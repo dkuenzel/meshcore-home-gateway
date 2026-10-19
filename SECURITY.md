@@ -20,11 +20,13 @@ system. The threat model, the trust boundaries and the mitigations are described
 [`docs/design.md`](docs/design.md#7-security). In short:
 
 - Commands from the radio are accepted only as direct messages from allowlisted contacts, never
-  from channels, and are protected against replay
+  from channels, and are protected against replay and against look-alike keys that share an
+  allowed sender's 6-byte prefix
   ([ADR 0009](docs/decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 - The bridge never executes anything itself; it publishes events that the home automation
   evaluates.
 - Outbound traffic is limited to configured targets and an airtime budget
   ([ADR 0008](docs/decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)).
-- The MeshCore TCP companion interface has no authentication; use USB or an isolated network.
+- The MeshCore TCP companion interface has no authentication and can lose push frames; use USB,
+  above all for commands, or else an isolated network.
 - Runtime dependencies come from the Linux distribution only; development tools are hash-pinned.

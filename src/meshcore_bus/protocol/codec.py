@@ -248,10 +248,11 @@ class ContactDeleted:
 
 @dataclass(frozen=True, slots=True)
 class AutoAddConfig:
-    """Response 25: `AutoAdd` flags and the hop limit for automatic adding (0: no limit)."""
+    """Response 25: `AutoAdd` flags and the hop limit for automatic adding (0: no limit; None:
+    firmware 1.12 and 1.13, which answer without it)."""
 
     flags: int
-    max_hops: int
+    max_hops: int | None
 
     @property
     def overwrites_oldest(self) -> bool:
@@ -466,6 +467,6 @@ _DECODERS: dict[int, Callable[[bytes], Decoded]] = {
     Push.NEW_ADVERT: _advert,
     Push.PATH_UPDATED: _path_updated,
     Push.CONTACT_DELETED: _contact_deleted,
-    Response.AUTOADD_CONFIG: lambda p: AutoAddConfig(flags=p[1], max_hops=p[2]),
+    Response.AUTOADD_CONFIG: lambda p: AutoAddConfig(p[1], p[2] if len(p) > 2 else None),
     Push.LOG_RX_DATA: _rx_log,
 }

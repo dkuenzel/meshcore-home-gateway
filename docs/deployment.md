@@ -10,10 +10,9 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   the official app: name, radio preset, channels, contacts. Then disconnect the app; the bridge
   must be the radio's only client (protocol.md, section 1).
 * **Radio settings worth checking** in the app:
-  * *add contacts manually*, with every contact type switched off in the auto-add settings and
-    *overwrite oldest* off: a node that the radio adds with the key prefix of a command sender
-    blocks that sender's commands, and with overwriting, commands sent while the bridge is not
-    connected are rejected (configuration.md, `[commands]`; ADR 0009);
+  * *add contacts manually*, with every contact type switched off in the auto-add settings: a
+    node that reaches the radio with the key prefix of a command sender blocks that sender's
+    commands for 24 hours (configuration.md, `[commands]`; ADR 0009);
   * the *airtime factor* for the legal duty cycle: the firmware allows 50 % by default; for the EU
     band 869.40–869.65 MHz (10 % per hour) the factor is 9 (protocol.md, section 7).
 * **Broker:** an MQTT user for the bridge, ideally with an ACL (mqtt-api.md, last section).
@@ -221,7 +220,7 @@ systemctl daemon-reload && systemctl enable --now meshcore-bus
 | `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the legal limit |
 | `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets); shorten messages or raise `burst_s` |
 | Commands rejected with `too_old` / `from_the_future` | Sender or bridge clock wrong; the phone apps set the radio clock, or set `max_age_s = 0` |
-| Commands rejected with `sender_ambiguous` | Two contacts share the first 6 key bytes, or did in the last 24 hours (an overwritten contact counts that long): remove the stray one and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets overwritten contacts |
-| Commands rejected with `sender_unverified` | The contact table could not be read (see the log), or the command waited in the radio while the bridge was not connected and the radio may overwrite contacts: send it again, and switch off automatic adding or overwriting |
+| Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-bus probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
+| Commands rejected with `sender_unverified` | The command waited in the radio before the bridge connected (restart, update, unplugged radio), or the contact table could not be read (see the log): send it again |
 | Commands rejected with `state_unwritable` | `/var/lib/meshcore-bus/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |

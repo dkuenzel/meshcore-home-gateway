@@ -107,7 +107,11 @@ def test_probe_lists_channels_and_contacts_over_tcp(capsys: pytest.CaptureFixtur
         assert main(["probe", "--tcp", address, "--list", "contacts"]) == EX_OK
         assert capsys.readouterr().out == f"{'a1' * 32}\tAlice Smith\tchat\n"  # tab made safe
         assert main(["probe", "--tcp", address, "--json"]) == EX_OK
-        report = json.loads(capsys.readouterr().out)
+        out = capsys.readouterr().out
+        assert "\x1b" not in out  # escaped in the JSON text
+        assert "\u2028" not in out
+        report = json.loads(out)
+        assert report["channels"][1]["name"] == "Alerts\x1b[2J\u2028"
         assert (report["name"], report["firmware"], report["spreading_factor"]) == (
             "Bridge",
             "v1.18.0",
@@ -140,16 +144,18 @@ def test_probe_leaves_waiting_messages_in_the_radio(capsys: pytest.CaptureFixtur
             "added manually, but chat, repeater automatically; a full table overwrites the oldest",
         ),
         (
+            EmulatedRadio(autoadd_config=0x41, autoadd_hops=None),  # firmware 1.12: no hop limit
+            {"manual": True, "types": ["0x40"], "overwrite_oldest": True},
+            "added manually, but 0x40 automatically; a full table overwrites the oldest",
+        ),
+        (
             EmulatedRadio(manual_add=False, unknown={Command.GET_AUTOADD_CONFIG}),
             {"manual": False, "types": ["chat", "repeater", "room", "sensor"],
              "overwrite_oldest": None},
-            (
-                "all added automatically; a full table may overwrite the oldest (firmware "
-                "without auto-add settings)"
-            ),
+            "all added automatically",
         ),
     ],
-    ids=["manual-with-types", "older-firmware"],
+    ids=["manual-with-types", "unknown-type", "older-firmware"],
 )  # fmt: skip
 def test_probe_reports_how_the_radio_adds_contacts(
     capsys: pytest.CaptureFixture[str], radio: EmulatedRadio, auto_add: dict[str, Any], line: str
@@ -218,7 +224,7 @@ def test_listen_prints_events_as_json_lines(
     publisher = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
     publisher.connect(broker.host, broker.port)
     publisher.loop_start()
-    retained = {"radio": "connected"}
+    retained = {"radio": "connected", "radio_name": "Gate\u009b2J \u202eevil\u2028\U000e0001 Grüße"}
     publisher.publish(
         "meshcore/radio1/state", json.dumps(retained), qos=1, retain=True
     ).wait_for_publish(5)
@@ -227,7 +233,11 @@ def test_listen_prints_events_as_json_lines(
     finally:
         publisher.loop_stop()
         publisher.disconnect()
-    line: dict[str, Any] = json.loads(capsys.readouterr().out.strip())
+    out = capsys.readouterr().out
+    for escaped in ("\\u009b", "\\u202e", "\\u2028", "\\udb40\\udc01"):  # not raw
+        assert escaped in out
+    assert "Grüße" in out  # ordinary letters stay readable
+    line: dict[str, Any] = json.loads(out.strip())
     assert line == {"topic": "meshcore/radio1/state", "payload": retained}
 
 

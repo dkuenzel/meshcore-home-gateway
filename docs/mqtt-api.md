@@ -88,9 +88,9 @@ which is how retries arrive). Channels listed in `ignore_channels` are skipped.
 | `command` | `null` unless the first word is a command word; then `accepted` and `reason` |
 
 A message frame names its sender only by the 6-byte prefix, so `sender_key`, `sender_name` and
-`target` are informational: a contact with the same prefix that the radio added or overwrote
-since the bridge last read the table is not reflected there. Base decisions on the `command`
-topic, whose sender the bridge verifies.
+`target` are informational: a contact with the same prefix that the radio added or dropped since
+the bridge last read the table is not reflected there. Base decisions on the `command` topic,
+whose sender the bridge verifies.
 
 ## Commands: `command`
 
@@ -110,9 +110,9 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `command.reason` | Meaning |
 | --- | --- |
 | `sender_unknown` | the sender prefix matches no contact on the radio |
-| `sender_ambiguous` | it matches several contacts, counting contacts the radio overwrote in the last 24 hours |
+| `sender_ambiguous` | it matches several contacts, or another key with this prefix was seen on the radio in the last 24 hours |
 | `sender_not_allowed` | the contact's full key is not in `commands.senders` |
-| `sender_unverified` | the contact table could not be read, or the command waited in the radio while the bridge was not connected and the radio may overwrite contacts on its own; the sender can send it again |
+| `sender_unverified` | the command waited in the radio before the bridge connected, or the contact table could not be read (also when the radio connection ended first); the sender can send it again |
 | `state_unwritable` | the state file could not be written, so the replay protection could not be kept; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock |

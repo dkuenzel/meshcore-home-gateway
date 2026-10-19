@@ -235,7 +235,7 @@ def _probe(args: argparse.Namespace) -> int:
         for contact in report["contacts"]:
             print(f"{contact['public_key']}\t{_safe_text(contact['name'])}\t{contact['type']}")
     elif args.json:
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        print(_json_text(report, indent=2))
     else:
         _print_report(report)
     return EX_OK
@@ -272,7 +272,7 @@ async def _probe_radio(transport: Any) -> dict[str, Any]:
         "coding_rate": me.coding_rate,
         "tx_power_dbm": me.tx_power_dbm,
         "manual_add_contacts": me.manual_add_contacts,
-        "auto_add": {  # null: firmware without auto-add settings (ADR 0009)
+        "auto_add": {  # overwrite_oldest null: firmware 1.11 or older, no such setting
             "manual": me.manual_add_contacts,
             "types": type_names(added_types(me, autoadd)),
             "overwrite_oldest": None if autoadd is None else autoadd.overwrites_oldest,
@@ -304,8 +304,6 @@ def _print_report(r: dict[str, Any]) -> None:
         adding += f", but {', '.join(auto['types'])} automatically"
     if auto["types"] and auto["overwrite_oldest"]:
         adding += "; a full table overwrites the oldest"
-    elif auto["types"] and auto["overwrite_oldest"] is None:
-        adding += "; a full table may overwrite the oldest (firmware without auto-add settings)"
     print(_safe_text(f"radio      {r['name']}  {r['public_key']}"))
     print(_safe_text(f"firmware   {firmware}"))
     print(f"lora       {lora}")
@@ -319,11 +317,31 @@ def _print_report(r: dict[str, Any]) -> None:
 
 def _safe_text(text: str) -> str:
     """For tab-separated lists and dialogs: control characters (tabs, line breaks, terminal
-    escapes) and Unicode line separators become spaces."""
+    escapes), format characters (direction overrides) and Unicode line separators become
+    spaces."""
     return "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in text)
 
 
-_UNSAFE = frozenset({"Cc", "Zl", "Zp"})
+def _json_text(value: Any, indent: int | None = None) -> str:
+    """JSON for a terminal: readable letters stay, but the characters `_safe_text` replaces are
+    written as \\u escapes, so texts from the mesh cannot steer the terminal. Still valid JSON:
+    json.dumps escapes C0 controls itself, so a raw line break is indentation, and the rest
+    only occurs inside strings."""
+    text = json.dumps(value, ensure_ascii=False, indent=indent)
+    return "".join(
+        _escaped(ch) if ch != "\n" and unicodedata.category(ch) in _UNSAFE else ch for ch in text
+    )
+
+
+def _escaped(ch: str) -> str:
+    code = ord(ch)
+    if code <= 0xFFFF:
+        return f"\\u{code:04x}"
+    code -= 0x10000  # outside the basic plane: a UTF-16 surrogate pair, as JSON requires
+    return f"\\u{0xD800 + (code >> 10):04x}\\u{0xDC00 + (code & 0x3FF):04x}"
+
+
+_UNSAFE = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
 # --- send and listen ------------------------------------------------------------------------
@@ -443,7 +461,7 @@ def _send(args: argparse.Namespace) -> int:
         if not watch.done.wait(args.wait) or watch.result is None:
             print("meshcore-bus: no delivery result in time", file=sys.stderr)
             return EX_FAILURE
-        print(json.dumps(watch.result, ensure_ascii=False))
+        print(_json_text(watch.result))
         return EX_OK if watch.result["event_type"] in {"sent", "confirmed"} else EX_FAILURE
     finally:
         client.disconnect()  # first: loop_stop() alone may wait 120 s for unacknowledged messages
@@ -498,9 +516,7 @@ def _listen(args: argparse.Namespace) -> int:
             payload: Any = json.loads(message.payload)
         except ValueError:
             payload = message.payload.decode("utf-8", errors="replace")
-        print(
-            json.dumps({"topic": message.topic, "payload": payload}, ensure_ascii=False), flush=True
-        )
+        print(_json_text({"topic": message.topic, "payload": payload}), flush=True)
         seen += 1
         if args.count and seen >= args.count:
             finished.set()

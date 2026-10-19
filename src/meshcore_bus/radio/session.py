@@ -6,8 +6,9 @@ frames (codes >= 0x80) in between. The session therefore
 * sends one command at a time (`asyncio.Lock`) and hands the waiting command only the frames
   with the response codes it expects; anything else is logged and dropped;
 * routes push frames: new messages trigger a sync, acknowledgements and received-packet logs go
-  to the event queue, adverts mark the contact table for a refresh, and the keys of overwritten
-  contacts are kept for the bridge;
+  to the event queue, adverts mark the contact table for a refresh;
+* reports every full key the radio names (table reads, advert, path and overwrite pushes) to
+  `on_contact_key` at once, so the bridge's memory of look-alikes is never behind (ADR 0009);
 * closes itself on a transport error or a command timeout; the bridge then reconnects.
 """
 
@@ -39,7 +40,6 @@ CLOCK_AHEAD_WARNING_S = 60
 SYNC_INTERVAL_S = 300.0  # safety net in case a MSG_WAITING push was lost
 HEARTBEAT_INTERVAL_S = 60.0
 CONTACTS_REFRESH_DELAY_S = 2.0
-MAX_DEPARTED = 1024
 
 ResponseCodes = frozenset[int]
 _SIMPLE = frozenset({Response.OK, Response.ERR, Response.DISABLED})
@@ -129,7 +129,7 @@ class CompanionSession:
         self._contacts_dirty = asyncio.Event()
         self.info: RadioInfo | None = None
         self.autoadd: codec.AutoAddConfig | None = None
-        self.departed: dict[str, None] = {}  # keys of overwritten contacts, oldest first
+        self.on_contact_key: Callable[[str], None] | None = None  # every key the radio names
         self.contacts_read_at = -1  # command count of the read behind contact_records
         self._commands_sent = 0
         self.contact_records: dict[str, codec.ContactRecord] = {}
@@ -206,13 +206,6 @@ class CompanionSession:
     def contacts(self) -> ContactBook:
         return ContactBook(Contact(key, rec.name) for key, rec in self.contact_records.items())
 
-    @property
-    def may_overwrite_contacts(self) -> bool:
-        """The radio may replace a contact on its own (ADR 0009); unknown before `start`."""
-        if self.info is None:
-            return True
-        return may_overwrite(self.info.self_info, self.autoadd)
-
     async def get_time(self) -> int:
         frame = await self._expect(
             codec.get_device_time(), Response.CURR_TIME, codec.CurrentTime, "get time"
@@ -237,7 +230,14 @@ class CompanionSession:
     async def reset_path(self, public_key: bytes) -> None:
         await self._expect_ok("reset path", codec.reset_path(public_key))
 
-    async def refresh_contacts(self) -> None:
+    async def refresh_contacts(self, *, newer_than: int | None = None) -> None:
+        """Read the contact table. With `newer_than`, a read that started after that command count
+        is enough: one in progress is awaited instead of sending another."""
+        if newer_than is not None:
+            async with self._lock:  # wait for the command in progress, perhaps such a read
+                pass
+            if self.contacts_read_at > newer_than:
+                return
         records: dict[str, codec.ContactRecord] = {}
         async with self._command(codec.get_contacts(), _CONTACT_CODES) as pending:
             started = self._commands_sent
@@ -247,6 +247,7 @@ class CompanionSession:
                     raise CommandFailedError("get contacts", decoded.name)
                 if isinstance(decoded, codec.ContactRecord):
                     records[decoded.public_key.hex()] = decoded
+                    self._report_key(decoded.public_key)
                 elif isinstance(decoded, codec.EndOfContacts):
                     break
         self.contact_records = records
@@ -296,11 +297,6 @@ class CompanionSession:
         finally:
             for event in fetched:
                 await self._events.put(event)
-
-    def take_departed(self) -> list[str]:
-        """Keys of contacts the radio overwrote since the last call (CONTACT_DELETED pushes)."""
-        keys, self.departed = list(self.departed), {}
-        return keys
 
     # --- internals ------------------------------------------------------------------------------
 
@@ -410,17 +406,17 @@ class CompanionSession:
             await self._events.put(AckReceived(decoded.ack, decoded.round_trip_ms))
         elif isinstance(decoded, codec.RxLog):
             await self._events.put(PacketLogged(decoded, self._wall()))
-        elif isinstance(decoded, codec.ContactDeleted):
-            self.departed[decoded.public_key.hex()] = None
-            while len(self.departed) > MAX_DEPARTED:
-                del self.departed[next(iter(self.departed))]
+        elif isinstance(decoded, codec.Advert | codec.PathUpdated | codec.ContactDeleted):
+            self._report_key(decoded.public_key)  # before any later frame is handled
             self._contacts_dirty.set()
-        elif (
-            isinstance(decoded, codec.Advert | codec.PathUpdated) or frame[0] == Push.CONTACTS_FULL
-        ):
+        elif frame[0] == Push.CONTACTS_FULL:
             self._contacts_dirty.set()
         else:
             log.debug("radio: push 0x%02x ignored", frame[0])
+
+    def _report_key(self, public_key: bytes) -> None:
+        if self.on_contact_key is not None:
+            self.on_contact_key(public_key.hex())
 
     @contextlib.asynccontextmanager
     async def _command(self, request: bytes, expected: Iterable[int]) -> AsyncIterator[_Pending]:
@@ -520,40 +516,28 @@ def added_types(self_info: codec.SelfInfo, autoadd: codec.AutoAddConfig | None) 
 
 
 def type_names(types: AutoAdd) -> list[str]:
-    return [name for flag, name in AUTO_ADD_TYPES.items() if types & flag]
-
-
-def may_overwrite(self_info: codec.SelfInfo, autoadd: codec.AutoAddConfig | None) -> bool:
-    """A full table makes the radio replace its oldest contact (BaseChatMesh.cpp:88-104).
-
-    Only when it adds contacts on its own at all; firmware without auto-add settings counts as
-    overwriting, because the bridge cannot ask it.
-    """
-    return bool(added_types(self_info, autoadd)) and (autoadd is None or autoadd.overwrites_oldest)
+    """Names of the contact types; bits of types this code does not know as one hex value."""
+    names = [name for flag, name in AUTO_ADD_TYPES.items() if types & flag]
+    unknown = int(types) & ~int(_EVERY_TYPE)
+    return [*names, f"0x{unknown:02x}"] if unknown else names
 
 
 def _warn_about_contact_adding(
     self_info: codec.SelfInfo, autoadd: codec.AutoAddConfig | None
 ) -> None:
-    """Automatic adding lets a look-alike of an allowed command sender into the table (ADR 0009).
-
-    The radio passes on direct messages from contacts of every type, so every type counts.
-    """
-    types = added_types(self_info, autoadd)
+    """Automatic adding lets a look-alike of an allowed command sender into the table, and the
+    bridge then rejects that sender's commands as ambiguous (ADR 0009). The radio passes on
+    direct messages from contacts of every type, so every type counts."""
     if not self_info.manual_add_contacts:
         log.warning(
-            "radio adds every new contact automatically; switch on manual adding and switch off "
-            "every type in its auto-add settings (ADR 0009)"
+            "radio adds every new contact automatically; a node with the key prefix of a command "
+            "sender would block that sender's commands: switch on manual adding and switch off "
+            "every type in the auto-add settings (ADR 0009)"
         )
-    elif types:
+    elif types := added_types(self_info, autoadd):
         log.warning(
-            "radio adds new contacts of type %s automatically despite manual adding; switch these "
-            "types off in its auto-add settings (ADR 0009)",
-            ", ".join(type_names(types)) or f"0x{int(types):02x}",
-        )
-    if may_overwrite(self_info, autoadd):
-        log.warning(
-            "radio may overwrite its oldest contact when the table is full: commands that waited "
-            "in the radio while the bridge was not connected are rejected (sender_unverified, "
-            "ADR 0009)"
+            "radio adds new contacts of type %s automatically despite manual adding; a node with "
+            "the key prefix of a command sender would block that sender's commands: switch these "
+            "types off in the auto-add settings (ADR 0009)",
+            ", ".join(type_names(types)),
         )

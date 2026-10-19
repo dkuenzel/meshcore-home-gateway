@@ -39,21 +39,26 @@ Rules, all of which must hold:
    channel secret can write there, and the sender name in a channel text is plain text.
 2. The first word, case-insensitive, is in `commands.words`.
 3. The 6-byte sender prefix in the message frame resolves to **exactly one** contact, and that
-   contact's **full** 32-byte key is in `commands.senders`. A prefix that matches several contacts
-   is rejected (`sender_ambiguous`). The contacts are the radio's table as read **after** the
-   message was fetched, plus every contact the radio reported as overwritten in the last 24 hours.
+   contact's **full** 32-byte key is in `commands.senders`. The contact must be in the radio's
+   table as read **after** the message was fetched, and no other key with the same prefix may have
+   been seen on the radio in the last 24 hours (`sender_ambiguous`).
    The radio can only decrypt a direct message from a contact it holds, so a look-alike that sent
-   the message was in the table when it arrived; until the bridge reads the table, the look-alike
-   either stays there or, if the radio overwrites the oldest contact of a full table, is replaced,
-   and the radio pushes its full key (`CONTACT_DELETED`) once to whichever client is connected.
-   * A rejection by the table the bridge already holds stands: only a removal could turn it into
-     an acceptance, and overwritten contacts still count. Otherwise the bridge reads the table
-     again, unless a read started after the message was fetched; one read serves a whole batch.
+   the message was in the table when it arrived. It can leave the table before the bridge reads
+   it: overwritten by a newer contact, or, in firmware 1.18, cleared by two adverts of its own (the
+   first claims type 0), without any removal push ([`protocol.md`](../protocol.md#5-semantics)).
+   But every advert, path update and overwrite is pushed with the contact's full key, and every
+   table read lists the keys. The bridge therefore remembers each key that shares the prefix of an
+   allowed sender, for 24 hours after it last saw it; such keys only add doubt, never a sender.
+   * A rejection by the table the bridge already holds stands, unless the sender was unknown:
+     nothing the radio does can turn it into an acceptance, because keys that leave the table are
+     remembered. Otherwise the bridge reads the table again, unless a read started after the
+     message was fetched; one read serves a whole batch, and a read in progress is awaited
+     instead of repeated.
    * A command that waited in the radio when the bridge connected is rejected
-     (`sender_unverified`) if the radio adds contacts on its own and may overwrite them: an
-     overwrite while no bridge listened was pushed to nobody. With other settings it is judged like
-     any other command.
-   * If the table cannot be read, the command is rejected (`sender_unverified`).
+     (`sender_unverified`): a look-alike may have come and gone while nobody listened. The sender
+     sends it again.
+   * If the table cannot be read, also because the radio connection ended first, the command is
+     rejected (`sender_unverified`).
 4. The sender timestamp is **greater** than the last accepted one of this sender (`replay`). The
    bridge stores it durably before publishing the event; if that fails, the command is rejected
    (`state_unwritable`).
@@ -69,18 +74,22 @@ appears on `received`. The bridge executes nothing.
 * Good, because direct messages are authenticated by the firmware with the key shared between the
   sender and the radio, so with full-key binding only the holder of an allowlisted key can command.
 * Good, because a 48-bit prefix collision, which can be produced with enough computing effort,
-  does not inherit permissions.
-* Bad, because a look-alike contact that the radio adds automatically blocks the real sender's
-  commands (`sender_ambiguous`) while it is in the table and for 24 hours after it was overwritten;
-  manual adding without automatic contact types avoids this. The radio passes on direct messages
-  from contacts of every type, so every type counts. The bridge reads the adding settings at
-  connect and warns.
+  does not inherit permissions, as long as the bridge is the radio's only client and sees its
+  pushes (USB; for TCP see below).
+* Bad, because a look-alike that reaches the radio blocks the real sender's commands
+  (`sender_ambiguous`) for 24 hours after the bridge last saw it. With manual adding and no
+  contact type added automatically, it reaches the table only if someone adds it. The radio
+  passes on direct messages from contacts of every type, so every type counts; the bridge reads
+  the adding settings at connect and warns.
 * Bad, because a command that could be accepted waits for a read of the contact table: about
   150 bytes per contact, 4.6 s for 350 contacts over a USB-UART bridge at 115200 baud, less over
   native USB. Ordinary messages and senders the cached table already rejects cost nothing, and one
   read serves every message fetched before it.
-* Bad, because on a radio that may overwrite contacts, commands sent while the bridge was not
-  connected (restart, update, unplugged radio) are rejected and must be sent again.
+* Bad, because commands sent while the bridge was not connected (restart, update, unplugged
+  radio) are rejected and must be sent again.
+* Bad, because over TCP the radio drops push frames while its 4-frame send queue is full; a
+  look-alike that enters and leaves the table between two reads can then go unseen. Commands
+  should come in over USB; the bridge warns when commands are configured with TCP.
 * Good, because replays of captured packets fail, also across restarts.
 * Bad, because senders need a correct clock (the phone apps set it; a handheld without time sync
   may be rejected until its clock is set). `max_age_s = 0` disables the window if needed.
@@ -89,13 +98,15 @@ appears on `received`. The bridge executes nothing.
 
 ### Confirmation
 
-Unit tests cover every rule and rejection, including a contact that only shares the prefix.
-Component tests with the emulated radio check that a look-alike added without a push makes the
-command ambiguous, also after the radio overwrote it and across reconnects; that a command waiting
-at connect is accepted with safe settings and rejected when the radio may overwrite contacts; that
-an unreadable contact table rejects it; that cached rejections cost no read and one read serves a
-batch; and that the timestamp is persisted before the command event is published, with an
-unwritable state file rejecting the command. The hardware checklist repeats the restart case.
+Unit tests cover every rule and rejection, including a contact that only shares the prefix and
+keys that are only remembered. Component tests with the emulated radio check that a look-alike
+makes the command ambiguous when it was added without a push, overwritten, cleared silently after
+its adverts, or seen only in an earlier table read, also across reconnects; that a sender known
+only from memory is not accepted; that a command waiting at connect is rejected and its repetition
+accepted; that an unreadable contact table rejects it; that cached rejections cost no read, one
+read serves a batch and a read in progress is reused; and that the timestamp is persisted before
+the command event is published, with an unwritable state file rejecting the command. The hardware
+checklist repeats the restart case.
 
 ## Pros and Cons of the Options
 
@@ -113,10 +124,10 @@ unwritable state file rejecting the command. The hardware checklist repeats the 
 
 * Message and contact frame layouts, contact-table behaviour of the firmware with source lines:
   [`docs/protocol.md`](../protocol.md).
-* Recommended radio settings: add contacts manually, add no contact type automatically, do not
-  overwrite the oldest contact.
-* Amended on 2026-10-19, before the first release: a review showed that reading the table alone
-  misses a look-alike the radio has overwritten in the meantime, and that a read per possible
-  command is slow on large tables. Added the memory of overwritten contacts, the order of checks
-  and the rule for commands waiting at connect.
+* Recommended for a radio that takes commands: USB, contacts added manually, no contact type
+  added automatically.
+* Amended on 2026-10-19, before the first release, after two reviews: reading the table alone
+  misses a look-alike that has left it again (overwritten, or cleared by its own adverts without
+  a push), and a read per possible command is slow on large tables. Added the memory of keys with
+  a sender's prefix, the order of checks and the rejection of commands waiting at connect.
 * Revisit if MeshCore adds signed commands or a challenge–response mechanism for companion clients.

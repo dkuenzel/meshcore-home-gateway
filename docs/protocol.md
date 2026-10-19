@@ -67,7 +67,7 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
 | 2 | `SEND_TXT_MSG` | text type, attempt, uint32 timestamp, 6-byte key prefix, text (`MyMesh.cpp:1132-1146`) | `SENT` / `ERR` |
 | 3 | `SEND_CHANNEL_TXT_MSG` | text type 0, channel index, uint32 timestamp, text (`MyMesh.cpp:1178-1185`) | **`OK`** / `ERR` |
 | 13 | `RESET_PATH` | full 32-byte public key (`MyMesh.cpp:1317-1327`) | `OK` / `ERR` |
-| 59 | `GET_AUTOADD_CONFIG` | – (`MyMesh.cpp:2030-2035`); older firmware answers `ERR 1` | `AUTOADD_CONFIG` |
+| 59 | `GET_AUTOADD_CONFIG` | – (`MyMesh.cpp:2030-2035`); 1.11 and older answer `ERR 1` | `AUTOADD_CONFIG` |
 
 Answers `OK` (0) and `ERR` (1, followed by the error code) are generic (`MyMesh.cpp:153-163`).
 Error codes (`MyMesh.cpp:135-140`): 1 unsupported command or frame too short, 2 not found (contact,
@@ -124,7 +124,9 @@ path (36–99), name (100–131), last advert (132), latitude (136), longitude (
 0x04 repeater, 0x08 room server, 0x10 sensor. The type flags only apply with manual adding
 (`SELF_INFO` byte 47); without it every type is added (`MyMesh.cpp:308-332`). Hop limit 0 means
 none; otherwise only adverts that passed fewer repeaters than the limit add a contact
-(`BaseChatMesh.cpp:165-172`).
+(`BaseChatMesh.cpp:165-172`). Firmware 1.12 and 1.13 send 2 bytes, without the hop limit
+(`MyMesh.cpp:1733-1737` of `companion-v1.12.0`); 1.11 and older do not know the command
+(`MyMesh.cpp:1624-1627` of `companion-v1.11.0`) and add every contact unless manual adding is on.
 
 **`CHANNEL_INFO`** (18), 50 bytes: index (1), name (2–33, NUL-terminated; **the bytes after the NUL
 are stale buffer contents**), secret (34–49) (`MyMesh.cpp:1752-1766`). The bridge does not keep
@@ -162,13 +164,13 @@ Codes 0x80 and above can arrive at any time, also between the frames of `GET_CON
 
 | Code | Name | Content | Bridge |
 | --- | --- | --- | --- |
-| 0x80 | `ADVERT` | public key | refresh contacts |
-| 0x81 | `PATH_UPDATED` | public key | refresh contacts |
+| 0x80 | `ADVERT` | public key of a contact in the table that advertised (`MyMesh.cpp:358-367`) | remember the key if it shares a command sender's prefix (ADR 0009); refresh contacts |
+| 0x81 | `PATH_UPDATED` | public key | remember the key, as above; refresh contacts |
 | 0x82 | `SEND_CONFIRMED` | 4-byte ACK code, uint32 round trip in ms | match to a waiting message |
 | 0x83 | `MSG_WAITING` | – | sync messages |
 | 0x88 | `LOG_RX_DATA` | SNR × 4 (int8), RSSI (int8 dBm), raw packet | optional `rx` topic |
-| 0x8A | `NEW_ADVERT` | contact layout | refresh contacts |
-| 0x8F | `CONTACT_DELETED` | full public key of a contact overwritten to make room (`MyMesh.cpp:342-349`) | remember the key for 24 h (ADR 0009), refresh contacts |
+| 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added | remember the key, as above; refresh contacts |
+| 0x8F | `CONTACT_DELETED` | public key of a contact overwritten to make room (`MyMesh.cpp:342-349`) | remember the key, as above; refresh contacts |
 | 0x90 | `CONTACTS_FULL` | – | refresh contacts |
 
 Further pushes (0x84–0x87, 0x89, 0x8B–0x8E: raw data, login, status, trace, telemetry, binary and
@@ -208,20 +210,32 @@ path-discovery responses, control data) are ignored (`MyMesh.cpp:117-133`).
   (`BaseChatMesh.cpp:203-211`); messages from others are dropped by the radio.
 * **Every contact type can send.** `onPeerDataRecv` checks no type (`BaseChatMesh.cpp:222-245`):
   a repeater, room server or sensor contact delivers plain direct messages like a chat contact.
-* **Contact table** (`BaseChatMesh.cpp:72-106, 150-185`): an advert from an unknown node adds it
+* **Contact table** (`BaseChatMesh.cpp:72-106, 122-200`): an advert from an unknown node adds it
   if its type may be added (`AUTOADD_CONFIG`) and the hop limit allows. A full table refuses the
   new contact (push `CONTACTS_FULL`) unless overwriting is on; then the non-favourite contact with
   the oldest modification time is replaced and its key pushed as `CONTACT_DELETED`. A plain direct
-  message renews its sender's modification time (`BaseChatMesh.cpp:240`). The push goes out once:
-  over USB the firmware always assumes a client (`ArduinoSerialInterface.cpp:16-18`), over TCP
-  only a connected client gets it (`MyMesh.cpp:342-349`). A bridge that was not connected never
-  learns of the overwrite.
+  message renews its sender's modification time (`BaseChatMesh.cpp:240`).
+* **A contact can leave the table without `CONTACT_DELETED`.** Every advert stores the type it
+  claims, also type 0 (`BaseChatMesh.cpp:192`). The next advert from a type-0 contact clears its
+  slot and runs the add flow again (`BaseChatMesh.cpp:151-154`), which refuses it when its type is
+  not added automatically, the hop limit is exceeded, or the table is full without overwriting
+  (`BaseChatMesh.cpp:158-182`). The key holder can do this with two adverts.
+* **Every advert is pushed with the full key:** `ADVERT` for a contact that is (now) in the table,
+  `NEW_ADVERT` for a node that was not added (`MyMesh.cpp:358-367`; `BaseChatMesh.cpp:158-182`
+  passes the refusals on). A push goes out once, to whichever client is connected: over USB the
+  firmware always assumes one (`ArduinoSerialInterface.cpp:16-18`), over TCP only a connected
+  client gets it (`MyMesh.cpp:342-349`). A bridge that was not connected never learns of it.
+* **Over TCP pushes can be lost.** The WiFi interface queues at most 4 frames and drops new ones
+  while the queue is full (`SerialWifiInterface.cpp:27-31`); it sends one queued frame per
+  main-loop pass (`SerialWifiInterface.cpp:85-100`), and a contact listing adds one frame per pass
+  because `isWriteBusy` is always false (`SerialWifiInterface.cpp:42-44`, `MyMesh.cpp:2392-2402`).
+  Pushes that arrive during a listing fill the queue for the rest of it.
 * **Contact list:** `GET_CONTACTS` sends one contact per main-loop pass (`MyMesh.cpp:2388-2410`),
-  so the list is not a snapshot; a contact overwritten during the read can be missing, but its
-  push arrives. The eight slots for temporary contacts (type 0, which a client creates for
-  anonymous requests, `BaseChatMesh.cpp:72-86, 883`) are never listed (`BaseChatMesh.cpp:976`),
-  yet the radio decrypts messages with them too (`BaseChatMesh.cpp:203-211`); only a client of the
-  radio can create them.
+  so the list is not a snapshot; a contact overwritten during the read can be missing, while its
+  push arrives (over USB). The eight slots for temporary contacts (type 0, which a client creates
+  for anonymous requests, `BaseChatMesh.cpp:72-86, 883`) are never listed
+  (`BaseChatMesh.cpp:976`), yet the radio decrypts messages with them too
+  (`BaseChatMesh.cpp:203-211`); only a client of the radio can create them.
 * **Listing cost** *(calculated)*: about 150 bytes per contact with framing, so a table of 350
   contacts takes about 4.6 s over a USB-UART bridge at 115200 baud; native USB is faster.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,12 +29,16 @@ BOB = EmulatedContact(bytes.fromhex("b2" * 32), "Bob", out_path_len=0x02)
 TWIN = EmulatedContact(ALICE.public_key[:6] + bytes(range(26)), "Mallory")  # same prefix
 
 
-def make_config(extra: str = "", messages: str = "", airtime: str = "") -> Config:
+def make_config(
+    extra: str = "",
+    messages: str = "",
+    airtime: str = "",
+    radio: str = 'transport = "tcp"\nhost = "192.0.2.10"',
+) -> Config:
     return parse_config(
         f"""
 [radio]
-transport = "tcp"
-host = "192.0.2.10"
+{radio}
 [mqtt]
 host = "broker.example.org"
 node_id = "radio1"
@@ -584,56 +589,35 @@ def test_new_contacts_are_read_before_their_messages(tmp_path: Path) -> None:
     scenario(main)
 
 
-def test_command_waiting_in_the_radio_at_connect_is_judged(tmp_path: Path) -> None:
-    """Sent while the bridge restarted: the radio held it, the bridge fetches it at connect."""
+def test_command_waiting_in_the_radio_at_connect_is_rejected(tmp_path: Path) -> None:
+    """Sent while no bridge listened: a look-alike may have come and gone unseen meanwhile, so the
+    sender has to send it again (ADR 0009). The message itself is still published."""
     radio = EmulatedRadio(contacts=[ALICE])
-    radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 30, push=False)
-
-    async def main() -> None:
-        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
-            command = await bus.wait_for("/command", lambda c: True)
-            assert (command["event_type"], command["sender_name"]) == ("arm", "Alice")
-            received = bus.payloads("/received")[0]
-            assert (received["sender_name"], received["target"]) == ("Alice", "alice")
-
-    scenario(main)
-
-
-def test_command_waiting_at_connect_is_refused_when_the_radio_may_overwrite_contacts(
-    tmp_path: Path,
-) -> None:
-    """While no bridge listened, a look-alike may have sent it and been overwritten since; the
-    push that says so went nowhere (ADR 0009)."""
-    radio = EmulatedRadio(
-        contacts=[ALICE], manual_add=False, autoadd_config=AutoAdd.OVERWRITE_OLDEST
-    )
     radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 30, push=False)
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
             received = await bus.wait_for("/received", lambda r: True)
             assert received["command"]["reason"] == "sender_unverified"
-            assert received["sender_name"] == "Alice"  # the message itself is still delivered
+            assert (received["sender_name"], received["target"]) == ("Alice", "alice")
             radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5)  # sent again
             command = await bus.wait_for("/command", lambda c: True)
-            assert command["event_type"] == "arm"
+            assert (command["event_type"], command["sender_name"]) == ("arm", "Alice")
 
     scenario(main)
 
 
-def test_overwritten_contacts_are_remembered_across_reconnects(tmp_path: Path) -> None:
-    radio = EmulatedRadio(
-        contacts=[ALICE, TWIN], manual_add=False, autoadd_config=AutoAdd.OVERWRITE_OLDEST
-    )
+def test_look_alikes_are_remembered_across_reconnects(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
             await bus.wait_for("/state", lambda s: s["radio"] == "connected")
             reads = radio.commands().count(Command.GET_CONTACTS)
-            radio.overwrite(TWIN)  # this session gets the push and then ends
+            radio.emit(bytes([Push.ADVERT]) + TWIN.public_key)  # seen by this session only
             for _attempt in range(100):
                 if radio.commands().count(Command.GET_CONTACTS) > reads:
-                    break
+                    break  # the advert was handled: the table is being read again
                 await asyncio.sleep(0.01)
             radio.disconnect()
             await bus.wait_for("/state", lambda s: s["radio"] == "disconnected")
@@ -661,6 +645,87 @@ def test_overwritten_look_alike_still_makes_the_sender_ambiguous(tmp_path: Path)
             assert not bus.payloads("/command")
 
     scenario(main)
+
+
+def test_look_alike_that_left_the_table_silently_still_counts(tmp_path: Path) -> None:
+    """Firmware 1.18 drops a contact without CONTACT_DELETED: after an advert that claims type 0,
+    its next advert clears the slot and may not add it again (BaseChatMesh.cpp:151-182). The
+    adverts' pushes carry its key, and the bridge remembers it (ADR 0009)."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], autoadd_config=AutoAdd.CHAT)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.contacts.append(TWIN)
+            radio.emit(bytes([Push.ADVERT]) + TWIN.public_key)  # added from its advert
+            radio.queue_direct_message(TWIN.public_key[:6], "arm now", NOW - 5, push=False)
+            radio.emit(bytes([Push.ADVERT]) + TWIN.public_key)  # claims type 0
+            radio.contacts.remove(TWIN)  # the next advert clears the slot ...
+            radio.emit(bytes([Push.NEW_ADVERT]) + TWIN.public_key + bytes(115))  # ... no re-add
+            radio.emit(bytes([Push.MSG_WAITING]))
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "sender_ambiguous"
+            assert not bus.payloads("/command")
+
+    scenario(main)
+
+
+def test_look_alike_seen_only_in_a_table_read_still_counts(tmp_path: Path) -> None:
+    """Over TCP the radio drops pushes when its send queue is full; a key from an earlier read
+    of the table is remembered as well."""
+    radio = EmulatedRadio(contacts=[ALICE, TWIN])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+            radio.contacts.remove(TWIN)  # gone without any push
+            reads = radio.commands().count(Command.GET_CONTACTS)
+            radio.emit(bytes([Push.ADVERT]) + BOB.public_key)  # the bridge reads the table again
+            for _attempt in range(100):
+                if radio.commands().count(Command.GET_CONTACTS) > reads:
+                    break
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.05)  # the read is complete: its table no longer holds the twin
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "sender_ambiguous"
+
+    scenario(main)
+
+
+def test_sender_known_only_from_memory_is_not_accepted(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5, push=False)
+            radio.overwrite(ALICE)
+            radio.emit(bytes([Push.MSG_WAITING]))
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "sender_unknown"
+            assert not bus.payloads("/command")
+
+    scenario(main)
+
+
+@pytest.mark.parametrize(("transport", "warned"), [("tcp", True), ("serial", False)])
+def test_commands_over_tcp_are_warned_about(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, transport: str, warned: bool
+) -> None:
+    """Over TCP the radio drops pushes when its send queue is full (ADR 0009)."""
+    radio_section = (
+        'transport = "tcp"\nhost = "192.0.2.10"'
+        if transport == "tcp"
+        else 'transport = "serial"\ndevice = "/dev/serial/by-id/usb-radio-if00"'
+    )
+    caplog.set_level(logging.WARNING)
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(make_config(radio=radio_section), radio, tmp_path) as (_, bus, _):
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+
+    scenario(main)
+    assert ("commands over TCP" in caplog.text) is warned
 
 
 def test_contact_reads_are_spent_only_where_they_can_change_the_verdict(tmp_path: Path) -> None:

@@ -6,7 +6,7 @@ Tasks on one event loop:
 * outbox: one message at a time: wait for radio and airtime, send, wait for the acknowledgement,
   retry, flood, report every step on the delivery topic;
 * radio events: acknowledgements and packet log at once, received messages in order
-  (deduplicated, command policy with the contact table read again for each command);
+  (deduplicated; command policy with a fresh contact table and a memory of look-alikes);
 * status: retained state document, systemd watchdog and status.
 """
 
@@ -32,7 +32,7 @@ from meshcore_bus.core.airtime import (
 )
 from meshcore_bus.core.budget import AirtimeBudget, Deduplicator
 from meshcore_bus.core.commands import CommandDecision, Rejection, command_word, evaluate_command
-from meshcore_bus.core.contacts import Contact, ContactBook
+from meshcore_bus.core.contacts import PREFIX_HEX_DIGITS, Contact
 from meshcore_bus.core.model import (
     DeliveryEvent,
     DeliveryState,
@@ -76,7 +76,7 @@ ACK_TIMEOUT_FACTOR = 1.2  # like the MeshCore Python client
 ACK_TIMEOUT_MIN_S, ACK_TIMEOUT_MAX_S = 5.0, 60.0
 RECENT_ACK_S = 120.0
 INBOUND_DEDUP_S = 3600.0  # retries reach us as duplicates with the same timestamp and text
-DEPARTED_S = 86_400.0  # an overwritten look-alike keeps a prefix ambiguous for a day
+LOOK_ALIKE_MEMORY_S = 86_400.0  # a key with a sender's prefix counts this long after last seen
 _FINAL_FROM_CACHE = frozenset(
     {Rejection.SENDER_AMBIGUOUS, Rejection.SENDER_NOT_ALLOWED, Rejection.REPLAY,
      Rejection.TOO_OLD, Rejection.FROM_THE_FUTURE}
@@ -183,7 +183,10 @@ class Bridge:
         self._targets = {t.alias: t for t in config.targets}
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
         self._messages: asyncio.Queue[MessageReceived] = asyncio.Queue()
-        self._departed: dict[str, float] = {}  # overwritten contacts: key -> first seen
+        # keys with the 6-byte prefix of an allowed command sender, as the radio named them:
+        # key -> when last seen; only these are kept, so the memory stays small (ADR 0009)
+        self._watched = frozenset(key[:PREFIX_HEX_DIGITS] for key in config.commands.senders)
+        self._seen: dict[str, float] = {}
         self._queue: asyncio.Queue[Outgoing] = asyncio.Queue(maxsize=config.messages.queue_size)
         self._budget = AirtimeBudget(
             config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
@@ -233,6 +236,7 @@ class Bridge:
             session = self._session_factory(
                 self._transport_factory(), self._events, self.config.radio.set_clock
             )
+            session.on_contact_key = self._contact_key
             try:
                 self._radio_info = await session.start()
             except (RadioError, OSError) as exc:
@@ -255,12 +259,17 @@ class Bridge:
                     self._publish_state()
             finally:
                 await session.close()
-                self._remember_departed(session)  # pushes this session saw, used or not
             await asyncio.sleep(delay * random.uniform(1.0, 1.2))  # noqa: S311 - jitter only
             delay = min(delay * 2, RECONNECT_MAX_S)
 
     def _check_radio(self, session: CompanionSession) -> None:
-        """Warn about targets the radio does not know and about a burst that is too small."""
+        """Warn about targets the radio does not know, a burst that is too small, and commands
+        over TCP."""
+        if self.config.radio.transport == "tcp" and self.config.commands.senders:
+            log.warning(
+                "commands over TCP: the radio drops push frames when its send queue is full, so "
+                "the bridge can miss a look-alike of a command sender; prefer USB (ADR 0009)"
+            )
         info = session.info
         if info is not None:
             longest = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, _lora(info))
@@ -569,13 +578,14 @@ class Bridge:
     async def _judge(self, event: MessageReceived) -> CommandDecision | None:
         """The command verdict; None if the message is no command at all (ADR 0009).
 
-        Messages carry only a 6-byte sender prefix, so the verdict uses the contact table of the
-        session that fetched the message plus the contacts the radio overwrote recently. A cached
-        rejection stands: only a removal could change it, and removed contacts still count. A
-        command that waited in a radio able to overwrite contacts is refused: an overwrite while
-        no session listened went unseen. Before an acceptance (or for an unknown sender) the
-        table is read again, unless a read already started after the message was fetched; that
-        one read then serves a whole batch.
+        Messages carry only a 6-byte sender prefix. The sender must be the only contact with that
+        prefix in the table of the session that fetched the message, and no other key with it may
+        have been seen on the radio within LOOK_ALIKE_MEMORY_S. A rejection by the cached table
+        stands, unless the sender was unknown: a removal is remembered, so nothing the radio does
+        turns it into an acceptance. A command that waited in the radio at connect is refused: a
+        look-alike may have come and gone while nobody listened. Before an acceptance (or for an
+        unknown sender) the table is read again, unless a read started after the message was
+        fetched; that read then serves a whole batch.
         """
         message, session = event.message, event.session
         word = command_word(message, self.config.commands)
@@ -584,42 +594,32 @@ class Bridge:
         decision = self._decide(message, session)
         if decision is not None and decision.rejection in _FINAL_FROM_CACHE:
             return decision
-        if event.at_connect and session.may_overwrite_contacts:
+        if event.at_connect:
             log.warning(
-                "command %s waited in the radio while the bridge was not connected; the radio "
-                "may have overwritten its sender since, so it is rejected (ADR 0009)",
+                "command %s waited in the radio before the bridge connected and is rejected: "
+                "the sender has to send it again (ADR 0009)",
                 word,
             )
             return CommandDecision(word, rejection=Rejection.SENDER_UNVERIFIED)
-        if session.contacts_read_at > event.fetched_at:
-            return decision
         try:
-            await session.refresh_contacts()
+            await session.refresh_contacts(newer_than=event.fetched_at)
         except RadioError as exc:
             log.warning("command sender cannot be verified: %s", exc)
             return CommandDecision(word, rejection=Rejection.SENDER_UNVERIFIED)
         return self._decide(message, session)
 
     def _decide(self, message: InboundMessage, session: CompanionSession) -> CommandDecision | None:
-        book = self._book(session)
-        return evaluate_command(
-            message, self.config.commands, book, self._ledger.view, self._wall()
-        )
-
-    def _book(self, session: CompanionSession) -> ContactBook:
-        """The session's contacts plus the contacts the radio overwrote in the last DEPARTED_S."""
-        self._remember_departed(session)
-        current = list(session.contacts)
-        present = {contact.public_key for contact in current}
-        gone = [Contact(key, "(overwritten)") for key in self._departed if key not in present]
-        return ContactBook([*current, *gone])
-
-    def _remember_departed(self, session: CompanionSession) -> None:
-        """Keep the overwritten contacts a session saw, also after the session ended."""
         now = self._mono()
-        for key in session.take_departed():
-            self._departed.setdefault(key, now)
-        self._departed = {k: at for k, at in self._departed.items() if now - at < DEPARTED_S}
+        self._seen = {k: at for k, at in self._seen.items() if now - at < LOOK_ALIKE_MEMORY_S}
+        return evaluate_command(
+            message, self.config.commands, session.contacts, self._ledger.view, self._wall(),
+            seen=self._seen,
+        )  # fmt: skip
+
+    def _contact_key(self, key: str) -> None:
+        """Every key the radio names (table read or push); keep those with a sender's prefix."""
+        if key[:PREFIX_HEX_DIGITS] in self._watched:
+            self._seen[key] = self._mono()
 
     def _target_for(self, message: InboundMessage, sender: Contact | None) -> str | None:
         for target in self._targets.values():

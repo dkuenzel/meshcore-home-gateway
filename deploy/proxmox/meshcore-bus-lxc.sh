@@ -496,7 +496,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
     for key in ${current_senders//,/ }; do  # senders the radio does not offer stay
       if [[ ! -v "contact_name[$key]" ]]; then
         log "kept command sender $key (not offered by the radio as a chat contact)"
-        selected+=${selected:+,}$key
+        [[ ,$selected, == *,"$key",* ]] || selected+=${selected:+,}$key
       fi
     done
     if [[ -n $selected ]]; then

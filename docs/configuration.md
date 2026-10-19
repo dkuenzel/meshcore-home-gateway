@@ -89,14 +89,17 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 Commands also need a sender timestamp newer than that sender's last accepted command; the bridge
 keeps these timestamps in `/var/lib/meshcore-bus/state.json`.
 
-Recommended radio settings (in the MeshCore app, before the bridge takes the radio over): add
-contacts manually, switch off every contact type in the auto-add settings, and do not overwrite the
-oldest contact. In manual mode the radio still adds the types enabled there, and a contact of any
-type can send direct messages; a node that the radio adds with the same 6-byte key prefix as an
-allowed sender blocks that sender's commands. If the radio may overwrite contacts, commands that
-waited in it while the bridge was not connected are rejected. The bridge logs a warning at connect
-for each of these settings, and `meshcore-bus probe` shows them
+Commands that waited in the radio while the bridge was not running (restart, update, unplugged
+radio) are rejected; the sender sends them again
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
+
+Recommended radio settings (in the MeshCore app, before the bridge takes the radio over): add
+contacts manually and switch off every contact type in the auto-add settings. In manual mode the
+radio still adds the types enabled there, and a contact of any type can send direct messages; a
+node that reaches the radio with the 6-byte key prefix of an allowed sender blocks that sender's
+commands for 24 hours. The bridge logs a warning at connect when the radio adds contacts on its
+own, and `meshcore-bus probe` shows the settings. Connect a radio that takes commands by USB: over
+TCP it drops push frames while its send queue is full, and the bridge warns about that too.
 
 ## `[diagnostics]`
 

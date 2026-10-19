@@ -224,12 +224,12 @@ UNKNOWN_AUTOADD: set[int] = {Command.GET_AUTOADD_CONFIG}  # older firmware: unkn
     ("radio", "warning"),
     [
         (EmulatedRadio(manual_add=False), "adds every new contact automatically"),
+        (EmulatedRadio(manual_add=False, unknown=UNKNOWN_AUTOADD), "adds every new contact"),
         (EmulatedRadio(autoadd_config=0x02), "adds new contacts of type chat automatically"),
         (EmulatedRadio(autoadd_config=0x1C), "of type repeater, room, sensor automatically"),
-        (EmulatedRadio(manual_add=False, autoadd_config=0x01), "may overwrite its oldest contact"),
-        (EmulatedRadio(manual_add=False, unknown=UNKNOWN_AUTOADD), "may overwrite its oldest"),
+        (EmulatedRadio(autoadd_config=0x41), "of type 0x40 automatically"),
     ],
-    ids=["all", "chat-in-manual-mode", "other-types", "overwrite", "unknown-settings"],
+    ids=["all", "all-older-firmware", "chat-in-manual-mode", "other-types", "unknown-type"],
 )
 def test_automatic_contact_adding_is_warned_about(
     caplog: pytest.LogCaptureFixture, radio: EmulatedRadio, warning: str
@@ -253,34 +253,6 @@ def test_manual_adding_without_automatic_types_is_quiet(
     assert "ADR 0009" not in caplog.text
 
 
-@pytest.mark.parametrize(
-    ("radio", "may_overwrite"),
-    [
-        (EmulatedRadio(), False),
-        (EmulatedRadio(manual_add=False), False),  # a full table refuses new contacts
-        (EmulatedRadio(manual_add=False, autoadd_config=0x01), True),
-        (EmulatedRadio(autoadd_config=0x01), False),  # nothing is added, so nothing overwritten
-        (EmulatedRadio(autoadd_config=0x03), True),
-        (EmulatedRadio(autoadd_config=0x11), True),  # a look-alike can advertise as a sensor
-        (EmulatedRadio(autoadd_config=0x41), True),  # unknown type bits count as types
-        (EmulatedRadio(manual_add=False, unknown=UNKNOWN_AUTOADD), True),
-        (EmulatedRadio(unknown=UNKNOWN_AUTOADD), False),
-    ],
-    ids=[
-        "manual", "automatic", "automatic-overwrite", "manual-overwrite", "chat-overwrite",
-        "sensor-overwrite", "unknown-type-overwrite", "automatic-unknown", "manual-unknown",
-    ],
-)  # fmt: skip
-def test_radio_settings_that_let_it_overwrite_contacts(
-    radio: EmulatedRadio, may_overwrite: bool
-) -> None:
-    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
-        await session.start()
-        assert session.may_overwrite_contacts is may_overwrite
-
-    run(radio, scenario)
-
-
 def test_firmware_without_auto_add_settings_still_starts() -> None:
     radio = EmulatedRadio(unknown=UNKNOWN_AUTOADD)
 
@@ -291,18 +263,54 @@ def test_firmware_without_auto_add_settings_still_starts() -> None:
     run(radio, scenario)
 
 
-def test_overwritten_contacts_are_remembered() -> None:
-    radio = EmulatedRadio(contacts=[ALICE, BOB])
+def test_firmware_without_the_hop_limit_still_starts() -> None:
+    """Firmware 1.12 and 1.13 answer the auto-add query without the hop limit."""
+    radio = EmulatedRadio(autoadd_config=0x02, autoadd_hops=None)
 
     async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
+        assert session.autoadd == codec.AutoAddConfig(flags=0x02, max_hops=None)
+
+    run(radio, scenario)
+
+
+def test_every_key_the_radio_reports_is_passed_on() -> None:
+    """Keys from table reads and from the pushes that carry one (advert, new advert, path,
+    overwrite) reach the callback in the radio's order, before any later frame (ADR 0009)."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    carol, dave, erin = (bytes.fromhex(b * 32) for b in ("c3", "d4", "e5"))
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        keys: list[str] = []
+        session.on_contact_key = lambda key: keys.append(key[:4])
+        await session.start()
+        assert keys == ["a1a1", "b2b2"]  # the table read at connect
+        radio.emit(bytes([Push.ADVERT]) + carol)
+        radio.emit(bytes([Push.NEW_ADVERT]) + dave + bytes(115))
+        radio.emit(bytes([Push.PATH_UPDATED]) + erin)
         radio.overwrite(BOB)
-        for _attempt in range(100):
-            if session.departed:
-                break
-            await asyncio.sleep(0.01)
-        assert session.take_departed() == [BOB.public_key.hex()]
-        assert session.take_departed() == []
+        radio.queue_direct_message(ALICE.public_key[:6], "after the pushes", START_TIME + 50)
+        event = await asyncio.wait_for(events.get(), 2)
+        assert isinstance(event, MessageReceived)
+        assert keys[2:6] == ["c3c3", "d4d4", "e5e5", "b2b2"]
+
+    run(radio, scenario)
+
+
+def test_a_read_in_progress_serves_a_request_for_a_newer_one() -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        reads = radio.commands().count(Command.GET_CONTACTS)
+        mark = session.contacts_read_at
+        running = asyncio.create_task(session.refresh_contacts())
+        await asyncio.sleep(0)  # it holds the command lock and has sent its request
+        await session.refresh_contacts(newer_than=mark)  # waits for it instead of reading
+        await running
+        assert radio.commands().count(Command.GET_CONTACTS) == reads + 1
+        await session.refresh_contacts(newer_than=session.contacts_read_at)  # none newer yet
+        assert radio.commands().count(Command.GET_CONTACTS) == reads + 2
 
     run(radio, scenario)
 

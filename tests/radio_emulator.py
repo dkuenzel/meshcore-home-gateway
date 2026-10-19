@@ -56,6 +56,7 @@ class EmulatedRadio:
     max_channels: int = 4
     manual_add: bool = True
     autoadd_config: int = 0  # AUTO_ADD_* flags (MyMesh.cpp:147-151)
+    autoadd_hops: int | None = 0  # None: firmware 1.12 and 1.13 answer without the hop limit
     spreading_factor: int = 8
     coding_rate: int = 8
     auto_ack: bool = True
@@ -216,7 +217,8 @@ class EmulatedRadio:
             self.channel_texts.append((p[2], p[7:].decode(), ts))
             self.emit(bytes([Response.OK]))
         elif code == Command.GET_AUTOADD_CONFIG:
-            self.emit(bytes([Response.AUTOADD_CONFIG, self.autoadd_config, 0]))
+            hops = b"" if self.autoadd_hops is None else bytes([self.autoadd_hops])
+            self.emit(bytes([Response.AUTOADD_CONFIG, self.autoadd_config]) + hops)
         elif code == Command.RESET_PATH:
             self.path_resets.append(p[1:33])
             for contact in self.contacts:

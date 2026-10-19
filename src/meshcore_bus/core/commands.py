@@ -6,9 +6,9 @@ A received message is a command only if all of these hold:
   secret can write there and the sender name is just text);
 * its first word is a configured command word;
 * the 6-byte sender prefix resolves to exactly one contact and that contact's full public key is
-  allowlisted; the bridge resolves it against the radio's contact table as read after the message
-  arrived plus the contacts the radio overwrote recently, because a look-alike with the same
-  prefix may have been added or overwritten a moment ago;
+  allowlisted. The contact must be in the radio's contact table as read after the message
+  arrived, and no other key with that prefix may have been seen on the radio recently: a
+  look-alike can enter the table and leave it again, sometimes without telling;
 * the sender timestamp is newer than the last accepted command of that sender (replay) and,
   unless disabled, within `max_age_s` of the bridge clock.
 
@@ -27,7 +27,7 @@ from meshcore_bus.core.model import InboundMessage, MessageKind, TextType
 
 class Rejection(StrEnum):
     SENDER_UNKNOWN = "sender_unknown"  # prefix matches no contact
-    SENDER_AMBIGUOUS = "sender_ambiguous"  # prefix matches several contacts
+    SENDER_AMBIGUOUS = "sender_ambiguous"  # prefix matches several contacts or recent keys
     SENDER_NOT_ALLOWED = "sender_not_allowed"
     REPLAY = "replay"  # not newer than the last accepted command of this sender
     TOO_OLD = "too_old"
@@ -89,18 +89,20 @@ def evaluate_command(
     contacts: ContactBook,
     last_accepted: Mapping[str, int],
     now: float,
+    *,
+    seen: Iterable[str] = (),
 ) -> CommandDecision | None:
     """None if the message is not a command at all, otherwise acceptance or the reason.
 
-    For an acceptance, `contacts` must hold the radio's contact table as read after the message
-    arrived and the contacts the radio overwrote since; an older table can only confirm a
-    rejection (ADR 0009).
+    For an acceptance, `contacts` must be the radio's contact table as read after the message
+    arrived; an older table can only confirm a rejection. `seen` are full keys the radio
+    reported recently (table reads, pushes); they only add doubt, never a sender (ADR 0009).
     """
     word = command_word(message, rules)
     if word is None or message.sender_prefix is None:
         return None
     args = message.text.strip().partition(" ")[2]
-    sender, rejection = _authorise(message.sender_prefix, rules, contacts)
+    sender, rejection = _authorise(message.sender_prefix, rules, contacts, seen)
     if rejection is None and sender is not None:
         rejection = _check_time(message.sender_timestamp, rules, last_accepted.get(sender), now)
     if sender is None or rejection is not None:
@@ -111,13 +113,15 @@ def evaluate_command(
 
 
 def _authorise(
-    prefix: str, rules: CommandRules, contacts: ContactBook
+    prefix: str, rules: CommandRules, contacts: ContactBook, seen: Iterable[str]
 ) -> tuple[str | None, Rejection | None]:
     candidates = contacts.resolve(prefix)
+    prefix = prefix.lower()
+    keys = {c.public_key for c in candidates} | {k for k in seen if k.startswith(prefix)}
+    if len(keys) > 1:
+        return None, Rejection.SENDER_AMBIGUOUS
     if not candidates:
         return None, Rejection.SENDER_UNKNOWN
-    if len(candidates) > 1:
-        return None, Rejection.SENDER_AMBIGUOUS
     sender = candidates[0].public_key
     if sender not in rules.senders:
         return None, Rejection.SENDER_NOT_ALLOWED

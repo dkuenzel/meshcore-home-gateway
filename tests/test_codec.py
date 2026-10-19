@@ -217,6 +217,8 @@ def test_contact_deleted_push_and_auto_add_settings() -> None:
     assert isinstance(settings, codec.AutoAddConfig)
     assert settings.overwrites_oldest
     assert not codec.AutoAddConfig(flags=0x1C, max_hops=0).overwrites_oldest
+    # firmware 1.12 and 1.13 answer without the hop limit (companion-v1.12.0 MyMesh.cpp:1733-1737)
+    assert codec.decode(payload("3E 02 00 19 03")) == codec.AutoAddConfig(flags=0x03, max_hops=None)
 
 
 def test_unknown_codes_are_kept_raw() -> None:

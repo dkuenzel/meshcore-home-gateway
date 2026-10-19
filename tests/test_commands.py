@@ -92,6 +92,27 @@ def test_prefix_collision_with_a_different_key_is_not_the_allowlisted_sender() -
     assert decision.rejection == Rejection.SENDER_NOT_ALLOWED
 
 
+def test_a_look_alike_seen_recently_makes_the_sender_ambiguous() -> None:
+    """The radio can drop a contact without telling (ADR 0009): a key with the same prefix that
+    the bridge saw on the radio recently still counts, though the table no longer holds it."""
+    decision = evaluate_command(dm("arm"), RULES, BOOK, {}, NOW, seen=[ALICE, MALLORY_SAME_PREFIX])
+    assert decision is not None
+    assert decision.rejection == Rejection.SENDER_AMBIGUOUS
+
+
+def test_a_sender_known_only_from_memory_is_not_accepted() -> None:
+    """Remembered keys only add doubt; the sender itself must be in the table just read."""
+    decision = evaluate_command(dm("arm"), RULES, ContactBook([]), {}, NOW, seen=[ALICE])
+    assert decision is not None
+    assert decision.rejection == Rejection.SENDER_UNKNOWN
+
+
+def test_seen_keys_of_other_prefixes_do_not_matter() -> None:
+    decision = evaluate_command(dm("arm"), RULES, BOOK, {}, NOW, seen=[ALICE, BOB, "c3" * 32])
+    assert decision is not None
+    assert decision.command is not None
+
+
 def test_newer_timestamp_than_last_accepted_passes() -> None:
     decision = evaluate_command(dm("status", ts=NOW - 1), RULES, BOOK, {ALICE: int(NOW - 5)}, NOW)
     assert decision is not None

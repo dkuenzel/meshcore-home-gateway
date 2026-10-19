@@ -586,6 +586,21 @@ def test_interactive_reconfigure_keeps_targets_the_radio_does_not_offer(host: Ho
     assert "kept" in result.stderr
 
 
+def test_unattended_reconfigure_lists_a_kept_sender_once(host: Host) -> None:
+    existing_container(host)
+    current = host.root / "current"
+    senders = f"commands.senders={ALICE},{RELAY}"
+    current.write_text(
+        current.read_text(encoding="utf-8").replace(f"commands.senders={ALICE}", senders),
+        encoding="utf-8",
+    )
+    answers = answers_file(host, senders + "\n")
+    result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    lines = host.pushed("meshcore-bus-answers").splitlines()
+    assert [line for line in lines if line.startswith("commands.senders=")] == [senders]
+
+
 def test_failed_reconfigure_starts_the_service_again(host: Host) -> None:
     existing_container(host)
     answers = answers_file(host, "mqtt.host=new.example.org\n")

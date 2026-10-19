@@ -221,7 +221,7 @@ sequenceDiagram
         B->>R: SYNC_NEXT_MESSAGE
         R-->>B: CONTACT_MSG_RECV_V3 / CHANNEL_MSG_RECV_V3
     end
-    Note over B,R: connected: pushes MSG_WAITING, SEND_CONFIRMED, ADVERT, LOG_RX_DATA
+    Note over B,R: connected: pushes MSG_WAITING, SEND_CONFIRMED, LOG_RX_DATA,<br/>ADVERT, NEW_ADVERT, PATH_UPDATED, CONTACT_DELETED
 ```
 
 * **Clock.** The firmware only moves its clock forward. If the radio is ahead of the bridge by more
@@ -231,11 +231,12 @@ sequenceDiagram
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
 * **Contacts and channels** are read at connect time; contacts are re-read after advert, path and
-  contact-table pushes, so key resolution (§7.3) sees new and changed contacts. The keys that
-  `CONTACT_DELETED` pushes report go to the bridge, which counts them for 24 hours. Channel slots
-  without a name are not configured and never used (the radio would send with an all-zero key).
+  contact-table pushes, so key resolution (§7.3) sees new and changed contacts. Every key the
+  radio names, in a table read or in an advert, path or overwrite push, goes to the bridge at
+  once, before the next frame is handled (§7.3). Channel slots without a name are not configured
+  and never used (the radio would send with an all-zero key).
 * **Contact adding.** At connect the session reads the manual-adding bit and the auto-add settings
-  and warns when the radio adds contacts on its own or may overwrite them (§7.2).
+  and warns when the radio adds contacts on its own (§7.2).
 * **Messages fetched at connect** are marked: they may have arrived while no session listened to
   the radio's pushes (§7.3).
 * **Liveness.** A battery query every 60 s doubles as a heartbeat.
@@ -421,12 +422,12 @@ Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does 
 | Threat | Mitigation |
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
-| Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys; a prefix that matches more than one contact is rejected. Before accepting a command the bridge reads the contact table again and counts the contacts the radio overwrote in the last 24 hours, so a look-alike added or overwritten a moment ago counts. A command that waited in the radio while the bridge was not connected is rejected if the radio may overwrite contacts (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically, no overwriting. |
+| Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted) and within `max_age_s` of the bridge clock. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression. |
 | Retained send request re-sent on every reconnect | Retained messages on `send/+` are ignored. |
-| Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. |
+| Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-bus`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
@@ -443,23 +444,30 @@ bridge clock in either direction
 The sender check is the hard part: the frame names the sender only by the prefix, and the contact
 table can change under the bridge. The radio decrypts a direct message only with a contact it
 holds, so a look-alike that sent a message was in the table when the message arrived. Afterwards
-it stays (the prefix is then ambiguous) or, with overwriting on and a full table, is replaced by a
-newer contact; the radio then pushes its key, once, to whichever client is connected
-([`protocol.md`](protocol.md#5-semantics)). The bridge therefore resolves the prefix against the
-contact table of the session that fetched the message plus every contact the radio reported as
-overwritten in the last 24 hours, and checks in this order:
+it may stay (the prefix is then ambiguous), be overwritten by a newer contact, or, in firmware
+1.18, clear its own slot with two adverts, without any removal push. What the radio does report,
+once and to whichever client is connected, is every advert, path update and overwrite, each with
+the full key ([`protocol.md`](protocol.md#5-semantics)); every table read lists the keys too.
 
-1. **Cached table.** A rejection by the table the bridge already holds stands: only a removal could
-   turn it into an acceptance, and overwritten contacts still count. Senders that are not allowed
+The bridge therefore keeps a memory: each key that shares the 6-byte prefix of an allowed sender,
+from a table read or a push, with the time it was last seen. A message's sender must be the only
+contact with its prefix in the table of the session that fetched the message, and no other key
+with that prefix may have been seen within the last 24 hours. Remembered keys only add doubt;
+they never become the sender. Only keys with a sender's prefix are kept, so the memory stays
+small whatever the radio hears. The checks run in this order:
+
+1. **Cached table.** A rejection by the table the bridge already holds stands, unless the sender
+   was unknown (it may have been added since): keys that leave the table are remembered, so
+   nothing the radio does turns such a rejection into an acceptance. Senders that are not allowed
    cost nothing.
 2. **Waited at connect.** A command fetched by the first sync of a session may have arrived while
-   no session listened, so an overwrite in that time went unseen. If the radio adds contacts on its
-   own and may overwrite them (or its firmware cannot report its settings), the command is
-   rejected (`sender_unverified`); the sender can send it again.
+   no session listened: a look-alike may have come and gone unseen. It is rejected
+   (`sender_unverified`); the sender sends it again.
 3. **Fresh table.** Otherwise the bridge reads the table again, unless a read started after the
-   message was fetched: one read serves every message fetched before it. A failed read rejects the
-   command (`sender_unverified`).
-4. **Verdict** on the fresh table and the overwritten contacts.
+   message was fetched: one read serves every message fetched before it, and a read in progress
+   is awaited instead of repeated. A failed read rejects the command (`sender_unverified`), also
+   when the radio connection ends first.
+4. **Verdict** on the fresh table and the memory.
 
 A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a USB-UART bridge at
 115200 baud. The rejection reasons are published, so misconfiguration and attacks are visible.
@@ -469,13 +477,15 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * Whoever controls an allowlisted handheld (or its key) can send commands. Keep the word list
   small and make automations confirm critical actions.
 * A look-alike needs a 48-bit prefix collision with an allowlisted key, which takes considerable
-  but feasible computing effort (about 2^48 key generations). If the radio adds it, the real
-  sender's commands are rejected (`sender_ambiguous`) while it is in the table and for 24 hours
-  after it was overwritten. A restart of the service ends that early; the commands that waited in
-  the radio meanwhile fall under step 2 of §7.3.
-* Contacts removed by hand (phone app) while the bridge was not connected are not known to it: a
-  look-alike added and removed that way could leave a waiting command behind. This needs access to
-  the radio.
+  but feasible computing effort (about 2^48 key generations). If it reaches the radio, the real
+  sender's commands are rejected (`sender_ambiguous`) for 24 hours after the bridge last saw it.
+  A restart of the service ends that early; commands that waited in the radio meanwhile are
+  rejected anyway (§7.3, step 2).
+* Over TCP, pushes can be lost while the radio's send queue is full; a look-alike that enters and
+  leaves the table between two table reads can then go unseen. Commands should use USB.
+* A second client of the radio (another interface of a multi-interface build, or anyone on the
+  TCP port) can change the contact table without the bridge seeing it. The bridge must be the
+  radio's only client.
 * The radio firmware and its key storage are trusted.
 * Messages on the radio are only as confidential as MeshCore's encryption; channel secrets of
   public or hashtag channels are known to everyone.
@@ -495,7 +505,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects | `delivery: duplicate` / `rejected` |
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
 | State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
-| Command sent while the bridge was not connected | fetched at connect | judged like any other; rejected if the radio may overwrite contacts | `received`: `sender_unverified`; log warning |
+| Command sent while the bridge was not connected | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
 
 ## 9 Deployment and operations
 
