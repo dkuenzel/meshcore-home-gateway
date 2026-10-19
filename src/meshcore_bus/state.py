@@ -80,9 +80,11 @@ class CommandLedger:
         return MappingProxyType(self._last)
 
     def record(self, sender_key: str, timestamp: int) -> None:
+        """Store the timestamp durably; memory follows only after a successful save."""
         if timestamp <= self._last.get(sender_key, -1):
             return
-        self._last[sender_key] = timestamp
+        updated = {**self._last, sender_key: timestamp}
         data = self._store.load()
-        data[self._KEY] = self._last
+        data[self._KEY] = updated
         self._store.save(data)
+        self._last = updated

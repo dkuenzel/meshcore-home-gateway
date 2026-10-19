@@ -230,10 +230,10 @@ def _probe(args: argparse.Namespace) -> int:
         return EX_FAILURE
     if args.list == "channels":
         for channel in report["channels"]:
-            print(f"{channel['index']}\t{_tab_safe(channel['name'])}")
+            print(f"{channel['index']}\t{_safe_text(channel['name'])}")
     elif args.list == "contacts":
         for contact in report["contacts"]:
-            print(f"{contact['public_key']}\t{_tab_safe(contact['name'])}\t{contact['type']}")
+            print(f"{contact['public_key']}\t{_safe_text(contact['name'])}\t{contact['type']}")
     elif args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
@@ -245,15 +245,20 @@ NODE_TYPES = {1: "chat", 2: "repeater", 3: "room", 4: "sensor"}
 
 
 async def _probe_radio(transport: Any) -> dict[str, Any]:
-    from meshcore_bus.radio.session import CompanionSession, RadioEvent  # noqa: PLC0415
+    from meshcore_bus.radio.session import (  # noqa: PLC0415
+        CompanionSession,
+        RadioEvent,
+        added_types,
+        type_names,
+    )
 
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()
     session = CompanionSession(transport, events, set_clock=False)
     try:
-        info = await session.start()
+        info = await session.start(fetch_messages=False)
     finally:
         await session.close()
-    me, device = info.self_info, info.device
+    me, device, autoadd = info.self_info, info.device, session.autoadd
     return {
         "name": me.name,
         "public_key": info.public_key,
@@ -267,6 +272,11 @@ async def _probe_radio(transport: Any) -> dict[str, Any]:
         "coding_rate": me.coding_rate,
         "tx_power_dbm": me.tx_power_dbm,
         "manual_add_contacts": me.manual_add_contacts,
+        "auto_add": {  # null: firmware without auto-add settings (ADR 0009)
+            "manual": me.manual_add_contacts,
+            "types": type_names(added_types(me, autoadd)),
+            "overwrite_oldest": None if autoadd is None else autoadd.overwrites_oldest,
+        },
         "battery_mv": session.battery.millivolts if session.battery else None,
         "contacts": [
             {
@@ -288,19 +298,26 @@ def _print_report(r: dict[str, Any]) -> None:
         f"{r['frequency_mhz']:.3f} MHz, {r['bandwidth_khz']:g} kHz, SF {r['spreading_factor']}, "
         f"CR 4/{r['coding_rate']}, {r['tx_power_dbm']} dBm"
     )
-    adding = "added manually" if r["manual_add_contacts"] else "added automatically"
-    print(f"radio      {r['name']}  {r['public_key']}")
-    print(f"firmware   {firmware}")
+    auto = r["auto_add"]
+    adding = "added manually" if auto["manual"] else "all added automatically"
+    if auto["manual"] and auto["types"]:
+        adding += f", but {', '.join(auto['types'])} automatically"
+    if auto["types"] and auto["overwrite_oldest"]:
+        adding += "; a full table overwrites the oldest"
+    elif auto["types"] and auto["overwrite_oldest"] is None:
+        adding += "; a full table may overwrite the oldest (firmware without auto-add settings)"
+    print(_safe_text(f"radio      {r['name']}  {r['public_key']}"))
+    print(_safe_text(f"firmware   {firmware}"))
     print(f"lora       {lora}")
     print(f"contacts   {adding}")
     for c in r["contacts"]:
-        print(f"  {c['public_key']}  {c['type']:<8} {c['name']}")
+        print(_safe_text(f"  {c['public_key']}  {c['type']:<8} {c['name']}"))
     print("channels")
     for ch in r["channels"]:
-        print(f"  {ch['index']:>3}  {ch['name']}")
+        print(_safe_text(f"  {ch['index']:>3}  {ch['name']}"))
 
 
-def _tab_safe(text: str) -> str:
+def _safe_text(text: str) -> str:
     """For tab-separated lists and dialogs: control characters (tabs, line breaks, terminal
     escapes) and Unicode line separators become spaces."""
     return "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in text)
@@ -346,7 +363,10 @@ class _Connection:
     def open(self, client: Any, mqtt: MqttConfig) -> str | None:
         """Connect and wait for the answer; returns an error text, or None when connected."""
         client.on_connect = self.on_connect
-        client.connect(mqtt.host, mqtt.port, mqtt.keepalive_s)
+        try:
+            client.connect(mqtt.host, mqtt.port, mqtt.keepalive_s)
+        except OSError as exc:  # refused, unreachable, unknown host name, TLS failure
+            return f"cannot connect to the broker {mqtt.host}:{mqtt.port}: {exc}"
         client.loop_start()
         if not self.answered.wait(CONNECT_TIMEOUT_S):
             return "broker did not answer"
@@ -364,6 +384,35 @@ def _matches(event_text: Any, wanted: str) -> bool:
     return event_text.endswith("...") and wanted.startswith(event_text[:-3])
 
 
+class _DeliveryWatch:
+    """Follows the delivery events of one send request. The bridge names the request in its first
+    event (queued, duplicate or rejected) with its own id and the final text; the result is the
+    final event with that id. Events of other requests to the same target are ignored."""
+
+    def __init__(self, alias: str, wanted: str, final: set[str]) -> None:
+        self._alias, self._wanted, self._final = alias, wanted, final
+        self._id: str | None = None
+        self.result: dict[str, Any] | None = None
+        self.done = threading.Event()
+
+    def on_message(self, _c: Any, _u: Any, message: Any) -> None:
+        try:
+            event = json.loads(message.payload)
+        except ValueError:
+            return
+        if not isinstance(event, dict) or event.get("target") != self._alias:
+            return
+        if self._id is None:
+            first = event.get("event_type") in {"queued", "duplicate", "rejected"}
+            unnamed_rejection = event.get("event_type") == "rejected" and event.get("text") is None
+            if not first or not (_matches(event.get("text"), self._wanted) or unnamed_rejection):
+                return
+            self._id = str(event.get("id"))
+        if event.get("id") == self._id and event.get("event_type") in self._final:
+            self.result = event
+            self.done.set()
+
+
 def _send(args: argparse.Namespace) -> int:
     from meshcore_bus.core.text import TextPolicy, TextRejectedError, prepare_text  # noqa: PLC0415
     from meshcore_bus.mqtt.topics import Topics  # noqa: PLC0415
@@ -377,36 +426,13 @@ def _send(args: argparse.Namespace) -> int:
         wanted = prepare_text(args.text, policy)
     except TextRejectedError:
         wanted = args.text
-    own_id: list[str] = []  # the bridge's id for this request, from its first event
-    results: list[dict[str, Any]] = []
-    done, subscribed = threading.Event(), threading.Event()
-
-    def on_message(_c: Any, _u: Any, message: Any) -> None:
-        try:
-            event = json.loads(message.payload)
-        except ValueError:
-            return
-        if not isinstance(event, dict) or event.get("target") != args.alias:
-            return
-        if not own_id:
-            first = event.get("event_type") in {"queued", "duplicate", "rejected"}
-            unnamed_rejection = event.get("event_type") == "rejected" and event.get("text") is None
-            if not first or not (_matches(event.get("text"), wanted) or unnamed_rejection):
-                return
-            own_id.append(str(event.get("id")))
-        if event.get("id") == own_id[0] and event.get("event_type") in final:
-            results.append(event)
-            done.set()
-
+    watch = _DeliveryWatch(args.alias, wanted, final)
     client = _mqtt_client(config.mqtt, "send")
-    client.on_message = on_message
-    client.on_subscribe = lambda *_: subscribed.set()
+    client.on_message = watch.on_message
     try:
         error = _Connection().open(client, config.mqtt)
         if error is None and args.wait > 0:
-            client.subscribe(topics.delivery, qos=1)
-            if not subscribed.wait(SUBSCRIBE_TIMEOUT_S):
-                error = "broker did not confirm the subscription"
+            error = _subscribe(client, topics.delivery)
         if error is None:
             error = _publish(client, topics.send(args.alias), args.text.encode("utf-8"))
         if error is not None:
@@ -414,15 +440,32 @@ def _send(args: argparse.Namespace) -> int:
             return EX_FAILURE
         if args.wait <= 0:
             return EX_OK
-        if not done.wait(args.wait):
+        if not watch.done.wait(args.wait) or watch.result is None:
             print("meshcore-bus: no delivery result in time", file=sys.stderr)
             return EX_FAILURE
-        event = results[0]
-        print(json.dumps(event, ensure_ascii=False))
-        return EX_OK if event["event_type"] in {"sent", "confirmed"} else EX_FAILURE
+        print(json.dumps(watch.result, ensure_ascii=False))
+        return EX_OK if watch.result["event_type"] in {"sent", "confirmed"} else EX_FAILURE
     finally:
         client.disconnect()  # first: loop_stop() alone may wait 120 s for unacknowledged messages
         client.loop_stop()
+
+
+def _subscribe(client: Any, topic: str) -> str | None:
+    """Subscribe with QoS 1 and wait for the broker's answer; returns an error text."""
+    answered = threading.Event()
+    refused: list[str] = []
+
+    def on_subscribe(_c: Any, _u: Any, _mid: Any, reason_codes: Any, _p: Any) -> None:
+        refused.extend(str(code) for code in reason_codes if code.is_failure)
+        answered.set()
+
+    client.on_subscribe = on_subscribe
+    client.subscribe(topic, qos=1)
+    if not answered.wait(SUBSCRIBE_TIMEOUT_S):
+        return "broker did not confirm the subscription"
+    if refused:
+        return f"broker refused the subscription to {topic}: {refused[0]}"
+    return None
 
 
 def _publish(client: Any, topic: str, payload: bytes) -> str | None:

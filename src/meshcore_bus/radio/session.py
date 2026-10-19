@@ -6,7 +6,8 @@ frames (codes >= 0x80) in between. The session therefore
 * sends one command at a time (`asyncio.Lock`) and hands the waiting command only the frames
   with the response codes it expects; anything else is logged and dropped;
 * routes push frames: new messages trigger a sync, acknowledgements and received-packet logs go
-  to the event queue, adverts mark the contact table for a refresh;
+  to the event queue, adverts mark the contact table for a refresh, and the keys of overwritten
+  contacts are kept for the bridge;
 * closes itself on a transport error or a command timeout; the bridge then reconnects.
 """
 
@@ -23,7 +24,7 @@ from typing import TypeVar
 from meshcore_bus.core.contacts import Contact, ContactBook
 from meshcore_bus.core.model import InboundMessage
 from meshcore_bus.protocol import codec
-from meshcore_bus.protocol.codes import Push, Response
+from meshcore_bus.protocol.codes import AutoAdd, Push, Response
 from meshcore_bus.protocol.framing import FrameDecoder, encode_frame
 from meshcore_bus.radio.transport import Transport
 
@@ -38,6 +39,7 @@ CLOCK_AHEAD_WARNING_S = 60
 SYNC_INTERVAL_S = 300.0  # safety net in case a MSG_WAITING push was lost
 HEARTBEAT_INTERVAL_S = 60.0
 CONTACTS_REFRESH_DELAY_S = 2.0
+MAX_DEPARTED = 1024
 
 ResponseCodes = frozenset[int]
 _SIMPLE = frozenset({Response.OK, Response.ERR, Response.DISABLED})
@@ -73,6 +75,9 @@ class RadioInfo:
 @dataclass(frozen=True, slots=True)
 class MessageReceived:
     message: InboundMessage
+    session: CompanionSession  # judge the sender on this session's contact table
+    fetched_at: int  # the session's command count when the message was fetched
+    at_connect: bool  # fetched at connect: it may have arrived while no session listened
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,14 +128,23 @@ class CompanionSession:
         self._sync_wanted = asyncio.Event()
         self._contacts_dirty = asyncio.Event()
         self.info: RadioInfo | None = None
+        self.autoadd: codec.AutoAddConfig | None = None
+        self.departed: dict[str, None] = {}  # keys of overwritten contacts, oldest first
+        self.contacts_read_at = -1  # command count of the read behind contact_records
+        self._commands_sent = 0
         self.contact_records: dict[str, codec.ContactRecord] = {}
         self.channels: dict[int, str] = {}
         self.battery: codec.Battery | None = None
 
     # --- life cycle -----------------------------------------------------------------------------
 
-    async def start(self) -> RadioInfo:
-        """Open the transport, resynchronise, identify the radio and fetch its tables."""
+    async def start(self, *, fetch_messages: bool = True) -> RadioInfo:
+        """Open the transport, resynchronise, identify the radio and fetch its tables.
+
+        `fetch_messages=False` leaves waiting messages in the radio (a probe while the service is
+        stopped must not take them away from it).
+        """
+
         await self._transport.open()
         self._tasks.append(asyncio.create_task(self._read_loop(), name="radio-reader"))
         await self._flush()
@@ -146,17 +160,16 @@ class CompanionSession:
             self._transport.description, self_info.name, device.version,
             device.firmware_code, device.model,
         )  # fmt: skip
-        if not self_info.manual_add_contacts:
-            log.warning(
-                "radio adds contacts automatically; manual adding is recommended (ADR 0009)"
-            )
+        self.autoadd = await self._read_autoadd()
+        _warn_about_contact_adding(self_info, self.autoadd)
         if self._set_clock:
             await self._sync_clock()
         await self.refresh_contacts()
         await self.refresh_channels(device.max_channels)
         self.battery = await self.get_battery()
-        await self.sync_messages()
-        self._tasks.append(asyncio.create_task(self._maintenance(), name="radio-maintenance"))
+        if fetch_messages:
+            await self.sync_messages(at_connect=True)
+            self._tasks.append(asyncio.create_task(self._maintenance(), name="radio-maintenance"))
         return self.info
 
     async def wait_closed(self) -> None:
@@ -193,6 +206,13 @@ class CompanionSession:
     def contacts(self) -> ContactBook:
         return ContactBook(Contact(key, rec.name) for key, rec in self.contact_records.items())
 
+    @property
+    def may_overwrite_contacts(self) -> bool:
+        """The radio may replace a contact on its own (ADR 0009); unknown before `start`."""
+        if self.info is None:
+            return True
+        return may_overwrite(self.info.self_info, self.autoadd)
+
     async def get_time(self) -> int:
         frame = await self._expect(
             codec.get_device_time(), Response.CURR_TIME, codec.CurrentTime, "get time"
@@ -220,6 +240,7 @@ class CompanionSession:
     async def refresh_contacts(self) -> None:
         records: dict[str, codec.ContactRecord] = {}
         async with self._command(codec.get_contacts(), _CONTACT_CODES) as pending:
+            started = self._commands_sent
             while True:
                 decoded = self._decode(await self._next(pending), "get contacts")
                 if isinstance(decoded, codec.Err):
@@ -229,6 +250,7 @@ class CompanionSession:
                 elif isinstance(decoded, codec.EndOfContacts):
                     break
         self.contact_records = records
+        self.contacts_read_at = started
         log.debug("radio: %d contacts", len(records))
 
     async def refresh_channels(self, max_channels: int) -> None:
@@ -242,27 +264,43 @@ class CompanionSession:
         self.channels = channels
         log.debug("radio: channels %s", channels)
 
-    async def sync_messages(self) -> int:
-        """Fetch queued messages until the radio reports none; returns how many arrived."""
-        count = 0
-        while True:
-            async with self._command(codec.sync_next_message(), _SYNC_CODES) as pending:
-                frame = await self._next(pending)
-            code = frame[0]
-            if code == Response.NO_MORE_MESSAGES:
-                return count
-            if code == Response.ERR:
-                raise CommandFailedError("sync", codec.Err(frame[1] if len(frame) > 1 else 0).name)
-            if code == Response.CHANNEL_DATA_RECV:
-                log.debug("radio: channel data frame ignored")
-                continue
-            try:
-                message = codec.decode_message(frame, received_at=self._wall())
-            except codec.ProtocolError as exc:
-                log.warning("radio: undecodable message skipped: %s", exc)
-                continue
-            count += 1
-            await self._events.put(MessageReceived(message))
+    async def sync_messages(self, *, at_connect: bool = False) -> int:
+        """Fetch queued messages until the radio reports none; returns how many arrived.
+
+        The messages go out as events only after the batch, so one contact read by the bridge
+        can serve all of them; also on an error, because the radio has already handed them over.
+        `at_connect` marks the batch fetched while connecting: those messages may have arrived
+        while no session saw the radio's pushes.
+        """
+        fetched: list[MessageReceived] = []
+        try:
+            while True:
+                async with self._command(codec.sync_next_message(), _SYNC_CODES) as pending:
+                    frame = await self._next(pending)
+                    fetched_at = self._commands_sent
+                code = frame[0]
+                if code == Response.NO_MORE_MESSAGES:
+                    return len(fetched)
+                if code == Response.ERR:
+                    error = codec.Err(frame[1] if len(frame) > 1 else 0)
+                    raise CommandFailedError("sync", error.name)
+                if code == Response.CHANNEL_DATA_RECV:
+                    log.debug("radio: channel data frame ignored")
+                    continue
+                try:
+                    message = codec.decode_message(frame, received_at=self._wall())
+                except codec.ProtocolError as exc:
+                    log.warning("radio: undecodable message skipped: %s", exc)
+                    continue
+                fetched.append(MessageReceived(message, self, fetched_at, at_connect))
+        finally:
+            for event in fetched:
+                await self._events.put(event)
+
+    def take_departed(self) -> list[str]:
+        """Keys of contacts the radio overwrote since the last call (CONTACT_DELETED pushes)."""
+        keys, self.departed = list(self.departed), {}
+        return keys
 
     # --- internals ------------------------------------------------------------------------------
 
@@ -275,6 +313,16 @@ class CompanionSession:
         finally:
             self._discarding = False
             self._decoder.reset()
+
+    async def _read_autoadd(self) -> codec.AutoAddConfig | None:
+        """The auto-add settings; None when the firmware does not know the command."""
+        try:
+            return await self._expect(
+                codec.get_autoadd_config(), Response.AUTOADD_CONFIG, codec.AutoAddConfig,
+                "get auto-add settings",
+            )  # fmt: skip
+        except CommandFailedError:
+            return None
 
     async def _sync_clock(self) -> None:
         radio_time = await self.get_time()
@@ -362,9 +410,13 @@ class CompanionSession:
             await self._events.put(AckReceived(decoded.ack, decoded.round_trip_ms))
         elif isinstance(decoded, codec.RxLog):
             await self._events.put(PacketLogged(decoded, self._wall()))
-        elif isinstance(decoded, codec.Advert | codec.PathUpdated) or frame[0] in (
-            Push.CONTACT_DELETED,
-            Push.CONTACTS_FULL,
+        elif isinstance(decoded, codec.ContactDeleted):
+            self.departed[decoded.public_key.hex()] = None
+            while len(self.departed) > MAX_DEPARTED:
+                del self.departed[next(iter(self.departed))]
+            self._contacts_dirty.set()
+        elif (
+            isinstance(decoded, codec.Advert | codec.PathUpdated) or frame[0] == Push.CONTACTS_FULL
         ):
             self._contacts_dirty.set()
         else:
@@ -385,6 +437,7 @@ class CompanionSession:
                     error = RadioError(f"write failed: {exc}")
                     self._end(error)
                     raise error from exc
+                self._commands_sent += 1
                 yield pending
             finally:
                 self._pending = None
@@ -398,9 +451,10 @@ class CompanionSession:
             )
         finally:
             closed.cancel()
+            if not frame.done():  # also when the caller is cancelled: no task left behind
+                frame.cancel()
         if frame in done:
             return frame.result()
-        frame.cancel()
         if self._failure is not None:
             raise RadioError(f"connection lost: {self._failure}")
         error = RadioError("no answer from the radio")
@@ -440,3 +494,66 @@ class CompanionSession:
 
 _CONTACT_CODES = frozenset({Response.CONTACTS_START, Response.CONTACT, Response.END_OF_CONTACTS})
 _SYNC_CODES = codec.MESSAGE_CODES | {Response.NO_MORE_MESSAGES}
+
+
+AUTO_ADD_TYPES = {
+    AutoAdd.CHAT: "chat",
+    AutoAdd.REPEATER: "repeater",
+    AutoAdd.ROOM_SERVER: "room",
+    AutoAdd.SENSOR: "sensor",
+}
+_EVERY_TYPE = AutoAdd.CHAT | AutoAdd.REPEATER | AutoAdd.ROOM_SERVER | AutoAdd.SENSOR
+
+
+def added_types(self_info: codec.SelfInfo, autoadd: codec.AutoAddConfig | None) -> AutoAdd:
+    """Contact types the radio adds on its own (MyMesh.cpp:308-332).
+
+    Every type without manual adding; with it, the types enabled in the auto-add settings, none
+    on firmware without those settings. Bits of types this code does not know count as well.
+    """
+    if not self_info.manual_add_contacts:
+        return _EVERY_TYPE
+    if autoadd is None:
+        return AutoAdd(0)
+    # int arithmetic: inverting the flag itself would also clear the unknown bits
+    return AutoAdd(autoadd.flags & 0xFF & ~int(AutoAdd.OVERWRITE_OLDEST))
+
+
+def type_names(types: AutoAdd) -> list[str]:
+    return [name for flag, name in AUTO_ADD_TYPES.items() if types & flag]
+
+
+def may_overwrite(self_info: codec.SelfInfo, autoadd: codec.AutoAddConfig | None) -> bool:
+    """A full table makes the radio replace its oldest contact (BaseChatMesh.cpp:88-104).
+
+    Only when it adds contacts on its own at all; firmware without auto-add settings counts as
+    overwriting, because the bridge cannot ask it.
+    """
+    return bool(added_types(self_info, autoadd)) and (autoadd is None or autoadd.overwrites_oldest)
+
+
+def _warn_about_contact_adding(
+    self_info: codec.SelfInfo, autoadd: codec.AutoAddConfig | None
+) -> None:
+    """Automatic adding lets a look-alike of an allowed command sender into the table (ADR 0009).
+
+    The radio passes on direct messages from contacts of every type, so every type counts.
+    """
+    types = added_types(self_info, autoadd)
+    if not self_info.manual_add_contacts:
+        log.warning(
+            "radio adds every new contact automatically; switch on manual adding and switch off "
+            "every type in its auto-add settings (ADR 0009)"
+        )
+    elif types:
+        log.warning(
+            "radio adds new contacts of type %s automatically despite manual adding; switch these "
+            "types off in its auto-add settings (ADR 0009)",
+            ", ".join(type_names(types)) or f"0x{int(types):02x}",
+        )
+    if may_overwrite(self_info, autoadd):
+        log.warning(
+            "radio may overwrite its oldest contact when the table is full: commands that waited "
+            "in the radio while the bridge was not connected are rejected (sender_unverified, "
+            "ADR 0009)"
+        )

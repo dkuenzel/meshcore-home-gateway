@@ -76,6 +76,12 @@ ACK_TIMEOUT_FACTOR = 1.2  # like the MeshCore Python client
 ACK_TIMEOUT_MIN_S, ACK_TIMEOUT_MAX_S = 5.0, 60.0
 RECENT_ACK_S = 120.0
 INBOUND_DEDUP_S = 3600.0  # retries reach us as duplicates with the same timestamp and text
+DEPARTED_S = 86_400.0  # an overwritten look-alike keeps a prefix ambiguous for a day
+_FINAL_FROM_CACHE = frozenset(
+    {Rejection.SENDER_AMBIGUOUS, Rejection.SENDER_NOT_ALLOWED, Rejection.REPLAY,
+     Rejection.TOO_OLD, Rejection.FROM_THE_FUTURE}
+)  # fmt: skip
+_TRANSIENT = frozenset({Rejection.SENDER_UNVERIFIED, Rejection.STATE_UNWRITABLE})
 DISCOVERY_DELAY_S = (0.5, 2.0)  # random delay after Home Assistant's birth message
 
 
@@ -176,7 +182,8 @@ class Bridge:
         self.topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
         self._targets = {t.alias: t for t in config.targets}
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
-        self._messages: asyncio.Queue[InboundMessage] = asyncio.Queue()
+        self._messages: asyncio.Queue[MessageReceived] = asyncio.Queue()
+        self._departed: dict[str, float] = {}  # overwritten contacts: key -> first seen
         self._queue: asyncio.Queue[Outgoing] = asyncio.Queue(maxsize=config.messages.queue_size)
         self._budget = AirtimeBudget(
             config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
@@ -230,10 +237,8 @@ class Bridge:
                 self._radio_info = await session.start()
             except (RadioError, OSError) as exc:
                 log.warning("radio: cannot connect (%s); retry in %.0f s", exc, delay)
-                await session.close()
             except Exception:  # a bug while connecting: keep the service up, retry later
                 log.exception("radio: cannot connect; retry in %.0f s", delay)
-                await session.close()
             else:
                 self._session = session
                 self._radio_ready.set()
@@ -247,8 +252,10 @@ class Bridge:
                 finally:
                     self._radio_ready.clear()
                     self._session = None
-                    await session.close()
                     self._publish_state()
+            finally:
+                await session.close()
+                self._remember_departed(session)  # pushes this session saw, used or not
             await asyncio.sleep(delay * random.uniform(1.0, 1.2))  # noqa: S311 - jitter only
             delay = min(delay * 2, RECONNECT_MAX_S)
 
@@ -416,7 +423,7 @@ class Bridge:
         if info is None:
             raise RadioError("radio not identified")
         target, text = item.target, item.text
-        airtime = await self._prepare(session, item, attempt, info)
+        airtime, reset_path = self._plan(session, item, attempt, info)
         if airtime > self._budget.capacity_s:
             raise _FinalError(DeliveryState.FAILED, "exceeds_airtime_burst")
         wait = self._budget.wait_s(airtime, self._mono())
@@ -425,6 +432,8 @@ class Bridge:
         if wait > 0:
             log.info("delivery %s waits %.1f s for airtime", item.id, wait)
             await asyncio.sleep(wait)
+        if reset_path is not None:
+            await session.reset_path(reset_path)  # only now: this attempt will be sent and flood
         self._budget.consume(airtime, self._mono())
         if target.channel_index is not None:
             await session.send_channel_text(target.channel_index, text, timestamp)
@@ -441,10 +450,11 @@ class Bridge:
             return None
         return self._event(item, DeliveryState.CONFIRMED, attempt=attempt + 1, rtt_ms=round_trip)
 
-    async def _prepare(
+    def _plan(
         self, session: CompanionSession, item: Outgoing, attempt: int, info: RadioInfo
-    ) -> float:
-        """Check the target on the radio, reset the path when due, estimate the airtime."""
+    ) -> tuple[float, bytes | None]:
+        """Check the target on the radio and estimate the airtime; also the key whose stored
+        path must be reset before this attempt, so that it floods."""
         target, size = item.target, len(item.text.encode())
         if target.channel_index is not None:
             if target.channel_index not in session.channels:
@@ -452,17 +462,18 @@ class Bridge:
             name_bytes = len(info.name.encode())
             if size > MAX_TEXT_BYTES - name_bytes - 2:  # the radio was renamed after queueing
                 raise _FinalError(DeliveryState.FAILED, "too_long")
-            return time_on_air_s(channel_message_bytes(size, name_bytes), _lora(info))
+            return time_on_air_s(channel_message_bytes(size, name_bytes), _lora(info)), None
         contact = self._resolve(session, target)
         record = session.contact_records[contact.public_key]
         known_flood = record.out_path_len == 0xFF
         flood_after = self.config.messages.flood_after
+        reset = None
         if attempt == flood_after and not known_flood:
-            await session.reset_path(bytes.fromhex(contact.public_key))  # the next send floods
+            reset = bytes.fromhex(contact.public_key)
         # from the reset on, assume a flood: the cached record does not show the reset
         flood = known_flood or attempt >= flood_after
         path_bytes = 0 if flood else _path_bytes(record.out_path_len)
-        return direct_attempt_airtime_s(size, path_bytes, flood, _lora(info))
+        return direct_attempt_airtime_s(size, path_bytes, flood, _lora(info)), reset
 
     def _resolve(self, session: CompanionSession, target: Target) -> Contact:
         key = _key(target)
@@ -493,7 +504,7 @@ class Bridge:
         while True:
             event = await self._events.get()
             if isinstance(event, MessageReceived):
-                self._messages.put_nowait(event.message)  # in order, without delaying acks
+                self._messages.put_nowait(event)  # in order, without delaying acks
             elif isinstance(event, AckReceived):
                 self._acks.resolve(event.ack, event.round_trip_ms)
             elif isinstance(event, PacketLogged) and self.config.diagnostics.publish_rx_log:
@@ -503,9 +514,16 @@ class Bridge:
 
     async def _message_loop(self) -> None:
         while True:
-            await self._on_message(await self._messages.get())
+            event = await self._messages.get()
+            try:
+                await self._on_message(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("received message could not be handled")
 
-    async def _on_message(self, message: InboundMessage) -> None:
+    async def _on_message(self, event: MessageReceived) -> None:
+        message, session = event.message, event.session
         if (
             message.kind is MessageKind.CHANNEL
             and message.channel_index in self.config.messages.ignore_channels
@@ -518,23 +536,21 @@ class Bridge:
         if self._inbound_dedup.is_duplicate(key, self._mono()):
             log.debug("duplicate of a received message dropped (sender retry)")
             return
-        word = command_word(message, self.config.commands)
-        verified = await self._contacts_for_command() if word else None
-        contacts = verified or self._known_contacts()
+        decision = await self._judge(event)
+        command = decision.command if decision else None
+        if decision is not None and command is not None:
+            try:
+                self._ledger.record(command.sender_key, command.sender_timestamp)  # first
+            except OSError:
+                log.exception("command not published: the state file cannot be written")
+                command = None
+                decision = CommandDecision(decision.word, rejection=Rejection.STATE_UNWRITABLE)
+        if decision is not None and decision.rejection in _TRANSIENT:
+            self._inbound_dedup.forget(key)  # the sender's retry may get through
         sender = None
         if message.sender_prefix is not None:
-            matches = contacts.resolve(message.sender_prefix)
+            matches = session.contacts.resolve(message.sender_prefix)
             sender = matches[0] if len(matches) == 1 else None
-        decision: CommandDecision | None = None
-        if word is not None and verified is None:
-            decision = CommandDecision(word, rejection=Rejection.SENDER_UNVERIFIED)
-        elif word is not None and verified is not None:
-            decision = evaluate_command(
-                message, self.config.commands, verified, self._ledger.view, self._wall()
-            )
-        command = decision.command if decision else None
-        if command is not None:
-            self._ledger.record(command.sender_key, command.sender_timestamp)  # before publishing
         target = self._target_for(message, sender)
         log.info("received %s message from %s (%d bytes)%s", message.kind.value,
                  sender.name if sender else message.sender_prefix or message.channel_index,
@@ -550,24 +566,60 @@ class Bridge:
                 self.topics.command, encode(command_payload(command, name, message.received_at))
             )
 
-    def _known_contacts(self) -> ContactBook:
-        return self._session.contacts if self._session else ContactBook([])
+    async def _judge(self, event: MessageReceived) -> CommandDecision | None:
+        """The command verdict; None if the message is no command at all (ADR 0009).
 
-    async def _contacts_for_command(self) -> ContactBook | None:
-        """The radio's contact table, read again for a possible command; None if unreadable.
-
-        Messages carry only a 6-byte sender prefix. A contact with the same prefix that the radio
-        added a moment ago, with or without a push, must make the sender ambiguous (ADR 0009).
+        Messages carry only a 6-byte sender prefix, so the verdict uses the contact table of the
+        session that fetched the message plus the contacts the radio overwrote recently. A cached
+        rejection stands: only a removal could change it, and removed contacts still count. A
+        command that waited in a radio able to overwrite contacts is refused: an overwrite while
+        no session listened went unseen. Before an acceptance (or for an unknown sender) the
+        table is read again, unless a read already started after the message was fetched; that
+        one read then serves a whole batch.
         """
-        session = self._session
-        if session is None:
+        message, session = event.message, event.session
+        word = command_word(message, self.config.commands)
+        if word is None:
             return None
+        decision = self._decide(message, session)
+        if decision is not None and decision.rejection in _FINAL_FROM_CACHE:
+            return decision
+        if event.at_connect and session.may_overwrite_contacts:
+            log.warning(
+                "command %s waited in the radio while the bridge was not connected; the radio "
+                "may have overwritten its sender since, so it is rejected (ADR 0009)",
+                word,
+            )
+            return CommandDecision(word, rejection=Rejection.SENDER_UNVERIFIED)
+        if session.contacts_read_at > event.fetched_at:
+            return decision
         try:
             await session.refresh_contacts()
         except RadioError as exc:
             log.warning("command sender cannot be verified: %s", exc)
-            return None
-        return session.contacts
+            return CommandDecision(word, rejection=Rejection.SENDER_UNVERIFIED)
+        return self._decide(message, session)
+
+    def _decide(self, message: InboundMessage, session: CompanionSession) -> CommandDecision | None:
+        book = self._book(session)
+        return evaluate_command(
+            message, self.config.commands, book, self._ledger.view, self._wall()
+        )
+
+    def _book(self, session: CompanionSession) -> ContactBook:
+        """The session's contacts plus the contacts the radio overwrote in the last DEPARTED_S."""
+        self._remember_departed(session)
+        current = list(session.contacts)
+        present = {contact.public_key for contact in current}
+        gone = [Contact(key, "(overwritten)") for key in self._departed if key not in present]
+        return ContactBook([*current, *gone])
+
+    def _remember_departed(self, session: CompanionSession) -> None:
+        """Keep the overwritten contacts a session saw, also after the session ended."""
+        now = self._mono()
+        for key in session.take_departed():
+            self._departed.setdefault(key, now)
+        self._departed = {k: at for k, at in self._departed.items() if now - at < DEPARTED_S}
 
     def _target_for(self, message: InboundMessage, sender: Contact | None) -> str | None:
         for target in self._targets.values():

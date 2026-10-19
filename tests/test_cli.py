@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import socket
 import stat
@@ -16,6 +17,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 from meshcore_bus import __version__
 from meshcore_bus import cli as cli_module
 from meshcore_bus.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
+from meshcore_bus.protocol.codes import Command
 from tests.conftest import Broker
 from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
 
@@ -112,8 +114,52 @@ def test_probe_lists_channels_and_contacts_over_tcp(capsys: pytest.CaptureFixtur
             8,
         )
         assert main(["probe", "--tcp", address]) == EX_OK
-        assert "Alerts" in capsys.readouterr().out
+        report = capsys.readouterr().out
+        assert "Alerts" in report
+        assert "\x1b" not in report  # names cannot reach the terminal as escape sequences
     assert radio.clock == 1_800_000_000  # probing never sets the radio clock
+
+
+def test_probe_leaves_waiting_messages_in_the_radio(capsys: pytest.CaptureFixture[str]) -> None:
+    """The service fetches them later; a probe while it is stopped must not swallow them."""
+    radio = EmulatedRadio(contacts=[ALICE])
+    radio.queue_direct_message(ALICE.public_key[:6], "arm", 1_800_000_000, push=False)
+    with TcpRadioServer(radio) as server:
+        assert main(["probe", "--tcp", f"127.0.0.1:{server.port}", "--json"]) == EX_OK
+    report = json.loads(capsys.readouterr().out)
+    assert len(radio.queue) == 1
+    assert report["auto_add"] == {"manual": True, "types": [], "overwrite_oldest": False}
+
+
+@pytest.mark.parametrize(
+    ("radio", "auto_add", "line"),
+    [
+        (
+            EmulatedRadio(autoadd_config=0x07),  # overwrite, chat, repeater
+            {"manual": True, "types": ["chat", "repeater"], "overwrite_oldest": True},
+            "added manually, but chat, repeater automatically; a full table overwrites the oldest",
+        ),
+        (
+            EmulatedRadio(manual_add=False, unknown={Command.GET_AUTOADD_CONFIG}),
+            {"manual": False, "types": ["chat", "repeater", "room", "sensor"],
+             "overwrite_oldest": None},
+            (
+                "all added automatically; a full table may overwrite the oldest (firmware "
+                "without auto-add settings)"
+            ),
+        ),
+    ],
+    ids=["manual-with-types", "older-firmware"],
+)  # fmt: skip
+def test_probe_reports_how_the_radio_adds_contacts(
+    capsys: pytest.CaptureFixture[str], radio: EmulatedRadio, auto_add: dict[str, Any], line: str
+) -> None:
+    with TcpRadioServer(radio) as server:
+        address = f"127.0.0.1:{server.port}"
+        assert main(["probe", "--tcp", address, "--json"]) == EX_OK
+        assert json.loads(capsys.readouterr().out)["auto_add"] == auto_add
+        assert main(["probe", "--tcp", address]) == EX_OK
+        assert f"contacts   {line}\n" in capsys.readouterr().out
 
 
 def test_probe_failure_exits_with_failure(capsys: pytest.CaptureFixture[str]) -> None:
@@ -251,34 +297,108 @@ def test_send_wait_reports_a_rejection(
     assert json.loads(capsys.readouterr().out)["event_type"] == "rejected"
 
 
+class ScriptedBroker:
+    """A minimal MQTT 3.1.1 broker on a local port that answers as told: accept the connection,
+    acknowledge publications or not, grant or refuse subscriptions."""
+
+    def __init__(self, *, ack_publish: bool = True, grant_subscribe: bool = True) -> None:
+        self._ack, self._grant = ack_publish, grant_subscribe
+        self._server = socket.socket()
+        self._server.bind(("127.0.0.1", 0))
+        self._server.listen(1)
+        self.port = self._server.getsockname()[1]
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        with contextlib.suppress(OSError):
+            connection, _ = self._server.accept()
+            with connection:
+                while (packet := _read_packet(connection)) is not None:
+                    kind, body = packet
+                    if kind == 0x10:  # CONNECT
+                        connection.sendall(bytes([0x20, 2, 0, 0]))
+                    elif kind == 0x82:  # SUBSCRIBE: packet id, then the filters
+                        code = 0x01 if self._grant else 0x80
+                        connection.sendall(bytes([0x90, 3]) + body[:2] + bytes([code]))
+                    elif kind & 0xF0 == 0x30 and self._ack:  # PUBLISH with QoS 1
+                        topic_length = int.from_bytes(body[:2], "big")
+                        packet_id = body[2 + topic_length : 4 + topic_length]
+                        connection.sendall(bytes([0x40, 2]) + packet_id)
+                    elif kind == 0xE0:  # DISCONNECT
+                        return
+
+    def close(self) -> None:
+        self._server.close()
+
+    def config(self, tmp_path: Path) -> str:
+        path = tmp_path / "config.toml"
+        path.write_text(
+            '[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n[mqtt]\nhost = "127.0.0.1"\n'
+            f'port = {self.port}\nnode_id = "radio1"\n[targets.alerts]\nchannel = 0\n',
+            encoding="utf-8",
+        )
+        return str(path)
+
+
+def _read_packet(connection: socket.socket) -> tuple[int, bytes] | None:
+    head = connection.recv(1)
+    if not head:
+        return None
+    length, shift = 0, 0
+    while True:
+        byte = connection.recv(1)[0]
+        length |= (byte & 0x7F) << shift
+        shift += 7
+        if not byte & 0x80:
+            break
+    body = b""
+    while len(body) < length:
+        chunk = connection.recv(length - len(body))
+        if not chunk:
+            return None
+        body += chunk
+    return head[0], body
+
+
 def test_send_fails_when_the_broker_does_not_confirm_the_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A broker that accepts the connection but never acknowledges the publication."""
     monkeypatch.setattr(cli_module, "PUBLISH_TIMEOUT_S", 0.5)
-    server = socket.socket()
-    server.bind(("127.0.0.1", 0))
-    server.listen(1)
-    port = server.getsockname()[1]
+    broker = ScriptedBroker(ack_publish=False)
+    try:
+        assert main(["send", "--config", broker.config(tmp_path), "alerts", "x"]) == EX_FAILURE
+    finally:
+        broker.close()
+    assert "did not confirm" in capsys.readouterr().err
 
-    def silent_broker() -> None:
-        connection, _ = server.accept()
-        with connection:
-            connection.recv(1024)  # CONNECT
-            connection.sendall(bytes([0x20, 0x02, 0x00, 0x00]))  # CONNACK: accepted
-            while connection.recv(1024):  # PUBLISH, never answered
-                pass
 
-    thread = threading.Thread(target=silent_broker, daemon=True)
-    thread.start()
+def test_send_wait_fails_when_the_broker_refuses_the_subscription(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    broker = ScriptedBroker(grant_subscribe=False)
+    try:
+        config = broker.config(tmp_path)
+        assert main(["send", "--config", config, "--wait", "5", "alerts", "x"]) == EX_FAILURE
+    finally:
+        broker.close()
+    assert "refused the subscription" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", [["send", "alerts", "x"], ["listen", "--count", "1"]])
+def test_unreachable_broker_is_reported_without_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    unused = socket.socket()
+    unused.bind(("127.0.0.1", 0))
+    port = unused.getsockname()[1]
+    unused.close()  # nothing listens there now
     config = tmp_path / "config.toml"
     config.write_text(
         f'[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n[mqtt]\nhost = "127.0.0.1"\n'
         f'port = {port}\nnode_id = "radio1"\n[targets.alerts]\nchannel = 0\n',
         encoding="utf-8",
     )
-    try:
-        assert main(["send", "--config", str(config), "alerts", "x"]) == EX_FAILURE
-    finally:
-        server.close()
-    assert "did not confirm" in capsys.readouterr().err
+    assert main([command[0], "--config", str(config), *command[1:]]) == EX_FAILURE
+    error = capsys.readouterr().err
+    assert "cannot connect to the broker" in error
+    assert "Traceback" not in error

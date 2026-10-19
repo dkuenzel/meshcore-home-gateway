@@ -55,6 +55,7 @@ class EmulatedRadio:
     channels: dict[int, str] = field(default_factory=lambda: {0: "Public"})
     max_channels: int = 4
     manual_add: bool = True
+    autoadd_config: int = 0  # AUTO_ADD_* flags (MyMesh.cpp:147-151)
     spreading_factor: int = 8
     coding_rate: int = 8
     auto_ack: bool = True
@@ -63,11 +64,15 @@ class EmulatedRadio:
     silent: set[int] = field(default_factory=set)  # command codes left unanswered
     drop_on: set[int] = field(default_factory=set)  # command codes that unplug the radio, once
     disabled: set[int] = field(default_factory=set)  # command codes answered with DISABLED
+    unknown: set[int] = field(default_factory=set)  # older firmware: ERR "unsupported", always
     description: str = "emulated radio"
 
     def __post_init__(self) -> None:
-        # own copies: the radio changes contacts (path reset), tests share the originals
+        # own copies: the radio changes them (path reset, one-time errors), tests share originals
         self.contacts = [replace(contact) for contact in self.contacts]
+        self.errors = dict(self.errors)
+        self.silent, self.drop_on = set(self.silent), set(self.drop_on)
+        self.disabled, self.unknown = set(self.disabled), set(self.unknown)
         self.opened = False
         self.received: list[bytes] = []  # every command payload, in order
         self.raw_written = bytearray()
@@ -144,6 +149,11 @@ class EmulatedRadio:
         if push:
             self.emit(bytes([Push.MSG_WAITING]))
 
+    def overwrite(self, contact: EmulatedContact) -> None:
+        """A full table with AUTO_ADD_OVERWRITE_OLDEST drops this contact (MyMesh.cpp:342-349)."""
+        self.contacts = [c for c in self.contacts if c.public_key != contact.public_key]
+        self.emit(bytes([Push.CONTACT_DELETED]) + contact.public_key)
+
     def acknowledge(self, ack: bytes, round_trip_ms: int = 1500) -> None:
         self.emit(bytes([Push.SEND_CONFIRMED]) + ack + struct.pack("<I", round_trip_ms))
 
@@ -166,6 +176,9 @@ class EmulatedRadio:
             return
         if code in self.errors:
             self.emit(bytes([Response.ERR, self.errors.pop(code)]))
+            return
+        if code in self.unknown:
+            self.emit(bytes([Response.ERR, 1]))  # ERR_CODE_UNSUPPORTED_CMD
             return
         if code == Command.APP_START:
             self.emit(self._self_info())
@@ -202,6 +215,8 @@ class EmulatedRadio:
             ts = struct.unpack_from("<I", p, 3)[0]
             self.channel_texts.append((p[2], p[7:].decode(), ts))
             self.emit(bytes([Response.OK]))
+        elif code == Command.GET_AUTOADD_CONFIG:
+            self.emit(bytes([Response.AUTOADD_CONFIG, self.autoadd_config, 0]))
         elif code == Command.RESET_PATH:
             self.path_resets.append(p[1:33])
             for contact in self.contacts:

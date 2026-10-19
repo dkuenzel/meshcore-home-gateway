@@ -87,8 +87,15 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the bridge clock; `0` disables the check |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the bridge
-keeps these timestamps in `/var/lib/meshcore-bus/state.json`. Set the radio to add contacts
-manually, so unknown nodes cannot enter its contact table
+keeps these timestamps in `/var/lib/meshcore-bus/state.json`.
+
+Recommended radio settings (in the MeshCore app, before the bridge takes the radio over): add
+contacts manually, switch off every contact type in the auto-add settings, and do not overwrite the
+oldest contact. In manual mode the radio still adds the types enabled there, and a contact of any
+type can send direct messages; a node that the radio adds with the same 6-byte key prefix as an
+allowed sender blocks that sender's commands. If the radio may overwrite contacts, commands that
+waited in it while the bridge was not connected are rejected. The bridge logs a warning at connect
+for each of these settings, and `meshcore-bus probe` shows them
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 
 ## `[diagnostics]`

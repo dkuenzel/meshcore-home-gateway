@@ -6,8 +6,9 @@ A received message is a command only if all of these hold:
   secret can write there and the sender name is just text);
 * its first word is a configured command word;
 * the 6-byte sender prefix resolves to exactly one contact and that contact's full public key is
-  allowlisted; the contact table must be read from the radio for each command, because a contact
-  with the same prefix may have been added a moment ago;
+  allowlisted; the bridge resolves it against the radio's contact table as read after the message
+  arrived plus the contacts the radio overwrote recently, because a look-alike with the same
+  prefix may have been added or overwritten a moment ago;
 * the sender timestamp is newer than the last accepted command of that sender (replay) and,
   unless disabled, within `max_age_s` of the bridge clock.
 
@@ -31,7 +32,8 @@ class Rejection(StrEnum):
     REPLAY = "replay"  # not newer than the last accepted command of this sender
     TOO_OLD = "too_old"
     FROM_THE_FUTURE = "from_the_future"
-    SENDER_UNVERIFIED = "sender_unverified"  # the radio's contact table could not be read
+    SENDER_UNVERIFIED = "sender_unverified"  # the bridge cannot rule out a look-alike sender
+    STATE_UNWRITABLE = "state_unwritable"  # the replay ledger could not be saved
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +92,9 @@ def evaluate_command(
 ) -> CommandDecision | None:
     """None if the message is not a command at all, otherwise acceptance or the reason.
 
-    `contacts` must be the radio's contact table read after the message arrived.
+    For an acceptance, `contacts` must hold the radio's contact table as read after the message
+    arrived and the contacts the radio overwrote since; an older table can only confirm a
+    rejection (ADR 0009).
     """
     word = command_word(message, rules)
     if word is None or message.sender_prefix is None:

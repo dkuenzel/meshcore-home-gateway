@@ -51,6 +51,7 @@ def payload(frame_hex: str) -> bytes:
         (codec.get_channel(0), "3C 02 00 1F 00"),
         (codec.get_battery(), "3C 01 00 14"),
         (codec.reset_path(PEER), "3C 21 00 0D " + PEER.hex()),
+        (codec.get_autoadd_config(), "3C 01 00 3B"),
     ],
 )
 def test_request_frames(request_bytes: bytes, frame_hex: str) -> None:
@@ -191,6 +192,31 @@ def test_self_info() -> None:
         frequency_khz=869_618, bandwidth_hz=62_500, spreading_factor=8, coding_rate=5,
         manual_add_contacts=False,
     )  # fmt: skip
+
+
+SELF_INFO_HEAD = "3E 42 00 05 01 16 16 " + SELF.hex() + " 00" * 12 + " F2 44 0D 00"
+
+
+@pytest.mark.parametrize(
+    "modulation",
+    ["24 F4 00 00 0D 05", "24 F4 00 00 04 05", "24 F4 00 00 08 09", "00 00 00 00 08 05"],
+    ids=["sf13", "sf4", "cr9", "bw0"],
+)
+def test_self_info_with_impossible_modulation_is_a_protocol_error(modulation: str) -> None:
+    """MeshCore 1.18 clamps these (MyMesh.cpp:991-992); anything else is a corrupt frame."""
+    with pytest.raises(codec.ProtocolError, match="modulation"):
+        codec.decode(payload(SELF_INFO_HEAD + " " + modulation + " 31 30 31 31 31 32 31 33"))
+
+
+def test_contact_deleted_push_and_auto_add_settings() -> None:
+    """Push 0x8F carries the overwritten contact's full key (MyMesh.cpp:342-349); response 25
+    the auto-add flags and the hop limit (MyMesh.cpp:2030-2035, flags at lines 147-151)."""
+    assert codec.decode(payload("3E 21 00 8F " + PEER.hex())) == codec.ContactDeleted(PEER)
+    settings = codec.decode(payload("3E 03 00 19 03 40"))
+    assert settings == codec.AutoAddConfig(flags=0x03, max_hops=64)
+    assert isinstance(settings, codec.AutoAddConfig)
+    assert settings.overwrites_oldest
+    assert not codec.AutoAddConfig(flags=0x1C, max_hops=0).overwrites_oldest
 
 
 def test_unknown_codes_are_kept_raw() -> None:

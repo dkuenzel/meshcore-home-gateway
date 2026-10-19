@@ -45,7 +45,8 @@ ignore_channels = []                                   # channel indices not to 
 budget_s_per_hour = 36                                 # 1 % of an hour for this bridge's messages
 burst_s = 10
 
-# Commands: direct messages from these contacts whose first word is listed.
+# Commands: direct messages from these contacts whose first word is listed. Set the radio to add
+# contacts manually, with no type auto-added and no overwriting (docs/configuration.md).
 [commands]
 senders = []                                           # full public keys
 words = []                                             # e.g. ["status", "arm", "disarm"]

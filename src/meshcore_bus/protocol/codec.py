@@ -13,7 +13,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from meshcore_bus.core.model import InboundMessage, MessageKind, TextType
-from meshcore_bus.protocol.codes import PROTOCOL_VERSION, Command, ErrorCode, Push, Response
+from meshcore_bus.protocol.codes import (
+    PROTOCOL_VERSION,
+    AutoAdd,
+    Command,
+    ErrorCode,
+    Push,
+    Response,
+)
 
 MAX_TEXT_BYTES = 160  # MAX_TEXT_LEN, src/helpers/BaseChatMesh.h:8
 MAX_ATTEMPT = 3  # only attempt & 3 enters the ACK code; above 3 the text limit drops to 158
@@ -79,6 +86,10 @@ def get_channel(index: int) -> bytes:
 
 def get_battery() -> bytes:
     return bytes([Command.GET_BATT_AND_STORAGE])
+
+
+def get_autoadd_config() -> bytes:
+    return bytes([Command.GET_AUTOADD_CONFIG])
 
 
 def reset_path(public_key: bytes) -> bytes:
@@ -229,6 +240,25 @@ class PathUpdated:
 
 
 @dataclass(frozen=True, slots=True)
+class ContactDeleted:
+    """The radio overwrote this contact to make room for a new one (MyMesh.cpp:342-349)."""
+
+    public_key: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class AutoAddConfig:
+    """Response 25: `AutoAdd` flags and the hop limit for automatic adding (0: no limit)."""
+
+    flags: int
+    max_hops: int
+
+    @property
+    def overwrites_oldest(self) -> bool:
+        return bool(self.flags & AutoAdd.OVERWRITE_OLDEST)
+
+
+@dataclass(frozen=True, slots=True)
 class RxLog:
     snr_db: float
     rssi_dbm: int
@@ -254,7 +284,7 @@ MESSAGE_CODES = frozenset(
 Decoded = (
     Ok | Err | Disabled | SelfInfo | DeviceInfo | CurrentTime | Sent | SendConfirmed
     | ContactsStart | ContactRecord | EndOfContacts | ChannelInfo | Battery | NoMoreMessages
-    | MessageWaiting | Advert | PathUpdated | RxLog | Unknown
+    | MessageWaiting | Advert | PathUpdated | ContactDeleted | AutoAddConfig | RxLog | Unknown
 )  # fmt: skip
 
 
@@ -291,6 +321,11 @@ def _battery(p: bytes) -> Battery:
     return Battery(millivolts=mv, storage_used_kb=used, storage_total_kb=total)
 
 
+def _contact_deleted(p: bytes) -> ContactDeleted:
+    _need(p, 33)
+    return ContactDeleted(public_key=p[1:33])
+
+
 def _advert(p: bytes) -> Advert:
     _need(p, 33)
     return Advert(public_key=p[1:33], new=p[0] == Push.NEW_ADVERT)
@@ -310,6 +345,8 @@ def _self_info(p: bytes) -> SelfInfo:
     _need(p, 58)
     tx_power, max_tx = struct.unpack_from("<bB", p, 2)
     freq_khz, bw_hz, sf, cr = struct.unpack_from("<IIBB", p, 48)
+    if not (5 <= sf <= 12 and 5 <= cr <= 8 and bw_hz > 0):  # the firmware clamps to these
+        raise ProtocolError(f"impossible modulation: SF {sf}, CR 4/{cr}, {bw_hz} Hz")
     return SelfInfo(
         public_key=p[4:36],
         name=p[58:].decode("utf-8", errors="replace"),
@@ -428,5 +465,7 @@ _DECODERS: dict[int, Callable[[bytes], Decoded]] = {
     Push.ADVERT: _advert,
     Push.NEW_ADVERT: _advert,
     Push.PATH_UPDATED: _path_updated,
+    Push.CONTACT_DELETED: _contact_deleted,
+    Response.AUTOADD_CONFIG: lambda p: AutoAddConfig(flags=p[1], max_hops=p[2]),
     Push.LOG_RX_DATA: _rx_log,
 }

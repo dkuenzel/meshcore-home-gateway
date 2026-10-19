@@ -77,15 +77,20 @@ which is how retries arrive). Channels listed in `ignore_channels` are skipped.
 | `event_type` | `contact` (direct message) or `channel` |
 | `text` | message text; for channels without the `"name: "` prefix |
 | `text_type` | `plain`, `cli_data`, `signed_plain` (room server post), `cli_command` |
-| `sender_key` | full public key if the 6-byte prefix matches exactly one contact, else `null` |
+| `sender_key` | full public key if the 6-byte prefix matches exactly one contact in the radio's contact table as the bridge last read it, else `null` |
 | `sender_prefix` | first 6 bytes of the sender's key, hex (direct messages) |
-| `sender_name` | contact name; for channels the **claimed** name from the text, not authenticated |
+| `sender_name` | contact name from the same table; for channels the **claimed** name from the text, not authenticated |
 | `target` | alias of a configured target matching the sender or channel, else `null` |
 | `channel_index` | channel messages only |
 | `sent_at` | sender's clock; `received_at` the bridge's clock |
 | `snr_db` | signal-to-noise ratio of the last hop, 0.25 dB steps; `null` for legacy frames |
 | `hops` | repeaters a flooded message passed; `null` if it arrived by direct route |
 | `command` | `null` unless the first word is a command word; then `accepted` and `reason` |
+
+A message frame names its sender only by the 6-byte prefix, so `sender_key`, `sender_name` and
+`target` are informational: a contact with the same prefix that the radio added or overwrote
+since the bridge last read the table is not reflected there. Base decisions on the `command`
+topic, whose sender the bridge verifies.
 
 ## Commands: `command`
 
@@ -99,10 +104,18 @@ in `commands.senders`, newer than the last accepted command of that sender and w
  "sent_at": "2026-10-18T09:00:00+00:00", "received_at": "2026-10-18T09:00:02+00:00"}
 ```
 
-Rejected attempts appear only on `received`, with `command.reason`: `sender_unknown`,
-`sender_ambiguous`, `sender_not_allowed`, `sender_unverified` (the radio's contact table could not
-be read), `replay`, `too_old`, `from_the_future`. Treat `args` as
-untrusted input.
+Treat `args` as untrusted input. Rejected attempts appear only on `received`, with
+`command.accepted` false and one of these reasons:
+
+| `command.reason` | Meaning |
+| --- | --- |
+| `sender_unknown` | the sender prefix matches no contact on the radio |
+| `sender_ambiguous` | it matches several contacts, counting contacts the radio overwrote in the last 24 hours |
+| `sender_not_allowed` | the contact's full key is not in `commands.senders` |
+| `sender_unverified` | the contact table could not be read, or the command waited in the radio while the bridge was not connected and the radio may overwrite contacts on its own; the sender can send it again |
+| `state_unwritable` | the state file could not be written, so the replay protection could not be kept; the sender can send it again |
+| `replay` | not newer than the last accepted command of this sender |
+| `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock |
 
 ## State: `state`
 

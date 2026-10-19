@@ -62,9 +62,10 @@ def test_start_flushes_then_identifies_and_loads_tables() -> None:
         assert set(session.contact_records) == {ALICE.public_key.hex(), BOB.public_key.hex()}
         assert session.channels == {0: "Public", 2: "Alerts"}  # empty slots are left out
         assert session.battery == codec.Battery(4012, 12, 976)
-        assert radio.commands()[:3] == [
+        assert radio.commands()[:4] == [
             Command.APP_START,
             Command.DEVICE_QUERY,
+            Command.GET_AUTOADD_CONFIG,
             Command.GET_DEVICE_TIME,
         ]
 
@@ -216,10 +217,149 @@ def test_advert_marks_contacts_for_refresh(monkeypatch: pytest.MonkeyPatch) -> N
     run(radio, scenario)
 
 
-def test_automatic_contact_adding_is_warned_about(caplog: pytest.LogCaptureFixture) -> None:
+UNKNOWN_AUTOADD: set[int] = {Command.GET_AUTOADD_CONFIG}  # older firmware: unknown command
+
+
+@pytest.mark.parametrize(
+    ("radio", "warning"),
+    [
+        (EmulatedRadio(manual_add=False), "adds every new contact automatically"),
+        (EmulatedRadio(autoadd_config=0x02), "adds new contacts of type chat automatically"),
+        (EmulatedRadio(autoadd_config=0x1C), "of type repeater, room, sensor automatically"),
+        (EmulatedRadio(manual_add=False, autoadd_config=0x01), "may overwrite its oldest contact"),
+        (EmulatedRadio(manual_add=False, unknown=UNKNOWN_AUTOADD), "may overwrite its oldest"),
+    ],
+    ids=["all", "chat-in-manual-mode", "other-types", "overwrite", "unknown-settings"],
+)
+def test_automatic_contact_adding_is_warned_about(
+    caplog: pytest.LogCaptureFixture, radio: EmulatedRadio, warning: str
+) -> None:
+    """The radio passes on direct messages from contacts of every type (BaseChatMesh.cpp)."""
     caplog.set_level(logging.WARNING)
-    run(EmulatedRadio(manual_add=False), start_only)
-    assert "adds contacts automatically" in caplog.text
+    run(radio, start_only)
+    assert warning in caplog.text
+
+
+@pytest.mark.parametrize(
+    "radio",
+    [EmulatedRadio(), EmulatedRadio(autoadd_config=0x01), EmulatedRadio(unknown=UNKNOWN_AUTOADD)],
+    ids=["no-types", "overwrite-without-types", "older-firmware"],
+)
+def test_manual_adding_without_automatic_types_is_quiet(
+    caplog: pytest.LogCaptureFixture, radio: EmulatedRadio
+) -> None:
+    caplog.set_level(logging.WARNING)
+    run(radio, start_only)
+    assert "ADR 0009" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("radio", "may_overwrite"),
+    [
+        (EmulatedRadio(), False),
+        (EmulatedRadio(manual_add=False), False),  # a full table refuses new contacts
+        (EmulatedRadio(manual_add=False, autoadd_config=0x01), True),
+        (EmulatedRadio(autoadd_config=0x01), False),  # nothing is added, so nothing overwritten
+        (EmulatedRadio(autoadd_config=0x03), True),
+        (EmulatedRadio(autoadd_config=0x11), True),  # a look-alike can advertise as a sensor
+        (EmulatedRadio(autoadd_config=0x41), True),  # unknown type bits count as types
+        (EmulatedRadio(manual_add=False, unknown=UNKNOWN_AUTOADD), True),
+        (EmulatedRadio(unknown=UNKNOWN_AUTOADD), False),
+    ],
+    ids=[
+        "manual", "automatic", "automatic-overwrite", "manual-overwrite", "chat-overwrite",
+        "sensor-overwrite", "unknown-type-overwrite", "automatic-unknown", "manual-unknown",
+    ],
+)  # fmt: skip
+def test_radio_settings_that_let_it_overwrite_contacts(
+    radio: EmulatedRadio, may_overwrite: bool
+) -> None:
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        assert session.may_overwrite_contacts is may_overwrite
+
+    run(radio, scenario)
+
+
+def test_firmware_without_auto_add_settings_still_starts() -> None:
+    radio = EmulatedRadio(unknown=UNKNOWN_AUTOADD)
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        assert session.autoadd is None
+
+    run(radio, scenario)
+
+
+def test_overwritten_contacts_are_remembered() -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.overwrite(BOB)
+        for _attempt in range(100):
+            if session.departed:
+                break
+            await asyncio.sleep(0.01)
+        assert session.take_departed() == [BOB.public_key.hex()]
+        assert session.take_departed() == []
+
+    run(radio, scenario)
+
+
+def test_messages_fetched_at_connect_are_marked() -> None:
+    """They may have arrived while no session watched the contact table (ADR 0009)."""
+    radio = EmulatedRadio(contacts=[ALICE])
+    radio.queue_direct_message(ALICE.public_key[:6], "waited", START_TIME + 10, push=False)
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.queue_direct_message(ALICE.public_key[:6], "live", START_TIME + 50)
+        fetched = [await asyncio.wait_for(events.get(), 2) for _ in range(2)]
+        assert [
+            (event.message.text, event.at_connect)
+            for event in fetched
+            if isinstance(event, MessageReceived)
+        ] == [("waited", True), ("live", False)]
+
+    run(radio, scenario)
+
+
+def test_messages_name_their_session_and_when_they_were_fetched() -> None:
+    """The bridge judges a command on the table of the session that fetched it, and reads that
+    table again only if no read started after the fetch."""
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.queue_direct_message(ALICE.public_key[:6], "status", START_TIME + 50)
+        event = await asyncio.wait_for(events.get(), 2)
+        assert isinstance(event, MessageReceived)
+        assert event.session is session
+        assert session.contacts_read_at < event.fetched_at
+        await session.refresh_contacts()
+        assert session.contacts_read_at > event.fetched_at
+
+    run(radio, scenario)
+
+
+def test_cancelled_command_leaves_no_task_behind() -> None:
+    radio = EmulatedRadio(silent={Command.GET_BATT_AND_STORAGE})
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        radio.silent.clear()
+        await session.start()
+        radio.silent.add(Command.GET_BATT_AND_STORAGE)
+        waiting = asyncio.create_task(session.get_battery())
+        await asyncio.sleep(0.05)
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        await asyncio.sleep(0)
+        frame_waits = [task for task in asyncio.all_tasks() if "Queue.get" in repr(task)]
+        assert frame_waits == []  # the waiter for the answer was cancelled too
+
+    run(radio, scenario, timeout_s=5)
 
 
 def test_channel_send_and_path_reset() -> None:

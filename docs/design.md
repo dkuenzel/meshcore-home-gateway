@@ -166,11 +166,16 @@ Long-running tasks on the loop, supervised by a task group:
   to 60 s, with jitter) when the transport fails;
 * **outbox worker**: one outgoing message at a time, in order;
 * **radio events**: acknowledgements and the receive log at once; received messages go to
-* **message handler**, which processes them in order (a possible command waits for a fresh read of
-  the radio's contact table without delaying acknowledgements);
+* **message handler**, which processes them in order (a command that could be accepted may wait
+  for a fresh read of the radio's contact table, §7.3, without delaying acknowledgements);
 * **request reader**: turns MQTT send requests into queue entries or rejections;
-* **status reporter**: publishes the state document on change and every 60 s, polls the battery,
-  pings the systemd watchdog.
+* **status reporter**: publishes the state document on change and every 60 s and pings the systemd
+  watchdog.
+
+Each radio session runs two tasks of its own: a **reader** that routes frames, and a
+**maintenance** task that re-reads the contact table after adverts and contact pushes, drains the
+message queue on `MSG_WAITING` and every 5 minutes, and polls the battery every 60 s as a
+heartbeat.
 
 Waits with a time limit use `asyncio.timeout`, not `asyncio.wait_for`: on Python 3.11, `wait_for`
 can lose a cancellation that arrives just as the awaited event completes, and the task group then
@@ -202,6 +207,8 @@ sequenceDiagram
     R-->>B: SELF_INFO (public key, radio settings, name)
     B->>R: DEVICE_QUERY (protocol version 3)
     R-->>B: DEVICE_INFO (firmware, limits, model)
+    B->>R: GET_AUTOADD_CONFIG
+    R-->>B: AUTOADD_CONFIG (or ERR on older firmware)
     B->>R: GET_DEVICE_TIME
     R-->>B: CURR_TIME
     opt radio clock behind and set_clock
@@ -224,8 +231,13 @@ sequenceDiagram
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
 * **Contacts and channels** are read at connect time; contacts are re-read after advert, path and
-  contact-table pushes, so key resolution (§7.3) sees new and changed contacts. Channel slots
+  contact-table pushes, so key resolution (§7.3) sees new and changed contacts. The keys that
+  `CONTACT_DELETED` pushes report go to the bridge, which counts them for 24 hours. Channel slots
   without a name are not configured and never used (the radio would send with an all-zero key).
+* **Contact adding.** At connect the session reads the manual-adding bit and the auto-add settings
+  and warns when the radio adds contacts on its own or may overwrite them (§7.2).
+* **Messages fetched at connect** are marked: they may have arrived while no session listened to
+  the radio's pushes (§7.3).
 * **Liveness.** A battery query every 60 s doubles as a heartbeat.
 * **Single client.** The radio must not serve another client (phone app) at the same time: both
   would drain the same message queue.
@@ -315,13 +327,14 @@ EU duty cycle for them.
    sender timestamp, SNR, hop count, text type).
 2. Exact repeats (same sender or channel, timestamp and text within an hour) are dropped: that is
    how a sender's retries arrive.
-3. The sender prefix is resolved against the contact table (§7.3). For a message that may be a
-   command (a direct message whose first word is a command word), the bridge reads the radio's
-   contact table again first; otherwise the table from the last refresh is enough.
+3. The sender prefix is resolved against the contact table as last read; for a possible command
+   (a direct message whose first word is a command word) §7.3 decides whether the table has to be
+   read again first.
 4. `core.commands` decides: not a command, accepted, or rejected with a reason.
 5. The bridge publishes the message on `received` (with the verdict), and an accepted command on
    `command`. The newest accepted timestamp per sender goes to the state file before the event is
-   published, so a crash cannot turn into a replay.
+   published, so a crash cannot turn into a replay; if the file cannot be written, the command is
+   rejected (`state_unwritable`) and the service carries on.
 6. Channels listed in `ignore_channels` are not published (busy public channels).
 
 ### 6.5 MQTT interface
@@ -408,12 +421,12 @@ Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does 
 | Threat | Mitigation |
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
-| Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys; a prefix that matches more than one contact is rejected. The contact table is read from the radio again for every possible command, so a look-alike added a moment ago (with or without a push) counts. Recommended: disable automatic contact adding on the bridge's radio. |
+| Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys; a prefix that matches more than one contact is rejected. Before accepting a command the bridge reads the contact table again and counts the contacts the radio overwrote in the last 24 hours, so a look-alike added or overwritten a moment ago counts. A command that waited in the radio while the bridge was not connected is rejected if the radio may overwrite contacts (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically, no overwriting. |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted) and within `max_age_s` of the bridge clock. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression. |
 | Retained send request re-sent on every reconnect | Retained messages on `send/+` are ignored. |
-| Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches. |
+| Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. |
 | Credential disclosure | Configuration 0640 `root:meshcore-bus`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
@@ -421,17 +434,48 @@ Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does 
 ### 7.3 Command authorisation in detail
 
 A received message is an accepted command only if: it is a plain-text direct message; its first word
-(case-insensitive) is in `commands.words`; its 6-byte sender prefix resolves to exactly one contact
-in the radio's contact table as read after the message arrived; that contact's full key is in
-`commands.senders`; its sender timestamp is newer than the last accepted command of that sender;
-and, unless `max_age_s` is 0, it lies within `max_age_s` of the bridge clock in either direction.
-The reasons for rejection are published, so misconfiguration and attacks are visible
+(case-insensitive) is in `commands.words`; its 6-byte sender prefix resolves to exactly one contact;
+that contact's full key is in `commands.senders`; its sender timestamp is newer than the last
+accepted command of that sender; and, unless `max_age_s` is 0, it lies within `max_age_s` of the
+bridge clock in either direction
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
+
+The sender check is the hard part: the frame names the sender only by the prefix, and the contact
+table can change under the bridge. The radio decrypts a direct message only with a contact it
+holds, so a look-alike that sent a message was in the table when the message arrived. Afterwards
+it stays (the prefix is then ambiguous) or, with overwriting on and a full table, is replaced by a
+newer contact; the radio then pushes its key, once, to whichever client is connected
+([`protocol.md`](protocol.md#5-semantics)). The bridge therefore resolves the prefix against the
+contact table of the session that fetched the message plus every contact the radio reported as
+overwritten in the last 24 hours, and checks in this order:
+
+1. **Cached table.** A rejection by the table the bridge already holds stands: only a removal could
+   turn it into an acceptance, and overwritten contacts still count. Senders that are not allowed
+   cost nothing.
+2. **Waited at connect.** A command fetched by the first sync of a session may have arrived while
+   no session listened, so an overwrite in that time went unseen. If the radio adds contacts on its
+   own and may overwrite them (or its firmware cannot report its settings), the command is
+   rejected (`sender_unverified`); the sender can send it again.
+3. **Fresh table.** Otherwise the bridge reads the table again, unless a read started after the
+   message was fetched: one read serves every message fetched before it. A failed read rejects the
+   command (`sender_unverified`).
+4. **Verdict** on the fresh table and the overwritten contacts.
+
+A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a USB-UART bridge at
+115200 baud. The rejection reasons are published, so misconfiguration and attacks are visible.
 
 ### 7.4 Residual risks
 
 * Whoever controls an allowlisted handheld (or its key) can send commands. Keep the word list
   small and make automations confirm critical actions.
+* A look-alike needs a 48-bit prefix collision with an allowlisted key, which takes considerable
+  but feasible computing effort (about 2^48 key generations). If the radio adds it, the real
+  sender's commands are rejected (`sender_ambiguous`) while it is in the table and for 24 hours
+  after it was overwritten. A restart of the service ends that early; the commands that waited in
+  the radio meanwhile fall under step 2 of §7.3.
+* Contacts removed by hand (phone app) while the bridge was not connected are not known to it: a
+  look-alike added and removed that way could leave a waiting command behind. This needs access to
+  the radio.
 * The radio firmware and its key storage are trusted.
 * Messages on the radio are only as confidential as MeshCore's encryption; channel secrets of
   public or hashtag channels are known to everyone.
@@ -450,6 +494,8 @@ The reasons for rejection are published, so misconfiguration and attacks are vis
 | Recipient out of range | no acknowledgement | retries, flood, then give up | `delivery: failed` |
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects | `delivery: duplicate` / `rejected` |
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
+| State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
+| Command sent while the bridge was not connected | fetched at connect | judged like any other; rejected if the radio may overwrite contacts | `received`: `sender_unverified`; log warning |
 
 ## 9 Deployment and operations
 
@@ -474,11 +520,13 @@ The reasons for rejection are published, so misconfiguration and attacks are vis
 * **Layout in the container:** `/usr/local/lib/meshcore-bus/meshcore-bus-<version>.pyz`, the symlink
   `current.pyz` to the active version, `/usr/local/bin/meshcore-bus` pointing to it. The zipapp runs
   with `/usr/bin/python3 -I` (isolated mode: no user site, no environment variables).
-* **Update:** `meshcore-bus-lxc.sh --update <id>` builds the new zipapp next to the old one,
-  checks the current configuration with it, then switches the symlink and restarts; a failed check
-  leaves the old version active, and rollback switches the symlink back. `--reconfigure <id>` runs
-  the dialogs again with the current settings as defaults (`meshcore-bus config answers`) and keeps
-  the settings it does not ask for; `--answers <file>` installs without dialogs.
+* **Update:** `meshcore-bus-lxc.sh --update <id>` builds the new zipapp under a temporary name
+  next to the old one, checks the current configuration with it, then moves it to its versioned
+  name, switches the symlink and restarts; a failed check leaves the old version active, also when
+  the version string did not change, and rollback switches the symlink back. `--reconfigure <id>`
+  runs the dialogs again with the current settings as defaults (`meshcore-bus config answers`) and
+  keeps the settings it does not ask for, and targets or command senders the radio no longer
+  offers; `--answers <file>` installs without dialogs.
 * **Backup:** the configuration file and `/var/lib/meshcore-bus/state.json`.
 
 ## 10 Testing strategy

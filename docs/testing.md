@@ -54,7 +54,7 @@ both on the same channel settings; B knows A as a contact and the reverse.
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 1 | `meshcore-bus probe --serial /dev/serial/by-id/…` with the service stopped | firmware, radio settings, contacts and channels listed |
+| 1 | `meshcore-bus probe --serial /dev/serial/by-id/…` with the service stopped | firmware, radio settings, how the radio adds contacts, contacts and channels listed |
 | 2 | Start the service | `availability` = `online`; `state.radio` = `connected`; battery plausible |
 | 3 | Publish to `send/<channel alias>` | B shows the message; `delivery`: `queued`, `sent` |
 | 4 | Publish to `send/<contact alias>` | B shows it; `delivery`: `confirmed` with a round trip time |
@@ -66,9 +66,11 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 10 | B sends a direct message and a channel message | two `received` events with sender, SNR, path length |
 | 11 | B (allowlisted) sends `status` | `command` event `status`; `received` shows `accepted` |
 | 12 | A not allowlisted contact sends `status` | no `command` event; `received` shows `sender_not_allowed` |
-| 13 | Unplug A's USB cable for 30 s, plug it in; in a Proxmox container also `pct reboot <id>` | `radio` = `disconnected`, then `connected`; queued messages go out (deployment.md: the container keeps the old device until it restarts) |
-| 14 | Stop and start the broker | bridge reconnects; `availability` back to `online` |
-| 15 | `kill -STOP` the service process | systemd watchdog restarts it within the watchdog interval |
-| 16 | Home Assistant | device with all entities; notify entity sends; event entities fire |
-| 17 | Proxmox installer, default setup, then `--reconfigure` and `--update` | container runs the service; reconfigure keeps unasked settings; update keeps the configuration |
-| 18 | Switch the host off and on with the radio unplugged | the container does not start (expected); after plugging in, `pct start <id>` |
+| 13 | `systemctl stop meshcore-bus`; B sends `status`; start the service | with manual adding and no overwriting: `command` event `status` after the start. With *overwrite oldest* and automatic adding: `received` shows `sender_unverified`, the log names the setting; B sends again and gets a `command` event |
+| 14 | `journalctl -u meshcore-bus` after the start, with automatic adding on | warnings name the auto-added contact types and overwriting (ADR 0009); none with the recommended settings |
+| 15 | Unplug A's USB cable for 30 s, plug it in; in a Proxmox container also `pct reboot <id>` | `radio` = `disconnected`, then `connected`; queued messages go out (deployment.md: the container keeps the old device until it restarts) |
+| 16 | Stop and start the broker | bridge reconnects; `availability` back to `online` |
+| 17 | `kill -STOP` the service process | systemd watchdog restarts it within the watchdog interval |
+| 18 | Home Assistant | device with all entities; notify entity sends; event entities fire |
+| 19 | Proxmox installer, default setup, then `--reconfigure` and `--update` | container runs the service; reconfigure keeps unasked settings; update keeps the configuration |
+| 20 | Switch the host off and on with the radio unplugged | the container does not start (expected); after plugging in, `pct start <id>` |

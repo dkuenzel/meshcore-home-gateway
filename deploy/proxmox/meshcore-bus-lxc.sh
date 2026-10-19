@@ -25,6 +25,9 @@ CONFIG=/etc/meshcore-bus/config.toml
 # pct exec passes the host's environment into the container; commands start from a clean one
 CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 
+# answers that steer the installer; every other key in --answers FILE is a configuration setting
+INSTALLER_KEYS=" setup ct.id ct.hostname ct.storage ct.disk_gb ct.memory_mb ct.bridge ct.ip \
+ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 declare -A ANSWERS=()   # from --answers FILE
 declare -A CURRENT=()   # settings of the installation being reconfigured
 declare -A OUT=()       # answers for `meshcore-bus config render`
@@ -134,14 +137,26 @@ ask_required() {  # ask_required KEY TEXT DEFAULT: an input that must not stay e
 }
 
 load_answers() {
-  local file=$1 line
+  local file=$1 line key
   [[ -r $file ]] || die "cannot read answers file $file"
   while IFS= read -r line || [[ -n $line ]]; do
     line=${line%$'\r'}   # files edited on Windows
     [[ -z $line || $line == \#* ]] && continue
     [[ $line == *=* ]] || die "answers file: expected key=value, got '$line'"
-    ANSWERS[${line%%=*}]=${line#*=}
+    key=${line%%=*}
+    case $key in
+      setup|ct.*|radio.choice|targets.*)
+        [[ $INSTALLER_KEYS == *" $key "* ]] || die "answers file: unknown answer $key" ;;
+    esac
+    ANSWERS[$key]=${line#*=}
   done <"$file"
+}
+
+pass_settings() {  # configuration settings from --answers go to the configuration as given
+  local key
+  for key in "${!ANSWERS[@]}"; do
+    if [[ $INSTALLER_KEYS != *" $key "* ]]; then OUT[$key]=${ANSWERS[$key]}; fi
+  done
 }
 
 choose_setup() {
@@ -332,13 +347,14 @@ install_service() {  # packages, user, zipapp and unit; the version switches onl
   pct push "$ctid" "$archive" /root/meshcore-bus-src.tar.gz \
     || die "copying meshcore-bus into container $ctid failed (see above)"
   in_ct "$ctid" bash -c "set -e
-    src=/root/meshcore-bus-src pyz=$LIB/meshcore-bus-$VERSION.pyz
-    trap 'rm -rf \$src \$src.tar.gz' EXIT
+    src=/root/meshcore-bus-src pyz=$LIB/meshcore-bus-$VERSION.pyz new=$LIB/.meshcore-bus.pyz.new
+    trap 'rm -rf \$src \$src.tar.gz \$new' EXIT
     rm -rf \$src && mkdir -p \$src $LIB
     tar -C \$src -xzf \$src.tar.gz
-    python3 \$src/tools/build_pyz.py --source \$src/src --output \$pyz \
+    python3 \$src/tools/build_pyz.py --source \$src/src --output \$new \
       --interpreter '/usr/bin/python3 -I' >/dev/null
-    if [ -f $CONFIG ]; then /usr/bin/python3 -I \$pyz check-config --config $CONFIG; fi
+    if [ -f $CONFIG ]; then /usr/bin/python3 -I \$new check-config --config $CONFIG; fi
+    mv -f \$new \$pyz   # only now: the same version may be the active one
     ln -sfn meshcore-bus-$VERSION.pyz $LIB/current.pyz
     ln -sfn $LIB/current.pyz /usr/local/bin/meshcore-bus
     install -m 0644 \$src/deploy/systemd/meshcore-bus.service /etc/systemd/system/
@@ -357,6 +373,9 @@ ask_radio() {
   done
   shopt -u nullglob
   choices+=("tcp" "radio with WiFi firmware (TCP, no authentication)")
+  if (( ! INTERACTIVE )) && [[ ! -v "ANSWERS[radio.choice]" ]]; then
+    die "no answer for radio.choice: name the radio's device path, or tcp"  # never guess one
+  fi
   radio=$(ask radio.choice menu "Radio connection" "${choices[0]}" "${choices[@]}")
   if [[ $radio == tcp ]]; then
     OUT[radio.transport]=tcp
@@ -455,7 +474,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
   if (( ${#channel_items[@]} )); then
     selected=$(ask targets.channels checklist "Channels to send to" "${current_channels#,}" \
       "${channel_items[@]}")
-    drop_targets channel
+    drop_offered channel channel_name
     for item in ${selected//,/ }; do
       alias=${alias_of[channel:$item]:-$(unique_alias "$(slug "${channel_name[$item]:-channel-$item}")" \
         "${alias_of[@]}")}
@@ -465,7 +484,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
   if (( ${#contact_items[@]} )); then
     selected=$(ask targets.contacts checklist "Contacts to send to" "${current_contacts#,}" \
       "${contact_items[@]}")
-    drop_targets contact
+    drop_offered contact contact_name
     for item in ${selected//,/ }; do
       alias=${alias_of[contact:$item]:-$(unique_alias "$(slug "${contact_name[$item]:-contact}")" \
         "${alias_of[@]}")}
@@ -474,6 +493,12 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
     selected=$(ask commands.senders checklist \
       "Contacts allowed to send commands (direct messages only)" "$current_senders" \
       "${sender_items[@]}")
+    for key in ${current_senders//,/ }; do  # senders the radio does not offer stay
+      if [[ ! -v "contact_name[$key]" ]]; then
+        log "kept command sender $key (not offered by the radio as a chat contact)"
+        selected+=${selected:+,}$key
+      fi
+    done
     if [[ -n $selected ]]; then
       OUT[commands.senders]=$selected
       OUT[commands.words]=$(ask commands.words input \
@@ -484,10 +509,17 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
   fi
 }
 
-drop_targets() {  # drop_targets channel|contact: forget the current targets of one kind
-  local key
+drop_offered() {  # drop_offered KIND OFFERED: forget the targets the dialog asked about again
+  local kind=$1 key ref
+  local -n offered=$2
   for key in "${!OUT[@]}"; do
-    if [[ $key == target.* && ${OUT[$key]} == "$1":* ]]; then unset "OUT[$key]"; fi
+    [[ $key == target.* && ${OUT[$key]} == "$kind":* ]] || continue
+    ref=${OUT[$key]#"$kind":}
+    if [[ -v "offered[$ref]" ]]; then
+      unset "OUT[$key]"
+    else
+      log "kept target ${key#target.} ($kind $ref is not offered by the radio)"
+    fi
   done
 }
 
@@ -553,6 +585,7 @@ After re-plugging the radio: pct reboot $ctid"
 
 install() {
   local template
+  pass_settings
   choose_setup
   ask_container
   ask_radio
@@ -584,6 +617,7 @@ reconfigure() {
   local ctid=$1
   ct_running "$ctid" || die "container $ctid is not running"
   load_current "$ctid"
+  pass_settings
   choose_setup
   ask_bridge
   check_settings

@@ -3,7 +3,7 @@ lines 9-140). Only the codes the bridge uses or must recognise."""
 
 from __future__ import annotations
 
-from enum import IntEnum
+from enum import IntEnum, IntFlag
 
 PROTOCOL_VERSION = 3  # DEVICE_QUERY app version: >= 3 selects the *_MSG_RECV_V3 frames
 
@@ -20,6 +20,7 @@ class Command(IntEnum):
     GET_BATT_AND_STORAGE = 20
     DEVICE_QUERY = 22
     GET_CHANNEL = 31
+    GET_AUTOADD_CONFIG = 59
 
 
 class Response(IntEnum):
@@ -40,6 +41,7 @@ class Response(IntEnum):
     CONTACT_MSG_RECV_V3 = 16
     CHANNEL_MSG_RECV_V3 = 17
     CHANNEL_INFO = 18
+    AUTOADD_CONFIG = 25
     CHANNEL_DATA_RECV = 27
 
 
@@ -64,6 +66,17 @@ class Push(IntEnum):
 
 
 PUSH_MIN = 0x80
+
+
+class AutoAdd(IntFlag):
+    """Auto-add settings (MyMesh.cpp:147-151). They apply when manual adding is on; without it
+    the radio adds every type."""
+
+    OVERWRITE_OLDEST = 0x01  # a full table overwrites the oldest non-favourite contact
+    CHAT = 0x02
+    REPEATER = 0x04
+    ROOM_SERVER = 0x08
+    SENSOR = 0x10
 
 
 class ErrorCode(IntEnum):

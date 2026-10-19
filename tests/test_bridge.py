@@ -15,7 +15,7 @@ from meshcore_bus import bridge as bridge_module
 from meshcore_bus.bridge import Bridge
 from meshcore_bus.config import Config, parse_config
 from meshcore_bus.mqtt.client import SendRequest
-from meshcore_bus.protocol.codes import Command, Push
+from meshcore_bus.protocol.codes import AutoAdd, Command, Push
 from meshcore_bus.radio import session as session_module
 from meshcore_bus.radio.session import CompanionSession, RadioEvent
 from meshcore_bus.radio.transport import Transport
@@ -421,6 +421,24 @@ def test_message_that_can_never_fit_the_burst_fails(
     assert "burst_s" in caplog.text  # warned when the radio connected
 
 
+def test_burst_is_checked_before_the_path_is_reset(tmp_path: Path) -> None:
+    """At SF 11 a 20-byte text to Bob takes 3.3 s direct and 6.1 s flooded: the flood attempt can
+    never fit a 5 s burst, so the stored path must stay."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], spreading_factor=11, auto_ack=False)
+    config = make_config(messages="max_attempts = 2\nflood_after = 1", airtime="burst_s = 5")
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            bus.send("bob", "x" * 20)
+            event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
+            assert (event["event_type"], event["reason"], event["attempt"]) == (
+                "failed", "exceeds_airtime_burst", 1,
+            )  # fmt: skip
+            assert radio.path_resets == []
+
+    scenario(main)
+
+
 def test_targets_missing_on_the_radio_fail(tmp_path: Path) -> None:
     twin = EmulatedContact(ALICE.public_key[:6] + bytes(26), "Twin")
     radio = EmulatedRadio(contacts=[ALICE, twin], channels={})  # no channel configured
@@ -566,6 +584,158 @@ def test_new_contacts_are_read_before_their_messages(tmp_path: Path) -> None:
     scenario(main)
 
 
+def test_command_waiting_in_the_radio_at_connect_is_judged(tmp_path: Path) -> None:
+    """Sent while the bridge restarted: the radio held it, the bridge fetches it at connect."""
+    radio = EmulatedRadio(contacts=[ALICE])
+    radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 30, push=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["event_type"], command["sender_name"]) == ("arm", "Alice")
+            received = bus.payloads("/received")[0]
+            assert (received["sender_name"], received["target"]) == ("Alice", "alice")
+
+    scenario(main)
+
+
+def test_command_waiting_at_connect_is_refused_when_the_radio_may_overwrite_contacts(
+    tmp_path: Path,
+) -> None:
+    """While no bridge listened, a look-alike may have sent it and been overwritten since; the
+    push that says so went nowhere (ADR 0009)."""
+    radio = EmulatedRadio(
+        contacts=[ALICE], manual_add=False, autoadd_config=AutoAdd.OVERWRITE_OLDEST
+    )
+    radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 30, push=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "sender_unverified"
+            assert received["sender_name"] == "Alice"  # the message itself is still delivered
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5)  # sent again
+            command = await bus.wait_for("/command", lambda c: True)
+            assert command["event_type"] == "arm"
+
+    scenario(main)
+
+
+def test_overwritten_contacts_are_remembered_across_reconnects(tmp_path: Path) -> None:
+    radio = EmulatedRadio(
+        contacts=[ALICE, TWIN], manual_add=False, autoadd_config=AutoAdd.OVERWRITE_OLDEST
+    )
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+            reads = radio.commands().count(Command.GET_CONTACTS)
+            radio.overwrite(TWIN)  # this session gets the push and then ends
+            for _attempt in range(100):
+                if radio.commands().count(Command.GET_CONTACTS) > reads:
+                    break
+                await asyncio.sleep(0.01)
+            radio.disconnect()
+            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected")
+            count = len(bus.payloads("/state"))
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=count)
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "sender_ambiguous"
+
+    scenario(main)
+
+
+def test_overwritten_look_alike_still_makes_the_sender_ambiguous(tmp_path: Path) -> None:
+    """With a full table the radio overwrites the oldest contact and says so with a push; the
+    look-alike that sent the message may be gone before the bridge reads the table."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB, TWIN], manual_add=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(TWIN.public_key[:6], "arm now", NOW - 5, push=False)
+            radio.overwrite(TWIN)  # CONTACT_DELETED push, then ...
+            radio.emit(bytes([Push.MSG_WAITING]))  # ... the bridge fetches the message
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "sender_ambiguous"
+            assert not bus.payloads("/command")
+
+    scenario(main)
+
+
+def test_contact_reads_are_spent_only_where_they_can_change_the_verdict(tmp_path: Path) -> None:
+    """Senders the cached table already rejects need no read; one read serves every message
+    fetched before it."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            before = radio.commands().count(Command.GET_CONTACTS)
+            for second in range(5):
+                radio.queue_direct_message(BOB.public_key[:6], "arm", NOW - 20 + second, push=False)
+            for second in range(3):
+                radio.queue_direct_message(
+                    ALICE.public_key[:6], "status", NOW - 10 + second, push=False
+                )
+            radio.emit(bytes([Push.MSG_WAITING]))
+            await bus.wait_for("/received", lambda r: True, since=7)
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["sender_not_allowed"] * 5 + [None] * 3
+            assert len(bus.payloads("/command")) == 3
+            assert radio.commands().count(Command.GET_CONTACTS) == before + 1
+
+    scenario(main)
+
+
+def test_unwritable_state_file_rejects_the_command_and_keeps_the_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    def full_disk(_store: object, _data: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            monkeypatch.setattr(JsonStateFile, "save", full_disk)
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "state_unwritable"
+            monkeypatch.undo()
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)  # the sender's retry
+            await bus.wait_for("/command", lambda c: True)  # the service is still there
+
+    scenario(main)
+
+
+def test_retry_of_an_unverified_command_is_judged_again(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.errors[Command.GET_CONTACTS] = 1
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)
+            await bus.wait_for("/received", lambda r: r["command"]["reason"] == "sender_unverified")
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)  # same packet again
+            await bus.wait_for("/command", lambda c: True)
+
+    scenario(main)
+
+
+def test_names_come_from_the_table_just_read(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.contacts.clear()  # removed in the app a moment ago
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "sender_unknown"
+            assert received["sender_name"] is None
+
+    scenario(main)
+
+
 def test_ignored_channels_are_not_published(tmp_path: Path) -> None:
     radio = EmulatedRadio()
 
@@ -635,7 +805,7 @@ def test_unexpected_error_while_connecting_is_retried(
         attempts.append(session)
         if len(attempts) == 1:
 
-            async def broken() -> Any:
+            async def broken(**_: Any) -> Any:
                 raise KeyError("bug")
 
             session.start = broken  # type: ignore[method-assign]

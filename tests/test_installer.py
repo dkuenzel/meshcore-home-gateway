@@ -463,6 +463,38 @@ def test_failure_after_creation_is_reported_once_and_names_the_container(host: H
     assert "pct destroy 105" in result.stderr
 
 
+def test_unknown_answers_are_refused(host: Host) -> None:
+    answers = answers_file(host)
+    answers.write_text(answers.read_text(encoding="utf-8") + "ct.memroy_mb=512\n", encoding="utf-8")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 1
+    assert "ct.memroy_mb" in result.stderr
+    assert not host.pct("create")
+
+
+def test_answers_pass_every_setting_through(host: Host) -> None:
+    extra = (
+        "messages.queue_size=50\nairtime.budget_s_per_hour=18\ndiagnostics.log_level=debug\n"
+        "homeassistant.prefix=ha\ncommands.max_age_s=600\n"
+    )
+    answers = answers_file(host)
+    answers.write_text(answers.read_text(encoding="utf-8") + extra, encoding="utf-8")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    config = host.config()
+    assert (config.messages.queue_size, config.airtime.budget_s_per_hour) == (50, 18.0)
+    assert (config.diagnostics.log_level, config.homeassistant.prefix) == ("debug", "ha")
+    assert config.commands.max_age_s == 600
+
+
+def test_unattended_install_needs_the_radio_named(host: Host) -> None:
+    """Without it the first serial device would be taken, possibly a Zigbee stick."""
+    result = run_installer(host, "--answers", str(answers_file(host, "mqtt.host=broker\n")))
+    assert result.returncode == 1
+    assert "radio.choice" in result.stderr
+    assert not host.pct("create")
+
+
 # --- update and reconfigure --------------------------------------------------------------------
 
 
@@ -522,6 +554,36 @@ def test_interactive_reconfigure_offers_the_current_settings(host: Host) -> None
     config = host.config()
     assert config.mqtt.password == "old-secret"
     assert {t.alias for t in config.targets} == {"my-alerts", "public", "alice"}
+
+
+def test_update_with_the_same_version_checks_before_replacing_it(host: Host) -> None:
+    existing_container(host)
+    result = run_installer(host, "--update", "105")
+    assert result.returncode == 0, result.stderr
+    (build,) = [c for c in host.inside() if "build_pyz.py" in c]
+    assert ".new" in build[: build.index("check-config")]  # built beside the active zipapp
+    assert build.index("check-config") < build.index("mv -f") < build.index("ln -sfn")
+
+
+def test_interactive_reconfigure_keeps_targets_the_radio_does_not_offer(host: Host) -> None:
+    existing_container(host)
+    current = host.root / "current"
+    current.write_text(
+        current.read_text(encoding="utf-8").replace(
+            f"commands.senders={ALICE}", f"commands.senders={ALICE},{RELAY}"
+        )
+        + f"target.relay=contact:{RELAY}\ntarget.old=channel:7\n",
+        encoding="utf-8",
+    )
+    dialog = ["default", "old.example.org", "bridge", "", "1", ALICE, ALICE, "status"]
+    result = run_installer(host, "--reconfigure", "105", dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    config = host.config()
+    targets = {t.alias: (t.channel_index, t.public_key) for t in config.targets}
+    assert targets["relay"] == (None, RELAY)  # a repeater: not offered, kept
+    assert targets["old"] == (7, None)  # no longer named on the radio: not offered, kept
+    assert config.commands.senders == frozenset({ALICE, RELAY})
+    assert "kept" in result.stderr
 
 
 def test_failed_reconfigure_starts_the_service_again(host: Host) -> None:

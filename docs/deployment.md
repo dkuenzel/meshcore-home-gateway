@@ -10,7 +10,10 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   the official app: name, radio preset, channels, contacts. Then disconnect the app; the bridge
   must be the radio's only client (protocol.md, section 1).
 * **Radio settings worth checking** in the app:
-  * *add contacts manually*, so unknown nodes cannot enter the contact table (ADR 0009);
+  * *add contacts manually*, with every contact type switched off in the auto-add settings and
+    *overwrite oldest* off: a node that the radio adds with the key prefix of a command sender
+    blocks that sender's commands, and with overwriting, commands sent while the bridge is not
+    connected are rejected (configuration.md, `[commands]`; ADR 0009);
   * the *airtime factor* for the legal duty cycle: the firmware allows 50 % by default; for the EU
     band 869.40–869.65 MHz (10 % per hour) the factor is 9 (protocol.md, section 7).
 * **Broker:** an MQTT user for the bridge, ideally with an ACL (mqtt-api.md, last section).
@@ -124,15 +127,22 @@ systemctl enable --now meshcore-bus
 
 ### Unattended installation
 
-`--answers FILE` skips all dialogs. The file has one `key=value` per line; keys are the dialog
-keys in the script (`ct.id`, `ct.hostname`, `ct.storage`, `ct.disk_gb`, `ct.memory_mb`,
-`ct.bridge`, `ct.ip`, `ct.gateway`, `ct.template_storage`, `radio.choice` (a device path or
-`tcp`), `radio.host`, `radio.port`) and configuration settings (`mqtt.host`, `mqtt.password`, …,
-see configuration.md). Targets: `targets.channels` and `targets.contacts` (comma-separated
-indices and keys as offered by `meshcore-bus probe --list`), `commands.senders`,
-`commands.words`. Missing keys take the defaults above; without a broker address (or a radio
-address for TCP) the script stops before it creates anything. Keep the file private; it may
-contain the broker password.
+`--answers FILE` skips all dialogs. The file has one `key=value` per line; empty lines and lines
+starting with `#` are ignored. There are two kinds of keys:
+
+* **Answers for the installer:** `setup`, `ct.id`, `ct.hostname`, `ct.storage`, `ct.disk_gb`,
+  `ct.memory_mb`, `ct.bridge`, `ct.ip`, `ct.gateway`, `ct.template_storage`, `radio.choice` (a
+  device path or `tcp`; required, the script never guesses a device), `targets.channels` and
+  `targets.contacts` (comma-separated indices and keys as offered by `meshcore-bus probe --list`).
+  An unknown key of this kind stops the script.
+* **Every other key is a configuration setting** (`radio.host`, `mqtt.host`, `mqtt.password`,
+  `airtime.budget_s_per_hour`, `commands.senders`, `commands.words`, …; see configuration.md) and
+  goes into the configuration as given. The configuration check refuses unknown settings and
+  invalid values before anything is created.
+
+Missing keys take the defaults above; without a broker address (or a radio address for TCP) the
+script stops before it creates anything. Keep the file private; it may contain the broker
+password.
 
 ### Update, reconfigure, remove
 
@@ -144,13 +154,16 @@ pct exec 105 -- ln -sfn meshcore-bus-<old version>.pyz /usr/local/lib/meshcore-b
 pct stop 105 && pct destroy 105                                       # remove
 ```
 
-* **Update** builds the new zipapp next to the old one and checks the current configuration with
-  it; only then it switches the `current.pyz` link and restarts the service. If the configuration
-  does not pass, the old version stays active.
+* **Update** builds the new zipapp under a temporary name next to the old one and checks the
+  current configuration with it; only then it moves it to `meshcore-bus-<version>.pyz`, switches
+  the `current.pyz` link and restarts the service. If the configuration does not pass, the old
+  version stays active, also when the version string did not change.
 * **Reconfigure** reads the current configuration (`meshcore-bus config answers`) and offers its
   values as defaults: an empty password keeps the current one, and settings the dialogs do not ask
-  for are kept. The service is stopped while the script reads the radio and started again
-  afterwards, also when a step fails.
+  for are kept. Targets and command senders that the radio does not offer (a contact that is not a
+  chat contact, a channel slot without a name) are kept as well, and the log names them. The
+  service is stopped while the script reads the radio and started again afterwards, also when a
+  step fails.
 
 ## 3 Other Linux systems
 
@@ -208,5 +221,7 @@ systemctl daemon-reload && systemctl enable --now meshcore-bus
 | `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the legal limit |
 | `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets); shorten messages or raise `burst_s` |
 | Commands rejected with `too_old` / `from_the_future` | Sender or bridge clock wrong; the phone apps set the radio clock, or set `max_age_s = 0` |
-| Commands rejected with `sender_ambiguous` | Two contacts share the first 6 key bytes; remove the stray one, add contacts manually |
+| Commands rejected with `sender_ambiguous` | Two contacts share the first 6 key bytes, or did in the last 24 hours (an overwritten contact counts that long): remove the stray one and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets overwritten contacts |
+| Commands rejected with `sender_unverified` | The contact table could not be read (see the log), or the command waited in the radio while the bridge was not connected and the radio may overwrite contacts: send it again, and switch off automatic adding or overwriting |
+| Commands rejected with `state_unwritable` | `/var/lib/meshcore-bus/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |
