@@ -232,9 +232,10 @@ sequenceDiagram
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
 * **Contacts and channels** are read at connect time; contacts are re-read after advert, path and
   contact-table pushes, so key resolution (§7.3) sees new and changed contacts. Every key the
-  radio names, in a table read or in an advert, path or overwrite push, goes to the bridge at
-  once, before the next frame is handled (§7.3). Channel slots without a name are not configured
-  and never used (the radio would send with an all-zero key).
+  radio names goes to the bridge, with whether the radio holds or held that contact: from a push
+  before the next frame is handled, from a table read record by record before the read returns
+  (§7.3). Channel slots without a name are not configured and never used (the radio would send
+  with an all-zero key).
 * **Contact adding.** At connect the session reads the manual-adding bit and the auto-add settings
   and warns when the radio adds contacts on its own (§7.2).
 * **Messages fetched at connect** are marked: they may have arrived while no session listened to
@@ -449,20 +450,25 @@ it may stay (the prefix is then ambiguous), be overwritten by a newer contact, o
 once and to whichever client is connected, is every advert, path update and overwrite, each with
 the full key ([`protocol.md`](protocol.md#5-semantics)); every table read lists the keys too.
 
-The bridge therefore keeps a memory: each key that shares the 6-byte prefix of an allowed sender,
-from a table read or a push, with the time it was last seen. A message's sender must be the only
-contact with its prefix in the table of the session that fetched the message, and no other key
-with that prefix may have been seen within the last 24 hours. Remembered keys only add doubt;
-they never become the sender. Only keys with a sender's prefix are kept, so the memory stays
-small whatever the radio hears. The checks run in this order:
+The bridge therefore keeps a memory: each key that shares the 6-byte prefix of an allowed sender and
+that the radio named as its contact (table read, advert, path or overwrite push), with the time it
+was last seen. A node the radio reported but did not add (`NEW_ADVERT`) cannot have sent a message
+the radio decrypted; its key only renews one already remembered, so a look-alike that merely
+advertises does not block the sender. (Firmware 1.11 and older also announce a contact they have
+just added that way, but cannot drop it without a client, so the fresh table shows it.) A message's
+sender must be the only contact with its prefix in the table of the session that fetched the
+message, and no other remembered key may share that prefix. Remembered keys only add doubt; they
+never become the sender. Only keys with a sender's prefix are kept, so the memory stays small
+whatever the radio hears. The checks run in this order:
 
 1. **Cached table.** A rejection by the table the bridge already holds stands, unless the sender
    was unknown (it may have been added since): keys that leave the table are remembered, so
    nothing the radio does turns such a rejection into an acceptance. Senders that are not allowed
    cost nothing.
-2. **Waited at connect.** A command fetched by the first sync of a session may have arrived while
-   no session listened: a look-alike may have come and gone unseen. It is rejected
-   (`sender_unverified`); the sender sends it again.
+2. **Fetched at connect.** A command fetched by the first sync of a session, which also takes
+   what arrives during the connection setup, may have arrived while no session listened: a
+   look-alike may have come and gone unseen. It is rejected (`sender_unverified`); the sender
+   sends it again.
 3. **Fresh table.** Otherwise the bridge reads the table again, unless a read started after the
    message was fetched: one read serves every message fetched before it, and a read in progress
    is awaited instead of repeated. A failed read rejects the command (`sender_unverified`), also
@@ -477,7 +483,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * Whoever controls an allowlisted handheld (or its key) can send commands. Keep the word list
   small and make automations confirm critical actions.
 * A look-alike needs a 48-bit prefix collision with an allowlisted key, which takes considerable
-  but feasible computing effort (about 2^48 key generations). If it reaches the radio, the real
+  but feasible computing effort (about 2^48 key generations). If the radio adds it, the real
   sender's commands are rejected (`sender_ambiguous`) for 24 hours after the bridge last saw it.
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2).
@@ -505,7 +511,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects | `delivery: duplicate` / `rejected` |
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
 | State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
-| Command sent while the bridge was not connected | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
+| Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
 
 ## 9 Deployment and operations
 

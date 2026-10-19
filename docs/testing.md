@@ -67,7 +67,7 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 11 | B (allowlisted) sends `status` | `command` event `status`; `received` shows `accepted` |
 | 12 | A not allowlisted contact sends `status` | no `command` event; `received` shows `sender_not_allowed` |
 | 13 | `systemctl stop meshcore-bus`; B sends `status`; start the service | `received` shows `sender_unverified`, the log says why; B sends again and gets a `command` event |
-| 14 | `journalctl -u meshcore-bus` after the start, with automatic adding switched on | a warning names the contact types the radio adds on its own (ADR 0009); none with the recommended settings |
+| 14 | `journalctl -u meshcore-bus` after the start, with automatic adding switched on | a warning says that the radio adds contacts on its own, in manual mode which types (ADR 0009); none with the recommended settings |
 | 15 | Unplug A's USB cable for 30 s, plug it in; in a Proxmox container also `pct reboot <id>` | `radio` = `disconnected`, then `connected`; queued messages go out (deployment.md: the container keeps the old device until it restarts) |
 | 16 | Stop and start the broker | bridge reconnects; `availability` back to `online` |
 | 17 | `kill -STOP` the service process | systemd watchdog restarts it within the watchdog interval |

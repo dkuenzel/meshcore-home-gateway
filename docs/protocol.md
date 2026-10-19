@@ -169,7 +169,7 @@ Codes 0x80 and above can arrive at any time, also between the frames of `GET_CON
 | 0x82 | `SEND_CONFIRMED` | 4-byte ACK code, uint32 round trip in ms | match to a waiting message |
 | 0x83 | `MSG_WAITING` | – | sync messages |
 | 0x88 | `LOG_RX_DATA` | SNR × 4 (int8), RSSI (int8 dBm), raw packet | optional `rx` topic |
-| 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added | remember the key, as above; refresh contacts |
+| 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added; 1.11 and older also send it for a contact they have just added (`BaseChatMesh.cpp:88-134` of `companion-v1.11.0`) | renew the key if it is already remembered; refresh contacts |
 | 0x8F | `CONTACT_DELETED` | public key of a contact overwritten to make room (`MyMesh.cpp:342-349`) | remember the key, as above; refresh contacts |
 | 0x90 | `CONTACTS_FULL` | – | refresh contacts |
 
@@ -222,9 +222,12 @@ path-discovery responses, control data) are ignored (`MyMesh.cpp:117-133`).
   (`BaseChatMesh.cpp:158-182`). The key holder can do this with two adverts.
 * **Every advert is pushed with the full key:** `ADVERT` for a contact that is (now) in the table,
   `NEW_ADVERT` for a node that was not added (`MyMesh.cpp:358-367`; `BaseChatMesh.cpp:158-182`
-  passes the refusals on). A push goes out once, to whichever client is connected: over USB the
-  firmware always assumes one (`ArduinoSerialInterface.cpp:16-18`), over TCP only a connected
-  client gets it (`MyMesh.cpp:342-349`). A bridge that was not connected never learns of it.
+  passes the refusals on). Firmware 1.11 and older also announce a contact they have just added
+  with `NEW_ADVERT`, but they have no way to drop a contact without a client: neither overwriting
+  (from 1.12) nor the type-0 path (from 1.17). A push goes out once, to whichever client is
+  connected: over USB the firmware always assumes one (`ArduinoSerialInterface.cpp:16-18`), over
+  TCP only a connected client gets it (`MyMesh.cpp:342-349`). A bridge that was not connected
+  never learns of it.
 * **Over TCP pushes can be lost.** The WiFi interface queues at most 4 frames and drops new ones
   while the queue is full (`SerialWifiInterface.cpp:27-31`); it sends one queued frame per
   main-loop pass (`SerialWifiInterface.cpp:85-100`), and a contact listing adds one frame per pass

@@ -231,7 +231,7 @@ class MessageWaiting:
 @dataclass(frozen=True, slots=True)
 class Advert:
     public_key: bytes
-    new: bool  # NEW_ADVERT: from a node that is not in the contact table
+    new: bool  # NEW_ADVERT: not added (firmware 1.11 and older: also a contact just added)
 
 
 @dataclass(frozen=True, slots=True)

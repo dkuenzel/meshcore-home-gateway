@@ -41,22 +41,24 @@ Rules, all of which must hold:
 3. The 6-byte sender prefix in the message frame resolves to **exactly one** contact, and that
    contact's **full** 32-byte key is in `commands.senders`. The contact must be in the radio's
    table as read **after** the message was fetched, and no other key with the same prefix may have
-   been seen on the radio in the last 24 hours (`sender_ambiguous`).
+   been a contact of the radio in the last 24 hours (`sender_ambiguous`).
    The radio can only decrypt a direct message from a contact it holds, so a look-alike that sent
    the message was in the table when it arrived. It can leave the table before the bridge reads
    it: overwritten by a newer contact, or, in firmware 1.18, cleared by two adverts of its own (the
    first claims type 0), without any removal push ([`protocol.md`](../protocol.md#5-semantics)).
    But every advert, path update and overwrite is pushed with the contact's full key, and every
    table read lists the keys. The bridge therefore remembers each key that shares the prefix of an
-   allowed sender, for 24 hours after it last saw it; such keys only add doubt, never a sender.
+   allowed sender and that the radio named as its contact, for 24 hours after it last saw it; such
+   keys only add doubt, never a sender. A node the radio reported but did not add (`NEW_ADVERT`)
+   cannot have sent a message the radio decrypted; it only renews a key already remembered.
    * A rejection by the table the bridge already holds stands, unless the sender was unknown:
      nothing the radio does can turn it into an acceptance, because keys that leave the table are
      remembered. Otherwise the bridge reads the table again, unless a read started after the
      message was fetched; one read serves a whole batch, and a read in progress is awaited
      instead of repeated.
-   * A command that waited in the radio when the bridge connected is rejected
-     (`sender_unverified`): a look-alike may have come and gone while nobody listened. The sender
-     sends it again.
+   * A command fetched while the bridge connects, because it waited in the radio or arrived
+     during the connection setup, is rejected (`sender_unverified`): a look-alike may have come
+     and gone while nobody listened. The sender sends it again.
    * If the table cannot be read, also because the radio connection ended first, the command is
      rejected (`sender_unverified`).
 4. The sender timestamp is **greater** than the last accepted one of this sender (`replay`). The
@@ -76,7 +78,7 @@ appears on `received`. The bridge executes nothing.
 * Good, because a 48-bit prefix collision, which can be produced with enough computing effort,
   does not inherit permissions, as long as the bridge is the radio's only client and sees its
   pushes (USB; for TCP see below).
-* Bad, because a look-alike that reaches the radio blocks the real sender's commands
+* Bad, because a look-alike that the radio adds blocks the real sender's commands
   (`sender_ambiguous`) for 24 hours after the bridge last saw it. With manual adding and no
   contact type added automatically, it reaches the table only if someone adds it. The radio
   passes on direct messages from contacts of every type, so every type counts; the bridge reads

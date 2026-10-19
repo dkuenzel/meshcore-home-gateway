@@ -580,12 +580,12 @@ class Bridge:
 
         Messages carry only a 6-byte sender prefix. The sender must be the only contact with that
         prefix in the table of the session that fetched the message, and no other key with it may
-        have been seen on the radio within LOOK_ALIKE_MEMORY_S. A rejection by the cached table
-        stands, unless the sender was unknown: a removal is remembered, so nothing the radio does
-        turns it into an acceptance. A command that waited in the radio at connect is refused: a
-        look-alike may have come and gone while nobody listened. Before an acceptance (or for an
-        unknown sender) the table is read again, unless a read started after the message was
-        fetched; that read then serves a whole batch.
+        have been a contact of the radio within LOOK_ALIKE_MEMORY_S. A rejection by the cached
+        table stands, unless the sender was unknown: a removal is remembered, so nothing the radio
+        does turns it into an acceptance. A command fetched at connect is refused: a look-alike
+        may have come and gone while nobody listened. Before an acceptance (or for an unknown
+        sender) the table is read again, unless a read started after the message was fetched;
+        that read then serves a whole batch.
         """
         message, session = event.message, event.session
         word = command_word(message, self.config.commands)
@@ -596,8 +596,8 @@ class Bridge:
             return decision
         if event.at_connect:
             log.warning(
-                "command %s waited in the radio before the bridge connected and is rejected: "
-                "the sender has to send it again (ADR 0009)",
+                "command %s was fetched while the bridge connected (it waited in the radio or "
+                "arrived meanwhile) and is rejected: the sender has to send it again (ADR 0009)",
                 word,
             )
             return CommandDecision(word, rejection=Rejection.SENDER_UNVERIFIED)
@@ -616,10 +616,16 @@ class Bridge:
             seen=self._seen,
         )  # fmt: skip
 
-    def _contact_key(self, key: str) -> None:
-        """Every key the radio names (table read or push); keep those with a sender's prefix."""
-        if key[:PREFIX_HEX_DIGITS] in self._watched:
-            self._seen[key] = self._mono()
+    def _contact_key(self, key: str, held: bool) -> None:
+        """Every key the radio names, from a table read or a push; keep those with a sender's
+        prefix. A node the radio did not add (held False) cannot send it anything it decrypts, so
+        its key only renews one already remembered: a look-alike that merely advertises does not
+        block the sender."""
+        if key[:PREFIX_HEX_DIGITS] not in self._watched:
+            return
+        now, last = self._mono(), self._seen.get(key)
+        if held or (last is not None and now - last < LOOK_ALIKE_MEMORY_S):
+            self._seen[key] = now
 
     def _target_for(self, message: InboundMessage, sender: Contact | None) -> str | None:
         for target in self._targets.values():

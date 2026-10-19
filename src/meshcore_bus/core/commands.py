@@ -7,7 +7,7 @@ A received message is a command only if all of these hold:
 * its first word is a configured command word;
 * the 6-byte sender prefix resolves to exactly one contact and that contact's full public key is
   allowlisted. The contact must be in the radio's contact table as read after the message
-  arrived, and no other key with that prefix may have been seen on the radio recently: a
+  arrived, and no other key with that prefix may have been a contact of the radio recently: a
   look-alike can enter the table and leave it again, sometimes without telling;
 * the sender timestamp is newer than the last accepted command of that sender (replay) and,
   unless disabled, within `max_age_s` of the bridge clock.

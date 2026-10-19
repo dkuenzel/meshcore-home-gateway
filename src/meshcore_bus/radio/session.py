@@ -7,8 +7,10 @@ frames (codes >= 0x80) in between. The session therefore
   with the response codes it expects; anything else is logged and dropped;
 * routes push frames: new messages trigger a sync, acknowledgements and received-packet logs go
   to the event queue, adverts mark the contact table for a refresh;
-* reports every full key the radio names (table reads, advert, path and overwrite pushes) to
-  `on_contact_key` at once, so the bridge's memory of look-alikes is never behind (ADR 0009);
+* reports every full key the radio names to `on_contact_key`, with whether the radio holds or
+  held that contact: pushes (advert, path, overwrite; a new advert is from a node it did not add)
+  before any later frame is handled, a table read record by record before the read returns. The
+  bridge's memory of look-alikes is therefore never behind a verdict (ADR 0009);
 * closes itself on a transport error or a command timeout; the bridge then reconnects.
 """
 
@@ -129,7 +131,7 @@ class CompanionSession:
         self._contacts_dirty = asyncio.Event()
         self.info: RadioInfo | None = None
         self.autoadd: codec.AutoAddConfig | None = None
-        self.on_contact_key: Callable[[str], None] | None = None  # every key the radio names
+        self.on_contact_key: Callable[[str, bool], None] | None = None  # key, held as contact
         self.contacts_read_at = -1  # command count of the read behind contact_records
         self._commands_sent = 0
         self.contact_records: dict[str, codec.ContactRecord] = {}
@@ -406,17 +408,20 @@ class CompanionSession:
             await self._events.put(AckReceived(decoded.ack, decoded.round_trip_ms))
         elif isinstance(decoded, codec.RxLog):
             await self._events.put(PacketLogged(decoded, self._wall()))
-        elif isinstance(decoded, codec.Advert | codec.PathUpdated | codec.ContactDeleted):
-            self._report_key(decoded.public_key)  # before any later frame is handled
+        elif isinstance(decoded, codec.Advert):
+            self._report_key(decoded.public_key, held=not decoded.new)  # before later frames
+            self._contacts_dirty.set()
+        elif isinstance(decoded, codec.PathUpdated | codec.ContactDeleted):
+            self._report_key(decoded.public_key)
             self._contacts_dirty.set()
         elif frame[0] == Push.CONTACTS_FULL:
             self._contacts_dirty.set()
         else:
             log.debug("radio: push 0x%02x ignored", frame[0])
 
-    def _report_key(self, public_key: bytes) -> None:
+    def _report_key(self, public_key: bytes, *, held: bool = True) -> None:
         if self.on_contact_key is not None:
-            self.on_contact_key(public_key.hex())
+            self.on_contact_key(public_key.hex(), held)
 
     @contextlib.asynccontextmanager
     async def _command(self, request: bytes, expected: Iterable[int]) -> AsyncIterator[_Pending]:

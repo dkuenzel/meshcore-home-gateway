@@ -26,10 +26,11 @@ format and the command line are public interfaces.
   only for messages that never left), inbound deduplication, retained state document.
 - Command policy with allowlisted full public keys and replay protection. The sender must be the
   only contact with its 6-byte prefix in the table read after the message arrived, and no other
-  key with that prefix may have been seen on the radio in the last 24 hours (table reads, advert,
-  path and overwrite pushes), so a look-alike that came and went makes the sender ambiguous.
-  Rejections by the cached table need no read, one read serves a batch, and a read in progress is
-  reused. Commands that waited in the radio before the bridge connected are refused. The bridge
+  key with that prefix may have been a contact of the radio in the last 24 hours (table reads,
+  advert, path and overwrite pushes), so a look-alike that came and went makes the sender
+  ambiguous, while one that the radio did not add does not count. Rejections by the cached table
+  need no read, one read serves a batch, and a read in progress is reused. Commands fetched while
+  the bridge connects are refused. The bridge
   warns at connect about contact types the radio adds on its own and about commands over TCP.
 - MQTT adapter on paho-mqtt with last will, Home Assistant device discovery with sensor, event and
   notify entities.

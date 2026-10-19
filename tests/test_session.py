@@ -276,15 +276,16 @@ def test_firmware_without_the_hop_limit_still_starts() -> None:
 
 def test_every_key_the_radio_reports_is_passed_on() -> None:
     """Keys from table reads and from the pushes that carry one (advert, new advert, path,
-    overwrite) reach the callback in the radio's order, before any later frame (ADR 0009)."""
+    overwrite) reach the callback before any later frame, marked whether the radio holds or held
+    the contact: a new advert is from a node it did not add (ADR 0009)."""
     radio = EmulatedRadio(contacts=[ALICE, BOB])
     carol, dave, erin = (bytes.fromhex(b * 32) for b in ("c3", "d4", "e5"))
 
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
-        keys: list[str] = []
-        session.on_contact_key = lambda key: keys.append(key[:4])
+        keys: list[tuple[str, bool]] = []
+        session.on_contact_key = lambda key, held: keys.append((key[:4], held))
         await session.start()
-        assert keys == ["a1a1", "b2b2"]  # the table read at connect
+        assert keys == [("a1a1", True), ("b2b2", True)]  # the table read at connect
         radio.emit(bytes([Push.ADVERT]) + carol)
         radio.emit(bytes([Push.NEW_ADVERT]) + dave + bytes(115))
         radio.emit(bytes([Push.PATH_UPDATED]) + erin)
@@ -292,7 +293,7 @@ def test_every_key_the_radio_reports_is_passed_on() -> None:
         radio.queue_direct_message(ALICE.public_key[:6], "after the pushes", START_TIME + 50)
         event = await asyncio.wait_for(events.get(), 2)
         assert isinstance(event, MessageReceived)
-        assert keys[2:6] == ["c3c3", "d4d4", "e5e5", "b2b2"]
+        assert keys[2:6] == [("c3c3", True), ("d4d4", False), ("e5e5", True), ("b2b2", True)]
 
     run(radio, scenario)
 

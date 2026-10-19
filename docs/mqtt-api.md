@@ -110,9 +110,9 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `command.reason` | Meaning |
 | --- | --- |
 | `sender_unknown` | the sender prefix matches no contact on the radio |
-| `sender_ambiguous` | it matches several contacts, or another key with this prefix was seen on the radio in the last 24 hours |
+| `sender_ambiguous` | it matches several contacts, or another key with this prefix was a contact on the radio in the last 24 hours |
 | `sender_not_allowed` | the contact's full key is not in `commands.senders` |
-| `sender_unverified` | the command waited in the radio before the bridge connected, or the contact table could not be read (also when the radio connection ended first); the sender can send it again |
+| `sender_unverified` | the bridge fetched the command while connecting (it waited in the radio, or arrived during the connection setup), or the contact table could not be read (also when the radio connection ended first); the sender can send it again |
 | `state_unwritable` | the state file could not be written, so the replay protection could not be kept; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock |

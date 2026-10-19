@@ -669,6 +669,21 @@ def test_look_alike_that_left_the_table_silently_still_counts(tmp_path: Path) ->
     scenario(main)
 
 
+def test_a_look_alike_the_radio_did_not_add_does_not_block_the_sender(tmp_path: Path) -> None:
+    """With manual adding the radio refuses the node and only reports it (NEW_ADVERT); it cannot
+    decrypt that node's messages, so its key does not count (ADR 0009)."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.emit(bytes([Push.NEW_ADVERT]) + TWIN.public_key + bytes(115))
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert command["sender_name"] == "Alice"
+
+    scenario(main)
+
+
 def test_look_alike_seen_only_in_a_table_read_still_counts(tmp_path: Path) -> None:
     """Over TCP the radio drops pushes when its send queue is full; a key from an earlier read
     of the table is remembered as well."""
