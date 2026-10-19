@@ -1,0 +1,56 @@
+# meshcore-bus configuration example. Reference: docs/configuration.md
+# Install as /etc/meshcore-bus/config.toml (owner root, group meshcore-bus, mode 0640),
+# then check it with: meshcore-bus check-config
+
+[radio]
+transport = "serial"                                   # "serial" (USB) or "tcp" (WiFi firmware)
+device = "/dev/serial/by-id/usb-Example_Radio_0001-if00"
+# host = "192.0.2.10"                                  # tcp only; the interface has no password
+# port = 5000
+set_clock = true                                       # move the radio clock forward to ours
+
+[mqtt]
+host = "broker.example.org"
+port = 1883
+username = "meshcore-bus"
+password = "change-me"
+tls = false                                            # true: verify the broker certificate
+# ca_file = "/etc/ssl/certs/example-ca.pem"
+base_topic = "meshcore"
+node_id = "radio1"                                     # topics: meshcore/radio1/...
+
+[homeassistant]
+discovery = true
+prefix = "homeassistant"
+device_name = "MeshCore radio"
+
+# Only configured targets can be sent to: publish text to meshcore/radio1/send/<alias>.
+[targets.alerts]
+channel = 1                                            # channel index on the radio
+
+[targets.operator]
+contact = "0000000000000000000000000000000000000000000000000000000000000000"  # full public key
+
+[messages]
+ascii_only = false                                     # true for handhelds without Unicode fonts
+truncate = true                                        # cut long texts ("...") instead of rejecting
+dedup_window_s = 300                                   # same target and text: once per window
+queue_size = 20
+queue_ttl_s = 600                                      # give up on messages older than this
+max_attempts = 3                                       # direct messages: sends until acknowledged
+flood_after = 2                                        # from this attempt on, reset the path (flood)
+ignore_channels = []                                   # channel indices not to publish
+
+[airtime]
+budget_s_per_hour = 36                                 # 1 % of an hour for this bridge's messages
+burst_s = 10
+
+# Commands: direct messages from these contacts whose first word is listed.
+[commands]
+senders = []                                           # full public keys
+words = []                                             # e.g. ["status", "arm", "disarm"]
+max_age_s = 900                                        # 0 disables the clock check
+
+[diagnostics]
+publish_rx_log = false                                 # SNR/RSSI of every received packet
+log_level = "info"

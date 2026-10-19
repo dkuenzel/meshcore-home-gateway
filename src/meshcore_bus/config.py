@@ -1,0 +1,496 @@
+"""Configuration file (TOML) with strict validation, and rendering from installer answers.
+
+Every setting is documented in docs/configuration.md. Unknown keys are errors, so a typo cannot
+silently fall back to a default.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+import tomllib
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal, cast
+
+from meshcore_bus.core.commands import CommandRules
+from meshcore_bus.core.contacts import normalise_key
+from meshcore_bus.core.model import MessageKind, Target
+
+ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
+LOG_LEVELS = ("debug", "info", "warning", "error")
+CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
+MIN_BURST_S = (
+    5.0  # must hold the longest single packet (about 2 s at SF 8 / 62.5 kHz, docs/design.md)
+)
+
+
+class ConfigError(ValueError):
+    """Invalid configuration; the message names the key."""
+
+
+@dataclass(frozen=True, slots=True)
+class RadioConfig:
+    transport: Literal["serial", "tcp"]
+    device: str | None = None
+    host: str | None = None
+    port: int = 5000
+    set_clock: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class MqttConfig:
+    host: str
+    node_id: str
+    port: int = 1883
+    username: str | None = None
+    password: str | None = None
+    tls: bool = False
+    ca_file: str | None = None
+    cert_file: str | None = None
+    key_file: str | None = None
+    client_id: str | None = None
+    keepalive_s: int = 60
+    base_topic: str = "meshcore"
+
+    @property
+    def topic_root(self) -> str:
+        return f"{self.base_topic}/{self.node_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class HomeAssistantConfig:
+    discovery: bool = True
+    prefix: str = "homeassistant"
+    device_name: str = "MeshCore radio"
+
+
+@dataclass(frozen=True, slots=True)
+class MessagesConfig:
+    ascii_only: bool = False
+    truncate: bool = True
+    dedup_window_s: float = 300.0
+    queue_size: int = 20
+    queue_ttl_s: float = 600.0
+    max_attempts: int = 3
+    flood_after: int = 2
+    ignore_channels: frozenset[int] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class AirtimeConfig:
+    budget_s_per_hour: float = 36.0
+    burst_s: float = 10.0
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticsConfig:
+    publish_rx_log: bool = False
+    log_level: str = "info"
+
+
+@dataclass(frozen=True, slots=True)
+class Config:
+    radio: RadioConfig
+    mqtt: MqttConfig
+    homeassistant: HomeAssistantConfig = field(default_factory=HomeAssistantConfig)
+    messages: MessagesConfig = field(default_factory=MessagesConfig)
+    airtime: AirtimeConfig = field(default_factory=AirtimeConfig)
+    commands: CommandRules = field(default_factory=lambda: CommandRules(frozenset(), frozenset()))
+    targets: tuple[Target, ...] = ()
+    diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
+    state_dir: Path = Path("/var/lib/meshcore-bus")
+
+
+def load_config(path: Path) -> Config:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc.strerror}") from exc
+    return parse_config(text)
+
+
+def parse_config(text: str) -> Config:
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"invalid TOML: {exc}") from exc
+    return _build(_Section(data, ""))
+
+
+# --- validation helpers -----------------------------------------------------------------------
+
+
+class _Section:
+    """A TOML table that remembers which keys were read, to report unknown ones."""
+
+    def __init__(self, data: Mapping[str, Any], path: str) -> None:
+        self._data = data
+        self._path = path
+        self._read: set[str] = set()
+
+    def key(self, name: str) -> str:
+        return f"{self._path}.{name}" if self._path else name
+
+    def has(self, name: str) -> bool:
+        return name in self._data
+
+    def raw(self, name: str) -> Any:
+        self._read.add(name)
+        return self._data.get(name)
+
+    def section(self, name: str) -> _Section:
+        value = self.raw(name)
+        if value is None:
+            value = {}
+        if not isinstance(value, dict):
+            raise ConfigError(f"{self.key(name)}: expected a table")
+        return _Section(value, self.key(name))
+
+    def string(
+        self, name: str, default: str | None = None, *, required: bool = False
+    ) -> str | None:
+        value = self.raw(name)
+        if value is None:
+            if required:
+                raise ConfigError(f"{self.key(name)}: required")
+            return default
+        if not isinstance(value, str) or not value:
+            raise ConfigError(f"{self.key(name)}: expected a non-empty string")
+        return value
+
+    def boolean(self, name: str, default: bool) -> bool:
+        value = self.raw(name)
+        if value is None:
+            return default
+        if not isinstance(value, bool):
+            raise ConfigError(f"{self.key(name)}: expected true or false")
+        return value
+
+    def integer(self, name: str, default: int, lo: int, hi: int) -> int:
+        value = self.raw(name)
+        if value is None:
+            return default
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ConfigError(f"{self.key(name)}: expected an integer")
+        if not lo <= value <= hi:
+            raise ConfigError(f"{self.key(name)}: must be between {lo} and {hi}, got {value}")
+        return value
+
+    def number(self, name: str, default: float, lo: float, hi: float = math.inf) -> float:
+        value = self.raw(name)
+        if value is None:
+            return default
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            raise ConfigError(f"{self.key(name)}: expected a number")
+        if not lo <= value <= hi:
+            raise ConfigError(f"{self.key(name)}: must be between {lo} and {hi}, got {value}")
+        return float(value)
+
+    def strings(self, name: str) -> list[str]:
+        value = self.raw(name)
+        if value is None:
+            return []
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise ConfigError(f"{self.key(name)}: expected a list of strings")
+        return cast(list[str], value)
+
+    def integers(self, name: str, lo: int, hi: int) -> list[int]:
+        value = self.raw(name)
+        if value is None:
+            return []
+        if not isinstance(value, list) or not all(
+            isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi for v in value
+        ):
+            raise ConfigError(f"{self.key(name)}: expected a list of integers {lo}..{hi}")
+        return cast(list[int], value)
+
+    def names(self) -> list[str]:
+        return list(self._data)
+
+    def check_unknown(self) -> None:
+        for name in self._data:
+            if name not in self._read:
+                raise ConfigError(f"{self.key(name)}: unknown setting")
+
+
+def _checked(section: _Section, builder: Callable[[_Section], Any]) -> Any:
+    result = builder(section)
+    section.check_unknown()
+    return result
+
+
+def _build(root: _Section) -> Config:
+    config = Config(
+        radio=_checked(root.section("radio"), _radio),
+        mqtt=_checked(root.section("mqtt"), _mqtt),
+        homeassistant=_checked(root.section("homeassistant"), _homeassistant),
+        messages=_checked(root.section("messages"), _messages),
+        airtime=_checked(root.section("airtime"), _airtime),
+        commands=_checked(root.section("commands"), _commands),
+        targets=_targets(root.section("targets")),
+        diagnostics=_checked(root.section("diagnostics"), _diagnostics),
+    )
+    root.check_unknown()
+    return config
+
+
+def _radio(s: _Section) -> RadioConfig:
+    transport = s.string("transport", required=True)
+    if transport not in ("serial", "tcp"):
+        raise ConfigError(f"{s.key('transport')}: must be 'serial' or 'tcp', got {transport!r}")
+    device = s.string("device")
+    host = s.string("host")
+    if transport == "serial" and device is None:
+        raise ConfigError(f"{s.key('device')}: required for the serial transport")
+    if transport == "tcp" and host is None:
+        raise ConfigError(f"{s.key('host')}: required for the tcp transport")
+    return RadioConfig(
+        transport=cast(Literal["serial", "tcp"], transport),
+        device=device,
+        host=host,
+        port=s.integer("port", 5000, 1, 65535),
+        set_clock=s.boolean("set_clock", True),
+    )
+
+
+def _mqtt(s: _Section) -> MqttConfig:
+    node_id = cast(str, s.string("node_id", required=True))
+    if not ID_PATTERN.fullmatch(node_id):
+        raise ConfigError(f"{s.key('node_id')}: use 1-32 of a-z, 0-9, '-', '_', got {node_id!r}")
+    base = cast(str, s.string("base_topic", "meshcore"))
+    if not all(TOPIC_SEGMENT.fullmatch(part) for part in base.split("/")):
+        raise ConfigError(
+            f"{s.key('base_topic')}: segments of A-Z, a-z, 0-9, '-', '_' separated by '/', "
+            f"got {base!r}"
+        )
+    return MqttConfig(
+        host=cast(str, s.string("host", required=True)),
+        node_id=node_id,
+        port=s.integer("port", 1883, 1, 65535),
+        username=s.string("username"),
+        password=s.string("password"),
+        tls=s.boolean("tls", False),
+        ca_file=s.string("ca_file"),
+        cert_file=s.string("cert_file"),
+        key_file=s.string("key_file"),
+        client_id=s.string("client_id"),
+        keepalive_s=s.integer("keepalive_s", 60, 10, 3600),
+        base_topic=base,
+    )
+
+
+def _homeassistant(s: _Section) -> HomeAssistantConfig:
+    prefix = cast(str, s.string("prefix", "homeassistant"))
+    if not TOPIC_SEGMENT.fullmatch(prefix):
+        raise ConfigError(f"{s.key('prefix')}: a single topic segment, got {prefix!r}")
+    return HomeAssistantConfig(
+        discovery=s.boolean("discovery", True),
+        prefix=prefix,
+        device_name=cast(str, s.string("device_name", "MeshCore radio")),
+    )
+
+
+def _messages(s: _Section) -> MessagesConfig:
+    max_attempts = s.integer("max_attempts", 3, 1, 4)  # the radio's attempt counter is 0..3
+    return MessagesConfig(
+        ascii_only=s.boolean("ascii_only", False),
+        truncate=s.boolean("truncate", True),
+        dedup_window_s=s.number("dedup_window_s", 300.0, 0.0, 86_400.0),
+        queue_size=s.integer("queue_size", 20, 1, 1000),
+        queue_ttl_s=s.number("queue_ttl_s", 600.0, 1.0, 86_400.0),
+        max_attempts=max_attempts,
+        flood_after=s.integer("flood_after", 2, 1, max(1, max_attempts)),
+        ignore_channels=frozenset(s.integers("ignore_channels", 0, CHANNEL_INDEX_MAX)),
+    )
+
+
+def _airtime(s: _Section) -> AirtimeConfig:
+    return AirtimeConfig(
+        budget_s_per_hour=s.number("budget_s_per_hour", 36.0, 0.001, 3600.0),
+        burst_s=s.number("burst_s", 10.0, MIN_BURST_S, 3600.0),
+    )
+
+
+def _commands(s: _Section) -> CommandRules:
+    senders, words = s.strings("senders"), s.strings("words")
+    max_age = s.number("max_age_s", 900.0, 0.0, 86_400.0)
+    try:
+        return CommandRules.create(senders=senders, words=words, max_age_s=max_age)
+    except ValueError as exc:
+        name = "senders" if "public key" in str(exc) else "words"
+        raise ConfigError(f"{s.key(name)}: {exc}") from exc
+
+
+def _targets(s: _Section) -> tuple[Target, ...]:
+    targets = []
+    for alias in s.names():
+        t = s.section(alias)
+        if not ID_PATTERN.fullmatch(alias):
+            raise ConfigError(f"{t.key('')[:-1]}: alias must be 1-32 of a-z, 0-9, '-', '_'")
+        if t.has("channel") == t.has("contact"):
+            raise ConfigError(f"{t.key('')[:-1]}: set exactly one of 'channel' or 'contact'")
+        if t.has("channel"):
+            index = t.integer("channel", 0, 0, CHANNEL_INDEX_MAX)
+            targets.append(Target(alias, MessageKind.CHANNEL, channel_index=index))
+        else:
+            try:
+                key = normalise_key(cast(str, t.string("contact", required=True)))
+            except ValueError as exc:
+                raise ConfigError(f"{t.key('contact')}: {exc}") from exc
+            targets.append(Target(alias, MessageKind.CONTACT, public_key=key))
+        t.check_unknown()
+    return tuple(targets)
+
+
+def _diagnostics(s: _Section) -> DiagnosticsConfig:
+    level = cast(str, s.string("log_level", "info"))
+    if level not in LOG_LEVELS:
+        raise ConfigError(f"{s.key('log_level')}: one of {', '.join(LOG_LEVELS)}, got {level!r}")
+    return DiagnosticsConfig(publish_rx_log=s.boolean("publish_rx_log", False), log_level=level)
+
+
+# --- rendering from installer answers -------------------------------------------------------
+
+_ANSWER_TYPES: dict[str, type] = {
+    "radio.transport": str, "radio.device": str, "radio.host": str, "radio.port": int,
+    "radio.set_clock": bool,
+    "mqtt.host": str, "mqtt.port": int, "mqtt.username": str, "mqtt.password": str,
+    "mqtt.tls": bool, "mqtt.ca_file": str, "mqtt.cert_file": str, "mqtt.key_file": str,
+    "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
+    "homeassistant.discovery": bool, "homeassistant.prefix": str,
+    "homeassistant.device_name": str,
+    "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
+    "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
+    "messages.flood_after": int, "messages.ignore_channels": list,
+    "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
+    "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
+    "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
+}  # fmt: skip
+
+HEADER = """\
+# meshcore-bus configuration, written by the installer.
+# Reference: docs/configuration.md. Check after editing: meshcore-bus check-config
+"""
+
+
+def render_config(answers: str) -> str:
+    """Build a validated TOML configuration from `key=value` lines (installer answers).
+
+    Keys are dotted settings (`mqtt.host`) or `target.<alias>` with `channel:<index>` or
+    `contact:<public key>`. Lists are comma-separated. Empty values are skipped.
+    """
+    tables: dict[str, dict[str, Any]] = {}
+    # split at "\n" only: str.splitlines() would also split at characters a password may contain
+    for number, raw_line in enumerate(answers.split("\n"), start=1):
+        line = raw_line.removesuffix("\r")
+        if not line.strip():
+            continue
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if not sep:
+            raise ConfigError(f"answers line {number}: expected key=value")
+        if value == "":
+            continue
+        table, _, name = key.rpartition(".")
+        if table == "target":
+            tables.setdefault(f"targets.{name}", {}).update(_target_answer(key, value))
+            continue
+        kind = _ANSWER_TYPES.get(key)
+        if kind is None:
+            raise ConfigError(f"{key}: unknown answer")
+        tables.setdefault(table, {})[name] = _convert(key, value, kind)
+    text = HEADER + "".join(_toml_table(name, values) for name, values in tables.items())
+    parse_config(text)  # the same validation as at startup
+    return text
+
+
+def config_answers(text: str) -> str:
+    """The installer answers for a configuration: the inverse of `render_config`.
+
+    Only the settings present in the file are listed, so settings left at their default keep
+    following the default. Public keys are normalised. The installer uses the answers as the
+    defaults when it reconfigures an installation, so settings it does not ask for are kept.
+    """
+    parse_config(text)  # only valid files
+    lines = []
+    for table, values in tomllib.loads(text).items():
+        for name, value in values.items():
+            if table == "targets":
+                kind = "channel" if "channel" in value else "contact"
+                ref = value[kind] if kind == "channel" else normalise_key(value[kind])
+                lines.append(f"target.{name}={kind}:{ref}")
+            elif (table, name) == ("commands", "senders"):
+                lines.append(f"commands.senders={','.join(normalise_key(k) for k in value)}")
+            else:
+                lines.append(f"{table}.{name}={_answer_value(f'{table}.{name}', value)}")
+    return "".join(f"{line}\n" for line in lines)
+
+
+def _answer_value(key: str, value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        if any("," in str(item) for item in value):
+            raise ConfigError(f"{key}: an item contains a comma, which the answers cannot express")
+        text = ",".join(str(item) for item in value)
+    else:
+        text = str(value)
+    if "\n" in text or "\r" in text:
+        raise ConfigError(f"{key}: contains a line break, which the answers cannot express")
+    return text
+
+
+def _target_answer(key: str, value: str) -> dict[str, Any]:
+    kind, _, ref = value.partition(":")
+    if kind == "channel" and ref.isdigit():
+        return {"channel": int(ref)}
+    if kind == "contact" and ref:
+        return {"contact": ref}
+    raise ConfigError(f"{key}: expected channel:<index> or contact:<public key>, got {value!r}")
+
+
+def _convert(key: str, value: str, kind: type) -> Any:
+    if kind is bool and value in ("true", "false"):
+        return value == "true"
+    try:
+        if kind is list:
+            items = [v.strip() for v in value.split(",") if v.strip()]
+            return [int(v) for v in items] if key.endswith("channels") else items
+        if kind is not bool:
+            return kind(value)
+    except ValueError:
+        pass
+    raise ConfigError(f"{key}: cannot read {value!r} as {kind.__name__}")
+
+
+def _toml_table(name: str, values: Mapping[str, Any]) -> str:
+    lines = [f"\n[{name}]"]
+    lines += [f"{key} = {_toml_value(value)}" for key, value in values.items()]
+    return "\n".join(lines) + "\n"
+
+
+def _toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return repr(value)
+    if isinstance(value, str):
+        return _toml_string(value)
+    if isinstance(value, Iterable):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    raise TypeError(f"cannot write {type(value).__name__} to TOML")
+
+
+def _toml_string(value: str) -> str:
+    out = []
+    for ch in value:
+        if ch in ('"', "\\"):
+            out.append("\\" + ch)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'

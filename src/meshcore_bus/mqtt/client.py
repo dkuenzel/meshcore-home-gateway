@@ -1,0 +1,171 @@
+"""Adapter between paho-mqtt and the asyncio event loop (ADR 0003, ADR 0007).
+
+paho runs its network loop in its own thread (`loop_start`) and reconnects by itself. Callbacks
+only hand data to the event loop with `call_soon_threadsafe`; `publish` is safe to call from the
+event loop because paho guards its outgoing queue with a lock. QoS 1 messages published while the
+broker is unreachable stay queued in paho (bounded) and go out after the reconnect.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import ssl
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+import paho.mqtt.client as paho
+from paho.mqtt.enums import CallbackAPIVersion, MQTTProtocolVersion
+
+from meshcore_bus.config import MqttConfig
+from meshcore_bus.mqtt.topics import Topics
+
+log = logging.getLogger(__name__)
+
+ONLINE = b"online"
+OFFLINE = b"offline"
+MAX_QUEUED_MESSAGES = 1000
+RECONNECT_MIN_S, RECONNECT_MAX_S = 1, 60
+
+
+@dataclass(frozen=True, slots=True)
+class SendRequest:
+    alias: str
+    payload: bytes
+    retained: bool
+
+
+class PahoLike(Protocol):
+    """The part of `paho.mqtt.client.Client` the adapter uses (lets tests pass a fake)."""
+
+    on_connect: Any
+    on_disconnect: Any
+    on_message: Any
+
+    def username_pw_set(self, username: str | None, password: str | None = None) -> None: ...
+    def tls_set_context(self, context: ssl.SSLContext | None = None) -> None: ...
+    def will_set(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> None: ...
+    def reconnect_delay_set(self, min_delay: int = 1, max_delay: int = 120) -> None: ...
+    def max_queued_messages_set(self, queue_size: int) -> Any: ...
+    def connect_async(self, host: str, port: int = 1883, keepalive: int = 60) -> None: ...
+    def loop_start(self) -> Any: ...
+    def loop_stop(self) -> Any: ...
+    def subscribe(self, topic: list[tuple[str, int]]) -> Any: ...
+    def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any: ...
+    def disconnect(self) -> Any: ...
+
+
+def make_paho_client(config: MqttConfig) -> PahoLike:
+    return paho.Client(
+        callback_api_version=CallbackAPIVersion.VERSION2,
+        client_id=config.client_id or f"meshcore-bus-{config.node_id}",
+        protocol=MQTTProtocolVersion.MQTTv311,
+        clean_session=True,
+    )
+
+
+def tls_context(config: MqttConfig) -> ssl.SSLContext:
+    context = ssl.create_default_context(cafile=config.ca_file)
+    if config.cert_file:
+        context.load_cert_chain(config.cert_file, config.key_file)
+    return context
+
+
+class MqttBus:
+    def __init__(
+        self,
+        config: MqttConfig,
+        topics: Topics,
+        ha_status_topic: str | None,
+        client_factory: Callable[[MqttConfig], PahoLike] = make_paho_client,
+    ) -> None:
+        self._config = config
+        self._topics = topics
+        self._ha_status = ha_status_topic
+        self._client = client_factory(config)
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
+        self.connected = False
+        self.on_connected: list[Callable[[], None]] = []
+        self.on_ha_online: list[Callable[[], None]] = []
+
+    async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        client, config = self._client, self._config
+        if config.username:
+            client.username_pw_set(config.username, config.password)
+        if config.tls:
+            client.tls_set_context(tls_context(config))
+        client.will_set(self._topics.availability, OFFLINE, qos=1, retain=True)
+        client.reconnect_delay_set(RECONNECT_MIN_S, RECONNECT_MAX_S)
+        client.max_queued_messages_set(MAX_QUEUED_MESSAGES)
+        client.on_connect = self._paho_connected
+        client.on_disconnect = self._paho_disconnected
+        client.on_message = self._paho_message
+        client.connect_async(config.host, config.port, config.keepalive_s)
+        client.loop_start()
+        log.info("MQTT: connecting to %s:%d", config.host, config.port)
+
+    def publish(self, topic: str, payload: bytes, retain: bool = False) -> None:
+        self._client.publish(topic, payload, qos=1, retain=retain)
+
+    async def stop(self, timeout_s: float = 2.0) -> None:
+        info = self._client.publish(self._topics.availability, OFFLINE, qos=1, retain=True)
+        wait = getattr(info, "wait_for_publish", None)
+        if self.connected and callable(wait):
+            try:
+                async with asyncio.timeout(timeout_s + 0.5):
+                    await asyncio.to_thread(wait, timeout_s)
+            except (TimeoutError, RuntimeError, ValueError):
+                log.warning("MQTT: offline status not confirmed before shutdown")
+        self._client.disconnect()
+        self._client.loop_stop()
+
+    # --- paho thread ---------------------------------------------------------------------------
+
+    def _paho_connected(self, client: Any, _u: Any, _f: Any, reason: Any, _p: Any) -> None:
+        if getattr(reason, "is_failure", False):
+            log.warning("MQTT: connection refused: %s", reason)
+            return
+        subscriptions = [(self._topics.send_subscription, 1)]
+        if self._ha_status:
+            subscriptions.append((self._ha_status, 1))
+        client.subscribe(subscriptions)
+        client.publish(self._topics.availability, ONLINE, qos=1, retain=True)
+        self._call(self._handle_connected)
+
+    def _paho_disconnected(self, _c: Any, _u: Any, _f: Any, reason: Any, _p: Any) -> None:
+        self._call(self._handle_disconnected, str(reason))
+
+    def _paho_message(self, _c: Any, _u: Any, message: Any) -> None:
+        self._call(
+            self._handle_message, message.topic, bytes(message.payload), bool(message.retain)
+        )
+
+    def _call(self, callback: Callable[..., None], *args: Any) -> None:
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(callback, *args)
+
+    # --- event loop ----------------------------------------------------------------------------
+
+    def _handle_connected(self) -> None:
+        self.connected = True
+        log.info("MQTT: connected")
+        for callback in self.on_connected:
+            callback()
+
+    def _handle_disconnected(self, reason: str) -> None:
+        if self.connected:
+            log.warning("MQTT: disconnected (%s), reconnecting", reason)
+        self.connected = False
+
+    def _handle_message(self, topic: str, payload: bytes, retained: bool) -> None:
+        if self._ha_status and topic == self._ha_status:
+            if payload == ONLINE:
+                for callback in self.on_ha_online:
+                    callback()
+            return
+        alias = self._topics.alias_from_send_topic(topic)
+        if alias is not None:
+            self.requests.put_nowait(SendRequest(alias, payload, retained))

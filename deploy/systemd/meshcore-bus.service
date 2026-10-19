@@ -1,0 +1,56 @@
+# meshcore-bus: MeshCore companion radio <-> MQTT bridge.
+# Install to /etc/systemd/system/; see docs/deployment.md.
+[Unit]
+Description=meshcore-bus MeshCore to MQTT bridge
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=20
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/local/bin/meshcore-bus run --config /etc/meshcore-bus/config.toml
+Restart=on-failure
+RestartSec=5
+# 78 = configuration error: restarting would not help
+RestartPreventExitStatus=78
+WatchdogSec=60
+TimeoutStopSec=20
+
+User=meshcore-bus
+Group=meshcore-bus
+SupplementaryGroups=dialout
+StateDirectory=meshcore-bus
+StateDirectoryMode=0700
+UMask=0077
+
+# Sandboxing. Needs mount namespaces: in a Proxmox container enable "nesting" (the installer does).
+# Not used: PrivateDevices= (it would hide the radio's serial port) and DeviceAllow= (unprivileged
+# containers do not enforce it); the radio is reached through the dialout group.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

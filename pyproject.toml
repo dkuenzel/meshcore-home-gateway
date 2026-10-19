@@ -1,0 +1,94 @@
+[build-system]
+requires = ["flit_core>=4,<5"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "meshcore-bus"
+dynamic = ["version"]
+description = "Bridge between a MeshCore companion radio and an MQTT message bus, with Home Assistant discovery."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "The meshcore-bus contributors" }]
+keywords = ["meshcore", "lora", "mesh", "mqtt", "home-assistant", "bridge"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: No Input/Output (Daemon)",
+  "Intended Audience :: System Administrators",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Communications :: Ham Radio",
+  "Topic :: Home Automation",
+  "Typing :: Typed",
+]
+# The only runtime dependency. Deployments take it from the distribution
+# (Debian 13: python3-paho-mqtt 2.1.0), see docs/decisions/0005-*.md.
+dependencies = ["paho-mqtt>=2.0,<3"]
+
+[project.scripts]
+meshcore-bus = "meshcore_bus.cli:main"
+
+[tool.flit.module]
+name = "meshcore_bus"
+
+[tool.flit.sdist]
+include = ["docs/", "deploy/", "tests/", "tools/", "requirements/", "Makefile", "CHANGELOG.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "S", "PT", "RET", "PIE",
+  "PERF", "PL", "RUF", "ASYNC", "TRY", "LOG", "G", "ISC", "T20", "DTZ", "BLE", "FURB",
+]
+ignore = [
+  "PLR2004",  # protocol code is full of byte offsets and codes; they are named where it helps
+  "PLR0913",  # dataclass-like constructors legitimately take many arguments
+  "TRY003",   # short messages in exceptions are fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "PLR0915", "PLC0415"]
+"tools/**" = ["T20"]
+"tests/manual/**" = ["T20"]  # a script that reports by printing
+"src/meshcore_bus/cli.py" = ["T20"]  # the command line prints by design
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src", "tests", "tools"]
+mypy_path = "src"
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+xfail_strict = true
+filterwarnings = ["error"]
+markers = ["broker: starts a local mosquitto broker (integration test)"]
+
+[tool.coverage.run]
+branch = true
+source = ["meshcore_bus"]
+patch = ["subprocess"]  # the system test runs the service as a process
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@overload",
+  "if __name__ == .__main__.:",
+]

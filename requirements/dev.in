@@ -1,0 +1,11 @@
+# Development and CI tools. Runtime needs only paho-mqtt (see pyproject.toml).
+# Compile with `make lock`; the lock file pins every package by hash.
+paho-mqtt==2.1.0   # same version as Debian 13 (python3-paho-mqtt), the deployment target
+pytest
+coverage
+ruff
+mypy
+build
+flit_core
+shellcheck-py
+zizmor

@@ -1,0 +1,23 @@
+# Weekly update proposals, only for releases that are at least 14 days old (cooldown).
+# For Python tools, regenerate the lock file in the pull request with `make lock`.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /requirements
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      dev-tools:
+        patterns: ["*"]
