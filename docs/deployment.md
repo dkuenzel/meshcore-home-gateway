@@ -174,14 +174,31 @@ pct stop 105 && pct destroy 105
 
 Requirements: systemd, Python 3.11 or newer, paho-mqtt 2.x. On Debian 13 both come from the
 distribution; on older systems install paho-mqtt from PyPI in a virtual environment and adjust the
-interpreter line. Run the steps as root in a clone of this repository.
+interpreter line. Run the steps as root in a clone of this repository (at the tag of the release
+you install, so that the unit and the example configuration match).
+
+The zipapp comes from a release or from the clone. A release file can be verified before it is
+installed: `SHA256SUMS` shows that the download is complete, the attestation that this repository's
+release workflow built it from the tagged commit
+([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)). The second
+command needs the GitHub CLI `gh`, logged in (`gh auth login`); the release also carries the
+attestation as a Sigstore bundle (`meshcore-home-gateway-X.Y.Z.sigstore.json`) for other Sigstore
+clients.
+
+```sh
+# either: the release file, verified (X.Y.Z is the version)
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify meshcore-home-gateway-X.Y.Z.pyz --repo dkuenzel/meshcore-home-gateway
+# or: built from the clone
+python3 tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
+  --output meshcore-home-gateway-X.Y.Z.pyz
+```
 
 ```sh
 apt install python3 python3-paho-mqtt
 install -d /usr/local/lib/meshcore-home-gateway
-python3 tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
-  --output /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-0.1.0.pyz
-ln -sfn meshcore-home-gateway-0.1.0.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+install -m 0755 meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/
+ln -sfn meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
 ln -sfn /usr/local/lib/meshcore-home-gateway/current.pyz /usr/local/bin/meshcore-home-gateway
 useradd --system --user-group --groups dialout --no-create-home --home-dir /nonexistent \
   --shell /usr/sbin/nologin meshcore-home-gateway

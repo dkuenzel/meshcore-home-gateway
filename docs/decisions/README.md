@@ -18,3 +18,4 @@ New records start from [`template.md`](template.md).
 | [0010](0010-home-assistant-through-mqtt-device-discovery.md) | Home Assistant integration through MQTT device discovery | accepted |
 | [0011](0011-neutral-english-language-project-under-mit.md) | A neutral, English-language project under the MIT license | accepted |
 | [0012](0012-project-name-meshcore-home-gateway.md) | The project is named meshcore-home-gateway | accepted |
+| [0013](0013-signed-releases-with-github-artifact-attestations.md) | Signed releases with GitHub artifact attestations | accepted |

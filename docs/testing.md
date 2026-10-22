@@ -22,7 +22,7 @@ make check       # lint, types, shellcheck, workflow audit, tests, build, unit c
 | Radio session and bridge | `tests/test_session.py`, `test_bridge.py` (emulated radio) | nothing |
 | MQTT | `tests/test_mqtt_client.py`, `test_discovery.py`, `test_payloads.py` | `mosquitto` for the tests marked `broker` |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
-| Configuration, state, CLI, packaging | `tests/test_config.py`, `test_state.py`, `test_cli.py`, `test_build_pyz.py` | nothing |
+| Configuration, state, CLI, packaging | `tests/test_config.py`, `test_state.py`, `test_cli.py`, `test_build_pyz.py`, `test_release_notes.py` | nothing |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
 | Documentation | `tests/test_docs.py` (relative links and headings in every Markdown file) | nothing |
@@ -49,10 +49,14 @@ for options.
 
 ## Hardware checklist
 
-Run before every release and after raising the supported firmware version. Record firmware
-versions, radio models and results in the pull request.
+The automated tests emulate the radio. This checklist covers what an emulator cannot: real radio
+links, acknowledgements over the air, a USB cable pulled out, the watchdog of a real systemd. It is
+the same for every installation and needs no particular hardware: any two MeshCore radios with
+companion firmware will do. Run it before every release and after raising the supported firmware
+version, and record the firmware versions, radio models and results in the pull request. Steps 15
+(the `pct` part), 19 and 20 apply to the Proxmox installer only.
 
-Setup: radio **A** on the bridge (USB), radio **B** as a handheld or phone companion in range,
+Setup: radio **A** on the gateway (USB), radio **B** as a handheld or phone companion in range,
 both on the same channel settings; B knows A as a contact and the reverse.
 
 | # | Step | Expected |

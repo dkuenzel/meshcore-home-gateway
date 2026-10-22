@@ -13,7 +13,7 @@ COOLDOWN_DAYS ?= 14
 PYZ := meshcore-home-gateway.pyz
 UNIT := meshcore-home-gateway.service
 
-.PHONY: help venv lock lint shellcheck workflows unit-check test matrix dist pyz check hooks clean
+.PHONY: help venv lock lint shellcheck workflows unit-check test matrix dist pyz release check hooks clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-11s %s\n", $$1, $$2}'
@@ -71,6 +71,24 @@ dist: venv ## Wheel, sdist and the single-file zipapp in dist/
 pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
 	$(BIN)/python tools/build_pyz.py --output dist/$(PYZ)
 	$(BIN)/python dist/$(PYZ) --version
+
+# The release workflow runs this on the tagged commit after `make check`; locally it is a dry run.
+# Wheel and sdist get the commit time as their timestamps, so a rebuild gives the same bytes.
+release: venv ## Release files in dist/release: zipapp, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
+	version=$$($(BIN)/python -c 'import meshcore_home_gateway; print(meshcore_home_gateway.__version__)'); \
+	  if [ -n "$(RELEASE_TAG)" ] && [ "$(RELEASE_TAG)" != "v$$version" ]; then \
+	    echo "release: tag $(RELEASE_TAG) does not match version $$version" >&2; exit 1; fi; \
+	  export SOURCE_DATE_EPOCH=$$(git log -1 --format=%ct); \
+	  $(MAKE) --no-print-directory dist; \
+	  rm -rf dist/release dist/release-notes.md && mkdir -p dist/release; \
+	  cp dist/*.whl dist/*.tar.gz dist/release/; \
+	  $(BIN)/python tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
+	    --output "dist/release/meshcore-home-gateway-$$version.pyz" >/dev/null; \
+	  "dist/release/meshcore-home-gateway-$$version.pyz" --version; \
+	  if ! $(BIN)/python tools/release_notes.py "$$version" >dist/release-notes.md; then \
+	    if [ -n "$(RELEASE_TAG)" ]; then exit 1; fi; \
+	    echo "release: dry run without a changelog section for $$version" >&2; fi; \
+	  cd dist/release && sha256sum -- * >SHA256SUMS && cat SHA256SUMS
 
 check: lint shellcheck workflows test dist unit-check ## Everything CI runs
 

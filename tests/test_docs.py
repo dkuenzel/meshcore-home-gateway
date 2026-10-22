@@ -11,10 +11,11 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+BUILD_OUTPUT = {"build", "dist"}  # generated files, e.g. dist/release-notes.md of `make release`
 DOCUMENTS = sorted(
     p
     for p in ROOT.rglob("*.md")
-    if not any(part.startswith(".") for part in p.relative_to(ROOT).parts)
+    if not any(part.startswith(".") or part in BUILD_OUTPUT for part in p.relative_to(ROOT).parts)
 )
 CODE_BLOCK = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 LINK = re.compile(r"\]\(([^)\s]+)\)")

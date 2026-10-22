@@ -11,7 +11,7 @@ format and the command line are public interfaces.
 
 - The project is named meshcore-home-gateway (developed as meshcore-bus until 2026-10-22; ADR
   0012): command, package, unit, user, paths, MQTT client identifier and Home Assistant IDs.
-- Design document, twelve architecture decision records, protocol reference (MeshCore companion
+- Design document, architecture decision records, protocol reference (MeshCore companion
   firmware 1.18.0), MQTT API, Home Assistant, configuration, deployment, testing and development
   documentation.
 - Companion protocol subset: framing with resynchronisation, command encoders, decoders for
@@ -51,6 +51,10 @@ format and the command line are public interfaces.
   passed through by its stable path, update that switches only to a version accepting the
   configuration (also with an unchanged version string), reconfigure that keeps the current
   settings and the targets the radio no longer offers.
+- Release workflow (ADR 0013): a tag `vX.Y.Z` builds the zipapp, wheel and sdist reproducibly
+  with the same `make` targets as a local check, attests them with Sigstore-signed build
+  provenance and publishes them with `SHA256SUMS` on a GitHub release; `make release` is the local
+  dry run.
 - Continuous integration that runs the same `make` targets as a local check (`make check`,
   `make matrix`), with a pre-push hook, hash-pinned tools with a 14-day cooldown and SHA-pinned
   actions.

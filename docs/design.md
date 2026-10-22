@@ -88,7 +88,7 @@ status, Home Assistant discovery, deployment on Proxmox VE and on any systemd-ba
 | Q2 | Reliability | Reconnects to radio and broker without restart; systemd restarts the process on crash or hang (watchdog). |
 | Q3 | Resource use | Idle CPU near zero, resident memory below 50 MB, container disk below 1 GB. |
 | Q4 | Maintainability | Branch coverage ≥ 90 %, `mypy --strict`, `ruff`; one module, one responsibility. |
-| Q5 | Supply chain | Runtime: standard library and Debian's `python3-paho-mqtt`; tools hash-pinned with a 14-day cooldown; actions pinned to commit SHAs. |
+| Q5 | Supply chain | Runtime: standard library and Debian's `python3-paho-mqtt`; tools hash-pinned with a 14-day cooldown; actions pinned to commit SHAs; release files reproducible and attested. |
 | Q6 | Privacy | Message texts are logged only at debug level. |
 
 ### 4.3 Constraints
@@ -432,6 +432,7 @@ Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does 
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
+| Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` check them (ADR 0013). |
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
 
 ### 7.3 Command authorisation in detail
@@ -548,6 +549,12 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   answers`) and keeps the settings it does not ask for, and targets or command senders the radio no
   longer offers; `--answers <file>` installs without dialogs.
 * **Backup:** the configuration file and `/var/lib/meshcore-home-gateway/state.json`.
+* **Releases** ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)):
+  a tag `vX.Y.Z` runs `.github/workflows/release.yml`. A read-only job runs `make check` and
+  `make release` (reproducible zipapp, wheel and sdist, `SHA256SUMS`, notes from the changelog);
+  a second job, the only one with write permissions, attests every file with Sigstore-signed build
+  provenance and publishes the GitHub release. Users verify a file with `sha256sum --check` and
+  `gh attestation verify`.
 
 ## 10 Testing strategy
 
@@ -578,6 +585,7 @@ the tests with every supported Python version that is installed, like the CI mat
 | Home Assistant through MQTT device discovery | [0010](decisions/0010-home-assistant-through-mqtt-device-discovery.md) |
 | Neutral, English-language project under MIT | [0011](decisions/0011-neutral-english-language-project-under-mit.md) |
 | Project name | [0012](decisions/0012-project-name-meshcore-home-gateway.md) |
+| Signed releases with artifact attestations | [0013](decisions/0013-signed-releases-with-github-artifact-attestations.md) |
 
 ## 12 Open questions and future work
 
@@ -586,4 +594,3 @@ the tests with every supported Python version that is installed, like the CI mat
   document at start-up and publish removals).
 * Priorities in the outgoing queue (an alert overtaking a status message).
 * MQTT 5 features: message expiry for send requests, response topics for correlation.
-* A signed release artifact with build provenance once the project is public.

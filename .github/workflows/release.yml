@@ -1,0 +1,82 @@
+# Release (ADR 0012): a tag vX.Y.Z builds the release files from the tagged commit with the same
+# Makefile targets as a local check, attests their build provenance (Sigstore-signed SLSA
+# provenance, verifiable with `gh attestation verify`) and publishes them with SHA256SUMS as a
+# GitHub release. A manual run is a dry run: it builds and keeps the files as a workflow artifact,
+# without attestation or release.
+# The build job only reads; the publish job alone gets the permissions to sign and to release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: check and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install the MQTT broker for the integration tests
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends mosquitto
+      - name: Everything CI checks
+        run: make check
+      - name: Release files, checked against the tag
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: make release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            dist/release/
+            dist/release-notes.md
+          if-no-files-found: error
+
+  publish:
+    name: attest and publish
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release
+      id-token: write # Sigstore signing certificate for the attestation
+      attestations: write # store the attestation
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+      - name: Check the files against their checksums
+        run: cd release && sha256sum --check --strict SHA256SUMS
+      - id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: release/SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          prerelease=()   # PEP 440 pre-releases: v1.0.0a1, v1.0.0b2, v1.0.0rc1, v1.0.0.dev1
+          if [[ $TAG =~ (a|b|rc|dev)[0-9]+$ ]]; then prerelease=(--prerelease); fi
+          # the attestation itself, for verification with any Sigstore client
+          cp -- "$BUNDLE" "release/meshcore-home-gateway-${TAG#v}.sigstore.json"
+          gh release create "$TAG" --verify-tag --title "meshcore-home-gateway ${TAG#v}" \
+            --notes-file release-notes.md "${prerelease[@]}" -- release/*

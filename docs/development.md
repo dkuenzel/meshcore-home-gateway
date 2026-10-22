@@ -66,8 +66,22 @@ pinned to commit SHAs; Dependabot proposes updates with the same cooldown.
 
 ## Release
 
-1. Run the hardware checklist in [`testing.md`](testing.md).
-2. Set `__version__` in `src/meshcore_home_gateway/__init__.py`; move the *Unreleased* entries in
-   `CHANGELOG.md` under the new version with the date.
-3. `make check`, then `make dist`; record `sha256sum dist/*` in the release notes.
-4. Tag `vX.Y.Z` on the release commit and publish the artifacts with the checksums.
+Releases are built, signed and published by the workflow `.github/workflows/release.yml`
+([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)); nobody builds
+release files by hand.
+
+1. Run the [hardware checklist](testing.md#hardware-checklist) with the release candidate.
+2. In a pull request: set `__version__` in `src/meshcore_home_gateway/__init__.py` (PEP 440, for
+   example `0.1.0` or `0.2.0rc1`) and move the *Unreleased* entries of `CHANGELOG.md` under
+   `## [X.Y.Z] - YYYY-MM-DD`. `make release` builds the release files into `dist/release/` as a
+   dry run; it fails when the changelog section is missing for a final version.
+3. After the merge, tag the merge commit and push the tag:
+   `git tag -a vX.Y.Z -m "meshcore-home-gateway X.Y.Z" && git push origin vX.Y.Z`.
+4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
+   zipapp, wheel and sdist reproducibly, writes `SHA256SUMS`, attests every file (Sigstore-signed
+   build provenance) and publishes the GitHub release with the changelog section as notes.
+5. Check the result like a user: download a file and run
+   `gh attestation verify meshcore-home-gateway-X.Y.Z.pyz --repo dkuenzel/meshcore-home-gateway`.
+
+A manual run of the workflow ("Run workflow" in the Actions tab) is a dry run on any branch: it
+builds the same files and keeps them as a workflow artifact, without attestation or release.

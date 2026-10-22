@@ -84,6 +84,9 @@ editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-con
 systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 ```
 
+Instead of building the zipapp, you can download it from a
+[release](https://github.com/dkuenzel/meshcore-home-gateway/releases) and verify it with
+`SHA256SUMS` and `gh attestation verify` (docs/deployment.md, section 3).
 `meshcore-home-gateway probe --serial <device>` lists the radio's channels and contacts for the
 configuration. The same steps with explanations: [`docs/deployment.md`](docs/deployment.md),
 section 3.
