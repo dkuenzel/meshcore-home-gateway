@@ -437,14 +437,16 @@ onoff() {  # onoff ITEM LIST: "on" if ITEM is in the comma-separated LIST
 }
 
 choose_targets() {  # read channels and contacts from the radio and ask which to use
-  local ctid=$1 channels contacts index name key type item selected alias
+  local ctid=$1 channels contacts index name key type item selected alias host
   local current_channels="" current_contacts="" current_senders=${OUT[commands.senders]-}
   local -a probe=() channel_items=() contact_items=() sender_items=()
   local -A channel_name=() contact_name=() alias_of=()
   if [[ ${OUT[radio.transport]} == serial ]]; then
     probe=(--serial "${OUT[radio.device]}")
   else
-    probe=(--tcp "${OUT[radio.host]}:${OUT[radio.port]:-5000}")
+    host=${OUT[radio.host]}
+    if [[ $host == *:* ]]; then host="[$host]"; fi   # IPv6 address
+    probe=(--tcp "$host:${OUT[radio.port]:-5000}")
   fi
   channels=$(in_ct "$ctid" meshcore-bus probe "${probe[@]}" --list channels) \
     || die "cannot read the radio (is it connected and not used by another program?)"

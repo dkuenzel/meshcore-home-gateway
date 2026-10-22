@@ -95,7 +95,8 @@ whose sender the bridge verifies.
 ## Commands: `command`
 
 Only accepted commands ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)):
-a plain direct message whose first word is in `commands.words`, from a contact whose full key is
+a plain direct message whose first word (ended by any whitespace, also a line break) is in
+`commands.words`, from a contact whose full key is
 in `commands.senders`, newer than the last accepted command of that sender and within
 `max_age_s` of the bridge clock.
 

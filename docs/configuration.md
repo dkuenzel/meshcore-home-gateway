@@ -28,12 +28,15 @@ would put nRF52 radios into their bootloader.
 | `port` | `1883` | broker port (8883 is usual with TLS) |
 | `username`, `password` | – | broker credentials |
 | `tls` | `false` | TLS with certificate and host name verification |
-| `ca_file` | system store | CA certificate file for TLS |
-| `cert_file`, `key_file` | – | client certificate for TLS authentication |
+| `ca_file` | system store | CA certificate file for TLS; only with `tls = true` |
+| `cert_file`, `key_file` | – | client certificate and key for TLS authentication; only with `tls = true`. `key_file` needs `cert_file` and can be left out when the certificate file holds the key |
 | `client_id` | `meshcore-bus-<node_id>` | MQTT client identifier |
 | `keepalive_s` | `60` | keep-alive interval, 10–3600 |
 | `base_topic` | `meshcore` | first topic levels; segments of `A-Z a-z 0-9 - _` separated by `/` |
 | `node_id` | required | this bridge's name in topics and entity IDs; 1–32 of `a-z 0-9 - _` |
+
+A TLS file that cannot be loaded (missing, unreadable, not a certificate or key) is a
+configuration error: `check-config` loads the files, and the service exits with code 78.
 
 ## `[homeassistant]`
 

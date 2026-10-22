@@ -79,7 +79,7 @@ def command_word(message: InboundMessage, rules: CommandRules) -> str | None:
         return None
     if message.sender_prefix is None:
         return None
-    word = message.text.strip().partition(" ")[0].casefold()
+    word = _split(message.text)[0].casefold()
     return word if word in rules.words else None
 
 
@@ -101,15 +101,19 @@ def evaluate_command(
     word = command_word(message, rules)
     if word is None or message.sender_prefix is None:
         return None
-    args = message.text.strip().partition(" ")[2]
+    args = _split(message.text)[1]
     sender, rejection = _authorise(message.sender_prefix, rules, contacts, seen)
     if rejection is None and sender is not None:
         rejection = _check_time(message.sender_timestamp, rules, last_accepted.get(sender), now)
     if sender is None or rejection is not None:
         return CommandDecision(word, rejection=rejection)
-    return CommandDecision(
-        word, command=Command(word, args.strip(), sender, message.sender_timestamp)
-    )
+    return CommandDecision(word, command=Command(word, args, sender, message.sender_timestamp))
+
+
+def _split(text: str) -> tuple[str, str]:
+    """The first word and the rest; words are separated by any whitespace (space, tab, line)."""
+    parts = text.split(maxsplit=1)
+    return (parts[0] if parts else ""), (parts[1].strip() if len(parts) > 1 else "")
 
 
 def _authorise(

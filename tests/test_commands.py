@@ -39,6 +39,19 @@ def test_allowlisted_sender_with_known_word_is_accepted() -> None:
     assert decision.command.sender_key == ALICE
 
 
+def test_any_whitespace_ends_the_command_word() -> None:
+    """A phone may put a line break or a tab after the word; it is still the first word."""
+    for text in ("arm\nnow please", "arm\tnow please", "arm\u00a0 now please  "):
+        decision = evaluate_command(dm(text), RULES, BOOK, last_accepted={}, now=NOW)
+        assert decision is not None
+        assert decision.command is not None
+        assert (decision.command.word, decision.command.args) == ("arm", "now please")
+    decision = evaluate_command(dm("status"), RULES, BOOK, last_accepted={}, now=NOW)
+    assert decision is not None
+    assert decision.command is not None
+    assert decision.command.args == ""
+
+
 def test_unknown_word_is_just_a_message() -> None:
     assert evaluate_command(dm("hello there"), RULES, BOOK, {}, NOW) is None
 
@@ -140,6 +153,8 @@ def test_command_word_marks_the_messages_that_need_sender_checks() -> None:
     """The bridge reads the radio's contact table again only for these (ADR 0009)."""
     assert command_word(dm("  Status please"), RULES) == "status"
     assert command_word(dm("statuses"), RULES) is None
+    assert command_word(dm("status\nplease"), RULES) == "status"
+    assert command_word(dm(" \n "), RULES) is None
     assert command_word(dm("arm", text_type=TextType.SIGNED_PLAIN), RULES) is None
     channel = InboundMessage(
         kind=MessageKind.CHANNEL, text="arm", sender_timestamp=int(NOW), received_at=NOW,

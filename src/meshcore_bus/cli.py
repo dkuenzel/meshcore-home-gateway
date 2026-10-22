@@ -97,7 +97,10 @@ def _parser() -> argparse.ArgumentParser:
     where.add_argument(
         "--serial", metavar="DEVICE", help="serial device, e.g. /dev/serial/by-id/..."
     )
-    where.add_argument("--tcp", metavar="HOST[:PORT]", help="WiFi companion, port 5000 by default")
+    where.add_argument(
+        "--tcp", metavar="HOST[:PORT]", type=tcp_address,
+        help="WiFi companion, port 5000 by default; IPv6 as [ADDRESS]:PORT",
+    )  # fmt: skip
     probe.add_argument("--list", choices=["contacts", "channels"], help="tab-separated list only")
     probe.add_argument("--json", action="store_true", help="everything as JSON")
 
@@ -113,7 +116,9 @@ def _parser() -> argparse.ArgumentParser:
     listen.add_argument(
         "--topic", choices=["received", "command", "delivery", "state", "all"], default="all"
     )
-    listen.add_argument("--count", type=int, default=0, help="stop after this many events")
+    listen.add_argument(
+        "--count", type=_count, default=0, help="stop after this many events (0: never)"
+    )
 
     config = commands.add_parser("config", help="configuration helpers")
     config_commands = config.add_subparsers(required=True, metavar="action")
@@ -195,6 +200,10 @@ def _check_config(args: argparse.Namespace) -> int:
     where = radio.device if radio.transport == "serial" else f"{radio.host}:{radio.port}"
     tls = " (TLS)" if mqtt.tls else ""
     discovery = f"on, prefix {ha.prefix}" if ha.discovery else "off"
+    if mqtt.tls:  # the certificate and key files must load, as at start-up
+        from meshcore_bus.mqtt.client import tls_context  # noqa: PLC0415
+
+        tls_context(mqtt)
     print(f"configuration {args.config}: valid")
     print(f"  radio      {radio.transport} {where}")
     print(f"  broker     {mqtt.host}:{mqtt.port}{tls}, topics {mqtt.topic_root}/...")
@@ -221,8 +230,7 @@ def _probe(args: argparse.Namespace) -> int:
     if args.serial:
         transport: Any = SerialTransport(args.serial)
     else:
-        host, _, port = args.tcp.partition(":")
-        transport = TcpTransport(host, int(port or 5000))
+        transport = TcpTransport(*args.tcp)
     try:
         report = asyncio.run(_probe_radio(transport))
     except Exception as exc:  # noqa: BLE001 - report any failure to the operator
@@ -242,6 +250,32 @@ def _probe(args: argparse.Namespace) -> int:
 
 
 NODE_TYPES = {1: "chat", 2: "repeater", 3: "room", 4: "sensor"}
+DEFAULT_TCP_PORT = 5000
+
+
+def tcp_address(text: str) -> tuple[str, int]:
+    """HOST, HOST:PORT, [IPV6] or [IPV6]:PORT; a bare IPv6 address has no port."""
+    host, port = text, ""
+    if text.startswith("["):
+        host, bracket, rest = text[1:].partition("]")
+        if not bracket or (rest and not rest.startswith(":")):
+            raise argparse.ArgumentTypeError(f"expected [ADDRESS]:PORT, got {text!r}")
+        port = rest[1:]
+    elif text.count(":") == 1:
+        host, _, port = text.partition(":")
+    if not host:
+        raise argparse.ArgumentTypeError(f"no host in {text!r}")
+    if not port:
+        return host, DEFAULT_TCP_PORT
+    if not port.isdecimal() or not 1 <= int(port) <= 65535:
+        raise argparse.ArgumentTypeError(f"port must be 1..65535, got {port!r}")
+    return host, int(port)
+
+
+def _count(text: str) -> int:
+    if not text.isdecimal():
+        raise argparse.ArgumentTypeError(f"expected a whole number, 0 or more, got {text!r}")
+    return int(text)
 
 
 async def _probe_radio(transport: Any) -> dict[str, Any]:
@@ -547,7 +581,12 @@ def _render(args: argparse.Namespace) -> int:
     except OSError as exc:
         raise ConfigError(f"cannot read {args.answers}: {exc.strerror}") from exc
     text = render_config(answers)
-    write_private(args.output, text, args.group)
+    try:
+        gid = None if args.group is None else grp.getgrnam(args.group).gr_gid
+    except KeyError:
+        print(f"meshcore-bus: no group {args.group!r}", file=sys.stderr)
+        return EX_FAILURE
+    write_private(args.output, text, gid)
     print(f"wrote {args.output}")
     return EX_OK
 
@@ -561,16 +600,17 @@ def _answers(args: argparse.Namespace) -> int:
     return EX_OK
 
 
-def write_private(path: Path, text: str, group: str | None) -> None:
-    """Write atomically with mode 0640; the file holds the broker password."""
+def write_private(path: Path, text: str, gid: int | None) -> None:
+    """Write atomically with mode 0640, readable by group `gid`; the file holds the broker
+    password."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
         os.chmod(tmp, 0o640)
-        if group is not None:
-            os.chown(tmp, -1, grp.getgrnam(group).gr_gid)
+        if gid is not None:
+            os.chown(tmp, -1, gid)
         os.replace(tmp, path)
     except BaseException:
         with contextlib.suppress(FileNotFoundError):

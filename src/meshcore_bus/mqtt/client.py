@@ -18,7 +18,7 @@ from typing import Any, Protocol
 import paho.mqtt.client as paho
 from paho.mqtt.enums import CallbackAPIVersion, MQTTProtocolVersion
 
-from meshcore_bus.config import MqttConfig
+from meshcore_bus.config import ConfigError, MqttConfig
 from meshcore_bus.mqtt.topics import Topics
 
 log = logging.getLogger(__name__)
@@ -66,10 +66,23 @@ def make_paho_client(config: MqttConfig) -> PahoLike:
 
 
 def tls_context(config: MqttConfig) -> ssl.SSLContext:
-    context = ssl.create_default_context(cafile=config.ca_file)
+    """TLS with certificate and host name verification. A missing or unreadable certificate or
+    key file is a configuration error, so the service does not restart in a loop over it."""
+    try:
+        context = ssl.create_default_context(cafile=config.ca_file)
+    except OSError as exc:  # also ssl.SSLError: not a certificate
+        raise ConfigError(f"mqtt.ca_file: cannot load {config.ca_file}: {_reason(exc)}") from exc
     if config.cert_file:
-        context.load_cert_chain(config.cert_file, config.key_file)
+        try:
+            context.load_cert_chain(config.cert_file, config.key_file)
+        except OSError as exc:
+            files = " and ".join(f for f in (config.cert_file, config.key_file) if f)
+            raise ConfigError(f"mqtt.cert_file: cannot load {files}: {_reason(exc)}") from exc
     return context
+
+
+def _reason(exc: OSError) -> str:
+    return exc.strerror or str(exc)
 
 
 class MqttBus:

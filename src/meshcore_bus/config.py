@@ -266,16 +266,23 @@ def _mqtt(s: _Section) -> MqttConfig:
             f"{s.key('base_topic')}: segments of A-Z, a-z, 0-9, '-', '_' separated by '/', "
             f"got {base!r}"
         )
+    tls = s.boolean("tls", False)
+    files = {name: s.string(name) for name in ("ca_file", "cert_file", "key_file")}
+    for name, value in files.items():
+        if value is not None and not tls:  # never fall back to a plain connection silently
+            raise ConfigError(f"{s.key(name)}: only used with tls = true")
+    if files["key_file"] is not None and files["cert_file"] is None:
+        raise ConfigError(f"{s.key('key_file')}: needs cert_file")
     return MqttConfig(
         host=cast(str, s.string("host", required=True)),
         node_id=node_id,
         port=s.integer("port", 1883, 1, 65535),
         username=s.string("username"),
         password=s.string("password"),
-        tls=s.boolean("tls", False),
-        ca_file=s.string("ca_file"),
-        cert_file=s.string("cert_file"),
-        key_file=s.string("key_file"),
+        tls=tls,
+        ca_file=files["ca_file"],
+        cert_file=files["cert_file"],
+        key_file=files["key_file"],
         client_id=s.string("client_id"),
         keepalive_s=s.integer("keepalive_s", 60, 10, 3600),
         base_topic=base,

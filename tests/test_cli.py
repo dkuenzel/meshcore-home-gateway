@@ -173,6 +173,94 @@ def test_probe_failure_exits_with_failure(capsys: pytest.CaptureFixture[str]) ->
     assert "probe failed" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("text", "address"),
+    [
+        ("radio.example.org", ("radio.example.org", 5000)),
+        ("192.0.2.10:5001", ("192.0.2.10", 5001)),
+        ("[2001:db8::10]:5001", ("2001:db8::10", 5001)),
+        ("[2001:db8::10]", ("2001:db8::10", 5000)),
+        ("2001:db8::10", ("2001:db8::10", 5000)),  # a bare IPv6 address has no port
+    ],
+)
+def test_probe_tcp_addresses(text: str, address: tuple[str, int]) -> None:
+    assert cli_module.tcp_address(text) == address
+
+
+@pytest.mark.parametrize(
+    "text", ["radio:abc", "radio:0", "radio:70000", ":5000", "[2001:db8::10", "[2001:db8::10]x"]
+)
+def test_probe_refuses_malformed_tcp_addresses(
+    text: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["probe", "--tcp", text])
+    assert exit_info.value.code == 2  # a usage error from argparse, not a traceback
+    assert "argument --tcp" in capsys.readouterr().err
+
+
+def test_listen_refuses_a_negative_count(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["listen", "--count", "-1"])
+    assert exit_info.value.code == 2
+    assert "argument --count" in capsys.readouterr().err
+
+
+def test_config_render_reports_an_unknown_group(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answers = tmp_path / "answers"
+    answers.write_text(
+        "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
+        "mqtt.node_id=radio1\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "config.toml"
+    command = ["config", "render", "--answers", str(answers), "--output", str(output)]
+    assert main([*command, "--group", "no-such-group-here"]) == EX_FAILURE
+    assert "no group 'no-such-group-here'" in capsys.readouterr().err
+    assert not output.exists()
+
+
+def tls_config(tmp_path: Path, files: str) -> Path:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n'
+        f'[mqtt]\nhost = "127.0.0.1"\nnode_id = "radio1"\ntls = true\n{files}\n'
+        "[targets.alerts]\nchannel = 0\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    "command",
+    [["check-config"], ["send", "alerts", "x"], ["listen", "--count", "1"], ["run"]],
+    ids=lambda c: c[0],
+)
+def test_unreadable_tls_files_are_configuration_errors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+) -> None:
+    """Exit code 78, so systemd does not restart the service in a loop over a missing file."""
+    monkeypatch.setattr(cli_module, "setup_logging", lambda _level: None)
+    not_a_certificate = tmp_path / "ca.pem"
+    not_a_certificate.write_text("not a certificate\n", encoding="utf-8")
+    for files, key in [
+        (f'ca_file = "{tmp_path / "missing.pem"}"', "mqtt.ca_file"),
+        (f'ca_file = "{not_a_certificate}"', "mqtt.ca_file"),
+        (f'cert_file = "{tmp_path / "client.pem"}"', "mqtt.cert_file"),
+    ]:
+        config = tls_config(tmp_path, files)
+        extra = ["--state-dir", str(tmp_path / "state")] if command == ["run"] else []
+        assert main([command[0], "--config", str(config), *extra, *command[1:]]) == EX_CONFIG
+        error = capsys.readouterr().err
+        assert f"configuration error: {key}: cannot load" in error
+        assert "Traceback" not in error
+
+
 def broker_config(tmp_path: Path, broker: Broker) -> Path:
     path = tmp_path / "config.toml"
     path.write_text(

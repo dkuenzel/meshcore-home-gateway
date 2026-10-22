@@ -390,8 +390,8 @@ holds the broker password). Unknown keys are errors. Every setting is in
 | Command | Purpose |
 | --- | --- |
 | `meshcore-bus run` | Run the bridge (systemd service). |
-| `meshcore-bus check-config` | Validate the configuration and print a summary. |
-| `meshcore-bus probe --serial DEV` / `--tcp HOST:PORT` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. |
+| `meshcore-bus check-config` | Validate the configuration (and load the TLS files) and print a summary. |
+| `meshcore-bus probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
 | `meshcore-bus send [--wait S] ALIAS TEXT` | Publish a send request through the broker; with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
 | `meshcore-bus listen [--topic T] [--count N]` | Print events from the broker as JSON lines. |
 | `meshcore-bus config render` | Write a validated configuration from `key=value` answers (installer). |
@@ -436,7 +436,7 @@ Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does 
 ### 7.3 Command authorisation in detail
 
 A received message is an accepted command only if: it is a plain-text direct message; its first word
-(case-insensitive) is in `commands.words`; its 6-byte sender prefix resolves to exactly one contact;
+(case-insensitive, ended by any whitespace) is in `commands.words`; its 6-byte sender prefix resolves to exactly one contact;
 that contact's full key is in `commands.senders`; its sender timestamp is newer than the last
 accepted command of that sender; and, unless `max_age_s` is 0, it lies within `max_age_s` of the
 bridge clock in either direction

@@ -316,6 +316,16 @@ def test_radio_over_tcp_needs_no_device(host: Host) -> None:
     )  # fmt: skip
 
 
+def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
+    answers = answers_file(
+        host, "radio.choice=tcp\nradio.host=2001:db8::30\nradio.port=5001\nmqtt.host=broker\n"
+    )
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    assert any("probe --tcp [2001:db8::30]:5001 --list channels" in c for c in host.inside())
+    assert host.config().radio.host == "2001:db8::30"
+
+
 def test_interactive_default_setup_asks_only_what_has_no_default(host: Host) -> None:
     dialog = [
         "default",  # setup

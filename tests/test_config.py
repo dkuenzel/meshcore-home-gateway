@@ -130,6 +130,9 @@ def test_full_configuration_is_read_completely() -> None:
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nbase_topic = "/a"', "mqtt.base_topic"),
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nport = "1883"', "mqtt.port: expected an integer"),
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nkeyfile = "/k"\ntls = true', "mqtt.keyfile: unknown"),
+        ('[mqtt]\nhost = "h"\nnode_id = "n"\nca_file = "/ca.pem"', "mqtt.ca_file: only used"),
+        ('[mqtt]\nhost = "h"\nnode_id = "n"\ncert_file = "/c.pem"\ntls = false', "mqtt.cert_file"),
+        ('[mqtt]\nhost = "h"\nnode_id = "n"\nkey_file = "/k.pem"\ntls = true', "needs cert_file"),
         ("[airtime]\nbudget_s_per_hour = 0", "airtime.budget_s_per_hour"),
         ("[airtime]\nburst_s = 2", "airtime.burst_s"),
         ("[messages]\nmax_attempts = 0", "messages.max_attempts"),
@@ -218,7 +221,8 @@ def test_every_setting_can_be_answered() -> None:
     """The installer answers cover the whole configuration (docs/configuration.md)."""
     answers = ANSWERS + "\n".join(
         [
-            "radio.set_clock=false", "mqtt.cert_file=/etc/c.pem", "mqtt.key_file=/etc/k.pem",
+            "radio.set_clock=false", "mqtt.tls=true", "mqtt.cert_file=/etc/c.pem",
+            "mqtt.key_file=/etc/k.pem",
             "mqtt.client_id=bridge-a", "mqtt.keepalive_s=30", "messages.truncate=false",
             "messages.dedup_window_s=60", "messages.queue_size=5", "messages.queue_ttl_s=120",
             "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
@@ -227,6 +231,9 @@ def test_every_setting_can_be_answered() -> None:
     )  # fmt: skip
     config = parse_config(render_config(answers))
     assert config.radio.set_clock is False
+    assert (config.mqtt.tls, config.mqtt.cert_file, config.mqtt.key_file) == (
+        True, "/etc/c.pem", "/etc/k.pem",
+    )  # fmt: skip
     assert (config.mqtt.client_id, config.mqtt.keepalive_s) == ("bridge-a", 30)
     assert (config.messages.max_attempts, config.messages.flood_after) == (4, 3)
     assert config.messages.ignore_channels == frozenset({0, 2})

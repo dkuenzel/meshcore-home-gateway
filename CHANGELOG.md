@@ -24,20 +24,24 @@ format and the command line are public interfaces.
   suppression, bounded queue with time to live, airtime budget from the LoRa time-on-air formula,
   acknowledgement tracking with retries and path reset, delivery events with reasons (`expired`
   only for messages that never left), inbound deduplication, retained state document.
-- Command policy with allowlisted full public keys and replay protection. The sender must be the
-  only contact with its 6-byte prefix in the table read after the message arrived, and no other
-  key with that prefix may have been a contact of the radio in the last 24 hours (table reads,
-  advert, path and overwrite pushes), so a look-alike that came and went makes the sender
+- Command policy with allowlisted full public keys and replay protection. The command word is the
+  first word of the text, ended by any whitespace (also a line break or a tab). The sender must be
+  the only contact with its 6-byte prefix in the table read after the message arrived, and no
+  other key with that prefix may have been a contact of the radio in the last 24 hours (table
+  reads, advert, path and overwrite pushes), so a look-alike that came and went makes the sender
   ambiguous, while one that the radio did not add does not count. Rejections by the cached table
   need no read, one read serves a batch, and a read in progress is reused. Commands fetched while
-  the bridge connects are refused. The bridge
-  warns at connect about contact types the radio adds on its own and about commands over TCP.
+  the bridge connects are refused. The bridge warns at connect about contact types the radio adds
+  on its own and about commands over TCP.
 - MQTT adapter on paho-mqtt with last will, Home Assistant device discovery with sensor, event and
-  notify entities.
-- Command line: `run`, `check-config`, `probe` (also shows how the radio adds contacts, and leaves
-  waiting messages in the radio), `send` (with `--wait` following its own request), `listen`,
-  `config render`, `config answers`. Texts from the mesh reach the terminal without control or
-  format characters.
+  notify entities. TLS files that cannot be loaded are configuration errors (exit code 78, no
+  restart loop), and TLS file settings without `tls = true` or a key without a certificate are
+  refused rather than ignored.
+- Command line: `run`, `check-config` (also loads the TLS files), `probe` (also shows how the
+  radio adds contacts, leaves waiting messages in the radio, and takes IPv6 addresses as
+  `[ADDRESS]:PORT`), `send` (with `--wait` following its own request), `listen`, `config render`,
+  `config answers`. Texts from the mesh reach the terminal without control or format characters;
+  malformed arguments and unknown groups are reported without a traceback.
 - systemd unit with notify, watchdog and sandboxing; reproducible zipapp build.
 - Proxmox VE installer: default and advanced setup in dialogs or from an answers file (unknown
   installer answers refused, every configuration setting passed on, the radio never guessed),
