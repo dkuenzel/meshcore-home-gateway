@@ -284,7 +284,7 @@ class Bridge:
                 log.warning("target %s: channel %s is not configured on the radio",
                             target.alias, target.channel_index)  # fmt: skip
             if target.kind is MessageKind.CONTACT and target.public_key is not None:
-                matches = session.contacts.resolve(target.public_key[:12])
+                matches = session.contacts.resolve(target.public_key[:PREFIX_HEX_DIGITS])
                 if [c.public_key for c in matches] != [target.public_key]:
                     log.warning("target %s: contact missing on the radio or prefix ambiguous",
                                 target.alias)  # fmt: skip
@@ -447,7 +447,7 @@ class Bridge:
         if target.channel_index is not None:
             await session.send_channel_text(target.channel_index, text, timestamp)
             return self._event(item, DeliveryState.SENT, attempt=1, airtime_s=airtime)
-        prefix = bytes.fromhex(_key(target)[:12])
+        prefix = bytes.fromhex(_key(target)[:PREFIX_HEX_DIGITS])
         sent = await session.send_text(prefix, text, timestamp, attempt)
         sent_event = self._event(item, DeliveryState.SENT, attempt=attempt + 1, airtime_s=airtime)
         self._deliver_event(sent_event)
@@ -486,7 +486,7 @@ class Bridge:
 
     def _resolve(self, session: CompanionSession, target: Target) -> Contact:
         key = _key(target)
-        matches = session.contacts.resolve(key[:12])
+        matches = session.contacts.resolve(key[:PREFIX_HEX_DIGITS])
         if len(matches) > 1:
             raise _FinalError(DeliveryState.FAILED, "ambiguous_target")
         if not matches or matches[0].public_key != key:

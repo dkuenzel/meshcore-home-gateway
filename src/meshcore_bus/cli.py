@@ -20,7 +20,7 @@ import threading
 import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from meshcore_bus import __version__
 from meshcore_bus.config import (
@@ -31,6 +31,9 @@ from meshcore_bus.config import (
     load_config,
     render_config,
 )
+
+if TYPE_CHECKING:
+    from meshcore_bus.radio.transport import Transport
 
 EX_OK, EX_FAILURE, EX_CONFIG = 0, 1, 78
 CONNECT_TIMEOUT_S = 10.0
@@ -169,7 +172,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     return EX_OK
 
 
-def transport_for(config: Config) -> Any:
+def transport_for(config: Config) -> Transport:
     from meshcore_bus.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
 
     radio = config.radio
