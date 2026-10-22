@@ -17,11 +17,14 @@ make check       # lint, types, shellcheck, workflow audit, tests, build, unit c
 | Suite | Files | Needs |
 | --- | --- | --- |
 | Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py` | nothing |
+| Architecture | `tests/test_architecture.py` (the core and the codec import no I/O modules, ADR 0007) | nothing |
 | Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source) | nothing |
 | Radio session and bridge | `tests/test_session.py`, `test_bridge.py` (emulated radio) | nothing |
 | MQTT | `tests/test_mqtt_client.py`, `test_discovery.py`, `test_payloads.py` | `mosquitto` for the tests marked `broker` |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
-| Configuration, CLI, packaging | `tests/test_config.py`, `test_cli.py`, `test_build_pyz.py` | nothing |
+| Configuration, state, CLI, packaging | `tests/test_config.py`, `test_state.py`, `test_cli.py`, `test_build_pyz.py` | nothing |
+| systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
+| System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
 | Documentation | `tests/test_docs.py` (relative links and headings in every Markdown file) | nothing |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 

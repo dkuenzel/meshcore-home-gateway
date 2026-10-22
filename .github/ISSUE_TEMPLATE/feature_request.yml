@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose a new feature or a change of behaviour.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Please check the goals and non-goals in docs/design.md and the decision records in
+        docs/decisions/ first: some features are left out on purpose. Changes to interfaces start
+        with an update of the design (CONTRIBUTING.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What do you want to achieve, and why is it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How could the bridge support it? Name the topics, settings or commands it would change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways you considered, for example an automation on the existing MQTT events.

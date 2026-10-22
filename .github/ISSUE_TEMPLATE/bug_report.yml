@@ -1,0 +1,62 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thank you for the report. Please remove passwords, public keys, contact names, addresses
+        and other personal data from everything you paste; security problems go to the private
+        form in the "Security" tab instead (SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: meshcore-bus version
+      description: Output of `meshcore-bus --version`, or the commit you run.
+      placeholder: meshcore-bus 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation
+      options:
+        - Proxmox VE installer
+        - Manual installation (docs/deployment.md, section 3)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: radio
+    attributes:
+      label: Radio
+      description: Model, companion firmware version and connection (USB or TCP); `meshcore-bus probe` shows the first two.
+      placeholder: Example board, firmware v1.18.0, USB
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. mosquitto_pub -t meshcore/radio1/send/alerts -m "test"
+        2. ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        `journalctl -u meshcore-bus` around the problem, and the relevant MQTT events
+        (`meshcore-bus listen`). Debug logs contain message texts; check them before pasting.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed passwords, keys and personal data from this report.
+          required: true

@@ -1,7 +1,12 @@
 # Contributing
 
 Thank you for helping. This project bridges a radio network and home automation, so correctness and
-safety come before features. The rules below keep it that way.
+safety come before features. The rules below keep it that way. Everyone taking part follows the
+[code of conduct](CODE_OF_CONDUCT.md).
+
+Report bugs and propose features with the issue forms; report security problems privately, as
+described in [`SECURITY.md`](SECURITY.md). For a larger change, open an issue first, so that the
+design can be agreed on before the code is written.
 
 ## Ground rules
 
@@ -59,7 +64,8 @@ GitHub Actions are pinned to full commit SHAs with the version as a comment.
 - One logical change per commit; imperative subject line of at most 72 characters.
 - Update `CHANGELOG.md` (section *Unreleased*) for every user-visible change.
 - A pull request describes what changed, why, and how it was tested, including tests on real
-  hardware where relevant (see the checklist in [`docs/testing.md`](docs/testing.md)).
+  hardware where relevant (see the checklist in [`docs/testing.md`](docs/testing.md)); the pull
+  request template lists the points.
 
 ## Releases
 

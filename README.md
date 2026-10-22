@@ -1,5 +1,8 @@
 # meshcore-bus
 
+[![CI](https://github.com/dkuenzel/meshcore-bus/actions/workflows/ci.yml/badge.svg)](https://github.com/dkuenzel/meshcore-bus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A small, dependable bridge between a [MeshCore](https://github.com/meshcore-dev/MeshCore) companion
 radio and an MQTT broker. Automations publish a text and the bridge sends it over the LoRa mesh;
 messages the radio receives come back as MQTT events, and direct messages from allowlisted contacts
@@ -46,10 +49,10 @@ change between minor versions; see [`CHANGELOG.md`](CHANGELOG.md).
 
 ### Proxmox VE
 
-On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root, from a copy of this
-repository:
+On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root:
 
 ```sh
+git clone https://github.com/dkuenzel/meshcore-bus.git && cd meshcore-bus
 ./deploy/proxmox/meshcore-bus-lxc.sh
 ```
 
@@ -61,6 +64,8 @@ the radio's channels and contacts so you can pick targets and command senders, a
 [`docs/deployment.md`](docs/deployment.md).
 
 ### Any systemd-based Linux
+
+As root, in a clone of this repository:
 
 ```sh
 apt install python3 python3-paho-mqtt            # Debian 13 or newer
@@ -132,8 +137,11 @@ make check        # what CI runs: ruff, mypy --strict, shellcheck, zizmor, tests
 make matrix       # the tests with every installed Python from 3.11 to 3.14, like the CI matrix
 ```
 
-Test-driven, with an emulated radio and a real `mosquitto` in the tests. See
-[`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/development.md`](docs/development.md).
+Test-driven, with an emulated radio and a real `mosquitto` in the tests. Contributions are
+welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md), [`docs/development.md`](docs/development.md) and
+the [code of conduct](CODE_OF_CONDUCT.md). Bugs and ideas go to the
+[issue tracker](https://github.com/dkuenzel/meshcore-bus/issues), security problems to the private form described in
+[`SECURITY.md`](SECURITY.md).
 
 ## License
 

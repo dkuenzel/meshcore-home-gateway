@@ -32,6 +32,7 @@ deploy/          systemd unit, Proxmox installer, example configuration
 docs/            design, decisions, protocol, API, operations
 tests/           pytest suites, emulated radio, broker fixture; tests/manual: checks run by hand
 tools/           build helpers (zipapp)
+.github/         CI workflow, Dependabot, issue forms, pull request template
 ```
 
 ## Test-driven workflow

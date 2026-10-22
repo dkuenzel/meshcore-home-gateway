@@ -7,8 +7,9 @@ The project is in its 0.x phase. Only the latest release receives fixes.
 ## Reporting a vulnerability
 
 Please do not open a public issue for a security problem. Use GitHub's private vulnerability
-reporting for this repository ("Security" tab, "Report a vulnerability"). If that is not available,
-contact the maintainers privately and allow time for a fix before disclosure.
+reporting for this repository ("Security" tab, "Report a vulnerability"); only the maintainers can
+read it. If the form is not available, open an issue that asks for a private contact, without any
+details of the problem. Please allow time for a fix before disclosure.
 
 Please include the version, the configuration that matters (without secrets) and the steps to
 reproduce.

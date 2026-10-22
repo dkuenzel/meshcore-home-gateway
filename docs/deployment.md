@@ -33,7 +33,7 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 On the Proxmox VE host, as root, in a copy of this repository:
 
 ```sh
-git clone <repository URL> meshcore-bus && cd meshcore-bus
+git clone https://github.com/dkuenzel/meshcore-bus.git && cd meshcore-bus
 ./deploy/proxmox/meshcore-bus-lxc.sh
 ```
 
@@ -168,7 +168,7 @@ pct stop 105 && pct destroy 105                                       # remove
 
 Requirements: systemd, Python 3.11 or newer, paho-mqtt 2.x. On Debian 13 both come from the
 distribution; on older systems install paho-mqtt from PyPI in a virtual environment and adjust the
-interpreter line.
+interpreter line. Run the steps as root in a clone of this repository.
 
 ```sh
 apt install python3 python3-paho-mqtt

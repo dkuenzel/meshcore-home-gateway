@@ -30,6 +30,13 @@ classifiers = [
 # (Debian 13: python3-paho-mqtt 2.1.0), see docs/decisions/0005-*.md.
 dependencies = ["paho-mqtt>=2.0,<3"]
 
+[project.urls]
+Homepage = "https://github.com/dkuenzel/meshcore-bus"
+Documentation = "https://github.com/dkuenzel/meshcore-bus/tree/main/docs"
+Source = "https://github.com/dkuenzel/meshcore-bus"
+Issues = "https://github.com/dkuenzel/meshcore-bus/issues"
+Changelog = "https://github.com/dkuenzel/meshcore-bus/blob/main/CHANGELOG.md"
+
 [project.scripts]
 meshcore-bus = "meshcore_bus.cli:main"
 
@@ -37,7 +44,10 @@ meshcore-bus = "meshcore_bus.cli:main"
 name = "meshcore_bus"
 
 [tool.flit.sdist]
-include = ["docs/", "deploy/", "tests/", "tools/", "requirements/", "Makefile", "CHANGELOG.md"]
+include = [
+  "docs/", "deploy/", "tests/", "tools/", "requirements/", "Makefile", "CHANGELOG.md",
+  "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
+]
 
 [tool.ruff]
 line-length = 100
