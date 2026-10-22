@@ -12,13 +12,13 @@ One device, named after `homeassistant.device_name`, with these entities (entity
 
 | Entity | Platform | Content |
 | --- | --- | --- |
-| `binary_sensor.meshcore_bus_radio1_radio` | connectivity, diagnostic | radio link up |
-| `sensor.meshcore_bus_radio1_battery` | voltage (V), diagnostic | radio battery |
-| `sensor.meshcore_bus_radio1_airtime` | duration (s), diagnostic | airtime of the last hour |
-| `event.meshcore_bus_radio1_message` | event: `contact`, `channel` | every received message; the payload keys are attributes |
-| `event.meshcore_bus_radio1_delivery` | event: `queued` … `rejected` | delivery steps of outgoing messages |
-| `event.meshcore_bus_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
-| `notify.meshcore_bus_radio1_send_<alias>` | notify, one per target | sends the message text to that target |
+| `binary_sensor.meshcore_home_gateway_radio1_radio` | connectivity, diagnostic | radio link up |
+| `sensor.meshcore_home_gateway_radio1_battery` | voltage (V), diagnostic | radio battery |
+| `sensor.meshcore_home_gateway_radio1_airtime` | duration (s), diagnostic | airtime of the last hour |
+| `event.meshcore_home_gateway_radio1_message` | event: `contact`, `channel` | every received message; the payload keys are attributes |
+| `event.meshcore_home_gateway_radio1_delivery` | event: `queued` … `rejected` | delivery steps of outgoing messages |
+| `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
+| `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target |
 
 All entities share the bridge's availability topic and turn `unavailable` when the bridge is
 offline. The state values come from the retained state document, so they are back right after a
@@ -52,7 +52,7 @@ automation:
     actions:
       - action: notify.send_message
         target:
-          entity_id: notify.meshcore_bus_radio1_send_alerts
+          entity_id: notify.meshcore_home_gateway_radio1_send_alerts
         data:
           message: "Smoke in the kitchen"
 ```
@@ -66,17 +66,17 @@ automation:
   - alias: Status on request over the mesh
     triggers:
       - trigger: state
-        entity_id: event.meshcore_bus_radio1_command
+        entity_id: event.meshcore_home_gateway_radio1_command
         not_from: [unavailable, unknown]
     conditions:
       - condition: state
-        entity_id: event.meshcore_bus_radio1_command
+        entity_id: event.meshcore_home_gateway_radio1_command
         attribute: event_type
         state: status
     actions:
       - action: notify.send_message
         target:
-          entity_id: notify.meshcore_bus_radio1_send_operator
+          entity_id: notify.meshcore_home_gateway_radio1_send_operator
         data:
           message: >-
             Doors {{ states('binary_sensor.doors') }},
@@ -90,11 +90,11 @@ automation:
   - alias: Mesh delivery failed
     triggers:
       - trigger: state
-        entity_id: event.meshcore_bus_radio1_delivery
+        entity_id: event.meshcore_home_gateway_radio1_delivery
         not_from: [unavailable, unknown]
     conditions:
       - condition: state
-        entity_id: event.meshcore_bus_radio1_delivery
+        entity_id: event.meshcore_home_gateway_radio1_delivery
         attribute: event_type
         state: failed
     actions:
@@ -102,8 +102,8 @@ automation:
         data:
           title: Mesh message failed
           message: >-
-            {{ state_attr('event.meshcore_bus_radio1_delivery', 'target') }}:
-            {{ state_attr('event.meshcore_bus_radio1_delivery', 'reason') }}
+            {{ state_attr('event.meshcore_home_gateway_radio1_delivery', 'target') }}:
+            {{ state_attr('event.meshcore_home_gateway_radio1_delivery', 'reason') }}
 ```
 
 A trigger on the attribute `event_type` alone would miss the second of two equal events in a row,

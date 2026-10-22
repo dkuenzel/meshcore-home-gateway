@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from meshcore_bus.config import Config, parse_config, render_config
+from meshcore_home_gateway.config import Config, parse_config, render_config
 
 ROOT = Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash") or "/bin/bash"
-SCRIPT = ROOT / "deploy" / "proxmox" / "meshcore-bus-lxc.sh"
+SCRIPT = ROOT / "deploy" / "proxmox" / "meshcore-home-gateway-lxc.sh"
 ALICE = "a1" * 32
 RELAY = "b2" * 32
 TEMPLATE = "debian-13-standard_13.6-1_amd64.tar.zst"
@@ -176,7 +176,7 @@ class Host:
         return (self.root / "pushed" / name).read_text(encoding="utf-8")
 
     def config(self) -> Config:
-        return parse_config(render_config(self.pushed("meshcore-bus-answers")))
+        return parse_config(render_config(self.pushed("meshcore-home-gateway-answers")))
 
     def log_text(self) -> str:
         return (self.root / "calls.log").read_text(encoding="utf-8")
@@ -218,7 +218,7 @@ def run_installer(
         "STUB": str(host.root),
         "ALICE": ALICE,
         "RELAY": RELAY,
-        "MESHCORE_BUS_SERIAL_DIR": str(host.serial.parent),
+        "MESHCORE_HOME_GATEWAY_SERIAL_DIR": str(host.serial.parent),
         **(env or {}),
     }
     return subprocess.run(  # noqa: S603 - our script with fixed arguments
@@ -275,10 +275,10 @@ def test_unattended_install_creates_and_configures_the_container(host: Host) -> 
     inside = host.inside()
     assert any("apt-get install" in c and "python3-paho-mqtt" in c for c in inside)
     assert any("build_pyz.py" in c and "/usr/bin/python3 -I" in c for c in inside)
-    assert any("config render" in c and "--group meshcore-bus" in c for c in inside)
+    assert any("config render" in c and "--group meshcore-home-gateway" in c for c in inside)
     assert inside[-2:] == [
-        "systemctl enable --now meshcore-bus",
-        "systemctl is-active --quiet meshcore-bus",
+        "systemctl enable --now meshcore-home-gateway",
+        "systemctl is-active --quiet meshcore-home-gateway",
     ]
 
     config = host.config()
@@ -342,7 +342,7 @@ def test_interactive_default_setup_asks_only_what_has_no_default(host: Host) -> 
     assert len(host.dialogs()) == len(dialog)
     options = create_options(host)
     assert (options["--rootfs"], options["--memory"], options["--hostname"]) == (
-        "local-lvm:2", "256", "meshcore-bus",
+        "local-lvm:2", "256", "meshcore-home-gateway",
     )  # fmt: skip
     config = host.config()
     assert config.mqtt.node_id == "radio1"
@@ -354,7 +354,8 @@ def test_interactive_default_setup_asks_only_what_has_no_default(host: Host) -> 
 def test_interactive_advanced_setup_asks_for_everything(host: Host) -> None:
     dialog = [
         "advanced",
-        "106", "meshcore-bus", "local-lvm", "4", "512", "vmbr1",  # id, name, disk, memory, bridge
+        # id, name, disk, memory, bridge
+        "106", "meshcore-home-gateway", "local-lvm", "4", "512", "vmbr1",
         "192.0.2.20/24", "192.0.2.1", "local",  # address, gateway, template storage
         str(host.serial),
         "broker.example.org", "no", "1883", "bridge", "pw", "meshcore", "gw1",  # broker, topics
@@ -514,7 +515,7 @@ def test_update_checks_the_configuration_before_switching_versions(host: Host) -
     assert result.returncode == 0, result.stderr
     (build,) = [c for c in host.inside() if "build_pyz.py" in c]
     assert build.index("check-config") < build.index("ln -sfn")
-    assert host.inside()[-1] == "systemctl restart meshcore-bus"
+    assert host.inside()[-1] == "systemctl restart meshcore-home-gateway"
     assert not host.pct("create")
 
 
@@ -542,8 +543,11 @@ def test_reconfigure_keeps_the_settings_it_does_not_ask_for(host: Host) -> None:
         frozenset({ALICE}), frozenset({"status"}),
     )  # fmt: skip
     inside = host.inside()
-    assert inside[0] == "meshcore-bus config answers --config /etc/meshcore-bus/config.toml"
-    assert inside.index("systemctl stop meshcore-bus") < next(
+    assert (
+        inside[0]
+        == "meshcore-home-gateway config answers --config /etc/meshcore-home-gateway/config.toml"
+    )
+    assert inside.index("systemctl stop meshcore-home-gateway") < next(
         i for i, c in enumerate(inside) if "--list channels" in c
     )
 
@@ -607,7 +611,7 @@ def test_unattended_reconfigure_lists_a_kept_sender_once(host: Host) -> None:
     answers = answers_file(host, senders + "\n")
     result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
     assert result.returncode == 0, result.stderr
-    lines = host.pushed("meshcore-bus-answers").splitlines()
+    lines = host.pushed("meshcore-home-gateway-answers").splitlines()
     assert [line for line in lines if line.startswith("commands.senders=")] == [senders]
 
 
@@ -617,7 +621,7 @@ def test_failed_reconfigure_starts_the_service_again(host: Host) -> None:
     env = {"PROBE_FAILS": "1"}
     result = run_installer(host, "--reconfigure", "105", "--answers", str(answers), env=env)
     assert result.returncode == 1
-    assert host.inside()[-1] == "systemctl start meshcore-bus"
+    assert host.inside()[-1] == "systemctl start meshcore-home-gateway"
 
 
 def test_help_and_unknown_options(host: Host) -> None:

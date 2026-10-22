@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from meshcore_bus.radio.transport import SerialTransport, TcpTransport, is_disconnect
+from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport, is_disconnect
 
 
 @pytest.fixture

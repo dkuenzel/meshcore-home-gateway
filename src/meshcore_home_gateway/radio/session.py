@@ -24,16 +24,16 @@ from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TypeVar
 
-from meshcore_bus.core.contacts import Contact, ContactBook
-from meshcore_bus.core.model import InboundMessage
-from meshcore_bus.protocol import codec
-from meshcore_bus.protocol.codes import AutoAdd, Push, Response
-from meshcore_bus.protocol.framing import FrameDecoder, encode_frame
-from meshcore_bus.radio.transport import Transport
+from meshcore_home_gateway.core.contacts import Contact, ContactBook
+from meshcore_home_gateway.core.model import InboundMessage
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import AutoAdd, Push, Response
+from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
+from meshcore_home_gateway.radio.transport import Transport
 
 log = logging.getLogger(__name__)
 
-APP_NAME = "meshcore-bus"
+APP_NAME = "meshcore-home-gateway"
 COMMAND_TIMEOUT_S = 5.0  # the firmware documentation recommends about 5 s per command
 FLUSH_BYTES = 256  # completes any partial frame left in the firmware parser (docs/protocol.md)
 FLUSH_SETTLE_S = 0.5

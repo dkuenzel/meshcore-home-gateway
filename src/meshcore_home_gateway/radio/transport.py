@@ -1,6 +1,6 @@
 """Byte transports to the companion radio: USB serial (termios) and TCP (asyncio).
 
-Both deliver raw bytes; framing is done by `meshcore_bus.protocol.framing`.
+Both deliver raw bytes; framing is done by `meshcore_home_gateway.protocol.framing`.
 """
 
 from __future__ import annotations

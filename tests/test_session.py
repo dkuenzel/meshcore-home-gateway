@@ -8,11 +8,11 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
-from meshcore_bus.core.model import MessageKind
-from meshcore_bus.protocol import codec
-from meshcore_bus.protocol.codes import Command, Push, Response
-from meshcore_bus.radio import session as session_module
-from meshcore_bus.radio.session import (
+from meshcore_home_gateway.core.model import MessageKind
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import Command, Push, Response
+from meshcore_home_gateway.radio import session as session_module
+from meshcore_home_gateway.radio.session import (
     AckReceived,
     CommandFailedError,
     CompanionSession,

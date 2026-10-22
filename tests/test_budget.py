@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from meshcore_bus.core.budget import AirtimeBudget, Deduplicator
+from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator
 
 
 def test_budget_starts_full_and_consumes() -> None:

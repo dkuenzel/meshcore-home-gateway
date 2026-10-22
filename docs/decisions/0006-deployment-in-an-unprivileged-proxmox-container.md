@@ -33,7 +33,7 @@ Chosen option: "an unprivileged LXC container created by a host script with dial
 isolates the bridge with almost no overhead, passes exactly one USB device into it, and lets one
 script do everything from container creation to a running, configured service.
 
-The script `deploy/proxmox/meshcore-bus-lxc.sh`:
+The script `deploy/proxmox/meshcore-home-gateway-lxc.sh`:
 
 1. checks the host: root, Proxmox VE 8 or 9 with a `pve-container` of 5.3.1 or newer (the first
    that accepts every Debian 13 point release; device passthrough itself exists since Proxmox VE
@@ -52,14 +52,14 @@ The script `deploy/proxmox/meshcore-bus-lxc.sh`:
 6. installs `python3` and `python3-paho-mqtt` from Debian, builds the zipapp from the checkout
    inside the container and installs the systemd unit; every command in the container runs with
    a clean environment, because `pct exec` passes the host's environment through;
-7. runs `meshcore-bus probe` inside the container and offers the radio's channels and chat
+7. runs `meshcore-home-gateway probe` inside the container and offers the radio's channels and chat
    contacts as targets and command senders;
-8. writes the configuration through `meshcore-bus config render` (validated, mode 0640) from an
-   answers file that is deleted afterwards, and starts the service.
+8. writes the configuration through `meshcore-home-gateway config render` (validated, mode 0640)
+   from an answers file that is deleted afterwards, and starts the service.
 
 `--answers FILE` runs the same steps without dialogs. `--update CTID` builds a new version and
-switches to it only if it accepts the current configuration. `--reconfigure CTID` offers the
-current settings as defaults (`meshcore-bus config answers`) and keeps those it does not ask for.
+switches to it only if it accepts the current configuration. `--reconfigure CTID` offers the current
+settings as defaults (`meshcore-home-gateway config answers`) and keeps those it does not ask for.
 
 ### Consequences
 

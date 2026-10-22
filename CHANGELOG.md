@@ -9,7 +9,9 @@ format and the command line are public interfaces.
 
 ### Added
 
-- Design document, eleven architecture decision records, protocol reference (MeshCore companion
+- The project is named meshcore-home-gateway (developed as meshcore-bus until 2026-10-22; ADR
+  0012): command, package, unit, user, paths, MQTT client identifier and Home Assistant IDs.
+- Design document, twelve architecture decision records, protocol reference (MeshCore companion
   firmware 1.18.0), MQTT API, Home Assistant, configuration, deployment, testing and development
   documentation.
 - Companion protocol subset: framing with resynchronisation, command encoders, decoders for

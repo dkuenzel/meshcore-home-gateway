@@ -2,9 +2,14 @@
 
 import pytest
 
-from meshcore_bus.core.commands import CommandRules, Rejection, command_word, evaluate_command
-from meshcore_bus.core.contacts import Contact, ContactBook
-from meshcore_bus.core.model import InboundMessage, MessageKind, TextType
+from meshcore_home_gateway.core.commands import (
+    CommandRules,
+    Rejection,
+    command_word,
+    evaluate_command,
+)
+from meshcore_home_gateway.core.contacts import Contact, ContactBook
+from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
 
 ALICE = "a1" * 32
 MALLORY_SAME_PREFIX = "a1" * 6 + "ff" * 26

@@ -13,8 +13,8 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
-from meshcore_bus.protocol import codec
-from meshcore_bus.protocol.codes import Command, Push, Response
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import Command, Push, Response
 
 SELF_KEY = bytes(range(0x10, 0x30))
 START_TIME = 1_800_000_000

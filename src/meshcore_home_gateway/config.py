@@ -14,9 +14,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from meshcore_bus.core.commands import CommandRules
-from meshcore_bus.core.contacts import normalise_key
-from meshcore_bus.core.model import MessageKind, Target
+from meshcore_home_gateway.core.commands import CommandRules
+from meshcore_home_gateway.core.contacts import normalise_key
+from meshcore_home_gateway.core.model import MessageKind, Target
 
 ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
 TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
@@ -101,7 +101,7 @@ class Config:
     commands: CommandRules = field(default_factory=lambda: CommandRules(frozenset(), frozenset()))
     targets: tuple[Target, ...] = ()
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
-    state_dir: Path = Path("/var/lib/meshcore-bus")
+    state_dir: Path = Path("/var/lib/meshcore-home-gateway")
 
 
 def load_config(path: Path) -> Config:
@@ -378,8 +378,8 @@ _ANSWER_TYPES: dict[str, type] = {
 }  # fmt: skip
 
 HEADER = """\
-# meshcore-bus configuration, written by the installer.
-# Reference: docs/configuration.md. Check after editing: meshcore-bus check-config
+# meshcore-home-gateway configuration, written by the installer.
+# Reference: docs/configuration.md. Check after editing: meshcore-home-gateway check-config
 """
 
 

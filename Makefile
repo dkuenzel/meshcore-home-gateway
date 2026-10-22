@@ -10,6 +10,8 @@ PYTHONS ?= python3.11 python3.12 python3.13 python3.14
 VENV ?= .venv
 BIN := $(VENV)/bin
 COOLDOWN_DAYS ?= 14
+PYZ := meshcore-home-gateway.pyz
+UNIT := meshcore-home-gateway.service
 
 .PHONY: help venv lock lint shellcheck workflows unit-check test matrix dist pyz check hooks clean
 
@@ -56,19 +58,19 @@ matrix: ## `make test` with every Python in PYTHONS that is installed (as the CI
 
 unit-check: pyz ## systemd-analyze: verify the unit, exposure score at most 2.0
 	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
-	  sed 's|^ExecStart=/usr/local/bin/meshcore-bus |ExecStart=$(CURDIR)/dist/meshcore-bus.pyz |' \
-	    deploy/systemd/meshcore-bus.service >"$$tmp/meshcore-bus.service" && \
-	  systemd-analyze verify "$$tmp/meshcore-bus.service" && \
-	  systemd-analyze security --offline=true --threshold=20 "$$tmp/meshcore-bus.service" | tail -n 1
+	  sed 's|^ExecStart=/usr/local/bin/meshcore-home-gateway |ExecStart=$(CURDIR)/dist/$(PYZ) |' \
+	    deploy/systemd/$(UNIT) >"$$tmp/$(UNIT)" && \
+	  systemd-analyze verify "$$tmp/$(UNIT)" && \
+	  systemd-analyze security --offline=true --threshold=20 "$$tmp/$(UNIT)" | tail -n 1
 
 dist: venv ## Wheel, sdist and the single-file zipapp in dist/
 	rm -rf dist
 	$(BIN)/python -m build --no-isolation --outdir dist .
 	$(MAKE) --no-print-directory pyz
 
-pyz: venv ## Reproducible zipapp dist/meshcore-bus.pyz, smoke-tested
-	$(BIN)/python tools/build_pyz.py --output dist/meshcore-bus.pyz
-	$(BIN)/python dist/meshcore-bus.pyz --version
+pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
+	$(BIN)/python tools/build_pyz.py --output dist/$(PYZ)
+	$(BIN)/python dist/$(PYZ) --version
 
 check: lint shellcheck workflows test dist unit-check ## Everything CI runs
 

@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from meshcore_bus.core.commands import Command, CommandDecision, Rejection
-from meshcore_bus.core.contacts import Contact
-from meshcore_bus.core.model import (
+from meshcore_home_gateway.core.commands import Command, CommandDecision, Rejection
+from meshcore_home_gateway.core.contacts import Contact
+from meshcore_home_gateway.core.model import (
     DeliveryEvent,
     DeliveryState,
     InboundMessage,
@@ -14,14 +14,14 @@ from meshcore_bus.core.model import (
     TextType,
     split_sender_name,
 )
-from meshcore_bus.mqtt.payloads import (
+from meshcore_home_gateway.mqtt.payloads import (
     command_payload,
     delivery_payload,
     encode,
     received_payload,
     rx_payload,
 )
-from meshcore_bus.mqtt.topics import Topics
+from meshcore_home_gateway.mqtt.topics import Topics
 
 KEY = "a1" * 32
 T0 = 1_800_000_000

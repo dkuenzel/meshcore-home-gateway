@@ -12,8 +12,8 @@ import struct
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from meshcore_bus.core.model import InboundMessage, MessageKind, TextType
-from meshcore_bus.protocol.codes import (
+from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
+from meshcore_home_gateway.protocol.codes import (
     PROTOCOL_VERSION,
     AutoAdd,
     Command,

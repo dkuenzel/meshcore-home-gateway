@@ -33,8 +33,8 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 On the Proxmox VE host, as root, in a copy of this repository:
 
 ```sh
-git clone https://github.com/dkuenzel/meshcore-bus.git && cd meshcore-bus
-./deploy/proxmox/meshcore-bus-lxc.sh
+git clone https://github.com/dkuenzel/meshcore-home-gateway.git && cd meshcore-home-gateway
+./deploy/proxmox/meshcore-home-gateway-lxc.sh
 ```
 
 The first dialog chooses the setup. **Default** asks only what has no sensible default: the
@@ -44,11 +44,11 @@ every setting in the table.
 | Question | Default | Setup |
 | --- | --- | --- |
 | Container ID | next free ID | Advanced |
-| Host name, disk storage, disk size, memory, network bridge | `meshcore-bus`, first active storage for containers, 2 GB, 256 MB, `vmbr0` | Advanced |
+| Host name, disk storage, disk size, memory, network bridge | `meshcore-home-gateway`, first active storage for containers, 2 GB, 256 MB, `vmbr0` | Advanced |
 | IPv4 address with prefix, gateway | `dhcp` | Advanced |
 | Storage for templates | first active storage for templates | Advanced |
 | Radio connection | the devices in `/dev/serial/by-id/`, or TCP with address and port (5000) | both |
-| Broker address, user, password | –, `meshcore-bus`, – | both |
+| Broker address, user, password | –, `meshcore-home-gateway`, – | both |
 | Broker TLS, port | no, 1883 (8883 with TLS) | Advanced |
 | Base topic, node id | `meshcore`, `radio1` | Advanced |
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
@@ -72,15 +72,15 @@ pveam update          # prints "update successful"; the exit status is 0 even wh
 pveam available --section system | grep debian-13-standard
 pveam download local debian-13-standard_<version>_amd64.tar.zst
 pct create 105 local:vztmpl/debian-13-standard_<version>_amd64.tar.zst \
-  --hostname meshcore-bus --cores 1 --memory 256 --swap 256 --rootfs local-lvm:2 \
+  --hostname meshcore-home-gateway --cores 1 --memory 256 --swap 256 --rootfs local-lvm:2 \
   --net0 name=eth0,bridge=vmbr0,ip=dhcp --timezone host --unprivileged 1 --features nesting=1 \
-  --onboot 1 --ostype debian --tags meshcore-bus
+  --onboot 1 --ostype debian --tags meshcore-home-gateway
 pct set 105 --dev0 path=/dev/serial/by-id/usb-<radio>-if00,gid=20,mode=0660
 pct start 105
 pct exec 105 -- getent group dialout    # 20 on Debian; otherwise use that number in dev0
-tar -czf /tmp/meshcore-bus-src.tar.gz src/meshcore_bus tools/build_pyz.py \
-  deploy/systemd/meshcore-bus.service
-pct push 105 /tmp/meshcore-bus-src.tar.gz /root/meshcore-bus-src.tar.gz
+tar -czf /tmp/meshcore-home-gateway-src.tar.gz src/meshcore_home_gateway tools/build_pyz.py \
+  deploy/systemd/meshcore-home-gateway.service
+pct push 105 /tmp/meshcore-home-gateway-src.tar.gz /root/meshcore-home-gateway-src.tar.gz
 pct enter 105
 ```
 
@@ -89,18 +89,19 @@ Inside the container:
 ```sh
 apt-get update && apt-get install -y --no-install-recommends python3 python3-paho-mqtt
 useradd --system --user-group --groups dialout --no-create-home --home-dir /nonexistent \
-  --shell /usr/sbin/nologin meshcore-bus
-mkdir -p /root/src /usr/local/lib/meshcore-bus && tar -C /root/src -xzf /root/meshcore-bus-src.tar.gz
+  --shell /usr/sbin/nologin meshcore-home-gateway
+mkdir -p /root/src /usr/local/lib/meshcore-home-gateway
+tar -C /root/src -xzf /root/meshcore-home-gateway-src.tar.gz
 python3 /root/src/tools/build_pyz.py --source /root/src/src --interpreter '/usr/bin/python3 -I' \
-  --output /usr/local/lib/meshcore-bus/meshcore-bus-<version>.pyz
-ln -sfn meshcore-bus-<version>.pyz /usr/local/lib/meshcore-bus/current.pyz
-ln -sfn /usr/local/lib/meshcore-bus/current.pyz /usr/local/bin/meshcore-bus
-install -m 0644 /root/src/deploy/systemd/meshcore-bus.service /etc/systemd/system/
+  --output /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<version>.pyz
+ln -sfn meshcore-home-gateway-<version>.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+ln -sfn /usr/local/lib/meshcore-home-gateway/current.pyz /usr/local/bin/meshcore-home-gateway
+install -m 0644 /root/src/deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
 systemctl daemon-reload
-meshcore-bus probe --serial /dev/serial/by-id/usb-<radio>-if00
-meshcore-bus config render --answers answers.txt --output /etc/meshcore-bus/config.toml \
-  --group meshcore-bus
-systemctl enable --now meshcore-bus
+meshcore-home-gateway probe --serial /dev/serial/by-id/usb-<radio>-if00
+meshcore-home-gateway config render --answers answers.txt \
+  --output /etc/meshcore-home-gateway/config.toml --group meshcore-home-gateway
+systemctl enable --now meshcore-home-gateway
 ```
 
 * **Unprivileged and with nesting, both set explicitly:** on Proxmox VE 8, `pct create` makes a
@@ -132,8 +133,8 @@ starting with `#` are ignored. There are two kinds of keys:
 * **Answers for the installer:** `setup`, `ct.id`, `ct.hostname`, `ct.storage`, `ct.disk_gb`,
   `ct.memory_mb`, `ct.bridge`, `ct.ip`, `ct.gateway`, `ct.template_storage`, `radio.choice` (a
   device path or `tcp`; required, the script never guesses a device), `targets.channels` and
-  `targets.contacts` (comma-separated indices and keys as offered by `meshcore-bus probe --list`).
-  An unknown key of this kind stops the script.
+  `targets.contacts` (comma-separated indices and keys as offered by `meshcore-home-gateway probe
+  --list`). An unknown key of this kind stops the script.
 * **Every other key is a configuration setting** (`radio.host`, `mqtt.host`, `mqtt.password`,
   `airtime.budget_s_per_hour`, `commands.senders`, `commands.words`, …; see configuration.md) and
   goes into the configuration as given. The configuration check refuses unknown settings and
@@ -146,22 +147,27 @@ password.
 ### Update, reconfigure, remove
 
 ```sh
-git pull && ./deploy/proxmox/meshcore-bus-lxc.sh --update 105       # new version, same configuration
-./deploy/proxmox/meshcore-bus-lxc.sh --reconfigure 105               # dialogs again
-pct exec 105 -- ln -sfn meshcore-bus-<old version>.pyz /usr/local/lib/meshcore-bus/current.pyz \
-  && pct exec 105 -- systemctl restart meshcore-bus                  # roll back
-pct stop 105 && pct destroy 105                                       # remove
+# new version, same configuration
+git pull && ./deploy/proxmox/meshcore-home-gateway-lxc.sh --update 105
+# dialogs again
+./deploy/proxmox/meshcore-home-gateway-lxc.sh --reconfigure 105
+# roll back
+pct exec 105 -- ln -sfn meshcore-home-gateway-<old version>.pyz \
+  /usr/local/lib/meshcore-home-gateway/current.pyz
+pct exec 105 -- systemctl restart meshcore-home-gateway
+# remove
+pct stop 105 && pct destroy 105
 ```
 
-* **Update** builds the new zipapp under a temporary name next to the old one and checks the
-  current configuration with it; only then it moves it to `meshcore-bus-<version>.pyz`, switches
+* **Update** builds the new zipapp under a temporary name next to the old one and checks the current
+  configuration with it; only then it moves it to `meshcore-home-gateway-<version>.pyz`, switches
   the `current.pyz` link and restarts the service. If the configuration does not pass, the old
   version stays active, also when the version string did not change.
-* **Reconfigure** reads the current configuration (`meshcore-bus config answers`) and offers its
-  values as defaults: an empty password keeps the current one, and settings the dialogs do not ask
-  for are kept. Targets and command senders that the radio does not offer (a contact that is not a
-  chat contact, a channel slot without a name) are kept as well, and the log names them. The
-  service is stopped while the script reads the radio and started again afterwards, also when a
+* **Reconfigure** reads the current configuration (`meshcore-home-gateway config answers`) and
+  offers its values as defaults: an empty password keeps the current one, and settings the dialogs
+  do not ask for are kept. Targets and command senders that the radio does not offer (a contact that
+  is not a chat contact, a channel slot without a name) are kept as well, and the log names them.
+  The service is stopped while the script reads the radio and started again afterwards, also when a
   step fails.
 
 ## 3 Other Linux systems
@@ -172,36 +178,37 @@ interpreter line. Run the steps as root in a clone of this repository.
 
 ```sh
 apt install python3 python3-paho-mqtt
-install -d /usr/local/lib/meshcore-bus
+install -d /usr/local/lib/meshcore-home-gateway
 python3 tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
-  --output /usr/local/lib/meshcore-bus/meshcore-bus-0.1.0.pyz
-ln -sfn meshcore-bus-0.1.0.pyz /usr/local/lib/meshcore-bus/current.pyz
-ln -sfn /usr/local/lib/meshcore-bus/current.pyz /usr/local/bin/meshcore-bus
+  --output /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-0.1.0.pyz
+ln -sfn meshcore-home-gateway-0.1.0.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+ln -sfn /usr/local/lib/meshcore-home-gateway/current.pyz /usr/local/bin/meshcore-home-gateway
 useradd --system --user-group --groups dialout --no-create-home --home-dir /nonexistent \
-  --shell /usr/sbin/nologin meshcore-bus
-install -D -m 0640 -g meshcore-bus deploy/config.example.toml /etc/meshcore-bus/config.toml
-install -m 0644 deploy/systemd/meshcore-bus.service /etc/systemd/system/
-editor /etc/meshcore-bus/config.toml && meshcore-bus check-config
-systemctl daemon-reload && systemctl enable --now meshcore-bus
+  --shell /usr/sbin/nologin meshcore-home-gateway
+install -D -m 0640 -g meshcore-home-gateway deploy/config.example.toml \
+  /etc/meshcore-home-gateway/config.toml
+install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
+editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-config
+systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 ```
 
 ## 4 Operations
 
 | Task | Command (inside the container) |
 | --- | --- |
-| Logs | `journalctl -u meshcore-bus -f` |
-| Status | `systemctl status meshcore-bus` (shows radio state and queue) |
-| Check the configuration | `meshcore-bus check-config` |
-| Watch the bus | `meshcore-bus listen` |
-| Send a test message | `meshcore-bus send --wait 60 <alias> "test"` |
-| Inspect the radio | `systemctl stop meshcore-bus && meshcore-bus probe --serial <device>` |
+| Logs | `journalctl -u meshcore-home-gateway -f` |
+| Status | `systemctl status meshcore-home-gateway` (shows radio state and queue) |
+| Check the configuration | `meshcore-home-gateway check-config` |
+| Watch the bus | `meshcore-home-gateway listen` |
+| Send a test message | `meshcore-home-gateway send --wait 60 <alias> "test"` |
+| Inspect the radio | `systemctl stop meshcore-home-gateway && meshcore-home-gateway probe --serial <device>` |
 
 * **Service:** `Type=notify` with a 60 s watchdog; restart after 5 s on failure, not on
-  configuration errors (exit code 78). `systemd-analyze security meshcore-bus` rates the unit's
-  exposure at 1.6 (lower is better).
-* **State and backup:** back up `/etc/meshcore-bus/config.toml` and
-  `/var/lib/meshcore-bus/state.json` (the newest accepted command time per sender; without it a
-  restored system accepts older recorded commands again until a sender sends a new one, within
+  configuration errors (exit code 78). `systemd-analyze security meshcore-home-gateway` rates the
+  unit's exposure at 1.6 (lower is better).
+* **State and backup:** back up `/etc/meshcore-home-gateway/config.toml` and
+  `/var/lib/meshcore-home-gateway/state.json` (the newest accepted command time per sender; without
+  it a restored system accepts older recorded commands again until a sender sends a new one, within
   `max_age_s`).
 * **Logs contain no message texts** at the default level; set `log_level = "debug"` temporarily to
   see them.
@@ -215,12 +222,12 @@ systemctl daemon-reload && systemctl enable --now meshcore-bus
 | `radio: cannot connect (no answer from the radio)` | Another program or the phone app holds the radio, or wrong firmware (BLE-only); close the app, check the firmware type |
 | State `disconnected` after re-plugging the radio | The device number changed: `pct reboot <id>` |
 | State `disconnected`, log shows `connection lost` every few minutes | USB power or cable; check `dmesg` on the host |
-| `delivery: failed`, reason `unknown_contact` | The contact is not in the radio's contact table or has a different key; `meshcore-bus probe` shows the table |
+| `delivery: failed`, reason `unknown_contact` | The contact is not in the radio's contact table or has a different key; `meshcore-home-gateway probe` shows the table |
 | `delivery: failed`, reason `channel_not_configured` | The channel index has no name on the radio |
 | `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the legal limit |
 | `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets); shorten messages or raise `burst_s` |
 | Commands rejected with `too_old` / `from_the_future` | Sender or bridge clock wrong; the phone apps set the radio clock, or set `max_age_s = 0` |
-| Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-bus probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
+| Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
 | Commands rejected with `sender_unverified` | The bridge fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
-| Commands rejected with `state_unwritable` | `/var/lib/meshcore-bus/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
+| Commands rejected with `state_unwritable` | `/var/lib/meshcore-home-gateway/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |

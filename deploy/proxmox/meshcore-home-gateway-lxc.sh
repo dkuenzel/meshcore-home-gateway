@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
-# meshcore-bus installer for Proxmox VE 8 (current updates) and 9.
+# meshcore-home-gateway installer for Proxmox VE 8 (current updates) and 9.
 #
 # Creates an unprivileged Debian 13 container, passes the radio's USB serial device through,
-# installs python3 and python3-paho-mqtt from Debian, builds the meshcore-bus zipapp from this
-# checkout inside the container, reads the radio's channels and contacts, writes the
-# configuration and starts the service. Run as root on the Proxmox host:
+# installs python3 and python3-paho-mqtt from Debian, builds the meshcore-home-gateway zipapp from
+# this checkout inside the container, reads the radio's channels and contacts, writes the
+# configuration and starts the service. Run as root on the Proxmox host, in the checkout:
 #
-#   ./deploy/proxmox/meshcore-bus-lxc.sh                    install, asking in dialogs
-#   ./deploy/proxmox/meshcore-bus-lxc.sh --answers FILE     install without dialogs (key=value)
-#   ./deploy/proxmox/meshcore-bus-lxc.sh --update CTID      install this checkout into a container
-#   ./deploy/proxmox/meshcore-bus-lxc.sh --reconfigure CTID ask again, keeping other settings
+#   deploy/proxmox/meshcore-home-gateway-lxc.sh                     install, asking in dialogs
+#   deploy/proxmox/meshcore-home-gateway-lxc.sh --answers FILE      install without dialogs
+#   deploy/proxmox/meshcore-home-gateway-lxc.sh --update CTID       install this checkout into CTID
+#   deploy/proxmox/meshcore-home-gateway-lxc.sh --reconfigure CTID  ask again, keep other settings
 #
 # Documentation: docs/deployment.md. Design decision: docs/decisions/0006-*.md.
 set -Eeuo pipefail
 
 REPO_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-VERSION=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$REPO_DIR/src/meshcore_bus/__init__.py")
-TITLE="meshcore-bus $VERSION"
-SERIAL_DIR=${MESHCORE_BUS_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
+VERSION=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' \
+  "$REPO_DIR/src/meshcore_home_gateway/__init__.py")
+TITLE="meshcore-home-gateway $VERSION"
+SERIAL_DIR=${MESHCORE_HOME_GATEWAY_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
 DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the container
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
-LIB=/usr/local/lib/meshcore-bus
-CONFIG=/etc/meshcore-bus/config.toml
+LIB=/usr/local/lib/meshcore-home-gateway
+CONFIG=/etc/meshcore-home-gateway/config.toml
 # pct exec passes the host's environment into the container; commands start from a clean one
 CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 
@@ -30,7 +31,7 @@ INSTALLER_KEYS=" setup ct.id ct.hostname ct.storage ct.disk_gb ct.memory_mb ct.b
 ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 declare -A ANSWERS=()   # from --answers FILE
 declare -A CURRENT=()   # settings of the installation being reconfigured
-declare -A OUT=()       # answers for `meshcore-bus config render`
+declare -A OUT=()       # answers for `meshcore-home-gateway config render`
 declare -A CT=()        # container settings
 INTERACTIVE=1
 ADVANCED=0
@@ -40,13 +41,13 @@ WORK=""
 
 # --- output and errors ----------------------------------------------------------------------
 
-log() { printf '%s\n' "meshcore-bus: $*" >&2; }
+log() { printf '%s\n' "meshcore-home-gateway: $*" >&2; }
 
 die() {
   if [[ -n $WORK ]]; then : >"$WORK/failed"; fi   # a parent shell's ERR trap stays quiet
   log "error: $*"
   if [[ -n $STOPPED ]]; then
-    in_ct "$STOPPED" systemctl start meshcore-bus >&2 \
+    in_ct "$STOPPED" systemctl start meshcore-home-gateway >&2 \
       && log "the service in container $STOPPED runs again with its previous configuration"
   fi
   if [[ -n $CREATED ]]; then
@@ -192,12 +193,12 @@ preflight() {
     die "pve-container $container cannot create Debian 13 containers;" \
       "update the host first (apt update && apt full-upgrade)"
   fi
-  [[ -n $VERSION && -f $REPO_DIR/tools/build_pyz.py ]] || die "run from a complete meshcore-bus checkout"
+  [[ -n $VERSION && -f $REPO_DIR/tools/build_pyz.py ]] || die "run from a complete meshcore-home-gateway checkout"
 }
 
 CHECK_SETTINGS_PY='import sys
 sys.path.insert(0, sys.argv[1])
-from meshcore_bus.config import ConfigError, render_config
+from meshcore_home_gateway.config import ConfigError, render_config
 try:
     with open(sys.argv[2], encoding="utf-8") as answers:
         render_config(answers.read())
@@ -231,7 +232,7 @@ ask_container() {
   [[ ${CT[id]} =~ ^[1-9][0-9]*$ ]] || die "container ID must be a number"
   pvesh get /cluster/nextid --vmid "${CT[id]}" >/dev/null 2>&1 \
     || die "ID ${CT[id]} is already used by a container or virtual machine"
-  CT[hostname]=$(ask_advanced ct.hostname input "Container host name" "meshcore-bus")
+  CT[hostname]=$(ask_advanced ct.hostname input "Container host name" "meshcore-home-gateway")
   CT[storage]=$(ask_advanced ct.storage input "Storage for the container disk" \
     "$(first_storage rootdir)")
   CT[disk]=$(ask_advanced ct.disk_gb input "Disk size in GB" "2")
@@ -297,7 +298,8 @@ create_container() {
     --hostname "${CT[hostname]}" --cores 1 --memory "${CT[memory]}" --swap "${CT[memory]}" \
     --rootfs "${CT[storage]}:${CT[disk]}" --net0 "$net" --timezone host \
     --unprivileged 1 --features nesting=1 --onboot 1 --ostype debian \
-    --tags meshcore-bus --description "meshcore-bus $VERSION, MeshCore radio to MQTT bridge" >&2 \
+    --tags meshcore-home-gateway \
+    --description "meshcore-home-gateway $VERSION: MeshCore radio to MQTT and Home Assistant" >&2 \
     || die "creating container ${CT[id]} failed (see above)"
   CREATED=${CT[id]}
   if [[ ${OUT[radio.transport]} == serial ]]; then
@@ -334,20 +336,21 @@ check_device_group() {  # dev0 used Debian's dialout GID; pass the device again 
 }
 
 install_service() {  # packages, user, zipapp and unit; the version switches only if it is usable
-  local ctid=$1 archive="$WORK/meshcore-bus-src.tar.gz"
-  log "installing python3, python3-paho-mqtt and meshcore-bus $VERSION in container $ctid"
+  local ctid=$1 archive="$WORK/meshcore-home-gateway-src.tar.gz"
+  log "installing python3, python3-paho-mqtt and meshcore-home-gateway $VERSION in container $ctid"
   in_ct "$ctid" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y -qq --no-install-recommends python3 python3-paho-mqtt' >&2 \
     || die "installing packages in container $ctid failed (see above)"
-  in_ct "$ctid" bash -c 'id meshcore-bus >/dev/null 2>&1 || useradd --system \
+  in_ct "$ctid" bash -c 'id meshcore-home-gateway >/dev/null 2>&1 || useradd --system \
     --user-group --groups dialout --no-create-home --home-dir /nonexistent \
-    --shell /usr/sbin/nologin meshcore-bus' >&2 || die "creating the service user failed"
+    --shell /usr/sbin/nologin meshcore-home-gateway' >&2 || die "creating the service user failed"
   tar -C "$REPO_DIR" -czf "$archive" --exclude=__pycache__ \
-    src/meshcore_bus tools/build_pyz.py deploy/systemd/meshcore-bus.service
-  pct push "$ctid" "$archive" /root/meshcore-bus-src.tar.gz \
-    || die "copying meshcore-bus into container $ctid failed (see above)"
+    src/meshcore_home_gateway tools/build_pyz.py deploy/systemd/meshcore-home-gateway.service
+  pct push "$ctid" "$archive" /root/meshcore-home-gateway-src.tar.gz \
+    || die "copying meshcore-home-gateway into container $ctid failed (see above)"
   in_ct "$ctid" bash -c "set -e
-    src=/root/meshcore-bus-src pyz=$LIB/meshcore-bus-$VERSION.pyz new=$LIB/.meshcore-bus.pyz.new
+    src=/root/meshcore-home-gateway-src new=$LIB/.meshcore-home-gateway.pyz.new
+    pyz=$LIB/meshcore-home-gateway-$VERSION.pyz
     trap 'rm -rf \$src \$src.tar.gz \$new' EXIT
     rm -rf \$src && mkdir -p \$src $LIB
     tar -C \$src -xzf \$src.tar.gz
@@ -355,11 +358,11 @@ install_service() {  # packages, user, zipapp and unit; the version switches onl
       --interpreter '/usr/bin/python3 -I' >/dev/null
     if [ -f $CONFIG ]; then /usr/bin/python3 -I \$new check-config --config $CONFIG; fi
     mv -f \$new \$pyz   # only now: the same version may be the active one
-    ln -sfn meshcore-bus-$VERSION.pyz $LIB/current.pyz
-    ln -sfn $LIB/current.pyz /usr/local/bin/meshcore-bus
-    install -m 0644 \$src/deploy/systemd/meshcore-bus.service /etc/systemd/system/
+    ln -sfn meshcore-home-gateway-$VERSION.pyz $LIB/current.pyz
+    ln -sfn $LIB/current.pyz /usr/local/bin/meshcore-home-gateway
+    install -m 0644 \$src/deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
     systemctl daemon-reload" >&2 \
-    || die "meshcore-bus $VERSION was not installed in container $ctid (see above)"
+    || die "meshcore-home-gateway $VERSION was not installed in container $ctid (see above)"
 }
 
 # --- configuration --------------------------------------------------------------------------
@@ -395,7 +398,8 @@ ask_bridge() {  # broker, topics, Home Assistant and message settings
   OUT[mqtt.tls]=$tls
   OUT[mqtt.port]=$(ask_advanced mqtt.port input "MQTT broker port" \
     "$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)")
-  OUT[mqtt.username]=$(ask mqtt.username input "MQTT user name (empty: none)" "meshcore-bus")
+  OUT[mqtt.username]=$(ask mqtt.username input "MQTT user name (empty: none)" \
+    "meshcore-home-gateway")
   if [[ -v "CURRENT[mqtt.password]" ]]; then
     password=$(ask mqtt.password password "MQTT password (empty: keep the current one)" "")
     if [[ -n $password ]]; then OUT[mqtt.password]=$password; fi
@@ -448,9 +452,9 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
     if [[ $host == *:* ]]; then host="[$host]"; fi   # IPv6 address
     probe=(--tcp "$host:${OUT[radio.port]:-5000}")
   fi
-  channels=$(in_ct "$ctid" meshcore-bus probe "${probe[@]}" --list channels) \
+  channels=$(in_ct "$ctid" meshcore-home-gateway probe "${probe[@]}" --list channels) \
     || die "cannot read the radio (is it connected and not used by another program?)"
-  contacts=$(in_ct "$ctid" meshcore-bus probe "${probe[@]}" --list contacts) \
+  contacts=$(in_ct "$ctid" meshcore-home-gateway probe "${probe[@]}" --list contacts) \
     || die "cannot read the radio's contacts"
 
   for key in "${!OUT[@]}"; do  # current targets keep their alias when selected again
@@ -525,7 +529,7 @@ drop_offered() {  # drop_offered KIND OFFERED: forget the targets the dialog ask
   done
 }
 
-write_answers() {  # the answers for `meshcore-bus config render`, one key=value per line
+write_answers() {  # the answers for `meshcore-home-gateway config render`, one key=value per line
   local key
   for key in "${!OUT[@]}"; do
     printf '%s=%s\n' "$key" "${OUT[$key]}"
@@ -535,17 +539,18 @@ write_answers() {  # the answers for `meshcore-bus config render`, one key=value
 configure() {  # write the configuration into the container
   local ctid=$1 answers="$WORK/answers"
   ( umask 077 && write_answers >"$answers" )
-  pct push "$ctid" "$answers" /root/meshcore-bus-answers --perms 0600
+  pct push "$ctid" "$answers" /root/meshcore-home-gateway-answers --perms 0600
   rm -f -- "$answers"
   in_ct "$ctid" bash -c "set -e
-    trap 'rm -f /root/meshcore-bus-answers' EXIT
-    meshcore-bus config render --answers /root/meshcore-bus-answers --output $CONFIG \
-      --group meshcore-bus" >&2 || die "the configuration was not accepted (see above)"
+    trap 'rm -f /root/meshcore-home-gateway-answers' EXIT
+    meshcore-home-gateway config render --answers /root/meshcore-home-gateway-answers \
+      --output $CONFIG --group meshcore-home-gateway" >&2 \
+    || die "the configuration was not accepted (see above)"
 }
 
 load_current() {  # the settings of an existing installation, as answers
   local ctid=$1 text line
-  text=$(in_ct "$ctid" meshcore-bus config answers --config "$CONFIG") \
+  text=$(in_ct "$ctid" meshcore-home-gateway config answers --config "$CONFIG") \
     || die "cannot read the configuration in container $ctid"
   while IFS= read -r line; do
     if [[ $line == *=* ]]; then CURRENT[${line%%=*}]=${line#*=}; fi
@@ -556,21 +561,21 @@ load_current() {  # the settings of an existing installation, as answers
 
 start_service() {  # Type=notify: "active" means the service has reported readiness
   local ctid=$1 attempt
-  in_ct "$ctid" systemctl enable --now meshcore-bus >&2 \
-    || die "the service did not start; see: pct exec $ctid -- journalctl -u meshcore-bus"
+  in_ct "$ctid" systemctl enable --now meshcore-home-gateway >&2 \
+    || die "the service did not start; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
   for (( attempt = 0; attempt < 15; attempt++ )); do
-    if in_ct "$ctid" systemctl is-active --quiet meshcore-bus; then return 0; fi
+    if in_ct "$ctid" systemctl is-active --quiet meshcore-home-gateway; then return 0; fi
     sleep 1
   done
-  die "the service did not start; see: pct exec $ctid -- journalctl -u meshcore-bus"
+  die "the service did not start; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
 }
 
 summary() {
   local ctid=$1 text
-  text="meshcore-bus $VERSION runs in container $ctid.
+  text="meshcore-home-gateway $VERSION runs in container $ctid.
 
-Logs:         pct exec $ctid -- journalctl -u meshcore-bus -f
-Check:        pct exec $ctid -- meshcore-bus check-config
+Logs:         pct exec $ctid -- journalctl -u meshcore-home-gateway -f
+Check:        pct exec $ctid -- meshcore-home-gateway check-config
 Reconfigure:  $0 --reconfigure $ctid
 Update:       $0 --update $ctid"
   if [[ ${OUT[radio.transport]} == serial ]]; then
@@ -610,9 +615,9 @@ update() {
   local ctid=$1
   ct_running "$ctid" || die "container $ctid is not running"
   install_service "$ctid"
-  in_ct "$ctid" systemctl restart meshcore-bus >&2 \
-    || die "the service did not restart; see: pct exec $ctid -- journalctl -u meshcore-bus"
-  log "container $ctid runs meshcore-bus $VERSION"
+  in_ct "$ctid" systemctl restart meshcore-home-gateway >&2 \
+    || die "the service did not restart; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
+  log "container $ctid runs meshcore-home-gateway $VERSION"
 }
 
 reconfigure() {
@@ -623,7 +628,7 @@ reconfigure() {
   choose_setup
   ask_bridge
   check_settings
-  in_ct "$ctid" systemctl stop meshcore-bus >&2   # the radio accepts a single client
+  in_ct "$ctid" systemctl stop meshcore-home-gateway >&2   # the radio accepts a single client
   STOPPED=$ctid
   choose_targets "$ctid"
   configure "$ctid"

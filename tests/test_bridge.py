@@ -12,15 +12,15 @@ from typing import Any
 
 import pytest
 
-from meshcore_bus import bridge as bridge_module
-from meshcore_bus.bridge import Bridge
-from meshcore_bus.config import Config, parse_config
-from meshcore_bus.mqtt.client import SendRequest
-from meshcore_bus.protocol.codes import AutoAdd, Command, Push
-from meshcore_bus.radio import session as session_module
-from meshcore_bus.radio.session import CompanionSession, RadioEvent
-from meshcore_bus.radio.transport import Transport
-from meshcore_bus.state import CommandLedger, JsonStateFile
+from meshcore_home_gateway import bridge as bridge_module
+from meshcore_home_gateway.bridge import Bridge
+from meshcore_home_gateway.config import Config, parse_config
+from meshcore_home_gateway.mqtt.client import SendRequest
+from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
+from meshcore_home_gateway.radio import session as session_module
+from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
+from meshcore_home_gateway.radio.transport import Transport
+from meshcore_home_gateway.state import CommandLedger, JsonStateFile
 from tests.radio_emulator import START_TIME, EmulatedContact, EmulatedRadio
 
 NOW = START_TIME + 100
@@ -212,7 +212,7 @@ def test_late_acknowledgement_of_an_earlier_attempt_counts(tmp_path: Path) -> No
             await bus.wait_for(
                 "/delivery", lambda d: d["event_type"] == "sent" and d["attempt"] == 2
             )
-            from meshcore_bus.protocol.codec import expected_ack
+            from meshcore_home_gateway.protocol.codec import expected_ack
             from tests.radio_emulator import SELF_KEY
 
             radio.acknowledge(expected_ack(NOW, 0, "late", SELF_KEY), 9000)

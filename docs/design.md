@@ -1,4 +1,4 @@
-# meshcore-bus: design
+# meshcore-home-gateway: design
 
 | | |
 | --- | --- |
@@ -8,12 +8,13 @@
 
 ## 1 Summary
 
-meshcore-bus connects one MeshCore companion radio to an MQTT broker. Automations publish a text to
-a topic and the bridge sends it over the mesh; messages the radio receives appear as MQTT events;
-direct messages from allowlisted contacts that start with a configured word become command events.
-The bridge budgets airtime, suppresses duplicates, reports the delivery state of every message, and
-announces itself to Home Assistant through MQTT discovery. It is small, has one runtime dependency
-from the Linux distribution, and installs on Proxmox VE into its own unprivileged container.
+meshcore-home-gateway connects one MeshCore companion radio to an MQTT broker. Automations publish a
+text to a topic and the bridge sends it over the mesh; messages the radio receives appear as MQTT
+events; direct messages from allowlisted contacts that start with a configured word become command
+events. The bridge budgets airtime, suppresses duplicates, reports the delivery state of every
+message, and announces itself to Home Assistant through MQTT discovery. It is small, has one runtime
+dependency from the Linux distribution, and installs on Proxmox VE into its own unprivileged
+container.
 
 ## 2 Context and scope
 
@@ -30,7 +31,7 @@ bridge is the piece in between.
 flowchart LR
     HA["Home automation<br/>(e.g. Home Assistant)"] <-->|MQTT| B[(MQTT broker)]
     S[Scripts, monitoring] <-->|MQTT| B
-    B <-->|MQTT| MB[meshcore-bus]
+    B <-->|MQTT| MB[meshcore-home-gateway]
     MB <-->|"companion protocol<br/>USB serial or TCP"| R[Companion radio]
     R <-.->|LoRa| M(("Mesh: repeaters,<br/>handhelds, phones"))
 ```
@@ -380,22 +381,22 @@ All entities share the availability topic, so they become unavailable when the b
 
 ### 6.7 Configuration
 
-One TOML file, `/etc/meshcore-bus/config.toml`, owner `root`, group `meshcore-bus`, mode 0640 (it
-holds the broker password). Unknown keys are errors. Every setting is in
-[`configuration.md`](configuration.md). The installer writes the file through
-`meshcore-bus config render`, which validates with the same code as the service.
+One TOML file, `/etc/meshcore-home-gateway/config.toml`, owner `root`, group
+`meshcore-home-gateway`, mode 0640 (it holds the broker password). Unknown keys are errors. Every
+setting is in [`configuration.md`](configuration.md). The installer writes the file through
+`meshcore-home-gateway config render`, which validates with the same code as the service.
 
 ### 6.8 Command line
 
 | Command | Purpose |
 | --- | --- |
-| `meshcore-bus run` | Run the bridge (systemd service). |
-| `meshcore-bus check-config` | Validate the configuration (and load the TLS files) and print a summary. |
-| `meshcore-bus probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
-| `meshcore-bus send [--wait S] ALIAS TEXT` | Publish a send request through the broker; with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
-| `meshcore-bus listen [--topic T] [--count N]` | Print events from the broker as JSON lines. |
-| `meshcore-bus config render` | Write a validated configuration from `key=value` answers (installer). |
-| `meshcore-bus config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
+| `meshcore-home-gateway run` | Run the bridge (systemd service). |
+| `meshcore-home-gateway check-config` | Validate the configuration (and load the TLS files) and print a summary. |
+| `meshcore-home-gateway probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
+| `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker; with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
+| `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines. |
+| `meshcore-home-gateway config render` | Write a validated configuration from `key=value` answers (installer). |
+| `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
 
 Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does not restart on it).
 
@@ -429,17 +430,17 @@ Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does 
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression. |
 | Retained send request re-sent on every reconnect | Retained messages on `send/+` are ignored. |
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
-| Credential disclosure | Configuration 0640 `root:meshcore-bus`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
+| Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
 
 ### 7.3 Command authorisation in detail
 
 A received message is an accepted command only if: it is a plain-text direct message; its first word
-(case-insensitive, ended by any whitespace) is in `commands.words`; its 6-byte sender prefix resolves to exactly one contact;
-that contact's full key is in `commands.senders`; its sender timestamp is newer than the last
-accepted command of that sender; and, unless `max_age_s` is 0, it lies within `max_age_s` of the
-bridge clock in either direction
+(case-insensitive, ended by any whitespace) is in `commands.words`; its 6-byte sender prefix
+resolves to exactly one contact; that contact's full key is in `commands.senders`; its sender
+timestamp is newer than the last accepted command of that sender; and, unless `max_age_s` is 0, it
+lies within `max_age_s` of the bridge clock in either direction
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 
 The sender check is the hard part: the frame names the sender only by the prefix, and the contact
@@ -516,7 +517,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 ## 9 Deployment and operations
 
 * **Proxmox VE** ([ADR 0006](decisions/0006-deployment-in-an-unprivileged-proxmox-container.md),
-  [`deployment.md`](deployment.md)): `deploy/proxmox/meshcore-bus-lxc.sh` runs on the host
+  [`deployment.md`](deployment.md)): `deploy/proxmox/meshcore-home-gateway-lxc.sh` runs on the host
   (Proxmox VE 9, or 8 with a `pve-container` that supports Debian 13). A default setup asks only
   for the radio, the broker and the targets, an advanced one for everything. The script validates
   the answers with the bridge's own configuration code and asks for confirmation before it
@@ -526,24 +527,27 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   radio to offer its channels and contacts as targets, writes the configuration and starts the
   service. Commands in the container run with a clean environment.
 * **Any systemd Linux:** install the two packages, copy the zipapp to
-  `/usr/local/lib/meshcore-bus/`, the unit to `/etc/systemd/system/`, write the configuration.
-* **Service:** `deploy/systemd/meshcore-bus.service`: `Type=notify`, watchdog, restart on failure,
-  system user `meshcore-bus` in group `dialout`, sandboxing (`ProtectSystem=strict`,
-  `NoNewPrivileges`, no capabilities, restricted address families and system calls, write-execute
-  memory denied). Device access is not restricted by the unit: `PrivateDevices=` would hide the
-  serial port, and unprivileged containers do not enforce `DeviceAllow=`; in the container only the
-  passed-through device exists, and only `dialout` may open it.
-* **Layout in the container:** `/usr/local/lib/meshcore-bus/meshcore-bus-<version>.pyz`, the symlink
-  `current.pyz` to the active version, `/usr/local/bin/meshcore-bus` pointing to it. The zipapp runs
-  with `/usr/bin/python3 -I` (isolated mode: no user site, no environment variables).
-* **Update:** `meshcore-bus-lxc.sh --update <id>` builds the new zipapp under a temporary name
-  next to the old one, checks the current configuration with it, then moves it to its versioned
+  `/usr/local/lib/meshcore-home-gateway/`, the unit to `/etc/systemd/system/`, write the
+  configuration.
+* **Service:** `deploy/systemd/meshcore-home-gateway.service`: `Type=notify`, watchdog, restart on
+  failure, system user `meshcore-home-gateway` in group `dialout`, sandboxing
+  (`ProtectSystem=strict`, `NoNewPrivileges`, no capabilities, restricted address families and
+  system calls, write-execute memory denied). Device access is not restricted by the unit:
+  `PrivateDevices=` would hide the serial port, and unprivileged containers do not enforce
+  `DeviceAllow=`; in the container only the passed-through device exists, and only `dialout` may
+  open it.
+* **Layout in the container:**
+  `/usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<version>.pyz`, the symlink
+  `current.pyz` to the active version, `/usr/local/bin/meshcore-home-gateway` pointing to it. The
+  zipapp runs with `/usr/bin/python3 -I` (isolated mode: no user site, no environment variables).
+* **Update:** `meshcore-home-gateway-lxc.sh --update <id>` builds the new zipapp under a temporary
+  name next to the old one, checks the current configuration with it, then moves it to its versioned
   name, switches the symlink and restarts; a failed check leaves the old version active, also when
   the version string did not change, and rollback switches the symlink back. `--reconfigure <id>`
-  runs the dialogs again with the current settings as defaults (`meshcore-bus config answers`) and
-  keeps the settings it does not ask for, and targets or command senders the radio no longer
-  offers; `--answers <file>` installs without dialogs.
-* **Backup:** the configuration file and `/var/lib/meshcore-bus/state.json`.
+  runs the dialogs again with the current settings as defaults (`meshcore-home-gateway config
+  answers`) and keeps the settings it does not ask for, and targets or command senders the radio no
+  longer offers; `--answers <file>` installs without dialogs.
+* **Backup:** the configuration file and `/var/lib/meshcore-home-gateway/state.json`.
 
 ## 10 Testing strategy
 
@@ -573,6 +577,7 @@ the tests with every supported Python version that is installed, like the CI mat
 | Inbound commands from allowlisted contacts | [0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md) |
 | Home Assistant through MQTT device discovery | [0010](decisions/0010-home-assistant-through-mqtt-device-discovery.md) |
 | Neutral, English-language project under MIT | [0011](decisions/0011-neutral-english-language-project-under-mit.md) |
+| Project name | [0012](decisions/0012-project-name-meshcore-home-gateway.md) |
 
 ## 12 Open questions and future work
 

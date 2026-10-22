@@ -11,14 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from meshcore_bus import __version__
-from meshcore_bus.config import Config
-from meshcore_bus.core.model import DeliveryState
-from meshcore_bus.mqtt.topics import Topics
+from meshcore_home_gateway import __version__
+from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.core.model import DeliveryState
+from meshcore_home_gateway.mqtt.topics import Topics
 
 
 def device_id(config: Config) -> str:
-    return f"meshcore_bus_{config.mqtt.node_id.replace('-', '_')}"
+    return f"meshcore_home_gateway_{config.mqtt.node_id.replace('-', '_')}"
 
 
 def discovery_topic(config: Config) -> str:
@@ -78,10 +78,10 @@ def discovery_payload(config: Config, topics: Topics) -> dict[str, Any]:
             "ids": [uid],
             "name": config.homeassistant.device_name,
             "mf": "MeshCore",
-            "mdl": "Companion radio via meshcore-bus",
+            "mdl": "Companion radio via meshcore-home-gateway",
             "sw": __version__,
         },
-        "o": {"name": "meshcore-bus", "sw": __version__},
+        "o": {"name": "meshcore-home-gateway", "sw": __version__},
         "availability": [{"topic": topics.availability}],
         "qos": 1,
         "cmps": components,

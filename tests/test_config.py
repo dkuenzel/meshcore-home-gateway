@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from meshcore_bus.config import (
+from meshcore_home_gateway.config import (
     ConfigError,
     config_answers,
     load_config,
     parse_config,
     render_config,
 )
-from meshcore_bus.core.model import MessageKind
+from meshcore_home_gateway.core.model import MessageKind
 
 KEY = "a1" * 32
 
@@ -194,7 +194,7 @@ def test_rendered_configuration_is_valid_and_complete() -> None:
     assert {t.alias for t in config.targets} == {"alerts", "alice"}
     assert config.commands.words == frozenset({"status", "arm"})
     assert tomllib.loads(text)["mqtt"]["username"] == "bridge"
-    assert text.startswith("# meshcore-bus configuration")
+    assert text.startswith("# meshcore-home-gateway configuration")
 
 
 def test_rendering_rejects_unknown_or_invalid_answers() -> None:

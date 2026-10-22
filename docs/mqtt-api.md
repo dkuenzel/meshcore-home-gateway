@@ -13,7 +13,7 @@ versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 | `received` | bridge → | no | JSON, `event_type` = `contact` or `channel` |
 | `command` | bridge → | no | JSON, `event_type` = command word |
 | `rx` | bridge → | no | JSON per received packet, only with `publish_rx_log` |
-| `<prefix>/device/meshcore_bus_<node>/config` | bridge → | no | Home Assistant discovery |
+| `<prefix>/device/meshcore_home_gateway_<node>/config` | bridge → | no | Home Assistant discovery |
 
 Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are always present.
 
@@ -145,9 +145,9 @@ decides whether the packet is for it — useful to compare antennas or locations
 Give the bridge its own user. With Mosquitto, an ACL along these lines keeps clients apart:
 
 ```text
-user meshcore-bus
+user meshcore-home-gateway
 topic readwrite meshcore/radio1/#
-topic write homeassistant/device/meshcore_bus_radio1/config
+topic write homeassistant/device/meshcore_home_gateway_radio1/config
 topic read homeassistant/status
 
 user homeassistant

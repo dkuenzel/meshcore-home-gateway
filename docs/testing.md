@@ -29,7 +29,7 @@ make check       # lint, types, shellcheck, workflow audit, tests, build, unit c
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
-installed they **fail** with a hint; set `MESHCORE_BUS_SKIP_BROKER_TESTS=1` to skip them on
+installed they **fail** with a hint; set `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them on
 purpose. One transport test is skipped when running as root, because root bypasses the exclusive
 lock it checks; CI runs it as a normal user.
 
@@ -57,7 +57,7 @@ both on the same channel settings; B knows A as a contact and the reverse.
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 1 | `meshcore-bus probe --serial /dev/serial/by-id/…` with the service stopped | firmware, radio settings, how the radio adds contacts, contacts and channels listed |
+| 1 | `meshcore-home-gateway probe --serial /dev/serial/by-id/…` with the service stopped | firmware, radio settings, how the radio adds contacts, contacts and channels listed |
 | 2 | Start the service | `availability` = `online`; `state.radio` = `connected`; battery plausible |
 | 3 | Publish to `send/<channel alias>` | B shows the message; `delivery`: `queued`, `sent` |
 | 4 | Publish to `send/<contact alias>` | B shows it; `delivery`: `confirmed` with a round trip time |
@@ -69,8 +69,8 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 10 | B sends a direct message and a channel message | two `received` events with sender, SNR, path length |
 | 11 | B (allowlisted) sends `status` | `command` event `status`; `received` shows `accepted` |
 | 12 | A not allowlisted contact sends `status` | no `command` event; `received` shows `sender_not_allowed` |
-| 13 | `systemctl stop meshcore-bus`; B sends `status`; start the service | `received` shows `sender_unverified`, the log says why; B sends again and gets a `command` event |
-| 14 | `journalctl -u meshcore-bus` after the start, with automatic adding switched on | a warning says that the radio adds contacts on its own, in manual mode which types (ADR 0009); none with the recommended settings |
+| 13 | `systemctl stop meshcore-home-gateway`; B sends `status`; start the service | `received` shows `sender_unverified`, the log says why; B sends again and gets a `command` event |
+| 14 | `journalctl -u meshcore-home-gateway` after the start, with automatic adding switched on | a warning says that the radio adds contacts on its own, in manual mode which types (ADR 0009); none with the recommended settings |
 | 15 | Unplug A's USB cable for 30 s, plug it in; in a Proxmox container also `pct reboot <id>` | `radio` = `disconnected`, then `connected`; queued messages go out (deployment.md: the container keeps the old device until it restarts) |
 | 16 | Stop and start the broker | bridge reconnects; `availability` back to `online` |
 | 17 | `kill -STOP` the service process | systemd watchdog restarts it within the watchdog interval |

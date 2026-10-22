@@ -7,10 +7,10 @@ docs/protocol.md, "Golden frames". The 3-byte frame header is stripped where pay
 
 import pytest
 
-from meshcore_bus.core.model import MessageKind, TextType
-from meshcore_bus.protocol import codec
-from meshcore_bus.protocol.codes import ErrorCode
-from meshcore_bus.protocol.framing import FrameDecoder, encode_frame
+from meshcore_home_gateway.core.model import MessageKind, TextType
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import ErrorCode
+from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
 
 TS = 1_760_000_000
 PEER = bytes.fromhex("11223344556677") + bytes(range(0x40, 0x59))

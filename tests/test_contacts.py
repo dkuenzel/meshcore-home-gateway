@@ -2,7 +2,7 @@
 
 import pytest
 
-from meshcore_bus.core.contacts import Contact, ContactBook, normalise_key
+from meshcore_home_gateway.core.contacts import Contact, ContactBook, normalise_key
 
 A = "a1" * 32
 A_TWIN = "a1" * 6 + "00" * 26

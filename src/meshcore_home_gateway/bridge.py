@@ -21,38 +21,43 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from meshcore_bus import __version__
-from meshcore_bus.config import Config
-from meshcore_bus.core.airtime import (
+from meshcore_home_gateway import __version__
+from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.core.airtime import (
     LoRaParams,
     channel_message_bytes,
     direct_attempt_airtime_s,
     meshcore_preamble,
     time_on_air_s,
 )
-from meshcore_bus.core.budget import AirtimeBudget, Deduplicator
-from meshcore_bus.core.commands import CommandDecision, Rejection, command_word, evaluate_command
-from meshcore_bus.core.contacts import PREFIX_HEX_DIGITS, Contact
-from meshcore_bus.core.model import (
+from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator
+from meshcore_home_gateway.core.commands import (
+    CommandDecision,
+    Rejection,
+    command_word,
+    evaluate_command,
+)
+from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact
+from meshcore_home_gateway.core.model import (
     DeliveryEvent,
     DeliveryState,
     InboundMessage,
     MessageKind,
     Target,
 )
-from meshcore_bus.core.text import TextPolicy, TextRejectedError, prepare_text
-from meshcore_bus.mqtt.client import SendRequest
-from meshcore_bus.mqtt.discovery import discovery_payload, discovery_topic
-from meshcore_bus.mqtt.payloads import (
+from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
+from meshcore_home_gateway.mqtt.client import SendRequest
+from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
+from meshcore_home_gateway.mqtt.payloads import (
     command_payload,
     delivery_payload,
     encode,
     received_payload,
     rx_payload,
 )
-from meshcore_bus.mqtt.topics import Topics
-from meshcore_bus.protocol.codec import MAX_TEXT_BYTES
-from meshcore_bus.radio.session import (
+from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
+from meshcore_home_gateway.radio.session import (
     AckReceived,
     CommandFailedError,
     CompanionSession,
@@ -62,9 +67,9 @@ from meshcore_bus.radio.session import (
     RadioEvent,
     RadioInfo,
 )
-from meshcore_bus.radio.transport import Transport
-from meshcore_bus.state import CommandLedger
-from meshcore_bus.systemd import notify, watchdog_interval_s
+from meshcore_home_gateway.radio.transport import Transport
+from meshcore_home_gateway.state import CommandLedger
+from meshcore_home_gateway.systemd import notify, watchdog_interval_s
 
 log = logging.getLogger(__name__)
 

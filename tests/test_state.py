@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from meshcore_bus.state import CommandLedger, JsonStateFile
+from meshcore_home_gateway.state import CommandLedger, JsonStateFile
 
 
 def test_missing_file_reads_as_empty(tmp_path: Path) -> None:

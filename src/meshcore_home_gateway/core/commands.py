@@ -21,8 +21,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-from meshcore_bus.core.contacts import ContactBook, normalise_key
-from meshcore_bus.core.model import InboundMessage, MessageKind, TextType
+from meshcore_home_gateway.core.contacts import ContactBook, normalise_key
+from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
 
 
 class Rejection(StrEnum):

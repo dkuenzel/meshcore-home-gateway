@@ -1,7 +1,7 @@
-# meshcore-bus: MeshCore companion radio <-> MQTT bridge.
+# meshcore-home-gateway: MeshCore companion radio <-> MQTT bridge.
 # Install to /etc/systemd/system/; see docs/deployment.md.
 [Unit]
-Description=meshcore-bus MeshCore to MQTT bridge
+Description=meshcore-home-gateway MeshCore to MQTT bridge
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=600
@@ -10,7 +10,7 @@ StartLimitBurst=20
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/local/bin/meshcore-bus run --config /etc/meshcore-bus/config.toml
+ExecStart=/usr/local/bin/meshcore-home-gateway run --config /etc/meshcore-home-gateway/config.toml
 Restart=on-failure
 RestartSec=5
 # 78 = configuration error: restarting would not help
@@ -18,10 +18,10 @@ RestartPreventExitStatus=78
 WatchdogSec=60
 TimeoutStopSec=20
 
-User=meshcore-bus
-Group=meshcore-bus
+User=meshcore-home-gateway
+Group=meshcore-home-gateway
 SupplementaryGroups=dialout
-StateDirectory=meshcore-bus
+StateDirectory=meshcore-home-gateway
 StateDirectoryMode=0700
 UMask=0077
 

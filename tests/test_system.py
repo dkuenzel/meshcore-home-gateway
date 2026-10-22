@@ -1,4 +1,4 @@
-"""The whole system as processes: `meshcore-bus run` against a broker and a radio over TCP.
+"""The whole system as processes: `meshcore-home-gateway run` against a broker and a radio over TCP.
 
 This is the closest the automated tests get to an installation: a real mosquitto, the service
 started as a subprocess like systemd would start it, the CLI as a client, SIGTERM to stop.
@@ -20,7 +20,7 @@ import paho.mqtt.client as paho
 import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
-from meshcore_bus.cli import EX_OK, main
+from meshcore_home_gateway.cli import EX_OK, main
 from tests.conftest import Broker
 from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
 
@@ -74,7 +74,7 @@ def test_service_end_to_end(
         )
         watcher = Watcher(broker)
         service = subprocess.Popen(  # noqa: S603 - our own module with fixed arguments
-            [sys.executable, "-m", "meshcore_bus", "run", "--config", str(config),
+            [sys.executable, "-m", "meshcore_home_gateway", "run", "--config", str(config),
              "--state-dir", str(tmp_path / "state")],
             stderr=subprocess.PIPE,
             env={**os.environ, "JOURNAL_STREAM": "1:1", "PYTHONPATH": str(SRC)},
@@ -82,7 +82,7 @@ def test_service_end_to_end(
         try:
             watcher.wait("meshcore/radio1/availability", lambda p: p == b"online")
             watcher.wait("meshcore/radio1/state", lambda p: json.loads(p)["radio"] == "connected")
-            watcher.wait("homeassistant/device/meshcore_bus_radio1/config")
+            watcher.wait("homeassistant/device/meshcore_home_gateway_radio1/config")
 
             assert (
                 main(["send", "--config", str(config), "--wait", "10", "alerts", "Gate open"])

@@ -13,7 +13,7 @@ microseconds), the code MeshCore runs.
 
 import pytest
 
-from meshcore_bus.core.airtime import (
+from meshcore_home_gateway.core.airtime import (
     LoRaParams,
     channel_message_bytes,
     direct_attempt_airtime_s,

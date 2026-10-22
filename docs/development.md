@@ -1,7 +1,7 @@
 # Development
 
-How to work on meshcore-bus. The rules (design first, test first, evidence for protocol facts)
-are in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+How to work on meshcore-home-gateway. The rules (design first, test first, evidence for protocol
+facts) are in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Set up
 
@@ -18,7 +18,7 @@ the integration tests, `uv` only to update the lock file.
 ## Layout
 
 ```text
-src/meshcore_bus/
+src/meshcore_home_gateway/
   core/          pure rules and calculations (no I/O): text, airtime, budget, contacts, commands, model
   protocol/      companion protocol: framing, codec (pure)
   radio/         transports (serial, TCP) and the companion session
@@ -56,7 +56,7 @@ tools/           build helpers (zipapp)
 
 `config.py` (dataclass and validation), `docs/configuration.md`, `deploy/config.example.toml`, and
 a test in `tests/test_config.py`. If the installer should ask for it, also the answer key in
-`config.render_config` and the dialog in `deploy/proxmox/meshcore-bus-lxc.sh`.
+`config.render_config` and the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
 
 ## Tool chain updates
 
@@ -67,7 +67,7 @@ pinned to commit SHAs; Dependabot proposes updates with the same cooldown.
 ## Release
 
 1. Run the hardware checklist in [`testing.md`](testing.md).
-2. Set `__version__` in `src/meshcore_bus/__init__.py`; move the *Unreleased* entries in
+2. Set `__version__` in `src/meshcore_home_gateway/__init__.py`; move the *Unreleased* entries in
    `CHANGELOG.md` under the new version with the date.
 3. `make check`, then `make dist`; record `sha256sum dist/*` in the release notes.
 4. Tag `vX.Y.Z` on the release commit and publish the artifacts with the checksums.

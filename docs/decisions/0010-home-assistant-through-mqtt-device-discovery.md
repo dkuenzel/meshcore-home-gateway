@@ -30,8 +30,8 @@ Chosen option: "device-based MQTT discovery", because one document describes the
 consistently, and Home Assistant offers fitting platforms: `event` entities for received messages,
 deliveries and commands, `notify` entities for sending, sensors for the state.
 
-* Discovery topic `<prefix>/device/meshcore_bus_<node>/config`, published when the bridge connects
-  and again shortly after Home Assistant's birth message; not retained.
+* Discovery topic `<prefix>/device/meshcore_home_gateway_<node>/config`, published when the bridge
+  connects and again shortly after Home Assistant's birth message; not retained.
 * Every component has a `unique_id` and a `default_entity_id`; the document has `origin`. Without
   them Home Assistant rejects the whole document.
 * Events are published without retain; notify publishes the plain text to `send/<alias>`.

@@ -1,8 +1,8 @@
 # MeshCore companion protocol: the subset the bridge uses
 
-This is a reference for the part of the MeshCore companion protocol that meshcore-bus implements,
-written from the firmware source. The firmware is authoritative; client libraries were only read
-to compare behaviour.
+This is a reference for the part of the MeshCore companion protocol that meshcore-home-gateway
+implements, written from the firmware source. The firmware is authoritative; client libraries were
+only read to compare behaviour.
 
 * **Firmware basis:** MeshCore `companion-v1.18.0`, commit `81dbae592ffad40b4212bc0b37e82b38da08f4bc`,
   `FIRMWARE_VER_CODE` 14 (`examples/companion_radio/MyMesh.h:7`).

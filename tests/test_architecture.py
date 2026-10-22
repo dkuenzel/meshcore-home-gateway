@@ -5,11 +5,12 @@ from pathlib import Path
 
 import pytest
 
-PACKAGE = Path(__file__).resolve().parent.parent / "src" / "meshcore_bus"
+PACKAGE = Path(__file__).resolve().parent.parent / "src" / "meshcore_home_gateway"
 FORBIDDEN = {
     "asyncio", "socket", "termios", "fcntl", "os", "subprocess", "threading", "time", "paho",
-    "meshcore_bus.radio", "meshcore_bus.mqtt", "meshcore_bus.bridge", "meshcore_bus.cli",
-    "meshcore_bus.state", "meshcore_bus.systemd", "meshcore_bus.config",
+    "meshcore_home_gateway.radio", "meshcore_home_gateway.mqtt", "meshcore_home_gateway.bridge",
+    "meshcore_home_gateway.cli", "meshcore_home_gateway.state", "meshcore_home_gateway.systemd",
+    "meshcore_home_gateway.config",
 }  # fmt: skip
 PURE = sorted([*PACKAGE.glob("core/*.py"), *PACKAGE.glob("protocol/*.py")])
 

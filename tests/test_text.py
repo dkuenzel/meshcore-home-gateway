@@ -2,7 +2,7 @@
 
 import pytest
 
-from meshcore_bus.core.text import TextPolicy, TextRejectedError, prepare_text
+from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
 
 UTF8 = TextPolicy(max_bytes=20)
 ASCII = TextPolicy(max_bytes=40, ascii_only=True)

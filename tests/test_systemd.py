@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from meshcore_bus.systemd import notify, watchdog_interval_s
+from meshcore_home_gateway.systemd import notify, watchdog_interval_s
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def test_notify_sends_a_datagram(notify_socket: socket.socket, tmp_path: Path) -
 
 
 def test_notify_supports_the_abstract_namespace() -> None:
-    name = f"meshcore-bus-test-{os.getpid()}"
+    name = f"meshcore-home-gateway-test-{os.getpid()}"
     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
         sock.bind("\0" + name)
         sock.settimeout(1.0)

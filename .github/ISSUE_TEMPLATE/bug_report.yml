@@ -11,9 +11,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: meshcore-bus version
-      description: Output of `meshcore-bus --version`, or the commit you run.
-      placeholder: meshcore-bus 0.1.0
+      label: meshcore-home-gateway version
+      description: Output of `meshcore-home-gateway --version`, or the commit you run.
+      placeholder: meshcore-home-gateway 0.1.0
     validations:
       required: true
   - type: dropdown
@@ -30,7 +30,7 @@ body:
     id: radio
     attributes:
       label: Radio
-      description: Model, companion firmware version and connection (USB or TCP); `meshcore-bus probe` shows the first two.
+      description: Model, companion firmware version and connection (USB or TCP); `meshcore-home-gateway probe` shows the first two.
       placeholder: Example board, firmware v1.18.0, USB
   - type: textarea
     id: what-happened
@@ -50,8 +50,9 @@ body:
     attributes:
       label: Logs
       description: >-
-        `journalctl -u meshcore-bus` around the problem, and the relevant MQTT events
-        (`meshcore-bus listen`). Debug logs contain message texts; check them before pasting.
+        `journalctl -u meshcore-home-gateway` around the problem, and the relevant MQTT
+        events (`meshcore-home-gateway listen`). Debug logs contain message texts; check them
+        before pasting.
       render: text
   - type: checkboxes
     id: checks

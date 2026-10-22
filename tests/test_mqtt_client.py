@@ -12,9 +12,9 @@ import paho.mqtt.client as paho
 import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
-from meshcore_bus.config import MqttConfig
-from meshcore_bus.mqtt.client import MqttBus, SendRequest
-from meshcore_bus.mqtt.topics import Topics
+from meshcore_home_gateway.config import MqttConfig
+from meshcore_home_gateway.mqtt.client import MqttBus, SendRequest
+from meshcore_home_gateway.mqtt.topics import Topics
 from tests.conftest import Broker
 
 TOPICS = Topics("meshcore", "radio1")

@@ -31,12 +31,12 @@ concurrency stays simple?
 Chosen option: "ports and adapters with one asyncio event loop", because it isolates every policy
 in pure functions and small classes with an injected clock, while all I/O runs on one loop.
 
-* **Core** (`meshcore_bus.core`): text rules, airtime estimate, airtime budget, deduplication,
-  command policy, data model. No I/O, no asyncio, time passed in.
-* **Protocol** (`meshcore_bus.protocol`): frame codec, command encoders and response decoders.
-  Pure functions on bytes.
-* **Application** (`meshcore_bus.bridge`): the service that connects radio and bus, delivery with
-  acknowledgement and retries. Async, depends only on the ports.
+* **Core** (`meshcore_home_gateway.core`): text rules, airtime estimate, airtime budget,
+  deduplication, command policy, data model. No I/O, no asyncio, time passed in.
+* **Protocol** (`meshcore_home_gateway.protocol`): frame codec, command encoders and response
+  decoders. Pure functions on bytes.
+* **Application** (`meshcore_home_gateway.bridge`): the service that connects radio and bus,
+  delivery with acknowledgement and retries. Async, depends only on the ports.
 * **Ports**: `Radio`, `Bus`, `StateStore`, `Clock` as `typing.Protocol` classes.
 * **Adapters**: companion session over a serial or TCP transport, MQTT client, JSON state file,
   systemd notification.

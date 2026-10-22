@@ -41,8 +41,8 @@ make matrix   # the tests with every installed Python from 3.11 to 3.14 (the CI 
 `make help` lists all targets. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the
 same targets, so a green `make check` plus `make matrix` locally means a green pipeline.
 
-The integration tests need `mosquitto`. If it is missing they fail rather than silently skip;
-set `MESHCORE_BUS_SKIP_BROKER_TESTS=1` to skip them deliberately (the summary shows the skip).
+The integration tests need `mosquitto`. If it is missing they fail rather than silently skip; set
+`MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them deliberately (the summary shows the skip).
 
 ## Dependencies of the tool chain
 
@@ -55,7 +55,7 @@ GitHub Actions are pinned to full commit SHAs with the version as a comment.
 ## Style
 
 - Python: `ruff` (lint and format) and `mypy --strict` must pass; type hints everywhere.
-- Small modules with one responsibility; the domain core (`meshcore_bus.core`) does no I/O.
+- Small modules with one responsibility; the domain core (`meshcore_home_gateway.core`) does no I/O.
 - Shell: `shellcheck` clean, `set -Eeuo pipefail`, functions over long scripts.
 - Documentation in English, plain and short sentences; Markdown, one sentence per idea.
 

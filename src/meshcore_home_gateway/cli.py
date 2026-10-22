@@ -1,4 +1,4 @@
-"""Command line: `meshcore-bus <command>` (design §6.8, docs/configuration.md).
+"""Command line: `meshcore-home-gateway <command>` (design §6.8, docs/configuration.md).
 
 Exit codes: 0 success, 1 failure (radio, broker, delivery), 78 configuration error (EX_CONFIG;
 the systemd unit does not restart on it).
@@ -22,8 +22,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from meshcore_bus import __version__
-from meshcore_bus.config import (
+from meshcore_home_gateway import __version__
+from meshcore_home_gateway.config import (
     Config,
     ConfigError,
     MqttConfig,
@@ -33,14 +33,14 @@ from meshcore_bus.config import (
 )
 
 if TYPE_CHECKING:
-    from meshcore_bus.radio.transport import Transport
+    from meshcore_home_gateway.radio.transport import Transport
 
 EX_OK, EX_FAILURE, EX_CONFIG = 0, 1, 78
 CONNECT_TIMEOUT_S = 10.0
 PUBLISH_TIMEOUT_S = 10.0
 SUBSCRIBE_TIMEOUT_S = 5.0
-DEFAULT_CONFIG = Path("/etc/meshcore-bus/config.toml")
-DEFAULT_STATE_DIR = Path("/var/lib/meshcore-bus")
+DEFAULT_CONFIG = Path("/etc/meshcore-home-gateway/config.toml")
+DEFAULT_STATE_DIR = Path("/var/lib/meshcore-home-gateway")
 FINAL_STATES = {
     "confirmed",
     "failed",
@@ -49,7 +49,7 @@ FINAL_STATES = {
     "rejected",
 }  # plus "sent" for channels
 
-log = logging.getLogger("meshcore_bus")
+log = logging.getLogger("meshcore_home_gateway")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -58,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return int(args.handler(args))
     except ConfigError as exc:
-        print(f"meshcore-bus: configuration error: {exc}", file=sys.stderr)
+        print(f"meshcore-home-gateway: configuration error: {exc}", file=sys.stderr)
         return EX_CONFIG
     except KeyboardInterrupt:
         return EX_FAILURE
@@ -66,10 +66,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="meshcore-bus",
-        description="Bridge between a MeshCore companion radio and an MQTT message bus.",
+        prog="meshcore-home-gateway",
+        description="Gateway between home automation (MQTT) and a MeshCore companion radio.",
     )
-    parser.add_argument("--version", action="version", version=f"meshcore-bus {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"meshcore-home-gateway {__version__}"
+    )
     commands = parser.add_subparsers(required=True, metavar="command")
 
     def command(
@@ -88,7 +90,7 @@ def _parser() -> argparse.ArgumentParser:
         "--state-dir",
         type=Path,
         default=None,
-        help="default: $STATE_DIRECTORY or /var/lib/meshcore-bus",
+        help="default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway",
     )
 
     command("check-config", "validate the configuration and print a summary", _check_config)
@@ -148,15 +150,15 @@ def _run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     setup_logging(config.diagnostics.log_level)
     state_dir = args.state_dir or Path(os.environ.get("STATE_DIRECTORY", DEFAULT_STATE_DIR))
-    log.info("meshcore-bus %s starting, state in %s", __version__, state_dir)
+    log.info("meshcore-home-gateway %s starting, state in %s", __version__, state_dir)
     return asyncio.run(_serve(config, state_dir))
 
 
 async def _serve(config: Config, state_dir: Path) -> int:
-    from meshcore_bus.bridge import Bridge  # noqa: PLC0415 - keep CLI start-up light
-    from meshcore_bus.mqtt.client import MqttBus  # noqa: PLC0415
-    from meshcore_bus.mqtt.topics import Topics  # noqa: PLC0415
-    from meshcore_bus.state import CommandLedger, JsonStateFile  # noqa: PLC0415
+    from meshcore_home_gateway.bridge import Bridge  # noqa: PLC0415 - keep CLI start-up light
+    from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
+    from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
+    from meshcore_home_gateway.state import CommandLedger, JsonStateFile  # noqa: PLC0415
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -168,12 +170,12 @@ async def _serve(config: Config, state_dir: Path) -> int:
     ledger = CommandLedger(JsonStateFile(state_dir / "state.json"))
     bridge = Bridge(config, bus, lambda: transport_for(config), ledger)
     await bridge.run(stop)
-    log.info("meshcore-bus stopped")
+    log.info("meshcore-home-gateway stopped")
     return EX_OK
 
 
 def transport_for(config: Config) -> Transport:
-    from meshcore_bus.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
+    from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
 
     radio = config.radio
     if radio.transport == "serial":
@@ -204,7 +206,7 @@ def _check_config(args: argparse.Namespace) -> int:
     tls = " (TLS)" if mqtt.tls else ""
     discovery = f"on, prefix {ha.prefix}" if ha.discovery else "off"
     if mqtt.tls:  # the certificate and key files must load, as at start-up
-        from meshcore_bus.mqtt.client import tls_context  # noqa: PLC0415
+        from meshcore_home_gateway.mqtt.client import tls_context  # noqa: PLC0415
 
         tls_context(mqtt)
     print(f"configuration {args.config}: valid")
@@ -228,7 +230,7 @@ def _check_config(args: argparse.Namespace) -> int:
 
 
 def _probe(args: argparse.Namespace) -> int:
-    from meshcore_bus.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
+    from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
 
     if args.serial:
         transport: Any = SerialTransport(args.serial)
@@ -237,7 +239,7 @@ def _probe(args: argparse.Namespace) -> int:
     try:
         report = asyncio.run(_probe_radio(transport))
     except Exception as exc:  # noqa: BLE001 - report any failure to the operator
-        print(f"meshcore-bus: probe failed: {exc}", file=sys.stderr)
+        print(f"meshcore-home-gateway: probe failed: {exc}", file=sys.stderr)
         return EX_FAILURE
     if args.list == "channels":
         for channel in report["channels"]:
@@ -282,7 +284,7 @@ def _count(text: str) -> int:
 
 
 async def _probe_radio(transport: Any) -> dict[str, Any]:
-    from meshcore_bus.radio.session import (  # noqa: PLC0415
+    from meshcore_home_gateway.radio.session import (  # noqa: PLC0415
         CompanionSession,
         RadioEvent,
         added_types,
@@ -387,9 +389,9 @@ _UNSAFE = frozenset({"Cc", "Cf", "Zl", "Zp"})
 def _mqtt_client(mqtt: MqttConfig, suffix: str) -> Any:
     import dataclasses  # noqa: PLC0415
 
-    from meshcore_bus.mqtt.client import make_paho_client, tls_context  # noqa: PLC0415
+    from meshcore_home_gateway.mqtt.client import make_paho_client, tls_context  # noqa: PLC0415
 
-    client_id = f"meshcore-bus-{suffix}-{os.getpid()}"
+    client_id = f"meshcore-home-gateway-{suffix}-{os.getpid()}"
     client = make_paho_client(dataclasses.replace(mqtt, client_id=client_id))
     if mqtt.username:
         client.username_pw_set(mqtt.username, mqtt.password)
@@ -469,8 +471,12 @@ class _DeliveryWatch:
 
 
 def _send(args: argparse.Namespace) -> int:
-    from meshcore_bus.core.text import TextPolicy, TextRejectedError, prepare_text  # noqa: PLC0415
-    from meshcore_bus.mqtt.topics import Topics  # noqa: PLC0415
+    from meshcore_home_gateway.core.text import (  # noqa: PLC0415
+        TextPolicy,
+        TextRejectedError,
+        prepare_text,
+    )
+    from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
 
     config = load_config(args.config)
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
@@ -491,12 +497,12 @@ def _send(args: argparse.Namespace) -> int:
         if error is None:
             error = _publish(client, topics.send(args.alias), args.text.encode("utf-8"))
         if error is not None:
-            print(f"meshcore-bus: {error}", file=sys.stderr)
+            print(f"meshcore-home-gateway: {error}", file=sys.stderr)
             return EX_FAILURE
         if args.wait <= 0:
             return EX_OK
         if not watch.done.wait(args.wait) or watch.result is None:
-            print("meshcore-bus: no delivery result in time", file=sys.stderr)
+            print("meshcore-home-gateway: no delivery result in time", file=sys.stderr)
             return EX_FAILURE
         print(_json_text(watch.result))
         return EX_OK if watch.result["event_type"] in {"sent", "confirmed"} else EX_FAILURE
@@ -534,7 +540,7 @@ def _publish(client: Any, topic: str, payload: bytes) -> str | None:
 
 
 def _listen(args: argparse.Namespace) -> int:
-    from meshcore_bus.mqtt.topics import Topics  # noqa: PLC0415
+    from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
 
     config = load_config(args.config)
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
@@ -566,7 +572,7 @@ def _listen(args: argparse.Namespace) -> int:
     try:
         error = connection.open(client, config.mqtt)
         if error is not None:
-            print(f"meshcore-bus: {error}", file=sys.stderr)
+            print(f"meshcore-home-gateway: {error}", file=sys.stderr)
             return EX_FAILURE
         finished.wait()
     finally:
@@ -587,7 +593,7 @@ def _render(args: argparse.Namespace) -> int:
     try:
         gid = None if args.group is None else grp.getgrnam(args.group).gr_gid
     except KeyError:
-        print(f"meshcore-bus: no group {args.group!r}", file=sys.stderr)
+        print(f"meshcore-home-gateway: no group {args.group!r}", file=sys.stderr)
         return EX_FAILURE
     write_private(args.output, text, gid)
     print(f"wrote {args.output}")

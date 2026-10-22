@@ -14,10 +14,10 @@ import paho.mqtt.client as paho
 import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
-from meshcore_bus import __version__
-from meshcore_bus import cli as cli_module
-from meshcore_bus.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
-from meshcore_bus.protocol.codes import Command
+from meshcore_home_gateway import __version__
+from meshcore_home_gateway import cli as cli_module
+from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
+from meshcore_home_gateway.protocol.codes import Command
 from tests.conftest import Broker
 from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
 
@@ -29,7 +29,7 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main(["--version"])
     assert exit_info.value.code == 0
-    assert capsys.readouterr().out.strip() == f"meshcore-bus {__version__}"
+    assert capsys.readouterr().out.strip() == f"meshcore-home-gateway {__version__}"
 
 
 def test_check_config_summarises_a_valid_file(capsys: pytest.CaptureFixture[str]) -> None:

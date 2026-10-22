@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-SKIP_BROKER = os.environ.get("MESHCORE_BUS_SKIP_BROKER_TESTS") == "1"
+SKIP_BROKER = os.environ.get("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS") == "1"
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ def _mosquitto() -> str:
     if found is None:
         pytest.fail(
             "mosquitto not found: install it (apt install mosquitto) or set "
-            "MESHCORE_BUS_SKIP_BROKER_TESTS=1 to skip the broker tests deliberately"
+            "MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1 to skip the broker tests deliberately"
         )
     return found
 
@@ -51,7 +51,7 @@ def refusing_broker(tmp_path: Path) -> Iterator[Broker]:
 
 def _run_broker(tmp_path: Path, *, anonymous: bool) -> Iterator[Broker]:
     if SKIP_BROKER:
-        pytest.skip("MESHCORE_BUS_SKIP_BROKER_TESTS=1")
+        pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
     port = _free_port()
     conf = tmp_path / "mosquitto.conf"
     conf.write_text(

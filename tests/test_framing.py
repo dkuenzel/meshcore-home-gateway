@@ -2,7 +2,7 @@
 
 import pytest
 
-from meshcore_bus.protocol.framing import MAX_FRAME_SIZE, FrameDecoder, encode_frame
+from meshcore_home_gateway.protocol.framing import MAX_FRAME_SIZE, FrameDecoder, encode_frame
 
 
 def test_frames_to_the_radio_start_with_less_than_and_little_endian_length() -> None:

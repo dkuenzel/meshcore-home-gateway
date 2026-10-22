@@ -1,6 +1,6 @@
-# meshcore-bus configuration example. Reference: docs/configuration.md
-# Install as /etc/meshcore-bus/config.toml (owner root, group meshcore-bus, mode 0640),
-# then check it with: meshcore-bus check-config
+# meshcore-home-gateway configuration example. Reference: docs/configuration.md
+# Install as /etc/meshcore-home-gateway/config.toml (owner root, group meshcore-home-gateway,
+# mode 0640), then check it with: meshcore-home-gateway check-config
 
 [radio]
 transport = "serial"                                   # "serial" (USB) or "tcp" (WiFi firmware)
@@ -12,7 +12,7 @@ set_clock = true                                       # move the radio clock fo
 [mqtt]
 host = "broker.example.org"
 port = 1883
-username = "meshcore-bus"
+username = "meshcore-home-gateway"
 password = "change-me"
 tls = false                                            # true: verify the broker certificate
 # ca_file = "/etc/ssl/certs/example-ca.pem"

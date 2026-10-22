@@ -1,10 +1,10 @@
-"""Build the single-file zipapp `meshcore-bus.pyz` reproducibly, with the standard library only.
+"""Build the single-file zipapp `meshcore-home-gateway.pyz` reproducibly, with the standard library.
 
-The archive holds the `meshcore_bus` package and a `__main__.py`. Entries are sorted and carry a
-fixed date and fixed permissions, so the same sources give the same bytes (with the same zlib).
-The installer builds it inside the container; `make pyz` builds it locally.
+The archive holds the `meshcore_home_gateway` package and a `__main__.py`. Entries are sorted and
+carry a fixed date and fixed permissions, so the same sources give the same bytes (with the same
+zlib). The installer builds it inside the container; `make pyz` builds it locally.
 
-    python3 tools/build_pyz.py --output dist/meshcore-bus.pyz [--interpreter "/usr/bin/python3 -I"]
+    python3 tools/build_pyz.py --output FILE.pyz [--interpreter "/usr/bin/python3 -I"]
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ import zipfile
 from pathlib import Path
 
 FIXED_DATE = (1980, 1, 1, 0, 0, 0)
-MAIN = b"from meshcore_bus.cli import main\n\nraise SystemExit(main())\n"
-PACKAGE = "meshcore_bus"
+MAIN = b"from meshcore_home_gateway.cli import main\n\nraise SystemExit(main())\n"
+PACKAGE = "meshcore_home_gateway"
 
 
 def package_files(source: Path) -> list[Path]:

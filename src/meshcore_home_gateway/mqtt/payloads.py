@@ -9,9 +9,9 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from meshcore_bus.core.commands import Command, CommandDecision
-from meshcore_bus.core.contacts import Contact
-from meshcore_bus.core.model import (
+from meshcore_home_gateway.core.commands import Command, CommandDecision
+from meshcore_home_gateway.core.contacts import Contact
+from meshcore_home_gateway.core.model import (
     DeliveryEvent,
     InboundMessage,
     MessageKind,

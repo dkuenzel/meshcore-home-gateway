@@ -1,18 +1,19 @@
-# meshcore-bus
+# meshcore-home-gateway
 
-[![CI](https://github.com/dkuenzel/meshcore-bus/actions/workflows/ci.yml/badge.svg)](https://github.com/dkuenzel/meshcore-bus/actions/workflows/ci.yml)
+[![CI](https://github.com/dkuenzel/meshcore-home-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/dkuenzel/meshcore-home-gateway/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A small, dependable bridge between a [MeshCore](https://github.com/meshcore-dev/MeshCore) companion
-radio and an MQTT broker. Automations publish a text and the bridge sends it over the LoRa mesh;
-messages the radio receives come back as MQTT events, and direct messages from allowlisted contacts
-can trigger commands. Home Assistant picks everything up through MQTT discovery, without custom
-code.
+A small, dependable gateway between home automation and a
+[MeshCore](https://github.com/meshcore-dev/MeshCore) LoRa mesh: alerts go out, commands come back.
+It connects a MeshCore companion radio to an MQTT broker. Automations publish a text and the
+gateway sends it over the mesh; messages the radio receives come back as MQTT events, and direct
+messages from allowlisted contacts can trigger commands. Home Assistant picks everything up through
+MQTT discovery, without custom code.
 
 ```mermaid
 flowchart LR
     HA[Home Assistant<br/>scripts, monitoring] <-->|MQTT| B[(broker)]
-    B <-->|MQTT| MB[meshcore-bus]
+    B <-->|MQTT| MB[meshcore-home-gateway]
     MB <-->|USB serial or TCP| R[companion radio]
     R <-.->|LoRa mesh| M((handhelds,<br/>repeaters, phones))
 ```
@@ -52,8 +53,8 @@ change between minor versions; see [`CHANGELOG.md`](CHANGELOG.md).
 On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root:
 
 ```sh
-git clone https://github.com/dkuenzel/meshcore-bus.git && cd meshcore-bus
-./deploy/proxmox/meshcore-bus-lxc.sh
+git clone https://github.com/dkuenzel/meshcore-home-gateway.git && cd meshcore-home-gateway
+./deploy/proxmox/meshcore-home-gateway-lxc.sh
 ```
 
 In the default setup the script asks only for the radio (USB serial device or TCP address) and the
@@ -69,20 +70,21 @@ As root, in a clone of this repository:
 
 ```sh
 apt install python3 python3-paho-mqtt            # Debian 13 or newer
-install -d /usr/local/lib/meshcore-bus
+install -d /usr/local/lib/meshcore-home-gateway
 python3 tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
-  --output /usr/local/lib/meshcore-bus/meshcore-bus-0.1.0.pyz
-ln -sfn meshcore-bus-0.1.0.pyz /usr/local/lib/meshcore-bus/current.pyz
-ln -sfn /usr/local/lib/meshcore-bus/current.pyz /usr/local/bin/meshcore-bus
+  --output /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-0.1.0.pyz
+ln -sfn meshcore-home-gateway-0.1.0.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+ln -sfn /usr/local/lib/meshcore-home-gateway/current.pyz /usr/local/bin/meshcore-home-gateway
 useradd --system --user-group --groups dialout --no-create-home --home-dir /nonexistent \
-  --shell /usr/sbin/nologin meshcore-bus
-install -D -m 0640 -g meshcore-bus deploy/config.example.toml /etc/meshcore-bus/config.toml
-install -m 0644 deploy/systemd/meshcore-bus.service /etc/systemd/system/
-editor /etc/meshcore-bus/config.toml && meshcore-bus check-config
-systemctl daemon-reload && systemctl enable --now meshcore-bus
+  --shell /usr/sbin/nologin meshcore-home-gateway
+install -D -m 0640 -g meshcore-home-gateway deploy/config.example.toml \
+  /etc/meshcore-home-gateway/config.toml
+install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
+editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-config
+systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 ```
 
-`meshcore-bus probe --serial <device>` lists the radio's channels and contacts for the
+`meshcore-home-gateway probe --serial <device>` lists the radio's channels and contacts for the
 configuration. The same steps with explanations: [`docs/deployment.md`](docs/deployment.md),
 section 3.
 
@@ -91,11 +93,11 @@ section 3.
 ```sh
 # send (UTF-8 text to a configured target alias)
 mosquitto_pub -h broker -t meshcore/radio1/send/alerts -m "Water pump stopped"
-meshcore-bus send --wait 30 operator "Back online"        # waits for the delivery result
+meshcore-home-gateway send --wait 30 operator "Back online"        # waits for the delivery result
 
 # listen
 mosquitto_sub -h broker -t 'meshcore/radio1/#' -v
-meshcore-bus listen --topic received
+meshcore-home-gateway listen --topic received
 ```
 
 In Home Assistant, call `notify.send_message` on the entity *Send to alerts*, and trigger
@@ -140,8 +142,8 @@ make matrix       # the tests with every installed Python from 3.11 to 3.14, lik
 Test-driven, with an emulated radio and a real `mosquitto` in the tests. Contributions are
 welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md), [`docs/development.md`](docs/development.md) and
 the [code of conduct](CODE_OF_CONDUCT.md). Bugs and ideas go to the
-[issue tracker](https://github.com/dkuenzel/meshcore-bus/issues), security problems to the private form described in
-[`SECURITY.md`](SECURITY.md).
+[issue tracker](https://github.com/dkuenzel/meshcore-home-gateway/issues), security problems to
+the private form described in [`SECURITY.md`](SECURITY.md).
 
 ## License
 

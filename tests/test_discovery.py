@@ -1,8 +1,8 @@
 """Home Assistant discovery document (rules from docs/home-assistant.md)."""
 
-from meshcore_bus.config import parse_config
-from meshcore_bus.mqtt.discovery import discovery_payload, discovery_topic
-from meshcore_bus.mqtt.topics import Topics
+from meshcore_home_gateway.config import parse_config
+from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
+from meshcore_home_gateway.mqtt.topics import Topics
 
 KEY = "a1" * 32
 CONFIG = parse_config(
@@ -29,20 +29,23 @@ TOPICS = Topics(CONFIG.mqtt.base_topic, CONFIG.mqtt.node_id)
 
 
 def test_topic_uses_the_device_path_and_a_safe_object_id() -> None:
-    assert discovery_topic(CONFIG) == "ha/device/meshcore_bus_radio_1/config"
+    assert discovery_topic(CONFIG) == "ha/device/meshcore_home_gateway_radio_1/config"
 
 
 def test_document_has_the_mandatory_parts() -> None:
     doc = discovery_payload(CONFIG, TOPICS)
-    assert doc["dev"]["ids"] == ["meshcore_bus_radio_1"]
+    assert doc["dev"]["ids"] == ["meshcore_home_gateway_radio_1"]
     assert doc["dev"]["name"] == "Mesh radio"
-    assert doc["o"]["name"] == "meshcore-bus"
+    assert doc["o"]["name"] == "meshcore-home-gateway"
     assert doc["availability"] == [{"topic": "meshcore/radio-1/availability"}]
     assert doc["qos"] == 1
     for key, component in doc["cmps"].items():
         assert component["p"] in {"binary_sensor", "sensor", "event", "notify"}, key
-        assert component["unique_id"] == f"meshcore_bus_radio_1_{key}"
-        assert component["default_entity_id"] == f"{component['p']}.meshcore_bus_radio_1_{key}"
+        assert component["unique_id"] == f"meshcore_home_gateway_radio_1_{key}"
+        assert (
+            component["default_entity_id"]
+            == f"{component['p']}.meshcore_home_gateway_radio_1_{key}"
+        )
 
 
 def test_entities_and_their_sources() -> None:

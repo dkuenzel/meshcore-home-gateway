@@ -3,15 +3,15 @@ requires = ["flit_core>=4,<5"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "meshcore-bus"
+name = "meshcore-home-gateway"
 dynamic = ["version"]
-description = "Bridge between a MeshCore companion radio and an MQTT message bus, with Home Assistant discovery."
+description = "Gateway between home automation and a MeshCore LoRa mesh, over MQTT with Home Assistant discovery."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "The meshcore-bus contributors" }]
-keywords = ["meshcore", "lora", "mesh", "mqtt", "home-assistant", "bridge"]
+authors = [{ name = "The meshcore-home-gateway contributors" }]
+keywords = ["meshcore", "lora", "mesh", "mqtt", "home-assistant", "gateway", "bridge"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: No Input/Output (Daemon)",
@@ -31,17 +31,17 @@ classifiers = [
 dependencies = ["paho-mqtt>=2.0,<3"]
 
 [project.urls]
-Homepage = "https://github.com/dkuenzel/meshcore-bus"
-Documentation = "https://github.com/dkuenzel/meshcore-bus/tree/main/docs"
-Source = "https://github.com/dkuenzel/meshcore-bus"
-Issues = "https://github.com/dkuenzel/meshcore-bus/issues"
-Changelog = "https://github.com/dkuenzel/meshcore-bus/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/dkuenzel/meshcore-home-gateway"
+Documentation = "https://github.com/dkuenzel/meshcore-home-gateway/tree/main/docs"
+Source = "https://github.com/dkuenzel/meshcore-home-gateway"
+Issues = "https://github.com/dkuenzel/meshcore-home-gateway/issues"
+Changelog = "https://github.com/dkuenzel/meshcore-home-gateway/blob/main/CHANGELOG.md"
 
 [project.scripts]
-meshcore-bus = "meshcore_bus.cli:main"
+meshcore-home-gateway = "meshcore_home_gateway.cli:main"
 
 [tool.flit.module]
-name = "meshcore_bus"
+name = "meshcore_home_gateway"
 
 [tool.flit.sdist]
 include = [
@@ -69,7 +69,7 @@ ignore = [
 "tests/**" = ["S101", "S105", "S106", "S108", "PLR0915", "PLC0415"]
 "tools/**" = ["T20"]
 "tests/manual/**" = ["T20"]  # a script that reports by printing
-"src/meshcore_bus/cli.py" = ["T20"]  # the command line prints by design
+"src/meshcore_home_gateway/cli.py" = ["T20"]  # the command line prints by design
 
 [tool.mypy]
 strict = true
@@ -89,7 +89,7 @@ markers = ["broker: starts a local mosquitto broker (integration test)"]
 
 [tool.coverage.run]
 branch = true
-source = ["meshcore_bus"]
+source = ["meshcore_home_gateway"]
 patch = ["subprocess"]  # the system test runs the service as a process
 
 [tool.coverage.report]

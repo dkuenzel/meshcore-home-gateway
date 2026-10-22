@@ -18,8 +18,8 @@ from typing import Any, Protocol
 import paho.mqtt.client as paho
 from paho.mqtt.enums import CallbackAPIVersion, MQTTProtocolVersion
 
-from meshcore_bus.config import ConfigError, MqttConfig
-from meshcore_bus.mqtt.topics import Topics
+from meshcore_home_gateway.config import ConfigError, MqttConfig
+from meshcore_home_gateway.mqtt.topics import Topics
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class PahoLike(Protocol):
 def make_paho_client(config: MqttConfig) -> PahoLike:
     return paho.Client(
         callback_api_version=CallbackAPIVersion.VERSION2,
-        client_id=config.client_id or f"meshcore-bus-{config.node_id}",
+        client_id=config.client_id or f"meshcore-home-gateway-{config.node_id}",
         protocol=MQTTProtocolVersion.MQTTv311,
         clean_session=True,
     )

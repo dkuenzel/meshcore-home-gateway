@@ -35,7 +35,7 @@ def test_archive_holds_the_package_and_an_entry_point(tmp_path: Path) -> None:
     with zipfile.ZipFile(pyz) as archive:
         names = archive.namelist()
     assert names[0] == "__main__.py"
-    assert "meshcore_bus/__init__.py" in names
-    assert "meshcore_bus/py.typed" in names
+    assert "meshcore_home_gateway/__init__.py" in names
+    assert "meshcore_home_gateway/py.typed" in names
     assert not [n for n in names if "__pycache__" in n or n.endswith(".pyc")]
     assert names[1:] == sorted(names[1:])

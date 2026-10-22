@@ -69,7 +69,8 @@ def drive(root: Path, host: stubs.Host) -> int:
     env = {
         **os.environ, "TERM": "xterm", "PATH": f"{root / 'bin'}:{os.environ['PATH']}",
         "STUB": str(root), "ALICE": stubs.ALICE, "RELAY": stubs.RELAY,
-        "MESHCORE_BUS_SERIAL_DIR": str(host.serial.parent), "COLUMNS": "100", "LINES": "30",
+        "MESHCORE_HOME_GATEWAY_SERIAL_DIR": str(host.serial.parent),
+        "COLUMNS": "100", "LINES": "30",
     }  # fmt: skip
     process = subprocess.Popen(  # noqa: S603 - our script
         [stubs.BASH, str(stubs.SCRIPT)], stdin=slave, stdout=slave, stderr=slave, env=env,
