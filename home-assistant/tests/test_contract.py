@@ -421,7 +421,41 @@ async def test_the_markdown_card_of_the_first_steps_shows_the_last_message(
     await fire(
         hass, TOPICS.received, received_payload(message, Contact(SENDER, "Alice"), "operator")
     )
-    assert " ".join(card.async_render(parse_result=False).split()) == "**Alice**: Hello"
+    assert card.async_render(parse_result=False).strip() == "<div><b>Alice</b>: Hello</div>"
+
+
+HOSTILE = (
+    "![](https://example.org/p.png) [x](https://example.org) <img src=x>\n\n**b** www.example.org"
+)
+
+
+@pytest.mark.parametrize(
+    ("kind", "text", "sender"),
+    [
+        (MessageKind.CONTACT, HOSTILE, Contact(SENDER, "<i>Mallory</i> [y](https://example.org)")),
+        (MessageKind.CHANNEL, f"<b>Mallory</b>: {HOSTILE}", None),  # the claimed name, too
+    ],
+)
+async def test_the_markdown_card_keeps_a_hostile_text_inert(
+    hass: HomeAssistant, mqtt: Any, kind: MessageKind, text: str, sender: Contact | None
+) -> None:
+    """Anyone in radio range writes the text and a channel sender's name. In a Markdown
+    paragraph even an escaped text becomes an image or a link; in an HTML block on one line, the
+    escaped text stays text (CommonMark: a blank line ends the block)."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    card = Template(guide_block("type: markdown")["content"], hass)
+    message = InboundMessage(kind, text, 1_760_000_000, 1_760_000_001.0, sender_prefix=SENDER[:12],
+                             channel_index=1 if kind is MessageKind.CHANNEL else None)  # fmt: skip
+    await fire(hass, TOPICS.received, received_payload(message, sender, "alerts"))
+    lines = [line for line in card.async_render(parse_result=False).splitlines() if line.strip()]
+    assert len(lines) == 1
+    (line,) = lines
+    assert line.startswith("<div>")
+    assert line.endswith("</div>")
+    inner = line.removeprefix("<div>").removesuffix("</div>")
+    assert "<" not in inner.replace("<b>", "", 1).replace("</b>", "", 1)  # only the card's own tag
+    assert "&lt;img src=x&gt;" in inner
 
 
 async def test_the_actions_of_the_first_steps_send_a_message(

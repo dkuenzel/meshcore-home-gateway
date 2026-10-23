@@ -9,7 +9,8 @@ release changes one of these, the entry gets the new version or goes.
 Sections: [Proxmox VE](#proxmox-ve), [Shell](#shell), [Debian, systemd and
 Linux](#debian-systemd-and-linux), [Python](#python), [GitHub](#github), [whiptail](#whiptail),
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
-[paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [MeshCore companion
+[paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
+dashboards](#home-assistant-dashboards), [MeshCore companion
 firmware](#meshcore-companion-firmware).
 
 ## How we verify
@@ -944,6 +945,31 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `uv pip install`.** One of the reasons for a standalone bridge
   ([ADR 0002](decisions/0002-standalone-bridge-instead-of-home-assistant-integration.md));
   source `util/package.py` lines 156-161 at 2026.10.0.
+
+## Home Assistant dashboards
+
+* **A Markdown card parses what its template puts out as Markdown, after the template's own
+  escaping: an escaped mesh text still becomes an image that the browser loads, a link or an
+  autolink; in an HTML block on one line it stays text.** The card renders its `content` with the
+  template engine; the frontend then parses the result with marked (GFM, line breaks on) and filters
+  each token with js-xss against a whitelist that admits `img` and `a`. `| e` escapes `<`, `>` and
+  `&` only, which leaves `![](https://example.org/p.png)`, `[x](https://example.org)` and
+  `www.example.org` intact; in a paragraph they become an `<img>` (a tracking pixel), an `<a>` and
+  an autolink. A line that starts with `<div>` opens a CommonMark HTML block, which marked passes on
+  as HTML, so the escaped text stays literal; a blank line ends the block, so line breaks in the
+  text must go. Anyone in radio range chooses a message's text and a channel sender's claimed name.
+  *Verified:* frontend `20260930.2`, the release Home Assistant 2026.10.0 pins:
+  `src/resources/markdown-worker.ts:19-36` (whitelist) and `:71-74` (each token filtered),
+  `src/components/ha-markdown-element.ts:92-93` (`gfm: true`), with marked 18.0.14 and xss 1.0.15
+  (`package.json:119` and `:140`); experiment: the card of [First
+  steps](home-assistant.md#first-steps), rendered by Home Assistant 2026.10.0's template engine with
+  a hostile text and sender name and then by a replica of that pipeline with the same library
+  versions (not in a browser): the earlier card gave two `<img>` and three `<a>`, the current one a
+  single HTML token with everything literal. *Here:* the card escapes the text and the sender name
+  and keeps them in a `<div>` on one line; `test_the_markdown_card_keeps_a_hostile_text_inert` in
+  the contract tests checks the form of its output. *Check:* `printf
+  '![](https://example.org/p.png)' | npx marked@18.0.14` prints an `<img>`; `printf
+  '<div>![](https://example.org/p.png)</div>' | npx marked@18.0.14` prints the input unchanged.
 
 ## MeshCore companion firmware
 
