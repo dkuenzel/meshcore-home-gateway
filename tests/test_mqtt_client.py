@@ -96,6 +96,30 @@ def test_connection_subscribes_and_announces_availability() -> None:
     asyncio.run(scenario())
 
 
+def test_every_reconnect_subscribes_and_announces_again() -> None:
+    """With a clean session the broker forgets the subscriptions with the connection."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        connections: list[int] = []
+        bus.on_connected.append(lambda: connections.append(1))
+        await bus.start()
+        reason = SimpleNamespace(is_failure=False)
+        for _ in range(2):
+            await asyncio.to_thread(fake.on_connect, fake, None, None, reason, None)
+            await asyncio.sleep(0)
+            assert bus.connected
+            fake.on_disconnect(fake, None, None, "lost", None)
+            await asyncio.sleep(0)
+            assert not bus.connected
+        assert names(fake).count("subscribe") == 2
+        online = [p for p in fake.published if p[:2] == (TOPICS.availability, b"online")]
+        assert len(online) == 2
+        assert connections == [1, 1]
+
+    asyncio.run(scenario())
+
+
 def test_refused_connection_is_only_logged() -> None:
     async def scenario() -> None:
         bus, fake = make_bus()
@@ -283,6 +307,40 @@ def test_with_broker_clean_stop_leaves_offline_retained(broker: Broker) -> None:
             assert (TOPICS.availability, b"offline", True) in late.messages
         finally:
             late.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.broker
+def test_with_broker_a_retained_request_is_flagged_only_when_replayed(broker: Broker) -> None:
+    """MQTT 3.1.1 clears the retain flag of a live message: a retained request published while
+    the bridge is connected arrives unflagged and is sent once. The copy the broker keeps arrives
+    flagged after every reconnect, so the bridge rejects it (docs/mqtt-api.md, Sending)."""
+
+    async def scenario() -> None:
+        observer = Observer(broker)
+        config = MqttConfig(host=broker.host, port=broker.port, node_id="radio1", keepalive_s=10)
+        bus = MqttBus(config, TOPICS, None)
+        connected = asyncio.Event()
+        bus.on_connected.append(connected.set)
+        await bus.start()
+        try:
+            await asyncio.wait_for(connected.wait(), 5)
+            await asyncio.to_thread(observer.wait_for, TOPICS.availability, b"online")
+            observer.client.publish(TOPICS.send("alerts"), b"Gate open", qos=1, retain=True)
+            live = await asyncio.wait_for(bus.requests.get(), 5)
+            assert live == SendRequest("alerts", b"Gate open", retained=False)
+
+            connected.clear()
+            client: Any = bus._client  # drop the connection; paho reconnects by itself
+            client.socket().shutdown(socket.SHUT_RDWR)
+            await asyncio.wait_for(connected.wait(), 10)
+            replayed = await asyncio.wait_for(bus.requests.get(), 5)
+            assert replayed == SendRequest("alerts", b"Gate open", retained=True)
+            assert bus.requests.empty()
+        finally:
+            await bus.stop()
+            observer.close()
 
     asyncio.run(scenario())
 

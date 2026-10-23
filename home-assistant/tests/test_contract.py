@@ -45,7 +45,7 @@ TARGETS = (
 PREFIX = "meshcore_home_gateway_radio1"
 
 
-def make_config(targets: str = TARGETS) -> Config:
+def make_config(targets: str = TARGETS, node_id: str = "radio1") -> Config:
     """Every component: targets (one alias with '-'), command words and the packet sensors."""
     return parse_config(f"""
 [radio]
@@ -53,7 +53,7 @@ transport = "tcp"
 host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"
-node_id = "radio1"
+node_id = "{node_id}"
 [diagnostics]
 publish_rx_log = true
 [commands]
@@ -164,6 +164,30 @@ async def test_discovery_creates_the_documented_entities(
         entry = registry.async_get(f"sensor.{PREFIX}_{sensor}")
         assert entry is not None
         assert entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+    assert problems(caplog) == []
+
+
+async def test_a_hyphen_in_the_node_id_becomes_an_underscore_only_in_the_entity_ids(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Discovery topic, device and unique IDs keep the node ID as it is, so node IDs that differ
+    only in '-' and '_' are two devices; their entity IDs would be equal, so Home Assistant
+    numbers the second set."""
+    hyphen, underscore = make_config(node_id="radio-1"), make_config(node_id="radio_1")
+    document = discovery_payload(hyphen, Topics(hyphen.mqtt.base_topic, "radio-1"))
+    await fire(hass, discovery_topic(hyphen), document)
+    expected = {
+        f"{c['p']}.meshcore_home_gateway_radio_1_{key.replace('-', '_')}"
+        for key, c in document["cmps"].items()
+    }
+    assert entity_ids(hass) == expected
+
+    other = discovery_payload(underscore, Topics(underscore.mqtt.base_topic, "radio_1"))
+    await fire(hass, discovery_topic(underscore), other)
+    (entry,) = hass.config_entries.async_entries("mqtt")
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert len(devices) == 2
+    assert entity_ids(hass) == expected | {f"{e}_2" for e in expected}
     assert problems(caplog) == []
 
 

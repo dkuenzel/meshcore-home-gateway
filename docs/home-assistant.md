@@ -41,6 +41,12 @@ node `radio1`:
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
 
+A `-` in the node ID becomes `_` in the entity IDs, as in an alias: node `radio-1` gives
+`sensor.meshcore_home_gateway_radio_1_battery`. The discovery topic, the device and the unique
+IDs keep the node ID as it is, so two gateways `radio-1` and `radio_1` on one broker are two
+devices, but the entity IDs of the one announced second end in `_2`; pick node IDs that differ in
+more than that.
+
 All entities share the gateway's availability topic and turn `unavailable` when it is offline.
 The state values come from the retained state document, so they are back right after a restart of
 either side.

@@ -36,7 +36,9 @@ RADIO_ATTRIBUTES = (
 
 
 def device_id(config: Config) -> str:
-    return f"meshcore_home_gateway_{config.mqtt.node_id.replace('-', '_')}"
+    """The node ID unchanged: node IDs that differ only in '-' and '_' are two devices (Home
+    Assistant turns '-' into '_' only in the entity IDs)."""
+    return f"meshcore_home_gateway_{config.mqtt.node_id}"
 
 
 def discovery_topic(config: Config) -> str:

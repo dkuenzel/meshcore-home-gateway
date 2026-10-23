@@ -1,6 +1,7 @@
 """Persistent state: atomic JSON file and the ledger of accepted command timestamps."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -87,3 +88,22 @@ def test_announced_components_survive_an_unwritable_state(
     monkeypatch.setattr(store, "save", fail)
     assert AnnouncedComponents(store).replace({}, now=0.0) == {"send_a": "notify"}
     assert "read-only file system" in caplog.text
+
+
+def test_a_failed_save_leaves_no_temporary_file_and_keeps_the_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "state.json"
+    ledger = CommandLedger(JsonStateFile(path))
+    ledger.record("aa" * 32, 100)
+
+    def full_disk(_src: object, _dst: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", full_disk)  # the rename of the temporary file
+        with pytest.raises(OSError, match="No space left"):
+            ledger.record("aa" * 32, 200)
+    assert ledger.last("aa" * 32) == 100
+    assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
+    assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100
