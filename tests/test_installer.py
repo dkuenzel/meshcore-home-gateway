@@ -611,7 +611,7 @@ def test_missing_broker_address_is_refused(host: Host) -> None:
         host, "--answers", str(answers_file(host, f"radio.choice={host.serial}\n"))
     )
     assert result.returncode == 1
-    assert "MQTT broker address" in result.stderr
+    assert "mqtt.host (MQTT broker: host name or IP address" in result.stderr
 
 
 def test_id_used_by_a_virtual_machine_is_refused(host: Host) -> None:

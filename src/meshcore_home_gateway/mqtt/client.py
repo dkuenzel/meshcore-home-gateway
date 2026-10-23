@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import ssl
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -41,6 +42,7 @@ class PahoLike(Protocol):
     """The part of `paho.mqtt.client.Client` the adapter uses (lets tests pass a fake)."""
 
     on_connect: Any
+    on_connect_fail: Any
     on_disconnect: Any
     on_message: Any
 
@@ -120,6 +122,7 @@ class MqttBus:
         # state behind a full backlog; publish() bounds the events instead
         client.max_queued_messages_set(0)
         client.on_connect = self._paho_connected
+        client.on_connect_fail = self._paho_connect_failed
         client.on_disconnect = self._paho_disconnected
         client.on_message = self._paho_message
         client.connect_async(config.host, config.port, config.keepalive_s)
@@ -172,6 +175,13 @@ class MqttBus:
         client.subscribe(subscriptions)
         client.publish(self._topics.availability, ONLINE, qos=1, retain=True)
         self._call(self._handle_connected)
+
+    def _paho_connect_failed(self, _c: Any, _u: Any) -> None:
+        # no answer from a broker (name, address, port, TLS): paho calls this while it handles
+        # the attempt's OSError and retries with the reconnect delay
+        exc = sys.exception()
+        reason = _reason(exc) if isinstance(exc, OSError) else "no connection"
+        log.warning("MQTT: cannot reach %s:%d: %s", self._config.host, self._config.port, reason)
 
     def _paho_disconnected(self, _c: Any, _u: Any, _f: Any, reason: Any, _p: Any) -> None:
         self._call(self._handle_disconnected, str(reason))

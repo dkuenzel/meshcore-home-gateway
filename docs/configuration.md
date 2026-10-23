@@ -14,7 +14,7 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | --- | --- | --- |
 | `transport` | required | `serial` (USB) or `tcp` (WiFi companion firmware) |
 | `device` | – | serial device, an absolute path; use the stable `/dev/serial/by-id/...` path. Required for `serial`, an error with `tcp` |
-| `host` | – | radio address. Required for `tcp`, an error with `serial`. The TCP interface has no authentication |
+| `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial`. The TCP interface has no authentication |
 | `port` | `5000` | TCP port; only with `tcp` |
 | `set_clock` | `true` | move the radio clock forward to the bridge clock at connect (it cannot be moved back) |
 
@@ -25,7 +25,7 @@ would put nRF52 radios into their bootloader.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `host` | required | broker address |
+| `host` | required | broker address: a host name or IP address, without `mqtt://` and port |
 | `port` | `1883` | broker port (8883 is usual with TLS) |
 | `username`, `password` | – | broker credentials; `password` needs `username` |
 | `tls` | `false` | TLS with certificate and host name verification |
