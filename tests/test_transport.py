@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import gc
 import os
 import termios
 from collections.abc import Iterator
@@ -24,6 +25,13 @@ def pty() -> Iterator[tuple[int, str]]:
     finally:
         os.close(controller)
         os.close(terminal)
+
+
+def open_descriptors() -> int:
+    """After a collection: garbage of earlier tests could otherwise close its descriptors while a
+    test counts."""
+    gc.collect()
+    return len(os.listdir("/proc/self/fd"))
 
 
 def test_serial_reads_and_writes_raw_bytes(pty: tuple[int, str]) -> None:
@@ -233,14 +241,14 @@ def test_serial_write_error_is_reported_as_connection_error(
 def test_serial_open_of_something_else_than_a_terminal_fails_cleanly(tmp_path: Path) -> None:
     plain = tmp_path / "not-a-tty"
     plain.write_bytes(b"")
-    before = len(os.listdir("/proc/self/fd"))
+    before = open_descriptors()
 
     async def scenario() -> None:
         with pytest.raises(OSError, match="Inappropriate ioctl"):
             await SerialTransport(str(plain)).open()
 
     asyncio.run(scenario())
-    assert len(os.listdir("/proc/self/fd")) == before  # the descriptor was closed
+    assert open_descriptors() == before  # the descriptor was closed
 
 
 def test_serial_terminal_setup_failure_is_an_os_error_and_closes_the_descriptor(
@@ -254,14 +262,14 @@ def test_serial_terminal_setup_failure_is_an_os_error_and_closes_the_descriptor(
         raise termios.error(errno.EIO, "Input/output error")
 
     monkeypatch.setattr(termios, "tcsetattr", hung_up)
-    before = len(os.listdir("/proc/self/fd"))
+    before = open_descriptors()
 
     async def scenario() -> None:
         with pytest.raises(OSError, match=f"Input/output error: '{path}'"):
             await SerialTransport(path).open()
 
     asyncio.run(scenario())
-    assert len(os.listdir("/proc/self/fd")) == before  # the descriptor was closed
+    assert open_descriptors() == before  # the descriptor was closed
 
 
 def test_tcp_connect_timeout_names_the_radio(monkeypatch: pytest.MonkeyPatch) -> None:
