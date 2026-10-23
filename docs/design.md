@@ -435,7 +435,9 @@ tell when Home Assistant has received them.
 One TOML file, `/etc/meshcore-home-gateway/config.toml`, owner `root`, group
 `meshcore-home-gateway`, mode 0640 (it holds the broker password). Unknown keys are errors. Every
 setting is in [`configuration.md`](configuration.md). The installer writes the file through
-`meshcore-home-gateway config render`, which validates with the same code as the service.
+`meshcore-home-gateway config render`, which validates with the same code as the service and
+creates a missing directory with mode 0755 whatever the umask, so that the service user reaches
+the file.
 
 ### 6.8 Command line
 

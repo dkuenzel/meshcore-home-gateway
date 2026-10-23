@@ -12,6 +12,7 @@ container's file system.
 from __future__ import annotations
 
 import functools
+import grp
 import hashlib
 import http.server
 import io
@@ -19,6 +20,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -66,7 +68,8 @@ STUBS = {
             if [[ -p /dev/stdin ]]; then  # files sent into the container through the input
               mkdir -p "$STUB/pushed"
               cat >"$STUB/input"
-              if [[ $* =~ cat\ \>/root/([^[:space:]]+) ]]; then
+              written='cat >/root/([^[:space:])]+)'
+              if [[ $* =~ $written ]]; then
                 cp "$STUB/input" "$STUB/pushed/${BASH_REMATCH[1]}"
               fi
             fi
@@ -787,9 +790,10 @@ def test_update_installs_this_checkout_and_restarts_the_service(
     container.receive(host, "/root/meshcore-home-gateway-src.tar.gz")
     config = render_config(CURRENT.format(serial=host.serial))
     container.path(CONFIG).write_text(config, encoding="utf-8")
-    run = container.run(host.script("build_pyz.py"))
+    run = container.run("umask 077\n" + host.script("build_pyz.py"))  # pct exec keeps the host's
     assert run.returncode == 0, run.stderr
     lib = container.path(LIB)
+    assert stat.S_IMODE(lib.stat().st_mode) == 0o755  # the service user reads the program
     assert zipfile.is_zipfile(lib / f"meshcore-home-gateway-{__version__}.pyz")
     assert (lib / "current.pyz").readlink() == Path(f"meshcore-home-gateway-{__version__}.pyz")
     command = container.path("/usr/local/bin/meshcore-home-gateway")
@@ -1046,16 +1050,39 @@ def test_the_answers_are_private_and_removed_after_rendering(
     result = run_installer(host, "--answers", str(answers_file(host)))
     assert result.returncode == 0, result.stderr
     script = host.script(f"--output {CONFIG}")
-    assert script.index("umask 077") < script.index(f"cat >{ANSWERS}")
-    container.stub("meshcore-home-gateway", f"exit {status}")
-    run = container.run(script, stdin=host.pushed("meshcore-home-gateway-answers"))
+    record = f'umask >>"{container.root}/umask.log"; stat -c %a "$4" >>"{container.root}/mode.log"'
+    container.stub("meshcore-home-gateway", f"{record}\nexit {status}")
+    answers = host.pushed("meshcore-home-gateway-answers")
+    run = container.run(f"umask 077\n{script}", stdin=answers)  # pct exec keeps the host's
     assert run.returncode == status
     (render,) = container.calls("meshcore-home-gateway")
     assert render == (
         f"config render --answers {container.path(ANSWERS)} --output {container.path(CONFIG)} "
         "--group meshcore-home-gateway"
     )
+    assert container.calls("mode") == ["600"]  # the answers, while they exist
+    assert container.calls("umask") == ["0022"]  # not 077 for the configuration's directory
     assert not container.path(ANSWERS).exists()
+
+
+def test_the_service_user_can_reach_the_written_configuration(
+    host: Host, container: Container
+) -> None:
+    """With the real program: the directory it creates is not only root's."""
+    result = run_installer(host, "--answers", str(answers_file(host)))
+    assert result.returncode == 0, result.stderr
+    group = grp.getgrgid(os.getgid()).gr_name  # the container's service group stands in for it
+    script = host.script(f"--output {CONFIG}")
+    assert script.endswith("--group meshcore-home-gateway")
+    script = script.removesuffix("meshcore-home-gateway") + group
+    program = f'PYTHONPATH="{ROOT / "src"}" exec "{sys.executable}" -m meshcore_home_gateway "$@"'
+    container.stub("meshcore-home-gateway", program)
+    container.path(CONFIG).parent.rmdir()  # the first installation creates it
+    run = container.run(f"umask 077\n{script}", stdin=host.pushed("meshcore-home-gateway-answers"))
+    assert run.returncode == 0, run.stderr
+    assert stat.S_IMODE(container.path(CONFIG).parent.stat().st_mode) == 0o755
+    config = container.path(CONFIG).stat()
+    assert (stat.S_IMODE(config.st_mode), config.st_gid) == (0o640, os.getgid())
 
 
 def test_help_and_unknown_options(host: Host) -> None:

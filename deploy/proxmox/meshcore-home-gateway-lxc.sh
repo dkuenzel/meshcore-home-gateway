@@ -547,6 +547,7 @@ install_service() {  # packages, user, zipapp and unit; the version switches onl
   # prints the installed version on stdout, everything else goes to stderr
   version=$(in_ct "$ctid" bash -c "set -e
     exec 3>&1 1>&2
+    umask 022   # not the host's: the service user must read the program
     src=$STAGE new=$LIB/.meshcore-home-gateway.pyz.new
     trap 'rm -rf \$src \$src.tar.gz \$new' EXIT
     mkdir -p $LIB
@@ -764,9 +765,9 @@ configure() {  # write the configuration into the container
   local ctid=$1
   # through a pipe and a private file in the container: the answers hold the broker password
   write_answers | in_ct_input "$ctid" bash -c "set -e
-    umask 077
+    umask 022   # not the host's: the service user must reach the configuration
     trap 'rm -f $ANSWERS_FILE' EXIT
-    cat >$ANSWERS_FILE
+    (umask 077 && cat >$ANSWERS_FILE)
     meshcore-home-gateway config render --answers $ANSWERS_FILE \
       --output $CONFIG --group meshcore-home-gateway" >&2 \
     || die "the configuration was not accepted (see above)"

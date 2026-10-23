@@ -135,6 +135,22 @@ def test_config_render_syncs_the_file_and_its_directory(
     assert output.read_text(encoding="utf-8") == "x = 1\n"
 
 
+def test_config_render_makes_its_directory_reachable_whatever_the_umask(tmp_path: Path) -> None:
+    """The service user must reach the file; root's umask may be 077 (the installer had one)."""
+    existing = tmp_path / "existing"
+    existing.mkdir(mode=0o700)
+    previous = os.umask(0o077)
+    try:
+        cli_module.write_private(tmp_path / "etc" / "gw" / "config.toml", "x = 1\n", None)
+        cli_module.write_private(existing / "config.toml", "x = 1\n", None)
+    finally:
+        os.umask(previous)
+    for directory in (tmp_path / "etc", tmp_path / "etc" / "gw"):
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o755
+    assert stat.S_IMODE((tmp_path / "etc" / "gw" / "config.toml").stat().st_mode) == 0o640
+    assert stat.S_IMODE(existing.stat().st_mode) == 0o700  # as the administrator set it
+
+
 def test_config_render_loads_the_tls_files(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
