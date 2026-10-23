@@ -570,7 +570,8 @@ def test_check_config_reports_a_refused_login_with_the_user_name(
     text = path.read_text(encoding="utf-8")
     path.write_text(
         text.replace(
-            'node_id = "radio1"\n', 'node_id = "radio1"\nusername = "gw"\npassword = "x"\n'
+            'node_id = "radio1"\n',
+            'node_id = "radio1"\nusername = "gw"\npassword = "S3cret-pw-7"\n',
         ),
         encoding="utf-8",
     )
@@ -581,7 +582,8 @@ def test_check_config_reports_a_refused_login_with_the_user_name(
         captured.err
     )
     assert "unknown user and missing credentials alike" in captured.err
-    assert '"x"' not in captured.out + captured.err
+    assert "systemctl reload mosquitto" in captured.err
+    assert "S3cret" not in captured.out + captured.err
 
 
 def test_check_config_reports_an_unreachable_broker(

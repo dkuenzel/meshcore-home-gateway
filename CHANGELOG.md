@@ -9,6 +9,9 @@ format and the command line are public interfaces.
 
 ### Changed
 
+- The installer suggests no MQTT user name any more: the dialog's field starts empty, and an
+  answers file without `mqtt.username` logs in without one (so `mqtt.password` alone is refused;
+  before, both took the user name `meshcore-home-gateway`).
 - The Proxmox installer runs straight from its address, like the Proxmox community scripts:
   `bash -c "$(wget -qO- URL)"`. Nothing is stored on the host; the program is downloaded inside
   the new container: from a release, its zipapp and unit, checked against its `SHA256SUMS` (the

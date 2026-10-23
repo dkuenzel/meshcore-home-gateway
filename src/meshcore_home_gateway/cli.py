@@ -473,7 +473,7 @@ class _Connection:
         client.on_connect = self.on_connect
         try:
             client.connect(mqtt.host, mqtt.port, mqtt.keepalive_s)
-        except OSError as exc:  # refused, unreachable, unknown host name, TLS failure
+        except (OSError, UnicodeError) as exc:  # refused, unreachable, unknown name, TLS failure
             return f"cannot connect to the broker {mqtt.host}:{mqtt.port}: {exc}"
         client.loop_start()
         if not self.answered.wait(CONNECT_TIMEOUT_S):

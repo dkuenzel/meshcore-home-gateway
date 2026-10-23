@@ -422,6 +422,10 @@ def test_identifiers_that_home_assistant_would_merge_are_refused(name: str) -> N
         ("[2001:db8::1]:1883", "without the port"),
         ("[2001:db8::1]", "without brackets"),
         ("broker.example.org/mqtt", "a host name or IP address only, got"),
+        ("mqtt..example.org", "a part between dots is empty"),
+        (".example.org", "a part between dots is empty"),
+        ("a" * 64 + ".example.org", "longer than 63 characters"),
+        ("2001:db8::zz", "a host name or IP address only, got"),
     ],
 )
 def test_a_url_or_a_port_in_a_host_is_refused(host: str, hint: str) -> None:
@@ -435,9 +439,12 @@ def test_a_url_or_a_port_in_a_host_is_refused(host: str, hint: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "host", ["broker.example.org", "192.0.2.20", "2001:db8::1", "fe80::1%eth0"]
-)
+    "host",
+    ["broker.example.org", "broker.example.org.", "192.0.2.20", "2001:db8::1", "fe80::1%eth0",
+     "::ffff:192.0.2.1", "mqtt.müller.example", "xn--mller-kva.example", "my_broker"],
+)  # fmt: skip
 def test_host_names_and_addresses_are_accepted(host: str) -> None:
+    """Python passes a name to the resolver in its IDNA form, so a non-ASCII name works too."""
     config = parse_config(MINIMAL.replace('host = "broker.example.org"', f'host = "{host}"'))
     assert config.mqtt.host == host
 
