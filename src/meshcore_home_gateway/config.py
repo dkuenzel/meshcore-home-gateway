@@ -105,11 +105,17 @@ class Config:
 
 
 def load_config(path: Path) -> Config:
+    return parse_config(read_text(path))
+
+
+def read_text(path: Path) -> str:
+    """A configuration or answers file as text; unreadable files are configuration errors."""
     try:
-        text = path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc.strerror}") from exc
-    return parse_config(text)
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"cannot read {path}: not valid UTF-8 (byte {exc.start})") from exc
 
 
 def parse_config(text: str) -> Config:
@@ -157,7 +163,7 @@ class _Section:
             if required:
                 raise ConfigError(f"{self.key(name)}: required")
             return default
-        if not isinstance(value, str) or not value:
+        if not isinstance(value, str) or not value.strip():
             raise ConfigError(f"{self.key(name)}: expected a non-empty string")
         return value
 

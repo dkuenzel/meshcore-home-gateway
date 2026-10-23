@@ -12,6 +12,7 @@ import contextlib
 import grp
 import json
 import logging
+import math
 import os
 import signal
 import sys
@@ -29,6 +30,7 @@ from meshcore_home_gateway.config import (
     MqttConfig,
     config_answers,
     load_config,
+    read_text,
     render_config,
 )
 
@@ -113,7 +115,7 @@ def _parser() -> argparse.ArgumentParser:
     send.add_argument("alias")
     send.add_argument("text")
     send.add_argument(
-        "--wait", type=float, default=0.0, metavar="SECONDS",
+        "--wait", type=_wait_seconds, default=0.0, metavar="SECONDS",
         help="wait for the delivery result; exit 1 unless sent or confirmed",
     )  # fmt: skip
 
@@ -275,6 +277,19 @@ def tcp_address(text: str) -> tuple[str, int]:
     if not port.isdecimal() or not 1 <= int(port) <= 65535:
         raise argparse.ArgumentTypeError(f"port must be 1..65535, got {port!r}")
     return host, int(port)
+
+
+MAX_WAIT_S = 86_400.0
+
+
+def _wait_seconds(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        value = math.nan
+    if not 0 <= value <= MAX_WAIT_S:  # also refuses nan and inf
+        raise argparse.ArgumentTypeError(f"expected 0 to {MAX_WAIT_S:.0f} seconds, got {text!r}")
+    return value
 
 
 def _count(text: str) -> int:
@@ -481,7 +496,10 @@ def _send(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
     target = next((t for t in config.targets if t.alias == args.alias), None)
-    final = FINAL_STATES | ({"sent"} if target and target.channel_index is not None else set())
+    if target is None:  # the bridge would reject it; also keeps wildcards out of the topic
+        print(f"meshcore-home-gateway: no target {args.alias!r} in {args.config}", file=sys.stderr)
+        return EX_FAILURE
+    final = FINAL_STATES | ({"sent"} if target.channel_index is not None else set())
     try:  # the text as the bridge will report it, apart from shortening
         policy = TextPolicy(1 << 20, ascii_only=config.messages.ascii_only, truncate=False)
         wanted = prepare_text(args.text, policy)
@@ -552,14 +570,22 @@ def _listen(args: argparse.Namespace) -> int:
     client = _mqtt_client(config.mqtt, "listen")
     seen = 0
     finished = threading.Event()
+    failures: list[Exception] = []
 
     def on_message(_c: Any, _u: Any, message: Any) -> None:
         nonlocal seen
+        if finished.is_set():  # paho may deliver a few more before the disconnect
+            return
         try:
             payload: Any = json.loads(message.payload)
         except ValueError:
             payload = message.payload.decode("utf-8", errors="replace")
-        print(_json_text({"topic": message.topic, "payload": payload}), flush=True)
+        try:
+            print(_json_text({"topic": message.topic, "payload": payload}), flush=True)
+        except Exception as exc:  # noqa: BLE001 - e.g. a closed pipe: end, do not hang
+            failures.append(exc)
+            finished.set()
+            return
         seen += 1
         if args.count and seen >= args.count:
             finished.set()
@@ -578,6 +604,13 @@ def _listen(args: argparse.Namespace) -> int:
     finally:
         client.disconnect()  # first: loop_stop() alone may wait 120 s for unacknowledged messages
         client.loop_stop()
+    if failures:
+        if isinstance(failures[0], BrokenPipeError):  # the reader went away (`| head`): quietly
+            with contextlib.suppress(OSError):
+                os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        else:
+            print(f"meshcore-home-gateway: {failures[0]}", file=sys.stderr)
+        return EX_FAILURE
     return EX_OK
 
 
@@ -585,11 +618,7 @@ def _listen(args: argparse.Namespace) -> int:
 
 
 def _render(args: argparse.Namespace) -> int:
-    try:
-        answers = args.answers.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ConfigError(f"cannot read {args.answers}: {exc.strerror}") from exc
-    text = render_config(answers)
+    text = render_config(read_text(args.answers))
     try:
         gid = None if args.group is None else grp.getgrnam(args.group).gr_gid
     except KeyError:
@@ -601,11 +630,7 @@ def _render(args: argparse.Namespace) -> int:
 
 
 def _answers(args: argparse.Namespace) -> int:
-    try:
-        text = args.config.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ConfigError(f"cannot read {args.config}: {exc.strerror}") from exc
-    print(config_answers(text), end="")
+    print(config_answers(read_text(args.config)), end="")
     return EX_OK
 
 

@@ -25,6 +25,7 @@ class AirtimeBudget:
             raise ValueError(f"airtime budget per hour must be in (0, 3600] s, got {per_hour_s}")
         if burst_s <= 0.0:
             raise ValueError(f"airtime budget burst must be positive, got {burst_s}")
+        self._per_hour = per_hour_s
         self._rate = per_hour_s / HOUR_S
         self._capacity = burst_s
         self._tokens = burst_s
@@ -37,7 +38,7 @@ class AirtimeBudget:
 
     @property
     def per_hour_s(self) -> float:
-        return self._rate * HOUR_S
+        return self._per_hour  # not _rate * HOUR_S, which reads 7.1 back as 7.099999999999999
 
     def available_s(self, now: float) -> float:
         self._refill(now)

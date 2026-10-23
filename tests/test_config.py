@@ -154,6 +154,18 @@ def test_invalid_settings_name_the_offending_key(snippet: str, message: str) -> 
         parse_config(text)
 
 
+def test_files_that_are_not_utf8_are_config_errors(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_bytes(b'[mqtt]\nhost = "\xff"\n')
+    with pytest.raises(ConfigError, match="not valid UTF-8"):
+        load_config(path)
+
+
+def test_blank_strings_are_refused() -> None:
+    with pytest.raises(ConfigError, match=r"mqtt\.host: expected a non-empty string"):
+        parse_config(MINIMAL.replace('host = "broker.example.org"', 'host = "  "'))
+
+
 def test_syntax_errors_are_config_errors() -> None:
     with pytest.raises(ConfigError, match="TOML"):
         parse_config("[radio\n")

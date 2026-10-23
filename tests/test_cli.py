@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import grp
 import json
+import os
 import socket
 import stat
+import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -68,7 +72,7 @@ def test_config_render_writes_a_private_valid_file(tmp_path: Path) -> None:
                 "--output",
                 str(output),
                 "--group",
-                "root",
+                grp.getgrgid(os.getgid()).gr_name,  # a group the test user may set
             ]
         )
         == EX_OK
@@ -259,6 +263,58 @@ def test_unreadable_tls_files_are_configuration_errors(
         error = capsys.readouterr().err
         assert f"configuration error: {key}: cannot load" in error
         assert "Traceback" not in error
+
+
+def test_send_refuses_an_alias_that_is_not_configured(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tls_config(tmp_path, "")  # never connects: the alias check comes first
+    for alias in ["alrets", "+", "a/b"]:
+        assert main(["send", "--config", str(config), alias, "x"]) == EX_FAILURE
+        error = capsys.readouterr().err
+        assert f"no target {alias!r}" in error
+        assert "Traceback" not in error
+
+
+@pytest.mark.parametrize("wait", ["-1", "inf", "nan", "1e9"])
+def test_send_refuses_an_impossible_wait(wait: str, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["send", "--wait", wait, "alerts", "x"])
+    assert exit_info.value.code == 2
+    assert "argument --wait" in capsys.readouterr().err
+
+
+@pytest.mark.broker
+def test_listen_ends_when_its_reader_goes_away(tmp_path: Path, broker: Broker) -> None:
+    """`listen | head -1`: a closed pipe ends the command instead of hanging forever."""
+    config = broker_config(tmp_path, broker)
+    process = subprocess.Popen(  # noqa: S603 - our own command line
+        [sys.executable, "-m", "meshcore_home_gateway", "listen", "--config", str(config)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )  # fmt: skip
+    assert process.stdout is not None
+    process.stdout.close()  # the reader is gone before the first event
+    publisher = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    publisher.connect(broker.host, broker.port)
+    publisher.loop_start()
+    try:
+        for _ in range(100):  # until listen has subscribed, printed and noticed
+            publisher.publish("meshcore/radio1/received", b"{}", qos=1).wait_for_publish(2)
+            if process.poll() is not None:
+                break
+            threading.Event().wait(0.1)
+        assert process.poll() is not None, "listen still runs with nobody reading"
+        assert process.returncode != 0
+        assert process.stderr is not None
+        assert b"Traceback" not in process.stderr.read()
+    finally:
+        publisher.disconnect()
+        publisher.loop_stop()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        if process.stderr is not None:
+            process.stderr.close()
 
 
 def broker_config(tmp_path: Path, broker: Broker) -> Path:

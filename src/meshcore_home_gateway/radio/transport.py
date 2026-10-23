@@ -149,8 +149,13 @@ class TcpTransport:
         self._writer: asyncio.StreamWriter | None = None
 
     async def open(self) -> None:
-        async with asyncio.timeout(CONNECT_TIMEOUT_S):
-            self._reader, self._writer = await asyncio.open_connection(self._host, self._port)
+        try:
+            async with asyncio.timeout(CONNECT_TIMEOUT_S):
+                self._reader, self._writer = await asyncio.open_connection(self._host, self._port)
+        except TimeoutError as exc:  # its own message is empty
+            raise TimeoutError(
+                f"{self.description}: no connection within {CONNECT_TIMEOUT_S:g} s"
+            ) from exc
 
     async def read(self) -> bytes:
         if self._reader is None:

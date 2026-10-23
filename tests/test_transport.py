@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from meshcore_home_gateway.radio import transport as transport_module
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport, is_disconnect
 
 
@@ -247,3 +248,13 @@ def test_serial_open_of_something_else_than_a_terminal_fails_cleanly(tmp_path: P
 
     asyncio.run(scenario())
     assert len(os.listdir("/proc/self/fd")) == before  # the descriptor was closed
+
+
+def test_tcp_connect_timeout_names_the_radio(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def never(*_: object) -> None:
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(asyncio, "open_connection", never)
+    monkeypatch.setattr(transport_module, "CONNECT_TIMEOUT_S", 0.01)
+    with pytest.raises(TimeoutError, match=r"tcp 192\.0\.2\.10:5000: no connection within"):
+        asyncio.run(TcpTransport("192.0.2.10", 5000).open())

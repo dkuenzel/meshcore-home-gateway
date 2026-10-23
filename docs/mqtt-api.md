@@ -20,7 +20,7 @@ Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are alwa
 ## Sending: `send/<alias>`
 
 The payload is the text, UTF-8, at most 1 KiB. Only aliases from `[targets.*]` in the
-configuration exist. The bridge cleans the text (control characters, repeated spaces), optionally
+configuration exist. The bridge cleans the text (control characters, direction overrides, repeated spaces), optionally
 transliterates it to ASCII, and truncates or rejects texts above the radio's limit: 160 bytes for a
 direct message, `160 − (radio name length + 2)` for a channel message.
 
@@ -119,7 +119,7 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `state_unwritable` | the state file could not be written, so the replay protection could not be kept; the sender can send it again |
 | `broker_unavailable` | the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
-| `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock |
+| `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock; with `max_age_s = 0`, more than a day ahead |
 
 ## State: `state`
 

@@ -41,3 +41,10 @@ def test_ledger_ignores_malformed_content(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text('{"command_timestamps": {"x": "not a number"}}', encoding="utf-8")
     assert CommandLedger(JsonStateFile(path)).last("x") is None
+
+
+def test_state_file_that_is_not_utf8_is_kept_aside(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    path.write_bytes(b"\xff\xfe not json")
+    assert JsonStateFile(path).load() == {}
+    assert (tmp_path / "state.json.corrupt").exists()

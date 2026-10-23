@@ -22,6 +22,17 @@ format and the command line are public interfaces.
 - A command queued behind a session that has just ended is no longer written to the radio; the
   error names the cause.
 - A clean shutdown no longer logs a reconnect warning; an unconfirmed `offline` is logged.
+- Text cleaning removes only control characters and direction overrides; joiners, variation
+  selectors and other format characters stay, so emoji sequences survive. Vertical tab, form feed
+  and Unicode line separators become line breaks; spaces from transliteration are collapsed.
+- With `max_age_s = 0` a command dated more than a day ahead is refused (`from_the_future`)
+  instead of blocking its sender's later commands as replays.
+- `listen` ends when its reader goes away (`| head`) and prints at most `--count` events;
+  `send` refuses aliases that are not configured and impossible `--wait` values.
+- Configuration, answers and state files that are not valid UTF-8 are configuration errors (the
+  state file is moved aside); blank strings are refused as settings.
+- A TCP connect timeout names the radio; the hourly airtime budget in the state document no longer
+  shows float artefacts; names from the mesh are quoted in the log.
 
 ### Added
 

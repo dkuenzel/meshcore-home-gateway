@@ -106,3 +106,7 @@ def test_forgotten_key_is_no_longer_a_duplicate() -> None:
     dedup.forget(("alerts", "Smoke"))
     assert not dedup.is_duplicate(("alerts", "Smoke"), now=1.0)
     dedup.forget(("never", "seen"))  # no error
+
+
+def test_the_hourly_budget_reads_back_as_configured() -> None:
+    assert AirtimeBudget(per_hour_s=7.1, burst_s=10.0, now=0.0).per_hour_s == 7.1

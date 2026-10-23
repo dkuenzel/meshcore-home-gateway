@@ -60,7 +60,7 @@ def prepare_text(text: str, policy: TextPolicy) -> str:
     """Return the text as it will be sent, or raise TextRejectedError."""
     cleaned = _clean(unicodedata.normalize("NFC", text))
     if policy.ascii_only:
-        cleaned = _to_ascii(cleaned)
+        cleaned = _clean(_to_ascii(cleaned))  # transliteration turns wide spaces into " "
     if not cleaned:
         raise TextRejectedError("empty", "text is empty after cleaning")
     encoded = cleaned.encode("utf-8")
@@ -76,12 +76,21 @@ def prepare_text(text: str, policy: TextPolicy) -> str:
 
 _SPACES = re.compile(r" {2,}")
 _SPACES_AROUND_NEWLINE = re.compile(r" *\n *")
+# vertical tab, form feed, next line, line and paragraph separator: breaks between words
+_BREAKS = str.maketrans(dict.fromkeys("\x0b\x0c\x85\u2028\u2029", "\n"))
+# direction embeddings, overrides and isolates make a text read differently than it is stored;
+# the byte order mark is noise. Joiners and variation selectors stay: they belong to the text.
+_DIRECTION = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\ufeff")
 
 
 def _clean(text: str) -> str:
-    """Normalise line endings, drop control characters, collapse spaces (bytes are scarce)."""
-    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
-    kept = "".join(ch for ch in text if ch == "\n" or unicodedata.category(ch)[0] != "C")
+    """Normalise line endings, drop control and direction characters, collapse spaces (bytes are
+    scarce)."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ").translate(_BREAKS)
+    kept = "".join(
+        ch for ch in text
+        if ch == "\n" or (unicodedata.category(ch) != "Cc" and ch not in _DIRECTION)
+    )  # fmt: skip
     return _SPACES_AROUND_NEWLINE.sub("\n", _SPACES.sub(" ", kept)).strip()
 
 

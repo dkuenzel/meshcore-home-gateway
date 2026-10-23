@@ -24,12 +24,12 @@ class JsonStateFile:
 
     def load(self) -> dict[str, Any]:
         try:
-            text = self.path.read_text(encoding="utf-8")
+            raw = self.path.read_bytes()
         except FileNotFoundError:
             return {}
         try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
             data = None
         if not isinstance(data, dict):
             aside = self.path.with_name(self.path.name + ".corrupt")

@@ -70,3 +70,20 @@ def test_exact_limit_is_not_truncated() -> None:
 def test_policy_rejects_limits_too_small_for_the_ellipsis() -> None:
     with pytest.raises(ValueError, match="max_bytes"):
         TextPolicy(max_bytes=3)
+
+
+def test_only_control_and_direction_characters_are_removed() -> None:
+    """Joiners and variation selectors are part of the text (emoji sequences, scripts); direction
+    overrides could make a text read differently than it is; line and page breaks separate."""
+    roomy = TextPolicy(max_bytes=160)
+    family = "\U0001f468\u200d\U0001f469\u200d\U0001f467"  # one emoji: joined by U+200D
+    assert prepare_text(f"Home {family} \u2764\ufe0f", roomy) == f"Home {family} \u2764\ufe0f"
+    assert prepare_text("abc\u202edef\u2066x\u2069\ufeff", roomy) == "abcdefx"
+    assert prepare_text("one\x0btwo\x0cthree\x85four\u2028five", roomy) == (
+        "one\ntwo\nthree\nfour\nfive"
+    )
+
+
+def test_spaces_from_transliteration_are_collapsed() -> None:
+    policy = TextPolicy(max_bytes=160, ascii_only=True)
+    assert prepare_text("a \u00a0 b\u2003c", policy) == "a b c"

@@ -588,7 +588,8 @@ class Bridge:
             matches = session.contacts.resolve(message.sender_prefix)
             sender = matches[0] if len(matches) == 1 else None
         target = self._target_for(message, sender)
-        log.info("received %s message from %s (%d bytes)%s", message.kind.value,
+        # %r: names come from the mesh and must not forge log lines or terminal escapes
+        log.info("received %s message from %r (%d bytes)%s", message.kind.value,
                  sender.name if sender else message.sender_prefix or message.channel_index,
                  len(message.text.encode()),
                  f", command {decision.word}: {'accepted' if command else decision.rejection}"

@@ -397,7 +397,7 @@ setting is in [`configuration.md`](configuration.md). The installer writes the f
 | `meshcore-home-gateway run` | Run the bridge (systemd service). |
 | `meshcore-home-gateway check-config` | Validate the configuration (and load the TLS files) and print a summary. |
 | `meshcore-home-gateway probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
-| `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker; with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
+| `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
 | `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines. |
 | `meshcore-home-gateway config render` | Write a validated configuration from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
@@ -445,7 +445,7 @@ A received message is an accepted command only if: it is a plain-text direct mes
 (case-insensitive, ended by any whitespace) is in `commands.words`; its 6-byte sender prefix
 resolves to exactly one contact; that contact's full key is in `commands.senders`; its sender
 timestamp is newer than the last accepted command of that sender; and, unless `max_age_s` is 0, it
-lies within `max_age_s` of the bridge clock in either direction
+lies within `max_age_s` of the bridge clock in either direction (with 0, at most a day ahead)
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 
 The sender check is the hard part: the frame names the sender only by the prefix, and the contact

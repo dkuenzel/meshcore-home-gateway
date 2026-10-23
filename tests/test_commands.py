@@ -166,3 +166,15 @@ def test_command_word_marks_the_messages_that_need_sender_checks() -> None:
         channel_index=1,
     )  # fmt: skip
     assert command_word(channel, RULES) is None
+
+
+def test_far_future_timestamps_are_refused_even_without_the_age_check() -> None:
+    """With max_age_s = 0 one command dated years ahead would be stored and turn every later
+    command of that sender into a replay."""
+    rules = CommandRules(senders=frozenset({ALICE}), words=frozenset({"arm"}), max_age_s=0)
+    far = evaluate_command(dm("arm", ts=NOW + 2 * 86_400), rules, BOOK, {}, NOW)
+    assert far is not None
+    assert far.rejection is Rejection.FROM_THE_FUTURE
+    near = evaluate_command(dm("arm", ts=NOW + 3_600), rules, BOOK, {}, NOW)  # a skewed clock
+    assert near is not None
+    assert near.command is not None

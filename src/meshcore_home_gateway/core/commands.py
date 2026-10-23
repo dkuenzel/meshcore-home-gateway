@@ -133,12 +133,17 @@ def _authorise(
     return sender, None
 
 
+# Even without the age check: one accepted command dated far ahead would make every later command
+# of that sender a replay, until its clock caught up.
+MAX_AHEAD_S = 86_400.0
+
+
 def _check_time(
     sent: int, rules: CommandRules, last_accepted: int | None, now: float
 ) -> Rejection | None:
     if rules.max_age_s > 0 and now - sent > rules.max_age_s:
         return Rejection.TOO_OLD
-    if rules.max_age_s > 0 and sent - now > rules.max_age_s:
+    if sent - now > (rules.max_age_s if rules.max_age_s > 0 else MAX_AHEAD_S):
         return Rejection.FROM_THE_FUTURE
     if last_accepted is not None and sent <= last_accepted:
         return Rejection.REPLAY
