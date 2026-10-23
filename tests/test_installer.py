@@ -1173,6 +1173,8 @@ def test_from_a_url_the_source_of_main_is_built_in_the_container(host: Host) -> 
     assert host.config().mqtt.host == "broker.example.org"
     assert f'wget -qO- {MAIN_INSTALLER})" -- --update 105' in result.stderr
     assert f"meshcore-home-gateway {__version__} runs in container 105" in result.stderr
+    # pct exec takes the host's PATH, which may lack /usr/local/bin
+    assert "pct exec 105 -- /usr/local/bin/meshcore-home-gateway check-config" in result.stderr
 
 
 def test_from_a_release_its_checked_files_are_downloaded_in_the_container(host: Host) -> None:

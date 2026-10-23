@@ -799,7 +799,7 @@ start_service() {  # Type=notify: "active" means the service has reported readin
   die "the service did not start; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
 }
 
-summary() {
+summary() {  # commands for the user: pct exec takes the host's PATH, which may lack /usr/local/bin
   local ctid=$1 text update
   update="$(invocation) --update $ctid"
   if [[ $SOURCE == release ]] && prerelease; then   # its own installer would install it again
@@ -808,7 +808,7 @@ summary() {
   text="meshcore-home-gateway $VERSION runs in container $ctid.
 
 Logs:         pct exec $ctid -- journalctl -u meshcore-home-gateway -f
-Check:        pct exec $ctid -- meshcore-home-gateway check-config
+Check:        pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config
 Reconfigure:  $(invocation) --reconfigure $ctid
 Update:       $update"
   if [[ ${OUT[radio.transport]} == serial ]]; then
