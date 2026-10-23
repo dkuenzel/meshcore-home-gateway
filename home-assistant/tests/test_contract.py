@@ -22,15 +22,27 @@ from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import async_fire_mqtt_message
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.core.commands import Command
-from meshcore_home_gateway.core.model import DeliveryEvent, DeliveryState
+from meshcore_home_gateway.core.contacts import Contact
+from meshcore_home_gateway.core.model import (
+    DeliveryEvent,
+    DeliveryState,
+    InboundMessage,
+    MessageKind,
+)
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
-from meshcore_home_gateway.mqtt.payloads import command_payload, delivery_payload, rx_payload
+from meshcore_home_gateway.mqtt.payloads import (
+    command_payload,
+    delivery_payload,
+    received_payload,
+    rx_payload,
+)
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.radio.session import RadioInfo
@@ -383,6 +395,56 @@ async def test_retained_events_are_ignored(hass: HomeAssistant, mqtt: Any) -> No
     payload = command_payload(Command("arm", "", SENDER, 1_760_000_000), "Alice", 1.0)
     await fire(hass, TOPICS.command, payload, retain=True)
     assert hass.states.get(f"event.{PREFIX}_command").state == "unknown"
+
+
+# --- first steps ------------------------------------------------------------------------------
+
+
+def guide_block(start: str) -> dict[str, Any]:
+    """The YAML block of docs/home-assistant.md that starts with `start`."""
+    blocks = re.findall(r"```yaml\n(.*?)```", GUIDE.read_text(encoding="utf-8"), re.DOTALL)
+    (block,) = [b for b in blocks if b.startswith(start)]
+    loaded: dict[str, Any] = yaml.safe_load(block)
+    return loaded
+
+
+async def test_the_markdown_card_of_the_first_steps_shows_the_last_message(
+    hass: HomeAssistant, mqtt: Any
+) -> None:
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    card = Template(guide_block("type: markdown")["content"], hass)
+    assert card.async_render(parse_result=False).strip() == "none yet"
+    message = InboundMessage(
+        MessageKind.CONTACT, "Hello", 1_760_000_000, 1_760_000_001.0, sender_prefix=SENDER[:12]
+    )
+    await fire(
+        hass, TOPICS.received, received_payload(message, Contact(SENDER, "Alice"), "operator")
+    )
+    assert " ".join(card.async_render(parse_result=False).split()) == "**Alice**: Hello"
+
+
+async def test_the_actions_of_the_first_steps_send_a_message(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The action for the developer tools, and the one of the dashboard button."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    button = guide_block("type: button")["tap_action"]
+    assert button["action"] == "perform-action"
+    for action in (guide_block("action: notify.send_message"), button):
+        name = action.get("perform_action") or action["action"]  # the button names it apart
+        domain, service = name.split(".")
+        mqtt.async_publish.reset_mock()
+        await hass.services.async_call(
+            domain, service, action["data"], blocking=True, target=action["target"]
+        )
+        await hass.async_block_till_done()
+        (send,) = [c.args for c in mqtt.async_publish.call_args_list]
+        assert (send[0], send[1], send[2]) == (
+            "meshcore/radio1/send/alerts", "Test from Home Assistant", 1,
+        )  # fmt: skip
+    assert problems(caplog) == []
 
 
 # --- the guide names the tested release --------------------------------------------------------

@@ -60,10 +60,12 @@ program (Debian package `whiptail`) in a pseudo terminal against the same stub P
 .venv/bin/python -I tests/manual/installer_dialogs.py
 ```
 
-It types the answers of a default setup and prints the resulting targets and broker settings. It
-sends keys on timing, so it is a manual check, not part of `make check`. It caught the two bugs
-the stub could not show: dialogs drawn into captured output, and names starting with `-` taken
-for options.
+It types the answers of a default setup, with a password of non-ASCII characters and under a
+locale the system lacks (as ssh may pass one on), prints the resulting targets and broker settings,
+and exits non-zero when they differ from what was typed. It sends keys on timing, so it is a manual
+check, not part of `make check`. It caught three bugs the stub could not show: dialogs drawn into
+captured output, names starting with `-` taken for options, and non-ASCII characters dropped in a
+locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
 
 ## Hardware checklist
 

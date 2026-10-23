@@ -124,6 +124,7 @@ automations on the event entities *Message*, *Command* and *Delivery*. Examples:
 | [`docs/deployment.md`](docs/deployment.md) | Proxmox installer, manual installation, updates, operations |
 | [`docs/protocol.md`](docs/protocol.md) | The companion protocol subset, with firmware sources |
 | [`docs/testing.md`](docs/testing.md) | Test suites and the hardware checklist |
+| [`docs/platform-notes.md`](docs/platform-notes.md) | What we verified about Proxmox VE, whiptail, Mosquitto, Home Assistant and the firmware, with the evidence |
 | [`docs/development.md`](docs/development.md) | Development workflow and releases |
 
 ## Security

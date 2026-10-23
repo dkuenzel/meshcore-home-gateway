@@ -18,7 +18,9 @@ design can be agreed on before the code is written.
   test that fails without the fix.
 - **Evidence for every protocol fact.** Statements about the MeshCore firmware cite the source file
   and line at a named release tag (see [`docs/protocol.md`](docs/protocol.md)). Calculations are
-  checked against an independent source or method.
+  checked against an independent source or method. Behaviour of the other software the project
+  relies on (Proxmox VE, whiptail, the broker, Home Assistant) goes to
+  [`docs/platform-notes.md`](docs/platform-notes.md) with the versions and the evidence.
 - **No new runtime dependencies** without a decision record. The runtime uses the Python standard
   library and `paho-mqtt` from the Linux distribution only
   ([ADR 0005](docs/decisions/0005-runtime-dependencies-from-the-distribution.md)).

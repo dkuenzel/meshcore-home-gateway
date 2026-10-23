@@ -65,6 +65,60 @@ either side.
 
 An entities card shows an attribute, such as the text of the last message, without YAML.
 
+## First steps
+
+Once the gateway runs, its device is under *Settings → Devices & services → MQTT*, named after
+`homeassistant.device_name`.
+
+**Read a message.** A received message is an event of *Message*
+(`event.meshcore_home_gateway_radio1_message`). Its text, sender, signal and times are attributes
+of that event; the logbook and the device's activity show only the event type (`contact` or
+`channel`), not the attributes. *Developer tools → States*, filtered for the entity, shows them
+all. On a dashboard, a Markdown card shows the last message:
+
+```yaml
+type: markdown
+title: Last mesh message
+content: >-
+  {% set e = 'event.meshcore_home_gateway_radio1_message' %}
+  {% if state_attr(e, 'text') is not none %}**{{ state_attr(e, 'sender_name') }}**:
+  {{ state_attr(e, 'text') }}{% else %}none yet{% endif %}
+```
+
+**Send a message.** Each target is a notify entity, *Send to <alias>*; it shows *unknown* until it
+sends for the first time. It has no input field of its own: it sends with the action
+`notify.send_message`. To try it, open *Developer tools → Actions*, switch to YAML mode and run:
+
+```yaml
+action: notify.send_message
+target:
+  entity_id: notify.meshcore_home_gateway_radio1_send_alerts
+data:
+  message: Test from Home Assistant
+```
+
+In an automation, the same action is *Notifications: Send a notification message* (examples
+below). A dashboard button that sends a fixed text:
+
+```yaml
+type: button
+name: Test message
+icon: mdi:send
+tap_action:
+  action: perform-action
+  perform_action: notify.send_message
+  target:
+    entity_id: notify.meshcore_home_gateway_radio1_send_alerts
+  data:
+    message: Test from Home Assistant
+```
+
+**See whether it arrived.** *Delivery* shows each step as an event: `queued`, then `sent` (final
+for a channel) and `confirmed` when the recipient of a direct message acknowledged it, or `failed`
+or `expired` with a `reason` attribute ([mqtt-api.md](mqtt-api.md#delivery-delivery)). The same
+test without Home Assistant, in the gateway's container:
+`meshcore-home-gateway send --wait 60 alerts "test"`.
+
 ## How discovery behaves
 
 * The gateway publishes the discovery document when it connects to the broker, a random 0.5–2 s
@@ -76,7 +130,10 @@ An entities card shows an attribute, such as the text of the last message, witho
   sends a disabled placeholder under the old ID, which Home Assistant binds, and then the removal.
   The state file keeps a removal pending for 30 days, since the gateway cannot see whether Home
   Assistant received it; Home Assistant must have run in that time. A leftover entity can be
-  deleted under *Settings → Entities*.
+  deleted under *Settings → Entities*. Delete only one that the gateway no longer announces:
+  deleting a current entity clears the whole device's discovery topic, so all its entities go
+  until the gateway announces again (restart the gateway;
+  [platform-notes.md](platform-notes.md#home-assistant-mqtt)).
 * To retire the gateway, stop it (or set `homeassistant.discovery = false`), then delete the device
   in Home Assistant.
 * Events are never retained: Home Assistant ignores replayed retained events.
@@ -89,8 +146,9 @@ These rules come from Home Assistant's MQTT discovery code (`homeassistant/compo
 [`home-assistant/tests/`](../home-assistant/tests/test_contract.py) check them with the real MQTT
 integration of the release pinned in
 [`home-assistant/requirements.in`](../home-assistant/requirements.in): the entity IDs above, the
-device page, sensors and attributes, availability, the removal of components, and the examples
-below exactly as written here (`make ha-test`, [testing.md](testing.md)).
+device page, sensors and attributes, availability, the removal of components, the Markdown card
+and the two actions of the first steps, and the examples below, exactly as written here
+(`make ha-test`, [testing.md](testing.md)).
 
 ## Examples
 
@@ -165,8 +223,9 @@ The event's keys are in `trigger.to_state.attributes`, for example `args` of a c
 ## Privacy
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home
-Assistant stores them in its history database. To keep them out, exclude the entity from the
-recorder:
+Assistant stores them in its history database, and the last event of each entity also in
+`.storage/core.restore_state` (restored after a restart). To keep them out of the history,
+exclude the entity from the recorder:
 
 ```yaml
 recorder:
