@@ -15,6 +15,7 @@ import pytest
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.config import Config, parse_config
+from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.mqtt.client import SendRequest
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
@@ -455,6 +456,23 @@ def test_attempts_after_the_path_reset_are_budgeted_as_floods(tmp_path: Path) ->
             airtime = [d["airtime_ms"] for d in sent]
             assert len(airtime) == 4
             assert airtime[0] == airtime[1] < airtime[2] == airtime[3]
+
+    scenario(main)
+
+
+def test_stored_path_counts_hops_times_hash_size(tmp_path: Path) -> None:
+    """out_path_len 0x83 is 3 hops of 3-byte hashes: the message carries 9 bytes of path."""
+    carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol", out_path_len=0x83)
+    radio = EmulatedRadio(contacts=[ALICE, BOB, carol])
+    config = make_config(extra=f'[targets.carol]\ncontact = "{carol.public_key.hex()}"')
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            bus.send("carol", "Hello Carol")
+            sent = await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            # header 1, path length 1, path 9, payload 4 + 16 for 11 text bytes
+            expected = time_on_air_s(31, LoRaParams(62_500.0, 8, 8, 32))
+            assert sent["airtime_ms"] == round(expected * 1000)
 
     scenario(main)
 

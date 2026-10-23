@@ -16,6 +16,10 @@ def test_whitespace_is_trimmed_and_line_endings_normalised() -> None:
     assert prepare_text("  a\r\nb\rc\t d  ", UTF8) == "a\nb\nc d"
 
 
+def test_spaces_around_line_breaks_are_removed() -> None:
+    assert prepare_text("a  \n  b", UTF8) == "a\nb"
+
+
 def test_control_characters_are_removed() -> None:
     assert prepare_text("a\x00b\x07c\x1bd", UTF8) == "abcd"
 
@@ -48,14 +52,39 @@ def test_utf8_mode_keeps_unicode() -> None:
     assert prepare_text("Tür 🚪", UTF8) == "Tür 🚪"
 
 
-def test_too_long_text_is_truncated_on_a_character_boundary() -> None:
+def test_truncation_does_not_split_a_utf8_sequence() -> None:
     policy = TextPolicy(max_bytes=10)
     # nine two-byte characters: 7 bytes remain for content, a fourth "ä" would be split
     assert prepare_text("äääääääää", policy) == "äää..."
 
 
+@pytest.mark.parametrize(
+    ("text", "max_bytes", "expected"),
+    [
+        # a flag is two regional indicators
+        ("Status 12345 \U0001f1e9\U0001f1ea more", 20, "Status 12345..."),
+        ("\U0001f1e9\U0001f1ea\U0001f1eb\U0001f1f7 ok", 15, "\U0001f1e9\U0001f1ea..."),
+        # emoji joined by U+200D, a skin tone modifier, a keycap (variation selector and mark)
+        ("Home \U0001f468\u200d\U0001f469\u200d\U0001f467 is back", 16, "Home..."),
+        ("OK \U0001f44d\U0001f3fd thanks", 10, "OK..."),
+        ("OK \U0001f44d\U0001f3fd thanks", 14, "OK \U0001f44d\U0001f3fd..."),
+        ("Code 1\ufe0f\u20e3 now", 9, "Code..."),
+        ("Hi \u0915\u093e\u0915\u093e", 9, "Hi..."),  # Devanagari vowel sign
+    ],
+)
+def test_truncation_keeps_characters_with_their_marks_and_joiners(
+    text: str, max_bytes: int, expected: str
+) -> None:
+    """A cut must not leave half a flag, an emoji without its modifier or a dangling joiner."""
+    assert prepare_text(text, TextPolicy(max_bytes)) == expected
+
+
 def test_truncation_keeps_as_much_as_fits() -> None:
     assert prepare_text("0123456789ABCDEF", TextPolicy(max_bytes=10)) == "0123456..."
+
+
+def test_truncation_drops_the_space_before_the_ellipsis() -> None:
+    assert prepare_text("0123 56789ABC", TextPolicy(max_bytes=8)) == "0123..."
 
 
 def test_too_long_text_is_rejected_when_truncation_is_off() -> None:

@@ -91,6 +91,7 @@ def test_non_plain_text_types_never_command() -> None:
         (dm("arm", ts=NOW + 901), BOOK, {}, Rejection.FROM_THE_FUTURE),
         (dm("arm", ts=NOW - 5), BOOK, {ALICE: int(NOW - 5)}, Rejection.REPLAY),
         (dm("arm", ts=NOW - 10), BOOK, {ALICE: int(NOW - 5)}, Rejection.REPLAY),
+        (dm("arm", ts=NOW - 1000), BOOK, {ALICE: int(NOW)}, Rejection.TOO_OLD),  # checked first
     ],
 )
 def test_rejections(
@@ -100,6 +101,14 @@ def test_rejections(
     assert decision is not None
     assert decision.command is None
     assert decision.rejection == reason
+
+
+@pytest.mark.parametrize("ts", [NOW - 900, NOW + 900])
+def test_the_age_window_includes_its_edges(ts: float) -> None:
+    """max_age_s = 900: a timestamp exactly 900 s behind or ahead of the clock is accepted."""
+    decision = evaluate_command(dm("arm", ts=ts), RULES, BOOK, last_accepted={}, now=NOW)
+    assert decision is not None
+    assert decision.command is not None
 
 
 def test_prefix_collision_with_a_different_key_is_not_the_allowlisted_sender() -> None:
@@ -178,3 +187,6 @@ def test_far_future_timestamps_are_refused_even_without_the_age_check() -> None:
     near = evaluate_command(dm("arm", ts=NOW + 3_600), rules, BOOK, {}, NOW)  # a skewed clock
     assert near is not None
     assert near.command is not None
+    edge = evaluate_command(dm("arm", ts=NOW + 86_400), rules, BOOK, {}, NOW)  # exactly a day
+    assert edge is not None
+    assert edge.command is not None

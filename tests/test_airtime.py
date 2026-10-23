@@ -11,9 +11,12 @@ The EU/UK Narrow values come from a second method, RadioLib's SX126x::getTimeOnA
 microseconds), the code MeshCore runs.
 """
 
+import math
+
 import pytest
 
 from meshcore_home_gateway.core.airtime import (
+    RECIPROCAL_PATH_BYTES,
     LoRaParams,
     channel_message_bytes,
     direct_attempt_airtime_s,
@@ -109,3 +112,12 @@ def test_flooded_attempt_counts_the_returned_path_packet() -> None:
     flooded = direct_attempt_airtime_s(20, path_bytes=0, flood=True, p=EU_NARROW)
     assert flooded > direct
     assert direct == pytest.approx(time_on_air_s(direct_message_bytes(20, 2, False), EU_NARROW))
+
+
+def test_returned_path_packet_is_sized_for_four_path_bytes() -> None:
+    """createPathReturn, sent direct (src/Mesh.cpp:173-178, 448-486): header 1, path length 1,
+    path P, hashes 2, MAC 2, AES blocks of path length 1, path P, type 1 and random 4. The bridge
+    assumes P = 4 (four hops with one-byte hashes); a longer way back costs more (protocol.md)."""
+    path = 4
+    firmware = 1 + 1 + path + 2 + 2 + 16 * math.ceil((6 + path) / 16)
+    assert firmware == RECIPROCAL_PATH_BYTES

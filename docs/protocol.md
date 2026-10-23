@@ -260,11 +260,15 @@ Encryption: AES-128-ECB in 16-byte blocks, zero-padded, with a 2-byte MAC in fro
 | direct text, `L` text bytes | `4 + 16 · ⌈(5 + L) / 16⌉` (hashes 2, MAC 2, timestamp 4, flags 1) |
 | channel text, name `N` bytes | `3 + 16 · ⌈(7 + N + L) / 16⌉` (channel hash 1, MAC 2, timestamp, flags, `"name: "`) |
 | acknowledgement | 6 |
-| path packet returned after a flooded acknowledgement | about 20 (`src/Mesh.cpp:173-178, 448-486`) |
+| path packet returned after a flooded acknowledgement | `4 + 16 · ⌈(6 + P) / 16⌉` for a way back of `P` path bytes (hashes 2, MAC 2, path length 1, path, type 1, random 4); sent direct along the way there (`src/Mesh.cpp:173-178, 448-486`) |
 
 A flood leaves the originating radio with an empty path; each repeater adds its hash
-(`src/Mesh.cpp:344-357, 647-678`). The bridge counts the transport codes on every flood and the
-returned path packet after a flooded direct message, so its estimate errs on the high side.
+(`src/Mesh.cpp:344-357, 647-678`). The bridge counts the transport codes on every flood and,
+after a flooded direct message, the returned path packet for a recipient 4 path bytes away (4 hops
+with one-byte hashes, either way): 26 bytes on air. Up to that distance the estimate errs on the
+high side. A more distant recipient makes the path packet larger than counted: at EU/UK Narrow a
+flooded attempt then takes about 0.2 s more airtime than estimated at 16 path bytes, and about
+1 s more at the maximum of 64.
 
 ## 7 Radio parameters and time on air
 
