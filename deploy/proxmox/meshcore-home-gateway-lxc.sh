@@ -603,7 +603,7 @@ ask_radio() {
 
 ask_bridge() {  # broker, topics, Home Assistant and message settings
   local tls password
-  OUT[mqtt.host]=$(ask_required mqtt.host "MQTT broker address" "")
+  OUT[mqtt.host]=$(ask_required mqtt.host "MQTT broker: host name or IP address (no mqtt://)" "")
   tls=$(ask_advanced mqtt.tls yesno "Use TLS for the broker connection?" "false")
   OUT[mqtt.tls]=$tls
   OUT[mqtt.port]=$(ask_advanced mqtt.port input "MQTT broker port" \

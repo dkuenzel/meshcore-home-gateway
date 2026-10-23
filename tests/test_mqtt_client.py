@@ -132,6 +132,50 @@ def test_refused_connection_is_only_logged() -> None:
     asyncio.run(scenario())
 
 
+def test_a_broker_that_cannot_be_reached_is_logged_with_the_reason(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A wrong name or address gets no answer from a broker: paho reports the attempt only."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        try:  # paho calls on_connect_fail while it handles the attempt's error
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+        except OSError:
+            fake.on_connect_fail(fake, None)
+        fake.on_connect_fail(fake, None)  # without an error at hand
+        assert "cannot reach broker.example.org:1883: Name or service not known" in caplog.text
+        assert "cannot reach broker.example.org:1883: no connection" in caplog.text
+        assert not bus.connected
+
+    asyncio.run(scenario())
+
+
+def test_with_paho_a_closed_port_is_logged_at_every_attempt(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The real client: no broker listens, so no answer ever comes."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = int(sock.getsockname()[1])
+
+    async def scenario() -> None:
+        config = MqttConfig(host="127.0.0.1", port=port, node_id="radio1")
+        bus = MqttBus(config, TOPICS, None)
+        await bus.start()
+        try:
+            for _ in range(100):
+                if "cannot reach" in caplog.text:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            await bus.stop()
+        assert f"MQTT: cannot reach 127.0.0.1:{port}: Connection refused" in caplog.text
+
+    asyncio.run(scenario())
+
+
 def test_send_requests_and_home_assistant_birth_reach_the_loop() -> None:
     async def scenario() -> None:
         bus, fake = make_bus()

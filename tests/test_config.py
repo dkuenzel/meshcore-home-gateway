@@ -1,5 +1,6 @@
 """Configuration: TOML parsing with strict validation, and rendering from installer answers."""
 
+import re
 import tomllib
 from dataclasses import fields
 from pathlib import Path
@@ -410,3 +411,32 @@ def test_identifiers_that_home_assistant_would_merge_are_refused(name: str) -> N
         parse_config(MINIMAL.replace('node_id = "radio1"', f'node_id = "{name}"'))
     with pytest.raises(ConfigError, match="alias"):
         parse_config(MINIMAL + f"[targets.{name}]\nchannel = 1\n")
+
+
+@pytest.mark.parametrize(
+    ("host", "hint"),
+    [
+        ("mqtt://broker.example.org", "without a scheme such as mqtt://"),
+        ("mqtts://broker.example.org:8883", "without a scheme"),
+        ("broker.example.org:1883", "without the port"),
+        ("[2001:db8::1]:1883", "without the port"),
+        ("[2001:db8::1]", "without brackets"),
+        ("broker.example.org/mqtt", "a host name or IP address only, got"),
+    ],
+)
+def test_a_url_or_a_port_in_a_host_is_refused(host: str, hint: str) -> None:
+    """Accepted, it would only fail when connecting, with an error that does not name the
+    setting."""
+    with pytest.raises(ConfigError, match=f"mqtt.host: .*{re.escape(hint)}"):
+        parse_config(MINIMAL.replace('host = "broker.example.org"', f'host = "{host}"'))
+    radio = FULL.replace('host = "192.0.2.10"', f'host = "{host}"')
+    with pytest.raises(ConfigError, match=f"radio.host: .*{re.escape(hint)}"):
+        parse_config(radio)
+
+
+@pytest.mark.parametrize(
+    "host", ["broker.example.org", "192.0.2.20", "2001:db8::1", "fe80::1%eth0"]
+)
+def test_host_names_and_addresses_are_accepted(host: str) -> None:
+    config = parse_config(MINIMAL.replace('host = "broker.example.org"', f'host = "{host}"'))
+    assert config.mqtt.host == host

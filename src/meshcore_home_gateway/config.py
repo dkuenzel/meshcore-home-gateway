@@ -27,6 +27,7 @@ ID_RULE = (
 # would share the entity IDs of 'radio'
 _MERGED_BY_HOME_ASSISTANT = re.compile(r"[-_]{2}|[-_]$")
 TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
+HOST = re.compile(r"[A-Za-z0-9._%:-]+")  # a name, an IPv4 address, or an IPv6 address (with zone)
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
 MIN_BURST_S = (
@@ -258,7 +259,7 @@ def _radio(s: _Section) -> RadioConfig:
         if s.has(name) and transport != used_by:  # it would have no effect
             raise ConfigError(f"{s.key(name)}: only used with transport = {used_by!r}")
     device = _absolute_path(s, "device")
-    host = s.string("host")
+    host = _host(s)
     if transport == "serial" and device is None:
         raise ConfigError(f"{s.key('device')}: required for the serial transport")
     if transport == "tcp" and host is None:
@@ -270,6 +271,22 @@ def _radio(s: _Section) -> RadioConfig:
         port=s.integer("port", 5000, 1, 65535),
         set_clock=s.boolean("set_clock", True),
     )
+
+
+def _host(s: _Section, *, required: bool = False) -> str | None:
+    """A host name or address: a URL or `host:port` would only fail when connecting."""
+    host = s.string("host", required=required)
+    if host is None or (HOST.fullmatch(host) and host.count(":") != 1):
+        return host
+    if "://" in host:
+        hint = ", without a scheme such as mqtt:// (TLS and port are settings of their own)"
+    elif host.count(":") == 1 or "]:" in host:
+        hint = ", without the port (that is the setting port)"
+    elif "[" in host:
+        hint = ", an IPv6 address without brackets"
+    else:
+        hint = ""
+    raise ConfigError(f"{s.key('host')}: a host name or IP address only{hint}, got {host!r}")
 
 
 def _absolute_path(s: _Section, name: str) -> str | None:
@@ -305,7 +322,7 @@ def _mqtt(s: _Section) -> MqttConfig:
     if password is not None and username is None:  # the client would not send it
         raise ConfigError(f"{s.key('password')}: needs username")
     return MqttConfig(
-        host=cast(str, s.string("host", required=True)),
+        host=cast(str, _host(s, required=True)),
         node_id=node_id,
         port=s.integer("port", 1883, 1, 65535),
         username=username,
