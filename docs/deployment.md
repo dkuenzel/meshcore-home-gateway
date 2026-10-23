@@ -28,6 +28,7 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 * An amd64 host with internet access for the Debian template and packages.
 * `whiptail` for the dialogs. It belongs to a standard Debian installation, but no Proxmox package
   depends on it; if it is missing, install it (`apt install whiptail`) or use `--answers`.
+  `--update` shows no dialogs and does not need it.
 
 ### Install
 
@@ -49,7 +50,7 @@ every setting in the table.
 | IPv4 address with prefix, gateway | `dhcp` | Advanced |
 | Storage for templates | first active storage for templates | Advanced |
 | Radio connection | the devices in `/dev/serial/by-id/`, or TCP with address and port (5000) | both |
-| Broker address, user, password | –, `meshcore-home-gateway`, – | both |
+| Broker address, user, password | –, `meshcore-home-gateway`, – (asked only with a user name) | both |
 | Broker TLS, port | no, 1883 (8883 with TLS) | Advanced |
 | Base topic, node id | `meshcore`, `radio1` | Advanced |
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
@@ -61,8 +62,8 @@ Before it creates anything, the script checks the settings with the bridge's own
 code and asks for confirmation. Then it downloads the newest Debian 13 template if needed, creates
 and starts the container, installs the service, reads the radio's channels and contacts for the
 last questions, writes the configuration and starts the service. The final message shows how to
-read the logs. If a step fails after the container was created, the error message says how to
-remove it.
+read the logs. If a step fails or the script is interrupted after the container was created, the
+error message says how to remove it.
 
 ### What the script does
 
@@ -140,7 +141,9 @@ starting with `#` are ignored. There are two kinds of keys:
   `ct.memory_mb`, `ct.bridge`, `ct.ip`, `ct.gateway`, `ct.template_storage`, `radio.choice` (a
   device path or `tcp`; required, the script never guesses a device), `targets.channels` and
   `targets.contacts` (comma-separated indices and keys as offered by `meshcore-home-gateway probe
-  --list`). An unknown key of this kind stops the script.
+  --list`). An unknown key of this kind, or a malformed index or key, stops the script before it
+  creates anything. An index or key that the radio does not offer becomes a target all the same,
+  with a warning in the log.
 * **Every other key is a configuration setting** (`radio.host`, `mqtt.host`, `mqtt.password`,
   `airtime.budget_s_per_hour`, `commands.senders`, `commands.words`, …; see configuration.md) and
   goes into the configuration as given. The configuration check refuses unknown settings and
@@ -171,14 +174,16 @@ pct stop 105 && pct destroy 105
   the `current.pyz` link and restarts the service. If the configuration does not pass, the old
   version stays active, also when the version string did not change.
 * **Reconfigure** reads the current configuration (`meshcore-home-gateway config answers`) and
-  offers its values as defaults: an empty password keeps the current one, and settings the dialogs
-  do not ask for are kept. Targets and command senders that the radio does not offer (a contact that
-  is not a chat contact, a channel slot without a name) are kept as well, and the log names them.
-  The service is stopped while the script reads the radio and started again afterwards, also when a
-  step fails. The container and the radio connection stay as installed: answers for them
-  (`radio.choice`, `ct.*`) stop the script. A TCP radio's address changes with the settings
-  `radio.host` and `radio.port` in an answers file; a serial radio under a new name is passed
-  through again by hand (see Troubleshooting).
+  offers its values as defaults: an empty password keeps the current one (an empty user name
+  removes it), and settings the dialogs do not ask for are kept. Selected targets keep their
+  aliases, all of them when several aliases name the same channel or contact. Targets and command
+  senders that the radio does not offer (a contact that is not a chat contact, a channel slot
+  without a name) are kept as well, and the log names them. The service is stopped while the script
+  reads the radio and started again afterwards, also when a step fails or the script is interrupted
+  (Ctrl-C, a closed SSH session). The container and the radio connection stay as installed:
+  answers for them (`radio.choice`, `ct.*`) stop the script. A TCP radio's address changes with
+  the settings `radio.host` and `radio.port` in an answers file; a serial radio under a new name is
+  passed through again by hand (see Troubleshooting).
 * **Roll back** works for versions that are still in `/usr/local/lib/meshcore-home-gateway/`;
   every update keeps the earlier files. Check the configuration with the old version first
   (`pct exec 105 -- python3 -I

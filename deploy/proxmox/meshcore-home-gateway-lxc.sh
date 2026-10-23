@@ -41,7 +41,8 @@ WORK=""
 
 # --- output and errors ----------------------------------------------------------------------
 
-log() { printf '%s\n' "meshcore-home-gateway: $*" >&2; }
+# after a hangup the terminal refuses writes: die must still restart the service
+log() { printf '%s\n' "meshcore-home-gateway: $*" >&2 || true; }
 
 die() {
   if [[ -n $WORK ]]; then : >"$WORK/failed"; fi   # a parent shell's ERR trap stays quiet
@@ -71,6 +72,8 @@ cleanup() {
 
 trap cleanup EXIT
 trap 'on_error $LINENO' ERR
+# Ctrl-C, kill or a closed SSH session: die restarts a stopped service and names a new container
+trap 'trap "" INT TERM HUP; die "cancelled (interrupted)"' INT TERM HUP
 
 # --- dialogs --------------------------------------------------------------------------------
 
@@ -158,6 +161,25 @@ load_answers() {
     esac
     ANSWERS[$key]=${line#*=}
   done <"$file"
+  check_target_answers
+}
+
+check_target_answers() {  # they are used only after the container is created: check them now
+  local channel='(0|[1-9][0-9]{0,2})' key='[0-9a-f]{64}' item
+  if [[ -v "ANSWERS[targets.channels]" ]]; then
+    ANSWERS[targets.channels]=${ANSWERS[targets.channels]// /}
+    [[ ${ANSWERS[targets.channels]} =~ ^($channel(,$channel)*)?$ ]] \
+      || die "answers file: targets.channels: expected channel indices, comma-separated"
+    for item in ${ANSWERS[targets.channels]//,/ }; do
+      (( item <= 255 )) || die "answers file: targets.channels: no channel $item (0-255)"
+    done
+  fi
+  if [[ -v "ANSWERS[targets.contacts]" ]]; then
+    ANSWERS[targets.contacts]=${ANSWERS[targets.contacts]// /}
+    ANSWERS[targets.contacts]=${ANSWERS[targets.contacts],,}   # as the radio lists them
+    [[ ${ANSWERS[targets.contacts]} =~ ^($key(,$key)*)?$ ]] \
+      || die "answers file: targets.contacts: expected public keys (64 hex digits), comma-separated"
+  fi
 }
 
 pass_settings() {  # configuration settings from --answers go to the configuration as given
@@ -177,13 +199,13 @@ choose_setup() {
 
 # --- checks ---------------------------------------------------------------------------------
 
-preflight() {
+preflight() {  # preflight MODE
   [[ $(id -u) -eq 0 ]] || die "run as root on the Proxmox host"
   local tool
   for tool in pct pveam pvesm pvesh pveversion dpkg-query python3 tar; do
     command -v "$tool" >/dev/null 2>&1 || die "'$tool' not found: this must run on a Proxmox VE host"
   done
-  if (( INTERACTIVE )); then
+  if (( INTERACTIVE )) && [[ $1 != update ]]; then   # --update shows no dialogs
     command -v whiptail >/dev/null 2>&1 \
       || die "whiptail not found: install it (apt install whiptail) or use --answers FILE"
   fi
@@ -215,7 +237,8 @@ except ConfigError as exc:
 check_settings() {  # validate the answers with this checkout before anything is created
   local answers="$WORK/check" reason
   ( umask 077 && write_answers >"$answers" )
-  reason=$(python3 -I -c "$CHECK_SETTINGS_PY" "$REPO_DIR/src" "$answers" 2>&1) \
+  # -B: no __pycache__ in the checkout, which may belong to a user who could not remove it
+  reason=$(python3 -I -B -c "$CHECK_SETTINGS_PY" "$REPO_DIR/src" "$answers" 2>&1) \
     || die "invalid settings: $reason"
   rm -f -- "$answers"
 }
@@ -235,13 +258,17 @@ first_storage() {  # first active storage for a content type (skips the header l
 }
 
 ask_container() {
-  CT[id]=$(ask_advanced ct.id input "Container ID" "$(pvesh get /cluster/nextid)")
+  # queried in assignments of their own: a failure inside a dialog's argument would not stop
+  local next_id storage template_storage
+  next_id=$(pvesh get /cluster/nextid) || die "cannot get the next free container ID (pvesh)"
+  storage=$(first_storage rootdir) || die "cannot list the storages (pvesm status)"
+  template_storage=$(first_storage vztmpl) || die "cannot list the storages (pvesm status)"
+  CT[id]=$(ask_advanced ct.id input "Container ID" "$next_id")
   [[ ${CT[id]} =~ ^[1-9][0-9]{2,8}$ ]] || die "container ID must be a number of at least 100"
   pvesh get /cluster/nextid --vmid "${CT[id]}" >/dev/null 2>&1 \
     || die "ID ${CT[id]} is already used by a container or virtual machine"
   CT[hostname]=$(ask_advanced ct.hostname input "Container host name" "meshcore-home-gateway")
-  CT[storage]=$(ask_advanced ct.storage input "Storage for the container disk" \
-    "$(first_storage rootdir)")
+  CT[storage]=$(ask_advanced ct.storage input "Storage for the container disk" "$storage")
   CT[disk]=$(ask_advanced ct.disk_gb input "Disk size in GB" "2")
   CT[memory]=$(ask_advanced ct.memory_mb input "Memory in MB" "256")
   CT[bridge]=$(ask_advanced ct.bridge input "Network bridge" "vmbr0")
@@ -251,7 +278,7 @@ ask_container() {
     CT[gateway]=$(ask_required ct.gateway "IPv4 gateway" "")
   fi
   CT[template_storage]=$(ask_advanced ct.template_storage input "Storage for templates" \
-    "$(first_storage vztmpl)")
+    "$template_storage")
   [[ ${CT[disk]} =~ ^[1-9][0-9]*$ && ${CT[memory]} =~ ^[1-9][0-9]*$ ]] \
     || die "disk size and memory must be whole numbers"
   [[ -n ${CT[storage]} ]] || die "no active storage for container disks"
@@ -407,7 +434,11 @@ ask_bridge() {  # broker, topics, Home Assistant and message settings
     "$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)")
   OUT[mqtt.username]=$(ask mqtt.username input "MQTT user name (empty: none)" \
     "meshcore-home-gateway")
-  if [[ -v "CURRENT[mqtt.password]" ]]; then
+  if [[ -z ${OUT[mqtt.username]} ]]; then
+    # a password needs a user name: no dialog, and the current one goes (the settings check
+    # refuses one given in the answers file)
+    [[ -v "ANSWERS[mqtt.password]" ]] || unset 'OUT[mqtt.password]'
+  elif [[ -v "CURRENT[mqtt.password]" ]]; then
     password=$(ask mqtt.password password "MQTT password (empty: keep the current one)" "")
     if [[ -n $password ]]; then OUT[mqtt.password]=$password; fi
   else
@@ -464,9 +495,9 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
   contacts=$(in_ct "$ctid" meshcore-home-gateway probe "${probe[@]}" --list contacts) \
     || die "cannot read the radio's contacts"
 
-  for key in "${!OUT[@]}"; do  # current targets keep their alias when selected again
+  for key in "${!OUT[@]}"; do  # current targets keep their aliases when selected again
     [[ $key == target.* ]] || continue
-    alias_of[${OUT[$key]}]=${key#target.}
+    alias_of[${OUT[$key]}]+="${alias_of[${OUT[$key]}]:+ }${key#target.}"
     case ${OUT[$key]} in
       channel:*) current_channels+=",${OUT[$key]#channel:}" ;;
       contact:*) current_contacts+=",${OUT[$key]#contact:}" ;;
@@ -489,9 +520,14 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
       "${channel_items[@]}")
     drop_offered channel channel_name
     for item in ${selected//,/ }; do
-      alias=${alias_of[channel:$item]:-$(unique_alias "$(slug "${channel_name[$item]:-channel-$item}")" \
-        "${alias_of[@]}")}
+      if [[ -v "alias_of[channel:$item]" ]]; then
+        for alias in ${alias_of[channel:$item]}; do OUT[target.$alias]=channel:$item; done
+        continue
+      fi
+      alias=$(unique_alias "$(slug "${channel_name[$item]:-channel-$item}")" "${alias_of[@]}")
       OUT[target.$alias]=channel:$item
+      [[ -v "channel_name[$item]" ]] \
+        || log "warning: channel $item is not offered by the radio (target $alias)"
     done
   fi
   if (( ${#contact_items[@]} )); then
@@ -499,9 +535,14 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
       "${contact_items[@]}")
     drop_offered contact contact_name
     for item in ${selected//,/ }; do
-      alias=${alias_of[contact:$item]:-$(unique_alias "$(slug "${contact_name[$item]:-contact}")" \
-        "${alias_of[@]}")}
+      if [[ -v "alias_of[contact:$item]" ]]; then
+        for alias in ${alias_of[contact:$item]}; do OUT[target.$alias]=contact:$item; done
+        continue
+      fi
+      alias=$(unique_alias "$(slug "${contact_name[$item]:-contact}")" "${alias_of[@]}")
       OUT[target.$alias]=contact:$item
+      [[ -v "contact_name[$item]" ]] \
+        || log "warning: contact $item is not a chat contact on the radio (target $alias)"
     done
     selected=$(ask commands.senders checklist \
       "Contacts allowed to send commands (direct messages only)" "$current_senders" \
@@ -646,8 +687,8 @@ reconfigure() {
   choose_setup
   ask_bridge
   check_settings
+  STOPPED=$ctid   # first: an interruption during the stop also starts the service again
   in_ct "$ctid" systemctl stop meshcore-home-gateway >&2   # the radio accepts a single client
-  STOPPED=$ctid
   choose_targets "$ctid"
   configure "$ctid"
   STOPPED=""
@@ -666,7 +707,7 @@ main() {
       *) die "unknown option $1 (see --help)" ;;
     esac
   done
-  preflight
+  preflight "$mode"
   WORK=$(mktemp -d)
   case $mode in
     install) install ;;
