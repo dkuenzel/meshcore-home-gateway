@@ -662,7 +662,7 @@ def _answers(args: argparse.Namespace) -> int:
 def write_private(path: Path, text: str, gid: int | None) -> None:
     """Write atomically and durably (fsync, rename, fsync of the directory) with mode 0640,
     readable by group `gid`; the file holds the broker password."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _make_directory(path.parent)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -682,6 +682,21 @@ def write_private(path: Path, text: str, gid: int | None) -> None:
         os.fsync(directory)
     finally:
         os.close(directory)
+
+
+def _make_directory(directory: Path) -> None:
+    """Create `directory` and its missing parents with mode 0755 whatever the umask: the service
+    user must reach the configuration. Existing directories keep their mode."""
+    if directory.is_dir():
+        return
+    _make_directory(directory.parent)
+    try:
+        directory.mkdir()
+    except FileExistsError:
+        if directory.is_dir():  # created meanwhile
+            return
+        raise
+    os.chmod(directory, 0o755)  # noqa: S103 - the file in it is 0640, the secret is there
 
 
 if __name__ == "__main__":
