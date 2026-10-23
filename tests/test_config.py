@@ -1,12 +1,14 @@
 """Configuration: TOML parsing with strict validation, and rendering from installer answers."""
 
 import tomllib
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
 from meshcore_home_gateway import config as config_module
 from meshcore_home_gateway.config import (
+    Config,
     ConfigError,
     config_answers,
     load_config,
@@ -125,7 +127,21 @@ def test_full_configuration_is_read_completely() -> None:
             '[radio]\ntransport = "serial"\ndevice = "/dev/ttyACM0"\nbaud = 1200',
             "radio.baud: unknown",
         ),
+        ('[radio]\ntransport = "serial"\ndevice = "ttyACM0"', "radio.device: must be an absolute"),
+        (
+            '[radio]\ntransport = "serial"\ndevice = "/dev/ttyACM0"\nhost = "192.0.2.1"',
+            "radio.host: only used with transport = 'tcp'",
+        ),
+        ('[radio]\ntransport = "serial"\ndevice = "/dev/ttyACM0"\nport = 5000', "radio.port: only"),
+        (
+            '[radio]\ntransport = "tcp"\nhost = "192.0.2.1"\ndevice = "/dev/ttyACM0"',
+            "radio.device: only used with transport = 'serial'",
+        ),
+        ('[mqtt]\nnode_id = "n"', "mqtt.host: required"),
         ('[mqtt]\nhost = "h"\nnode_id = "Bad Name"', "mqtt.node_id"),
+        ('[mqtt]\nhost = "h"\nnode_id = "_lab"', "mqtt.node_id: .*starting with a letter or digit"),
+        ('[mqtt]\nhost = "h"\nnode_id = "n"\npassword = "x"', "mqtt.password: needs username"),
+        ('[mqtt]\nhost = "h"\nnode_id = "n"\ntls = "false"', "mqtt.tls: expected true or false"),
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nport = 70000', "mqtt.port"),
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nbase_topic = "a/#"', "mqtt.base_topic"),
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nbase_topic = "/a"', "mqtt.base_topic"),
@@ -134,14 +150,30 @@ def test_full_configuration_is_read_completely() -> None:
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nca_file = "/ca.pem"', "mqtt.ca_file: only used"),
         ('[mqtt]\nhost = "h"\nnode_id = "n"\ncert_file = "/c.pem"\ntls = false', "mqtt.cert_file"),
         ('[mqtt]\nhost = "h"\nnode_id = "n"\nkey_file = "/k.pem"\ntls = true', "needs cert_file"),
+        (
+            '[mqtt]\nhost = "h"\nnode_id = "n"\ntls = true\nca_file = "ca.pem"',
+            "mqtt.ca_file: must be an absolute path",
+        ),  # the service runs in /, check-config wherever it is started
+        (
+            '[mqtt]\nhost = "h"\nnode_id = "n"\ntls = true\ncert_file = "./c.pem"',
+            "mqtt.cert_file: must be an absolute path",
+        ),
+        ('[homeassistant]\nprefix = "a/b"', "homeassistant.prefix: a single topic segment"),
         ("[airtime]\nbudget_s_per_hour = 0", "airtime.budget_s_per_hour"),
         ("[airtime]\nburst_s = 2", "airtime.burst_s"),
         ("[messages]\nmax_attempts = 0", "messages.max_attempts"),
+        ('[messages]\nqueue_ttl_s = "60"', "messages.queue_ttl_s: expected a number"),
+        ("[messages]\nignore_channels = [300]", "messages.ignore_channels: expected a list"),
         ('[commands]\nsenders = ["a1b2c3d4e5f6"]\nwords = ["arm"]', "commands.senders"),
         ('[commands]\nwords = ["two words"]', "commands.words"),
+        ('[commands]\nwords = "arm"', "commands.words: expected a list of strings"),
+        ("[commands]\nwords = [1]", "commands.words: expected a list of strings"),
+        ("[targets]\nalerts = 1", "targets.alerts: expected a table"),
         ("[targets.Alerts]\nchannel = 1", "targets.Alerts"),
+        ("[targets._alerts]\nchannel = 1", "targets._alerts: .*starting with a letter or digit"),
         ("[targets.alerts]\nchannel = 1\ncontact = 'x'", "targets.alerts"),
         ("[targets.alerts]\nchannel = 256", "targets.alerts.channel"),
+        ("[targets.x]\ncontact = 'zz'", "targets.x.contact"),
         ('[diagnostics]\nlog_level = "loud"', "diagnostics.log_level"),
         ("[unknown]\nx = 1", "unknown: unknown"),
     ],
@@ -210,11 +242,25 @@ def test_rendered_configuration_is_valid_and_complete() -> None:
     assert text.startswith("# meshcore-home-gateway configuration")
 
 
-def test_rendering_rejects_unknown_or_invalid_answers() -> None:
-    with pytest.raises(ConfigError, match=r"mqtt\.colour"):
-        render_config(ANSWERS + "mqtt.colour=blue\n")
-    with pytest.raises(ConfigError, match=r"target\.x"):
-        render_config(ANSWERS + "target.x=planet:3\n")
+@pytest.mark.parametrize(
+    ("answer", "message"),
+    [
+        ("mqtt.colour=blue", r"mqtt\.colour: unknown answer"),
+        ("mqtt.port=abc", r"mqtt\.port: cannot read 'abc' as int"),
+        ("mqtt.tls=maybe", r"mqtt\.tls: cannot read 'maybe' as bool"),
+        ("target.x=planet:3", r"target\.x: expected channel"),
+        ("target.x=channel:\u00b2", r"target\.x: expected channel"),  # a digit, but not 0-9
+        ("target.news]#x=channel:2", r"target\.news\]#x: alias must be"),  # would end the header
+        ("target.my news=channel:2", r"target\.my news: alias must be"),
+        ("target._news=channel:2", r"target\._news: .*starting with a letter or digit"),
+    ],
+)
+def test_rendering_names_the_offending_answer(answer: str, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        render_config(ANSWERS + answer + "\n")
+
+
+def test_rendering_rejects_lines_without_an_equals_sign() -> None:
     with pytest.raises(ConfigError, match="line 1"):
         render_config("no equals sign")
 
@@ -264,8 +310,8 @@ def test_answers_render_back_to_the_same_configuration(text: str) -> None:
     assert parse_config(render_config(answers)) == parse_config(text)
 
 
-def test_every_setting_has_an_answer_type(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without one, `--reconfigure` could not write the setting back (answers, then render)."""
+def settings_read(monkeypatch: pytest.MonkeyPatch, *texts: str) -> set[str]:
+    """The dotted names of every table and setting that parsing these files looks up."""
     read: set[str] = set()
     original = config_module._Section.raw
 
@@ -274,11 +320,25 @@ def test_every_setting_has_an_answer_type(monkeypatch: pytest.MonkeyPatch) -> No
         return original(self, name)
 
     monkeypatch.setattr(config_module._Section, "raw", raw)
-    for text in (MINIMAL, FULL):
+    for text in texts:
         parse_config(text)
+    return read
+
+
+def test_every_setting_has_an_answer_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without one, `--reconfigure` could not write the setting back (answers, then render)."""
+    read = settings_read(monkeypatch, MINIMAL, FULL)
     settings = {key for key in read if "." in key and not key.startswith("targets.")}
     assert len(settings) > 30
     assert settings - set(config_module._ANSWER_TYPES) == set()
+
+
+def test_every_part_of_the_configuration_comes_from_the_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A field that no table of the file fills would look like a setting that cannot be set."""
+    tables = {key for key in settings_read(monkeypatch, FULL) if "." not in key}
+    assert tables == {f.name for f in fields(Config)}
 
 
 def test_answers_contain_only_the_settings_of_the_file() -> None:
@@ -302,7 +362,7 @@ def test_answers_use_normalised_public_keys() -> None:
 
 def test_answers_keep_unusual_characters() -> None:
     """Commas, '=', quotes and Unicode line separators survive (answers are split at \\n only)."""
-    text = MINIMAL + 'password = "p\\u2028w,=\\"x"\n'
+    text = MINIMAL + 'username = "u"\npassword = "p\\u2028w,=\\"x"\n'
     config = parse_config(render_config(config_answers(text)))
     assert config.mqtt.password == 'p\u2028w,="x'
 
@@ -310,6 +370,12 @@ def test_answers_keep_unusual_characters() -> None:
 def test_answers_refuse_values_with_line_breaks() -> None:
     with pytest.raises(ConfigError, match=r"mqtt\.password"):
         config_answers(MINIMAL + 'password = "a\\nb"\n')
+
+
+def test_answers_refuse_list_items_with_commas() -> None:
+    """The answers separate list items by commas; a command word may contain one."""
+    with pytest.raises(ConfigError, match=r"commands\.words: an item contains a comma"):
+        config_answers(MINIMAL + '\n[commands]\nwords = ["a,b"]\n')
 
 
 def test_answers_refuse_invalid_files() -> None:

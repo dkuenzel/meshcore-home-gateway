@@ -433,7 +433,7 @@ setting is in [`configuration.md`](configuration.md). The installer writes the f
 | `meshcore-home-gateway probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
 | `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
 | `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines. |
-| `meshcore-home-gateway config render` | Write a validated configuration from `key=value` answers (installer). |
+| `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
 
 Exit codes: 0 success, 1 failure, 2 usage error (invalid arguments), 78 configuration error (the

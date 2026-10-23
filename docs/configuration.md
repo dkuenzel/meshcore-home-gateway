@@ -13,9 +13,9 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `transport` | required | `serial` (USB) or `tcp` (WiFi companion firmware) |
-| `device` | – | serial device; use the stable `/dev/serial/by-id/...` path. Required for `serial` |
-| `host` | – | radio address. Required for `tcp`. The TCP interface has no authentication |
-| `port` | `5000` | TCP port |
+| `device` | – | serial device, an absolute path; use the stable `/dev/serial/by-id/...` path. Required for `serial`, an error with `tcp` |
+| `host` | – | radio address. Required for `tcp`, an error with `serial`. The TCP interface has no authentication |
+| `port` | `5000` | TCP port; only with `tcp` |
 | `set_clock` | `true` | move the radio clock forward to the bridge clock at connect (it cannot be moved back) |
 
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it
@@ -27,31 +27,33 @@ would put nRF52 radios into their bootloader.
 | --- | --- | --- |
 | `host` | required | broker address |
 | `port` | `1883` | broker port (8883 is usual with TLS) |
-| `username`, `password` | – | broker credentials |
+| `username`, `password` | – | broker credentials; `password` needs `username` |
 | `tls` | `false` | TLS with certificate and host name verification |
-| `ca_file` | system store | CA certificate file for TLS; only with `tls = true` |
-| `cert_file`, `key_file` | – | client certificate and key for TLS authentication; only with `tls = true`. `key_file` needs `cert_file` and can be left out when the certificate file holds the key |
+| `ca_file` | system store | CA certificate file for TLS, an absolute path; only with `tls = true` |
+| `cert_file`, `key_file` | – | client certificate and key for TLS authentication, absolute paths; only with `tls = true`. `key_file` needs `cert_file` and can be left out when the certificate file holds the key |
 | `client_id` | `meshcore-home-gateway-<node_id>` | MQTT client identifier |
 | `keepalive_s` | `60` | keep-alive interval, 10–3600 |
 | `base_topic` | `meshcore` | first topic levels; segments of `A-Z a-z 0-9 - _` separated by `/` |
-| `node_id` | required | this bridge's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`. Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
+| `node_id` | required | this bridge's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`, starting with a letter or digit. Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
 
 A TLS file that cannot be loaded (missing, unreadable, not a certificate or key) is a
-configuration error: `check-config` loads the files, and the service exits with code 78.
+configuration error: `check-config` and `config render` load the files, and the service exits with
+code 78. The paths must be absolute, like `radio.device`: the service runs in `/`, not in the
+directory where `check-config` is started.
 
 ## `[homeassistant]`
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `discovery` | `true` | publish the discovery document and follow Home Assistant's birth message |
-| `prefix` | `homeassistant` | discovery prefix (as set in Home Assistant's MQTT options) |
+| `prefix` | `homeassistant` | discovery prefix (as set in Home Assistant's MQTT options); one topic level of `A-Z a-z 0-9 - _` |
 | `device_name` | `MeshCore radio` | name of the device in Home Assistant |
-| `status_topic` | `homeassistant/status` | topic of Home Assistant's birth message (MQTT options, *birth message*); it does not follow `prefix` |
+| `status_topic` | `homeassistant/status` | topic of Home Assistant's birth message (MQTT options, *birth message*); it does not follow `prefix`. Segments of `A-Z a-z 0-9 - _` separated by `/` |
 
 ## `[targets.<alias>]`
 
 The only destinations the bridge sends to; publish to `send/<alias>`. The alias is 1–32 of
-`a-z 0-9 - _`. Set exactly one of:
+`a-z 0-9 - _`, starting with a letter or digit. Set exactly one of:
 
 | Key | Meaning |
 | --- | --- |
@@ -64,19 +66,19 @@ The only destinations the bridge sends to; publish to `send/<alias>`. The alias 
 | --- | --- | --- |
 | `ascii_only` | `false` | transliterate to ASCII (ä → ae, typographic quotes, accents); for handhelds without Unicode fonts |
 | `truncate` | `true` | cut texts above the radio limit between whole characters (flags and emoji sequences included) and mark them with `...`; `false` rejects them |
-| `dedup_window_s` | `300` | the same text to the same target is sent once per window; `0` disables |
+| `dedup_window_s` | `300` | the same text to the same target is sent once per window, 0–86400; `0` disables |
 | `queue_size` | `20` | waiting messages, 1–1000; more are rejected |
-| `queue_ttl_s` | `600` | time to live of a message: never sent within it, it expires; sent but not acknowledged within it, it fails |
+| `queue_ttl_s` | `600` | time to live of a message, 1–86400: never sent within it, it expires; sent but not acknowledged within it, it fails |
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
-| `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods |
-| `ignore_channels` | `[]` | channel indices whose messages are not published (busy public channels) |
+| `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` |
+| `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels) |
 
 ## `[airtime]`
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `budget_s_per_hour` | `36` | seconds of transmission per hour for the bridge's messages (1 % of the hour) |
-| `burst_s` | `10` | seconds that may be spent at once; at least 5 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
+| `budget_s_per_hour` | `36` | seconds of transmission per hour for the bridge's messages (1 % of the hour), 0.001–3600 |
+| `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
 
 Within one run of the service, the bridge's transmissions over any interval *T* stay below
 `burst_s + budget_s_per_hour × T / 3600`. The budget is not stored: each start begins with a full
@@ -91,7 +93,7 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | --- | --- | --- |
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
-| `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the bridge clock; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
+| `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the bridge clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the bridge
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
@@ -120,10 +122,11 @@ TCP it drops push frames while its send queue is full, and the bridge warns abou
 ## Installer answers
 
 `meshcore-home-gateway config render --answers <file> --output <config> --group
-meshcore-home-gateway` builds a configuration from `key=value` lines and validates it like the
-service does. Keys are the dotted settings above (`mqtt.host=…`), `target.<alias>=channel:<index>`
-or `target.<alias>=contact:<public key>`; lists are comma-separated; empty values are skipped. The
-Proxmox installer uses it so that no shell code writes TOML.
+meshcore-home-gateway` builds a configuration from `key=value` lines and validates it like
+`check-config` does, TLS files included. Keys are the dotted settings above (`mqtt.host=…`),
+`target.<alias>=channel:<index>` or `target.<alias>=contact:<public key>`; lists are
+comma-separated; empty values are skipped. The Proxmox installer uses it so that no shell code
+writes TOML.
 
 `meshcore-home-gateway config answers --config <config>` does the reverse: it prints the settings
 present in a configuration file as answers, with public keys normalised. The installer's
