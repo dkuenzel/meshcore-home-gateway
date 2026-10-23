@@ -61,7 +61,7 @@ def prepare_text(text: str, policy: TextPolicy) -> str:
     cleaned = _clean(unicodedata.normalize("NFC", text))
     if policy.ascii_only:
         cleaned = _clean(_to_ascii(cleaned))  # transliteration turns wide spaces into " "
-    if not cleaned:
+    if not any(unicodedata.category(ch) != "Cf" and not ch.isspace() for ch in cleaned):
         raise TextRejectedError("empty", "text is empty after cleaning")
     encoded = cleaned.encode("utf-8")
     if len(encoded) <= policy.max_bytes:
@@ -95,6 +95,11 @@ def _clean(text: str) -> str:
 
 
 def _to_ascii(text: str) -> str:
+    """Transliterate; invisible format characters (soft hyphen, zero-width space, joiners) are
+    dropped instead of becoming a visible '?'."""
     decomposed = unicodedata.normalize("NFKD", text.translate(_TRANSLITERATION))
-    base = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    base = "".join(
+        ch for ch in decomposed
+        if not unicodedata.combining(ch) and unicodedata.category(ch) != "Cf"
+    )  # fmt: skip
     return "".join(ch if ch.isascii() else "?" for ch in base)

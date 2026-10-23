@@ -67,6 +67,7 @@ class FakeBus:
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
         self.published: list[tuple[str, bytes, bool]] = []
+        self.qos: dict[str, set[int]] = {}
         self.stopped = False
         self.connected = True
 
@@ -77,8 +78,9 @@ class FakeBus:
     async def stop(self) -> None:
         self.stopped = True
 
-    def publish(self, topic: str, payload: bytes, retain: bool = False) -> None:
+    def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
         self.published.append((topic, payload, retain))
+        self.qos.setdefault(topic, set()).add(qos)
 
     def send(self, alias: str, text: str | bytes, retained: bool = False) -> None:
         payload = text.encode() if isinstance(text, str) else text
@@ -225,12 +227,13 @@ def test_late_acknowledgement_of_an_earlier_attempt_counts(tmp_path: Path) -> No
 
 def test_acknowledgement_arriving_before_a_retry_ends_the_delivery(tmp_path: Path) -> None:
     """The acknowledgement of attempt 1 arrives while attempt 2 waits for airtime: nothing is
-    sent again and the stored path is kept."""
+    sent again and the stored path is kept (Bob has one, and attempt 2 would flood)."""
     radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
 
     async def main() -> None:
-        async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
-            bus.send("alice", "early")
+        config = make_config(messages="flood_after = 1")
+        async with running(config, radio, tmp_path) as (bridge, bus, _notes):
+            bus.send("bob", "early")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
             bridge._budget._tokens, bridge._budget._rate = 0.0, 2.0  # attempt 2 waits ~0.3 s
             await asyncio.sleep(0.25)
@@ -552,11 +555,11 @@ def test_command_time_is_stored_before_the_command_is_published(tmp_path: Path) 
     stored_at_publish: list[Any] = []
 
     class WatchingBus(FakeBus):
-        def publish(self, topic: str, payload: bytes, retain: bool = False) -> None:
+        def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
             if topic.endswith("/command"):
                 stored = json.loads(state.read_text(encoding="utf-8"))
                 stored_at_publish.append(stored["command_timestamps"])
-            super().publish(topic, payload, retain)
+            super().publish(topic, payload, retain, qos)
 
     radio = EmulatedRadio(contacts=[ALICE])
 
@@ -989,7 +992,10 @@ def test_components_of_an_earlier_configuration_are_removed(tmp_path: Path) -> N
 
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
-            for document in bus.payloads("/config"):  # every announcement of this run
+            documents = bus.payloads("/config")
+            assert len(documents) % 2 == 0  # each announcement: the placeholder, then removal
+            for bind, document in zip(documents[::2], documents[1::2], strict=True):
+                assert bind["cmps"]["send_old"]["enabled_by_default"] is False
                 assert document["cmps"]["send_old"] == {"p": "notify"}
                 assert document["cmps"]["radio"]["p"] == "binary_sensor"
 
@@ -997,4 +1003,67 @@ def test_components_of_an_earlier_configuration_are_removed(tmp_path: Path) -> N
     data = store.load()
     assert "send_old" not in data["ha_components"]
     assert data["ha_components"]["radio"] == "binary_sensor"
+    assert data["ha_removed"]["send_old"]["p"] == "notify"  # pending, in case nobody got it
     assert data["command_timestamps"] == {"a1" * 32: 5}
+
+
+def test_command_events_are_never_delivered_late(tmp_path: Path) -> None:
+    """QoS 0: a command event that cannot be delivered at once (a broker loss that paho has not
+    noticed yet) is lost, not resent after the reconnect to trigger automations at any time."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(ALICE.public_key[:6], "status", NOW - 5)
+            await bus.wait_for("/command", lambda c: True)
+            assert bus.qos["meshcore/radio1/command"] == {0}
+            assert bus.qos["meshcore/radio1/received"] == {1}
+
+    scenario(main)
+
+
+class OfflineBus(FakeBus):
+    """A broker that is never reached in this run."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.connected = False
+
+    async def start(self) -> None:
+        pass
+
+
+def test_a_removal_survives_a_run_that_never_reached_the_broker(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"ha_components": {"send_old": "notify", "radio": "binary_sensor"}})
+
+    async def offline_run() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path, bus=OfflineBus()):
+            pass
+
+    async def online_run() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
+            documents = bus.payloads("/config")
+            removing = [d for d in documents if d["cmps"].get("send_old") == {"p": "notify"}]
+            assert removing  # still sent: the first run reached nobody
+
+    scenario(offline_run)
+    scenario(online_run)
+
+
+def test_a_removal_binds_the_component_first(tmp_path: Path) -> None:
+    """Home Assistant removes only components it has discovered since its own start, so each
+    removal is preceded by a disabled placeholder under the same unique_id."""
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"ha_components": {"send_old": "notify", "command": "event"}})
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
+            documents = bus.payloads("/config")
+            first, second = documents[0]["cmps"]["send_old"], documents[1]["cmps"]["send_old"]
+            assert first["enabled_by_default"] is False
+            assert first["unique_id"] == "meshcore_home_gateway_radio1_send_old"
+            assert second == {"p": "notify"}
+            assert documents[0]["cmps"]["radio"] == documents[1]["cmps"]["radio"]
+
+    scenario(main)

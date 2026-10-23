@@ -87,3 +87,17 @@ def test_only_control_and_direction_characters_are_removed() -> None:
 def test_spaces_from_transliteration_are_collapsed() -> None:
     policy = TextPolicy(max_bytes=160, ascii_only=True)
     assert prepare_text("a \u00a0 b\u2003c", policy) == "a b c"
+
+
+def test_ascii_mode_drops_invisible_format_characters() -> None:
+    """Soft hyphens and zero-width spaces from copied text would become visible '?'."""
+    policy = TextPolicy(160, ascii_only=True)
+    assert prepare_text("Temperatur\u00adf\u00fchler", policy) == "Temperaturfuehler"
+    assert prepare_text("a\u200bb\u200ec\u2060d", policy) == "abcd"
+
+
+@pytest.mark.parametrize("text", ["\u200b", "\u00ad \u2060", "\u200d"])
+def test_a_text_without_visible_characters_is_rejected(text: str) -> None:
+    with pytest.raises(TextRejectedError) as rejected:
+        prepare_text(text, TextPolicy(160))
+    assert rejected.value.reason == "empty"

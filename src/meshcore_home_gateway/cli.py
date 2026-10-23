@@ -506,6 +506,11 @@ def _send(args: argparse.Namespace) -> int:
     if target is None:  # the bridge would reject it; also keeps wildcards out of the topic
         print(f"meshcore-home-gateway: no target {args.alias!r} in {args.config}", file=sys.stderr)
         return EX_FAILURE
+    try:  # bytes that are not UTF-8 reach argv as surrogates (PEP 383)
+        payload = args.text.encode("utf-8")
+    except UnicodeEncodeError:
+        print("meshcore-home-gateway: the text is not valid UTF-8", file=sys.stderr)
+        return EX_FAILURE
     final = FINAL_STATES | ({"sent"} if target.channel_index is not None else set())
     try:  # the text as the bridge will report it, apart from shortening
         policy = TextPolicy(1 << 20, ascii_only=config.messages.ascii_only, truncate=False)
@@ -520,7 +525,7 @@ def _send(args: argparse.Namespace) -> int:
         if error is None and args.wait > 0:
             error = _subscribe(client, topics.delivery)
         if error is None:
-            error = _publish(client, topics.send(args.alias), args.text.encode("utf-8"))
+            error = _publish(client, topics.send(args.alias), payload)
         if error is not None:
             print(f"meshcore-home-gateway: {error}", file=sys.stderr)
             return EX_FAILURE

@@ -1,4 +1,4 @@
-# Release (ADR 0012): a tag vX.Y.Z builds the release files from the tagged commit with the same
+# Release (ADR 0013): a tag vX.Y.Z builds the release files from the tagged commit with the same
 # Makefile targets as a local check, attests their build provenance (Sigstore-signed SLSA
 # provenance, verifiable with `gh attestation verify`) and publishes them with SHA256SUMS as a
 # GitHub release. A manual run is a dry run: it builds and keeps the files as a workflow artifact,
@@ -74,7 +74,9 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
           set -euo pipefail
-          prerelease=()   # PEP 440 pre-releases: v1.0.0a1, v1.0.0b2, v1.0.0rc1, v1.0.0.dev1
+          # PEP 440 pre-releases: v1.0.0a1, v1.0.0b2, v1.0.0rc1, v1.0.0.dev1; `make release`
+          # admits only version forms for which the end of the tag tells (tools/release_notes.py)
+          prerelease=()
           if [[ $TAG =~ (a|b|rc|dev)[0-9]+$ ]]; then prerelease=(--prerelease); fi
           # the attestation itself, for verification with any Sigstore client
           cp -- "$BUNDLE" "release/meshcore-home-gateway-${TAG#v}.sigstore.json"

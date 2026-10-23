@@ -48,8 +48,16 @@ def discovery_payload(
     topics: Topics,
     radio: RadioInfo | None = None,
     removed: Mapping[str, str] | None = None,
+    *,
+    bind: bool = False,
 ) -> dict[str, Any]:
-    """The document; `radio` fills the device page, `removed` (key -> platform) are removed."""
+    """The document; `radio` fills the device page, `removed` (key -> platform) are removed.
+
+    Home Assistant removes a component only if it has discovered it since its own start. With
+    `bind`, the removed components are sent as disabled placeholders under their unique_id
+    instead, which binds an entity left from an earlier run (or creates an invisible disabled
+    one); the document without `bind`, sent right after, then removes them.
+    """
     uid = device_id(config)
 
     def component(key: str, platform: str, name: str, **options: Any) -> dict[str, Any]:
@@ -138,7 +146,9 @@ def discovery_payload(
             key, "notify", f"Send to {target.alias}", command_topic=topics.send(target.alias)
         )
     for key, platform in (removed or {}).items():
-        components.setdefault(key, {"p": platform})
+        if key not in components:
+            placeholder = _placeholder(f"{uid}_{key}", platform, topics) if bind else None
+            components[key] = placeholder or {"p": platform}
     device: dict[str, Any] = {
         "ids": [uid],
         "name": config.homeassistant.device_name,
@@ -154,3 +164,27 @@ def discovery_payload(
         "qos": 1,
         "cmps": components,
     }
+
+
+# the options each platform requires; nothing is ever published to or read from these topics
+_REQUIRED: dict[str, dict[str, Any]] = {
+    "binary_sensor": {"state_topic": "{root}/removed"},
+    "sensor": {"state_topic": "{root}/removed"},
+    "event": {"state_topic": "{root}/removed", "event_types": ["removed"]},
+    "notify": {"command_topic": "{root}/removed"},
+}
+
+
+def _placeholder(unique_id: str, platform: str, topics: Topics) -> dict[str, Any] | None:
+    """A disabled component under an earlier unique_id; None for a platform of another version."""
+    required = _REQUIRED.get(platform)
+    if required is None:
+        return None
+    options = {
+        name: value.format(root=topics.root) if isinstance(value, str) else value
+        for name, value in required.items()
+    }
+    return {
+        "p": platform, "unique_id": unique_id, "default_entity_id": f"{platform}.{unique_id}",
+        "name": "Removed", "enabled_by_default": False, **options,
+    }  # fmt: skip

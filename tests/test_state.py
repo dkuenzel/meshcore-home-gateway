@@ -55,13 +55,24 @@ def test_state_file_that_is_not_utf8_is_kept_aside(tmp_path: Path) -> None:
 def test_announced_components_report_the_ones_that_are_gone(tmp_path: Path) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     components = AnnouncedComponents(store)
-    assert components.replace({"radio": "binary_sensor", "send_a": "notify"}) == {}
-    assert components.replace({"radio": "binary_sensor"}) == {"send_a": "notify"}
-    assert components.replace({"radio": "binary_sensor"}) == {}
+    day = 86_400.0
+    assert components.replace({"radio": "binary_sensor", "send_a": "notify"}, now=0.0) == {}
+    assert components.replace({"radio": "binary_sensor"}, now=day) == {"send_a": "notify"}
+    # still pending in the next run: nothing tells the gateway that Home Assistant got it
+    assert components.replace({"radio": "binary_sensor"}, now=2 * day) == {"send_a": "notify"}
+    assert components.replace({"radio": "binary_sensor"}, now=32 * day) == {}  # expired
     CommandLedger(store).record("a1" * 32, 5)  # both live in the same file
     assert store.load()["ha_components"] == {"radio": "binary_sensor"}
-    store.save({"ha_components": ["radio"]})
-    assert components.replace({}) == {}
+    store.save({"ha_components": ["radio"], "ha_removed": {"x": "bad"}})
+    assert components.replace({}, now=0.0) == {}
+
+
+def test_a_component_that_comes_back_is_no_longer_removed(tmp_path: Path) -> None:
+    components = AnnouncedComponents(JsonStateFile(tmp_path / "state.json"))
+    components.replace({"send_a": "notify"}, now=0.0)
+    assert components.replace({}, now=1.0) == {"send_a": "notify"}
+    assert components.replace({"send_a": "notify"}, now=2.0) == {}
+    assert components.replace({"send_a": "notify"}, now=3.0) == {}
 
 
 def test_announced_components_survive_an_unwritable_state(
@@ -74,5 +85,5 @@ def test_announced_components_survive_an_unwritable_state(
         raise OSError("read-only file system")
 
     monkeypatch.setattr(store, "save", fail)
-    assert AnnouncedComponents(store).replace({}) == {"send_a": "notify"}
+    assert AnnouncedComponents(store).replace({}, now=0.0) == {"send_a": "notify"}
     assert "read-only file system" in caplog.text

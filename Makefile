@@ -106,7 +106,7 @@ release: venv ## Release files in dist/release: zipapp, wheel, sdist, SHA256SUMS
 	  "dist/release/meshcore-home-gateway-$$version.pyz" --version; \
 	  if ! $(BIN)/python tools/release_notes.py "$$version" >dist/release-notes.md; then \
 	    if [ -n "$(RELEASE_TAG)" ]; then exit 1; fi; \
-	    echo "release: dry run without a changelog section for $$version" >&2; fi; \
+	    echo "release: dry run; with RELEASE_TAG=v$$version this stops here (see above)" >&2; fi; \
 	  cd dist/release && sha256sum -- * >SHA256SUMS && cat SHA256SUMS
 
 check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test

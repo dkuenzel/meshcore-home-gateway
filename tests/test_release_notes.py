@@ -82,3 +82,29 @@ def test_the_command_line_prints_the_section(
     assert capsys.readouterr().out == "### Fixed\n\n- A bug.\n"
     with pytest.raises(SystemExit, match="no section"):
         release_notes.main(["9.9.9", "--changelog", str(changelog)])
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["0.1.0", "1.2.3a1", "1.2.3b2", "1.2.3rc1", "1.2.3.dev4", "1.2.3rc1.dev2", "1.2.3.post1"],
+)
+def test_the_documented_version_forms_are_accepted(version: str) -> None:
+    release_notes.check_version(version)
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["1.0.0rc1.post1", "1.0.0a1.post2", "1.0.0rc1+build", "1.0.0c1", "1.0.0rc", "1.0", "v1.0.0"],
+)
+def test_other_version_forms_are_refused(version: str) -> None:
+    """The release workflow tells pre-releases by the end of the tag; these would be published as
+    the latest full release, or are not canonical."""
+    with pytest.raises(ValueError, match="version"):
+        release_notes.check_version(version)
+
+
+def test_the_command_line_checks_the_version_first(tmp_path: Path) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text("## [1.0.0rc1.post1] - 2026-11-02\n\n- Notes.\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="version"):
+        release_notes.main(["1.0.0rc1.post1", "--changelog", str(changelog)])

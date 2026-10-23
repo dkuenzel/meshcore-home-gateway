@@ -3,7 +3,9 @@
     python3 tools/release_notes.py 0.1.0 [--changelog CHANGELOG.md]
 
 The section must exist with a date, as Keep a Changelog writes it (`## [0.1.0] - 2026-11-02`), so
-a release cannot go out without its changelog entry. `make release` uses it.
+a release cannot go out without its changelog entry. The version must have one of the forms the
+release workflow tells apart by the end of the tag: X.Y.Z, X.Y.ZaN, bN, rcN, each optionally with
+.devN, and X.Y.Z.postN. `make release` uses it.
 """
 
 from __future__ import annotations
@@ -14,7 +16,22 @@ from pathlib import Path
 
 CHANGELOG = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
 _NEXT_SECTION = re.compile(r"^## ", re.MULTILINE)
+_NUMBER = r"(?:0|[1-9][0-9]*)"
+_RELEASE = rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}"
+# pre-releases end in aN, bN, rcN or devN, as the workflow's --prerelease test expects; no local
+# versions (+...), no post-releases of pre-releases, only canonical PEP 440 spellings
+_VERSION = re.compile(
+    rf"{_RELEASE}(?:(?:a|b|rc){_NUMBER})?(?:\.dev{_NUMBER})?|{_RELEASE}\.post{_NUMBER}"
+)
 _LINK_DEFINITIONS = re.compile(r"(?:^\[[^\]]+\]: \S+\s*$\n?)+\Z", re.MULTILINE)
+
+
+def check_version(version: str) -> None:
+    if not _VERSION.fullmatch(version):
+        raise ValueError(
+            f"version {version!r} is not one of X.Y.Z, X.Y.Z(a|b|rc)N, with optional .devN, or "
+            "X.Y.Z.postN"
+        )
 
 
 def section(text: str, version: str) -> str:
@@ -37,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--changelog", type=Path, default=CHANGELOG)
     args = parser.parse_args(argv)
     try:
+        check_version(args.version)
         print(section(args.changelog.read_text(encoding="utf-8"), args.version))
     except ValueError as exc:
         raise SystemExit(f"release_notes: {exc}") from None

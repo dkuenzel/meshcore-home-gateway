@@ -63,6 +63,9 @@ artifact, without attestation or release. `make release` does the same locally.
   gives the same digests.
 * Neutral, because one more action (`actions/attest`, by GitHub) is pinned by commit SHA and
   updated by Dependabot with the cooldown.
+* Neutral, because the check must name the release workflow and the tag (`--signer-workflow`,
+  `--source-ref`; docs/deployment.md), and the release tags must be protected: with `--repo`
+  alone, any workflow of the repository on any branch would pass.
 * Bad, because the verification with `gh` depends on GitHub's attestation API; the Sigstore bundle
   can also be checked with other Sigstore clients, but that is more work.
 * Bad, because releases need GitHub Actions to run; when the account cannot run workflows, no
