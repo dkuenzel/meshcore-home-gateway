@@ -23,6 +23,7 @@ REF=main       # SOURCE=ref: the branch, tag or commit whose source is built in 
 PICKED=""      # SOURCE=release: the release to install, this copy's or the one --release names
 VERSION=""     # known in advance for a checkout and a release, else after the installation
 TITLE="meshcore-home-gateway"
+BROKER_LOGIN=""   # the result of check_broker, for the final message
 SERIAL_DIR=${MESHCORE_HOME_GATEWAY_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
 DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the container
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
@@ -62,7 +63,7 @@ die() {
     log "container $CREATED was created but is not finished; remove it with" \
       "'pct stop $CREATED; pct destroy $CREATED' and run the installer again"
   fi
-  if (( INTERACTIVE )) && [[ $* != cancelled* ]] && command -v whiptail >/dev/null 2>&1; then
+  if (( INTERACTIVE )) && [[ $* != cancelled* ]] && type -P whiptail >/dev/null; then
     whiptail --title "$TITLE" --msgbox -- "Error: $*" 12 72 >&2 || true
   fi
   exit 1
@@ -86,6 +87,11 @@ trap 'on_error $LINENO' ERR
 trap 'trap "" INT TERM HUP PIPE; die "cancelled (interrupted)"' INT TERM HUP PIPE
 
 # --- dialogs --------------------------------------------------------------------------------
+
+# In the caller's locale, one setting the host lacks (LANG=de_DE.UTF-8 passed on by ssh, or
+# LC_CTYPE=UTF-8 from macOS) is enough for the C locale, and whiptail then drops every non-ASCII
+# character typed, passwords included, without a word. C.UTF-8 is built into Debian's C library.
+whiptail() { LC_ALL=C.UTF-8 command whiptail "$@"; }
 
 # ask KEY KIND TEXT DEFAULT [CHOICE DESCRIPTION [on|off] ...]
 #   KIND: input | password | yesno | menu | checklist. The answer comes from --answers, else from
@@ -270,7 +276,7 @@ preflight() {  # preflight MODE
     command -v "$tool" >/dev/null 2>&1 || die "'$tool' not found: this must run on a Proxmox VE host"
   done
   if (( INTERACTIVE )) && [[ $1 != update ]]; then   # --update shows no dialogs
-    command -v whiptail >/dev/null 2>&1 \
+    type -P whiptail >/dev/null \
       || die "whiptail not found: install it (apt install whiptail) or use --answers FILE"
     # `wget -qO- URL | bash`: the input is the rest of the script, the dialogs would read it
     if [[ -p /dev/stdin ]]; then
@@ -326,6 +332,40 @@ check_settings_in() {  # check_settings_in CTID: with the program installed in t
     || die "invalid settings (see above)"
 }
 
+check_broker() {  # check_broker CTID: log in as the service will, before the radio is read
+  local ctid=$1 reason key
+  while :; do
+    # the broker's answer goes to stdout, into $reason; another client id than the service's
+    if reason=$(write_answers | in_ct_input "$ctid" bash -c "set -e
+        umask 077
+        dir=\$(mktemp -d)
+        trap 'rm -rf \$dir' EXIT
+        cat >\$dir/answers
+        meshcore-home-gateway config render --answers \$dir/answers \
+          --output \$dir/login.toml 2>&1 >/dev/null
+        meshcore-home-gateway check-config --config \$dir/login.toml --broker 2>&1 >/dev/null"); then
+      BROKER_LOGIN="login accepted"
+      return 0
+    fi
+    reason=${reason//meshcore-home-gateway: /}
+    if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "The broker login failed:
+
+$reason
+
+Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes \
+the settings later.)" 20 78 >&2; then
+      log "warning: the broker login failed: $reason"
+      log "the service keeps trying; change the broker settings with --reconfigure $ctid"
+      BROKER_LOGIN="login failed (see above), the service keeps trying"
+      return 0
+    fi
+    for key in mqtt.host mqtt.tls mqtt.port mqtt.username; do  # what was just given: the defaults
+      CURRENT[$key]=${OUT[$key]-}
+    done
+    ask_broker all
+  done
+}
+
 # --- container ------------------------------------------------------------------------------
 
 ct_running() { [[ $(pct status "$1" 2>/dev/null) == "status: running" ]]; }
@@ -374,6 +414,12 @@ ask_container() {
   [[ -n ${CT[template_storage]} ]] || die "no active storage for templates"
 }
 
+login_text() {  # the broker login, for messages; never the password
+  if [[ -z ${OUT[mqtt.username]-} ]]; then printf 'none (no user name)'; return; fi
+  printf "user '%s' %s" "${OUT[mqtt.username]}" \
+    "$(if [[ -n ${OUT[mqtt.password]-} ]]; then echo with; else echo without; fi) a password"
+}
+
 confirm_install() {
   if (( ! INTERACTIVE )); then return 0; fi
   local radio=${OUT[radio.device]:-${OUT[radio.host]-}:${OUT[radio.port]-}}
@@ -385,6 +431,7 @@ Memory:   ${CT[memory]} MB
 Network:  $network
 Radio:    $radio
 Broker:   ${OUT[mqtt.host]}:${OUT[mqtt.port]}, TLS ${OUT[mqtt.tls]}
+Login:    $(login_text)
 
 Afterwards the channels and contacts are read from the radio." 18 78 >&2 || die "cancelled"
 }
@@ -601,25 +648,37 @@ ask_radio() {
   fi
 }
 
-ask_bridge() {  # broker, topics, Home Assistant and message settings
-  local tls password
+ask_broker() {  # ask_broker [all]: address and login; "all" asks also what the default setup skips
+  local tls password user ask_more=ask_advanced
+  if [[ ${1-} == all ]]; then ask_more=ask; fi
   OUT[mqtt.host]=$(ask_required mqtt.host "MQTT broker: host name or IP address (no mqtt://)" "")
-  tls=$(ask_advanced mqtt.tls yesno "Use TLS for the broker connection?" "false")
+  tls=$($ask_more mqtt.tls yesno "Use TLS for the broker connection?" "false")
   OUT[mqtt.tls]=$tls
-  OUT[mqtt.port]=$(ask_advanced mqtt.port input "MQTT broker port" \
+  OUT[mqtt.port]=$($ask_more mqtt.port input "MQTT broker port" \
     "$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)")
-  OUT[mqtt.username]=$(ask mqtt.username input "MQTT user name (empty: none)" \
-    "meshcore-home-gateway")
-  if [[ -z ${OUT[mqtt.username]} ]]; then
+  # no suggested name in the field: whiptail adds what is typed to it instead of replacing it
+  user=$(ask mqtt.username input \
+    "MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)" "")
+  OUT[mqtt.username]=$user
+  if [[ -z $user ]]; then
     # a password needs a user name: no dialog, and the current one goes (the settings check
     # refuses one given in the answers file)
     [[ -v "ANSWERS[mqtt.password]" ]] || unset 'OUT[mqtt.password]'
-  elif [[ -v "CURRENT[mqtt.password]" ]]; then
-    password=$(ask mqtt.password password "MQTT password (empty: keep the current one)" "")
+  elif [[ -v "CURRENT[mqtt.password]" && $user == "${CURRENT[mqtt.username]-}" ]]; then
+    password=$(ask mqtt.password password \
+      "Password of MQTT user '$user' (empty: keep the current one)" "")
     if [[ -n $password ]]; then OUT[mqtt.password]=$password; fi
-  else
-    OUT[mqtt.password]=$(ask mqtt.password password "MQTT password (empty: none)" "")
+  else  # a new user name: a current password belongs to the old one
+    password=""
+    if (( INTERACTIVE )) || [[ -v "ANSWERS[mqtt.password]" ]]; then
+      password=$(ask mqtt.password password "Password of MQTT user '$user' (empty: none)" "")
+    fi
+    if [[ -n $password ]]; then OUT[mqtt.password]=$password; else unset 'OUT[mqtt.password]'; fi
   fi
+}
+
+ask_bridge() {  # broker, topics, Home Assistant and message settings
+  ask_broker
   OUT[mqtt.base_topic]=$(ask_advanced mqtt.base_topic input "Base topic" "meshcore")
   OUT[mqtt.node_id]=$(ask_advanced mqtt.node_id input "Node id (in topics and entity IDs)" \
     "radio1")
@@ -807,6 +866,7 @@ summary() {  # commands for the user: pct exec takes the host's PATH, which may 
   fi
   text="meshcore-home-gateway $VERSION runs in container $ctid.
 
+Broker:       ${OUT[mqtt.host]}:${OUT[mqtt.port]}, $(login_text): $BROKER_LOGIN
 Logs:         pct exec $ctid -- journalctl -u meshcore-home-gateway -f
 Check:        pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config
 Reconfigure:  $(invocation) --reconfigure $ctid
@@ -838,6 +898,7 @@ install() {
   if [[ ${OUT[radio.transport]} == serial ]]; then check_device_group "${CT[id]}"; fi
   install_service "${CT[id]}"
   if [[ $SOURCE != checkout ]]; then check_settings_in "${CT[id]}"; fi
+  check_broker "${CT[id]}"
   choose_targets "${CT[id]}"
   configure "${CT[id]}"
   start_service "${CT[id]}"
@@ -873,6 +934,7 @@ reconfigure() {
   choose_setup
   ask_bridge
   check_settings_in "$ctid"   # with the version installed there, which renders the configuration
+  check_broker "$ctid"   # while the service still runs
   STOPPED=$ctid   # first: an interruption during the stop also starts the service again
   in_ct "$ctid" systemctl stop meshcore-home-gateway >&2   # the radio accepts a single client
   choose_targets "$ctid"

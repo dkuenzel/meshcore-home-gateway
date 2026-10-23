@@ -75,6 +75,13 @@ STUBS = {
             fi
             [[ -z ${SLEEP_AT-} || $* != *"$SLEEP_AT"* ]] || sleep 60
             case "$*" in
+              *"--broker"*)  # the login check: refused as often as BROKER_REFUSALS says
+                refused=$(cat "$STUB/broker-refused" 2>/dev/null || echo 0)
+                if (( refused < ${BROKER_REFUSALS:-0} )); then
+                  echo $(( refused + 1 )) >"$STUB/broker-refused"
+                  echo "meshcore-home-gateway: broker refused the connection: Not authorized"
+                  exit 1
+                fi ;;
               *'--output $dir/config.toml'*)  # the settings check
                 [[ -z ${CHECK_FAILS-} ]] || { echo "bad" >&2; exit 78; } ;;
               *"daemon-reload"*) echo "${STUB_VERSION:-0.0.0}" ;;  # the installation step
@@ -150,6 +157,7 @@ STUBS = {
     "id": 'echo "${STUB_UID:-0}"',
     "whiptail": r"""
         log whiptail "$@"
+        printf '%s\n' "${LC_ALL-unset}" >>"$STUB/whiptail-locale"
         positional=0 ended=0  # like popt: after the box type, '-' starts an option unless after --
         for arg in "$@"; do
           if (( positional && ! ended )); then
@@ -329,7 +337,8 @@ def answers_file(host: Host, text: str | None = None) -> Path:
     path = host.root / "answers.txt"
     if text is None:
         text = (
-            f"radio.choice={host.serial}\nmqtt.host=broker.example.org\nmqtt.password=s3cret=x\n"
+            f"radio.choice={host.serial}\nmqtt.host=broker.example.org\n"
+            "mqtt.username=meshcore-home-gateway\nmqtt.password=s3cret=x\n"
             f"targets.channels=1\ntargets.contacts={ALICE}\ncommands.senders={ALICE}\n"
             "commands.words=status,arm\n"
         )
@@ -536,6 +545,85 @@ def test_without_a_user_name_no_password_is_asked(host: Host) -> None:
     assert not [c for c in host.dialogs() if "--passwordbox" in c]
     config = host.config()
     assert (config.mqtt.username, config.mqtt.password) == (None, None)
+
+
+def test_the_dialogs_run_in_a_utf8_locale(host: Host) -> None:
+    """In a locale the host lacks, whiptail drops every non-ASCII character typed."""
+    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pässwört§", "yes",
+              "1", "", ""]  # fmt: skip
+    env = {"LANG": "de_DE.UTF-8", "LC_CTYPE": "UTF-8"}  # as ssh passes them on
+    result = run_installer(host, dialog=dialog, env=env)
+    assert result.returncode == 0, result.stderr
+    locales = (host.root / "whiptail-locale").read_text(encoding="utf-8").split()
+    assert locales
+    assert set(locales) == {"C.UTF-8"}
+    assert host.config().mqtt.password == "pässwört§"
+
+
+def test_the_user_name_field_starts_empty_and_the_password_names_the_user(host: Host) -> None:
+    """whiptail adds what is typed to a suggested name instead of replacing it."""
+    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "1", "", ""]
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    (user,) = [c for c in host.dialogs() if any("MQTT user name" in a for a in c)]
+    assert user[-1] == ""  # the field's content
+    assert any("meshcore-home-gateway" in a for a in user)  # suggested in the text
+    (password,) = [c for c in host.dialogs() if "--passwordbox" in c]
+    assert any("Password of MQTT user 'bridge'" in a for a in password)
+    (confirm,) = [c for c in host.dialogs() if any("Create container" in a for a in c)]
+    assert any("Login:    user 'bridge' with a password" in a for a in confirm)
+    assert "pw" not in " ".join(confirm).split()
+
+
+def test_the_broker_login_is_checked_before_the_radio_is_read(host: Host) -> None:
+    result = run_installer(host, "--answers", str(answers_file(host)))
+    assert result.returncode == 0, result.stderr
+    inside = host.inside()
+    login = next(i for i, c in enumerate(inside) if "--broker" in c)
+    probe = next(i for i, c in enumerate(inside) if "--list channels" in c)
+    assert login < probe
+    script = host.script("--broker")
+    assert script.index("umask 077") < script.index("cat >$dir/answers")
+    assert "trap 'rm -rf $dir' EXIT" in script
+    assert "--config $dir/login.toml --broker" in script  # not the configuration itself
+    assert "user 'meshcore-home-gateway' with a password: login accepted" in result.stderr
+
+
+def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
+    dialog = [
+        "default", str(host.serial), "broker.example.org", "bridge", "wrong", "yes",
+        "yes",  # the login failed: enter the broker settings again
+        "broker.example.org", "no", "1883", "bridge", "right",  # all of them this time
+        "1", "", "",
+    ]  # fmt: skip
+    result = run_installer(host, dialog=dialog, env={"BROKER_REFUSALS": "1"})
+    assert result.returncode == 0, result.stderr
+    assert len(host.dialogs()) == len(dialog)
+    again = next(c for c in host.dialogs() if any("The broker login failed" in a for a in c))
+    assert any("broker refused the connection: Not authorized" in a for a in again)
+    assert host.config().mqtt.password == "right"
+    assert len([c for c in host.inside() if "--broker" in c]) == 2
+    assert "login accepted" in result.stderr
+
+
+def test_a_refused_login_can_be_kept(host: Host) -> None:
+    """No: the installation goes on, the service keeps trying, and the message says so."""
+    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "no",
+              "1", "", ""]  # fmt: skip
+    result = run_installer(host, dialog=dialog, env={"BROKER_REFUSALS": "9"})
+    assert result.returncode == 0, result.stderr
+    assert "warning: the broker login failed: broker refused the connection" in result.stderr
+    assert "login failed (see above), the service keeps trying" in result.stderr
+    assert host.inside()[-1].startswith("systemctl is-active")
+
+
+def test_without_dialogs_a_refused_login_is_a_warning(host: Host) -> None:
+    """The broker may be down while the gateway is installed: the service keeps trying."""
+    result = run_installer(host, "--answers", str(answers_file(host)),
+                           env={"BROKER_REFUSALS": "9"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "warning: the broker login failed" in result.stderr
+    assert len([c for c in host.inside() if "--broker" in c]) == 1
 
 
 def test_declining_the_confirmation_creates_nothing(host: Host) -> None:
@@ -892,6 +980,30 @@ def test_reconfigure_keeps_an_anonymous_broker_and_the_default_port(host: Host) 
     config = host.config()
     assert (config.mqtt.username, config.mqtt.password) == (None, None)
     assert (config.mqtt.tls, config.mqtt.port) == (True, 1883)
+
+
+def test_reconfigure_with_a_new_user_name_does_not_keep_the_old_password(host: Host) -> None:
+    """The current password belongs to the current user."""
+    existing_container(host)
+    answers = answers_file(host, "mqtt.username=david\n")
+    result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    assert (host.config().mqtt.username, host.config().mqtt.password) == ("david", None)
+    dialog = ["default", "old.example.org", "erika", "", "1", ALICE, ALICE, "status"]
+    result = run_installer(host, "--reconfigure", "105", dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    (password,) = [c for c in host.dialogs() if "--passwordbox" in c]
+    assert any("Password of MQTT user 'erika' (empty: none)" in a for a in password)
+
+
+def test_reconfigure_checks_the_login_while_the_service_runs(host: Host) -> None:
+    existing_container(host)
+    answers = answers_file(host, "mqtt.host=new.example.org\n")
+    result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    inside = host.inside()
+    login = next(i for i, c in enumerate(inside) if "--broker" in c)
+    assert login < inside.index("systemctl stop meshcore-home-gateway")
 
 
 def test_reconfigure_without_a_user_name_drops_the_password(host: Host) -> None:

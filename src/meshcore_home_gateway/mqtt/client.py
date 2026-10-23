@@ -106,6 +106,7 @@ class MqttBus:
         self._queued = 0  # events published since the connection was lost
         self._dropped = 0
         self._stopping = False
+        self._answered = False  # paho thread: the broker answered the current attempt
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
 
@@ -166,8 +167,13 @@ class MqttBus:
     # --- paho thread ---------------------------------------------------------------------------
 
     def _paho_connected(self, client: Any, _u: Any, _f: Any, reason: Any, _p: Any) -> None:
+        self._answered = True
         if getattr(reason, "is_failure", False):
-            log.warning("MQTT: connection refused: %s", reason)
+            # Mosquitto answers 'Not authorized' for a wrong password, an unknown user and
+            # missing credentials alike: the user name tells the user what was sent
+            user = f"user {self._config.username!r}" if self._config.username else "no user name"
+            log.warning("MQTT: connection refused: %s (%s; test the login with: "
+                        "meshcore-home-gateway check-config --broker)", reason, user)  # fmt: skip
             return
         subscriptions = [(self._topics.send_subscription, 1)]
         if self._ha_status:
@@ -184,7 +190,8 @@ class MqttBus:
         log.warning("MQTT: cannot reach %s:%d: %s", self._config.host, self._config.port, reason)
 
     def _paho_disconnected(self, _c: Any, _u: Any, _f: Any, reason: Any, _p: Any) -> None:
-        self._call(self._handle_disconnected, str(reason))
+        answered, self._answered = self._answered, False
+        self._call(self._handle_disconnected, str(reason), answered)
 
     def _paho_message(self, _c: Any, _u: Any, message: Any) -> None:
         self._call(
@@ -207,9 +214,12 @@ class MqttBus:
         for callback in self.on_connected:
             callback()
 
-    def _handle_disconnected(self, reason: str) -> None:
+    def _handle_disconnected(self, reason: str, answered: bool = True) -> None:
         if self.connected and not self._stopping:
             log.warning("MQTT: disconnected (%s), reconnecting", reason)
+        elif not answered and not self._stopping:  # e.g. TLS expected, or a refused feature
+            log.warning("MQTT: %s:%d closed the connection without answering (%s)",
+                        self._config.host, self._config.port, reason)  # fmt: skip
         self.connected = False
 
     def _handle_message(self, topic: str, payload: bytes, retained: bool) -> None:

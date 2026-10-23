@@ -35,6 +35,21 @@ format and the command line are public interfaces.
 
 ### Fixed
 
+- The broker login: the installer's dialogs run in the `C.UTF-8` locale (in a locale the host
+  lacks, whiptail dropped every non-ASCII character typed, passwords included); the user name
+  field starts empty (whiptail added what was typed to the suggested name); the password dialog
+  names its user, and `--reconfigure` no longer keeps the old password for a new user name.
+- The installer logs in to the broker before it reads the radio and, when the broker refuses,
+  shows its answer and offers to enter the broker settings again; the final message shows the
+  result. `check-config --broker` does the same login, `check-config` names the user.
+- The gateway names the user in a refused login, and logs attempts that no broker answers
+  (`cannot reach HOST:PORT: reason`) and connections closed before an answer; they went
+  unlogged. `mqtt.host` and `radio.host` must be a host name or IP address: `mqtt://`, a port or
+  brackets are refused with a hint.
+- The service user could not read a configuration written under a strict umask; the program's
+  directory and the configuration's are created readable whatever the host's umask. The final
+  message names the program by its path, which `pct exec` needs when the host's `PATH` lacks
+  `/usr/local/bin`.
 - Commands: an identical copy of a command's packet, also of a rejected one, stays a duplicate
   while it could pass the age check (an hour, or twice `max_age_s`); after `broker_unavailable`
   the sender's timestamp is stored, so a copy is a `replay` also after a restart.
