@@ -192,8 +192,10 @@ starting with `#` are ignored. There are two kinds of keys:
   how to remove the container).
 
 Missing keys take the defaults above; without a broker address (or a radio address for TCP) the
-script stops before it creates anything. Keep the file private; it may contain the broker
-password. From a URL the file goes after `--`: `bash -c "$(wget -qO- URL)" -- --answers FILE`.
+script stops before it creates anything. Without `mqtt.username` the gateway logs in without a
+user name, and `mqtt.password` alone is refused. The script logs in to the broker before it reads
+the radio; a refused login is a warning, since the broker may be down meanwhile and the service
+keeps trying. Keep the file private; it may contain the broker password. From a URL the file goes after `--`: `bash -c "$(wget -qO- URL)" -- --answers FILE`.
 
 TLS without own files uses the container's system CA store. A file (`mqtt.ca_file`,
 `mqtt.cert_file`, `mqtt.key_file`) must exist in the container when the configuration is written,
@@ -231,8 +233,11 @@ pct stop 105 && pct destroy 105
   (`releases/download/vX.Y.Zrc1/meshcore-home-gateway-lxc.sh`) or with `--release X.Y.Zrc1`; the
   final message of a pre-release names its own installer.
 * **Reconfigure** reads the current configuration (`meshcore-home-gateway config answers`) and
-  offers its values as defaults: an empty password keeps the current one (an empty user name
-  removes it), and settings the dialogs do not ask for are kept. Selected targets keep their
+  offers its values as defaults: an empty password keeps the current one while the user name stays
+  the same (with a new user name it means no password, so an answers file that changes
+  `mqtt.username` gives `mqtt.password` too; an empty user name removes both), and settings the
+  dialogs do not ask for are kept. The broker login is checked before the service is stopped,
+  with the version installed in the container (one from before the check skips it). Selected targets keep their
   aliases, all of them when several aliases name the same channel or contact. Targets and command
   senders that the radio does not offer (a contact that is not a chat contact, a channel slot
   without a name) are kept as well, and the log names them. The service is stopped while the script

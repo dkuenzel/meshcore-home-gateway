@@ -7,7 +7,8 @@ collected by pytest because it sends keys on timing, which is too fragile for CI
 
     .venv/bin/python -I tests/manual/installer_dialogs.py
 
-Expected output: the resulting configuration's targets and broker settings, exit code 0.
+It also runs whiptail under a locale the system lacks, as ssh may pass one on: the password with
+non-ASCII characters must arrive whole. Exit code 0 when the configuration is as typed.
 """
 
 from __future__ import annotations
@@ -27,12 +28,13 @@ sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
 from tests import test_installer as stubs  # noqa: E402
 
+PASSWORD = "pw-sêcret§"  # whiptail drops non-ASCII characters in a locale it cannot set
 KEYS = [  # one entry per dialog, in the order of the default setup
     b"\r",  # setup: default
     b"\r",  # radio: first device
     b"broker.example.org\r",  # broker address
-    b"\r",  # user: default
-    b"pw-secret\r",  # password
+    b"bridge\r",  # user: the field starts empty
+    PASSWORD.encode() + b"\r",  # password
     b"\r",  # create the container: yes
     b" \x1b[B \r",  # channels: tick the first two
     b" \r",  # contacts: tick the first
@@ -60,8 +62,14 @@ def main() -> int:
             "password set:",
             bool(config.mqtt.password),
         )
-        print("password in the call log:", "pw-secret" in host.log_text())
-        return code
+        leaked = PASSWORD in host.log_text()
+        print("password in the call log:", leaked)
+        targets = {t.alias for t in config.targets}
+        expected = (config.mqtt.username, config.mqtt.password) == ("bridge", PASSWORD)
+        if code or leaked or not expected or not targets:
+            print("NOT as typed", file=sys.stderr)
+            return code or 1
+        return 0
 
 
 def drive(root: Path, host: stubs.Host) -> int:
@@ -71,6 +79,7 @@ def drive(root: Path, host: stubs.Host) -> int:
         "STUB": str(root), "ALICE": stubs.ALICE, "RELAY": stubs.RELAY,
         "MESHCORE_HOME_GATEWAY_SERIAL_DIR": str(host.serial.parent),
         "COLUMNS": "100", "LINES": "30",
+        "LANG": "de_DE.UTF-8", "LC_CTYPE": "UTF-8",  # as ssh may pass them on; not installed
     }  # fmt: skip
     process = subprocess.Popen(  # noqa: S603 - our script
         [stubs.BASH, str(stubs.SCRIPT)], stdin=slave, stdout=slave, stderr=slave, env=env,

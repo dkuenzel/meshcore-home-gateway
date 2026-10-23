@@ -75,13 +75,16 @@ STUBS = {
             fi
             [[ -z ${SLEEP_AT-} || $* != *"$SLEEP_AT"* ]] || sleep 60
             case "$*" in
-              *"--broker"*)  # the login check: refused as often as BROKER_REFUSALS says
-                refused=$(cat "$STUB/broker-refused" 2>/dev/null || echo 0)
-                if (( refused < ${BROKER_REFUSALS:-0} )); then
-                  echo $(( refused + 1 )) >"$STUB/broker-refused"
-                  echo "meshcore-home-gateway: broker refused the connection: Not authorized"
-                  exit 1
-                fi ;;
+              *"--broker"*)  # the login check: exit statuses in turn from BROKER_ANSWERS
+                n=$(cat "$STUB/broker-checks" 2>/dev/null || echo 0)
+                echo $(( n + 1 )) >"$STUB/broker-checks"
+                read -ra codes <<<"${BROKER_ANSWERS:-0}"
+                code=${codes[n]:-${codes[-1]}}  # the last one repeats
+                case $code in  # 3: a version without the check, 4: the settings refused
+                  1) echo "meshcore-home-gateway: broker refused the connection: Not authorized" ;;
+                  4) echo "meshcore-home-gateway: configuration error: mqtt.port: not a number" ;;
+                esac
+                exit "$code" ;;
               *'--output $dir/config.toml'*)  # the settings check
                 [[ -z ${CHECK_FAILS-} ]] || { echo "bad" >&2; exit 78; } ;;
               *"daemon-reload"*) echo "${STUB_VERSION:-0.0.0}" ;;  # the installation step
@@ -586,7 +589,7 @@ def test_the_broker_login_is_checked_before_the_radio_is_read(host: Host) -> Non
     assert script.index("umask 077") < script.index("cat >$dir/answers")
     assert "trap 'rm -rf $dir' EXIT" in script
     assert "--config $dir/login.toml --broker" in script  # not the configuration itself
-    assert "user 'meshcore-home-gateway' with a password: login accepted" in result.stderr
+    assert "Broker:       login accepted" in result.stderr
 
 
 def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
@@ -596,11 +599,15 @@ def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
         "broker.example.org", "no", "1883", "bridge", "right",  # all of them this time
         "1", "", "",
     ]  # fmt: skip
-    result = run_installer(host, dialog=dialog, env={"BROKER_REFUSALS": "1"})
+    result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 0"})
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
     again = next(c for c in host.dialogs() if any("The broker login failed" in a for a in c))
     assert any("broker refused the connection: Not authorized" in a for a in again)
+    # whiptail adds what is typed to a field's content: the refused name is only in the text
+    users = [c for c in host.dialogs() if any("MQTT user name" in a for a in c)]
+    assert [c[-1] for c in users] == ["", ""]
+    assert any("(it was 'bridge')" in a for a in users[1])
     assert host.config().mqtt.password == "right"
     assert len([c for c in host.inside() if "--broker" in c]) == 2
     assert "login accepted" in result.stderr
@@ -610,7 +617,7 @@ def test_a_refused_login_can_be_kept(host: Host) -> None:
     """No: the installation goes on, the service keeps trying, and the message says so."""
     dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "no",
               "1", "", ""]  # fmt: skip
-    result = run_installer(host, dialog=dialog, env={"BROKER_REFUSALS": "9"})
+    result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1"})
     assert result.returncode == 0, result.stderr
     assert "warning: the broker login failed: broker refused the connection" in result.stderr
     assert "login failed (see above), the service keeps trying" in result.stderr
@@ -620,10 +627,68 @@ def test_a_refused_login_can_be_kept(host: Host) -> None:
 def test_without_dialogs_a_refused_login_is_a_warning(host: Host) -> None:
     """The broker may be down while the gateway is installed: the service keeps trying."""
     result = run_installer(host, "--answers", str(answers_file(host)),
-                           env={"BROKER_REFUSALS": "9"})  # fmt: skip
+                           env={"BROKER_ANSWERS": "1"})  # fmt: skip
     assert result.returncode == 0, result.stderr
     assert "warning: the broker login failed" in result.stderr
     assert len([c for c in host.inside() if "--broker" in c]) == 1
+
+
+def test_settings_typed_again_that_are_refused_are_asked_once_more(host: Host) -> None:
+    """No login was tried: going on would only fail when the configuration is written."""
+    retry = ["broker.example.org", "no", "x1883", "bridge", "pw"]
+    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "wrong", "yes",
+              "yes", *retry, *retry[:2], "1883", *retry[3:], "1", "", ""]  # fmt: skip
+    result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 4 0"})
+    assert result.returncode == 0, result.stderr
+    assert len(host.dialogs()) == len(dialog)
+    refused = [c for c in host.calls("whiptail") if any("were not accepted" in a for a in c)]
+    assert len(refused) == 1
+    assert "--msgbox" in refused[0]  # no way to go on with them
+    assert any("mqtt.port: not a number" in a for a in refused[0])
+
+
+def test_without_dialogs_refused_settings_stop_before_the_radio_is_read(host: Host) -> None:
+    result = run_installer(host, "--answers", str(answers_file(host)),
+                           env={"BROKER_ANSWERS": "4"})  # fmt: skip
+    assert result.returncode == 1
+    assert "the broker settings were not accepted: configuration error" in result.stderr
+    assert not [c for c in host.inside() if "--list channels" in c]
+
+
+def test_changing_tls_when_typing_again_offers_the_other_port(host: Host) -> None:
+    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "yes",
+              "broker.example.org", "yes", "8883", "bridge", "pw", "1", "", ""]  # fmt: skip
+    result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 0"})
+    assert result.returncode == 0, result.stderr
+    (port,) = [c for c in host.dialogs() if any("MQTT broker port" in a for a in c)]
+    assert port[-1] == "8883"
+    assert (host.config().mqtt.tls, host.config().mqtt.port) == (True, 8883)
+
+
+def test_a_version_without_the_login_check_is_not_taken_for_a_refusal(host: Host) -> None:
+    """--reconfigure uses the program installed in the container, which may be older."""
+    existing_container(host)
+    dialog = ["default", "old.example.org", "bridge", "", "1", ALICE, ALICE, "status"]
+    result = run_installer(host, "--reconfigure", "105", dialog=dialog,
+                           env={"BROKER_ANSWERS": "3"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert len(host.dialogs()) == len(dialog)  # no question about the login
+    assert "cannot check the broker login" in result.stderr
+    assert "Broker:       not checked" in result.stderr
+    assert "warning" not in result.stderr
+
+
+def test_reconfigure_typed_again_can_keep_the_installed_password(host: Host) -> None:
+    existing_container(host)
+    dialog = ["default", "old.example.org", "bridge", "new-but-wrong", "yes",
+              "old.example.org", "no", "1883", "bridge", "",  # typed again: keep the installed one
+              "1", ALICE, ALICE, "status"]  # fmt: skip
+    result = run_installer(host, "--reconfigure", "105", dialog=dialog,
+                           env={"BROKER_ANSWERS": "1 0"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    passwords = [c for c in host.dialogs() if "--passwordbox" in c]
+    assert any("(empty: keep the installed one)" in a for a in passwords[1])
+    assert host.config().mqtt.password == "old-secret"
 
 
 def test_declining_the_confirmation_creates_nothing(host: Host) -> None:

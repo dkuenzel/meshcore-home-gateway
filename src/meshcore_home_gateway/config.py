@@ -6,6 +6,7 @@ silently fall back to a default.
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import re
 import tomllib
@@ -27,7 +28,8 @@ ID_RULE = (
 # would share the entity IDs of 'radio'
 _MERGED_BY_HOME_ASSISTANT = re.compile(r"[-_]{2}|[-_]$")
 TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
-HOST = re.compile(r"[A-Za-z0-9._%:-]+")  # a name, an IPv4 address, or an IPv6 address (with zone)
+# a host name in its ASCII form (also an IPv4 address); a trailing dot names the root
+HOST_NAME = re.compile(r"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*\.?")
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
 MIN_BURST_S = (
@@ -274,19 +276,39 @@ def _radio(s: _Section) -> RadioConfig:
 
 
 def _host(s: _Section, *, required: bool = False) -> str | None:
-    """A host name or address: a URL or `host:port` would only fail when connecting."""
+    """A host name or address. A URL or `host:port` would only fail when connecting; a name that
+    the resolver cannot encode (an empty or overlong part) would end paho's network thread."""
     host = s.string("host", required=required)
-    if host is None or (HOST.fullmatch(host) and host.count(":") != 1):
+    hint = None if host is None else _host_problem(host)
+    if hint is None:
         return host
-    if "://" in host:
-        hint = ", without a scheme such as mqtt:// (TLS and port are settings of their own)"
-    elif host.count(":") == 1 or "]:" in host:
-        hint = ", without the port (that is the setting port)"
-    elif "[" in host:
-        hint = ", an IPv6 address without brackets"
-    else:
-        hint = ""
     raise ConfigError(f"{s.key('host')}: a host name or IP address only{hint}, got {host!r}")
+
+
+def _ipv6_address(host: str) -> bool:
+    address, percent, zone = host.partition("%")
+    try:
+        ipaddress.IPv6Address(address)
+    except ValueError:
+        return False
+    return not percent or HOST_NAME.fullmatch(zone) is not None
+
+
+def _host_problem(host: str) -> str | None:
+    """None for a usable host, else a hint for the message (may be empty)."""
+    if "://" in host:
+        return ", without a scheme such as mqtt:// (TLS and port are settings of their own)"
+    if "]:" in host or (host.count(":") == 1 and "[" not in host):
+        return ", without the port (that is the setting port)"
+    if "[" in host or "]" in host:
+        return ", an IPv6 address without brackets"
+    if ":" in host:  # an IPv6 address, with a zone for a link-local one
+        return None if _ipv6_address(host) else ""
+    try:
+        name = host.encode("idna").decode("ascii")  # what the resolver gets, as Python sends it
+    except UnicodeError:
+        return " (a part between dots is empty or longer than 63 characters)"
+    return None if HOST_NAME.fullmatch(name) else ""
 
 
 def _absolute_path(s: _Section, name: str) -> str | None:

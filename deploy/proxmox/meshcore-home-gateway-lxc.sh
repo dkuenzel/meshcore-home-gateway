@@ -111,7 +111,12 @@ ask() {
     printf '%s' "$default"
     return
   fi
-  local result
+  show_dialog "$kind" "$text" "$default" "$@"
+}
+
+show_dialog() {  # show_dialog KIND TEXT DEFAULT [CHOICE ...]: a dialog, whatever is stored
+  local kind=$1 text=$2 default=$3 result
+  shift 3
   case $kind in
     input)
       result=$(whiptail --title "$TITLE" --inputbox -- "$text" 12 72 "$default" 3>&1 1>&2 2>&3) ;;
@@ -333,21 +338,36 @@ check_settings_in() {  # check_settings_in CTID: with the program installed in t
 }
 
 check_broker() {  # check_broker CTID: log in as the service will, before the radio is read
-  local ctid=$1 reason key
+  local ctid=$1 reason status
   while :; do
-    # the broker's answer goes to stdout, into $reason; another client id than the service's
-    if reason=$(write_answers | in_ct_input "$ctid" bash -c "set -e
+    # with the program in the container, another client id than the service's; its messages go
+    # to stdout, into $reason. Exit 3: that version has no login check; 4: settings refused
+    status=0
+    reason=$(write_answers | in_ct_input "$ctid" bash -c "set -e
         umask 077
         dir=\$(mktemp -d)
         trap 'rm -rf \$dir' EXIT
         cat >\$dir/answers
+        meshcore-home-gateway check-config --help | grep -e --broker >/dev/null || exit 3
         meshcore-home-gateway config render --answers \$dir/answers \
-          --output \$dir/login.toml 2>&1 >/dev/null
-        meshcore-home-gateway check-config --config \$dir/login.toml --broker 2>&1 >/dev/null"); then
-      BROKER_LOGIN="login accepted"
-      return 0
-    fi
+          --output \$dir/login.toml 2>&1 >/dev/null || exit 4
+        meshcore-home-gateway check-config --config \$dir/login.toml --broker 2>&1 >/dev/null") \
+      || status=$?
     reason=${reason//meshcore-home-gateway: /}
+    case $status in
+      0) BROKER_LOGIN="login accepted"; return 0 ;;
+      3)  # --reconfigure keeps the installed version
+        log "meshcore-home-gateway $VERSION in container $ctid cannot check the broker login"
+        BROKER_LOGIN="not checked (version $VERSION cannot; check after --update)"
+        return 0 ;;
+      4)  # a value typed again: no login was tried
+        (( INTERACTIVE )) || die "the broker settings were not accepted: $reason"
+        whiptail --title "$TITLE" --msgbox -- "The broker settings were not accepted:
+
+$reason" 16 78 >&2 || true
+        ask_broker_again
+        continue ;;
+    esac
     if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "The broker login failed:
 
 $reason
@@ -359,10 +379,7 @@ the settings later.)" 20 78 >&2; then
       BROKER_LOGIN="login failed (see above), the service keeps trying"
       return 0
     fi
-    for key in mqtt.host mqtt.tls mqtt.port mqtt.username; do  # what was just given: the defaults
-      CURRENT[$key]=${OUT[$key]-}
-    done
-    ask_broker all
+    ask_broker_again
   done
 }
 
@@ -648,13 +665,12 @@ ask_radio() {
   fi
 }
 
-ask_broker() {  # ask_broker [all]: address and login; "all" asks also what the default setup skips
-  local tls password user ask_more=ask_advanced
-  if [[ ${1-} == all ]]; then ask_more=ask; fi
+ask_broker() {  # address and login
+  local tls password user
   OUT[mqtt.host]=$(ask_required mqtt.host "MQTT broker: host name or IP address (no mqtt://)" "")
-  tls=$($ask_more mqtt.tls yesno "Use TLS for the broker connection?" "false")
+  tls=$(ask_advanced mqtt.tls yesno "Use TLS for the broker connection?" "false")
   OUT[mqtt.tls]=$tls
-  OUT[mqtt.port]=$($ask_more mqtt.port input "MQTT broker port" \
+  OUT[mqtt.port]=$(ask_advanced mqtt.port input "MQTT broker port" \
     "$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)")
   # no suggested name in the field: whiptail adds what is typed to it instead of replacing it
   user=$(ask mqtt.username input \
@@ -673,6 +689,36 @@ ask_broker() {  # ask_broker [all]: address and login; "all" asks also what the 
     if (( INTERACTIVE )) || [[ -v "ANSWERS[mqtt.password]" ]]; then
       password=$(ask mqtt.password password "Password of MQTT user '$user' (empty: none)" "")
     fi
+    if [[ -n $password ]]; then OUT[mqtt.password]=$password; else unset 'OUT[mqtt.password]'; fi
+  fi
+}
+
+ask_broker_again() {  # after a refused login, with dialogs: every broker setting
+  local host=${OUT[mqtt.host]-} previous=${OUT[mqtt.tls]-false} was=${OUT[mqtt.username]-}
+  local tls port user password before=""
+  if [[ -n $was ]]; then before=" (it was '$was')"; fi
+  OUT[mqtt.host]=""
+  while [[ -z ${OUT[mqtt.host]} ]]; do
+    OUT[mqtt.host]=$(show_dialog input "MQTT broker: host name or IP address (no mqtt://)" "$host")
+  done
+  tls=$(show_dialog yesno "Use TLS for the broker connection?" "$previous")
+  OUT[mqtt.tls]=$tls
+  port=${OUT[mqtt.port]-}
+  if [[ $tls != "$previous" && ( -z $port || $port == 1883 || $port == 8883 ) ]]; then
+    port=$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)   # the other default
+  fi
+  OUT[mqtt.port]=$(show_dialog input "MQTT broker port" "$port")
+  # empty, not the refused name: whiptail adds what is typed to a field's content
+  user=$(show_dialog input "MQTT user name as set up on the broker$before; empty: none" "")
+  OUT[mqtt.username]=$user
+  if [[ -z $user ]]; then
+    unset 'OUT[mqtt.password]'
+  elif [[ -v "CURRENT[mqtt.password]" && $user == "${CURRENT[mqtt.username]-}" ]]; then
+    password=$(show_dialog password \
+      "Password of MQTT user '$user' (empty: keep the installed one)" "")
+    OUT[mqtt.password]=${password:-${CURRENT[mqtt.password]}}
+  else
+    password=$(show_dialog password "Password of MQTT user '$user' (empty: none)" "")
     if [[ -n $password ]]; then OUT[mqtt.password]=$password; else unset 'OUT[mqtt.password]'; fi
   fi
 }
@@ -866,7 +912,7 @@ summary() {  # commands for the user: pct exec takes the host's PATH, which may 
   fi
   text="meshcore-home-gateway $VERSION runs in container $ctid.
 
-Broker:       ${OUT[mqtt.host]}:${OUT[mqtt.port]}, $(login_text): $BROKER_LOGIN
+Broker:       ${BROKER_LOGIN:-login not checked}
 Logs:         pct exec $ctid -- journalctl -u meshcore-home-gateway -f
 Check:        pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config
 Reconfigure:  $(invocation) --reconfigure $ctid
@@ -878,7 +924,9 @@ The container starts only while the radio is plugged in.
 After re-plugging the radio: pct reboot $ctid"
   fi
   log "$text"
-  if (( INTERACTIVE )); then whiptail --title "$TITLE" --msgbox -- "$text" 20 78 >&2 || true; fi
+  if (( INTERACTIVE )); then  # 22 rows hold it with the wrapped commands; with --scrolltext, Enter
+    whiptail --title "$TITLE" --msgbox -- "$text" 22 78 >&2 || true   # would not close the box
+  fi
 }
 
 # --- modes ----------------------------------------------------------------------------------
