@@ -70,8 +70,44 @@ def prepare_text(text: str, policy: TextPolicy) -> str:
         raise TextRejectedError(
             "too_long", f"text too long: {len(encoded)} bytes, limit {policy.max_bytes}"
         )
-    keep = encoded[: policy.max_bytes - len(ELLIPSIS)].decode("utf-8", errors="ignore")
-    return keep.rstrip() + ELLIPSIS
+    return _cut(cleaned, policy.max_bytes - len(ELLIPSIS)).rstrip() + ELLIPSIS
+
+
+def _cut(text: str, max_bytes: int) -> str:
+    """The longest start of `text` within `max_bytes` UTF-8 bytes that ends between two whole
+    characters as a reader sees them: a flag, joined emoji, an emoji with its skin tone, a
+    letter with its marks.
+
+    The standard library has no grapheme segmentation (Unicode UAX #29), so `_joined`
+    approximates it for marks, joiners, variation selectors, emoji modifiers, tags and flags. Not
+    covered are Indic conjuncts across a virama, prepended marks and Hangul jamo that NFC left
+    uncomposed: there a cut can still fall inside what reads as one character.
+    """
+    end = len(text.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore"))
+    while 0 < end < len(text) and _joined(text, end):
+        end -= 1
+    return text[:end]
+
+
+_ZWJ = "\u200d"
+_JOINERS = "\u200c\u200d"  # zero-width non-joiner and joiner: part of the character before
+_MARKS = frozenset({"Mn", "Mc", "Me"})  # also variation selectors and the keycap mark
+_REGIONAL_INDICATORS = "".join(map(chr, range(0x1F1E6, 0x1F200)))  # a flag is a pair
+
+
+def _joined(text: str, i: int) -> bool:
+    """True if text[i] belongs to the same character as text[i - 1]."""
+    before, after = text[i - 1], text[i]
+    if after in _JOINERS or before == _ZWJ:  # a zero-width joiner also binds the next emoji
+        return True
+    if unicodedata.category(after) in _MARKS:
+        return True
+    if "\U0001f3fb" <= after <= "\U0001f3ff" or "\U000e0020" <= after <= "\U000e007f":
+        return True  # emoji modifiers (skin tones), tags (flags of regions like Scotland)
+    if before in _REGIONAL_INDICATORS and after in _REGIONAL_INDICATORS:
+        run = i - len(text[:i].rstrip(_REGIONAL_INDICATORS))
+        return run % 2 == 1  # an odd run ends in the first half of a flag
+    return False
 
 
 _SPACES = re.compile(r" {2,}")

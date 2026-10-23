@@ -312,15 +312,18 @@ ciphertext of timestamp, flags and text, padded to 16-byte blocks; for a channel
 channel hash, the MAC and the ciphertext of timestamp, flags, name prefix and text.
 
 Modulation details from the firmware: preamble 32 symbols up to SF 8 and 16 above, CRC on,
-explicit header, low data rate optimisation from 16 ms symbol time. The estimate errs on the high
-side: it counts 4 transport-code bytes on every flood and, for a flooded direct message, the path
-packet the radio sends back after the acknowledgement. The implementation reproduces published
-reference values and RadioLib's own calculation (`tests/test_airtime.py`).
+explicit header, low data rate optimisation from 16 ms symbol time. The estimate counts 4
+transport-code bytes on every flood and, for a flooded direct message, the path packet the radio
+sends back after the acknowledgement, sized for a recipient 4 path bytes away (4 hops with
+one-byte hashes). Up to that distance it errs on the high side; over more hops the path packet
+is larger than counted ([`protocol.md`](protocol.md#6-on-air-sizes)). The implementation
+reproduces published reference values and RadioLib's own calculation (`tests/test_airtime.py`).
 
 The budget is a token bucket over seconds of airtime
 ([ADR 0008](decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)): it holds at
 most `burst_s` (default 10 s) and refills at `budget_s_per_hour` (default 36 s, 1 % of an hour).
-Over any interval *T* the bridge's own transmissions are bounded by `burst_s + budget × T / 3600`.
+Over any interval *T* the bridge's own transmissions are bounded by `burst_s + budget × T / 3600`
+per run of the service: the bucket is not stored, each start begins with a full burst.
 Each attempt of a direct message counts. The radio's other transmissions (acknowledgements it
 sends, adverts, path returns) are not counted; the default leaves 9 percentage points of the 10 %
 EU duty cycle for them.

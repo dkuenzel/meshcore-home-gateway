@@ -63,7 +63,7 @@ The only destinations the bridge sends to; publish to `send/<alias>`. The alias 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `ascii_only` | `false` | transliterate to ASCII (ä → ae, typographic quotes, accents); for handhelds without Unicode fonts |
-| `truncate` | `true` | cut texts above the radio limit and mark them with `...`; `false` rejects them |
+| `truncate` | `true` | cut texts above the radio limit between whole characters (flags and emoji sequences included) and mark them with `...`; `false` rejects them |
 | `dedup_window_s` | `300` | the same text to the same target is sent once per window; `0` disables |
 | `queue_size` | `20` | waiting messages, 1–1000; more are rejected |
 | `queue_ttl_s` | `600` | time to live of a message: never sent within it, it expires; sent but not acknowledged within it, it fails |
@@ -78,7 +78,9 @@ The only destinations the bridge sends to; publish to `send/<alias>`. The alias 
 | `budget_s_per_hour` | `36` | seconds of transmission per hour for the bridge's messages (1 % of the hour) |
 | `burst_s` | `10` | seconds that may be spent at once; at least 5 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
 
-Over any interval *T* the bridge's transmissions stay below `burst_s + budget_s_per_hour × T / 3600`.
+Within one run of the service, the bridge's transmissions over any interval *T* stay below
+`burst_s + budget_s_per_hour × T / 3600`. The budget is not stored: each start begins with a full
+burst, so every restart within *T* adds up to `burst_s`.
 The radio's own traffic (acknowledgements it sends, adverts) is not counted; in the EU band
 869.40–869.65 MHz the device limit is 10 % of every hour. The radio has its own limiter, the
 *airtime factor*, which defaults to 50 % (docs/protocol.md, section 7).

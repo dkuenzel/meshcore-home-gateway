@@ -69,7 +69,9 @@ HEADER_BYTES = 1
 PATH_LEN_BYTES = 1
 TRANSPORT_CODE_BYTES = 4  # only on floods with an active flood scope; counted to stay safe
 CIPHER_BLOCK = 16
-RECIPROCAL_PATH_BYTES = 26  # path packet the radio returns after a flooded acknowledgement
+# Path packet the radio returns after a flooded acknowledgement, sized for a way back of 4 path
+# bytes (4 hops with one-byte hashes); a longer way makes it larger (docs/protocol.md).
+RECIPROCAL_PATH_BYTES = 26
 
 
 def meshcore_preamble(spreading_factor: int) -> int:
@@ -97,7 +99,7 @@ def channel_message_bytes(text_bytes: int, name_bytes: int) -> int:
 
 def direct_attempt_airtime_s(text_bytes: int, path_bytes: int, flood: bool, p: LoRaParams) -> float:
     """Airtime this radio spends on one attempt of a direct message, including the path packet
-    it sends back after a flooded acknowledgement."""
+    it sends back after a flooded acknowledgement (estimated as RECIPROCAL_PATH_BYTES)."""
     airtime = time_on_air_s(direct_message_bytes(text_bytes, path_bytes, flood), p)
     if flood:
         airtime += time_on_air_s(RECIPROCAL_PATH_BYTES, p)

@@ -1,4 +1,4 @@
-"""Airtime budget and deduplication for outgoing messages (ADR 0008).
+"""Airtime budget for outgoing messages and deduplication of repeated messages (ADR 0008).
 
 Both take the current time as an argument, so tests control the clock. Times are seconds from
 any monotonic origin.
@@ -18,6 +18,8 @@ class AirtimeBudget:
 
     The bucket holds at most `burst_s` seconds and refills at `per_hour_s` seconds per hour, so
     over any interval T the bridge transmits at most burst_s + per_hour_s * T / 3600 seconds.
+    That holds per bucket: a new one starts full, and the bridge creates one at every start of
+    the service, so each restart within T adds up to burst_s.
     """
 
     def __init__(self, per_hour_s: float, burst_s: float, now: float) -> None:
@@ -70,10 +72,12 @@ class AirtimeBudget:
 
 
 class Deduplicator:
-    """Suppresses the same key (target, text) within a window: one message per cause.
+    """Suppresses a repeated key within a window: one message per cause.
 
-    A duplicate does not extend the window, so a condition that keeps firing produces one
-    message per window rather than none.
+    A key is any hashable value; the bridge uses (alias, text) for send requests and the sender,
+    its timestamp and the text for received messages, whose retries arrive as repeats. A
+    duplicate does not extend the window, so a condition that keeps firing produces one message
+    per window rather than none.
     """
 
     def __init__(self, window_s: float) -> None:
@@ -96,7 +100,9 @@ class Deduplicator:
         return False
 
     def forget(self, key: Hashable) -> None:
-        """Undo an acceptance whose request was not taken after all (full queue)."""
+        """Undo an acceptance whose message was not taken after all, so that a repeat gets
+        through (a send request refused for a full queue, a command refused for a transient
+        reason)."""
         self._accepted.pop(key, None)
 
     def _prune(self, now: float) -> None:
