@@ -79,11 +79,17 @@ all. On a dashboard, a Markdown card shows the last message:
 ```yaml
 type: markdown
 title: Last mesh message
-content: >-
+content: |-
   {% set e = 'event.meshcore_home_gateway_radio1_message' %}
-  {% if state_attr(e, 'text') is not none %}**{{ state_attr(e, 'sender_name') }}**:
-  {{ state_attr(e, 'text') }}{% else %}none yet{% endif %}
+  {% set text = state_attr(e, 'text') %}
+  {% if text is none %}none yet{% else %}<div><b>{{ (state_attr(e, 'sender_name') or '?') | e }}</b>: {{ text | e | replace('\r', ' ') | replace('\n', ' ') }}</div>{% endif %}
 ```
+
+Anyone in radio range chooses a message's text and a channel sender's name, so the card escapes
+them and keeps them in an HTML block on one line: in Markdown, even an escaped text such as
+`![](https://example.org/pixel.png)` or `[here](https://example.org)` becomes an image that the
+browser loads or a link, and a blank line would end the block
+([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 
 **Send a message.** Each target is a notify entity, *Send to <alias>*; it shows *unknown* until it
 sends for the first time. It has no input field of its own: it sends with the action
