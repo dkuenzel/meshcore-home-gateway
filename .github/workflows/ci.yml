@@ -64,7 +64,6 @@ jobs:
           python-version: "3.13"
       - name: Static checks
         run: make lint shellcheck workflows
-      - name: Build wheel, sdist and zipapp
-        run: make dist
-      - name: Verify the systemd unit and its exposure score
-        run: make unit-check
+      # One invocation: unit-check takes the zipapp that dist builds.
+      - name: Build wheel, sdist and zipapp, verify the systemd unit and its exposure score
+        run: make dist unit-check

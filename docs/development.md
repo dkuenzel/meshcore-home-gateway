@@ -7,8 +7,8 @@ facts) are in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ```sh
 make venv    # .venv with the hash-pinned tools from requirements/dev.txt and the package (editable)
-make hooks   # pre-push hook: make check
-make matrix  # tests with every installed Python from 3.11 to 3.14, each in its own .venv-python3.X
+make hooks   # pre-push hook: make check on the commit to push (refuses uncommitted changes)
+make matrix  # tests with each Python from 3.11 to 3.14, each in its own .venv-python3.X
 make help    # all targets
 ```
 
@@ -68,7 +68,10 @@ the newest release of every tool that is at least `COOLDOWN_DAYS` (14) old. `mak
 same for the Home Assistant test environment (`home-assistant/requirements.in`, one pinned
 `pytest-homeassistant-custom-component`, which pins Home Assistant); after a Home Assistant update,
 run `make ha-test` and adjust "tested with" in `docs/home-assistant.md`. Review the diff like code. GitHub Actions are
-pinned to commit SHAs; Dependabot proposes updates with the same cooldown.
+pinned to commit SHAs; Dependabot proposes updates with the same cooldown. `paho-mqtt` stays at the
+version of Debian 13 (ADR 0005), and Dependabot ignores it: raise it with the deployment target.
+A changed lock file gives `make venv` a fresh environment, so that no package the lock dropped
+stays installed.
 
 ## Release
 

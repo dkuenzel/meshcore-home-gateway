@@ -141,7 +141,7 @@ separate setting on the radio.
 ```sh
 make venv hooks   # tools from the hash-pinned lock file, pre-push hook
 make check        # what CI runs: ruff, mypy --strict, shellcheck, zizmor, tests, build, unit check
-make matrix       # the tests with every installed Python from 3.11 to 3.14, like the CI matrix
+make matrix       # the tests with each Python from 3.11 to 3.14 (all installed), like CI
 ```
 
 Test-driven, with an emulated radio and a real `mosquitto` in the tests. Contributions are
