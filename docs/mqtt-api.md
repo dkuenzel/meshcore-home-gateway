@@ -66,8 +66,9 @@ the send topics gets no event for the excess, which the log counts (at most once
 `id` is a random identifier per request. In final events, `attempt` is the number of
 transmissions so far (0 if the message never left). Retries of a direct message keep the radio
 timestamp, so a recipient that got the message but whose acknowledgement was lost may show it
-twice; the same holds for an attempt that a radio disconnect interrupted after the radio had sent
-it.
+twice. An attempt that a radio disconnect interrupted after the radio had sent it is repeated as
+the identical packet: nodes that saw the first copy drop it, so it earns no acknowledgement, and
+the next attempt may show the message twice the same way.
 
 ## Received messages: `received`
 

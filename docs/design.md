@@ -71,7 +71,7 @@ status, Home Assistant discovery, deployment on Proxmox VE and on any systemd-ba
 | --- | --- |
 | F1 | A UTF-8 text published to `<base>/<node>/send/<alias>` is sent to the target `<alias>`. Unknown aliases are rejected with a delivery event. |
 | F2 | Texts are cleaned (control characters, spaces), optionally transliterated to ASCII, and limited to the byte limit of the target type; too long texts are truncated (marked `...`) or rejected. |
-| F3 | Direct messages are retried until acknowledged, up to `max_attempts`; from attempt `flood_after` on the stored path is reset so the message floods. |
+| F3 | Direct messages are retried until acknowledged, up to `max_attempts`; after `flood_after` unacknowledged attempts the stored path is reset so the next attempt floods. |
 | F4 | Messages wait in a bounded queue for the radio and for airtime; after `queue_ttl_s` they expire. |
 | F5 | The same text to the same target within `dedup_window_s` is sent once. |
 | F6 | Every received message is published on `received`, with sender, channel, signal and the command verdict. |
@@ -216,24 +216,30 @@ sequenceDiagram
     R-->>B: DEVICE_INFO (firmware, limits, model)
     B->>R: GET_AUTOADD_CONFIG
     R-->>B: AUTOADD_CONFIG (or ERR on older firmware)
-    B->>R: GET_DEVICE_TIME
-    R-->>B: CURR_TIME
-    opt radio clock behind and set_clock
-        B->>R: SET_DEVICE_TIME (now)
-        R-->>B: OK
+    opt set_clock
+        B->>R: GET_DEVICE_TIME
+        R-->>B: CURR_TIME
+        opt radio clock behind
+            B->>R: SET_DEVICE_TIME (now)
+            R-->>B: OK
+        end
     end
     B->>R: GET_CONTACTS, GET_CHANNEL (each index)
     R-->>B: contacts, channel names
+    B->>R: GET_BATT_AND_STORAGE
+    R-->>B: BATT_AND_STORAGE
     loop until NO_MORE_MESSAGES
         B->>R: SYNC_NEXT_MESSAGE
         R-->>B: CONTACT_MSG_RECV_V3 / CHANNEL_MSG_RECV_V3
     end
-    Note over B,R: connected: pushes MSG_WAITING, SEND_CONFIRMED, LOG_RX_DATA,<br/>ADVERT, NEW_ADVERT, PATH_UPDATED, CONTACT_DELETED
+    Note over B,R: connected: pushes MSG_WAITING, SEND_CONFIRMED, LOG_RX_DATA,<br/>ADVERT, NEW_ADVERT, PATH_UPDATED,<br/>CONTACT_DELETED, CONTACTS_FULL
 ```
 
-* **Clock.** The firmware only moves its clock forward. If the radio is ahead of the bridge by more
-  than 60 s the bridge logs a warning; command age checks may then reject commands until the clock
-  is right (visible as `too_old` or `from_the_future`).
+* **Clock.** With `set_clock` (the default) the session reads the radio clock at connect and sets
+  it when it is behind; the firmware only moves its clock forward. If the radio is ahead of the
+  bridge by more than 60 s the bridge logs a warning; command age checks may then reject commands
+  until the clock is right (visible as `too_old` or `from_the_future`). Without `set_clock` the
+  clock is neither read nor checked.
 * **Messages.** On `MSG_WAITING`, after connecting, and every 5 minutes as a safety net, the session
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
@@ -294,7 +300,9 @@ sequenceDiagram
    a time to live of `queue_ttl_s`. A message that never left within that time is `expired`:
    `no_radio` (radio disconnected), `queue_ttl` (waited behind other messages) or
    `airtime_budget`. A message that left at least once and runs out of time is `failed` with
-   `no_acknowledgement`.
+   `no_acknowledgement`. No attempt starts after the time to live, but the acknowledgement wait of
+   the last one runs to its end (step 7), so a late acknowledgement still confirms the message and
+   the final event can come up to 60 s after `queue_ttl_s`.
 6. **Airtime.** Before each transmission the bridge estimates the packet's time on air (§6.3) and
    waits until the budget allows it; if the wait would exceed the remaining time to live, the
    message expires. A packet longer than `burst_s` could never be sent: it fails at once
@@ -308,8 +316,11 @@ sequenceDiagram
    Late acknowledgements of earlier attempts still count. After `max_attempts` the state is
    `failed`. A recipient whose acknowledgement got lost receives the retry as a second message;
    the firmware does not deduplicate it. An attempt interrupted by a radio error (disconnect,
-   timeout) is repeated with the same number once the radio is back, within the time to live; if
-   the radio had already sent it, the recipient gets it twice. The radio's own refusals (ERR,
+   timeout) is repeated with the same number once the radio is back, within the time to live. If the
+   radio had already sent it, the repeat is the identical packet, and nodes that saw the first copy
+   drop it ([`protocol.md`](protocol.md#5-semantics)): a channel message arrives once; a direct
+   message's repeat earns no acknowledgement, so the bridge waits out its timeout and the next
+   attempt may show up at the recipient as a second message. The radio's own refusals (ERR,
    `disabled`) end the delivery as `failed` with the error name.
 
 Messages leave strictly in arrival order, one at a time. A message waiting for an acknowledgement
@@ -469,7 +480,7 @@ systemd unit does not restart on it).
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
 | Retained send request re-sent on every reconnect | A retained request published while the bridge is connected arrives without the flag (MQTT 3.1.1) and is sent once; the copy the broker keeps arrives flagged at every later connection (reconnect or restart) and is rejected (`reason: retained`), not sent. Clear it with an empty retained message on the same topic. |
 | Forged events on the bridge's topics by another broker client (a fake `command` event triggers automations as if an allowlisted sender had sent it) | Topic ACLs: only the bridge user may publish below `<base>/<node>/`, except `send/`. Required when commands are configured (mqtt-api.md, last section); the sender check protects only the radio side. |
-| Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
+| Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Nor does the bridge authenticate the radio: a host that takes the radio's address (ARP or DNS spoofing, or while the radio is off) can present an allowlisted key as a contact and forge accepted commands, and it receives the outgoing messages. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
 | Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` with the release workflow and the tag check them (ADR 0013); tag protection keeps others from tagging. |
@@ -536,7 +547,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   With `max_age_s` of an hour or less (the default is 15 minutes), only a restart within that
   time leaves this gap.
 * Over TCP, pushes can be lost while the radio's send queue is full; a look-alike that enters and
-  leaves the table between two table reads can then go unseen. Commands should use USB.
+  leaves the table between two table reads can then go unseen. The link is not authenticated
+  either: whoever answers on the radio's address is the radio to the bridge, so a host that takes
+  that address can forge commands from an allowlisted key. Commands should use USB, or a network
+  that only the bridge and the radio can reach.
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
@@ -550,7 +564,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | --- | --- | --- | --- |
 | Radio unplugged or rebooted | read error, command timeout | session closed, reconnect with back-off; queue waits; an interrupted attempt is repeated | `state.radio = disconnected`; connectivity entity off |
 | Malformed or unexpected answer | decoding | session closed, resynchronised on reconnect | log warning |
-| Radio clock wrong | `CURR_TIME` vs bridge clock | set forward; warn if ahead | log warning; command rejections `too_old` / `from_the_future` |
+| Radio clock wrong | `CURR_TIME` vs bridge clock | with `set_clock`: set forward; warn if ahead | log warning; command rejections `too_old` / `from_the_future` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
 | Bridge crashes or restarts | systemd | restart after 5 s; queued outgoing messages are lost; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; no delivery state for lost messages |
@@ -590,7 +604,9 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * **Update:** `meshcore-home-gateway-lxc.sh --update <id>` builds the new zipapp under a temporary
   name next to the old one, checks the current configuration with it, then moves it to its versioned
   name, switches the symlink and restarts; a failed check leaves the old version active, also when
-  the version string did not change, and rollback switches the symlink back. `--reconfigure <id>`
+  the version string did not change. Rollback switches the symlink back to a version still
+  installed; an update with an unchanged version string replaces that version's file, and the unit
+  file the update installed stays in place (it is not rolled back). `--reconfigure <id>`
   runs the dialogs again with the current settings as defaults (`meshcore-home-gateway config
   answers`) and keeps the settings it does not ask for, and targets or command senders the radio no
   longer offers; `--answers <file>` installs without dialogs.

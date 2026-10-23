@@ -39,7 +39,7 @@ dedup_window_s = 300                                   # same target and text: o
 queue_size = 20
 queue_ttl_s = 600                                      # give up on messages older than this
 max_attempts = 3                                       # direct messages: sends until acknowledged
-flood_after = 2                                        # from this attempt on, reset the path (flood)
+flood_after = 2                                        # unanswered sends, then path reset (flood)
 ignore_channels = []                                   # channel indices not to publish
 
 [airtime]

@@ -184,9 +184,11 @@ pct stop 105 && pct destroy 105
   answers for them (`radio.choice`, `ct.*`) stop the script. A TCP radio's address changes with
   the settings `radio.host` and `radio.port` in an answers file; a serial radio under a new name is
   passed through again by hand (see Troubleshooting).
-* **Roll back** works for versions that are still in `/usr/local/lib/meshcore-home-gateway/`;
-  every update keeps the earlier files. Check the configuration with the old version first
-  (`pct exec 105 -- python3 -I
+* **Roll back** works for versions that are still in `/usr/local/lib/meshcore-home-gateway/`.
+  An update keeps the files of other versions, but replaces the file of its own version: after an
+  update with an unchanged version string (a checkout of `main` between two releases) there is
+  nothing to roll back to. The unit file is not rolled back: the one the update installed stays.
+  Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
 

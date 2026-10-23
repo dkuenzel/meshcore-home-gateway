@@ -233,6 +233,21 @@ def test_unacknowledged_message_is_retried_then_flooded_then_failed(tmp_path: Pa
     scenario(main)
 
 
+def test_flood_after_equal_to_max_attempts_never_floods(tmp_path: Path) -> None:
+    """`flood_after` counts unanswered attempts before the reset: none is left to flood."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    config = make_config(messages="max_attempts = 3\nflood_after = 3")
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            bus.send("bob", "Are you there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "failed")
+            assert [t.attempt for t in radio.texts] == [0, 1, 2]
+            assert radio.path_resets == []
+
+    scenario(main)
+
+
 def test_late_acknowledgement_of_an_earlier_attempt_counts(tmp_path: Path) -> None:
     radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
 
@@ -543,6 +558,30 @@ def test_running_out_of_time_after_sending_is_a_failure(
                 "/delivery", lambda d: d["text"] == "late" and d["event_type"] in FINAL, 5
             )
             assert (late["event_type"], late["reason"]) == ("expired", "queue_ttl")
+
+    scenario(main)
+
+
+def test_last_attempt_waits_for_its_acknowledgement_past_the_time_to_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No attempt starts after `queue_ttl_s`, but the last one still waits for its acknowledgement:
+    one that arrives after the time to live confirms the message."""
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 2.0)
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 2.0)
+    radio = EmulatedRadio(contacts=[ALICE], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(messages="queue_ttl_s = 1"), radio, tmp_path) as (_, bus, _):
+            bus.send("alice", "slow")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            await asyncio.sleep(1.2)  # past the time to live, within the acknowledgement wait
+            from meshcore_home_gateway.protocol.codec import expected_ack
+
+            radio.acknowledge(expected_ack(NOW, 0, "slow", SELF_KEY), 3000)
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
+            assert (done["event_type"], done["attempt"], done["rtt_ms"]) == ("confirmed", 1, 3000)
+            assert len(radio.texts) == 1
 
     scenario(main)
 
