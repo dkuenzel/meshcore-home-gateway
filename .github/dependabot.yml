@@ -21,3 +21,14 @@ updates:
     groups:
       dev-tools:
         patterns: ["*"]
+
+  # The Home Assistant test environment: only the plugin, which pins one Home Assistant release.
+  # Regenerate the lock file in the pull request with `make ha-lock`.
+  - package-ecosystem: pip
+    directory: /home-assistant
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    allow:
+      - dependency-name: pytest-homeassistant-custom-component

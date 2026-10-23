@@ -10,10 +10,14 @@ PYTHONS ?= python3.11 python3.12 python3.13 python3.14
 VENV ?= .venv
 BIN := $(VENV)/bin
 COOLDOWN_DAYS ?= 14
+# Home Assistant contract tests: their own environment, pinned in home-assistant/requirements.txt
+HA_PYTHON ?= python3.14
+HA_VENV ?= .venv-homeassistant
 PYZ := meshcore-home-gateway.pyz
 UNIT := meshcore-home-gateway.service
 
-.PHONY: help venv lock lint shellcheck workflows unit-check test matrix dist pyz release check hooks clean
+.PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test dist pyz \
+  release check hooks clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-11s %s\n", $$1, $$2}'
@@ -30,6 +34,11 @@ lock: ## Re-resolve requirements/dev.txt with uv: the newest releases older than
 	uv pip compile requirements/dev.in --universal --python-version 3.11 --generate-hashes --upgrade \
 	  --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
 	  --output-file requirements/dev.txt
+
+ha-lock: ## Re-resolve home-assistant/requirements.txt, only releases older than COOLDOWN_DAYS
+	uv pip compile home-assistant/requirements.in --universal --python-version 3.14.2 \
+	  --generate-hashes --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
+	  --output-file home-assistant/requirements.txt
 
 lint: venv ## ruff lint and format check, mypy --strict
 	$(BIN)/ruff check .
@@ -55,6 +64,16 @@ matrix: ## `make test` with every Python in PYTHONS that is installed (as the CI
 	  $(MAKE) --no-print-directory test PYTHON=$$python VENV=.venv-$$python || failed="$$failed $$python"; \
 	done; \
 	if [ -n "$$failed" ]; then echo "matrix: failed with$$failed"; exit 1; fi; echo "matrix: all passed"
+
+$(HA_VENV)/.installed: home-assistant/requirements.txt
+	$(HA_PYTHON) -m venv $(HA_VENV)
+	$(HA_VENV)/bin/python -m pip install --quiet --require-hashes --no-deps \
+	  -r home-assistant/requirements.txt
+	touch $@
+
+ha-test: $(HA_VENV)/.installed ## Contract tests against the pinned Home Assistant (Python 3.14.2+)
+	$(HA_VENV)/bin/python -m pytest -c home-assistant/pytest.ini -p no:cacheprovider \
+	  home-assistant/tests
 
 unit-check: pyz ## systemd-analyze: verify the unit, exposure score at most 2.0
 	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
@@ -90,7 +109,7 @@ release: venv ## Release files in dist/release: zipapp, wheel, sdist, SHA256SUMS
 	    echo "release: dry run without a changelog section for $$version" >&2; fi; \
 	  cd dist/release && sha256sum -- * >SHA256SUMS && cat SHA256SUMS
 
-check: lint shellcheck workflows test dist unit-check ## Everything CI runs
+check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test
 
 hooks: ## Run `make check` before every push
 	git config core.hooksPath .githooks

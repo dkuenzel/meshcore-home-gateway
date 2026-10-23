@@ -8,7 +8,7 @@ action *Send a notification message*.
 
 ## Requirements
 
-* Home Assistant 2026.8 or newer, tested with 2026.10.2.
+* Home Assistant 2026.8 or newer, tested with 2026.10.
 * The MQTT integration connected to the same broker, with discovery and the birth message enabled
   (both are the defaults).
 * In the gateway configuration: `homeassistant.discovery = true` (the default), `prefix` equal to
@@ -74,11 +74,13 @@ An entities card shows an attribute, such as the text of the last message, witho
   through the notify entities rather than `mqtt.publish`, which since 2026.10 needs an
   administrator when a user starts it.
 
-These rules were checked against Home Assistant 2026.10.2: the MQTT discovery schema in
-`homeassistant/components/mqtt/` (`schemas.py`, `discovery.py`, `event.py`, `notify.py`), and the
-documents of this version run through the real MQTT integration
-(`pytest-homeassistant-custom-component` 0.13.373): entity IDs, device page, attributes, removal,
-and the examples below.
+These rules come from Home Assistant's MQTT discovery code (`homeassistant/components/mqtt/`:
+`schemas.py`, `discovery.py`, `event.py`, `notify.py`). The contract tests in
+[`home-assistant/tests/`](../home-assistant/tests/test_contract.py) check them with the real MQTT
+integration of the release pinned in
+[`home-assistant/requirements.in`](../home-assistant/requirements.in): the entity IDs above, the
+device page, sensors and attributes, availability, the removal of components, and the examples
+below exactly as written here (`make ha-test`, [testing.md](testing.md)).
 
 ## Examples
 

@@ -1,0 +1,3 @@
+# Test environment for the Home Assistant contract tests (`make ha-test`, docs/testing.md).
+# The plugin pins one Home Assistant release; update it here and run `make ha-lock`.
+pytest-homeassistant-custom-component==0.13.371
