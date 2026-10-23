@@ -130,3 +130,18 @@ def test_a_text_without_visible_characters_is_rejected(text: str) -> None:
     with pytest.raises(TextRejectedError) as rejected:
         prepare_text(text, TextPolicy(160))
     assert rejected.value.reason == "empty"
+
+
+@pytest.mark.parametrize(
+    ("text", "max_bytes", "expected"),
+    [
+        ("Hi \u0e19\u0e49\u0e33 more text here", 12, "Hi..."),  # Thai sara am
+        ("Hi \u0ea5\u0eb3 more text", 11, "Hi..."),  # Lao am
+        ("ok \uff76\uff9e" + "xyz" * 30, 9, "ok..."),  # halfwidth katakana voiced mark
+    ],
+)
+def test_truncation_keeps_signs_that_follow_their_letter(
+    text: str, max_bytes: int, expected: str
+) -> None:
+    """These belong to the letter before them although they are no marks (Unicode UAX #29)."""
+    assert prepare_text(text, TextPolicy(max_bytes)) == expected

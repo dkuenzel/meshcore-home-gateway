@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import time
@@ -1196,7 +1197,8 @@ def test_unwritable_state_file_rejects_the_command_and_keeps_the_service(
     scenario(main)
 
 
-def test_retry_of_an_unverified_command_is_judged_again(tmp_path: Path) -> None:
+def test_a_command_sent_anew_after_an_unverified_one_is_judged_again(tmp_path: Path) -> None:
+    """The identical copy (a retry or a replay, which look the same) stays a duplicate."""
     radio = EmulatedRadio(contacts=[ALICE])
 
     async def main() -> None:
@@ -1204,8 +1206,10 @@ def test_retry_of_an_unverified_command_is_judged_again(tmp_path: Path) -> None:
             radio.errors[Command.GET_CONTACTS] = 1
             radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)
             await bus.wait_for("/received", lambda r: r["command"]["reason"] == "sender_unverified")
-            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 4)  # sent again
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)  # identical
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 4)  # sent anew
             await bus.wait_for("/command", lambda c: True)
+            assert len(bus.payloads("/received")) == 2  # the identical copy gave no event
 
     scenario(main)
 
@@ -1553,5 +1557,135 @@ def test_a_removal_binds_the_component_first(tmp_path: Path) -> None:
             assert first["unique_id"] == "meshcore_home_gateway_radio1_send_old"
             assert second == {"p": "notify"}
             assert documents[0]["cmps"]["radio"] == documents[1]["cmps"]["radio"]
+
+    scenario(main)
+
+
+def test_a_look_alike_added_during_the_airtime_wait_does_not_get_the_message(
+    tmp_path: Path,
+) -> None:
+    """The target is resolved again after waiting for airtime, which can take minutes."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], manual_add=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
+            bridge._budget._tokens, bridge._budget._rate = 0.0, 1.0  # waits about its airtime
+            bus.send("alice", "Alarm")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+            await asyncio.sleep(0.1)  # the outbox waits for airtime now
+            assert radio.texts == []
+            radio.contacts.insert(0, TWIN)  # added in an earlier slot than Alice
+            radio.emit(bytes([Push.ADVERT]) + TWIN.public_key)
+            final = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL, 5)
+            assert (final["event_type"], final["reason"]) == ("failed", "ambiguous_target")
+            assert radio.texts == []
+
+    scenario(main)
+
+
+class InFlightRadio(EmulatedRadio):
+    """Takes a message out of its queue when SYNC_NEXT_MESSAGE arrives, as the firmware does; the
+    answer reaches the host a few milliseconds later (the transfer time)."""
+
+    armed = False
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.synced = asyncio.Event()
+
+    def _handle(self, p: bytes) -> None:
+        if self.armed and p[0] == Command.SYNC_NEXT_MESSAGE and self.queue:
+            self.received.append(p)
+            asyncio.get_running_loop().call_later(0.005, self.emit, self.queue.pop(0))
+            self.synced.set()
+            return
+        super()._handle(p)
+
+
+def test_a_message_whose_answer_is_on_its_way_at_stop_is_published(tmp_path: Path) -> None:
+    """The radio has already taken it out of its queue: lost if the stop does not wait for it."""
+    radio = InFlightRadio(contacts=[ALICE, BOB])
+    bus = FakeBus()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, bus=bus):
+            radio.armed = True
+            radio.queue_direct_message(BOB.public_key[:6], "hello", NOW - 4)
+            await asyncio.wait_for(radio.synced.wait(), 3)
+            assert not radio.queue  # the stop begins while the answer is on its way
+
+    scenario(main)
+    assert [r["text"] for r in bus.payloads("/received")] == ["hello"]
+
+
+def test_a_long_channel_text_accepted_before_the_first_connect_is_deduplicated(
+    tmp_path: Path,
+) -> None:
+    """Shortened for the radio's name only when it is sent; the same request again is still a
+    duplicate of the text that went out."""
+    radio = EmulatedRadio()
+    plugged: list[bool] = []
+
+    def transport() -> Transport:
+        return radio if plugged else Unreachable()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, transport=transport) as (_, bus, _n):
+            bus.send("alerts", "b" * 200)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+            plugged.append(True)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent", 5)
+            since = len(bus.payloads("/delivery"))
+            bus.send("alerts", "b" * 200)  # well within dedup_window_s
+            second = await bus.wait_for(
+                "/delivery", lambda d: d["event_type"] in FINAL | {"queued"}, 3, since=since
+            )
+            assert second["event_type"] == "duplicate"
+            assert len(radio.channel_texts) == 1
+
+    scenario(main)
+
+
+@pytest.mark.parametrize("at_connect", [True, False], ids=["at-connect", "table-read-failed"])
+def test_a_rejected_command_cannot_be_replayed_while_its_age_window_lasts(
+    tmp_path: Path, at_connect: bool
+) -> None:
+    """With max_age_s = 3600 and the sender's clock 3000 s ahead, a copy passes the age check
+    until 6600 s after the original: the duplicate memory must last that long."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    sent = NOW + 3000
+    if at_connect:
+        radio.queue_direct_message(ALICE.public_key[:6], "arm", sent, push=False)
+    offset = [0.0]
+    config = make_config()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, max_age_s=3600.0)
+    )
+    bus = FakeBus()
+    store = JsonStateFile(tmp_path / "state.json")
+
+    async def main() -> None:
+        stop = asyncio.Event()
+        bridge = Bridge(
+            config, bus, lambda: radio, CommandLedger(store), session_factory=fast_sessions,
+            wall_clock=lambda: NOW + offset[0], monotonic=lambda: time.monotonic() + offset[0],
+            notifier=lambda _m: True,
+        )  # fmt: skip
+        task = asyncio.create_task(bridge.run(stop))
+        try:
+            if not at_connect:
+                await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+                radio.errors[Command.GET_CONTACTS] = 1
+                radio.queue_direct_message(ALICE.public_key[:6], "arm", sent)
+            first = await bus.wait_for("/received", lambda r: True)
+            assert first["command"]["reason"] == "sender_unverified"
+            offset[0] = 3601.0  # an hour later, no restart
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", sent)  # the replayed copy
+            radio.queue_direct_message(ALICE.public_key[:6], "hello", NOW + 3601)
+            await bus.wait_for("/received", lambda r: r["text"] == "hello")
+            assert not bus.payloads("/command")
+        finally:
+            stop.set()
+            await asyncio.wait_for(task, 5)
 
     scenario(main)

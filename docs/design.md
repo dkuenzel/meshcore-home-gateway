@@ -347,8 +347,10 @@ reproduces published reference values and RadioLib's own calculation (`tests/tes
 The budget is a token bucket over seconds of airtime
 ([ADR 0008](decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)): it holds at
 most `burst_s` (default 10 s) and refills at `budget_s_per_hour` (default 36 s, 1 % of an hour).
-Over any interval *T* the bridge's own transmissions are bounded by `burst_s + budget × T / 3600`
-per run of the service: the bucket is not stored, each start begins with a full burst.
+Over any interval *T* the airtime the bridge counts for its own transmissions is bounded by
+`burst_s + budget × T / 3600` per run of the service: the bucket is not stored, each start begins
+with a full burst. The count is exact except for a flooded attempt to a recipient more than 4 path
+bytes away, whose returned path packet is longer than estimated (protocol.md §6).
 Each attempt of a direct message counts. The radio's other transmissions (acknowledgements it
 sends, adverts, path returns) are not counted; the default leaves 9 percentage points of the 10 %
 EU duty cycle for them.
@@ -542,10 +544,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   rejected anyway (§7.3, step 2).
 * A command rejected as `sender_unverified` or `state_unwritable` leaves the sender's last
   timestamp as it was (the sender was not verified, or the file could not be written). A replayed
-  copy of its packet is dropped as a repeat for an hour; later, or after a restart of the
-  service, it is accepted if it is still within `max_age_s`, at any time with `max_age_s = 0`.
-  With `max_age_s` of an hour or less (the default is 15 minutes), only a restart within that
-  time leaves this gap.
+  copy of its packet is dropped as a repeat for as long as it could pass the age check: an hour,
+  or twice `max_age_s` and a minute if that is longer (the sender's clock may be `max_age_s`
+  ahead). So only a restart of the service leaves a gap, within `max_age_s`; with
+  `max_age_s = 0` a copy that arrives after the hour is accepted at any time.
 * Over TCP, pushes can be lost while the radio's send queue is full; a look-alike that enters and
   leaves the table between two table reads can then go unseen. The link is not authenticated
   either: whoever answers on the radio's address is the radio to the bridge, so a host that takes

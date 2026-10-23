@@ -182,6 +182,18 @@ class CompanionSession:
             raise self._failure
 
     async def close(self) -> None:
+        try:
+            syncing = self._pending is not None and self._pending.expected >= _SYNC_CODES
+            if syncing and not self.closed and asyncio.current_task() not in self._tasks:
+                # the answer to the command in flight may hold a message the radio has already
+                # taken out of its queue: let it arrive before closing
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(self._timeout), self._lock:
+                        self._end(None)
+        finally:
+            await self._close_now()
+
+    async def _close_now(self) -> None:
         self._end(None)
         current = asyncio.current_task()
         others = [task for task in self._tasks if task is not current]

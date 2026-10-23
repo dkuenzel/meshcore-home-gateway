@@ -1,6 +1,6 @@
 """Airtime budget for outgoing messages and deduplication of repeated messages (ADR 0008).
 
-Both take the current time as an argument, so tests control the clock. Times are seconds from
+All of them take the current time as an argument, so tests control the clock. Times are seconds from
 any monotonic origin.
 """
 
@@ -100,10 +100,15 @@ class Deduplicator:
         return False
 
     def forget(self, key: Hashable) -> None:
-        """Undo an acceptance whose message was not taken after all, so that a repeat gets
-        through (a send request refused for a full queue, a command refused for a transient
-        reason)."""
+        """Undo an acceptance whose send request was not taken after all (a full queue), so that
+        its repeat gets through. Received messages are never forgotten: a copy of one, also of a
+        rejected command, stays a duplicate (ADR 0009)."""
         self._accepted.pop(key, None)
+
+    def rekey(self, old: Hashable, new: Hashable, now: float) -> None:
+        """Replace an accepted key by the one it turned out to be (the final text)."""
+        if self._accepted.pop(old, None) is not None and new not in self._accepted:
+            self._accepted[new] = now
 
     def _prune(self, now: float) -> None:
         while self._accepted:

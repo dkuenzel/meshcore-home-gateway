@@ -45,7 +45,8 @@ A `-` in the node ID becomes `_` in the entity IDs, as in an alias: node `radio-
 `sensor.meshcore_home_gateway_radio_1_battery`. The discovery topic, the device and the unique
 IDs keep the node ID as it is, so two gateways `radio-1` and `radio_1` on one broker are two
 devices, but the entity IDs of the one announced second end in `_2`; pick node IDs that differ in
-more than that.
+more than that. Node IDs and aliases that Home Assistant would shorten further (a trailing `-` or
+`_`, two of them in a row) are refused by the configuration check.
 
 All entities share the gateway's availability topic and turn `unavailable` when it is offline.
 The state values come from the retained state document, so they are back right after a restart of
