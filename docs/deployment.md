@@ -32,11 +32,40 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 
 ### Install
 
-On the Proxmox VE host, as root, in a copy of this repository:
+On the Proxmox VE host, as root:
 
 ```sh
-git clone https://github.com/dkuenzel/meshcore-home-gateway.git && cd meshcore-home-gateway
-./deploy/proxmox/meshcore-home-gateway-lxc.sh
+bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
+```
+
+Before the first release there is nothing at that address; install the source of `main`:
+
+```sh
+bash -c "$(wget -qO- https://raw.githubusercontent.com/dkuenzel/meshcore-home-gateway/main/deploy/proxmox/meshcore-home-gateway-lxc.sh)"
+```
+
+The script runs from memory and stores nothing on the host besides the Debian template, which
+lands in the template storage as for any container. It downloads the program inside the new
+container:
+
+* run from a release's address: that release's zipapp and unit, checked against the release's
+  `SHA256SUMS` before they are installed (`--release X.Y.Z` picks another release);
+* run from `main`'s address: the source archive of `main` (or of the branch, tag or commit that
+  `--ref` names), built inside the container; HTTPS is the only check;
+* run from a clone of this repository: that clone, packed and sent into the container (for
+  development); with `--release` or `--ref`, a download as above.
+
+Options follow a `--`, for example `bash -c "$(wget -qO- URL)" -- --answers FILE`; `--help` lists
+them. If the command does nothing at all, the address could not be downloaded (`bash -c` gets an
+empty script): `wget -O- URL` shows why. To check the installer before running it, download it, verify it on a machine with the
+GitHub CLI `gh` (the release attests it like its other files), then run it:
+
+```sh
+wget https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh
+gh attestation verify meshcore-home-gateway-lxc.sh --repo dkuenzel/meshcore-home-gateway \
+  --signer-workflow dkuenzel/meshcore-home-gateway/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
+bash meshcore-home-gateway-lxc.sh && rm meshcore-home-gateway-lxc.sh
 ```
 
 The first dialog chooses the setup. **Default** asks only what has no sensible default: the
@@ -58,16 +87,18 @@ every setting in the table.
 | Channels and contacts to send to | read from the radio | both |
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
 
-Before it creates anything, the script checks the settings with the bridge's own configuration
-code and asks for confirmation. Then it downloads the newest Debian 13 template if needed, creates
-and starts the container, installs the service, reads the radio's channels and contacts for the
-last questions, writes the configuration and starts the service. The final message shows how to
+The script asks for confirmation before it creates anything. Then it downloads the newest Debian
+13 template if needed, creates and starts the container, installs the program, checks the
+settings with the program's own configuration code (when it installs a clone: already before the
+container is created), reads the radio's channels and contacts for the last questions, writes the
+configuration and starts the service. The final message shows how to
 read the logs. If a step fails or the script is interrupted after the container was created, the
 error message says how to remove it.
 
 ### What the script does
 
-The equivalent manual steps, for review or for a setup the script does not cover. On the host:
+The equivalent manual steps, for review or for a setup the script does not cover, from a clone of
+this repository. On the host:
 
 ```sh
 pveam update          # prints "update successful"; the exit status is 0 even when it fails
@@ -147,19 +178,30 @@ starting with `#` are ignored. There are two kinds of keys:
 * **Every other key is a configuration setting** (`radio.host`, `mqtt.host`, `mqtt.password`,
   `airtime.budget_s_per_hour`, `commands.senders`, `commands.words`, …; see configuration.md) and
   goes into the configuration as given. The configuration check refuses unknown settings and
-  invalid values before anything is created.
+  invalid values: when the script installs a clone, before anything is created; otherwise in the
+  new container right after the program is installed, before the radio is read (the message says
+  how to remove the container).
 
 Missing keys take the defaults above; without a broker address (or a radio address for TCP) the
 script stops before it creates anything. Keep the file private; it may contain the broker
-password.
+password. From a URL the file goes after `--`: `bash -c "$(wget -qO- URL)" -- --answers FILE`.
+
+TLS without own files uses the container's system CA store. A file (`mqtt.ca_file`,
+`mqtt.cert_file`, `mqtt.key_file`) must exist in the container when the configuration is written,
+which a new container cannot: install first, then copy the files in (for example `pct push 105
+ca.pem /etc/meshcore-home-gateway/ca.pem`) and set them with
+`bash -c "$(wget -qO- URL)" -- --reconfigure 105 --answers FILE`.
 
 ### Update, reconfigure, remove
 
 ```sh
-# new version, same configuration
-git pull && ./deploy/proxmox/meshcore-home-gateway-lxc.sh --update 105
+installer=https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh
+# new version, same configuration (before the first release: main's address, as for the install)
+bash -c "$(wget -qO- $installer)" -- --update 105
 # dialogs again
-./deploy/proxmox/meshcore-home-gateway-lxc.sh --reconfigure 105
+bash -c "$(wget -qO- $installer)" -- --reconfigure 105
+# an earlier release again
+bash -c "$(wget -qO- $installer)" -- --release 0.1.0 --update 105
 # roll back to an earlier version that is still installed
 pct exec 105 -- ls /usr/local/lib/meshcore-home-gateway/
 pct exec 105 -- ln -sfn meshcore-home-gateway-<old version>.pyz \
@@ -169,12 +211,16 @@ pct exec 105 -- systemctl restart meshcore-home-gateway
 pct stop 105 && pct destroy 105
 ```
 
-* **Update** builds the new zipapp under a temporary name next to the old one and checks the current
-  configuration with it; only then it moves it to `meshcore-home-gateway-<version>.pyz`, switches
-  the `current.pyz` link and restarts the service. If the configuration does not pass, the old
+* **Update** downloads (or builds) the new zipapp under a temporary name next to the old one and
+  checks the current configuration with it; only then it moves it to
+  `meshcore-home-gateway-<version>.pyz`, switches the `current.pyz` link and restarts the service. If the configuration does not pass, the old
   version stays active, also when the version string did not change. A newer version can refuse
   a configuration that an older one accepted (see the changelog); fix the setting it names, for
-  example with `--reconfigure`, and update again.
+  example with `--reconfigure`, and update again. The `latest` address serves the latest release,
+  never a pre-release (`a`, `b`, `rc`, `dev`): it does not find one, or installs an older release
+  over it. Install or update to a pre-release with its own installer
+  (`releases/download/vX.Y.Zrc1/meshcore-home-gateway-lxc.sh`) or with `--release X.Y.Zrc1`; the
+  final message of a pre-release names its own installer.
 * **Reconfigure** reads the current configuration (`meshcore-home-gateway config answers`) and
   offers its values as defaults: an empty password keeps the current one (an empty user name
   removes it), and settings the dialogs do not ask for are kept. Selected targets keep their

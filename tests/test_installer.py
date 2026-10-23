@@ -2,23 +2,31 @@
 
 The stubs record every call and answer like a Proxmox VE 9 host would (output formats from the
 Proxmox sources, see docs/deployment.md). The tests check the container that would be created,
-the commands run inside it, and that the answers pushed into the container render to a valid
-configuration. The `pct exec` stub refuses commands that do not start from a clean environment.
+the commands run inside it, and that the answers sent into the container render to a valid
+configuration. The `pct exec` stub refuses commands that do not start from a clean environment,
+and keeps what a command reads from its input as the file it writes (`cat >/root/NAME`).
 The scripts sent into the container run on their own, against a directory that stands in for the
 container's file system.
 """
 
 from __future__ import annotations
 
+import functools
+import hashlib
+import http.server
+import io
 import os
 import re
 import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import textwrap
+import threading
 import time
 import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,8 +63,20 @@ STUBS = {
             if [[ ${1-} != env || ${2-} != -i ]]; then echo "stub: no env -i" >&2; exit 97; fi
             shift 2
             while [[ ${1-} == *=* ]]; do shift; done
+            if [[ -p /dev/stdin ]]; then  # files sent into the container through the input
+              mkdir -p "$STUB/pushed"
+              cat >"$STUB/input"
+              if [[ $* =~ cat\ \>/root/([^[:space:]]+) ]]; then
+                cp "$STUB/input" "$STUB/pushed/${BASH_REMATCH[1]}"
+              fi
+            fi
             [[ -z ${SLEEP_AT-} || $* != *"$SLEEP_AT"* ]] || sleep 60
             case "$*" in
+              *'--output $dir/config.toml'*)  # the settings check
+                [[ -z ${CHECK_FAILS-} ]] || { echo "bad" >&2; exit 78; } ;;
+              *"daemon-reload"*) echo "${STUB_VERSION:-0.0.0}" ;;  # the installation step
+              "meshcore-home-gateway --version")
+                echo "meshcore-home-gateway ${STUB_VERSION:-0.0.0}" ;;
               *"--list channels"*)
                 [[ -z ${PROBE_FAILS-} ]] || exit 1
                 printf '%b' "${PROBE_CHANNELS:-0\\tPublic\\n1\\tAlerts\\n2\\tpublic\\n}" ;;
@@ -239,6 +259,7 @@ def installer_env(host: Host, env: dict[str, str] | None = None) -> dict[str, st
         "ALICE": ALICE,
         "RELAY": RELAY,
         "MESHCORE_HOME_GATEWAY_SERIAL_DIR": str(host.serial.parent),
+        "STUB_VERSION": __version__,
         **(env or {}),
     }
 
@@ -254,7 +275,7 @@ def run_installer(
         (host.root / "dialog").write_text("\n".join(dialog) + "\n", encoding="utf-8")
     return subprocess.run(  # noqa: S603 - our script with fixed arguments
         [BASH, str(script), *args], env=installer_env(host, env), capture_output=True, text=True,
-        timeout=60, check=False,
+        stdin=subprocess.DEVNULL, timeout=60, check=False,
     )  # fmt: skip
 
 
@@ -284,17 +305,18 @@ def interrupt_installer(
     return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
 
-def path_without(host: Host, command: str) -> str:
-    """The stubs and the test's PATH without `command`: directories that hold it become links."""
-    (host.root / "bin" / command).unlink(missing_ok=True)
+def path_without(host: Host, *commands: str) -> str:
+    """The stubs and the test's PATH without `commands`: directories that hold one become links."""
+    for command in commands:
+        (host.root / "bin" / command).unlink(missing_ok=True)
     directories = [host.root / "bin"]
     for number, entry in enumerate(os.environ["PATH"].split(os.pathsep)):
         directory = Path(entry)
-        if (directory / command).exists():
+        if any((directory / command).exists() for command in commands):
             directory, original = host.root / f"path-{number}", directory
             directory.mkdir()
             for path in original.iterdir():
-                if path.name != command:
+                if path.name not in commands:
                     (directory / path.name).symlink_to(path)
         directories.append(directory)
     return os.pathsep.join(str(d) for d in directories)
@@ -348,16 +370,16 @@ class Container:
         return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
     def receive(self, host: Host, path: str) -> None:
-        """Put the file the installer pushed to `path` (`pct push`) there."""
+        """Put the file the installer sent to `path` (through a command's input) there."""
         shutil.copy(host.root / "pushed" / Path(path).name, self.path(path))
 
-    def run(self, script: str) -> subprocess.CompletedProcess[str]:
+    def run(self, script: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         absolute = r"(?<![\w.-])/(?=(?:etc|root|usr/local)/)"
         script = re.sub(absolute, lambda _: f"{self.root}/", script)
         script = re.sub(r"(?<=\s)/usr/bin/python3\b", lambda _: sys.executable, script)
         return subprocess.run(  # noqa: S603 - a script of the installer
             [BASH, "-c", script], env={"PATH": f"{self.root / 'stubs'}:{os.environ['PATH']}"},
-            capture_output=True, text=True, timeout=60, check=False,
+            input=stdin, capture_output=True, text=True, timeout=60, check=False,
         )  # fmt: skip
 
 
@@ -393,8 +415,9 @@ def test_unattended_install_creates_and_configures_the_container(host: Host) -> 
     assert not host.pct("reboot")  # dialout has GID 20 in the container
 
     order = [c[1] for c in host.calls("pct")]
-    assert order.index("create") < order.index("set") < order.index("start") < order.index("push")
+    assert order.index("create") < order.index("set") < order.index("start") < order.index("exec")
     assert all(c[3:6] == ["--", "env", "-i"] for c in host.pct("exec"))
+    assert not host.pct("push")  # files go through the input of commands: none on the host
 
     inside = host.inside()
     assert any("apt-get install" in c and "python3-paho-mqtt" in c for c in inside)
@@ -1022,11 +1045,10 @@ def test_the_answers_are_private_and_removed_after_rendering(
     """They hold the broker password, also when the configuration is not accepted."""
     result = run_installer(host, "--answers", str(answers_file(host)))
     assert result.returncode == 0, result.stderr
-    (push,) = [c for c in host.pct("push") if c[4] == ANSWERS]
-    assert push[5:] == ["--perms", "0600"]
-    container.receive(host, ANSWERS)
+    script = host.script(f"--output {CONFIG}")
+    assert script.index("umask 077") < script.index(f"cat >{ANSWERS}")
     container.stub("meshcore-home-gateway", f"exit {status}")
-    run = container.run(host.script("config render"))
+    run = container.run(script, stdin=host.pushed("meshcore-home-gateway-answers"))
     assert run.returncode == status
     (render,) = container.calls("meshcore-home-gateway")
     assert render == (
@@ -1072,3 +1094,402 @@ def test_target_answers_count_also_when_the_radio_offers_none(host: Host, kind: 
     targets = {(t.channel_index, t.public_key) for t in host.config().targets}
     assert ((None, ALICE) if kind == "contacts" else (3, None)) in targets
     assert sum("warning:" in line for line in result.stderr.splitlines()) == 1
+
+
+# --- run from a URL: nothing on the host, the program is downloaded in the container ------------
+
+ARCHIVE = "https://github.com/dkuenzel/meshcore-home-gateway/archive/main.tar.gz"
+RELEASES = "https://github.com/dkuenzel/meshcore-home-gateway/releases/download/"
+MAIN_INSTALLER = (
+    "https://raw.githubusercontent.com/dkuenzel/meshcore-home-gateway/main/"
+    "deploy/proxmox/meshcore-home-gateway-lxc.sh"
+)
+STAGE = "/root/meshcore-home-gateway-src"
+
+
+def run_from_url(
+    host: Host, *args: str, release: str = "", env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Like `bash -c "$(wget -qO- URL)" -- ARGS`: the script is no file, so there is no checkout.
+    `release` is the version that `make release` writes into the published copy."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    if release:
+        text = text.replace('\nRELEASE=""', f'\nRELEASE="{release}"', 1)
+    temporary = host.root / "tmp"
+    temporary.mkdir(exist_ok=True)
+    return subprocess.run(  # noqa: S603 - our script with fixed arguments
+        [BASH, "-c", text, "--", *args],
+        env=installer_env(host, {"TMPDIR": str(temporary), **(env or {})}),
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60, check=False,
+    )  # fmt: skip
+
+
+def fetches(host: Host) -> list[list[str]]:
+    """The downloads in the container: the arguments after `python3 -I -c FETCH_PY`."""
+    return [a[4:] for a in host.inside_args() if a[:3] == ["python3", "-I", "-c"]]
+
+
+def test_from_a_url_the_source_of_main_is_built_in_the_container(host: Host) -> None:
+    """Before the first release; the host needs neither python3 nor tar, and keeps no file."""
+    env = {"PATH": path_without(host, "python3", "tar")}
+    result = run_from_url(host, "--answers", str(answers_file(host)), env=env)
+    assert result.returncode == 0, result.stderr
+    assert fetches(host) == [["source", ARCHIVE, STAGE]]
+    assert not [c for c in host.inside() if f"cat >{STAGE}.tar.gz" in c]  # nothing from the host
+    assert not host.pct("push")
+    assert not list((host.root / "tmp").iterdir())
+    inside = host.inside()
+    install = next(i for i, c in enumerate(inside) if "build_pyz.py" in c)
+    check = next(i for i, c in enumerate(inside) if "--output $dir/config.toml" in c)
+    probe = next(i for i, c in enumerate(inside) if "--list channels" in c)
+    assert install < check < probe  # the settings are checked with the installed program
+    assert host.config().mqtt.host == "broker.example.org"
+    assert f'wget -qO- {MAIN_INSTALLER})" -- --update 105' in result.stderr
+    assert f"meshcore-home-gateway {__version__} runs in container 105" in result.stderr
+
+
+def test_from_a_release_its_checked_files_are_downloaded_in_the_container(host: Host) -> None:
+    result = run_from_url(host, "--answers", str(answers_file(host)), release="1.2.3",
+                          env={"STUB_VERSION": "1.2.3"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert fetches(host) == [["release", f"{RELEASES}v1.2.3/", "1.2.3", STAGE]]
+    assert "meshcore-home-gateway 1.2.3 in container 105" in result.stderr  # known in advance
+    assert 'releases/latest/download/meshcore-home-gateway-lxc.sh)" -- --update 105' in (
+        result.stderr
+    )
+
+
+def test_a_pre_release_names_its_own_installer(host: Host) -> None:
+    """releases/latest skips pre-releases: it would not find one, or install an older release."""
+    result = run_from_url(host, "--answers", str(answers_file(host)), release="0.2.0rc1",
+                          env={"STUB_VERSION": "0.2.0rc1"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    installer = f"{RELEASES}v0.2.0rc1/meshcore-home-gateway-lxc.sh"
+    assert f'wget -qO- {installer})" -- --reconfigure 105' in result.stderr
+    assert "the installer of a newer release" in result.stderr
+    assert "releases/latest" not in result.stderr
+
+
+def test_another_ref_is_installed_again_with_the_installer_of_main(host: Host) -> None:
+    """The installer at an older ref may not run from an address."""
+    result = run_from_url(host, "--ref", "v0.1.0", "--answers", str(answers_file(host)))
+    assert result.returncode == 0, result.stderr
+    assert fetches(host) == [["source", ARCHIVE.replace("main", "v0.1.0"), STAGE]]
+    assert f'wget -qO- {MAIN_INSTALLER})" -- --ref v0.1.0 --update 105' in result.stderr
+
+
+@pytest.mark.parametrize("release", ["", "9.9.9"])
+def test_reconfigure_names_the_version_that_runs_in_the_container(host: Host, release: str) -> None:
+    """Not the version of the installer: nothing is installed."""
+    existing_container(host)
+    answers = answers_file(host, "mqtt.host=new.example.org\n")
+    result = run_from_url(host, "--reconfigure", "105", "--answers", str(answers),
+                          release=release, env={"STUB_VERSION": "1.2.3"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "meshcore-home-gateway 1.2.3 runs in container 105" in result.stderr
+    assert not fetches(host)
+
+
+def test_reconfigure_names_the_installer_by_its_own_release(host: Host) -> None:
+    """Not by the version in the container: main's 0.1.0.dev0 was never published."""
+    existing_container(host)
+    answers = answers_file(host, "mqtt.host=new.example.org\n")
+    result = run_from_url(host, "--reconfigure", "105", "--answers", str(answers),
+                          release="0.1.0", env={"STUB_VERSION": "0.1.0.dev0"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "meshcore-home-gateway 0.1.0.dev0 runs in container 105" in result.stderr
+    assert 'releases/latest/download/meshcore-home-gateway-lxc.sh)" -- --update 105' in (
+        result.stderr
+    )
+    assert "v0.1.0.dev0" not in result.stderr
+
+
+def test_reconfigure_with_refused_settings_leaves_the_service_running(host: Host) -> None:
+    existing_container(host)
+    answers = answers_file(host, "mqtt.host=new.example.org\n")
+    result = run_from_url(host, "--reconfigure", "105", "--answers", str(answers),
+                          env={"CHECK_FAILS": "1"})  # fmt: skip
+    assert result.returncode == 1
+    assert "invalid settings" in result.stderr
+    assert not [c for c in host.inside() if "systemctl" in c or "--group" in c]
+
+
+@pytest.mark.parametrize(("answers", "status"), [("mqtt.port=1884\n", 0), ("mqtt.port=abc\n", 1)])
+def test_the_settings_check_in_the_container_renders_the_answers(
+    host: Host, container: Container, answers: str, status: int
+) -> None:
+    """With the installed program, into temporary files that hold the password only meanwhile;
+    the configuration stays as it is."""
+    existing_container(host)
+    reconfigure = answers_file(host, "mqtt.host=new.example.org\n")
+    assert run_from_url(host, "--reconfigure", "105", "--answers", str(reconfigure)).returncode == 0
+    script = host.script("--output $dir/config.toml")
+    assert script.index("umask 077") < script.index("mktemp")
+    program = f'PYTHONPATH="{ROOT / "src"}" exec "{sys.executable}" -m meshcore_home_gateway "$@"'
+    container.stub("meshcore-home-gateway", program)
+    temporary = container.path("/tmp")
+    temporary.mkdir()
+    current = CURRENT.format(serial=host.serial)
+    run = container.run(f"export TMPDIR={temporary}\n{script}", stdin=current + answers)
+    assert (run.returncode != 0) == bool(status), run.stderr
+    assert ("mqtt.port" in run.stderr) == bool(status)
+    (render,) = container.calls("meshcore-home-gateway")
+    assert render.startswith(f"config render --answers {temporary}/")
+    assert not list(temporary.iterdir())
+    assert not container.path(CONFIG).exists()
+
+
+def test_from_a_url_refused_settings_are_reported_before_the_radio_is_read(host: Host) -> None:
+    result = run_from_url(host, "--answers", str(answers_file(host)), env={"CHECK_FAILS": "1"})
+    assert result.returncode == 1
+    assert "invalid settings" in result.stderr
+    assert "pct destroy 105" in result.stderr
+    assert not [c for c in host.inside() if "--list channels" in c]
+
+
+def test_update_from_a_url_downloads_into_the_container(host: Host) -> None:
+    existing_container(host)
+    result = run_from_url(host, "--update", "105", release="1.2.3")
+    assert result.returncode == 0, result.stderr
+    assert fetches(host)[0][:3] == ["release", fetches(host)[0][1], "1.2.3"]
+    assert host.inside()[-1] == "systemctl restart meshcore-home-gateway"
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (["--release", "2.0.0"], ["release", f"{RELEASES}v2.0.0/", "2.0.0", STAGE]),
+        (["--ref", "v0.1.0"], ["source", ARCHIVE.replace("main", "v0.1.0"), STAGE]),
+    ],
+)  # fmt: skip
+def test_a_release_or_a_ref_can_be_chosen_also_from_a_checkout(
+    host: Host, args: list[str], expected: list[str]
+) -> None:
+    existing_container(host)
+    result = run_installer(host, *args, "--update", "105")
+    assert result.returncode == 0, result.stderr
+    assert fetches(host) == [expected]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["--release", "1.0;rm"], ["--release"], ["--ref", "-x"], ["--ref", "a b"],
+     ["--release", "1.0.0", "--ref", "main"]],
+)  # fmt: skip
+def test_bad_release_and_ref_options_are_refused(host: Host, args: list[str]) -> None:
+    result = run_installer(host, *args, "--update", "105")
+    assert result.returncode == 1
+    assert "--release" in result.stderr or "--ref" in result.stderr
+    assert not host.pct("exec")
+
+
+def test_the_published_copy_names_its_release() -> None:
+    """`make release` writes the version into the one line it replaces."""
+    lines = SCRIPT.read_text(encoding="utf-8").splitlines()
+    assert lines.count('RELEASE=""     # the copy published with a release names its version here '
+                       "(make release)") == 1  # fmt: skip
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "meshcore-home-gateway-lxc.sh" in makefile
+    assert 's/^RELEASE=\\"\\"/RELEASE=\\"$$version\\"/' in makefile
+
+
+def test_help_needs_no_script_file(host: Host) -> None:
+    result = run_from_url(host, "--help")
+    assert result.returncode == 0
+    assert "--release VERSION" in result.stdout
+    assert "wget -qO- URL" in result.stdout
+
+
+# --- the download inside the container ---------------------------------------------------------
+
+FETCH = re.search(r"\nFETCH_PY='(.*?)'\n", SCRIPT.read_text(encoding="utf-8"), re.DOTALL)
+UNIT = "deploy/systemd/meshcore-home-gateway.service"
+
+
+@pytest.fixture
+def server(tmp_path: Path) -> Iterator[tuple[str, Path]]:
+    """A web server for the files below the directory it yields, and its base URL."""
+    files = tmp_path / "www"
+    files.mkdir()
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(files))
+    handler.log_message = lambda *_: None  # type: ignore[attr-defined]
+    web = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=web.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{web.server_address[1]}/", files
+    finally:
+        web.shutdown()
+        web.server_close()
+
+
+def fetch(*args: str) -> subprocess.CompletedProcess[str]:
+    assert FETCH is not None
+    return subprocess.run(  # noqa: S603 - the installer's download step
+        [sys.executable, "-I", "-c", FETCH.group(1), *args],
+        capture_output=True, text=True, timeout=60, check=False,
+    )  # fmt: skip
+
+
+def publish_release(files: Path, version: str, pyz: bytes = b"PK zipapp") -> None:
+    release = files / f"v{version}"
+    release.mkdir()
+    (release / f"meshcore-home-gateway-{version}.pyz").write_bytes(pyz)
+    (release / "meshcore-home-gateway.service").write_bytes((ROOT / UNIT).read_bytes())
+    sums = "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+        for path in sorted(release.iterdir())
+    )
+    (release / "SHA256SUMS").write_text(sums, encoding="utf-8")
+
+
+def test_the_files_of_a_release_are_downloaded_and_checked(
+    server: tuple[str, Path], tmp_path: Path
+) -> None:
+    base, files = server
+    publish_release(files, "1.2.3")
+    target = tmp_path / "stage"
+    result = fetch("release", f"{base}v1.2.3/", "1.2.3", str(target))
+    assert result.returncode == 0, result.stderr
+    assert (target / "meshcore-home-gateway.pyz").read_bytes() == b"PK zipapp"
+    assert (target / UNIT).read_bytes() == (ROOT / UNIT).read_bytes()
+
+
+def test_a_release_file_that_does_not_match_its_checksum_is_not_installed(
+    server: tuple[str, Path], tmp_path: Path
+) -> None:
+    base, files = server
+    publish_release(files, "1.2.3")
+    (files / "v1.2.3" / "meshcore-home-gateway-1.2.3.pyz").write_bytes(b"PK tampered")
+    target = tmp_path / "stage"
+    result = fetch("release", f"{base}v1.2.3/", "1.2.3", str(target))
+    assert result.returncode == 1
+    assert "does not match the SHA256SUMS" in result.stderr
+    assert not (target / "meshcore-home-gateway.pyz").exists()
+
+
+def test_a_missing_release_is_reported(server: tuple[str, Path], tmp_path: Path) -> None:
+    base, _ = server
+    result = fetch("release", f"{base}v9.9.9/", "9.9.9", str(tmp_path / "stage"))
+    assert result.returncode == 1
+    assert "cannot download" in result.stderr
+    assert "404" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def source_archive(files: Path, *extra: tarfile.TarInfo) -> None:
+    """Like GitHub's archive of a ref: everything below one top directory."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for path in ("src/meshcore_home_gateway", "tools/build_pyz.py", UNIT, "README.md"):
+            archive.add(ROOT / path, f"meshcore-home-gateway-main/{path}",
+                        filter=lambda i: None if "__pycache__" in i.name else i)  # fmt: skip
+        for member in extra:
+            archive.addfile(member, io.BytesIO(b"x" * member.size))
+    (files / "main.tar.gz").write_bytes(buffer.getvalue())
+
+
+def test_the_source_of_a_ref_is_extracted_without_the_rest(
+    server: tuple[str, Path], tmp_path: Path
+) -> None:
+    base, files = server
+    escape = tarfile.TarInfo("meshcore-home-gateway-main/../escaped")
+    escape.size = 1
+    source_archive(files, escape)
+    target = tmp_path / "stage"
+    result = fetch("source", f"{base}main.tar.gz", str(target))
+    assert result.returncode == 0, result.stderr
+    assert (target / "src/meshcore_home_gateway/__init__.py").exists()
+    assert (target / "tools/build_pyz.py").exists()
+    assert (target / UNIT).exists()
+    assert not (target / "README.md").exists()
+    assert not (tmp_path / "escaped").exists()
+    build = subprocess.run(  # noqa: S603 - the build the installation step runs
+        [sys.executable, str(target / "tools/build_pyz.py"), "--source", str(target / "src"),
+         "--output", str(tmp_path / "gw.pyz")], capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert build.returncode == 0, build.stderr
+
+
+def test_a_source_archive_with_a_link_out_of_the_tree_is_refused(
+    server: tuple[str, Path], tmp_path: Path
+) -> None:
+    base, files = server
+    link = tarfile.TarInfo("meshcore-home-gateway-main/src/meshcore_home_gateway/passwd")
+    link.type, link.linkname = tarfile.SYMTYPE, "/etc/passwd"
+    source_archive(files, link)
+    result = fetch("source", f"{base}main.tar.gz", str(tmp_path / "stage"))
+    assert result.returncode == 1
+    assert "not a usable source archive" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_an_archive_without_the_source_is_refused(server: tuple[str, Path], tmp_path: Path) -> None:
+    base, files = server
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        archive.add(ROOT / "README.md", "other-main/README.md")
+    (files / "main.tar.gz").write_bytes(buffer.getvalue())
+    result = fetch("source", f"{base}main.tar.gz", str(tmp_path / "stage"))
+    assert result.returncode == 1
+    assert "holds no meshcore-home-gateway source" in result.stderr
+
+
+def test_a_release_file_is_installed_as_it_was_published(
+    host: Host, container: Container, tmp_path: Path
+) -> None:
+    """No build: the zipapp of the release, checked against its SHA256SUMS, is the one used.
+
+    Also when an interrupted run from a checkout left its archive behind."""
+    existing_container(host)
+    assert run_from_url(host, "--update", "105", release=__version__).returncode == 0
+    stage = container.path(STAGE)
+    container.path(f"{STAGE}.tar.gz").write_bytes(b"left behind")
+    (stage / "deploy/systemd").mkdir(parents=True)
+    shutil.copy(ROOT / UNIT, stage / UNIT)
+    build = subprocess.run(  # noqa: S603 - a zipapp like the release one
+        [sys.executable, str(ROOT / "tools/build_pyz.py"), "--source", str(ROOT / "src"),
+         "--output", str(stage / "meshcore-home-gateway.pyz")], capture_output=True, check=False,
+    )  # fmt: skip
+    assert build.returncode == 0
+    published = (stage / "meshcore-home-gateway.pyz").read_bytes()
+    config = render_config(CURRENT.format(serial=host.serial))
+    container.path(CONFIG).write_text(config, encoding="utf-8")
+    run = container.run(host.script("build_pyz.py"))
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip() == __version__  # reported to the installer
+    installed = container.path(LIB) / f"meshcore-home-gateway-{__version__}.pyz"
+    assert installed.read_bytes() == published
+    assert not stage.exists()
+    assert not container.path(f"{STAGE}.tar.gz").exists()
+
+
+def test_the_source_of_a_ref_is_built_in_the_container(host: Host, container: Container) -> None:
+    """Also when an interrupted run from a checkout left its archive behind."""
+    existing_container(host)
+    assert run_from_url(host, "--update", "105").returncode == 0
+    stage = container.path(STAGE)
+    for path in ("src/meshcore_home_gateway", "tools/build_pyz.py", UNIT):  # as FETCH_PY leaves it
+        copy = shutil.copytree if (ROOT / path).is_dir() else shutil.copy
+        (stage / path).parent.mkdir(parents=True, exist_ok=True)
+        copy(ROOT / path, stage / path)
+    container.path(f"{STAGE}.tar.gz").write_bytes(b"left behind")
+    config = render_config(CURRENT.format(serial=host.serial))
+    container.path(CONFIG).write_text(config, encoding="utf-8")
+    run = container.run(host.script("build_pyz.py"))
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip() == __version__
+    assert zipfile.is_zipfile(container.path(LIB) / f"meshcore-home-gateway-{__version__}.pyz")
+    assert not stage.exists()
+    assert not container.path(f"{STAGE}.tar.gz").exists()
+
+
+def test_dialogs_refuse_a_script_piped_into_bash(host: Host) -> None:
+    """`wget -qO- URL | bash`: the dialogs would read the rest of the script as answers."""
+    result = subprocess.run(  # noqa: S603 - our script, fed like `wget -qO- URL | bash`
+        [BASH, "-s"], input=SCRIPT.read_text(encoding="utf-8"), env=installer_env(host),
+        capture_output=True, text=True, timeout=60, check=False,
+    )  # fmt: skip
+    assert result.returncode == 1
+    assert 'bash -c "$(wget -qO- URL)"' in result.stderr
+    assert not host.calls("whiptail")

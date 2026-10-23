@@ -54,9 +54,12 @@ change between minor versions; see [`CHANGELOG.md`](CHANGELOG.md).
 On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root:
 
 ```sh
-git clone https://github.com/dkuenzel/meshcore-home-gateway.git && cd meshcore-home-gateway
-./deploy/proxmox/meshcore-home-gateway-lxc.sh
+bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
 ```
+
+Before the first release, use `main`'s copy instead:
+`bash -c "$(wget -qO- https://raw.githubusercontent.com/dkuenzel/meshcore-home-gateway/main/deploy/proxmox/meshcore-home-gateway-lxc.sh)"`. Nothing is stored on the host: the program is downloaded (from
+a release: checked against its `SHA256SUMS`) inside the new container.
 
 In the default setup the script asks only for the radio (USB serial device or TCP address) and the
 broker; the advanced setup also asks for the container and topic settings. After a confirmation it

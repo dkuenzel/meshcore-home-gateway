@@ -89,8 +89,10 @@ release files by hand.
 3. After the merge, tag the merge commit and push the tag:
    `git tag -a vX.Y.Z -m "meshcore-home-gateway X.Y.Z" && git push origin vX.Y.Z`.
 4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
-   zipapp, wheel and sdist reproducibly, writes `SHA256SUMS`, attests every file (Sigstore-signed
-   build provenance) and publishes the GitHub release with the changelog section as notes.
+   zipapp, wheel and sdist reproducibly, adds the systemd unit and the Proxmox installer with the
+   version written in (`RELEASE="X.Y.Z"`: run from the release's address, it installs this
+   release), writes `SHA256SUMS`, attests every file (Sigstore-signed build provenance) and
+   publishes the GitHub release with the changelog section as notes.
 5. Check the result like a user: download a file and run
 
    ```sh

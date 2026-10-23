@@ -581,12 +581,13 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 
 * **Proxmox VE** ([ADR 0006](decisions/0006-deployment-in-an-unprivileged-proxmox-container.md),
   [`deployment.md`](deployment.md)): `deploy/proxmox/meshcore-home-gateway-lxc.sh` runs on the host
-  (Proxmox VE 9, or 8 with a `pve-container` that supports Debian 13). A default setup asks only
-  for the radio, the broker and the targets, an advanced one for everything. The script validates
-  the answers with the bridge's own configuration code and asks for confirmation before it
-  creates an unprivileged Debian 13 container with nesting, passes the USB serial device through
-  (`dev0`, group `dialout` as seen in the container), installs `python3` and `python3-paho-mqtt`
-  from Debian, builds the zipapp from the checked-out sources inside the container, probes the
+  (Proxmox VE 9, or 8 with a `pve-container` that supports Debian 13), straight from its address
+  (`bash -c "$(wget -qO- URL)"`); the host keeps nothing. A default setup asks only for the radio,
+  the broker and the targets, an advanced one for everything. After a confirmation it creates an
+  unprivileged Debian 13 container with nesting, passes the USB serial device through (`dev0`,
+  group `dialout` as seen in the container), installs `python3` and `python3-paho-mqtt` from
+  Debian and the program inside the container (a release's zipapp checked against its
+  `SHA256SUMS`, or the source of `main` built there), validates the answers with it, probes the
   radio to offer its channels and contacts as targets, writes the configuration and starts the
   service. Commands in the container run with a clean environment.
 * **Any systemd Linux:** install the two packages, copy the zipapp to
@@ -603,9 +604,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   `/usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<version>.pyz`, the symlink
   `current.pyz` to the active version, `/usr/local/bin/meshcore-home-gateway` pointing to it. The
   zipapp runs with `/usr/bin/python3 -I` (isolated mode: no user site, no environment variables).
-* **Update:** `meshcore-home-gateway-lxc.sh --update <id>` builds the new zipapp under a temporary
-  name next to the old one, checks the current configuration with it, then moves it to its versioned
-  name, switches the symlink and restarts; a failed check leaves the old version active, also when
+* **Update:** `meshcore-home-gateway-lxc.sh --update <id>` downloads the new zipapp (from a
+  release, checked against its `SHA256SUMS`) or builds it, under a temporary name next to the old
+  one, checks the current configuration with it, then moves it to its versioned name, switches the
+  symlink and restarts; a failed check leaves the old version active, also when
   the version string did not change. Rollback switches the symlink back to a version still
   installed; an update with an unchanged version string replaces that version's file, and the unit
   file the update installed stays in place (it is not rolled back). `--reconfigure <id>`

@@ -97,5 +97,5 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 16 | Stop and start the broker | bridge reconnects; `availability` back to `online` |
 | 17 | `kill -STOP` the service process | systemd watchdog restarts it within the watchdog interval |
 | 18 | Home Assistant | device with all entities; notify entity sends; event entities fire |
-| 19 | Proxmox installer, default setup, then `--reconfigure` and `--update` | container runs the service; reconfigure keeps unasked settings; update keeps the configuration |
+| 19 | Proxmox installer from its address (`bash -c "$(wget -qO- URL)"`), default setup, then `--reconfigure` and `--update` | container runs the service; nothing new on the host but the template; reconfigure keeps unasked settings; update keeps the configuration |
 | 20 | Switch the host off and on with the radio unplugged | the container does not start (expected); after plugging in, `pct start <id>` |

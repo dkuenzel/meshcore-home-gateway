@@ -2,27 +2,34 @@
 # meshcore-home-gateway installer for Proxmox VE 8 (current updates) and 9.
 #
 # Creates an unprivileged Debian 13 container, passes the radio's USB serial device through,
-# installs python3 and python3-paho-mqtt from Debian, builds the meshcore-home-gateway zipapp from
-# this checkout inside the container, reads the radio's channels and contacts, writes the
-# configuration and starts the service. Run as root on the Proxmox host, in the checkout:
+# installs python3 and python3-paho-mqtt from Debian and meshcore-home-gateway inside the
+# container, reads the radio's channels and contacts, writes the configuration and starts the
+# service. Run as root on the Proxmox host, straight from a release; nothing is stored on the
+# host, the program is downloaded and checked inside the container:
 #
-#   deploy/proxmox/meshcore-home-gateway-lxc.sh                     install, asking in dialogs
-#   deploy/proxmox/meshcore-home-gateway-lxc.sh --answers FILE      install without dialogs
-#   deploy/proxmox/meshcore-home-gateway-lxc.sh --update CTID       install this checkout into CTID
-#   deploy/proxmox/meshcore-home-gateway-lxc.sh --reconfigure CTID  ask again, keep other settings
+#   bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
 #
-# Documentation: docs/deployment.md. Design decision: docs/decisions/0006-*.md.
+# Run from a checkout, it installs that checkout. Options: --help. Documentation:
+# docs/deployment.md. Design decision: docs/decisions/0006-*.md.
 set -Eeuo pipefail
 
-REPO_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-VERSION=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' \
-  "$REPO_DIR/src/meshcore_home_gateway/__init__.py")
-TITLE="meshcore-home-gateway $VERSION"
+REPOSITORY=dkuenzel/meshcore-home-gateway
+RELEASES=https://github.com/$REPOSITORY/releases
+RELEASE=""     # the copy published with a release names its version here (make release)
+SCRIPT=${BASH_SOURCE[0]-}   # unset when the script comes from a URL: bash -c "$(wget ...)"
+SOURCE=""      # where the program comes from: checkout, release or ref (detect_source)
+REPO_DIR=""    # SOURCE=checkout: the checkout
+REF=main       # SOURCE=ref: the branch, tag or commit whose source is built in the container
+PICKED=""      # SOURCE=release: the release to install, this copy's or the one --release names
+VERSION=""     # known in advance for a checkout and a release, else after the installation
+TITLE="meshcore-home-gateway"
 SERIAL_DIR=${MESHCORE_HOME_GATEWAY_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
 DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the container
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
 LIB=/usr/local/lib/meshcore-home-gateway
 CONFIG=/etc/meshcore-home-gateway/config.toml
+STAGE=/root/meshcore-home-gateway-src      # the program before its installation, in the container
+ANSWERS_FILE=/root/meshcore-home-gateway-answers
 # pct exec passes the host's environment into the container; commands start from a clean one
 CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 
@@ -37,7 +44,7 @@ INTERACTIVE=1
 ADVANCED=0
 CREATED=""              # container created by this run, named in error messages
 STOPPED=""              # container whose service this run stopped, started again on errors
-WORK=""
+WORK=""                 # an empty directory on the host: marks errors already reported
 
 # --- output and errors ----------------------------------------------------------------------
 
@@ -202,15 +209,76 @@ choose_setup() {
 
 # --- checks ---------------------------------------------------------------------------------
 
+usage() {
+  cat <<EOF
+Usage: meshcore-home-gateway-lxc.sh [OPTION...]   (as root on the Proxmox VE host)
+
+  (no option)          install, asking in dialogs
+  --answers FILE       install without dialogs (docs/deployment.md, unattended installation)
+  --update CTID        install the current version into container CTID and restart the service
+  --reconfigure CTID   ask again, keeping the other settings
+  --release VERSION    install this release (its files are checked against its SHA256SUMS)
+  --ref REF            install the source of a branch, tag or commit, built in the container
+  -h, --help           show this text
+
+Run from a checkout, the script installs that checkout. Run from a URL
+  bash -c "\$(wget -qO- URL)" -- OPTION...
+it downloads the program inside the container: the release it was published with, or the
+source of main before the first release. Nothing is stored on the host.
+EOF
+}
+
+detect_source() {  # where meshcore-home-gateway comes from, unless --release or --ref chose
+  local dir
+  if [[ -z $SOURCE && -n $SCRIPT && -f $SCRIPT ]]; then
+    dir=$(cd -- "$(dirname -- "$SCRIPT")/../.." && pwd)
+    if [[ -f $dir/src/meshcore_home_gateway/__init__.py && -f $dir/tools/build_pyz.py ]]; then
+      SOURCE=checkout REPO_DIR=$dir
+      VERSION=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' \
+        "$dir/src/meshcore_home_gateway/__init__.py")
+    fi
+  fi
+  if [[ -z $SOURCE && -n $RELEASE ]]; then SOURCE=release PICKED=$RELEASE VERSION=$RELEASE; fi
+  SOURCE=${SOURCE:-ref}
+  TITLE="meshcore-home-gateway ${VERSION:-($REF)}"
+}
+
+prerelease() { [[ $PICKED =~ (a|b|rc|dev)[0-9]+$ ]]; }   # as the release workflow marks them
+
+invocation() {  # how to run this installer again, for the final message
+  local address
+  case $SOURCE in
+    checkout) printf '%s' "$SCRIPT"; return ;;
+    release)  # releases/latest skips pre-releases: for one of them, its own installer
+      if prerelease; then address=$RELEASES/download/v$PICKED/meshcore-home-gateway-lxc.sh
+      else address=$RELEASES/latest/download/meshcore-home-gateway-lxc.sh; fi ;;
+    ref)  # main's installer: the one at an older ref may not run from an address
+      address=https://raw.githubusercontent.com/$REPOSITORY/main/deploy/proxmox
+      address+=/meshcore-home-gateway-lxc.sh ;;
+  esac
+  # shellcheck disable=SC2016 # the $(...) is for the user to run, not to expand here
+  printf 'bash -c "$(wget -qO- %s)" --' "$address"
+  if [[ $SOURCE == ref && $REF != main ]]; then printf ' --ref %s' "$REF"; fi
+}
+
 preflight() {  # preflight MODE
   [[ $(id -u) -eq 0 ]] || die "run as root on the Proxmox host"
   local tool
-  for tool in pct pveam pvesm pvesh pveversion dpkg-query python3 tar; do
+  local -a tools=(pct pveam pvesm pvesh pveversion dpkg-query)
+  if [[ $SOURCE == checkout ]]; then tools+=(python3 tar); fi   # to check and pack the checkout
+  for tool in "${tools[@]}"; do
     command -v "$tool" >/dev/null 2>&1 || die "'$tool' not found: this must run on a Proxmox VE host"
   done
   if (( INTERACTIVE )) && [[ $1 != update ]]; then   # --update shows no dialogs
     command -v whiptail >/dev/null 2>&1 \
       || die "whiptail not found: install it (apt install whiptail) or use --answers FILE"
+    # `wget -qO- URL | bash`: the input is the rest of the script, the dialogs would read it
+    if [[ -p /dev/stdin ]]; then
+      INTERACTIVE=0   # no message box either
+      # shellcheck disable=SC2016 # the $(...) is for the user to run
+      die "the dialogs need the terminal as input: run" \
+        'bash -c "$(wget -qO- URL)" instead of piping into bash, or use --answers FILE'
+    fi
   fi
   local version major container
   version=$(pveversion | sed -n 's|^pve-manager/\([^/]*\)/.*|\1|p')   # 8.4.14, or 7.4-3
@@ -225,25 +293,37 @@ preflight() {  # preflight MODE
     die "pve-container $container cannot create Debian 13 containers;" \
       "update the host first (apt update && apt full-upgrade)"
   fi
-  [[ -n $VERSION && -f $REPO_DIR/tools/build_pyz.py ]] || die "run from a complete meshcore-home-gateway checkout"
+  if [[ $SOURCE == checkout ]]; then
+    [[ -n $VERSION ]] || die "cannot read the version of the checkout $REPO_DIR"
+  fi
 }
 
 CHECK_SETTINGS_PY='import sys
 sys.path.insert(0, sys.argv[1])
 from meshcore_home_gateway.config import ConfigError, render_config
 try:
-    with open(sys.argv[2], encoding="utf-8") as answers:
-        render_config(answers.read())
+    render_config(sys.stdin.buffer.read().decode("utf-8"))
 except ConfigError as exc:
     sys.exit(str(exc))'
 
-check_settings() {  # validate the answers with this checkout before anything is created
-  local answers="$WORK/check" reason
-  ( umask 077 && write_answers >"$answers" )
-  # -B: no __pycache__ in the checkout, which may belong to a user who could not remove it
-  reason=$(python3 -I -B -c "$CHECK_SETTINGS_PY" "$REPO_DIR/src" "$answers" 2>&1) \
+check_settings() {  # from a checkout: with its configuration code, before anything is created
+  [[ $SOURCE == checkout ]] || return 0   # otherwise in the new container (check_settings_in)
+  local reason
+  # -B: no __pycache__ in the checkout, which may belong to a user who could not remove it; the
+  # answers go through a pipe, not a file
+  reason=$(write_answers | python3 -I -B -c "$CHECK_SETTINGS_PY" "$REPO_DIR/src" 2>&1) \
     || die "invalid settings: $reason"
-  rm -f -- "$answers"
+}
+
+check_settings_in() {  # check_settings_in CTID: with the program installed in the container
+  write_answers | in_ct_input "$1" bash -c "set -e
+    umask 077
+    dir=\$(mktemp -d)
+    trap 'rm -rf \$dir' EXIT
+    cat >\$dir/answers
+    meshcore-home-gateway config render --answers \$dir/answers --output \$dir/config.toml \
+      >/dev/null" >&2 \
+    || die "invalid settings (see above)"
 }
 
 # --- container ------------------------------------------------------------------------------
@@ -254,6 +334,12 @@ in_ct() {  # in_ct CTID COMMAND...: run a command in the container, clean enviro
   local ctid=$1
   shift
   pct exec "$ctid" -- "${CT_ENV[@]}" "$@" </dev/null
+}
+
+in_ct_input() {  # like in_ct, the command reads this function's input (files for the container)
+  local ctid=$1
+  shift
+  pct exec "$ctid" -- "${CT_ENV[@]}" "$@"
 }
 
 first_storage() {  # first active storage for a content type (skips the header line)
@@ -336,7 +422,8 @@ create_container() {
     --rootfs "${CT[storage]}:${CT[disk]}" --net0 "$net" --timezone host \
     --unprivileged 1 --features nesting=1 --onboot 1 --ostype debian \
     --tags meshcore-home-gateway \
-    --description "meshcore-home-gateway $VERSION: MeshCore radio to MQTT and Home Assistant" >&2 \
+    --description "meshcore-home-gateway ${VERSION:-$REF}: MeshCore radio to MQTT and Home Assistant" \
+    >&2 \
     || die "creating container ${CT[id]} failed (see above)"
   CREATED=${CT[id]}
   if [[ ${OUT[radio.transport]} == serial ]]; then
@@ -372,34 +459,119 @@ check_device_group() {  # dev0 used Debian's dialout GID; pass the device again 
   fi
 }
 
+# Runs in the container: downloads the program into a directory, given last on the command line.
+#   release URL VERSION DIR: the zipapp and the unit of a release, checked against its SHA256SUMS
+#   source URL DIR: the source archive of a branch, tag or commit (HTTPS only, nothing to check)
+FETCH_PY='import hashlib, io, os, shutil, sys, tarfile, urllib.request
+
+UNIT = "deploy/systemd/meshcore-home-gateway.service"
+SOURCE = ("src/meshcore_home_gateway/", "tools/build_pyz.py", UNIT)
+
+
+def get(url):
+    request = urllib.request.Request(url, headers={"User-Agent": "meshcore-home-gateway-lxc"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read()
+    except OSError as exc:  # HTTP errors too
+        sys.exit(f"cannot download {url}: {exc}")
+
+
+def put(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as file:
+        file.write(data)
+
+
+mode, url, target = sys.argv[1], sys.argv[2], sys.argv[-1]
+shutil.rmtree(target, ignore_errors=True)
+if mode == "release":
+    version, sums = sys.argv[3], {}
+    for line in get(url + "SHA256SUMS").decode("utf-8").splitlines():
+        digest, _, name = line.partition(" ")
+        sums[name.strip().lstrip("*")] = digest
+    files = {
+        f"meshcore-home-gateway-{version}.pyz": "meshcore-home-gateway.pyz",
+        os.path.basename(UNIT): UNIT,
+    }
+    for name, path in files.items():
+        data = get(url + name)
+        if sums.get(name) != hashlib.sha256(data).hexdigest():
+            sys.exit(f"{name} does not match the SHA256SUMS of the release: not installed")
+        put(os.path.join(target, path), data)
+else:
+    try:
+        with tarfile.open(fileobj=io.BytesIO(get(url)), mode="r:gz") as archive:
+            members = []
+            for member in archive.getmembers():
+                inner = member.name.partition("/")[2]  # below the top directory of the archive
+                if inner.startswith(SOURCE[0]) or inner in SOURCE[1:]:
+                    member.name = inner
+                    members.append(member)
+            if not any(member.name == SOURCE[1] for member in members):
+                sys.exit(f"{url} holds no meshcore-home-gateway source")
+            archive.extractall(target, members=members, filter="data")  # no links out, no devices
+    except tarfile.TarError as exc:
+        sys.exit(f"{url}: not a usable source archive ({exc})")'
+
+stage_program() {  # stage_program CTID: the program to install, in $STAGE in the container
+  local ctid=$1 base
+  case $SOURCE in
+    checkout)  # packed on the fly: no file on the host
+      tar -C "$REPO_DIR" -cz --exclude=__pycache__ src/meshcore_home_gateway tools/build_pyz.py \
+        deploy/systemd/meshcore-home-gateway.service \
+        | in_ct_input "$ctid" bash -c "umask 077 && cat >$STAGE.tar.gz" \
+        || die "copying meshcore-home-gateway into container $ctid failed (see above)" ;;
+    release)
+      base=$RELEASES/download/v$PICKED/
+      in_ct "$ctid" python3 -I -c "$FETCH_PY" release "$base" "$PICKED" "$STAGE" >&2 \
+        || die "cannot download release $PICKED into container $ctid (see above)" ;;
+    ref)
+      in_ct "$ctid" python3 -I -c "$FETCH_PY" source \
+        "https://github.com/$REPOSITORY/archive/$REF.tar.gz" "$STAGE" >&2 \
+        || die "cannot download the source of $REF into container $ctid (see above)" ;;
+  esac
+}
+
 install_service() {  # packages, user, zipapp and unit; the version switches only if it is usable
-  local ctid=$1 archive="$WORK/meshcore-home-gateway-src.tar.gz"
-  log "installing python3, python3-paho-mqtt and meshcore-home-gateway $VERSION in container $ctid"
+  local ctid=$1 version
+  log "installing python3, python3-paho-mqtt and meshcore-home-gateway ${VERSION:-from $REF}" \
+    "in container $ctid"
   in_ct "$ctid" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y -qq --no-install-recommends python3 python3-paho-mqtt' >&2 \
-    || die "installing packages in container $ctid failed (see above)"
+    apt-get install -y -qq --no-install-recommends python3 python3-paho-mqtt ca-certificates' \
+    >&2 || die "installing packages in container $ctid failed (see above)"
   in_ct "$ctid" bash -c 'id meshcore-home-gateway >/dev/null 2>&1 || useradd --system \
     --user-group --groups dialout --no-create-home --home-dir /nonexistent \
     --shell /usr/sbin/nologin meshcore-home-gateway' >&2 || die "creating the service user failed"
-  tar -C "$REPO_DIR" -czf "$archive" --exclude=__pycache__ \
-    src/meshcore_home_gateway tools/build_pyz.py deploy/systemd/meshcore-home-gateway.service
-  pct push "$ctid" "$archive" /root/meshcore-home-gateway-src.tar.gz \
-    || die "copying meshcore-home-gateway into container $ctid failed (see above)"
-  in_ct "$ctid" bash -c "set -e
-    src=/root/meshcore-home-gateway-src new=$LIB/.meshcore-home-gateway.pyz.new
-    pyz=$LIB/meshcore-home-gateway-$VERSION.pyz
+  stage_program "$ctid"
+  # prints the installed version on stdout, everything else goes to stderr
+  version=$(in_ct "$ctid" bash -c "set -e
+    exec 3>&1 1>&2
+    src=$STAGE new=$LIB/.meshcore-home-gateway.pyz.new
     trap 'rm -rf \$src \$src.tar.gz \$new' EXIT
-    rm -rf \$src && mkdir -p \$src $LIB
-    tar -C \$src -xzf \$src.tar.gz
-    python3 \$src/tools/build_pyz.py --source \$src/src --output \$new \
-      --interpreter '/usr/bin/python3 -I' >/dev/null
+    mkdir -p $LIB
+    source=$SOURCE   # not by which files are there: a leftover archive must not replace a release
+    if [ \$source = checkout ]; then
+      rm -rf \$src && mkdir -p \$src && tar -C \$src -xzf \$src.tar.gz
+    fi
+    if [ \$source = release ]; then   # the release file, checked against SHA256SUMS
+      install -m 0755 \$src/meshcore-home-gateway.pyz \$new
+    else
+      python3 \$src/tools/build_pyz.py --source \$src/src --output \$new \
+        --interpreter '/usr/bin/python3 -I' >/dev/null
+    fi
+    version=\$(python3 -I \$new --version) && version=\${version##* }
+    case \$version in ''|*[!0-9A-Za-z.+-]*) echo \"unexpected version '\$version'\"; exit 1 ;; esac
     if [ -f $CONFIG ]; then /usr/bin/python3 -I \$new check-config --config $CONFIG; fi
-    mv -f \$new \$pyz   # only now: the same version may be the active one
-    ln -sfn meshcore-home-gateway-$VERSION.pyz $LIB/current.pyz
+    mv -f \$new $LIB/meshcore-home-gateway-\$version.pyz   # only now: it may be the active one
+    ln -sfn meshcore-home-gateway-\$version.pyz $LIB/current.pyz
     ln -sfn $LIB/current.pyz /usr/local/bin/meshcore-home-gateway
     install -m 0644 \$src/deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
-    systemctl daemon-reload" >&2 \
-    || die "meshcore-home-gateway $VERSION was not installed in container $ctid (see above)"
+    systemctl daemon-reload
+    echo \$version >&3") \
+    || die "meshcore-home-gateway ${VERSION:-from $REF} was not installed in container $ctid" \
+      "(see above)"
+  VERSION=$version TITLE="meshcore-home-gateway $version"
 }
 
 # --- configuration --------------------------------------------------------------------------
@@ -589,13 +761,13 @@ write_answers() {  # the answers for `meshcore-home-gateway config render`, one 
 }
 
 configure() {  # write the configuration into the container
-  local ctid=$1 answers="$WORK/answers"
-  ( umask 077 && write_answers >"$answers" )
-  pct push "$ctid" "$answers" /root/meshcore-home-gateway-answers --perms 0600
-  rm -f -- "$answers"
-  in_ct "$ctid" bash -c "set -e
-    trap 'rm -f /root/meshcore-home-gateway-answers' EXIT
-    meshcore-home-gateway config render --answers /root/meshcore-home-gateway-answers \
+  local ctid=$1
+  # through a pipe and a private file in the container: the answers hold the broker password
+  write_answers | in_ct_input "$ctid" bash -c "set -e
+    umask 077
+    trap 'rm -f $ANSWERS_FILE' EXIT
+    cat >$ANSWERS_FILE
+    meshcore-home-gateway config render --answers $ANSWERS_FILE \
       --output $CONFIG --group meshcore-home-gateway" >&2 \
     || die "the configuration was not accepted (see above)"
 }
@@ -627,13 +799,17 @@ start_service() {  # Type=notify: "active" means the service has reported readin
 }
 
 summary() {
-  local ctid=$1 text
+  local ctid=$1 text update
+  update="$(invocation) --update $ctid"
+  if [[ $SOURCE == release ]] && prerelease; then   # its own installer would install it again
+    update="the installer of a newer release ($RELEASES) with -- --update $ctid"
+  fi
   text="meshcore-home-gateway $VERSION runs in container $ctid.
 
 Logs:         pct exec $ctid -- journalctl -u meshcore-home-gateway -f
 Check:        pct exec $ctid -- meshcore-home-gateway check-config
-Reconfigure:  $0 --reconfigure $ctid
-Update:       $0 --update $ctid"
+Reconfigure:  $(invocation) --reconfigure $ctid
+Update:       $update"
   if [[ ${OUT[radio.transport]} == serial ]]; then
     text+="
 
@@ -653,13 +829,14 @@ install() {
   ask_container
   ask_radio
   ask_bridge
-  check_settings
+  check_settings   # from a checkout; otherwise right after the installation in the container
   confirm_install
   template=$(choose_template "${CT[template_storage]}")
   create_container "$template"
   start_container "${CT[id]}"
   if [[ ${OUT[radio.transport]} == serial ]]; then check_device_group "${CT[id]}"; fi
   install_service "${CT[id]}"
+  if [[ $SOURCE != checkout ]]; then check_settings_in "${CT[id]}"; fi
   choose_targets "${CT[id]}"
   configure "${CT[id]}"
   start_service "${CT[id]}"
@@ -679,7 +856,7 @@ update() {
 }
 
 reconfigure() {
-  local ctid=$1 key
+  local ctid=$1 key version
   for key in "${!ANSWERS[@]}"; do  # the container and the radio connection stay as installed
     case $key in
       radio.choice|ct.*) die "--reconfigure cannot apply the answer $key (see docs/deployment.md)" ;;
@@ -687,10 +864,14 @@ reconfigure() {
   done
   ct_running "$ctid" || die "container $ctid is not running"
   load_current "$ctid"
+  version=$(in_ct "$ctid" meshcore-home-gateway --version) && version=${version##* }
+  [[ $version =~ ^[0-9][0-9A-Za-z.+-]*$ ]] \
+    || die "cannot read the version of meshcore-home-gateway in container $ctid"
+  VERSION=$version TITLE="meshcore-home-gateway $version"   # what runs there, not this installer
   pass_settings
   choose_setup
   ask_bridge
-  check_settings
+  check_settings_in "$ctid"   # with the version installed there, which renders the configuration
   STOPPED=$ctid   # first: an interruption during the stop also starts the service again
   in_ct "$ctid" systemctl stop meshcore-home-gateway >&2   # the radio accepts a single client
   choose_targets "$ctid"
@@ -707,10 +888,20 @@ main() {
       --answers) [[ $# -ge 2 ]] || die "--answers needs a file"; INTERACTIVE=0; load_answers "$2"; shift 2 ;;
       --update) [[ $# -ge 2 ]] || die "--update needs a container ID"; mode=update; ctid=$2; shift 2 ;;
       --reconfigure) [[ $# -ge 2 ]] || die "--reconfigure needs a container ID"; mode=reconfigure; ctid=$2; shift 2 ;;
-      -h|--help) sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      --release)
+        [[ $# -ge 2 && $2 =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || die "--release needs a version, e.g. 0.1.0"
+        [[ $SOURCE != ref ]] || die "--release and --ref exclude each other"
+        SOURCE=release PICKED=$2 VERSION=$2; shift 2 ;;
+      --ref)
+        [[ $# -ge 2 && $2 =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
+          || die "--ref needs a branch, tag or commit, e.g. main"
+        [[ $SOURCE != release ]] || die "--release and --ref exclude each other"
+        SOURCE=ref REF=$2; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
       *) die "unknown option $1 (see --help)" ;;
     esac
   done
+  detect_source
   preflight "$mode"
   WORK=$(mktemp -d)
   case $mode in

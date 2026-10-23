@@ -9,6 +9,14 @@ format and the command line are public interfaces.
 
 ### Changed
 
+- The Proxmox installer runs straight from its address, like the Proxmox community scripts:
+  `bash -c "$(wget -qO- URL)"`. Nothing is stored on the host; the program is downloaded inside
+  the new container: from a release, its zipapp and unit, checked against its `SHA256SUMS` (the
+  release publishes the installer with its version written in); before the first release, the
+  source of `main` (`--ref` for another branch, tag or commit), built there. Run from a clone, it
+  installs the clone, as before. Files go into the container through command input, no longer
+  through temporary files on the host; when the program is downloaded, the settings are checked in
+  the new container. `--release` installs another release, for example to go back to one.
 - Settings that would have no effect are configuration errors: `mqtt.password` without
   `mqtt.username`, `radio.device` with `transport = "tcp"`, `radio.host` or `radio.port` with
   `transport = "serial"`. `radio.device` and the TLS files must be absolute paths (the service
@@ -158,10 +166,10 @@ format and the command line are public interfaces.
 - systemd unit with notify, watchdog and sandboxing; reproducible zipapp build.
 - Proxmox VE installer: default and advanced setup in dialogs or from an answers file (unknown
   installer answers refused, every configuration setting passed on, the radio never guessed),
-  settings checked before anything is created, unprivileged Debian 13 container with nesting, radio
-  passed through by its stable path, update that switches only to a version accepting the
-  configuration (also with an unchanged version string), reconfigure that keeps the current
-  settings and the targets the radio no longer offers.
+  settings checked with the program's own code before the radio is read, unprivileged Debian 13
+  container with nesting, radio passed through by its stable path, update that switches only to a
+  version accepting the configuration (also with an unchanged version string), reconfigure that
+  keeps the current settings and the targets the radio no longer offers.
 - Release workflow (ADR 0013): a tag `vX.Y.Z` builds the zipapp, wheel and sdist reproducibly
   with the same `make` targets as a local check, attests them with Sigstore-signed build
   provenance and publishes them with `SHA256SUMS` on a GitHub release; `make release` is the local
