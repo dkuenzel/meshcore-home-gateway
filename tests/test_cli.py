@@ -549,6 +549,59 @@ def test_refused_broker_connection_is_an_error(
     assert "refused" in capsys.readouterr().err
 
 
+@pytest.mark.broker
+def test_check_config_logs_in_to_the_broker_on_request(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = str(broker_config(tmp_path, broker))
+    assert main(["check-config", "--config", config]) == EX_OK
+    assert "login" not in capsys.readouterr().out  # only with --broker
+    assert main(["check-config", "--config", config, "--broker"]) == EX_OK
+    out = capsys.readouterr().out
+    assert "no user name" in out
+    assert f"login      accepted by {broker.host}:{broker.port}" in out
+
+
+@pytest.mark.broker
+def test_check_config_reports_a_refused_login_with_the_user_name(
+    tmp_path: Path, refusing_broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = broker_config(tmp_path, refusing_broker)
+    text = path.read_text(encoding="utf-8")
+    path.write_text(
+        text.replace(
+            'node_id = "radio1"\n', 'node_id = "radio1"\nusername = "gw"\npassword = "x"\n'
+        ),
+        encoding="utf-8",
+    )
+    assert main(["check-config", "--config", str(path), "--broker"]) == EX_FAILURE
+    captured = capsys.readouterr()
+    assert "user 'gw' with a password" in captured.out
+    assert "broker refused the connection: Not authorized (user 'gw' with a password)" in (
+        captured.err
+    )
+    assert "unknown user and missing credentials alike" in captured.err
+    assert '"x"' not in captured.out + captured.err
+
+
+def test_check_config_reports_an_unreachable_broker(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = int(sock.getsockname()[1])
+    path = tmp_path / "config.toml"
+    path.write_text(
+        f'[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n'
+        f'[mqtt]\nhost = "127.0.0.1"\nport = {port}\nnode_id = "radio1"\n',
+        encoding="utf-8",
+    )
+    assert main(["check-config", "--config", str(path), "--broker"]) == EX_FAILURE
+    error = capsys.readouterr().err
+    assert f"cannot connect to the broker 127.0.0.1:{port}" in error
+    assert "alike" not in error  # no broker answered: not a matter of credentials
+
+
 class FakeBridge:
     """Answers send requests like the bridge does, with events of other requests mixed in."""
 

@@ -11,6 +11,8 @@ from typing import Any
 import paho.mqtt.client as paho
 import pytest
 from paho.mqtt.enums import CallbackAPIVersion
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.reasoncodes import ReasonCode
 
 from meshcore_home_gateway.config import MqttConfig
 from meshcore_home_gateway.mqtt import client as client_module
@@ -120,14 +122,38 @@ def test_every_reconnect_subscribes_and_announces_again() -> None:
     asyncio.run(scenario())
 
 
-def test_refused_connection_is_only_logged() -> None:
+def test_refused_connection_is_only_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """With the user name: Mosquitto gives the same reason for every credentials problem."""
+
     async def scenario() -> None:
         bus, fake = make_bus()
         await bus.start()
-        fake.on_connect(fake, None, None, SimpleNamespace(is_failure=True), None)
+        refused = ReasonCode(PacketTypes.CONNACK, identifier=135)
+        fake.on_connect(fake, None, None, refused, None)
+        fake.on_disconnect(fake, None, None, "Unspecified error", None)  # paho closes after it
         await asyncio.sleep(0)
         assert not bus.connected
         assert "subscribe" not in names(fake)
+        assert "connection refused: Not authorized (user 'u'; test the login with" in caplog.text
+        assert "check-config --broker" in caplog.text
+        assert "'p'" not in caplog.text
+        assert "without answering" not in caplog.text  # the refusal was the answer
+
+    asyncio.run(scenario())
+
+
+def test_a_connection_closed_without_an_answer_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """A plain connection to a TLS port, or a broker that refuses a feature, sends no CONNACK."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        fake.on_disconnect(fake, None, None, "Unspecified error", None)
+        await asyncio.sleep(0)
+        assert (
+            "MQTT: broker.example.org:1883 closed the connection without answering "
+            "(Unspecified error)"
+        ) in caplog.text
 
     asyncio.run(scenario())
 

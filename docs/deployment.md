@@ -16,7 +16,8 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   * the *airtime factor* for the legal duty cycle: the firmware allows 50 % by default; for the EU
     band 869.40–869.65 MHz (10 % per hour) the factor is 9 (protocol.md, section 7).
 * **Broker:** an MQTT user for the bridge, with an ACL (mqtt-api.md, last section); the ACL is
-  required when commands are configured.
+  required when commands are configured. A standalone Mosquitto reads a user added with
+  `mosquitto_passwd` only after `systemctl reload mosquitto`.
 * **Home Assistant:** MQTT integration with discovery enabled (the default).
 
 ## 2 Proxmox VE
@@ -79,7 +80,7 @@ every setting in the table.
 | IPv4 address with prefix, gateway | `dhcp` | Advanced |
 | Storage for templates | first active storage for templates | Advanced |
 | Radio connection | the devices in `/dev/serial/by-id/`, or TCP with address and port (5000) | both |
-| Broker address, user, password | –, `meshcore-home-gateway`, – (asked only with a user name) | both |
+| Broker address, user, password | –, none (suggested: `meshcore-home-gateway`), – (asked only with a user name) | both |
 | Broker TLS, port | no, 1883 (8883 with TLS) | Advanced |
 | Base topic, node id | `meshcore`, `radio1` | Advanced |
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
@@ -90,10 +91,15 @@ every setting in the table.
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
 settings with the program's own configuration code (when it installs a clone: already before the
-container is created), reads the radio's channels and contacts for the last questions, writes the
-configuration and starts the service. The final message shows how to
-read the logs. If a step fails or the script is interrupted after the container was created, the
-error message says how to remove it.
+container is created), logs in to the broker with the user name and password given, reads the
+radio's channels and contacts for the last questions, writes the configuration and starts the
+service. When the broker refuses the login, the script shows its answer and offers to enter the
+broker settings again (without dialogs it warns and goes on: the service keeps trying). The final
+message shows the result of the login and how to read the logs. If a step fails or the script is
+interrupted after the container was created, the error message says how to remove it.
+
+The dialogs run in the `C.UTF-8` locale: in a locale the host lacks (for example one passed on by
+ssh), whiptail would drop every non-ASCII character typed, passwords included.
 
 ### What the script does
 
@@ -292,6 +298,7 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 | Logs | `journalctl -u meshcore-home-gateway -f` |
 | Status | `systemctl status meshcore-home-gateway` (shows radio state and queue) |
 | Check the configuration | `meshcore-home-gateway check-config` |
+| Check the broker login | `meshcore-home-gateway check-config --broker` |
 | Watch the bus | `meshcore-home-gateway listen` |
 | Send a test message | `meshcore-home-gateway send --wait 60 <alias> "test"` |
 | Inspect the radio | `systemctl stop meshcore-home-gateway && meshcore-home-gateway probe --serial <device>` |
@@ -323,6 +330,9 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 | Commands rejected with `replay` although they are new | The sender's clock went backwards (reset, battery change): its timestamps are older than its last accepted command. Set the clock right; or, with the service stopped, remove the sender's key from `command_timestamps` in `/var/lib/meshcore-home-gateway/state.json` |
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
 | Commands rejected with `sender_unverified` | The bridge fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
+| `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto`. `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on refuses the reserved names `homeassistant` and `addons`, takes a Home Assistant user by its login name (not the display name) or a `logins` entry (after an add-on restart), and remembers a refused login for about 5 minutes: restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1`), not the user |
+| `MQTT: cannot reach …` | No broker answered at that name or address and port: check `mqtt.host` (a host name or IP address, no `mqtt://`) and `mqtt.port`, the network and the firewall |
+| `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
 | Commands rejected with `broker_unavailable` | The gateway could not reach the broker when the command arrived; check the broker connection (`availability`, the log), then send the command again |
 | Commands rejected with `state_unwritable` | `/var/lib/meshcore-home-gateway/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |

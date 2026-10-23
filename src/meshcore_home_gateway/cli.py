@@ -96,7 +96,11 @@ def _parser() -> argparse.ArgumentParser:
         help="default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway",
     )
 
-    command("check-config", "validate the configuration and print a summary", _check_config)
+    check = command("check-config", "validate the configuration and print a summary", _check_config)
+    check.add_argument(
+        "--broker", action="store_true",
+        help="also log in to the broker with the configured user name and password",
+    )  # fmt: skip
 
     probe = command(
         "probe", "connect to a radio directly and list what it knows", _probe, config=False
@@ -221,7 +225,10 @@ def _check_config(args: argparse.Namespace) -> int:
         tls_context(mqtt)
     print(f"configuration {args.config}: valid")
     print(f"  radio      {radio.transport} {where}")
-    print(f"  broker     {mqtt.host}:{mqtt.port}{tls}, topics {mqtt.topic_root}/...")
+    login = f"user {mqtt.username!r}" if mqtt.username else "no user name"
+    if mqtt.username:
+        login += " with a password" if mqtt.password else " without a password"
+    print(f"  broker     {mqtt.host}:{mqtt.port}{tls}, {login}, topics {mqtt.topic_root}/...")
     print(f"  discovery  {discovery}")
     for target in config.targets:
         if target.channel_index is not None:
@@ -233,6 +240,27 @@ def _check_config(args: argparse.Namespace) -> int:
         print(f"  commands   {', '.join(words)} from {senders} sender(s)")
     airtime = config.airtime
     print(f"  airtime    {airtime.budget_s_per_hour:g} s per hour, burst {airtime.burst_s:g} s")
+    if not args.broker:
+        return EX_OK
+    client = _mqtt_client(mqtt, "check")  # another client id: the service may be connected
+    connection = _Connection()
+    try:
+        error = connection.open(client, mqtt)
+    finally:
+        client.disconnect()
+        client.loop_stop()
+    if error is not None:
+        print(f"meshcore-home-gateway: {error} ({login})", file=sys.stderr)
+        if connection.refusal is not None:
+            print(
+                "meshcore-home-gateway: brokers such as Mosquitto refuse a wrong password, an "
+                "unknown user and missing credentials alike; a standalone Mosquitto knows a user "
+                "added with mosquitto_passwd only after 'systemctl reload mosquitto' "
+                "(docs/deployment.md, troubleshooting)",
+                file=sys.stderr,
+            )
+        return EX_FAILURE
+    print(f"  login      accepted by {mqtt.host}:{mqtt.port}")
     return EX_OK
 
 
