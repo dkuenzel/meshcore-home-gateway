@@ -63,7 +63,8 @@ Rules, all of which must hold:
      rejected (`sender_unverified`).
 4. The sender timestamp is **greater** than the last accepted one of this sender (`replay`). The
    bridge stores it durably before publishing the event; if that fails, the command is rejected
-   (`state_unwritable`).
+   (`state_unwritable`). It also stores the timestamp of a command it refuses because the broker
+   is unreachable (`broker_unavailable`): that sender was verified.
 5. Unless `max_age_s` is 0, the timestamp lies within `max_age_s` of the bridge clock
    (`too_old`, `from_the_future`).
 
@@ -93,6 +94,10 @@ appears on `received`. The bridge executes nothing.
   look-alike that enters and leaves the table between two reads can then go unseen. Commands
   should come in over USB; the bridge warns when commands are configured with TCP.
 * Good, because replays of captured packets fail, also across restarts.
+* Bad, because a command rejected as `sender_unverified` or `state_unwritable` stores no
+  timestamp (a look-alike's must not block the real sender, or the file cannot be written). A
+  replayed copy of its packet is dropped as an exact repeat for an hour; later, or after a
+  restart, it is accepted if it is still within `max_age_s`, at any time with `max_age_s = 0`.
 * Bad, because senders need a correct clock (the phone apps set it; a handheld without time sync
   may be rejected until its clock is set). `max_age_s = 0` disables the window if needed.
 * Bad, because the contact must be known to the radio with its full key (it has to have advertised
@@ -105,10 +110,11 @@ keys that are only remembered. Component tests with the emulated radio check tha
 makes the command ambiguous when it was added without a push, overwritten, cleared silently after
 its adverts, or seen only in an earlier table read, also across reconnects; that a sender known
 only from memory is not accepted; that a command waiting at connect is rejected and its repetition
-accepted; that an unreadable contact table rejects it; that cached rejections cost no read, one
-read serves a batch and a read in progress is reused; and that the timestamp is persisted before
-the command event is published, with an unwritable state file rejecting the command. The hardware
-checklist repeats the restart case.
+accepted, while an identical copy of its packet, or of one refused for an unreachable broker (also
+after a restart), is not; that an unreadable contact table rejects it; that cached rejections cost
+no read, one read serves a batch and a read in progress is reused; and that the timestamp is
+persisted before the command event is published, with an unwritable state file rejecting the
+command. The hardware checklist repeats the restart case.
 
 ## Pros and Cons of the Options
 
@@ -132,4 +138,7 @@ checklist repeats the restart case.
   misses a look-alike that has left it again (overwritten, or cleared by its own adverts without
   a push), and a read per possible command is slow on large tables. Added the memory of keys with
   a sender's prefix, the order of checks and the rejection of commands waiting at connect.
+* Amended on 2026-10-23, before the first release: a rejected command stays an exact repeat
+  instead of being judged again (the radio has acknowledged it, so only a replay repeats it), and
+  `broker_unavailable` stores the timestamp; the remaining gap is listed under Consequences.
 * Revisit if MeshCore adds signed commands or a challenge–response mechanism for companion clients.

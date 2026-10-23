@@ -91,7 +91,7 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | --- | --- | --- |
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
-| `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the bridge clock; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay) |
+| `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the bridge clock; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the bridge
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.

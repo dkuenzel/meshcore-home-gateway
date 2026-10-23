@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +18,7 @@ from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.mqtt.client import SendRequest
+from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
@@ -133,6 +135,7 @@ async def running(
     *,
     sessions: Callable[..., CompanionSession] = fast_sessions,
     bus: FakeBus | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> AsyncIterator[tuple[Bridge, FakeBus, list[str]]]:
     bus = bus or FakeBus()
     stop, notes = asyncio.Event(), []
@@ -144,7 +147,8 @@ async def running(
     store = JsonStateFile(tmp_path / "state.json")
     bridge = Bridge(
         config, bus, transport or (lambda: radio), CommandLedger(store), session_factory=sessions,
-        wall_clock=lambda: NOW, notifier=note, components=AnnouncedComponents(store),
+        wall_clock=lambda: NOW, monotonic=monotonic, notifier=note,
+        components=AnnouncedComponents(store),
     )  # fmt: skip
     task = asyncio.create_task(bridge.run(stop))
     try:
@@ -158,6 +162,28 @@ async def running(
 
 def scenario(coro: Callable[[], Any]) -> None:
     asyncio.run(asyncio.wait_for(coro(), 20))
+
+
+FINAL = {"confirmed", "failed", "expired", "rejected", "duplicate"}
+
+
+class Unreachable:
+    """A radio that is not plugged in."""
+
+    description = "unreachable"
+    needs_flush = False
+
+    async def open(self) -> None:
+        raise FileNotFoundError("no such device")
+
+    async def read(self) -> bytes:
+        raise ConnectionError
+
+    async def write(self, data: bytes) -> None:
+        raise ConnectionError
+
+    async def close(self) -> None:
+        return None
 
 
 def test_channel_message_is_queued_and_sent(tmp_path: Path) -> None:
@@ -264,8 +290,36 @@ def test_command_is_refused_while_the_broker_is_unreachable(tmp_path: Path) -> N
                 "word": "arm", "accepted": False, "reason": "broker_unavailable",
             }  # fmt: skip
             bus.connected = True
-            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 10)  # the retry
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)  # sent again
             await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
+
+    scenario(main)
+
+
+def test_copy_of_a_command_refused_for_the_broker_is_no_command(tmp_path: Path) -> None:
+    """The radio acknowledged the packet, so the sender does not repeat it: an identical copy is
+    a replay. The sender was verified, so its timestamp is stored, also across a restart."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.connected = False
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 30)
+            await bus.wait_for(
+                "/received", lambda r: r["command"]["reason"] == "broker_unavailable"
+            )
+            bus.connected = True
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 30)  # replayed copy
+            radio.queue_direct_message(BOB.public_key[:6], "hello", NOW - 1)
+            await bus.wait_for("/received", lambda r: r["text"] == "hello")
+            assert len(bus.payloads("/received")) == 2  # the copy was dropped as a duplicate
+            assert not bus.payloads("/command")
+        restarted = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(make_config(), restarted, tmp_path) as (_, bus, _notes):
+            restarted.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 30)  # again
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "replay"
+            assert not bus.payloads("/command")
 
     scenario(main)
 
@@ -320,6 +374,45 @@ def test_channel_limit_accounts_for_the_radio_name(tmp_path: Path) -> None:
     scenario(main)
 
 
+@pytest.mark.parametrize(
+    ("truncate", "text", "sent"),
+    [
+        (True, "a" * 150, "a" * 150),  # not cut to the 127 bytes of the longest name
+        (True, "b" * 200, "b" * 149 + "..."),
+        (False, "c" * 155, None),  # fails as too long
+    ],
+    ids=["fits", "truncated", "too_long"],
+)
+def test_channel_text_accepted_before_the_radio_is_known_is_limited_when_sent(
+    tmp_path: Path, truncate: bool, text: str, sent: str | None
+) -> None:
+    """The firmware puts the radio's name in front of a channel text, and before the radio has
+    connected once that name is unknown: the text is limited when it is sent, for this radio
+    ("Bridge") to 160 - 8 = 152 bytes."""
+    radio = EmulatedRadio()
+    plugged: list[bool] = []
+    config = make_config(messages=f"truncate = {str(truncate).lower()}")
+
+    def transport() -> Transport:
+        return radio if plugged else Unreachable()
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path, transport=transport) as (_, bus, _notes):
+            bus.send("alerts", text)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+            plugged.append(True)  # the radio connects
+            final = await bus.wait_for(
+                "/delivery", lambda d: d["event_type"] in FINAL | {"sent"}, 5
+            )
+            if sent is None:
+                assert (final["event_type"], final["reason"]) == ("failed", "too_long")
+            else:
+                assert (final["event_type"], final["text"]) == ("sent", sent)
+            assert [t for _, t, _ in radio.channel_texts] == ([] if sent is None else [sent])
+
+    scenario(main)
+
+
 def test_duplicates_are_suppressed(tmp_path: Path) -> None:
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
@@ -331,23 +424,36 @@ def test_duplicates_are_suppressed(tmp_path: Path) -> None:
     scenario(main)
 
 
+def test_events_of_a_flood_of_refused_requests_are_limited(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flood of refused requests must not become a flood of events, which would push other
+    events out of a subscriber's queue on the broker; the log counts what was left out. Accepted
+    requests keep their events."""
+    monkeypatch.setattr(bridge_module, "STATUS_INTERVAL_S", 0.05)  # reports the count
+    monkeypatch.setattr(bridge_module, "REFUSED_REPORT_INTERVAL_S", 0.2)
+    caplog.set_level(logging.WARNING)
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
+            for _request in range(5000):
+                bus.send("nobody", "x")
+            bus.send("alerts", "valid")
+            await bus.wait_for(
+                "/delivery", lambda d: (d["text"], d["event_type"]) == ("valid", "sent")
+            )
+            refused = [d for d in bus.payloads("/delivery") if d["reason"] == "unknown_target"]
+            assert 100 <= len(refused) < 200  # the burst, and the rate while the flood lasted
+            await asyncio.sleep(0.4)
+            reports = [r.getMessage() for r in caplog.records if "not published" in r.getMessage()]
+            assert len(reports) == 2  # at once, then the rest of the flood
+            counted = sum(int(report.rsplit(" ", 1)[1]) for report in reports)
+            assert counted + len(refused) == 5000
+
+    scenario(main)
+
+
 def test_full_queue_rejects_and_waiting_messages_expire(tmp_path: Path) -> None:
-    class Unreachable:
-        description = "unreachable"
-        needs_flush = False
-
-        async def open(self) -> None:
-            raise FileNotFoundError("no such device")
-
-        async def read(self) -> bytes:
-            raise ConnectionError
-
-        async def write(self, data: bytes) -> None:
-            raise ConnectionError
-
-        async def close(self) -> None:
-            return None
-
     config = make_config(messages="queue_size = 1\nqueue_ttl_s = 1")
 
     async def main() -> None:
@@ -377,9 +483,6 @@ def test_airtime_budget_makes_messages_expire(tmp_path: Path) -> None:
             assert bridge.state_payload()["airtime_1h_s"] <= 5.0
 
     scenario(main)
-
-
-FINAL = {"confirmed", "failed", "expired", "rejected", "duplicate"}
 
 
 def test_request_rejected_for_a_full_queue_is_no_duplicate_later(tmp_path: Path) -> None:
@@ -510,6 +613,132 @@ def test_burst_is_checked_before_the_path_is_reset(tmp_path: Path) -> None:
     scenario(main)
 
 
+def test_message_waits_for_airtime_then_is_sent(tmp_path: Path) -> None:
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
+            bridge._budget._tokens, bridge._budget._rate = 0.0, 2.0  # about 0.3 s to wait
+            bus.send("alerts", "Smoke")
+            event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL | {"sent"})
+            assert event["event_type"] == "sent"
+            assert event["airtime_ms"] > 300
+            assert [text for _, text, _ in radio.channel_texts] == ["Smoke"]
+
+    scenario(main)
+
+
+def test_airtime_running_out_after_sending_is_a_failure(tmp_path: Path) -> None:
+    """The message left once, so it was not acknowledged: `failed`, not `expired`."""
+    radio = EmulatedRadio(contacts=[ALICE], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
+            bus.send("alice", "x")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            bridge._budget._tokens, bridge._budget._rate = 0.0, 1e-6  # nothing for attempt 2
+            event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
+            assert (event["event_type"], event["reason"], event["attempt"]) == (
+                "failed", "no_acknowledgement", 1,
+            )  # fmt: skip
+            assert len(radio.texts) == 1
+
+    scenario(main)
+
+
+@pytest.mark.parametrize(
+    ("alias", "refusal", "reason"),
+    [
+        ("alice", {"errors": {Command.SEND_TXT_MSG: 3}}, "table_full"),
+        ("alerts", {"disabled": {Command.SEND_CHANNEL_TXT_MSG}}, "disabled"),
+    ],
+    ids=["error", "disabled"],
+)
+def test_a_refusal_of_the_radio_ends_the_delivery(
+    tmp_path: Path, alias: str, refusal: dict[str, Any], reason: str
+) -> None:
+    """ERR or DISABLED is the radio's answer, not an interruption: nothing is sent again."""
+    radio = EmulatedRadio(contacts=[ALICE], **refusal)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send(alias, "x")
+            event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL | {"sent"})
+            assert (event["event_type"], event["reason"], event["attempt"]) == ("failed", reason, 0)
+            sends = {Command.SEND_TXT_MSG, Command.SEND_CHANNEL_TXT_MSG}
+            assert len([c for c in radio.commands() if c in sends]) == 1
+
+    scenario(main)
+
+
+def test_channel_text_too_long_for_a_renamed_radio_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A text accepted for the radio's old name no longer fits after a rename."""
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 0.3)
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 0.3)
+    radio = EmulatedRadio(contacts=[ALICE], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("alice", "busy")  # the outbox waits for acknowledgements meanwhile
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            bus.send("alerts", "c" * 152)  # just fits "Bridge"
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+            radio.name = "Bridge 2"  # the bridge learns the new name when it connects again
+            radio.disconnect()
+            event = await bus.wait_for(
+                "/delivery", lambda d: d["target"] == "alerts" and d["event_type"] in FINAL, 5
+            )
+            assert (event["event_type"], event["reason"]) == ("failed", "too_long")
+            assert radio.channel_texts == []
+
+    scenario(main)
+
+
+def test_unexpected_errors_lose_one_message_and_the_service_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A bug while sending fails that delivery (`internal_error`), a bug while handling a received
+    message loses that one; both are logged with their traceback."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    plan = Bridge._plan
+    failures = {"plan": 1, "payload": 1}
+
+    def plan_once(self: Bridge, *args: Any) -> Any:
+        if failures["plan"]:
+            failures["plan"] -= 1
+            raise KeyError("bug in planning")
+        return plan(self, *args)
+
+    def payload_once(*args: Any) -> Any:
+        if failures["payload"]:
+            failures["payload"] -= 1
+            raise KeyError("bug in the payload")
+        return received_payload(*args)
+
+    monkeypatch.setattr(Bridge, "_plan", plan_once)
+    monkeypatch.setattr(bridge_module, "received_payload", payload_once)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("alerts", "first")
+            bus.send("alerts", "second")
+            await bus.wait_for(
+                "/delivery", lambda d: (d["text"], d["event_type"]) == ("second", "sent")
+            )
+            first = [d for d in bus.payloads("/delivery") if d["text"] == "first"]
+            assert (first[-1]["event_type"], first[-1]["reason"]) == ("failed", "internal_error")
+            radio.queue_direct_message(BOB.public_key[:6], "lost", NOW - 5)
+            radio.queue_direct_message(BOB.public_key[:6], "published", NOW - 4)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["text"] == "published"
+
+    scenario(main)
+    assert "bug in planning" in caplog.text
+    assert "bug in the payload" in caplog.text
+
+
 def test_targets_missing_on_the_radio_fail(tmp_path: Path) -> None:
     twin = EmulatedContact(ALICE.public_key[:6] + bytes(26), "Twin")
     radio = EmulatedRadio(contacts=[ALICE, twin], channels={})  # no channel configured
@@ -529,6 +758,28 @@ def test_targets_missing_on_the_radio_fail(tmp_path: Path) -> None:
             assert reasons == {"channel_not_configured", "ambiguous_target", "unknown_contact"}
             assert radio.texts == []
             assert radio.channel_texts == []
+
+    scenario(main)
+
+
+def test_contact_change_the_radio_reported_is_read_before_sending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The radio encrypts for the first contact with the target's 6-byte prefix. A look-alike it
+    has just added in an earlier slot, and reported, must make the delivery fail instead of
+    receiving the message, although the regular read of the table follows only later."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 2.0)  # the production delay
+    radio = EmulatedRadio(contacts=[ALICE, BOB], manual_add=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.contacts.insert(0, TWIN)
+            radio.emit(bytes([Push.ADVERT]) + TWIN.public_key)
+            await asyncio.sleep(0.05)  # the push has been handled
+            bus.send("alice", "Alarm")
+            final = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
+            assert (final["event_type"], final["reason"]) == ("failed", "ambiguous_target")
+            assert radio.texts == []
 
     scenario(main)
 
@@ -674,6 +925,24 @@ def test_command_waiting_in_the_radio_at_connect_is_rejected(tmp_path: Path) -> 
     scenario(main)
 
 
+def test_copy_of_a_command_rejected_at_connect_is_no_command(tmp_path: Path) -> None:
+    """The radio acknowledged the packet when the bridge fetched it, so the sender does not
+    repeat it: an identical copy is a replay and is dropped as a duplicate (ADR 0009)."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 30, push=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for("/received", lambda r: r["command"]["reason"] == "sender_unverified")
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 30)  # replayed copy
+            radio.queue_direct_message(BOB.public_key[:6], "hello", NOW - 1)
+            await bus.wait_for("/received", lambda r: r["text"] == "hello")
+            assert len(bus.payloads("/received")) == 2
+            assert not bus.payloads("/command")
+
+    scenario(main)
+
+
 def test_look_alikes_are_remembered_across_reconnects(tmp_path: Path) -> None:
     radio = EmulatedRadio(contacts=[ALICE])
 
@@ -686,8 +955,9 @@ def test_look_alikes_are_remembered_across_reconnects(tmp_path: Path) -> None:
                 if radio.commands().count(Command.GET_CONTACTS) > reads:
                     break  # the advert was handled: the table is being read again
                 await asyncio.sleep(0.01)
+            count = len(bus.payloads("/state"))
             radio.disconnect()
-            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected")
+            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected", since=count)
             count = len(bus.payloads("/state"))
             await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=count)
             radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5)
@@ -700,12 +970,13 @@ def test_look_alikes_are_remembered_across_reconnects(tmp_path: Path) -> None:
 def test_overwritten_look_alike_still_makes_the_sender_ambiguous(tmp_path: Path) -> None:
     """With a full table the radio overwrites the oldest contact and says so with a push; the
     look-alike that sent the message may be gone before the bridge reads the table."""
-    radio = EmulatedRadio(contacts=[ALICE, BOB, TWIN], manual_add=False)
+    radio = EmulatedRadio(contacts=[ALICE, BOB], manual_add=False)
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.contacts.append(TWIN)  # added without a push: no read of the table shows it
             radio.queue_direct_message(TWIN.public_key[:6], "arm now", NOW - 5, push=False)
-            radio.overwrite(TWIN)  # CONTACT_DELETED push, then ...
+            radio.overwrite(TWIN)  # CONTACT_DELETED push, the only trace of it, then ...
             radio.emit(bytes([Push.MSG_WAITING]))  # ... the bridge fetches the message
             received = await bus.wait_for("/received", lambda r: True)
             assert received["command"]["reason"] == "sender_ambiguous"
@@ -747,6 +1018,37 @@ def test_a_look_alike_the_radio_did_not_add_does_not_block_the_sender(tmp_path: 
             radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 5)
             command = await bus.wait_for("/command", lambda c: True)
             assert command["sender_name"] == "Alice"
+
+    scenario(main)
+
+
+def test_look_alike_counts_for_a_day_after_it_was_last_seen(tmp_path: Path) -> None:
+    """A node the radio did not add (NEW_ADVERT) renews a look-alike that is still remembered,
+    but does not bring back one that is forgotten (ADR 0009)."""
+    clock, day = [1000.0], bridge_module.LOOK_ALIKE_MEMORY_S
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    not_added = bytes([Push.NEW_ADVERT]) + TWIN.public_key + bytes(115)
+
+    def now() -> float:
+        return clock[0]
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, monotonic=now) as (_, bus, _notes):
+            radio.emit(bytes([Push.ADVERT]) + TWIN.public_key)  # a contact of the radio, once
+            await asyncio.sleep(0.05)
+            clock[0] += day - 10
+            radio.emit(not_added)  # renews it
+            await asyncio.sleep(0.05)
+            clock[0] += 20  # a day after the first sighting, not after the renewal
+            radio.queue_direct_message(ALICE.public_key[:6], "arm one", NOW - 9)
+            first = await bus.wait_for("/received", lambda r: True)
+            assert first["command"]["reason"] == "sender_ambiguous"
+            clock[0] += day  # forgotten
+            radio.emit(not_added)  # renews nothing
+            await asyncio.sleep(0.05)
+            radio.queue_direct_message(ALICE.public_key[:6], "arm two", NOW - 5)
+            second = await bus.wait_for("/received", lambda r: True, since=1)
+            assert second["command"] == {"word": "arm", "accepted": True, "reason": None}
 
     scenario(main)
 
@@ -849,7 +1151,7 @@ def test_unwritable_state_file_rejects_the_command_and_keeps_the_service(
             received = await bus.wait_for("/received", lambda r: True)
             assert received["command"]["reason"] == "state_unwritable"
             monkeypatch.undo()
-            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)  # the sender's retry
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 4)  # sent again
             await bus.wait_for("/command", lambda c: True)  # the service is still there
 
     scenario(main)
@@ -863,7 +1165,7 @@ def test_retry_of_an_unverified_command_is_judged_again(tmp_path: Path) -> None:
             radio.errors[Command.GET_CONTACTS] = 1
             radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)
             await bus.wait_for("/received", lambda r: r["command"]["reason"] == "sender_unverified")
-            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)  # same packet again
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 4)  # sent again
             await bus.wait_for("/command", lambda c: True)
 
     scenario(main)
@@ -881,6 +1183,78 @@ def test_names_come_from_the_table_just_read(tmp_path: Path) -> None:
             assert received["sender_name"] is None
 
     scenario(main)
+
+
+FORGED = "\u202e\nERROR x\x1b[31m\u2028"  # direction override, line breaks, terminal escape
+
+
+def test_names_from_the_mesh_cannot_forge_log_lines(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Contact names come from the mesh: quoted in the log, they cannot start a line of their
+    own, turn a line around or send escapes to a terminal."""
+    caplog.set_level(logging.INFO)
+    eve = EmulatedContact(bytes.fromhex("e5" * 32), "Eve" + FORGED)
+    radio = EmulatedRadio(contacts=[ALICE, eve])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(eve.public_key[:6], "hello", NOW - 5)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["sender_name"] == "Eve" + FORGED  # the event has the name as it is
+
+    scenario(main)
+    assert "message from 'Eve\\u202e\\nERROR x\\x1b[31m\\u2028'" in caplog.text
+    assert not any(ch in caplog.text for ch in "\u202e\x1b\u2028")
+    assert "\nERROR x" not in caplog.text
+
+
+def test_alias_of_an_unknown_send_topic_cannot_forge_log_lines(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The alias comes from the topic of a request; brokers pass direction and line separator
+    characters in topic names."""
+    caplog.set_level(logging.INFO)
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
+            bus.send("x" + FORGED, "hi")
+            await bus.wait_for("/delivery", lambda d: d["reason"] == "unknown_target")
+
+    scenario(main)
+    assert "to 'x\\u202e\\nERROR x\\x1b[31m\\u2028': rejected" in caplog.text
+    assert not any(ch in caplog.text for ch in "\u202e\x1b\u2028")
+    assert "\nERROR x" not in caplog.text
+
+
+def test_messages_taken_from_the_radio_are_published_before_stopping(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """On stop the radio goes first; what it has handed over is still published. A command that
+    waits for its table read is rejected, as the read can no longer happen."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    bus = FakeBus()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, bus=bus):
+            reads = radio.commands().count(Command.GET_CONTACTS)
+            radio.silent.add(Command.GET_CONTACTS)  # the command waits for its table read
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5, push=False)
+            radio.queue_direct_message(BOB.public_key[:6], "hello", NOW - 4, push=False)
+            radio.emit(bytes([Push.MSG_WAITING]))
+            for _attempt in range(100):
+                if radio.commands().count(Command.GET_CONTACTS) > reads:
+                    break  # both messages are out of the radio, and the command waits
+                await asyncio.sleep(0.01)
+            assert not radio.queue
+        # the service stops here
+
+    scenario(main)
+    received = bus.payloads("/received")
+    assert [r["text"] for r in received] == ["arm", "hello"]
+    assert received[0]["command"]["reason"] == "sender_unverified"
+    assert "cannot be verified: session closed" in caplog.text  # not "no answer"
+    assert not bus.payloads("/command")
 
 
 def test_ignored_channels_are_not_published(tmp_path: Path) -> None:
@@ -923,13 +1297,30 @@ def test_state_discovery_and_systemd_notifications(tmp_path: Path) -> None:
     scenario(main)
 
 
+def test_watchdog_is_pinged_at_half_its_interval_and_the_state_repeated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bridge_module, "watchdog_interval_s", lambda: 0.1)
+    monkeypatch.setattr(bridge_module, "STATUS_INTERVAL_S", 0.15)
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, notes):
+            pings, states = notes.count("WATCHDOG=1"), len(bus.payloads("/state"))
+            await asyncio.sleep(0.6)
+            assert notes.count("WATCHDOG=1") - pings >= 9  # every 0.05 s
+            assert len(bus.payloads("/state")) - states >= 3  # every 0.15 s
+
+    scenario(main)
+
+
 def test_radio_reconnects_after_unplugging(tmp_path: Path) -> None:
     radio = EmulatedRadio()
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            count = len(bus.payloads("/state"))  # the first document says disconnected too
             radio.disconnect()
-            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected")
+            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected", since=count)
             count = len(bus.payloads("/state"))
 
             await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=count)
@@ -980,6 +1371,32 @@ def test_receive_log_is_published_when_enabled(tmp_path: Path) -> None:
     scenario(main)
 
 
+def test_receive_log_is_not_published_by_default(tmp_path: Path) -> None:
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.emit(bytes([Push.LOG_RX_DATA, 0x1F, 0x9F]) + b"\x0d\x00\x01")
+            radio.queue_channel_message(0, "Carol: hi", NOW)  # handled after the packet log
+            await bus.wait_for("/received", lambda r: True)
+            assert not bus.payloads("/rx")
+
+    scenario(main)
+
+
+@pytest.mark.parametrize("set_clock", [True, False])
+def test_radio_clock_is_set_only_when_configured(tmp_path: Path, set_clock: bool) -> None:
+    radio = EmulatedRadio()  # its clock is 100 s behind the bridge's
+    section = f'transport = "tcp"\nhost = "192.0.2.10"\nset_clock = {str(set_clock).lower()}'
+
+    async def main() -> None:
+        async with running(make_config(radio=section), radio, tmp_path):
+            pass
+
+    scenario(main)
+    assert (Command.SET_DEVICE_TIME in radio.commands()) is set_clock
+
+
 def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:
     """The device page shows the radio's model and firmware once they are known."""
     radio = EmulatedRadio()
@@ -990,13 +1407,27 @@ def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:
             assert "mdl" not in documents[0]["dev"]  # announced on connect, radio not yet known
             assert documents[-1]["dev"]["mdl"] == "Example Radio"
             assert documents[-1]["dev"]["sn"] == SELF_KEY.hex()
-            count = len(documents)
+            count, states = len(documents), len(bus.payloads("/state"))
             radio.disconnect()
-            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected")
+            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected", since=states)
             states = len(bus.payloads("/state"))
             await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=states)
             assert len(bus.payloads("/config")) == count  # the same radio again
             assert not any(retain for t, _, retain in bus.published if t.endswith("/config"))
+
+    scenario(main)
+
+
+def test_discovery_can_be_switched_off(tmp_path: Path) -> None:
+    config = make_config(extra="[homeassistant]\ndiscovery = false")
+
+    async def main() -> None:
+        async with running(config, EmulatedRadio(), tmp_path) as (_, bus, _notes):
+            for callback in bus.on_ha_online:  # Home Assistant announces itself
+                callback()
+            await asyncio.sleep(0.05)
+            assert not bus.payloads("/config")
+            assert bus.payloads("/state")[-1]["radio"] == "connected"
 
     scenario(main)
 
