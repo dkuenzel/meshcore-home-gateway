@@ -321,6 +321,8 @@ def _mqtt(s: _Section) -> MqttConfig:
     username, password = s.string("username"), s.string("password")
     if password is not None and username is None:  # the client would not send it
         raise ConfigError(f"{s.key('password')}: needs username")
+    if username is not None and username != username.strip():  # copied with a blank, mostly
+        raise ConfigError(f"{s.key('username')}: no blank at the start or end, got {username!r}")
     return MqttConfig(
         host=cast(str, _host(s, required=True)),
         node_id=node_id,
