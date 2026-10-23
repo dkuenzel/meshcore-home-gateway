@@ -161,7 +161,10 @@ the keys of the next section), which gives the same file with the same mode.
 
   The script writes `path=` explicitly because device names may contain `=`.
 * **Clean environment:** `pct exec` passes the host's environment (locale, `PATH`) into the
-  container; the script runs every command with `env -i` and a fixed `PATH`.
+  container; the script runs every command with `env -i` and a fixed `PATH`. When the host's
+  `PATH` lacks `/usr/local/bin`, `pct exec 105 -- meshcore-home-gateway` fails with "Failed to
+  exec"; name the program with its path, `pct exec 105 -- /usr/local/bin/meshcore-home-gateway
+  check-config`, as the final message does.
 
 ### Unattended installation
 
