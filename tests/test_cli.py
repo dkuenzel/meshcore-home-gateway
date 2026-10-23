@@ -556,3 +556,15 @@ def test_unreachable_broker_is_reported_without_a_traceback(
     error = capsys.readouterr().err
     assert "cannot connect to the broker" in error
     assert "Traceback" not in error
+
+
+def test_send_refuses_a_text_that_is_not_utf8(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Bytes that are not UTF-8 reach argv as surrogates (PEP 383)."""
+    config = tls_config(tmp_path, "")  # never connects: the text check comes first
+    text = b"caf\xe9".decode("utf-8", "surrogateescape")
+    assert main(["send", "--config", str(config), "alerts", text]) == EX_FAILURE
+    error = capsys.readouterr().err
+    assert "not valid UTF-8" in error
+    assert "Traceback" not in error

@@ -126,9 +126,11 @@ class MqttBus:
         client.loop_start()
         log.info("MQTT: connecting to %s:%d", config.host, config.port)
 
-    def publish(self, topic: str, payload: bytes, retain: bool = False) -> None:
+    def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
+        """QoS 1 events are queued while the broker is unreachable; QoS 0 events (commands) are
+        not, so they can never arrive late."""
         if not self.connected:
-            if retain:  # availability and state: the reconnect publishes the current ones
+            if retain or qos == 0:  # retained: the reconnect publishes the current documents
                 return
             if self._queued >= MAX_QUEUED_EVENTS:
                 if not self._dropped:
@@ -137,8 +139,9 @@ class MqttBus:
                 self._dropped += 1
                 return
             self._queued += 1
-        info = self._client.publish(topic, payload, qos=1, retain=retain)
-        if getattr(info, "rc", 0):
+        info = self._client.publish(topic, payload, qos=qos, retain=retain)
+        # NO_CONN: paho noticed the loss first and keeps a QoS 1 message for the reconnect
+        if getattr(info, "rc", 0) not in (paho.MQTT_ERR_SUCCESS, paho.MQTT_ERR_NO_CONN):
             log.warning("MQTT: publish to %s refused (paho error %s)", topic, info.rc)
 
     async def stop(self, timeout_s: float = 2.0) -> None:

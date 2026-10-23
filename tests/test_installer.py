@@ -508,6 +508,29 @@ def test_a_malformed_answers_line_is_reported_without_its_content(host: Host) ->
     assert "s3cret" not in result.stderr
 
 
+@pytest.mark.parametrize("separator", [": ", " "])
+def test_a_password_with_equals_signs_in_a_malformed_line_stays_secret(
+    host: Host, separator: str
+) -> None:
+    secret = "Zm9vYmFyYmF6cXV4MTIzNA=="  # base64: the line has an '=' after all
+    lines = f"radio.choice={host.serial}\nmqtt.password{separator}{secret}\n"
+    result = run_installer(host, "--answers", str(answers_file(host, lines)))
+    assert result.returncode == 1
+    assert "line 2" in result.stderr
+    assert secret.rstrip("=") not in result.stderr
+
+
+def test_an_answers_file_that_is_not_utf8_is_reported_clearly(host: Host) -> None:
+    answers = answers_file(host)
+    with answers.open("ab") as file:
+        file.write(b"homeassistant.device_name=K\xfcche\r\n")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 1
+    assert "UTF-8" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not host.pct("create")
+
+
 def test_a_container_id_below_100_is_refused(host: Host) -> None:
     answers = answers_file(host)
     answers.write_text(answers.read_text(encoding="utf-8") + "setup=advanced\nct.id=50\n",

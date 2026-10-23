@@ -215,6 +215,44 @@ async def test_a_component_of_an_earlier_configuration_is_removed(
     assert problems(caplog) == []
 
 
+@pytest.mark.parametrize(
+    ("key", "platform"),
+    [("send_old", "notify"), ("command", "event"), ("rx_old", "sensor"), ("old", "binary_sensor")],
+)
+async def test_a_component_is_removed_also_after_a_restart_of_home_assistant(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, key: str, platform: str
+) -> None:
+    """The entity is left from an earlier run of Home Assistant, which therefore ignores a bare
+    {"p": ...}; the placeholder sent first binds it, so the removal takes effect."""
+    registry = er.async_get(hass)
+    (entry,) = hass.config_entries.async_entries("mqtt")
+    unique_id = f"{PREFIX}_{key}"
+    registry.async_get_or_create(
+        platform, "mqtt", unique_id, config_entry=entry, suggested_object_id=unique_id
+    )
+    fewer = parse_config(  # this run's configuration has no such component
+        f"""
+[radio]
+transport = "tcp"
+host = "192.0.2.10"
+[mqtt]
+host = "broker.example.org"
+node_id = "radio1"
+{TARGETS}
+"""
+    )
+    removed = {key: platform}
+    await announce(hass, discovery_payload(fewer, TOPICS, None, removed))
+    assert registry.async_get_entity_id(platform, "mqtt", unique_id) is not None
+
+    for _ in range(2):  # as the bridge sends it, and again: nothing is left either way
+        await announce(hass, discovery_payload(fewer, TOPICS, None, removed, bind=True))
+        await announce(hass, discovery_payload(fewer, TOPICS, None, removed))
+        assert registry.async_get_entity_id(platform, "mqtt", unique_id) is None
+    assert f"notify.{PREFIX}_send_alerts" in entity_ids(hass)
+    assert problems(caplog) == []
+
+
 # --- state -------------------------------------------------------------------------------------
 
 

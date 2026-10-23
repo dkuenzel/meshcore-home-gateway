@@ -1,7 +1,8 @@
 # MQTT API
 
 All topics hang below `<base_topic>/<node_id>`; with the defaults of the example configuration that
-is `meshcore/radio1`. Everything uses QoS 1. The API is a public interface under semantic
+is `meshcore/radio1`. Everything uses QoS 1, except the `command` events (QoS 0, see there). The
+API is a public interface under semantic
 versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 
 | Topic | Direction | Retained | Payload |
@@ -37,9 +38,11 @@ check `availability` first if it matters.
 
 ## Delivery: `delivery`
 
-One event per step. Every request ends with exactly one final event: `rejected` or `duplicate` at
-once; otherwise `expired` or `failed`, or `sent` for a channel message and `confirmed` for a
-direct message.
+One event per step. While the gateway runs, every request ends with exactly one final event:
+`rejected` or `duplicate` at once; otherwise `expired` or `failed`, or `sent` for a channel
+message and `confirmed` for a direct message. A stop or restart drops queued messages without one
+([design §3](design.md#3-goals-and-non-goals)), and so does a broker outage with more than 1000
+events waiting; wait for a final event with a timeout.
 
 ```json
 {"event_type": "confirmed", "id": "7f3a91c2", "target": "operator", "text": "Back online",
@@ -119,7 +122,7 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `sender_not_allowed` | the contact's full key is not in `commands.senders` |
 | `sender_unverified` | the bridge fetched the command while connecting (it waited in the radio, or arrived during the connection setup), or the contact table could not be read (also when the radio connection ended first); the sender can send it again |
 | `state_unwritable` | the state file could not be written, so the replay protection could not be kept; the sender can send it again |
-| `broker_unavailable` | the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
+| `broker_unavailable` | the gateway knew the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock; with `max_age_s = 0`, more than a day ahead |
 

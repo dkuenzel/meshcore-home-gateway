@@ -265,7 +265,7 @@ class EmulatedRadio:
 
 
 class WifiFrameParser:
-    """Frame parser of the WiFi companion firmware (src/helpers/esp32/SerialWifiInterface.cpp
+    """Frame parser of the WiFi companion firmware (src/helpers/wifi/SerialWifiInterface.cpp
     at companion-v1.18.0, :102-161), unlike the serial one: while no header is pending it
     consumes exactly 3 bytes as a header; a header with type 0 or length 0 is not one
     (:46-48), and the next 3 bytes are read as a header again. Then it waits for the announced

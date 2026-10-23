@@ -33,6 +33,21 @@ format and the command line are public interfaces.
   state file is moved aside); blank strings are refused as settings.
 - A TCP connect timeout names the radio; the hourly airtime budget in the state document no longer
   shows float artefacts; names from the mesh are quoted in the log.
+- Command events are published with QoS 0: after a broker loss that the gateway had not noticed
+  yet (one to two `keepalive_s`), a command could still reach the automations after the
+  reconnect, at any later time; now it is lost and the sender can send it again.
+- Removing components in Home Assistant also works after Home Assistant restarted (a disabled
+  placeholder binds the old entity first) and after a run that reached neither broker nor Home
+  Assistant (removals stay pending for 30 days).
+- Events queued while the broker is down are no longer logged as refused.
+- Texts: in ASCII mode invisible format characters (soft hyphen, zero-width space) are dropped
+  instead of becoming `?`; a text of only such characters is rejected as empty; `send` refuses a
+  text that is not UTF-8 instead of printing a traceback.
+- Installer: a malformed answers line is reported by its number also when the broker password
+  contains `=`; an answers file that is not UTF-8 is reported by line, without a traceback.
+- Releases: `make release` admits only version forms that the release workflow classifies right
+  (no `1.0.0rc1.post1`, no local versions); the documented attestation check names the release
+  workflow and the tag.
 - Installer: `--update` refuses a container without an installation instead of installing
   packages, a user and a service into it; `--reconfigure` keeps an anonymous broker anonymous and
   a port left at its default, and refuses answers it cannot apply (`radio.choice`, `ct.*`); a

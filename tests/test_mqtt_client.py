@@ -285,3 +285,39 @@ def test_with_broker_clean_stop_leaves_offline_retained(broker: Broker) -> None:
             late.close()
 
     asyncio.run(scenario())
+
+
+def test_events_queued_for_the_reconnect_are_not_logged_as_refused(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """paho keeps a QoS 1 message for the reconnect and still answers MQTT_ERR_NO_CONN."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        fake.publish = lambda *a, **k: SimpleNamespace(rc=paho.MQTT_ERR_NO_CONN)  # type: ignore[method-assign]
+        bus.publish("meshcore/radio1/received", b"queued")
+        assert "refused" not in caplog.text
+        fake.publish = lambda *a, **k: SimpleNamespace(rc=paho.MQTT_ERR_QUEUE_SIZE)  # type: ignore[method-assign]
+        bus.publish("meshcore/radio1/received", b"lost")
+        assert "refused" in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_the_quality_of_service_reaches_paho() -> None:
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        bus._handle_connected()
+        bus.publish("meshcore/radio1/command", b"{}", qos=0)
+        bus.publish("meshcore/radio1/received", b"{}")
+        assert [(p[0], p[2]) for p in fake.published][-2:] == [
+            ("meshcore/radio1/command", 0), ("meshcore/radio1/received", 1),
+        ]  # fmt: skip
+        bus.connected = False
+        before = len(fake.published)
+        bus.publish("meshcore/radio1/command", b"{}", qos=0)  # nothing to keep for later
+        assert len(fake.published) == before
+
+    asyncio.run(scenario())

@@ -87,7 +87,7 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 6 | Send a text longer than 160 bytes | truncated with `...` (or `rejected` if `truncate = false`) |
 | 7 | With `ascii_only = true`, send umlauts | B shows the transliteration |
 | 8 | Send the same text twice within the window | second is `duplicate` |
-| 9 | Set `budget_s_per_hour = 1` and `burst_s = 5`, send ten messages of about 100 characters at once | the first ones `sent`, the later ones `expired` (`airtime_budget`) without waiting |
+| 9 | Set `budget_s_per_hour = 1` and `burst_s = 5` (`burst_s = 20` at SF 11 or 12 with 62.5 kHz, where one message takes longer than 5 s), send messages of about 100 characters at once until `airtime_available_s` in the state is below the `airtime_ms` of one (more than ten at fast presets) | those sent while airtime lasts, the rest `expired` (`airtime_budget`) without waiting |
 | 10 | B sends a direct message and a channel message | two `received` events with sender, SNR, path length |
 | 11 | B (allowlisted) sends `status` | `command` event `status`; `received` shows `accepted` |
 | 12 | A not allowlisted contact sends `status` | no `command` event; `received` shows `sender_not_allowed` |

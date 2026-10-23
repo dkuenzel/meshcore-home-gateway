@@ -138,15 +138,20 @@ ask_required() {  # ask_required KEY TEXT DEFAULT: an input that must not stay e
 }
 
 load_answers() {
-  local file=$1 line key number=0
+  local file=$1 line key number=0 invalid
   [[ -r $file ]] || die "cannot read answers file $file"
+  # in a UTF-8 locale '.' matches no invalid byte: such a line does not match as a whole
+  invalid=$(LC_ALL=C.UTF-8 grep -naxv '.*' -- "$file" | head -n 1 | cut -d: -f1) || true
+  [[ -z $invalid ]] || die "answers file line $invalid: not valid UTF-8 (save the file as UTF-8)"
   while IFS= read -r line || [[ -n $line ]]; do
     number=$(( number + 1 ))
     line=${line%$'\r'}   # files edited on Windows
     [[ -z $line || $line == \#* ]] && continue
-    # the line number only: the line may hold the broker password
-    [[ $line == *=* ]] || die "answers file line $number: expected key=value"
     key=${line%%=*}
+    # the line number only: the line may hold the broker password (also after a ':' or ' '
+    # typed instead of '=', when the password itself contains a '=')
+    [[ $line == *=* && $key =~ ^[A-Za-z0-9_.-]+$ ]] \
+      || die "answers file line $number: expected key=value"
     case $key in
       setup|ct.*|radio.choice|targets.*)
         [[ $INSTALLER_KEYS == *" $key "* ]] || die "answers file: unknown answer $key" ;;

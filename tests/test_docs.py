@@ -52,3 +52,17 @@ def test_relative_links_resolve(document: Path) -> None:
         elif anchor and destination.suffix == ".md" and anchor not in headings(destination):
             broken.append(f"{target}: no such heading")
     assert not broken, broken
+
+
+def test_attestation_checks_name_the_release_workflow_and_the_tag() -> None:
+    """`--repo` alone accepts an attestation from any workflow and ref of the repository."""
+    commands = [
+        line
+        for path in DOCUMENTS
+        for line in re.sub(r"\\\n\s*", " ", path.read_text(encoding="utf-8")).splitlines()
+        if "gh attestation verify" in line and "--repo" in line
+    ]
+    assert commands
+    for command in commands:
+        assert "--signer-workflow" in command, command
+        assert "--source-ref" in command, command

@@ -42,11 +42,14 @@ deliveries and commands, `notify` entities for sending, sensors for the state.
 * Good, because the device appears with all entities as soon as the bridge connects.
 * Good, because nothing is retained in the discovery topic: Home Assistant does not re-create the
   entities of a removed bridge after a restart (its device stays until deleted). Components that
-  a new configuration no longer has are removed by the bridge with `{"p": <platform>}`.
+  a new configuration no longer has are removed by the bridge: a disabled placeholder binds the
+  old entity (Home Assistant removes only components discovered since its own start), then
+  `{"p": <platform>}` removes it.
 * Bad, because device-based discovery needs Home Assistant 2024.11 or newer; the documented
   entities and automations need 2026.8 ([home-assistant.md](../home-assistant.md), Requirements).
-* Neutral, because the bridge remembers the components it announced (in its state file), so that
-  it can remove the ones a new configuration no longer has.
+* Neutral, because the bridge remembers the components it announced and keeps removals pending
+  for 30 days (in its state file), so that it can remove the ones a new configuration no longer
+  has even when Home Assistant or the broker was down.
 
 ### Confirmation
 

@@ -111,7 +111,7 @@ class Bus(Protocol):
 
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
-    def publish(self, topic: str, payload: bytes, retain: bool = False) -> None: ...
+    def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None: ...
 
 
 SessionFactory = Callable[[Transport, "asyncio.Queue[RadioEvent]", bool], CompanionSession]
@@ -608,8 +608,13 @@ class Bridge:
         self._bus.publish(self.topics.received, encode(payload))
         if command is not None:
             name = sender.name if sender else None
+            # QoS 0: an event that cannot be delivered now is lost, never delivered late (after
+            # a broker loss that paho has not noticed yet); the sender gets no answer and can
+            # send the command again
             self._bus.publish(
-                self.topics.command, encode(command_payload(command, name, message.received_at))
+                self.topics.command,
+                encode(command_payload(command, name, message.received_at)),
+                qos=0,
             )
 
     async def _judge(self, event: MessageReceived) -> CommandDecision | None:
@@ -720,14 +725,21 @@ class Bridge:
 
     def _publish_announcements(self) -> None:
         if self.config.homeassistant.discovery:
-            if self._removed is None:  # first announcement: what the last run had and this lacks
+            if self._removed is None:  # first announcement: what earlier runs had and this lacks
                 current = discovery_payload(self.config, self.topics)["cmps"]
                 platforms = {key: component["p"] for key, component in current.items()}
-                self._removed = self._components.replace(platforms) if self._components else {}
+                self._removed = (
+                    self._components.replace(platforms, now=self._wall())
+                    if self._components else {}
+                )  # fmt: skip
                 if self._removed:
                     log.info("Home Assistant: removing %s", ", ".join(sorted(self._removed)))
-            document = discovery_payload(self.config, self.topics, self._radio_info, self._removed)
-            self._bus.publish(discovery_topic(self.config), encode(document))
+            topic, info = discovery_topic(self.config), self._radio_info
+            if self._removed:  # Home Assistant removes only what it discovered since its start
+                bind = discovery_payload(self.config, self.topics, info, self._removed, bind=True)
+                self._bus.publish(topic, encode(bind))
+            document = discovery_payload(self.config, self.topics, info, self._removed)
+            self._bus.publish(topic, encode(document))
             self._announced = _identity(self._radio_info)
         self._publish_state()
 

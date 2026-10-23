@@ -80,14 +80,25 @@ release files by hand.
 2. In a pull request: set `__version__` in `src/meshcore_home_gateway/__init__.py` (PEP 440, for
    example `0.1.0` or `0.2.0rc1`) and move the *Unreleased* entries of `CHANGELOG.md` under
    `## [X.Y.Z] - YYYY-MM-DD`. `make release` builds the release files into `dist/release/` as a
-   dry run; it fails when the changelog section is missing for a final version.
+   dry run and only warns about a missing section or an unsupported version form;
+   `RELEASE_TAG=vX.Y.Z make release`, as the workflow runs it, fails then. Run that before you
+   tag.
 3. After the merge, tag the merge commit and push the tag:
    `git tag -a vX.Y.Z -m "meshcore-home-gateway X.Y.Z" && git push origin vX.Y.Z`.
 4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
    zipapp, wheel and sdist reproducibly, writes `SHA256SUMS`, attests every file (Sigstore-signed
    build provenance) and publishes the GitHub release with the changelog section as notes.
 5. Check the result like a user: download a file and run
-   `gh attestation verify meshcore-home-gateway-X.Y.Z.pyz --repo dkuenzel/meshcore-home-gateway`.
+
+   ```sh
+   gh attestation verify meshcore-home-gateway-X.Y.Z.pyz --repo dkuenzel/meshcore-home-gateway \
+     --signer-workflow dkuenzel/meshcore-home-gateway/.github/workflows/release.yml \
+     --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
+   ```
+
+Protect the release tags (a repository ruleset for `v*` that only maintainers may create): the
+attestation proves which workflow built a file from which tag, so a tag that anyone with write
+access can push proves little.
 
 A manual run of the workflow ("Run workflow" in the Actions tab) is a dry run on any branch: it
 builds the same files and keeps them as a workflow artifact, without attestation or release.

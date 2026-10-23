@@ -65,8 +65,11 @@ An entities card shows an attribute, such as the text of the last message, witho
   firmware or key first becomes known or changes. The document is not retained; after a restart of
   Home Assistant the entities are back with the birth message, without any action.
 * A component of an earlier configuration (a removed target, command words or the rx log switched
-  off) is removed by the gateway at its next start: it is sent as `{"p": <platform>}` in every
-  announcement of that run. The state file remembers what was announced.
+  off) is removed by the gateway, also when Home Assistant restarted in between: each announcement
+  sends a disabled placeholder under the old ID, which Home Assistant binds, and then the removal.
+  The state file keeps a removal pending for 30 days, since the gateway cannot see whether Home
+  Assistant received it; Home Assistant must have run in that time. A leftover entity can be
+  deleted under *Settings → Entities*.
 * To retire the gateway, stop it (or set `homeassistant.discovery = false`), then delete the device
   in Home Assistant.
 * Events are never retained: Home Assistant ignores replayed retained events.

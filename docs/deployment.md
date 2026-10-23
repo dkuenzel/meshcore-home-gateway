@@ -194,7 +194,8 @@ you install, so that the unit and the example configuration match).
 
 The zipapp comes from a release or from the clone. A release file can be verified before it is
 installed: `SHA256SUMS` shows that the download is complete, the attestation that this repository's
-release workflow built it from the tagged commit
+release workflow built it from the tag (the command checks both, `--repo` alone would accept any
+workflow and branch of the repository)
 ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)). The second
 command needs the GitHub CLI `gh`, logged in (`gh auth login`); the release also carries the
 attestation as a Sigstore bundle (`meshcore-home-gateway-X.Y.Z.sigstore.json`) for other Sigstore
@@ -203,7 +204,9 @@ clients.
 ```sh
 # either: the release file, verified (X.Y.Z is the version)
 sha256sum --check --ignore-missing SHA256SUMS
-gh attestation verify meshcore-home-gateway-X.Y.Z.pyz --repo dkuenzel/meshcore-home-gateway
+gh attestation verify meshcore-home-gateway-X.Y.Z.pyz --repo dkuenzel/meshcore-home-gateway \
+  --signer-workflow dkuenzel/meshcore-home-gateway/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
 # or: built from the clone
 python3 tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
   --output meshcore-home-gateway-X.Y.Z.pyz

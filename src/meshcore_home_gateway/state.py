@@ -92,29 +92,54 @@ class CommandLedger:
 
 
 class AnnouncedComponents:
-    """The components of the last discovery document: key -> platform.
+    """The components of the last discovery document (key -> platform), and the earlier ones
+    that a new configuration no longer has (a removed target, command words or rx log switched
+    off), which the bridge removes in Home Assistant.
 
-    Home Assistant keeps a component that is left out of the document; it removes one only when
-    it is sent as `{"p": <platform>}`. The bridge sends that for the components of an earlier
-    configuration (a removed target, command words or rx log switched off).
+    The removals stay pending for REMOVAL_KEEP_S: the gateway cannot tell when Home Assistant has
+    received one (it may be down, or the broker), and sending one again does no harm.
     """
 
     _KEY = "ha_components"
+    _REMOVED = "ha_removed"  # key -> {"p": platform, "since": unix time}
 
     def __init__(self, store: JsonStateFile) -> None:
         self._store = store
 
-    def replace(self, current: Mapping[str, str]) -> dict[str, str]:
-        """Store the current components; return the earlier ones that are gone."""
+    def replace(self, current: Mapping[str, str], now: float) -> dict[str, str]:
+        """Store the current components; return the pending removals (key -> platform)."""
         data = self._store.load()
-        raw = data.get(self._KEY)
-        previous: dict[str, str] = {}
-        if isinstance(raw, dict):
-            previous = {k: v for k, v in raw.items() if isinstance(v, str)}
-        if previous != current:
+        previous = _string_map(data.get(self._KEY))
+        removed: dict[str, dict[str, Any]] = {}
+        raw = data.get(self._REMOVED)
+        for key, entry in raw.items() if isinstance(raw, dict) else ():
+            if (
+                isinstance(entry, dict)
+                and isinstance(entry.get("p"), str)
+                and isinstance(entry.get("since"), (int, float))
+            ):
+                removed[key] = {"p": entry["p"], "since": entry["since"]}
+        for key, platform in previous.items():
+            if key not in current:
+                removed.setdefault(key, {"p": platform, "since": now})
+        removed = {
+            key: entry for key, entry in removed.items()
+            if key not in current and now - entry["since"] < REMOVAL_KEEP_S
+        }  # fmt: skip
+        if previous != current or data.get(self._REMOVED, {}) != removed:
             data[self._KEY] = dict(current)
+            data[self._REMOVED] = removed
             try:
                 self._store.save(data)
-            except OSError as exc:  # removed ones are sent again next time, which is harmless
+            except OSError as exc:  # pending removals come back from `previous` next time
                 log.warning("cannot store the Home Assistant components: %s", exc)
-        return {key: platform for key, platform in previous.items() if key not in current}
+        return {key: entry["p"] for key, entry in removed.items()}
+
+
+REMOVAL_KEEP_S = 30 * 86_400.0
+
+
+def _string_map(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    return {key: value for key, value in raw.items() if isinstance(value, str)}

@@ -37,7 +37,7 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
   reconnects; every reconnect feeds the stale frame another 256 bytes and a command until it is
   complete, and restarting the radio clears it at once. Valid frames are at most 176 bytes, so
   only a client that wrote garbage leaves such a header. This is for USB serial only.
-* **The TCP parser is different** (`src/helpers/esp32/SerialWifiInterface.cpp:102-161`): while no
+* **The TCP parser is different** (`src/helpers/wifi/SerialWifiInterface.cpp:102-161`): while no
   header is pending it consumes exactly 3 bytes; a header with type 0 or length 0 is not one
   (:46-48), and the next 3 bytes are read as a header again. 256 zeros are 85 such headers plus
   one byte, which shifts every later header by one byte, so the radio never sees `APP_START`.

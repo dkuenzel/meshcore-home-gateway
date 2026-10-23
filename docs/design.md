@@ -355,13 +355,17 @@ The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
 | `command` | out | no | JSON with `event_type` = command word |
 | `rx` | out | no | JSON per received packet: SNR, RSSI, raw bytes (optional) |
 
-* QoS 1 throughout. MQTT 3.1.1 with a clean session: requests published while the bridge is
+* QoS 1 throughout, except command events. MQTT 3.1.1 with a clean session: requests published
+  while the bridge is
   offline are lost, which is the safer choice for alerts that would otherwise arrive late. Events
   the bridge publishes while the broker is down are queued in memory (up to 1000, more are
   dropped and counted in the log) and sent after the reconnect; retained documents are not
   queued, because the reconnect publishes availability and state again. Commands are refused
   while the broker is unreachable (`broker_unavailable`): delivered after the reconnect, they
-  would trigger automations at an arbitrary later time.
+  would trigger automations at an arbitrary later time. A broker that vanishes silently (power
+  loss, network) is noticed only after one to two `keepalive_s`; command events go out with QoS 0,
+  so one sent in that time is lost instead of being resent after the reconnect. The sender then
+  gets no answer and can send the command again.
 * On reconnect the bridge republishes availability, discovery and state; when Home Assistant
   announces itself on `homeassistant.status_topic` (default `homeassistant/status`), discovery and
   state (availability is retained, so Home Assistant receives it with its subscription).
@@ -388,8 +392,12 @@ automations are in [`home-assistant.md`](home-assistant.md).
 All entities share the availability topic, so they become unavailable when the bridge is offline.
 The document names the radio's model, firmware and key once the radio is known and is sent again
 when they change; unknown fields are left out, because Home Assistant rejects a document with a
-null device field. Components of the previous run that the configuration no longer has are sent
-once per announcement as `{"p": <platform>}`, which removes them; the state file keeps the list.
+null device field. Components of an earlier run that the configuration no longer has are
+removed: Home Assistant removes a component only when it is sent as `{"p": <platform>}` and only if
+it has discovered it since its own start, so each announcement first sends a disabled placeholder
+under the old unique_id (it binds a leftover entity, or creates an invisible disabled one), then
+the removal. The state file keeps these removals pending for 30 days, because the gateway cannot
+tell when Home Assistant has received them.
 
 ### 6.7 Configuration
 
@@ -446,7 +454,7 @@ systemd unit does not restart on it).
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
-| Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` check them (ADR 0013). |
+| Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` with the release workflow and the tag check them (ADR 0013); tag protection keeps others from tagging. |
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
 
 ### 7.3 Command authorisation in detail
@@ -519,7 +527,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Radio unplugged or rebooted | read error, command timeout | session closed, reconnect with back-off; queue waits; an interrupted attempt is repeated | `state.radio = disconnected`; connectivity entity off |
 | Malformed or unexpected answer | decoding | session closed, resynchronised on reconnect | log warning |
 | Radio clock wrong | `CURR_TIME` vs bridge clock | set forward; warn if ahead | log warning; command rejections `too_old` / `from_the_future` |
-| Broker unreachable | paho disconnect | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
+| Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
 | Bridge crashes or restarts | systemd | restart after 5 s; queued messages are lost | availability; no delivery state for lost messages |
 | Airtime budget exhausted | token bucket | messages wait, then expire | `delivery: expired`; airtime entity |
