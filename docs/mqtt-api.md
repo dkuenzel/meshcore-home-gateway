@@ -23,7 +23,9 @@ Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are alwa
 The payload is the text, UTF-8, at most 1 KiB. Only aliases from `[targets.*]` in the
 configuration exist. The bridge cleans the text (control characters, direction overrides, repeated spaces), optionally
 transliterates it to ASCII, and truncates or rejects texts above the radio's limit: 160 bytes for a
-direct message, `160 − (radio name length + 2)` for a channel message.
+direct message, `160 − (radio name length + 2)` for a channel message. Before the radio has
+connected once, its name is unknown: a channel text is then accepted up to 158 bytes and limited
+when it is sent (truncated, or `failed` with `too_long`).
 
 ```sh
 mosquitto_pub -h broker.example.org -u client -P secret -q 1 \
@@ -42,7 +44,9 @@ One event per step. While the gateway runs, every request ends with exactly one 
 `rejected` or `duplicate` at once; otherwise `expired` or `failed`, or `sent` for a channel
 message and `confirmed` for a direct message. A stop or restart drops queued messages without one
 ([design §3](design.md#3-goals-and-non-goals)), and so does a broker outage with more than 1000
-events waiting; wait for a final event with a timeout.
+events waiting; wait for a final event with a timeout. The `rejected` and `duplicate` events of
+requests refused at once are limited to 20 per second, in bursts of up to 100: a client that floods
+the send topics gets no event for the excess, which the log counts (at most once a minute).
 
 ```json
 {"event_type": "confirmed", "id": "7f3a91c2", "target": "operator", "text": "Back online",
@@ -125,6 +129,14 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `broker_unavailable` | the gateway knew the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock; with `max_age_s = 0`, more than a day ahead |
+
+The radio acknowledges a direct message when it receives it, so a rejected command does not come
+back by itself: sent again, it has a newer timestamp. An identical copy of the packet is a replay.
+The bridge drops it as a repeat for an hour; after `broker_unavailable` it has also stored the
+timestamp, so a later copy is a `replay`. After `sender_unverified` (the sender was not verified)
+and `state_unwritable` it has not: a copy that arrives after that hour, or after a restart of the
+gateway, is judged afresh and accepted if it is still within `max_age_s` (always with
+`max_age_s = 0`; [design §7.4](design.md#74-residual-risks)).
 
 ## State: `state`
 

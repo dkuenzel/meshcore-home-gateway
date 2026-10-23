@@ -497,11 +497,12 @@ def test_messages_name_their_session_and_when_they_were_fetched() -> None:
 
 
 def test_cancelled_command_leaves_no_task_behind() -> None:
-    radio = EmulatedRadio(silent={Command.GET_BATT_AND_STORAGE})
+    radio = EmulatedRadio()
 
     async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
-        radio.silent.clear()
         await session.start()
+        await asyncio.sleep(0)
+        before = asyncio.all_tasks()
         radio.silent.add(Command.GET_BATT_AND_STORAGE)
         waiting = asyncio.create_task(session.get_battery())
         await asyncio.sleep(0.05)
@@ -509,8 +510,7 @@ def test_cancelled_command_leaves_no_task_behind() -> None:
         with pytest.raises(asyncio.CancelledError):
             await waiting
         await asyncio.sleep(0)
-        frame_waits = [task for task in asyncio.all_tasks() if "Queue.get" in repr(task)]
-        assert frame_waits == []  # the waiter for the answer was cancelled too
+        assert asyncio.all_tasks() - before == set()  # its waits for the answer were cancelled
 
     run(radio, scenario, timeout_s=5)
 

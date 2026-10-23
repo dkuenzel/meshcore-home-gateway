@@ -13,6 +13,7 @@ Tasks on one event loop:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 import secrets
@@ -30,7 +31,7 @@ from meshcore_home_gateway.core.airtime import (
     meshcore_preamble,
     time_on_air_s,
 )
-from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator
+from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator, RateLimit
 from meshcore_home_gateway.core.commands import (
     CommandDecision,
     Rejection,
@@ -74,21 +75,20 @@ from meshcore_home_gateway.systemd import notify, watchdog_interval_s
 log = logging.getLogger(__name__)
 
 MAX_REQUEST_BYTES = 1024
-MAX_NAME_BYTES = 31  # longest radio name; before the radio is known, channel texts assume it
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1.0, 60.0
 STATUS_INTERVAL_S = 60.0
+STOP_DRAIN_S = 2.0  # on stop, received messages already out of the radio are handled this long
 ACK_TIMEOUT_FACTOR = 1.2  # like the MeshCore Python client
 ACK_TIMEOUT_MIN_S, ACK_TIMEOUT_MAX_S = 5.0, 60.0
 RECENT_ACK_S = 120.0
+REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST = 20.0, 100.0  # events of requests refused at once
+REFUSED_REPORT_INTERVAL_S = 60.0  # the log counts the events left out at most this often
 INBOUND_DEDUP_S = 3600.0  # retries reach us as duplicates with the same timestamp and text
 LOOK_ALIKE_MEMORY_S = 86_400.0  # a key with a sender's prefix counts this long after last seen
 _FINAL_FROM_CACHE = frozenset(
     {Rejection.SENDER_AMBIGUOUS, Rejection.SENDER_NOT_ALLOWED, Rejection.REPLAY,
      Rejection.TOO_OLD, Rejection.FROM_THE_FUTURE}
 )  # fmt: skip
-_TRANSIENT = frozenset(
-    {Rejection.SENDER_UNVERIFIED, Rejection.STATE_UNWRITABLE, Rejection.BROKER_UNAVAILABLE}
-)
 DISCOVERY_DELAY_S = (0.5, 2.0)  # random delay after Home Assistant's birth message
 
 
@@ -129,6 +129,7 @@ class Outgoing:
     target: Target
     text: str
     created: float  # monotonic
+    raw: str | None = None  # a channel text accepted before the radio's name was known
 
 
 class AckWaiter:
@@ -208,6 +209,9 @@ class Bridge:
             config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
         )
         self._dedup = Deduplicator(config.messages.dedup_window_s)
+        self._refusals = RateLimit(REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, now=monotonic())
+        self._unpublished = 0  # events of refused requests left out since the last report
+        self._next_report = monotonic()
         self._inbound_dedup = Deduplicator(INBOUND_DEDUP_S)
         self._acks = AckWaiter(monotonic)
         self._session: CompanionSession | None = None
@@ -237,6 +241,7 @@ class Bridge:
                     self._tasks.append(group.create_task(coroutine, name=name))
                 await stop.wait()
                 self._notify("STOPPING=1")
+                await self._finish_inbound(self._tasks[0])  # the radio task
                 for task in self._tasks:
                     task.cancel()
         finally:
@@ -245,6 +250,17 @@ class Bridge:
             self._radio_ready.clear()
             self._publish_state()
             await self._bus.stop()
+
+    async def _finish_inbound(self, radio: asyncio.Task[None]) -> None:
+        """Stop the radio first, then handle the messages it has already handed over, for at most
+        STOP_DRAIN_S: once fetched, they are no longer in the radio. A command waiting for its
+        table read is rejected, as the closed session cannot read it."""
+        radio.cancel()
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout(STOP_DRAIN_S):
+                await asyncio.wait([radio])
+                await self._events.join()
+                await self._messages.join()
 
     # --- radio ----------------------------------------------------------------------------------
 
@@ -339,10 +355,10 @@ class Bridge:
     def _accept(self, request: SendRequest) -> None:
         event_id = secrets.token_hex(4)
         try:
-            target, text = self._validate(request)
+            target, text, raw = self._validate(request)
         except _FinalError as exc:
             event = DeliveryEvent(event_id, request.alias, exc.state, reason=exc.reason)
-            self._deliver_event(event)
+            self._deliver_refusal(event)
             return
         state, reason = DeliveryState.QUEUED, None
         key = (target.alias, text)
@@ -350,13 +366,39 @@ class Bridge:
             state = DeliveryState.DUPLICATE
         else:
             try:
-                self._queue.put_nowait(Outgoing(event_id, target, text, self._mono()))
+                self._queue.put_nowait(Outgoing(event_id, target, text, self._mono(), raw))
             except asyncio.QueueFull:
                 self._dedup.forget(key)  # not taken, so a retry must not count as duplicate
                 state, reason = DeliveryState.REJECTED, "queue_full"
-        self._deliver_event(DeliveryEvent(event_id, target.alias, state, text=text, reason=reason))
+        event = DeliveryEvent(event_id, target.alias, state, text=text, reason=reason)
+        if state is DeliveryState.QUEUED:
+            self._deliver_event(event)
+        else:
+            self._deliver_refusal(event)
 
-    def _validate(self, request: SendRequest) -> tuple[Target, str]:
+    def _deliver_refusal(self, event: DeliveryEvent) -> None:
+        """The event of a request refused at once (rejected, duplicate), at a bounded rate: a
+        flood of requests must not become a flood of events, which would push other events out
+        of a subscriber's queue on the broker. Queued requests keep all their events."""
+        if self._refusals.allow(self._mono()):
+            self._deliver_event(event)
+            return
+        self._unpublished += 1
+        self._report_unpublished()
+
+    def _report_unpublished(self) -> None:
+        now = self._mono()
+        if self._unpublished and now >= self._next_report:
+            log.warning(
+                "delivery events of refused send requests not published (limit %g per second, "
+                "bursts of %g): %d", REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, self._unpublished,
+            )  # fmt: skip
+            self._unpublished = 0
+            self._next_report = now + REFUSED_REPORT_INTERVAL_S
+
+    def _validate(self, request: SendRequest) -> tuple[Target, str, str | None]:
+        """The target, the prepared text and, if the text is limited only when it is sent (a
+        channel text before the radio's name is known), the request text."""
         if request.retained:
             raise _FinalError(DeliveryState.REJECTED, "retained")
         if len(request.payload) > MAX_REQUEST_BYTES:
@@ -369,14 +411,17 @@ class Bridge:
         if target is None:
             raise _FinalError(DeliveryState.REJECTED, "unknown_target")
         try:
-            return target, prepare_text(raw, self._text_policy(target))
+            text = prepare_text(raw, self._text_policy(target, self._radio_info))
         except TextRejectedError as exc:
             raise _FinalError(DeliveryState.REJECTED, exc.reason) from None
+        name_unknown = target.kind is MessageKind.CHANNEL and self._radio_info is None
+        return target, text, raw if name_unknown else None
 
-    def _text_policy(self, target: Target) -> TextPolicy:
+    def _text_policy(self, target: Target, info: RadioInfo | None) -> TextPolicy:
+        """Without the radio's name, a channel text gets the limit of the shortest one."""
         limit = MAX_TEXT_BYTES
         if target.kind is MessageKind.CHANNEL:
-            name = len(self._radio_info.name.encode()) if self._radio_info else MAX_NAME_BYTES
+            name = len(info.name.encode()) if info else 0
             limit = MAX_TEXT_BYTES - name - 2  # the firmware prepends "<name>: "
         messages = self.config.messages
         return TextPolicy(limit, ascii_only=messages.ascii_only, truncate=messages.truncate)
@@ -454,8 +499,12 @@ class Bridge:
         info = session.info
         if info is None:
             raise RadioError("radio not identified")
-        target, text = item.target, item.text
+        if item.target.kind is MessageKind.CONTACT and session.contacts_outdated:
+            # the radio encrypts for the first contact with the prefix: resolve the target on a
+            # table that shows the change, a look-alike added in an earlier slot included
+            await session.refresh_contacts()
         airtime, reset_path = self._plan(session, item, attempt, info)
+        target, text = item.target, item.text  # after planning, which may limit the text
         if airtime > self._budget.capacity_s:
             raise _FinalError(DeliveryState.FAILED, "exceeds_airtime_burst")
         wait = self._budget.wait_s(airtime, self._mono())
@@ -499,6 +548,12 @@ class Bridge:
         if target.channel_index is not None:
             if target.channel_index not in session.channels:
                 raise _FinalError(DeliveryState.FAILED, "channel_not_configured")
+            if item.raw is not None:  # accepted before the radio's name was known: limit it now
+                try:
+                    item.text = prepare_text(item.raw, self._text_policy(target, info))
+                except TextRejectedError as exc:
+                    raise _FinalError(DeliveryState.FAILED, exc.reason) from None
+                size = len(item.text.encode())
             name_bytes = len(info.name.encode())
             if size > MAX_TEXT_BYTES - name_bytes - 2:  # the radio was renamed after queueing
                 raise _FinalError(DeliveryState.FAILED, "too_long")
@@ -534,7 +589,8 @@ class Bridge:
         )  # fmt: skip
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
-        log.info("delivery %s to %s: %s%s", event.id, event.target, event.state.value,
+        # %r: the alias of a rejected request comes from its topic, which may hold any character
+        log.info("delivery %s to %r: %s%s", event.id, event.target, event.state.value,
                  f" ({event.reason})" if event.reason else "")  # fmt: skip
         self._bus.publish(self.topics.delivery, encode(delivery_payload(event)))
 
@@ -551,6 +607,7 @@ class Bridge:
                 rx = event.rx
                 payload = rx_payload(rx.snr_db, rx.rssi_dbm, rx.raw, event.received_at)
                 self._bus.publish(self.topics.rx, encode(payload))
+            self._events.task_done()  # for the stop (_finish_inbound)
 
     async def _message_loop(self) -> None:
         while True:
@@ -561,6 +618,7 @@ class Bridge:
                 raise
             except Exception:
                 log.exception("received message could not be handled")
+            self._messages.task_done()
 
     async def _on_message(self, event: MessageReceived) -> None:
         message, session = event.message, event.session
@@ -573,25 +631,26 @@ class Bridge:
             message.sender_prefix if message.kind is MessageKind.CONTACT else message.channel_index
         )
         key = (message.kind, origin, message.sender_timestamp, message.text)
+        # also after a rejection: the radio acknowledged the packet, so the sender does not repeat
+        # it and an identical copy is a replay; a command sent again has a newer timestamp
         if self._inbound_dedup.is_duplicate(key, self._mono()):
-            log.debug("duplicate of a received message dropped (sender retry)")
+            log.debug("duplicate of a received message dropped (sender retry or replay)")
             return
         decision = await self._judge(event)
         command = decision.command if decision else None
+        if decision is not None and command is not None:
+            try:
+                # first; also when the broker is unreachable (below): the sender was verified
+                self._ledger.record(command.sender_key, command.sender_timestamp)
+            except OSError:
+                log.exception("command not published: the state file cannot be written")
+                command = None
+                decision = CommandDecision(decision.word, rejection=Rejection.STATE_UNWRITABLE)
         if decision is not None and command is not None and not self._bus.connected:
             # queued until the reconnect, it would trigger automations at any later time
             log.warning("command %s refused: the broker is unreachable", decision.word)
             command = None
             decision = CommandDecision(decision.word, rejection=Rejection.BROKER_UNAVAILABLE)
-        if decision is not None and command is not None:
-            try:
-                self._ledger.record(command.sender_key, command.sender_timestamp)  # first
-            except OSError:
-                log.exception("command not published: the state file cannot be written")
-                command = None
-                decision = CommandDecision(decision.word, rejection=Rejection.STATE_UNWRITABLE)
-        if decision is not None and decision.rejection in _TRANSIENT:
-            self._inbound_dedup.forget(key)  # the sender's retry may get through
         sender = None
         if message.sender_prefix is not None:
             matches = session.contacts.resolve(message.sender_prefix)
@@ -689,6 +748,7 @@ class Bridge:
         while True:
             if watchdog:
                 self._notify("WATCHDOG=1")
+            self._report_unpublished()  # the end of a flood of refused requests
             if self._mono() >= next_state:
                 self._publish_state()
                 next_state = self._mono() + STATUS_INTERVAL_S

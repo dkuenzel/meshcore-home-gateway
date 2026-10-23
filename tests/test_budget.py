@@ -1,10 +1,10 @@
-"""Airtime budget (token bucket over seconds of transmission) and deduplication."""
+"""Airtime budget (token bucket over seconds of transmission), rate limit and deduplication."""
 
 import math
 
 import pytest
 
-from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator
+from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator, RateLimit
 
 
 def test_budget_starts_full_and_consumes() -> None:
@@ -67,6 +67,20 @@ def test_used_in_the_last_hour_is_a_sliding_window() -> None:
 def test_budget_rejects_impossible_settings(per_hour: float, burst: float) -> None:
     with pytest.raises(ValueError, match="budget"):
         AirtimeBudget(per_hour_s=per_hour, burst_s=burst, now=0.0)
+
+
+def test_rate_limit_allows_a_burst_then_the_rate() -> None:
+    limit = RateLimit(per_s=20.0, burst=100.0, now=0.0)
+    assert sum(limit.allow(now=0.0) for _ in range(150)) == 100
+    assert sum(limit.allow(now=1.0) for _ in range(50)) == 20  # refilled at 20 per second
+    assert sum(limit.allow(now=100.0) for _ in range(150)) == 100  # capped at the burst
+    assert not limit.allow(now=50.0)  # a clock that goes back refills nothing
+
+
+@pytest.mark.parametrize(("per_s", "burst"), [(0.0, 10.0), (1.0, 0.5)])
+def test_rate_limit_rejects_impossible_settings(per_s: float, burst: float) -> None:
+    with pytest.raises(ValueError, match="rate limit"):
+        RateLimit(per_s=per_s, burst=burst, now=0.0)
 
 
 def test_duplicate_within_window_is_detected_without_extending_it() -> None:

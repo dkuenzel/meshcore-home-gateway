@@ -133,6 +133,7 @@ class CompanionSession:
         self.autoadd: codec.AutoAddConfig | None = None
         self.on_contact_key: Callable[[str, bool], None] | None = None  # key, held as contact
         self.contacts_read_at = -1  # command count of the read behind contact_records
+        self._contacts_changed_at = -1  # command count at the last contact push
         self._commands_sent = 0
         self.contact_records: dict[str, codec.ContactRecord] = {}
         self.channels: dict[int, str] = {}
@@ -207,6 +208,12 @@ class CompanionSession:
     @property
     def contacts(self) -> ContactBook:
         return ContactBook(Contact(key, rec.name) for key, rec in self.contact_records.items())
+
+    @property
+    def contacts_outdated(self) -> bool:
+        """The radio has reported a contact change that the table as last read may not show: no
+        read has started since (the maintenance task reads it again only after a delay)."""
+        return self._contacts_changed_at >= self.contacts_read_at
 
     async def get_time(self) -> int:
         frame = await self._expect(
@@ -413,14 +420,18 @@ class CompanionSession:
             await self._events.put(PacketLogged(decoded, self._wall()))
         elif isinstance(decoded, codec.Advert):
             self._report_key(decoded.public_key, held=not decoded.new)  # before later frames
-            self._contacts_dirty.set()
+            self._contacts_changed()
         elif isinstance(decoded, codec.PathUpdated | codec.ContactDeleted):
             self._report_key(decoded.public_key)
-            self._contacts_dirty.set()
+            self._contacts_changed()
         elif frame[0] == Push.CONTACTS_FULL:
-            self._contacts_dirty.set()
+            self._contacts_changed()
         else:
             log.debug("radio: push 0x%02x ignored", frame[0])
+
+    def _contacts_changed(self) -> None:
+        self._contacts_changed_at = self._commands_sent
+        self._contacts_dirty.set()
 
     def _report_key(self, public_key: bytes, *, held: bool = True) -> None:
         if self.on_contact_key is not None:
@@ -466,6 +477,8 @@ class CompanionSession:
             return frame.result()
         if self._failure is not None:
             raise RadioError(f"connection lost: {self._failure}")
+        if self.closed:  # closed by its owner (the bridge stops): no answer was missed
+            raise self._closed_error()
         error = RadioError("no answer from the radio")
         self._end(error)
         raise error

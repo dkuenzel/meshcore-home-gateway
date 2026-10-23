@@ -111,3 +111,27 @@ class Deduplicator:
             if now - accepted_at < self._window:
                 break
             del self._accepted[oldest_key]
+
+
+class RateLimit:
+    """Token bucket over events: at most `burst` at once, refilled at `per_s` per second."""
+
+    def __init__(self, per_s: float, burst: float, now: float) -> None:
+        if per_s <= 0.0 or burst < 1.0:
+            raise ValueError(
+                f"rate limit needs a positive rate and a burst of at least 1: {per_s}, {burst}"
+            )
+        self._rate = per_s
+        self._capacity = burst
+        self._tokens = burst
+        self._last = now
+
+    def allow(self, now: float) -> bool:
+        """Take one event's token if there is one."""
+        elapsed = max(0.0, now - self._last)
+        self._tokens = min(self._capacity, self._tokens + elapsed * self._rate)
+        self._last = max(self._last, now)
+        if self._tokens < 1.0:
+            return False
+        self._tokens -= 1.0
+        return True

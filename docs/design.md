@@ -138,7 +138,7 @@ flowchart TB
 | --- | --- |
 | `core.text` | Clean, transliterate and limit outgoing text. |
 | `core.airtime` | LoRa time on air; on-air size of MeshCore text packets. |
-| `core.budget` | Airtime token bucket; duplicate suppression. |
+| `core.budget` | Airtime token bucket; event rate limit; duplicate suppression. |
 | `core.contacts` | Resolve 6-byte key prefixes to full keys; detect ambiguity. |
 | `core.commands` | Decide whether a message is an authorised command. |
 | `core.model` | Data classes shared by all layers. |
@@ -172,6 +172,11 @@ Long-running tasks on the loop, supervised by a task group:
 * **request reader**: turns MQTT send requests into queue entries or rejections;
 * **status reporter**: publishes the state document on change and every 60 s and pings the systemd
   watchdog.
+
+On stop the radio supervisor ends first and closes the session. The radio events and the message
+handler then finish the messages the radio has already handed over, for at most 2 s (a command
+waiting for its table read is rejected, `sender_unverified`); then the other tasks are cancelled.
+Messages still waiting in the radio are fetched at the next start.
 
 Each radio session runs two tasks of its own: a **reader** that routes frames, and a
 **maintenance** task that re-reads the contact table after adverts and contact pushes, drains the
@@ -269,11 +274,17 @@ sequenceDiagram
 2. **Target.** Only configured aliases exist
    ([ADR 0008](decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)). A contact
    target is bound to a full public key; at send time its 6-byte prefix must match exactly one
-   contact on the radio, and that contact must have the configured key, otherwise the delivery
-   fails (`ambiguous_target`, `unknown_contact`). A channel target must be a named channel slot on
-   the radio (`channel_not_configured`).
+   contact in the radio's table as last read, read again first when the radio has reported a
+   contact change since, and that contact must have the configured key, otherwise the delivery
+   fails (`ambiguous_target`, `unknown_contact`). The radio encrypts for the first contact with
+   the prefix, so a look-alike it has just added would get the message; a change whose push was
+   lost (over TCP) remains unseen until the next read. A channel target must be a named channel
+   slot on the radio (`channel_not_configured`).
 3. **Text.** `core.text` applies the policy. Limits: 160 bytes for a direct message; for a channel
-   message the firmware prepends `"<radio name>: "`, so the limit shrinks by that prefix.
+   message the firmware prepends `"<radio name>: "`, so the limit shrinks by that prefix. Before
+   the radio has connected once, the name is unknown: a channel text is checked against the
+   shortest prefix and limited again when it is sent; one that may not be truncated then fails
+   (`too_long`), as after a rename of the radio.
 4. **Duplicates.** Same alias and same final text within `dedup_window_s` → `duplicate`. A
    request rejected because the queue is full does not count, so its retry is accepted.
 5. **Queue.** Bounded (`queue_size`); a full queue rejects. Each entry carries its arrival time and
@@ -341,7 +352,8 @@ EU duty cycle for them.
 5. The bridge publishes the message on `received` (with the verdict), and an accepted command on
    `command`. The newest accepted timestamp per sender goes to the state file before the event is
    published, so a crash cannot turn into a replay; if the file cannot be written, the command is
-   rejected (`state_unwritable`) and the service carries on.
+   rejected (`state_unwritable`) and the service carries on. A command refused because the broker
+   is unreachable (`broker_unavailable`) stores its timestamp too: its sender was verified.
 6. Channels listed in `ignore_channels` are not published (busy public channels).
 
 ### 6.5 MQTT interface
@@ -449,9 +461,9 @@ systemd unit does not restart on it).
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
 | Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
-| Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted) and within `max_age_s` of the bridge clock. |
+| Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted; a command refused because the broker was unreachable counts too) and within `max_age_s` of the bridge clock. Exact repeats are dropped for an hour, also those of a rejected command. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
-| Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
+| Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
 | Retained send request re-sent on every reconnect | Retained messages on `send/+` are rejected (`reason: retained`) and not sent; clear the retained message on the broker. |
 | Forged events on the bridge's topics by another broker client (a fake `command` event triggers automations as if an allowlisted sender had sent it) | Topic ACLs: only the bridge user may publish below `<base>/<node>/`, except `send/`. Required when commands are configured (mqtt-api.md, last section); the sender check protects only the radio side. |
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
@@ -514,6 +526,12 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   sender's commands are rejected (`sender_ambiguous`) for 24 hours after the bridge last saw it.
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2).
+* A command rejected as `sender_unverified` or `state_unwritable` leaves the sender's last
+  timestamp as it was (the sender was not verified, or the file could not be written). A replayed
+  copy of its packet is dropped as a repeat for an hour; later, or after a restart of the
+  service, it is accepted if it is still within `max_age_s`, at any time with `max_age_s = 0`.
+  With `max_age_s` of an hour or less (the default is 15 minutes), only a restart within that
+  time leaves this gap.
 * Over TCP, pushes can be lost while the radio's send queue is full; a look-alike that enters and
   leaves the table between two table reads can then go unseen. Commands should use USB.
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
@@ -532,10 +550,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Radio clock wrong | `CURR_TIME` vs bridge clock | set forward; warn if ahead | log warning; command rejections `too_old` / `from_the_future` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
-| Bridge crashes or restarts | systemd | restart after 5 s; queued messages are lost | availability; no delivery state for lost messages |
+| Bridge crashes or restarts | systemd | restart after 5 s; queued outgoing messages are lost; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; no delivery state for lost messages |
 | Airtime budget exhausted | token bucket | messages wait, then expire | `delivery: expired`; airtime entity |
 | Recipient out of range | no acknowledgement | retries, flood, then give up | `delivery: failed` |
-| Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects | `delivery: duplicate` / `rejected` |
+| Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects; the events of refused requests are limited to 20 per second (bursts of 100), so they cannot push other events out of a subscriber's queue on the broker | `delivery: duplicate` / `rejected`; a log warning counts the events left out |
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
 | State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
 | Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
