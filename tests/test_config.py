@@ -440,3 +440,11 @@ def test_a_url_or_a_port_in_a_host_is_refused(host: str, hint: str) -> None:
 def test_host_names_and_addresses_are_accepted(host: str) -> None:
     config = parse_config(MINIMAL.replace('host = "broker.example.org"', f'host = "{host}"'))
     assert config.mqtt.host == host
+
+
+@pytest.mark.parametrize("name", [" gw", "gw ", "gw\t"])
+def test_a_user_name_with_surrounding_blanks_is_refused(name: str) -> None:
+    """Mosquitto would refuse it as an unknown user, with the same answer as a wrong password."""
+    text = MINIMAL.replace('node_id = "radio1"', f'node_id = "radio1"\nusername = "{name}"')
+    with pytest.raises(ConfigError, match=r"mqtt\.username: no blank"):
+        parse_config(text.replace("\t", "\\t"))
