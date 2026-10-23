@@ -1,8 +1,27 @@
 #!/bin/sh
-# Runs the same checks as CI before anything leaves the machine.
+# Runs `make check` (the checks of CI, with one Python; `make matrix` runs the CI matrix) on the
+# checked-out commit, and refuses a push that this does not cover: another commit, uncommitted
+# changes or untracked files. Deletions need no check.
 # Activate once per clone with `make hooks`. Bypass only in an emergency: git push --no-verify
 set -eu
 cd "$(git rev-parse --show-toplevel)"
+head=$(git rev-parse HEAD)
+pushed=""
+# git writes one line per ref: <local ref> <local object> <remote ref> <remote object>
+while read -r local_ref local_object _; do
+    case $local_object in *[!0]*) ;; *) continue ;; esac # only zeros: the ref is deleted
+    if [ "$(git rev-parse --verify --quiet "$local_object^{commit}")" != "$head" ]; then
+        echo "pre-push: $local_ref is not the checked-out commit; check it out and push again" >&2
+        exit 1
+    fi
+    pushed=yes
+done
+[ -n "$pushed" ] || exit 0
+if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+    echo "pre-push: uncommitted changes or untracked files, which CI does not see;" \
+        "commit, stash or ignore them" >&2
+    exit 1
+fi
 echo "pre-push: make check"
 if ! make check; then
     echo "pre-push: checks failed, push aborted" >&2

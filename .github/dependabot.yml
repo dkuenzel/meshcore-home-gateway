@@ -21,6 +21,10 @@ updates:
     groups:
       dev-tools:
         patterns: ["*"]
+    ignore:
+      # Pinned to the version of Debian 13 (python3-paho-mqtt, ADR 0005), the deployment target:
+      # CI tests what production runs. Raise it together with the deployment target.
+      - dependency-name: "paho-mqtt"
 
   # The Home Assistant test environment: only the plugin, which pins one Home Assistant release.
   # Regenerate the lock file in the pull request with `make ha-lock`.

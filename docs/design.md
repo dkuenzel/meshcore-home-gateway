@@ -615,7 +615,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Hardware | real radios | checklist in [`testing.md`](testing.md), before each release |
 
 `make check` runs everything except the hardware checklist, locally and in CI; `make matrix` runs
-the tests with every supported Python version that is installed, like the CI matrix.
+the tests with every supported Python version, like the CI matrix, and fails if one is missing.
 
 ## 11 Alternatives considered
 

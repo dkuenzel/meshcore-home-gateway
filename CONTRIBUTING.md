@@ -34,14 +34,20 @@ and `mosquitto` for the integration tests (`apt install mosquitto`; the tests st
 broker on a free port).
 
 ```sh
-make venv     # .venv from the hash-pinned lock file requirements/dev.txt
+make venv     # .venv from the hash-pinned lock file requirements/dev.txt (fresh when it changes)
 make hooks    # run `make check` before every push
 make check    # everything CI runs: lint, shellcheck, workflow audit, tests, build, unit check
-make matrix   # the tests with every installed Python from 3.11 to 3.14 (the CI matrix)
+make matrix   # the tests with each Python from 3.11 to 3.14 (the CI matrix); all must be installed
 ```
 
 `make help` lists all targets. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the
-same targets, so a green `make check` plus `make matrix` locally means a green pipeline.
+same targets, so a green `make check`, `make matrix` and `make ha-test` locally mean a green
+pipeline. `make matrix` fails when one of the Pythons is missing; `make matrix PYTHONS=python3.13`
+tests only the ones named, and CI the rest.
+
+The pre-push hook runs `make check` on the working tree, so it lets a push through only when that
+is the commit being pushed: it refuses uncommitted changes, untracked files (commit, stash or
+ignore them) and refs that point to another commit than the checked-out one.
 
 The integration tests need `mosquitto`. If it is missing they fail rather than silently skip; set
 `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them deliberately (the summary shows the skip).
@@ -52,6 +58,10 @@ Development tools are pinned with hashes in `requirements/dev.txt`, resolved fro
 `requirements/dev.in` by `make lock`. The lock only admits releases that are at least 14 days old
 (`COOLDOWN_DAYS`), which keeps freshly published, possibly compromised releases out. Dependabot
 proposes updates with the same cooldown; regenerate the lock in the pull request with `make lock`.
+The exception is `paho-mqtt`: `requirements/dev.in` pins the version of Debian 13, so that CI
+tests what production runs
+([ADR 0005](docs/decisions/0005-runtime-dependencies-from-the-distribution.md)). Dependabot leaves
+it alone; it changes with the deployment target.
 GitHub Actions are pinned to full commit SHAs with the version as a comment.
 
 ## Style

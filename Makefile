@@ -24,8 +24,10 @@ help: ## List the targets
 
 venv: $(VENV)/.installed ## Development environment from the hash-pinned lock file
 
+# A changed lock gives a fresh environment, as in CI: --clear drops the packages it no longer has.
+# Only an existing environment is cleared, never another directory that VENV names by mistake.
 $(VENV)/.installed: requirements/dev.txt pyproject.toml
-	$(PYTHON) -m venv $(VENV)
+	$(PYTHON) -m venv $(if $(wildcard $(VENV)/pyvenv.cfg),--clear) $(VENV)
 	$(BIN)/python -m pip install --quiet --require-hashes --no-deps -r requirements/dev.txt
 	$(BIN)/python -m pip install --quiet --no-deps --no-build-isolation --editable .
 	touch $@
@@ -57,16 +59,18 @@ test: venv ## Tests with branch coverage, service subprocesses included (gate in
 	$(BIN)/coverage combine --quiet
 	$(BIN)/coverage report
 
-matrix: ## `make test` with every Python in PYTHONS that is installed (as the CI matrix)
-	@failed=""; for python in $(PYTHONS); do \
-	  if ! command -v $$python >/dev/null; then echo "matrix: $$python not installed, skipped"; continue; fi; \
+matrix: ## `make test` with every Python in PYTHONS (the CI matrix); a missing one fails it
+	@failed=""; missing=""; for python in $(PYTHONS); do \
+	  if ! command -v $$python >/dev/null; then missing="$$missing $$python"; continue; fi; \
 	  echo "matrix: $$python"; \
 	  $(MAKE) --no-print-directory test PYTHON=$$python VENV=.venv-$$python || failed="$$failed $$python"; \
 	done; \
-	if [ -n "$$failed" ]; then echo "matrix: failed with$$failed"; exit 1; fi; echo "matrix: all passed"
+	if [ -n "$$missing" ]; then echo "matrix: not installed:$$missing (or narrow PYTHONS)"; fi; \
+	if [ -n "$$failed" ]; then echo "matrix: failed with$$failed"; fi; \
+	if [ -n "$$missing$$failed" ]; then exit 1; fi; echo "matrix: all passed"
 
 $(HA_VENV)/.installed: home-assistant/requirements.txt
-	$(HA_PYTHON) -m venv $(HA_VENV)
+	$(HA_PYTHON) -m venv $(if $(wildcard $(HA_VENV)/pyvenv.cfg),--clear) $(HA_VENV)
 	$(HA_VENV)/bin/python -m pip install --quiet --require-hashes --no-deps \
 	  -r home-assistant/requirements.txt
 	touch $@
@@ -75,7 +79,7 @@ ha-test: $(HA_VENV)/.installed ## Contract tests against the pinned Home Assista
 	$(HA_VENV)/bin/python -m pytest -c home-assistant/pytest.ini -p no:cacheprovider \
 	  home-assistant/tests
 
-unit-check: pyz ## systemd-analyze: verify the unit, exposure score at most 2.0
+unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
 	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
 	  sed 's|^ExecStart=/usr/local/bin/meshcore-home-gateway |ExecStart=$(CURDIR)/dist/$(PYZ) |' \
 	    deploy/systemd/$(UNIT) >"$$tmp/$(UNIT)" && \

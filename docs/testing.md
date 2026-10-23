@@ -7,7 +7,7 @@ the automated tests and how to test with real radios before a release.
 
 ```sh
 make test        # pytest with branch coverage (service subprocesses included); fails below 90 %
-make matrix      # make test with each installed Python of 3.11 to 3.14, like the CI matrix
+make matrix      # make test with each Python of 3.11 to 3.14 (all installed), like the CI matrix
 make unit-check  # systemd-analyze verify and exposure score of the unit
 make check       # lint, types, shellcheck, workflow audit, tests, build, unit check: what CI runs
 ```
