@@ -36,6 +36,14 @@ def test_decoder_skips_noise_and_counts_it() -> None:
     assert decoder.discarded == len(b"boot log\r\n")
 
 
+def test_decoder_accepts_a_frame_of_the_maximum_size() -> None:
+    """A V3 direct message with the longest text, 160 bytes, is exactly this size."""
+    message = bytes.fromhex("10 19 00 00 112233445566 02 00 0078E768") + b"x" * 160
+    size = MAX_FRAME_SIZE.to_bytes(2, "little")
+    assert len(message) == MAX_FRAME_SIZE
+    assert FrameDecoder().feed(b">" + size + message) == [message]
+
+
 def test_decoder_resynchronises_after_an_impossible_length() -> None:
     decoder = FrameDecoder()
     oversize = (MAX_FRAME_SIZE + 1).to_bytes(2, "little")

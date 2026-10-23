@@ -56,7 +56,10 @@ class SerialTransport:
             _make_raw(fd, self._speed)
             _set_modem_lines(fd)
             termios.tcflush(fd, termios.TCIOFLUSH)
-        except OSError:
+        except termios.error as exc:  # no OSError: the bridge would take it for a bug
+            os.close(fd)  # it holds the exclusive lock
+            raise OSError(exc.args[0], exc.args[1], self.device) from exc
+        except BaseException:
             os.close(fd)
             raise
         self._fd = fd
@@ -180,11 +183,3 @@ class TcpTransport:
             writer.close()
             with contextlib.suppress(OSError, ConnectionError):
                 await writer.wait_closed()
-
-
-def is_disconnect(exc: BaseException) -> bool:
-    """Errors that mean the radio went away (reconnect) rather than a bug."""
-    return isinstance(exc, ConnectionError | TimeoutError) or (
-        isinstance(exc, OSError)
-        and exc.errno in (errno.EIO, errno.ENODEV, errno.ENXIO, errno.EBADF)
-    )
