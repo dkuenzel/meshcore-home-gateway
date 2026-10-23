@@ -241,7 +241,7 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 * **State and backup:** back up `/etc/meshcore-home-gateway/config.toml` and
   `/var/lib/meshcore-home-gateway/state.json` (the newest accepted command time per sender; without
   it a restored system accepts older recorded commands again until a sender sends a new one, within
-  `max_age_s`).
+  `max_age_s`; and the Home Assistant components last announced).
 * **Logs contain no message texts** at the default level; set `log_level = "debug"` temporarily to
   see them.
 

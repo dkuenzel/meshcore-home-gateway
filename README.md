@@ -31,8 +31,9 @@ flowchart LR
   are deduplicated.
 - **Commands** only from direct messages of allowlisted contacts (bound to their full public key),
   with replay protection; channel messages never command.
-- **Home Assistant:** one device with radio link, battery and airtime sensors, event entities for
-  messages, deliveries and commands, and a notify entity per target.
+- **Home Assistant:** nothing to install there; MQTT discovery creates one device with radio
+  link, battery, airtime and queue sensors, event entities for messages, deliveries and commands,
+  and a notify entity per target.
 - **Small supply chain:** Python standard library plus `paho-mqtt` from the Linux distribution; no
   other runtime dependency.
 - **One-step installation on Proxmox VE** in an unprivileged container, configured through dialogs
@@ -43,7 +44,7 @@ flowchart LR
 ## Status
 
 Version 0.x, alpha. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and
-Home Assistant 2026.10. The MQTT API, the configuration format and the command line may still
+Home Assistant 2026.10 (2026.8 or newer is required). The MQTT API, the configuration format and the command line may still
 change between minor versions; see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Quick start

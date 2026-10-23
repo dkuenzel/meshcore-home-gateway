@@ -1,8 +1,15 @@
 """Home Assistant discovery document (rules from docs/home-assistant.md)."""
 
+import re
+from typing import Any
+
+from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import parse_config
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
+from meshcore_home_gateway.mqtt.payloads import rx_payload
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
+from meshcore_home_gateway.radio.session import RadioInfo
 
 KEY = "a1" * 32
 CONFIG = parse_config(
@@ -26,6 +33,32 @@ words = ["status", "arm"]
 """
 )
 TOPICS = Topics(CONFIG.mqtt.base_topic, CONFIG.mqtt.node_id)
+RADIO = RadioInfo(
+    SelfInfo(bytes.fromhex("c3" * 32), "Gateway", 22, 22, 869_618, 62_500, 8, 8, True),
+    DeviceInfo(9, 350, 40, "1 Oct 2026", "Heltec V3", "v1.18.0", 0),
+)
+STATE_KEYS = {
+    "radio", "battery_v", "airtime_1h_s", "airtime_available_s", "airtime_budget_s_per_hour",
+    "queue", "radio_name", "public_key", "model", "firmware", "frequency_mhz", "bandwidth_khz",
+    "spreading_factor", "coding_rate", "tx_power_dbm", "version",
+}  # fmt: skip
+
+
+def _values(document: Any) -> list[Any]:
+    if isinstance(document, dict):
+        return [v for value in document.values() for v in [value, *_values(value)]]
+    if isinstance(document, list):
+        return [v for value in document for v in [value, *_values(value)]]
+    return []
+
+
+def _template_keys(components: dict[str, dict[str, Any]], topic: str) -> set[str]:
+    keys = set()
+    for component in components.values():
+        if topic in (component.get("state_topic"), component.get("json_attributes_topic")):
+            for option in ("value_template", "json_attributes_template"):
+                keys |= set(re.findall(r"value_json\.(\w+)", component.get(option, "")))
+    return keys
 
 
 def test_topic_uses_the_device_path_and_a_safe_object_id() -> None:
@@ -51,8 +84,8 @@ def test_document_has_the_mandatory_parts() -> None:
 def test_entities_and_their_sources() -> None:
     cmps = discovery_payload(CONFIG, TOPICS)["cmps"]
     assert set(cmps) == {
-        "radio", "battery", "airtime", "message", "delivery", "command",
-        "send_alerts", "send_alice",
+        "radio", "battery", "airtime", "airtime_available", "queue", "message", "delivery",
+        "command", "send_alerts", "send_alice",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -71,3 +104,50 @@ def test_command_entity_only_with_command_words() -> None:
         '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
     )
     assert "command" not in discovery_payload(plain, Topics("meshcore", "n"))["cmps"]
+
+
+def test_the_device_shows_the_radio_once_it_is_known() -> None:
+    """Home Assistant rejects the whole document for one null device field, so unknown ones are
+    left out; it keeps the stored values then."""
+    unknown = discovery_payload(CONFIG, TOPICS)
+    assert {"mdl", "sw", "sn"}.isdisjoint(unknown["dev"])
+    assert None not in _values(unknown)
+    known = discovery_payload(CONFIG, TOPICS, RADIO)
+    assert (known["dev"]["mdl"], known["dev"]["sw"]) == ("Heltec V3", "v1.18.0")
+    assert known["dev"]["sn"] == "c3" * 32
+    assert known["o"]["sw"] == __version__
+    assert known["o"]["url"].startswith("https://github.com/")
+    assert known["cmps"] == unknown["cmps"]
+
+
+def test_every_state_value_reaches_home_assistant() -> None:
+    """A new key in the state document must get an entity or an attribute."""
+    cmps = discovery_payload(CONFIG, TOPICS)["cmps"]
+    assert _template_keys(cmps, TOPICS.state) == STATE_KEYS
+    assert cmps["queue"]["value_template"] == "{{ value_json.queue }}"
+    assert cmps["airtime_available"]["unit_of_measurement"] == "s"
+    assert "budget_s_per_hour" in cmps["airtime_available"]["json_attributes_template"]
+    assert "radio_name" in cmps["radio"]["json_attributes_template"]
+
+
+def test_packet_sensors_only_with_the_rx_log_and_disabled_by_default() -> None:
+    assert not {"rx_rssi", "rx_snr"} & set(discovery_payload(CONFIG, TOPICS)["cmps"])
+    rx = parse_config(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        "[diagnostics]\npublish_rx_log = true\n"
+    )
+    topics = Topics("meshcore", "n")
+    cmps = discovery_payload(rx, topics)["cmps"]
+    for key in ("rx_rssi", "rx_snr"):
+        assert cmps[key]["state_topic"] == "meshcore/n/rx"
+        assert cmps[key]["enabled_by_default"] is False
+    sample = set(rx_payload(5.25, -90, b"\x01", 0.0)) - {"raw", "length", "received_at"}
+    assert _template_keys(cmps, topics.rx) == sample
+
+
+def test_removed_components_are_sent_once_as_their_platform() -> None:
+    """Home Assistant removes a component only when it is sent as {"p": <platform>}."""
+    removed = {"send_old": "notify", "send_alerts": "notify"}
+    doc = discovery_payload(CONFIG, TOPICS, removed=removed)
+    assert doc["cmps"]["send_old"] == {"p": "notify"}
+    assert doc["cmps"]["send_alerts"]["command_topic"] == "meshcore/radio-1/send/alerts"

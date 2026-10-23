@@ -41,6 +41,9 @@ format and the command line are public interfaces.
 - `make pyz` builds the zipapp with the isolated interpreter `/usr/bin/python3 -I`, as installed;
   `make lock` takes the newest releases within the cooldown; the sdist contains `.github/` and
   `.githooks/`, which its tests and `make check` need.
+- Home Assistant's birth message is followed on its own topic (`homeassistant.status_topic`,
+  default `homeassistant/status`) instead of below the discovery prefix: with a custom prefix the
+  entities stayed unavailable after a restart of Home Assistant.
 - Documentation matches the code: retained send requests are rejected, not ignored; the final
   delivery states; the `STATUS=` line; exit code 2; what Home Assistant's birth message
   republishes; topic ACLs are required with commands; manual installation steps, roll back, a
@@ -48,6 +51,12 @@ format and the command line are public interfaces.
 
 ### Added
 
+- Home Assistant: the device shows the radio's model, firmware and key (announced again when they
+  become known or change); sensors *Airtime available* and *Queue*; the radio's static facts as
+  attributes of *Radio link*; packet RSSI and SNR sensors with `publish_rx_log` (disabled by
+  default). Components of an earlier configuration (a removed target) are removed by the gateway.
+  The guide names the required version (2026.8), maps every MQTT value to its place in Home
+  Assistant and uses the `event.received` trigger, which also fires on an entity's first event.
 - The project is named meshcore-home-gateway (developed as meshcore-bus until 2026-10-22; ADR
   0012): command, package, unit, user, paths, MQTT client identifier and Home Assistant IDs.
 - Design document, architecture decision records, protocol reference (MeshCore companion

@@ -1,6 +1,7 @@
 """Small persistent state in one JSON file, written atomically.
 
-Today it holds the newest accepted command timestamp per sender (replay protection, ADR 0009).
+It holds the newest accepted command timestamp per sender (replay protection, ADR 0009) and the
+Home Assistant components of the last discovery document (docs/home-assistant.md).
 """
 
 from __future__ import annotations
@@ -88,3 +89,32 @@ class CommandLedger:
         data[self._KEY] = updated
         self._store.save(data)
         self._last = updated
+
+
+class AnnouncedComponents:
+    """The components of the last discovery document: key -> platform.
+
+    Home Assistant keeps a component that is left out of the document; it removes one only when
+    it is sent as `{"p": <platform>}`. The bridge sends that for the components of an earlier
+    configuration (a removed target, command words or rx log switched off).
+    """
+
+    _KEY = "ha_components"
+
+    def __init__(self, store: JsonStateFile) -> None:
+        self._store = store
+
+    def replace(self, current: Mapping[str, str]) -> dict[str, str]:
+        """Store the current components; return the earlier ones that are gone."""
+        data = self._store.load()
+        raw = data.get(self._KEY)
+        previous: dict[str, str] = {}
+        if isinstance(raw, dict):
+            previous = {k: v for k, v in raw.items() if isinstance(v, str)}
+        if previous != current:
+            data[self._KEY] = dict(current)
+            try:
+                self._store.save(data)
+            except OSError as exc:  # removed ones are sent again next time, which is harmless
+                log.warning("cannot store the Home Assistant components: %s", exc)
+        return {key: platform for key, platform in previous.items() if key not in current}

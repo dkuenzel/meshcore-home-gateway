@@ -77,7 +77,7 @@ status, Home Assistant discovery, deployment on Proxmox VE and on any systemd-ba
 | F6 | Every received message is published on `received`, with sender, channel, signal and the command verdict. |
 | F7 | A received message is a command only under the rules of §7.3; accepted commands are published on `command` with the word as `event_type`. |
 | F8 | Availability (`online`/`offline`, retained, with last will) and a retained state document are published. |
-| F9 | Home Assistant discovery publishes one device with connectivity, battery, airtime, message, delivery and command entities and one notify entity per target. |
+| F9 | Home Assistant discovery publishes one device with connectivity, battery, airtime, queue, message, delivery and command entities and one notify entity per target; the device shows the radio's model, firmware and key. |
 | F10 | The CLI checks a configuration, probes a radio (contacts, channels), sends and listens via MQTT, and renders a configuration from installer answers. |
 
 ### 4.2 Quality requirements
@@ -363,8 +363,8 @@ The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
   while the broker is unreachable (`broker_unavailable`): delivered after the reconnect, they
   would trigger automations at an arbitrary later time.
 * On reconnect the bridge republishes availability, discovery and state; when Home Assistant
-  announces itself on `homeassistant/status`, discovery and state (availability is retained, so
-  Home Assistant receives it with its subscription).
+  announces itself on `homeassistant.status_topic` (default `homeassistant/status`), discovery and
+  state (availability is retained, so Home Assistant receives it with its subscription).
 
 ### 6.6 Home Assistant
 
@@ -374,15 +374,22 @@ automations are in [`home-assistant.md`](home-assistant.md).
 
 | Entity | Platform | Source |
 | --- | --- | --- |
-| Radio link | `binary_sensor` (connectivity) | `state` → `radio` |
+| Radio link | `binary_sensor` (connectivity) | `state` → `radio`; the radio's static facts as attributes |
 | Battery | `sensor` (voltage) | `state` → `battery_v` |
 | Airtime last hour | `sensor` (duration) | `state` → `airtime_1h_s` |
+| Airtime available | `sensor` (duration) | `state` → `airtime_available_s` |
+| Queue | `sensor` | `state` → `queue` |
+| Last packet RSSI, SNR | `sensor` (signal strength), disabled by default | `rx` (only with `publish_rx_log`) |
 | Message | `event` (`contact`, `channel`) | `received` |
 | Delivery | `event` (delivery states) | `delivery` |
 | Command | `event` (configured words) | `command` |
 | Send to *alias* | `notify`, one per target | `send/<alias>` |
 
 All entities share the availability topic, so they become unavailable when the bridge is offline.
+The document names the radio's model, firmware and key once the radio is known and is sent again
+when they change; unknown fields are left out, because Home Assistant rejects a document with a
+null device field. Components of the previous run that the configuration no longer has are sent
+once per announcement as `{"p": <platform>}`, which removes them; the state file keeps the list.
 
 ### 6.7 Configuration
 
@@ -597,7 +604,5 @@ the tests with every supported Python version that is installed, like the CI mat
 ## 12 Open questions and future work
 
 * BLE transport as a further adapter, for radios without USB data or WiFi.
-* Removing stale notify entities when a target is deleted (read the previous retained discovery
-  document at start-up and publish removals).
 * Priorities in the outgoing queue (an alert overtaking a status message).
 * MQTT 5 features: message expiry for send requests, response topics for correlation.

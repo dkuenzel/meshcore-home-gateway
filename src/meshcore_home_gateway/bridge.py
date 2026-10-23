@@ -68,7 +68,7 @@ from meshcore_home_gateway.radio.session import (
     RadioInfo,
 )
 from meshcore_home_gateway.radio.transport import Transport
-from meshcore_home_gateway.state import CommandLedger
+from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger
 from meshcore_home_gateway.systemd import notify, watchdog_interval_s
 
 log = logging.getLogger(__name__)
@@ -184,8 +184,10 @@ class Bridge:
         wall_clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
         notifier: Callable[[str], bool] = notify,
+        components: AnnouncedComponents | None = None,
     ) -> None:
         self.config = config
+        self._components = components
         self._bus = bus
         self._transport_factory = transport_factory
         self._ledger = ledger
@@ -210,6 +212,8 @@ class Bridge:
         self._acks = AckWaiter(monotonic)
         self._session: CompanionSession | None = None
         self._radio_info: RadioInfo | None = None
+        self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
+        self._removed: dict[str, str] | None = None  # earlier components, removed in this run
         self._radio_ready = asyncio.Event()
         self._tasks: list[asyncio.Task[None]] = []
 
@@ -262,7 +266,12 @@ class Bridge:
                 self._radio_ready.set()
                 delay = RECONNECT_MIN_S
                 self._check_radio(session)
-                self._publish_state()
+                if self.config.homeassistant.discovery and _identity(self._radio_info) != (
+                    self._announced
+                ):
+                    self._publish_announcements()  # the device page shows the radio
+                else:
+                    self._publish_state()
                 try:
                     await session.wait_closed()
                 except RadioError as exc:
@@ -711,13 +720,24 @@ class Bridge:
 
     def _publish_announcements(self) -> None:
         if self.config.homeassistant.discovery:
-            document = discovery_payload(self.config, self.topics)
+            if self._removed is None:  # first announcement: what the last run had and this lacks
+                current = discovery_payload(self.config, self.topics)["cmps"]
+                platforms = {key: component["p"] for key, component in current.items()}
+                self._removed = self._components.replace(platforms) if self._components else {}
+                if self._removed:
+                    log.info("Home Assistant: removing %s", ", ".join(sorted(self._removed)))
+            document = discovery_payload(self.config, self.topics, self._radio_info, self._removed)
             self._bus.publish(discovery_topic(self.config), encode(document))
+            self._announced = _identity(self._radio_info)
         self._publish_state()
 
     def _schedule_announcements(self) -> None:
         delay = random.uniform(*DISCOVERY_DELAY_S)  # noqa: S311 - spreading load only
         asyncio.get_running_loop().call_later(delay, self._publish_announcements)
+
+
+def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
+    return (info.device.model, info.device.version, info.public_key) if info else None
 
 
 def _lora(info: RadioInfo) -> LoRaParams:

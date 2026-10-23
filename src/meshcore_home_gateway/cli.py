@@ -160,17 +160,24 @@ async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.bridge import Bridge  # noqa: PLC0415 - keep CLI start-up light
     from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
-    from meshcore_home_gateway.state import CommandLedger, JsonStateFile  # noqa: PLC0415
+    from meshcore_home_gateway.state import (  # noqa: PLC0415
+        AnnouncedComponents,
+        CommandLedger,
+        JsonStateFile,
+    )
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
-    ha_status = f"{config.homeassistant.prefix}/status" if config.homeassistant.discovery else None
+    ha_status = config.homeassistant.status_topic if config.homeassistant.discovery else None
     bus = MqttBus(config.mqtt, topics, ha_status)
-    ledger = CommandLedger(JsonStateFile(state_dir / "state.json"))
-    bridge = Bridge(config, bus, lambda: transport_for(config), ledger)
+    store = JsonStateFile(state_dir / "state.json")
+    bridge = Bridge(
+        config, bus, lambda: transport_for(config), CommandLedger(store),
+        components=AnnouncedComponents(store),
+    )  # fmt: skip
     await bridge.run(stop)
     log.info("meshcore-home-gateway stopped")
     return EX_OK

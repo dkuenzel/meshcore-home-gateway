@@ -320,3 +320,17 @@ def test_answers_refuse_invalid_files() -> None:
 def test_rendering_accepts_windows_line_ends() -> None:
     config = parse_config(render_config(ANSWERS.replace("\n", "\r\n")))
     assert config.mqtt.host == "broker.example.org"
+
+
+def test_home_assistant_status_topic_is_independent_of_the_prefix() -> None:
+    """Home Assistant sends its birth message to its own topic, not below the discovery prefix."""
+    assert parse_config(FULL).homeassistant.status_topic == "homeassistant/status"
+    custom = parse_config(
+        FULL.replace('prefix = "ha"', 'prefix = "ha"\nstatus_topic = "ha/status"')
+    )
+    assert custom.homeassistant.status_topic == "ha/status"
+    for invalid in ("#", "ha/+", "ha//status", "/ha"):
+        with pytest.raises(ConfigError, match="status_topic"):
+            parse_config(
+                FULL.replace('prefix = "ha"', f'prefix = "ha"\nstatus_topic = "{invalid}"')
+            )

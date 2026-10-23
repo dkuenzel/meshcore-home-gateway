@@ -46,6 +46,7 @@ configuration error: `check-config` loads the files, and the service exits with 
 | `discovery` | `true` | publish the discovery document and follow Home Assistant's birth message |
 | `prefix` | `homeassistant` | discovery prefix (as set in Home Assistant's MQTT options) |
 | `device_name` | `MeshCore radio` | name of the device in Home Assistant |
+| `status_topic` | `homeassistant/status` | topic of Home Assistant's birth message (MQTT options, *birth message*); it does not follow `prefix` |
 
 ## `[targets.<alias>]`
 

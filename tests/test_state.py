@@ -3,7 +3,9 @@
 import json
 from pathlib import Path
 
-from meshcore_home_gateway.state import CommandLedger, JsonStateFile
+import pytest
+
+from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger, JsonStateFile
 
 
 def test_missing_file_reads_as_empty(tmp_path: Path) -> None:
@@ -48,3 +50,29 @@ def test_state_file_that_is_not_utf8_is_kept_aside(tmp_path: Path) -> None:
     path.write_bytes(b"\xff\xfe not json")
     assert JsonStateFile(path).load() == {}
     assert (tmp_path / "state.json.corrupt").exists()
+
+
+def test_announced_components_report_the_ones_that_are_gone(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    components = AnnouncedComponents(store)
+    assert components.replace({"radio": "binary_sensor", "send_a": "notify"}) == {}
+    assert components.replace({"radio": "binary_sensor"}) == {"send_a": "notify"}
+    assert components.replace({"radio": "binary_sensor"}) == {}
+    CommandLedger(store).record("a1" * 32, 5)  # both live in the same file
+    assert store.load()["ha_components"] == {"radio": "binary_sensor"}
+    store.save({"ha_components": ["radio"]})
+    assert components.replace({}) == {}
+
+
+def test_announced_components_survive_an_unwritable_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"ha_components": {"send_a": "notify"}})
+
+    def fail(_data: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(store, "save", fail)
+    assert AnnouncedComponents(store).replace({}) == {"send_a": "notify"}
+    assert "read-only file system" in caplog.text

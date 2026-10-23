@@ -20,8 +20,8 @@ from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
 from meshcore_home_gateway.radio.transport import Transport
-from meshcore_home_gateway.state import CommandLedger, JsonStateFile
-from tests.radio_emulator import START_TIME, EmulatedContact, EmulatedRadio
+from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger, JsonStateFile
+from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
 
 NOW = START_TIME + 100
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
@@ -138,10 +138,10 @@ async def running(
         notes.append(message)
         return True
 
-    ledger = CommandLedger(JsonStateFile(tmp_path / "state.json"))
+    store = JsonStateFile(tmp_path / "state.json")
     bridge = Bridge(
-        config, bus, transport or (lambda: radio), ledger, session_factory=sessions,
-        wall_clock=lambda: NOW, notifier=note,
+        config, bus, transport or (lambda: radio), CommandLedger(store), session_factory=sessions,
+        wall_clock=lambda: NOW, notifier=note, components=AnnouncedComponents(store),
     )  # fmt: skip
     task = asyncio.create_task(bridge.run(stop))
     try:
@@ -543,7 +543,7 @@ def test_received_messages_and_commands(tmp_path: Path) -> None:
 
     scenario(main)
     ledger = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
-    assert ledger == {"command_timestamps": {ALICE.public_key.hex(): NOW - 10}}
+    assert ledger["command_timestamps"] == {ALICE.public_key.hex(): NOW - 10}
 
 
 def test_command_time_is_stored_before_the_command_is_published(tmp_path: Path) -> None:
@@ -554,7 +554,8 @@ def test_command_time_is_stored_before_the_command_is_published(tmp_path: Path) 
     class WatchingBus(FakeBus):
         def publish(self, topic: str, payload: bytes, retain: bool = False) -> None:
             if topic.endswith("/command"):
-                stored_at_publish.append(json.loads(state.read_text(encoding="utf-8")))
+                stored = json.loads(state.read_text(encoding="utf-8"))
+                stored_at_publish.append(stored["command_timestamps"])
             super().publish(topic, payload, retain)
 
     radio = EmulatedRadio(contacts=[ALICE])
@@ -565,7 +566,7 @@ def test_command_time_is_stored_before_the_command_is_published(tmp_path: Path) 
             await bus.wait_for("/command", lambda c: True)
 
     scenario(main)
-    assert stored_at_publish == [{"command_timestamps": {ALICE.public_key.hex(): NOW - 7}}]
+    assert stored_at_publish == [{ALICE.public_key.hex(): NOW - 7}]
 
 
 def test_command_is_judged_by_the_contacts_of_this_moment(tmp_path: Path) -> None:
@@ -956,3 +957,44 @@ def test_receive_log_is_published_when_enabled(tmp_path: Path) -> None:
             assert (rx["snr_db"], rx["rssi_dbm"], rx["raw"]) == (7.75, -97, "0d0001")
 
     scenario(main)
+
+
+def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:
+    """The device page shows the radio's model and firmware once they are known."""
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            documents = bus.payloads("/config")
+            assert "mdl" not in documents[0]["dev"]  # announced on connect, radio not yet known
+            assert documents[-1]["dev"]["mdl"] == "Example Radio"
+            assert documents[-1]["dev"]["sn"] == SELF_KEY.hex()
+            count = len(documents)
+            radio.disconnect()
+            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected")
+            states = len(bus.payloads("/state"))
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=states)
+            assert len(bus.payloads("/config")) == count  # the same radio again
+            assert not any(retain for t, _, retain in bus.published if t.endswith("/config"))
+
+    scenario(main)
+
+
+def test_components_of_an_earlier_configuration_are_removed(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({
+        "ha_components": {"send_old": "notify", "radio": "binary_sensor"},
+        "command_timestamps": {"a1" * 32: 5},
+    })  # fmt: skip
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
+            for document in bus.payloads("/config"):  # every announcement of this run
+                assert document["cmps"]["send_old"] == {"p": "notify"}
+                assert document["cmps"]["radio"]["p"] == "binary_sensor"
+
+    scenario(main)
+    data = store.load()
+    assert "send_old" not in data["ha_components"]
+    assert data["ha_components"]["radio"] == "binary_sensor"
+    assert data["command_timestamps"] == {"a1" * 32: 5}

@@ -65,6 +65,7 @@ class HomeAssistantConfig:
     discovery: bool = True
     prefix: str = "homeassistant"
     device_name: str = "MeshCore radio"
+    status_topic: str = "homeassistant/status"
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,10 +300,17 @@ def _homeassistant(s: _Section) -> HomeAssistantConfig:
     prefix = cast(str, s.string("prefix", "homeassistant"))
     if not TOPIC_SEGMENT.fullmatch(prefix):
         raise ConfigError(f"{s.key('prefix')}: a single topic segment, got {prefix!r}")
+    status_topic = cast(str, s.string("status_topic", "homeassistant/status"))
+    if not all(TOPIC_SEGMENT.fullmatch(part) for part in status_topic.split("/")):
+        raise ConfigError(
+            f"{s.key('status_topic')}: segments of A-Z, a-z, 0-9, '-', '_' separated by '/', "
+            f"got {status_topic!r}"
+        )
     return HomeAssistantConfig(
         discovery=s.boolean("discovery", True),
         prefix=prefix,
         device_name=cast(str, s.string("device_name", "MeshCore radio")),
+        status_topic=status_topic,
     )
 
 
@@ -374,7 +382,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "mqtt.tls": bool, "mqtt.ca_file": str, "mqtt.cert_file": str, "mqtt.key_file": str,
     "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
     "homeassistant.discovery": bool, "homeassistant.prefix": str,
-    "homeassistant.device_name": str,
+    "homeassistant.device_name": str, "homeassistant.status_topic": str,
     "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,

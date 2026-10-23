@@ -32,19 +32,21 @@ deliveries and commands, `notify` entities for sending, sensors for the state.
 
 * Discovery topic `<prefix>/device/meshcore_home_gateway_<node>/config`, published when the bridge
   connects and again shortly after Home Assistant's birth message; not retained.
-* Every component has a `unique_id` and a `default_entity_id`; the document has `origin`. Without
-  them Home Assistant rejects the whole document.
+* Every component has a `unique_id`, and the document has `origin`: without them Home Assistant
+  rejects the whole document. `default_entity_id` sets stable entity IDs.
 * Events are published without retain; notify publishes the plain text to `send/<alias>`.
 * The shared state document is always complete, so no template renders against a missing key.
 
 ### Consequences
 
 * Good, because the device appears with all entities as soon as the bridge connects.
-* Good, because nothing is retained in the discovery topic, so a removed bridge leaves no ghost
-  entities.
-* Bad, because device-based discovery needs Home Assistant 2024.11 or newer.
-* Bad, because removing a target leaves its notify entity until it is deleted by hand (automatic
-  removal is listed as future work in the design).
+* Good, because nothing is retained in the discovery topic: Home Assistant does not re-create the
+  entities of a removed bridge after a restart (its device stays until deleted). Components that
+  a new configuration no longer has are removed by the bridge with `{"p": <platform>}`.
+* Bad, because device-based discovery needs Home Assistant 2024.11 or newer; the documented
+  entities and automations need 2026.8 ([home-assistant.md](../home-assistant.md), Requirements).
+* Neutral, because the bridge remembers the components it announced (in its state file), so that
+  it can remove the ones a new configuration no longer has.
 
 ### Confirmation
 

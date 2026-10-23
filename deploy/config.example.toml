@@ -23,6 +23,7 @@ node_id = "radio1"                                     # topics: meshcore/radio1
 discovery = true
 prefix = "homeassistant"
 device_name = "MeshCore radio"
+status_topic = "homeassistant/status"   # birth message topic, as in Home Assistant's MQTT options
 
 # Only configured targets can be sent to: publish text to meshcore/radio1/send/<alias>.
 [targets.alerts]
