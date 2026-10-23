@@ -14,6 +14,22 @@ make check       # lint, types, shellcheck, workflow audit, tests, build, unit c
 
 `make unit-check` needs `systemd-analyze` (any systemd-based Linux).
 
+## Home Assistant contract tests
+
+```sh
+make ha-test     # the gateway's documents in a real Home Assistant (needs Python 3.14.2 or newer)
+```
+
+`home-assistant/tests/test_contract.py` feeds the discovery document, the state document and the
+event payloads into the MQTT integration of the Home Assistant release that
+`pytest-homeassistant-custom-component` pins (`home-assistant/requirements.in`; the environment is
+installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-homeassistant`, about
+900 MB). It checks what [home-assistant.md](home-assistant.md) promises, including the example
+automations taken from that page, and that Home Assistant logs no warning. It is a separate CI job
+and not part of `make check`, because Home Assistant needs a newer Python than the gateway and
+is a large download. Run it after changing discovery, payloads, the state document or
+home-assistant.md.
+
 | Suite | Files | Needs |
 | --- | --- | --- |
 | Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py` | nothing |

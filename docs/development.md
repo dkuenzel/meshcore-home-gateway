@@ -64,7 +64,10 @@ for it, also the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
 ## Tool chain updates
 
 `make lock` re-resolves `requirements/dev.txt` from `requirements/dev.in` with hashes and takes
-the newest release of every tool that is at least `COOLDOWN_DAYS` (14) old. Review the diff like code. GitHub Actions are
+the newest release of every tool that is at least `COOLDOWN_DAYS` (14) old. `make ha-lock` does the
+same for the Home Assistant test environment (`home-assistant/requirements.in`, one pinned
+`pytest-homeassistant-custom-component`, which pins Home Assistant); after a Home Assistant update,
+run `make ha-test` and adjust "tested with" in `docs/home-assistant.md`. Review the diff like code. GitHub Actions are
 pinned to commit SHAs; Dependabot proposes updates with the same cooldown.
 
 ## Release

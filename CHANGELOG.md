@@ -51,6 +51,9 @@ format and the command line are public interfaces.
 
 ### Added
 
+- Contract tests against the real Home Assistant MQTT integration (`make ha-test`, a CI job): the
+  discovery document, the state and event payloads and the automations of the Home Assistant
+  guide, with a hash-pinned Home Assistant release that Dependabot proposes updates for.
 - Home Assistant: the device shows the radio's model, firmware and key (announced again when they
   become known or change); sensors *Airtime available* and *Queue*; the radio's static facts as
   attributes of *Radio link*; packet RSSI and SNR sensors with `publish_rx_log` (disabled by

@@ -48,6 +48,7 @@ include = [
   "docs/", "deploy/", "tests/", "tools/", "requirements/", "Makefile", "CHANGELOG.md",
   "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
   ".github/", ".githooks/",  # the tests check links into them, `make check` runs their checks
+  "home-assistant/",
 ]
 
 [tool.ruff]
@@ -68,6 +69,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "S108", "PLR0915", "PLC0415"]
+"home-assistant/tests/**" = ["S101"]
 "tools/**" = ["T20"]
 "tests/manual/**" = ["T20"]  # a script that reports by printing
 "src/meshcore_home_gateway/cli.py" = ["T20"]  # the command line prints by design
