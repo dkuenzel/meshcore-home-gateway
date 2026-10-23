@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import dataclasses
 import grp
 import json
 import logging
@@ -34,6 +35,7 @@ from meshcore_home_gateway.config import (
     read_text,
     render_config,
 )
+from meshcore_home_gateway.protocol.codes import ContactFlag, TelemetryMode
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.radio.transport import Transport
@@ -293,6 +295,27 @@ def _probe(args: argparse.Namespace) -> int:
 
 
 NODE_TYPES = {1: "chat", 2: "repeater", 3: "room", 4: "sensor"}
+ADVERT_LOCATION = {0: "none", 1: "share"}  # adverts without or with the radio's position
+_FLAG_NAMES = {
+    ContactFlag.FAVOURITE: "favourite",
+    ContactFlag.TELEMETRY_BASE: "telemetry_base",
+    ContactFlag.TELEMETRY_LOCATION: "telemetry_location",
+    ContactFlag.TELEMETRY_ENVIRONMENT: "telemetry_environment",
+    ContactFlag.REMOTE_CLI: "remote_cli",
+}
+
+
+def _mode_name(mode: TelemetryMode | int) -> str:
+    return mode.name.lower() if isinstance(mode, TelemetryMode) else str(mode)
+
+
+def _flag_names(flags: int) -> list[str]:
+    """Names of a contact's flags; unknown bits as one hex value."""
+    names = [name for flag, name in _FLAG_NAMES.items() if flags & flag]
+    unknown = flags & ~sum(_FLAG_NAMES)
+    return [*names, f"0x{unknown:02x}"] if unknown else names
+
+
 DEFAULT_TCP_PORT = 5000
 
 
@@ -348,7 +371,7 @@ async def _probe_radio(transport: Any) -> dict[str, Any]:
         info = await session.start(fetch_messages=False)
     finally:
         await session.close()
-    me, device, autoadd = info.self_info, info.device, session.autoadd
+    me, device, autoadd, tuning = info.self_info, info.device, session.autoadd, session.tuning
     return {
         "name": me.name,
         "public_key": info.public_key,
@@ -367,12 +390,23 @@ async def _probe_radio(transport: Any) -> dict[str, Any]:
             "types": type_names(added_types(me, autoadd)),
             "overwrite_oldest": None if autoadd is None else autoadd.overwrites_oldest,
         },
+        "position": None if me.position is None else dataclasses.asdict(me.position),
+        "advert_location": ADVERT_LOCATION.get(me.advert_location, str(me.advert_location)),
+        "telemetry": {
+            "base": _mode_name(me.telemetry_base),
+            "location": _mode_name(me.telemetry_location),
+            "environment": _mode_name(me.telemetry_environment),
+        },
+        "multi_acks": me.multi_acks,
+        # null: firmware without GET_TUNING_PARAMS; duty cycle 1 / (1 + factor)
+        "airtime_factor": None if tuning is None else tuning.airtime_factor_milli / 1000,
         "battery_mv": session.battery.millivolts if session.battery else None,
         "contacts": [
             {
                 "public_key": key,
                 "name": rec.name,
                 "type": NODE_TYPES.get(rec.node_type, str(rec.node_type)),
+                "flags": _flag_names(rec.flags),
             }
             for key, rec in sorted(
                 session.contact_records.items(), key=lambda kv: kv[1].name.lower()
@@ -398,8 +432,18 @@ def _print_report(r: dict[str, Any]) -> None:
     print(_safe_text(f"firmware   {firmware}"))
     print(f"lora       {lora}")
     print(f"contacts   {adding}")
+    telemetry = ", ".join(f"{kind} {mode}" for kind, mode in r["telemetry"].items())
+    print(f"telemetry  {telemetry}")
+    spot = r["position"]
+    place = "none" if spot is None else f"{spot['latitude']}, {spot['longitude']}"
+    shared = "shared in adverts" if r["advert_location"] == "share" else "not in adverts"
+    print(f"position   {place}, {shared}")
+    if r["airtime_factor"] is not None:
+        duty = 100 / (1 + r["airtime_factor"])
+        print(f"airtime    factor {r['airtime_factor']:g}: the radio sends at most {duty:.3g} %")
     for c in r["contacts"]:
-        print(_safe_text(f"  {c['public_key']}  {c['type']:<8} {c['name']}"))
+        cli = "  REMOTE CLI" if "remote_cli" in c["flags"] else ""
+        print(_safe_text(f"  {c['public_key']}  {c['type']:<8} {c['name']}{cli}"))
     print("channels")
     for ch in r["channels"]:
         print(_safe_text(f"  {ch['index']:>3}  {ch['name']}"))

@@ -31,12 +31,20 @@ class EmulatedContact:
     name: str
     node_type: int = 1
     out_path_len: int = 0xFF  # unknown path: the radio floods
+    flags: int = 0
+    out_path: bytes = b""
+    latitude_e6: int = 0
+    longitude_e6: int = 0
+    last_advert: int = START_TIME - 3600
 
     def record(self, code: int = Response.CONTACT) -> bytes:
+        """The contact layout (MyMesh.cpp:171-192), also of the NEW_ADVERT push."""
         name = self.name.encode()[:31].ljust(32, b"\x00")
         return (
-            bytes([code]) + self.public_key + bytes([self.node_type, 0, self.out_path_len])
-            + bytes(64) + name + struct.pack("<IiiI", START_TIME - 3600, 0, 0, START_TIME - 60)
+            bytes([code]) + self.public_key + bytes([self.node_type, self.flags, self.out_path_len])
+            + self.out_path.ljust(64, b"\x00") + name
+            + struct.pack("<IiiI", self.last_advert, self.latitude_e6, self.longitude_e6,
+                          START_TIME - 60)
         )  # fmt: skip
 
 
@@ -60,6 +68,13 @@ class EmulatedRadio:
     autoadd_hops: int | None = 0  # None: firmware 1.12 and 1.13 answer without the hop limit
     spreading_factor: int = 8
     coding_rate: int = 8
+    latitude_e6: int = 0
+    longitude_e6: int = 0
+    telemetry_modes: int = 0  # bits 0-1 base, 2-3 location, 4-5 environment
+    advert_location: int = 0
+    tuning: tuple[int, int] | None = (0, 1000)  # rx delay base, airtime factor, x 1000
+    stats: bool = True  # firmware with GET_STATS (1.11 and later)
+    packets_received: int = 120
     auto_ack: bool = True
     ack_round_trip_ms: int = 1500
     errors: dict[int, int] = field(default_factory=dict)  # command code -> error code, once
@@ -152,6 +167,15 @@ class EmulatedRadio:
         if push:
             self.emit(bytes([Push.MSG_WAITING]))
 
+    def advertise(self, contact: EmulatedContact) -> None:
+        """A checked advert: ADVERT with the key for a contact, else NEW_ADVERT with the record
+        (MyMesh.cpp:356-367)."""
+        known = any(c.public_key == contact.public_key for c in self.contacts)
+        if known:
+            self.emit(bytes([Push.ADVERT]) + contact.public_key)
+        else:
+            self.emit(contact.record(Push.NEW_ADVERT))
+
     def overwrite(self, contact: EmulatedContact) -> None:
         """A full table with AUTO_ADD_OVERWRITE_OLDEST drops this contact (MyMesh.cpp:342-349)."""
         self.contacts = [c for c in self.contacts if c.public_key != contact.public_key]
@@ -221,6 +245,10 @@ class EmulatedRadio:
         elif code == Command.GET_AUTOADD_CONFIG:
             hops = b"" if self.autoadd_hops is None else bytes([self.autoadd_hops])
             self.emit(bytes([Response.AUTOADD_CONFIG, self.autoadd_config]) + hops)
+        elif code == Command.GET_TUNING_PARAMS and self.tuning is not None:
+            self.emit(bytes([Response.TUNING_PARAMS]) + struct.pack("<II", *self.tuning))
+        elif code == Command.GET_STATS and self.stats:
+            self._stats(p[1])
         elif code == Command.RESET_PATH:
             self.path_resets.append(p[1:33])
             for contact in self.contacts:
@@ -248,10 +276,24 @@ class EmulatedRadio:
         if self.auto_ack:
             self.acknowledge(ack, self.ack_round_trip_ms)
 
+    def _stats(self, kind: int) -> None:
+        """GET_STATS (MyMesh.cpp:1914-1964)."""
+        if kind == 0:
+            body = struct.pack("<HIHB", 4012, 3600, 0, 0)
+        elif kind == 1:
+            body = struct.pack("<hbbII", -118, -97, 26, 41, 300)
+        elif kind == 2:
+            body = struct.pack("<7I", self.packets_received, 30, 10, 20, 70, 50, 2)
+        else:
+            self.emit(bytes([Response.ERR, 6]))
+            return
+        self.emit(bytes([Response.STATS, kind]) + body)
+
     def _self_info(self) -> bytes:
         return (
-            bytes([Response.SELF_INFO, 1, 22, 22]) + SELF_KEY + bytes(8)
-            + bytes([0, 0, 0, int(self.manual_add)])
+            bytes([Response.SELF_INFO, 1, 22, 22]) + SELF_KEY
+            + struct.pack("<ii", self.latitude_e6, self.longitude_e6)
+            + bytes([0, self.advert_location, self.telemetry_modes, int(self.manual_add)])
             + struct.pack("<IIBB", 869_618, 62_500, self.spreading_factor, self.coding_rate)
             + self.name.encode()
         )  # fmt: skip

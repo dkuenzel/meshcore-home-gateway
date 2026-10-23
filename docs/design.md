@@ -214,8 +214,8 @@ sequenceDiagram
     R-->>B: SELF_INFO (public key, radio settings, name)
     B->>R: DEVICE_QUERY (protocol version 3)
     R-->>B: DEVICE_INFO (firmware, limits, model)
-    B->>R: GET_AUTOADD_CONFIG
-    R-->>B: AUTOADD_CONFIG (or ERR on older firmware)
+    B->>R: GET_AUTOADD_CONFIG, GET_TUNING_PARAMS
+    R-->>B: AUTOADD_CONFIG, TUNING_PARAMS (or ERR on older firmware)
     opt set_clock
         B->>R: GET_DEVICE_TIME
         R-->>B: CURR_TIME
@@ -226,8 +226,8 @@ sequenceDiagram
     end
     B->>R: GET_CONTACTS, GET_CHANNEL (each index)
     R-->>B: contacts, channel names
-    B->>R: GET_BATT_AND_STORAGE
-    R-->>B: BATT_AND_STORAGE
+    B->>R: GET_BATT_AND_STORAGE, GET_STATS (core, radio, packets)
+    R-->>B: BATT_AND_STORAGE, STATS (or ERR on older firmware)
     loop until NO_MORE_MESSAGES
         B->>R: SYNC_NEXT_MESSAGE
         R-->>B: CONTACT_MSG_RECV_V3 / CHANNEL_MSG_RECV_V3
@@ -253,7 +253,14 @@ sequenceDiagram
   and warns when the radio adds contacts on its own (§7.2).
 * **Messages fetched at connect** are marked: they may have arrived while no session listened to
   the radio's pushes (§7.3).
-* **Liveness.** A battery query every 60 s doubles as a heartbeat.
+* **Liveness.** A battery query every 60 s doubles as a heartbeat; with it the session reads the
+  radio's statistics (noise floor, its own measured time on air, packet counters, uptime), unless
+  the firmware does not have them.
+* **What the radio reports** goes to the bridge as events beside the messages: every contact table
+  it reads, every advert the radio checked (a contact's key, or the full record of a node it did
+  not add, with its position) and the heartbeat's readings. The full contact records keep the
+  path, flags and the position of the contact's last advert that carried one (protocol.md,
+  section 3).
 * **Single client.** The radio must not serve another client (phone app) at the same time: both
   would drain the same message queue.
 

@@ -20,6 +20,8 @@ class Command(IntEnum):
     GET_BATT_AND_STORAGE = 20
     DEVICE_QUERY = 22
     GET_CHANNEL = 31
+    GET_TUNING_PARAMS = 43
+    GET_STATS = 56
     GET_AUTOADD_CONFIG = 59
 
 
@@ -41,6 +43,8 @@ class Response(IntEnum):
     CONTACT_MSG_RECV_V3 = 16
     CHANNEL_MSG_RECV_V3 = 17
     CHANNEL_INFO = 18
+    TUNING_PARAMS = 23
+    STATS = 24
     AUTOADD_CONFIG = 25
     CHANNEL_DATA_RECV = 27
 
@@ -77,6 +81,42 @@ class AutoAdd(IntFlag):
     REPEATER = 0x04
     ROOM_SERVER = 0x08
     SENSOR = 0x10
+
+
+class StatsType(IntEnum):
+    """Second byte of `GET_STATS` and of its answer (MyMesh.cpp:70-73)."""
+
+    CORE = 0
+    RADIO = 1
+    PACKETS = 2
+
+
+class NodeType(IntEnum):
+    """Advert types (src/helpers/AdvertDataHelpers.h:7-11)."""
+
+    NONE = 0
+    CHAT = 1  # a companion: a person's radio
+    REPEATER = 2
+    ROOM_SERVER = 3
+    SENSOR = 4
+
+
+class ContactFlag(IntFlag):
+    """Flags of a contact record (src/helpers/ContactInfo.h:29-33)."""
+
+    FAVOURITE = 0x01  # kept when a full table overwrites the oldest contact
+    TELEMETRY_BASE = 0x02  # may request battery telemetry, if the mode says "by contact"
+    TELEMETRY_LOCATION = 0x04
+    TELEMETRY_ENVIRONMENT = 0x08
+    REMOTE_CLI = 0x10  # may run the radio's CLI over the air: never set by the gateway
+
+
+class TelemetryMode(IntEnum):
+    """Who may request a kind of telemetry (examples/companion_radio/NodePrefs.h:7-9)."""
+
+    DENY = 0
+    BY_CONTACT = 1  # contacts whose flags allow it
+    ALLOW_ALL = 2
 
 
 class ErrorCode(IntEnum):

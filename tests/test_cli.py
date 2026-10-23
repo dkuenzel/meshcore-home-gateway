@@ -207,6 +207,11 @@ def test_probe_lists_channels_and_contacts_over_tcp(capsys: pytest.CaptureFixtur
             "v1.18.0",
             8,
         )
+        assert report["position"] is None
+        assert report["advert_location"] == "none"
+        assert report["telemetry"] == {"base": "deny", "location": "deny", "environment": "deny"}
+        assert (report["multi_acks"], report["airtime_factor"]) == (0, 1.0)
+        assert report["contacts"][0]["flags"] == []
         assert main(["probe", "--tcp", address]) == EX_OK
         report = capsys.readouterr().out
         assert "Alerts" in report
@@ -257,6 +262,39 @@ def test_probe_reports_how_the_radio_adds_contacts(
         assert json.loads(capsys.readouterr().out)["auto_add"] == auto_add
         assert main(["probe", "--tcp", address]) == EX_OK
         assert f"contacts   {line}\n" in capsys.readouterr().out
+
+
+def test_probe_reports_position_telemetry_airtime_and_contact_flags(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """What the managed profile looks at (SELF_INFO bytes 36-47, GET_TUNING_PARAMS, contact
+    flags): a contact with the remote CLI flag can run the radio's CLI over the air."""
+    admin = EmulatedContact(bytes.fromhex("c3" * 32), "Admin", flags=0x10 | 0x01 | 0x40)
+    radio = EmulatedRadio(
+        contacts=[admin], latitude_e6=53_550_000, longitude_e6=9_990_000, advert_location=1,
+        telemetry_modes=0x26, tuning=(0, 9000),
+    )  # fmt: skip
+    with TcpRadioServer(radio) as server:
+        address = f"127.0.0.1:{server.port}"
+        assert main(["probe", "--tcp", address, "--json"]) == EX_OK
+        report = json.loads(capsys.readouterr().out)
+        assert report["position"] == {"latitude": 53.55, "longitude": 9.99}
+        assert report["advert_location"] == "share"
+        assert report["telemetry"] == {
+            "base": "allow_all", "location": "by_contact", "environment": "allow_all",
+        }  # fmt: skip
+        assert report["airtime_factor"] == 9.0
+        assert report["contacts"][0]["flags"] == ["favourite", "remote_cli", "0x40"]
+        assert main(["probe", "--tcp", address]) == EX_OK
+        out = capsys.readouterr().out
+        assert "telemetry  base allow_all, location by_contact, environment allow_all\n" in out
+        assert "position   53.55, 9.99, shared in adverts\n" in out
+        assert "airtime    factor 9: the radio sends at most 10 %\n" in out
+        assert f"  {'c3' * 32}  chat     Admin  REMOTE CLI\n" in out
+    radio = EmulatedRadio(tuning=None)
+    with TcpRadioServer(radio) as server:
+        assert main(["probe", "--tcp", f"127.0.0.1:{server.port}", "--json"]) == EX_OK
+        assert json.loads(capsys.readouterr().out)["airtime_factor"] is None
 
 
 def test_probe_failure_exits_with_failure(capsys: pytest.CaptureFixture[str]) -> None:
