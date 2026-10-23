@@ -5,8 +5,10 @@ frames (codes >= 0x80) in between. The session therefore
 
 * sends one command at a time (`asyncio.Lock`) and hands the waiting command only the frames
   with the response codes it expects; anything else is logged and dropped;
-* routes push frames: new messages trigger a sync, acknowledgements and received-packet logs go
-  to the event queue, adverts mark the contact table for a refresh;
+* routes push frames: new messages trigger a sync, acknowledgements, received-packet logs and
+  adverts go to the event queue, adverts also mark the contact table for a refresh;
+* reports every contact table it reads and the radio's statistics (with the battery heartbeat)
+  to the event queue, for the views of the radio and its contacts;
 * reports every full key the radio names to `on_contact_key`, with whether the radio holds or
   held that contact: pushes (advert, path, overwrite; a new advert is from a node it did not add)
   before any later frame is handled, a table read record by record before the read returns. The
@@ -20,14 +22,14 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TypeVar
 
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.model import InboundMessage
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import PUSH_MIN, AutoAdd, Push, Response
+from meshcore_home_gateway.protocol.codes import PUSH_MIN, AutoAdd, Push, Response, StatsType
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
 from meshcore_home_gateway.radio.transport import Transport
 
@@ -46,6 +48,7 @@ CONTACTS_REFRESH_DELAY_S = 2.0
 ResponseCodes = frozenset[int]
 _SIMPLE = frozenset({Response.OK, Response.ERR, Response.DISABLED})
 T = TypeVar("T")
+S = TypeVar("S", codec.CoreStats, codec.RadioStats, codec.PacketStats)
 
 
 class RadioError(Exception):
@@ -94,7 +97,33 @@ class PacketLogged:
     received_at: float
 
 
-RadioEvent = MessageReceived | AckReceived | PacketLogged
+@dataclass(frozen=True, slots=True)
+class AdvertHeard:
+    """The radio checked an advert's signature and reports it: a contact (key only) or a node it
+    did not add (its full record)."""
+
+    advert: codec.Advert
+    received_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class ContactsRead:
+    records: Mapping[str, codec.ContactRecord]  # full key, hex -> record; not changed later
+    read_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class StatsRead:
+    """The heartbeat's readings; a part is None if the firmware does not have it."""
+
+    battery: codec.Battery
+    core: codec.CoreStats | None
+    radio: codec.RadioStats | None
+    packets: codec.PacketStats | None
+    read_at: float
+
+
+RadioEvent = MessageReceived | AckReceived | PacketLogged | AdvertHeard | ContactsRead | StatsRead
 
 
 @dataclass
@@ -138,6 +167,9 @@ class CompanionSession:
         self.contact_records: dict[str, codec.ContactRecord] = {}
         self.channels: dict[int, str] = {}
         self.battery: codec.Battery | None = None
+        self.tuning: codec.TuningParams | None = None  # None: not known to the firmware
+        self.stats: StatsRead | None = None
+        self._stats_supported = True
 
     # --- life cycle -----------------------------------------------------------------------------
 
@@ -163,13 +195,20 @@ class CompanionSession:
             self._transport.description, self_info.name, device.version,
             device.firmware_code, device.model,
         )  # fmt: skip
-        self.autoadd = await self._read_autoadd()
+        self.autoadd = await self._optional(
+            codec.get_autoadd_config(), Response.AUTOADD_CONFIG, codec.AutoAddConfig,
+            "get auto-add settings",
+        )  # fmt: skip
         _warn_about_contact_adding(self_info, self.autoadd)
+        self.tuning = await self._optional(
+            codec.get_tuning_params(), Response.TUNING_PARAMS, codec.TuningParams,
+            "get tuning parameters",
+        )  # fmt: skip
         if self._set_clock:
             await self._sync_clock()
         await self.refresh_contacts()
         await self.refresh_channels(device.max_channels)
-        self.battery = await self.get_battery()
+        await self.read_status()
         if fetch_messages:
             await self.sync_messages(at_connect=True)
             self._tasks.append(asyncio.create_task(self._maintenance(), name="radio-maintenance"))
@@ -241,6 +280,29 @@ class CompanionSession:
             codec.get_battery(), Response.BATT_AND_STORAGE, codec.Battery, "get battery"
         )
 
+    async def read_status(self) -> StatsRead:
+        """Battery and statistics (the heartbeat); reported to the event queue as well.
+
+        Firmware without `GET_STATS` answers `ERR`: the statistics are then not asked again in
+        this session.
+        """
+        self.battery = battery = await self.get_battery()
+        core = radio = packets = None
+        if self._stats_supported:
+            core = await self._stats(StatsType.CORE, codec.CoreStats)
+            if core is None:
+                self._stats_supported = False
+                log.info("radio: no statistics (firmware without GET_STATS)")
+            else:
+                radio = await self._stats(StatsType.RADIO, codec.RadioStats)
+                packets = await self._stats(StatsType.PACKETS, codec.PacketStats)
+        self.stats = stats = StatsRead(battery, core, radio, packets, self._wall())
+        await self._events.put(stats)
+        return stats
+
+    async def _stats(self, kind: StatsType, answer: type[S]) -> S | None:
+        return await self._optional(codec.get_stats(kind), Response.STATS, answer, "get statistics")
+
     async def send_text(self, prefix: bytes, text: str, timestamp: int, attempt: int) -> codec.Sent:
         request = codec.send_text(prefix, text, timestamp, attempt)
         return await self._expect(request, Response.SENT, codec.Sent, "send text")
@@ -274,6 +336,7 @@ class CompanionSession:
         self.contact_records = records
         self.contacts_read_at = started
         log.debug("radio: %d contacts", len(records))
+        await self._events.put(ContactsRead(records, self._wall()))
 
     async def refresh_channels(self, max_channels: int) -> None:
         channels: dict[int, str] = {}
@@ -334,13 +397,10 @@ class CompanionSession:
             self._discarding = False
             self._decoder.reset()
 
-    async def _read_autoadd(self) -> codec.AutoAddConfig | None:
-        """The auto-add settings; None when the firmware does not know the command."""
+    async def _optional(self, request: bytes, code: int, kind: type[T], name: str) -> T | None:
+        """The answer to a command that older firmware does not know; None on `ERR`."""
         try:
-            return await self._expect(
-                codec.get_autoadd_config(), Response.AUTOADD_CONFIG, codec.AutoAddConfig,
-                "get auto-add settings",
-            )  # fmt: skip
+            return await self._expect(request, code, kind, name)
         except CommandFailedError:
             return None
 
@@ -380,7 +440,7 @@ class CompanionSession:
                     await self.sync_messages()
                     next_sync = loop.time() + SYNC_INTERVAL_S
                 if loop.time() >= next_beat:
-                    self.battery = await self.get_battery()
+                    await self.read_status()
                     next_beat = loop.time() + HEARTBEAT_INTERVAL_S
         except RadioError as exc:
             self._end(exc)
@@ -433,6 +493,7 @@ class CompanionSession:
         elif isinstance(decoded, codec.Advert):
             self._report_key(decoded.public_key, held=not decoded.new)  # before later frames
             self._contacts_changed()
+            await self._events.put(AdvertHeard(decoded, self._wall()))
         elif isinstance(decoded, codec.PathUpdated | codec.ContactDeleted):
             self._report_key(decoded.public_key)
             self._contacts_changed()

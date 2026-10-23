@@ -76,6 +76,8 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
 | 3 | `SEND_CHANNEL_TXT_MSG` | text type 0, channel index, uint32 timestamp, text (`MyMesh.cpp:1178-1185`) | **`OK`** / `ERR` |
 | 13 | `RESET_PATH` | full 32-byte public key (`MyMesh.cpp:1317-1327`) | `OK` / `ERR` |
 | 59 | `GET_AUTOADD_CONFIG` | – (`MyMesh.cpp:2030-2035`); 1.11 and older answer `ERR 1` | `AUTOADD_CONFIG` |
+| 43 | `GET_TUNING_PARAMS` | – (`MyMesh.cpp:1481-1487`) | `TUNING_PARAMS` |
+| 56 | `GET_STATS` | statistics type: 0 core, 1 radio, 2 packets (`MyMesh.cpp:70-73, 1914-1964`); another type gives `ERR 6` | `STATS` |
 
 Answers `OK` (0) and `ERR` (1, followed by the error code) are generic (`MyMesh.cpp:153-163`).
 Error codes (`MyMesh.cpp:135-140`): 1 unsupported command or frame too short, 2 not found (contact,
@@ -104,10 +106,10 @@ Details that matter:
 | 2 | 1 | transmit power, int8 dBm |
 | 3 | 1 | maximum transmit power |
 | 4 | 32 | own public key |
-| 36, 40 | 4 + 4 | latitude, longitude, int32 × 10⁻⁶ degrees |
+| 36, 40 | 4 + 4 | latitude, longitude, int32 × 10⁻⁶ degrees; 0, 0 is none. A board with GPS updates it from its fix (`src/helpers/sensors/EnvironmentSensorManager.cpp:939-947`), otherwise it is the position set with `SET_ADVERT_LATLON` (`MyMesh.cpp:981, 1266-1280`) |
 | 44 | 1 | extra acknowledgements (`multi_acks`) |
-| 45 | 1 | advert location policy |
-| 46 | 1 | telemetry modes |
+| 45 | 1 | advert location policy: 0 adverts carry no position, 1 they carry this one (`MyMesh.cpp:1299-1303, 2436-2442`; `NodePrefs.h:11-12`) |
+| 46 | 1 | telemetry modes: bits 0–1 base (battery), 2–3 location, 4–5 environment; each 0 deny, 1 by the requesting contact's flags, 2 allow everyone (`MyMesh.cpp:1101-1102`, `NodePrefs.h:7-9`) |
 | 47 | 1 | bit 0: contacts are added manually (then only the types enabled in `AUTOADD_CONFIG`) |
 | 48 | 4 | frequency, uint32 kHz |
 | 52 | 4 | bandwidth, uint32 Hz |
@@ -127,6 +129,19 @@ layout: public key (1–32), type (33: 1 chat, 2 repeater, 3 room server, 4 sens
 path (36–99), name (100–131), last advert (132), latitude (136), longitude (140), last modified
 (144). `CONTACTS_START` carries the contact count, `END_OF_CONTACTS` the newest modification time.
 
+* **Flags** (`src/helpers/ContactInfo.h:29-33`): 0x01 favourite (kept when a full table overwrites
+  the oldest contact), 0x02, 0x04, 0x08 this contact may request base, location, environment
+  telemetry where the mode says "by contact" (`MyMesh.cpp:641-663`), **0x10 this contact may run
+  the radio's CLI over the air** (`BaseChatMesh.cpp:262-268`, `MyMesh.cpp:538-548`). `probe`
+  lists the flags and marks 0x10.
+* **Path:** of the 64 path bytes only hops × hash size are in use; the rest is stale buffer.
+* **Position:** an advert updates it only when it carries one (`BaseChatMesh.cpp:114-116,
+  193-196`), so a contact keeps the position of its last advert with one; 0, 0 is none. A record
+  in `NEW_ADVERT` has the position of that advert, if any (`BaseChatMesh.cpp:108-120`).
+* **Last advert** is the node's clock at its newest advert; the radio drops an advert of a contact
+  that is not newer (replay protection, `BaseChatMesh.cpp:131-136`). **Last modified** is the
+  radio's clock.
+
 **`AUTOADD_CONFIG`** (25), 3 bytes (`MyMesh.cpp:2030-2035`): flags (1) and hop limit (2). Flags
 (`MyMesh.cpp:147-151`): 0x01 a full table overwrites the oldest non-favourite contact, 0x02 chat,
 0x04 repeater, 0x08 room server, 0x10 sensor. The type flags only apply with manual adding
@@ -135,6 +150,20 @@ none; otherwise only adverts that passed fewer repeaters than the limit add a co
 (`BaseChatMesh.cpp:165-172`). Firmware 1.12 and 1.13 send 2 bytes, without the hop limit
 (`MyMesh.cpp:1733-1737` of `companion-v1.12.0`); 1.11 and older do not know the command
 (`MyMesh.cpp:1624-1627` of `companion-v1.11.0`) and add every contact unless manual adding is on.
+
+**`TUNING_PARAMS`** (23), 9 bytes (`MyMesh.cpp:1481-1487`): receive delay base (1) and airtime
+factor (5), each a float × 1000 as uint32. The factor sets the radio's own duty cycle,
+`1 / (1 + factor)` (section 7); the radio clamps it to 0–9 when it loads its settings
+(`MyMesh.cpp:988`). Firmware without the command answers `ERR 1`.
+
+**`STATS`** (24), the statistics type in byte 1 (`MyMesh.cpp:1914-1964`), all since the radio
+booted:
+
+| Type | Bytes after the type | Fields |
+| --- | --- | --- |
+| 0 core | 9 | battery uint16 mV, uptime uint32 s, error flags uint16 (0x01 send queue full, 0x02 channel activity detection timed out, 0x04 receive start timed out; `src/Dispatcher.h:110-112`), packets waiting to be sent uint8 |
+| 1 radio | 12 | noise floor int16 dBm, last RSSI int8 dBm, last SNR int8 × 4, time on air sent and received uint32 s each (everything the radio sent: messages, acknowledgements, adverts, repeats) |
+| 2 packets | 28 | packets received, sent, sent flood, sent direct, received flood, received direct, receive errors, uint32 each; the last one from 1.18 on (24 bytes before) |
 
 **`CHANNEL_INFO`** (18), 50 bytes: index (1), name (2–33, NUL-terminated; **the bytes after the NUL
 are stale buffer contents**), secret (34–49) (`MyMesh.cpp:1752-1766`). The bridge does not keep
@@ -172,17 +201,32 @@ Codes 0x80 and above can arrive at any time, also between the frames of `GET_CON
 
 | Code | Name | Content | Bridge |
 | --- | --- | --- | --- |
-| 0x80 | `ADVERT` | public key of a contact in the table that advertised (`MyMesh.cpp:358-367`) | remember the key if it shares a command sender's prefix (ADR 0009); refresh contacts |
+| 0x80 | `ADVERT` | public key of a contact in the table that advertised (`MyMesh.cpp:358-367`) | remember the key if it shares a command sender's prefix (ADR 0009); refresh contacts; report the advert |
 | 0x81 | `PATH_UPDATED` | public key | remember the key, as above; refresh contacts |
 | 0x82 | `SEND_CONFIRMED` | 4-byte ACK code, uint32 round trip in ms | match to a waiting message |
 | 0x83 | `MSG_WAITING` | – | sync messages |
-| 0x88 | `LOG_RX_DATA` | SNR × 4 (int8), RSSI (int8 dBm), raw packet | optional `rx` topic |
-| 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added; 1.11 and older also send it for a contact they have just added (`BaseChatMesh.cpp:88-134` of `companion-v1.11.0`) | renew the key if it is already remembered; refresh contacts |
+| 0x88 | `LOG_RX_DATA` | SNR × 4 (int8), RSSI (int8 dBm), raw packet: every packet the radio receives, before it handles it (`MyMesh.cpp:291-302`, `src/Dispatcher.cpp:199`); see below | optional `rx` topic |
+| 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added; 1.11 and older also send it for a contact they have just added (`BaseChatMesh.cpp:88-134` of `companion-v1.11.0`) | renew the key if it is already remembered; refresh contacts; report the advert with its record |
 | 0x8F | `CONTACT_DELETED` | public key of a contact overwritten to make room (`MyMesh.cpp:342-349`) | remember the key, as above; refresh contacts |
 | 0x90 | `CONTACTS_FULL` | – | refresh contacts |
 
 Further pushes (0x84–0x87, 0x89, 0x8B–0x8E: raw data, login, status, trace, telemetry, binary and
 path-discovery responses, control data) are ignored (`MyMesh.cpp:117-133`).
+
+**Raw packets in `LOG_RX_DATA`** (wire format, `src/Packet.cpp:65-85`): header (1: bits 0–1 route
+0 flood with transport codes, 1 flood, 2 direct, 3 direct with transport codes; bits 2–5 payload
+type; bits 6–7 version, `src/Packet.h:8-37`), two uint16 transport codes (only routes 0 and 3),
+path length (1, as `out_path_len`; hash size 4 is reserved and invalid, `src/Packet.cpp:13-18`),
+path, payload (at least one byte). Pushes longer than a frame are not sent (`MyMesh.cpp:292`).
+An advert (payload type 4, `src/Mesh.cpp:252-290, 410-440`) is public key (32), timestamp (uint32,
+the sender's clock), signature (64), then app data of at most 32 bytes
+(`src/MeshCore.h:12`, `src/Mesh.cpp:269`; `src/helpers/AdvertDataHelpers.cpp:4-68`): flags (bits
+0–3 type; 0x10 position follows, int32 latitude and longitude × 10⁻⁶; 0x20 and 0x40 a uint16
+feature field each; 0x80 the rest is the name). The radio drops an advert without a name
+(`BaseChatMesh.cpp:122-127`). **A logged advert is unverified**: its signature is checked by the
+radio only after the log (`src/Mesh.cpp:271-290`), and the bridge cannot check Ed25519 signatures
+with the standard library. Only the `ADVERT` or `NEW_ADVERT` that follows for the same key and
+timestamp shows that the radio accepted it.
 
 ## 5 Semantics
 

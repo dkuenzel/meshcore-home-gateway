@@ -20,6 +20,8 @@ from meshcore_home_gateway.protocol.codes import (
     ErrorCode,
     Push,
     Response,
+    StatsType,
+    TelemetryMode,
 )
 
 MAX_TEXT_BYTES = 160  # MAX_TEXT_LEN, src/helpers/BaseChatMesh.h:8
@@ -27,6 +29,9 @@ MAX_ATTEMPT = 3  # only attempt & 3 enters the ACK code; above 3 the text limit 
 PREFIX_BYTES = 6
 KEY_BYTES = 32
 DIRECT_PATH = 0xFF  # path_len of a message that arrived by direct route
+NO_PATH = 0xFF  # out_path_len of a contact without a known path: the radio floods
+MAX_PATH_BYTES = 64  # MAX_PATH_SIZE, src/MeshCore.h:22
+CONTACT_RECORD_BYTES = 147  # the contact layout after the code byte (MyMesh.cpp:171-192)
 
 
 class ProtocolError(ValueError):
@@ -92,6 +97,14 @@ def get_autoadd_config() -> bytes:
     return bytes([Command.GET_AUTOADD_CONFIG])
 
 
+def get_tuning_params() -> bytes:
+    return bytes([Command.GET_TUNING_PARAMS])
+
+
+def get_stats(kind: StatsType) -> bytes:
+    return bytes([Command.GET_STATS, kind])
+
+
 def reset_path(public_key: bytes) -> bytes:
     if len(public_key) != KEY_BYTES:
         raise ValueError("reset_path needs the full 32-byte public key")
@@ -153,6 +166,50 @@ class SelfInfo:
     spreading_factor: int
     coding_rate: int
     manual_add_contacts: bool
+    latitude_e6: int = 0  # the radio's position (its GPS, or as set), 10^-6 degrees; 0, 0: none
+    longitude_e6: int = 0
+    multi_acks: int = 0  # extra acknowledgements the radio sends per direct message
+    advert_location: int = 0  # advert location policy: 0 adverts carry no position, 1 they do
+    telemetry_modes: int = 0  # bits 0-1 base, 2-3 location, 4-5 environment (TelemetryMode)
+
+    @property
+    def position(self) -> Position | None:
+        return position(self.latitude_e6, self.longitude_e6)
+
+    @property
+    def telemetry_base(self) -> TelemetryMode | int:
+        return _mode(self.telemetry_modes)
+
+    @property
+    def telemetry_location(self) -> TelemetryMode | int:
+        return _mode(self.telemetry_modes >> 2)
+
+    @property
+    def telemetry_environment(self) -> TelemetryMode | int:
+        return _mode(self.telemetry_modes >> 4)
+
+
+@dataclass(frozen=True, slots=True)
+class Position:
+    """WGS 84 degrees, as the firmware stores them: int32 in 10^-6 degrees."""
+
+    latitude: float
+    longitude: float
+
+
+def position(latitude_e6: int, longitude_e6: int) -> Position | None:
+    """None for 0, 0: the firmware's value for "no position" (BaseChatMesh.cpp:108-120)."""
+    if latitude_e6 == 0 and longitude_e6 == 0:
+        return None
+    return Position(latitude_e6 / 1_000_000, longitude_e6 / 1_000_000)
+
+
+def _mode(bits: int) -> TelemetryMode | int:
+    """A telemetry mode; the value 3, which the firmware does not define, stays a number."""
+    try:
+        return TelemetryMode(bits & 0x03)
+    except ValueError:
+        return bits & 0x03
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,12 +249,37 @@ class ContactsStart:
 @dataclass(frozen=True, slots=True)
 class ContactRecord:
     public_key: bytes
-    node_type: int  # 1 chat, 2 repeater, 3 room server, 4 sensor
-    flags: int
+    node_type: int  # 1 chat, 2 repeater, 3 room server, 4 sensor (NodeType)
+    flags: int  # ContactFlag
     out_path_len: int  # 0xFF: no known path, sends flood
     name: str
-    last_advert: int
-    last_modified: int
+    last_advert: int  # the node's clock when it sent its newest advert
+    last_modified: int  # the radio's clock when it last changed the record
+    out_path: bytes = b""  # the stored path, out_path_len says how much of it is used
+    latitude_e6: int = 0  # position from the newest advert that carried one, 10^-6 degrees
+    longitude_e6: int = 0
+    raw: bytes = b""  # the record as the radio sent it, without the code byte
+
+    @property
+    def position(self) -> Position | None:
+        return position(self.latitude_e6, self.longitude_e6)
+
+    @property
+    def path_known(self) -> bool:
+        return self.out_path_len != NO_PATH
+
+    @property
+    def path_hops(self) -> int | None:
+        """Repeaters on the stored path; None without a known path."""
+        return None if self.out_path_len == NO_PATH else self.out_path_len & 0x3F
+
+    @property
+    def path_hashes(self) -> list[bytes]:
+        """The repeaters of the stored path, as hashes (prefixes of their keys)."""
+        if self.out_path_len == NO_PATH:
+            return []
+        hops, size = self.out_path_len & 0x3F, (self.out_path_len >> 6) + 1
+        return [self.out_path[i * size : (i + 1) * size] for i in range(hops)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +314,7 @@ class MessageWaiting:
 class Advert:
     public_key: bytes
     new: bool  # NEW_ADVERT: not added (firmware 1.11 and older: also a contact just added)
+    record: ContactRecord | None = None  # NEW_ADVERT: the node as the radio would add it
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,6 +343,51 @@ class AutoAddConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class TuningParams:
+    """Response 23 (MyMesh.cpp:1481-1487): floats of the radio's settings, x 1000."""
+
+    rx_delay_base_milli: int
+    airtime_factor_milli: int  # duty cycle = 1 / (1 + factor); clamped to 0..9 at boot (:988)
+
+
+@dataclass(frozen=True, slots=True)
+class CoreStats:
+    """`STATS` type 0 (MyMesh.cpp:1914-1928)."""
+
+    battery_mv: int
+    uptime_s: int
+    error_flags: int  # src/Dispatcher.h:110-112: 0x01 queue full, 0x02 CAD, 0x04 start RX timeout
+    queue_length: int  # packets waiting to be sent
+
+
+@dataclass(frozen=True, slots=True)
+class RadioStats:
+    """`STATS` type 1 (MyMesh.cpp:1929-1943): the radio's own measurements since it booted."""
+
+    noise_floor_dbm: int
+    last_rssi_dbm: int
+    last_snr_db: float
+    tx_airtime_s: int  # time on air of everything it sent: messages, acknowledgements, adverts
+    rx_airtime_s: int
+
+
+@dataclass(frozen=True, slots=True)
+class PacketStats:
+    """`STATS` type 2 (MyMesh.cpp:1944-1962), counters since the radio booted."""
+
+    received: int
+    sent: int
+    sent_flood: int
+    sent_direct: int
+    received_flood: int
+    received_direct: int
+    receive_errors: int | None  # firmware 1.18 and later
+
+
+Stats = CoreStats | RadioStats | PacketStats
+
+
+@dataclass(frozen=True, slots=True)
 class RxLog:
     snr_db: float
     rssi_dbm: int
@@ -285,7 +413,8 @@ MESSAGE_CODES = frozenset(
 Decoded = (
     Ok | Err | Disabled | SelfInfo | DeviceInfo | CurrentTime | Sent | SendConfirmed
     | ContactsStart | ContactRecord | EndOfContacts | ChannelInfo | Battery | NoMoreMessages
-    | MessageWaiting | Advert | PathUpdated | ContactDeleted | AutoAddConfig | RxLog | Unknown
+    | MessageWaiting | Advert | PathUpdated | ContactDeleted | AutoAddConfig | TuningParams
+    | CoreStats | RadioStats | PacketStats | RxLog | Unknown
 )  # fmt: skip
 
 
@@ -329,7 +458,9 @@ def _contact_deleted(p: bytes) -> ContactDeleted:
 
 def _advert(p: bytes) -> Advert:
     _need(p, 33)
-    return Advert(public_key=p[1:33], new=p[0] == Push.NEW_ADVERT)
+    new = p[0] == Push.NEW_ADVERT
+    record = _contact(p) if new and len(p) >= 1 + CONTACT_RECORD_BYTES else None
+    return Advert(public_key=p[1:33], new=new, record=record)
 
 
 def _path_updated(p: bytes) -> PathUpdated:
@@ -345,6 +476,7 @@ def _rx_log(p: bytes) -> RxLog:
 def _self_info(p: bytes) -> SelfInfo:
     _need(p, 58)
     tx_power, max_tx = struct.unpack_from("<bB", p, 2)
+    latitude, longitude = struct.unpack_from("<ii", p, 36)
     freq_khz, bw_hz, sf, cr = struct.unpack_from("<IIBB", p, 48)
     if not (5 <= sf <= 12 and 5 <= cr <= 8 and bw_hz > 0):  # the firmware clamps to these
         raise ProtocolError(f"impossible modulation: SF {sf}, CR 4/{cr}, {bw_hz} Hz")
@@ -358,6 +490,11 @@ def _self_info(p: bytes) -> SelfInfo:
         spreading_factor=sf,
         coding_rate=cr,
         manual_add_contacts=bool(p[47] & 1),
+        latitude_e6=latitude,
+        longitude_e6=longitude,
+        multi_acks=p[44],
+        advert_location=p[45],
+        telemetry_modes=p[46],
     )
 
 
@@ -375,17 +512,47 @@ def _device_info(p: bytes) -> DeviceInfo:
 
 
 def _contact(p: bytes) -> ContactRecord:
-    _need(p, 148)
-    last_advert, _lat, _lon, last_modified = struct.unpack_from("<IiiI", p, 132)
+    _need(p, 1 + CONTACT_RECORD_BYTES)
+    last_advert, latitude, longitude, last_modified = struct.unpack_from("<IiiI", p, 132)
+    path_len = p[35]
+    used = 0 if path_len == NO_PATH else (path_len & 0x3F) * ((path_len >> 6) + 1)
     return ContactRecord(
         public_key=p[1:33],
         node_type=p[33],
         flags=p[34],
-        out_path_len=p[35],
+        out_path_len=path_len,
         name=_cstring(p[100:132]),
         last_advert=last_advert,
         last_modified=last_modified,
+        out_path=p[36 : 36 + min(used, MAX_PATH_BYTES)],
+        latitude_e6=latitude,
+        longitude_e6=longitude,
+        raw=p[1 : 1 + CONTACT_RECORD_BYTES],
     )
+
+
+def _tuning(p: bytes) -> TuningParams:
+    rx_delay, factor = struct.unpack_from("<II", p, 1)
+    return TuningParams(rx_delay_base_milli=rx_delay, airtime_factor_milli=factor)
+
+
+def _stats(p: bytes) -> Stats:
+    kind = p[1]
+    if kind == StatsType.CORE:
+        battery, uptime, flags, queue = struct.unpack_from("<HIHB", p, 2)
+        return CoreStats(battery, uptime, flags, queue)
+    if kind == StatsType.RADIO:
+        noise, rssi, snr, tx, rx = struct.unpack_from("<hbbII", p, 2)
+        return RadioStats(noise, rssi, snr / 4, tx, rx)
+    if kind == StatsType.PACKETS:
+        received, sent, sent_flood, sent_direct, received_flood, received_direct = (
+            struct.unpack_from("<6I", p, 2)
+        )
+        errors = struct.unpack_from("<I", p, 26)[0] if len(p) >= 30 else None
+        return PacketStats(
+            received, sent, sent_flood, sent_direct, received_flood, received_direct, errors
+        )
+    raise ProtocolError(f"unknown statistics type {kind}")
 
 
 def decode_message(p: bytes, received_at: float) -> InboundMessage:
@@ -468,5 +635,7 @@ _DECODERS: dict[int, Callable[[bytes], Decoded]] = {
     Push.PATH_UPDATED: _path_updated,
     Push.CONTACT_DELETED: _contact_deleted,
     Response.AUTOADD_CONFIG: lambda p: AutoAddConfig(p[1], p[2] if len(p) > 2 else None),
+    Response.TUNING_PARAMS: _tuning,
+    Response.STATS: _stats,
     Push.LOG_RX_DATA: _rx_log,
 }

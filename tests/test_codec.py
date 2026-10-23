@@ -6,11 +6,13 @@ layouts are in docs/protocol.md, sections 1-4. The 3-byte frame header is stripp
 are compared.
 """
 
+from dataclasses import replace
+
 import pytest
 
 from meshcore_home_gateway.core.model import MessageKind, TextType
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import ErrorCode
+from meshcore_home_gateway.protocol.codes import ErrorCode, StatsType, TelemetryMode
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
 
 TS = 1_760_000_000
@@ -53,6 +55,9 @@ def payload(frame_hex: str) -> bytes:
         (codec.get_battery(), "3C 01 00 14"),
         (codec.reset_path(PEER), "3C 21 00 0D " + PEER.hex()),
         (codec.get_autoadd_config(), "3C 01 00 3B"),
+        (codec.get_tuning_params(), "3C 01 00 2B"),
+        (codec.get_stats(StatsType.CORE), "3C 02 00 38 00"),
+        (codec.get_stats(StatsType.PACKETS), "3C 02 00 38 02"),
     ],
 )
 def test_request_frames(request_bytes: bytes, frame_hex: str) -> None:
@@ -156,10 +161,44 @@ def test_contacts_stream() -> None:
     contact = codec.decode(payload(bob))
     assert contact == codec.ContactRecord(
         public_key=PEER, node_type=1, flags=0, out_path_len=0xFF, name="Bob",
-        last_advert=TS - 3600, last_modified=TS - 60,
+        last_advert=TS - 3600, last_modified=TS - 60, out_path=b"",
+        latitude_e6=53_550_000, longitude_e6=9_990_000, raw=payload(bob)[1:],
     )  # fmt: skip
+    assert isinstance(contact, codec.ContactRecord)
+    assert contact.position == codec.Position(53.55, 9.99)
+    assert (contact.path_known, contact.path_hops, contact.path_hashes) == (False, None, [])
     new_advert = codec.decode(payload(bob.replace("3E 94 00 03", "3E 94 00 8A", 1)))
-    assert new_advert == codec.Advert(public_key=PEER, new=True)
+    assert new_advert == codec.Advert(public_key=PEER, new=True, record=contact)
+
+
+@pytest.mark.parametrize(
+    ("path_len", "path", "hashes"),
+    [
+        ("02", "AA BB", [h("AA"), h("BB")]),  # 1-byte hashes: bits 6-7 are 0
+        ("42", "AA BB CC DD", [h("AABB"), h("CCDD")]),  # 2-byte hashes
+        ("00", "", []),  # a neighbour: known path without repeaters
+    ],
+)
+def test_contact_with_a_known_path(path_len: str, path: str, hashes: list[bytes]) -> None:
+    """out_path_len: bits 0-5 hops, bits 6-7 hash size - 1 (src/Packet.h:78-80); the stored path
+    is always 64 bytes, of which the radio uses hops x size (MyMesh.cpp:177-178)."""
+    used = h(path)
+    record = (
+        "03" + PEER.hex() + "01 01 " + path_len + used.ljust(64, b"\xee").hex()
+        + "42 6F 62" + "00" * 29 + "F0 69 E7 68 00 00 00 00 00 00 00 00 C4 77 E7 68"
+    )  # fmt: skip
+    contact = codec.decode(h(record))
+    assert isinstance(contact, codec.ContactRecord)
+    assert contact.path_known
+    assert contact.path_hops == len(hashes)
+    assert contact.path_hashes == hashes
+    assert contact.out_path == used  # not the stale rest of the buffer
+    assert contact.position is None  # 0, 0 means no position
+    assert contact.flags == 0x01  # favourite
+
+
+def test_a_new_advert_from_older_firmware_without_the_record_has_none() -> None:
+    assert codec.decode(h("8A" + PEER.hex())) == codec.Advert(PEER, new=True, record=None)
 
 
 def test_channel_info_ignores_bytes_after_the_name() -> None:
@@ -193,6 +232,52 @@ def test_self_info() -> None:
         frequency_khz=869_618, bandwidth_hz=62_500, spreading_factor=8, coding_rate=5,
         manual_add_contacts=False,
     )  # fmt: skip
+    assert isinstance(info, codec.SelfInfo)
+    assert info.position is None
+    assert info.telemetry_base is TelemetryMode.DENY
+
+
+def test_self_info_position_policies_and_telemetry_modes() -> None:
+    """Bytes 36-47 (MyMesh.cpp:1092-1103): position, extra acknowledgements, advert location
+    policy, telemetry modes (env << 4 | location << 2 | base), manual adding."""
+    frame = (
+        "05 01 16 16 " + SELF.hex() + " B0 1B 31 03 90 90 67 FF 01 01 26 01"
+        " F2 44 0D 00 24 F4 00 00 08 08 47 57"
+    )  # fmt: skip
+    info = codec.decode(h(frame))
+    assert isinstance(info, codec.SelfInfo)
+    assert info.position == codec.Position(53.55, -9.99)
+    assert (info.multi_acks, info.advert_location, info.manual_add_contacts) == (1, 1, True)
+    assert info.telemetry_base is TelemetryMode.ALLOW_ALL
+    assert info.telemetry_location is TelemetryMode.BY_CONTACT
+    assert info.telemetry_environment is TelemetryMode.ALLOW_ALL
+    assert replace(info, telemetry_modes=0x03).telemetry_base == 3  # undefined: kept as number
+
+
+def test_statistics() -> None:
+    """GET_STATS answers (MyMesh.cpp:1914-1964); 1.17 and older send packets without errors."""
+    core = codec.decode(h("18 00 AC 0F 10 0E 00 00 05 00 03"))
+    assert core == codec.CoreStats(battery_mv=4012, uptime_s=3600, error_flags=5, queue_length=3)
+    radio = codec.decode(h("18 01 8A FF 9F 1A 29 00 00 00 2C 01 00 00"))
+    assert radio == codec.RadioStats(
+        noise_floor_dbm=-118, last_rssi_dbm=-97, last_snr_db=6.5, tx_airtime_s=41,
+        rx_airtime_s=300,
+    )  # fmt: skip
+    counters = "78 00 00 00 1E 00 00 00 0A 00 00 00 14 00 00 00 46 00 00 00 32 00 00 00"
+    packets = codec.decode(h("18 02 " + counters + " 02 00 00 00"))
+    assert packets == codec.PacketStats(120, 30, 10, 20, 70, 50, receive_errors=2)
+    older = codec.decode(h("18 02 " + counters))
+    assert older == codec.PacketStats(120, 30, 10, 20, 70, 50, receive_errors=None)
+    with pytest.raises(codec.ProtocolError, match="statistics type 7"):
+        codec.decode(h("18 07 00 00"))
+    with pytest.raises(codec.ProtocolError):
+        codec.decode(h("18 01 8A FF"))
+
+
+def test_tuning_parameters() -> None:
+    """Response 23 (MyMesh.cpp:1481-1487): rx delay base and airtime factor, floats x 1000."""
+    tuning = codec.decode(h("17 00 00 00 00 28 23 00 00"))
+    assert tuning == codec.TuningParams(rx_delay_base_milli=0, airtime_factor_milli=9000)
 
 
 SELF_INFO_HEAD = "3E 42 00 05 01 16 16 " + SELF.hex() + " 00" * 12 + " F2 44 0D 00"

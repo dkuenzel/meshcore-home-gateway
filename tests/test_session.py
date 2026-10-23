@@ -15,12 +15,15 @@ from meshcore_home_gateway.protocol.framing import encode_frame
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import (
     AckReceived,
+    AdvertHeard,
     CommandFailedError,
     CompanionSession,
+    ContactsRead,
     MessageReceived,
     PacketLogged,
     RadioError,
     RadioEvent,
+    StatsRead,
 )
 from meshcore_home_gateway.radio.transport import TcpTransport
 from tests.radio_emulator import (
@@ -35,6 +38,26 @@ from tests.radio_emulator import (
 
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
 BOB = EmulatedContact(bytes.fromhex("b2" * 32), "Bob", out_path_len=0x02)
+
+
+WATCHED = (MessageReceived, AckReceived, PacketLogged)
+
+
+async def next_event(events: asyncio.Queue[RadioEvent]) -> RadioEvent:
+    """The next message, acknowledgement or packet log; most tests skip table reads, adverts and
+    statistics."""
+    while True:
+        event = await asyncio.wait_for(events.get(), 2)
+        if isinstance(event, WATCHED):
+            return event
+
+
+def queued(
+    events: asyncio.Queue[RadioEvent], kinds: tuple[type, ...] = WATCHED
+) -> list[RadioEvent]:
+    """The events of these kinds already in the queue, which is emptied."""
+    everything = [events.get_nowait() for _ in range(events.qsize())]
+    return [event for event in everything if isinstance(event, kinds)]
 
 
 async def start_only(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
@@ -72,10 +95,12 @@ def test_start_flushes_then_identifies_and_loads_tables() -> None:
         assert set(session.contact_records) == {ALICE.public_key.hex(), BOB.public_key.hex()}
         assert session.channels == {0: "Public", 2: "Alerts"}  # empty slots are left out
         assert session.battery == codec.Battery(4012, 12, 976)
-        assert radio.commands()[:4] == [
+        assert session.tuning == codec.TuningParams(0, 1000)
+        assert radio.commands()[:5] == [
             Command.APP_START,
             Command.DEVICE_QUERY,
             Command.GET_AUTOADD_CONFIG,
+            Command.GET_TUNING_PARAMS,
             Command.GET_DEVICE_TIME,
         ]
 
@@ -99,7 +124,7 @@ def test_whatever_arrives_during_the_flush_is_dropped() -> None:
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         info = await session.start()  # the partial frame does not swallow the first answer
         assert info.name == "Bridge"
-        assert events.empty()  # the stale acknowledgement is not passed on
+        assert not queued(events)  # the stale acknowledgement is not passed on
 
     run(radio, scenario)
 
@@ -140,7 +165,7 @@ def test_queued_messages_are_drained_at_start_in_both_layouts() -> None:
 
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
-        first, second = events.get_nowait(), events.get_nowait()
+        first, second = queued(events)
         assert isinstance(first, MessageReceived)
         assert isinstance(second, MessageReceived)
         assert (first.message.kind, first.message.text) == (MessageKind.CONTACT, "early")
@@ -160,7 +185,7 @@ def test_channel_data_and_undecodable_messages_are_skipped(
 
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
-        fetched = [events.get_nowait() for _ in range(events.qsize())]
+        fetched = queued(events)
         texts = [event.message.text for event in fetched if isinstance(event, MessageReceived)]
         assert texts == ["first", "last"]  # the batch goes on after both
         assert not session.closed
@@ -181,7 +206,7 @@ def test_messages_fetched_before_a_sync_error_are_still_delivered() -> None:
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         with pytest.raises(CommandFailedError, match="sync: bad_state"):
             await session.start()
-        event = events.get_nowait()
+        (event,) = queued(events)
         assert isinstance(event, MessageReceived)
         assert event.message.text == "kept"
 
@@ -194,7 +219,7 @@ def test_message_waiting_push_triggers_a_sync() -> None:
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
         radio.queue_direct_message(ALICE.public_key[:6], "status", START_TIME + 50)
-        event = await asyncio.wait_for(events.get(), 2)
+        event = await next_event(events)
         assert isinstance(event, MessageReceived)
         assert event.message.text == "status"
         assert event.message.sender_prefix == ALICE.public_key[:6].hex()
@@ -211,7 +236,7 @@ def test_periodic_sync_fetches_a_message_whose_push_was_lost(
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
         radio.queue_direct_message(ALICE.public_key[:6], "unannounced", START_TIME + 50, push=False)
-        event = await asyncio.wait_for(events.get(), 2)
+        event = await next_event(events)
         assert isinstance(event, MessageReceived)
         assert event.message.text == "unannounced"
 
@@ -226,7 +251,7 @@ def test_send_text_returns_the_expected_ack_and_the_confirmation_arrives_as_even
         sent = await session.send_text(ALICE.public_key[:6], "Gate open", START_TIME + 100, 0)
         assert sent.flood
         assert sent.expected_ack == codec.expected_ack(START_TIME + 100, 0, "Gate open", SELF_KEY)
-        event = await asyncio.wait_for(events.get(), 2)
+        event = await next_event(events)
         assert event == AckReceived(sent.expected_ack, 1500)
 
     run(radio, scenario)
@@ -258,7 +283,7 @@ def test_pushes_inside_the_contacts_stream_are_still_handled() -> None:
         radio.emit(bytes([Response.CONTACTS_START, 2, 0, 0, 0]))  # a stale frame from before
         radio.emit(bytes([Push.LOG_RX_DATA, 0x1F, 0x9F]) + b"\x0d\x00")
         await session.refresh_contacts()
-        event = await asyncio.wait_for(events.get(), 2)
+        event = await next_event(events)
         assert isinstance(event, PacketLogged)
         assert (event.rx.snr_db, event.rx.rssi_dbm) == (7.75, -97)
         assert len(session.contact_records) == 2
@@ -454,7 +479,7 @@ def test_every_key_the_radio_reports_is_passed_on() -> None:
         radio.emit(bytes([Push.PATH_UPDATED]) + erin)
         radio.overwrite(BOB)
         radio.queue_direct_message(ALICE.public_key[:6], "after the pushes", START_TIME + 50)
-        event = await asyncio.wait_for(events.get(), 2)
+        event = await next_event(events)
         assert isinstance(event, MessageReceived)
         assert keys[2:6] == [("c3c3", True), ("d4d4", False), ("e5e5", True), ("b2b2", True)]
 
@@ -487,7 +512,7 @@ def test_messages_fetched_at_connect_are_marked() -> None:
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
         radio.queue_direct_message(ALICE.public_key[:6], "live", START_TIME + 50)
-        fetched = [await asyncio.wait_for(events.get(), 2) for _ in range(2)]
+        fetched = [await next_event(events) for _ in range(2)]
         assert [
             (event.message.text, event.at_connect)
             for event in fetched
@@ -505,7 +530,7 @@ def test_messages_name_their_session_and_when_they_were_fetched() -> None:
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
         radio.queue_direct_message(ALICE.public_key[:6], "status", START_TIME + 50)
-        event = await asyncio.wait_for(events.get(), 2)
+        event = await next_event(events)
         assert isinstance(event, MessageReceived)
         assert event.session is session
         assert session.contacts_read_at < event.fetched_at
@@ -673,5 +698,113 @@ def test_a_command_waiting_behind_a_dead_session_is_never_sent() -> None:
         assert all(isinstance(r, RadioError) for r in results)
         assert "no answer from the radio" in str(results[1])  # the cause, not a bare "closed"
         assert Command.SEND_TXT_MSG not in [payload[0] for payload in radio.received]
+
+    run(radio, scenario)
+
+
+def test_table_reads_statistics_and_tuning_at_connect() -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        reads = queued(events, (ContactsRead,))
+        assert len(reads) == 1
+        assert isinstance(reads[0], ContactsRead)
+        assert reads[0].records is session.contact_records
+        assert reads[0].read_at == START_TIME + 100
+        assert session.tuning == codec.TuningParams(0, 1000)
+        stats = session.stats
+        assert stats is not None
+        assert stats.battery == codec.Battery(4012, 12, 976)
+        assert stats.core == codec.CoreStats(4012, 3600, 0, 0)
+        assert stats.radio is not None
+        assert stats.radio.noise_floor_dbm == -118
+        assert stats.packets is not None
+        assert stats.packets.receive_errors == 2
+
+    run(radio, scenario)
+
+
+def test_every_table_read_and_heartbeat_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.05)
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        assert len(queued(events, (StatsRead,))) == 1  # at connect
+        radio.packets_received = 121
+        await asyncio.sleep(0.15)
+        beats = queued(events, (StatsRead,))
+        assert beats
+        last = beats[-1]
+        assert isinstance(last, StatsRead)
+        assert last.packets is not None
+        assert last.packets.received == 121
+        await session.refresh_contacts()
+        assert len(queued(events, (ContactsRead,))) == 1
+
+    run(radio, scenario)
+
+
+def test_firmware_without_statistics_and_tuning(caplog: pytest.LogCaptureFixture) -> None:
+    """Both answer ERR 1 there (MyMesh.cpp:2059-2061): the session goes on without them and
+    does not ask for the statistics again."""
+    radio = EmulatedRadio(stats=False, tuning=None)
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        assert session.tuning is None
+        stats = await session.read_status()
+        assert (stats.core, stats.radio, stats.packets) == (None, None, None)
+        assert stats.battery.millivolts == 4012
+        assert radio.commands().count(Command.GET_STATS) == 1
+        assert len(queued(events, (StatsRead,))) == 2
+
+    caplog.set_level(logging.INFO)
+    run(radio, scenario)
+    assert "radio: no statistics (firmware without GET_STATS)" in caplog.text
+
+
+def test_adverts_are_reported_with_the_record_of_a_node_not_added() -> None:
+    carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol", latitude_e6=53_550_000,
+                            longitude_e6=9_990_000)  # fmt: skip
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        queued(events)
+        radio.advertise(ALICE)
+        radio.advertise(carol)
+        heard: list[AdvertHeard] = []
+        while len(heard) < 2:
+            event = await asyncio.wait_for(events.get(), 2)
+            if isinstance(event, AdvertHeard):
+                heard.append(event)
+        contact, node = heard
+        assert (contact.advert.public_key, contact.advert.new) == (ALICE.public_key, False)
+        assert contact.advert.record is None
+        assert (node.advert.new, node.received_at) == (True, START_TIME + 100)
+        assert node.advert.record is not None
+        assert node.advert.record.name == "Carol"
+        assert node.advert.record.position == codec.Position(53.55, 9.99)
+
+    run(radio, scenario)
+
+
+class ConfusedRadio(EmulatedRadio):
+    """Answers every statistics request with the radio statistics."""
+
+    def _stats(self, kind: int) -> None:
+        super()._stats(1)
+
+
+def test_statistics_of_another_type_end_the_session() -> None:
+    """Out of step with the radio: the bridge reconnects and resynchronises."""
+    radio = ConfusedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        with pytest.raises(RadioError, match="get statistics: unexpected answer RadioStats"):
+            await session.start()
+        assert session.closed
 
     run(radio, scenario)

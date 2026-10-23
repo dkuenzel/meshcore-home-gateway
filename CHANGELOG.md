@@ -137,6 +137,10 @@ format and the command line are public interfaces.
 
 ### Added
 
+- `probe` reports what the radio tells about privacy and airtime: its position and whether its
+  adverts carry it, who may request its telemetry (base, location, environment), the extra
+  acknowledgements, its own duty-cycle factor (`airtime_factor`), and the flags of every contact;
+  a contact that may run the radio's command line over the air (flag 0x10) is marked.
 - Contract tests against the real Home Assistant MQTT integration (`make ha-test`, a CI job): the
   discovery document, the state and event payloads and the automations of the Home Assistant
   guide, with a hash-pinned Home Assistant release that Dependabot proposes updates for.
