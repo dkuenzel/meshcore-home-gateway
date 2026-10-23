@@ -83,7 +83,7 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 2 | Start the service | `availability` = `online`; `state.radio` = `connected`; battery plausible |
 | 3 | Publish to `send/<channel alias>` | B shows the message; `delivery`: `queued`, `sent` |
 | 4 | Publish to `send/<contact alias>` | B shows it; `delivery`: `confirmed` with a round trip time |
-| 5 | Switch B off, send to its alias | attempts 1..`max_attempts`, path reset from `flood_after`, then `failed` |
+| 5 | Switch B off, send to its alias | attempts 1..`max_attempts`, path reset after attempt `flood_after`, then `failed` |
 | 6 | Send a text longer than 160 bytes | truncated with `...` (or `rejected` if `truncate = false`) |
 | 7 | With `ascii_only = true`, send umlauts | B shows the transliteration |
 | 8 | Send the same text twice within the window | second is `duplicate` |

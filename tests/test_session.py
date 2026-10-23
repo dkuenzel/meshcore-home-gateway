@@ -114,6 +114,25 @@ def test_clock_is_moved_forward_only() -> None:
     assert Command.SET_DEVICE_TIME not in ahead.commands()
 
 
+def test_clock_is_not_read_without_set_clock() -> None:
+    radio = EmulatedRadio(clock=START_TIME)
+
+    async def main() -> None:
+        events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        session = CompanionSession(
+            radio, events, wall_clock=lambda: START_TIME + 100, command_timeout_s=0.3,
+            flush_settle_s=0.01, set_clock=False,
+        )  # fmt: skip
+        try:
+            await session.start()
+        finally:
+            await session.close()
+
+    asyncio.run(main())
+    assert Command.GET_DEVICE_TIME not in radio.commands()
+    assert radio.clock == START_TIME
+
+
 def test_queued_messages_are_drained_at_start_in_both_layouts() -> None:
     radio = EmulatedRadio(contacts=[ALICE])
     radio.queue_direct_message(ALICE.public_key[:6], "early", START_TIME, v3=False, push=False)

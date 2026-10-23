@@ -68,9 +68,9 @@ The only destinations the bridge sends to; publish to `send/<alias>`. The alias 
 | `truncate` | `true` | cut texts above the radio limit between whole characters (flags and emoji sequences included) and mark them with `...`; `false` rejects them |
 | `dedup_window_s` | `300` | the same text to the same target is sent once per window, 0–86400; `0` disables |
 | `queue_size` | `20` | waiting messages, 1–1000; more are rejected |
-| `queue_ttl_s` | `600` | time to live of a message, 1–86400: never sent within it, it expires; sent but not acknowledged within it, it fails |
+| `queue_ttl_s` | `600` | time to live of a message, 1–86400: no attempt starts after it. Never sent within it, it expires; sent but not acknowledged, it fails when the acknowledgement wait of its last attempt ends (up to 60 s after the time to live) |
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
-| `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` |
+| `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels) |
 
 ## `[airtime]`
@@ -110,7 +110,9 @@ that the radio adds with the 6-byte key prefix of an allowed sender blocks that 
 until 24 hours after it was last seen; a node that only advertises is not added and does not count.
 The bridge logs a warning at connect when the radio adds contacts on its own, and
 `meshcore-home-gateway probe` shows the settings. Connect a radio that takes commands by USB: over
-TCP it drops push frames while its send queue is full, and the bridge warns about that too.
+TCP it drops push frames while its send queue is full (the bridge warns about that too), and a
+host that takes the radio's network address can pose as the radio and forge commands
+([design §7.2](design.md#72-threats-and-mitigations)).
 
 ## `[diagnostics]`
 

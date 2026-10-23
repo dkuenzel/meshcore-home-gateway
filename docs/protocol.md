@@ -31,12 +31,14 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
   *(inferred)*: a partial frame from an earlier client would swallow the next bytes.
 * **Resynchronisation** *(inferred from the parser)*: the bridge writes 256 zero bytes at session
   start and discards everything that arrives during the next 0.5 s. Zeros are ignored when idle,
-  complete a pending header, and complete a pending frame that still expects at most 256 bytes;
-  a zero-filled frame executes as unknown command 0 (answered with `ERR 1`). A corrupted header
-  that announced a longer frame is not completed: the first command then times out and the bridge
-  reconnects; every reconnect feeds the stale frame another 256 bytes and a command until it is
-  complete, and restarting the radio clears it at once. Valid frames are at most 176 bytes, so
-  only a client that wrote garbage leaves such a header. This is for USB serial only.
+  complete a pending header, and complete a pending frame that still expects at most 256 bytes. A
+  frame with no payload byte yet executes as unknown command 0 (answered with `ERR 1`); a partly
+  received command executes with zero-padded arguments: a cut channel send, for example, transmits
+  its truncated text (`MyMesh.cpp:1178-1193`). A corrupted header that announced a longer frame is
+  not completed: the first command then times out and the bridge reconnects; every reconnect feeds
+  the stale frame another 256 bytes and a command until it is complete, and restarting the radio
+  clears it at once. Valid frames are at most 176 bytes, so only a client that wrote garbage leaves
+  such a header. This is for USB serial only.
 * **The TCP parser is different** (`src/helpers/wifi/SerialWifiInterface.cpp:102-161`): while no
   header is pending it consumes exactly 3 bytes; a header with type 0 or length 0 is not one
   (:46-48), and the next 3 bytes are read as a header again. 256 zeros are 85 such headers plus
