@@ -2,8 +2,9 @@
 
 paho runs its network loop in its own thread (`loop_start`) and reconnects by itself. Callbacks
 only hand data to the event loop with `call_soon_threadsafe`; `publish` is safe to call from the
-event loop because paho guards its outgoing queue with a lock. QoS 1 messages published while the
-broker is unreachable stay queued in paho (bounded) and go out after the reconnect.
+event loop because paho guards its outgoing queue with a lock. While the broker is unreachable,
+events stay queued in paho and go out after the reconnect, at most MAX_QUEUED_EVENTS of them;
+retained documents are skipped then, because the reconnect publishes them again.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ log = logging.getLogger(__name__)
 
 ONLINE = b"online"
 OFFLINE = b"offline"
-MAX_QUEUED_MESSAGES = 1000
+MAX_QUEUED_EVENTS = 1000  # events kept for the broker while it is unreachable
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1, 60
 
 
@@ -100,6 +101,9 @@ class MqttBus:
         self._loop: asyncio.AbstractEventLoop | None = None
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
         self.connected = False
+        self._queued = 0  # events published since the connection was lost
+        self._dropped = 0
+        self._stopping = False
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
 
@@ -112,7 +116,9 @@ class MqttBus:
             client.tls_set_context(tls_context(config))
         client.will_set(self._topics.availability, OFFLINE, qos=1, retain=True)
         client.reconnect_delay_set(RECONNECT_MIN_S, RECONNECT_MAX_S)
-        client.max_queued_messages_set(MAX_QUEUED_MESSAGES)
+        # no limit inside paho: at a reconnect it would also refuse `online`, discovery and
+        # state behind a full backlog; publish() bounds the events instead
+        client.max_queued_messages_set(0)
         client.on_connect = self._paho_connected
         client.on_disconnect = self._paho_disconnected
         client.on_message = self._paho_message
@@ -121,16 +127,32 @@ class MqttBus:
         log.info("MQTT: connecting to %s:%d", config.host, config.port)
 
     def publish(self, topic: str, payload: bytes, retain: bool = False) -> None:
-        self._client.publish(topic, payload, qos=1, retain=retain)
+        if not self.connected:
+            if retain:  # availability and state: the reconnect publishes the current ones
+                return
+            if self._queued >= MAX_QUEUED_EVENTS:
+                if not self._dropped:
+                    log.warning("MQTT: broker unreachable, %d events queued; dropping events "
+                                "until the connection is back", self._queued)  # fmt: skip
+                self._dropped += 1
+                return
+            self._queued += 1
+        info = self._client.publish(topic, payload, qos=1, retain=retain)
+        if getattr(info, "rc", 0):
+            log.warning("MQTT: publish to %s refused (paho error %s)", topic, info.rc)
 
     async def stop(self, timeout_s: float = 2.0) -> None:
+        self._stopping = True
         info = self._client.publish(self._topics.availability, OFFLINE, qos=1, retain=True)
         wait = getattr(info, "wait_for_publish", None)
         if self.connected and callable(wait):
             try:
                 async with asyncio.timeout(timeout_s + 0.5):
-                    await asyncio.to_thread(wait, timeout_s)
+                    await asyncio.to_thread(wait, timeout_s)  # returns after the timeout
+                confirmed = bool(getattr(info, "is_published", lambda: True)())
             except (TimeoutError, RuntimeError, ValueError):
+                confirmed = False
+            if not confirmed:
                 log.warning("MQTT: offline status not confirmed before shutdown")
         self._client.disconnect()
         self._client.loop_stop()
@@ -165,11 +187,15 @@ class MqttBus:
     def _handle_connected(self) -> None:
         self.connected = True
         log.info("MQTT: connected")
+        if self._dropped:
+            log.warning("MQTT: %d events were dropped while the broker was unreachable",
+                        self._dropped)  # fmt: skip
+        self._queued = self._dropped = 0
         for callback in self.on_connected:
             callback()
 
     def _handle_disconnected(self, reason: str) -> None:
-        if self.connected:
+        if self.connected and not self._stopping:
             log.warning("MQTT: disconnected (%s), reconnecting", reason)
         self.connected = False
 

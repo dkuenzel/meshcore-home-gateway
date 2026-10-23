@@ -86,7 +86,9 @@ _FINAL_FROM_CACHE = frozenset(
     {Rejection.SENDER_AMBIGUOUS, Rejection.SENDER_NOT_ALLOWED, Rejection.REPLAY,
      Rejection.TOO_OLD, Rejection.FROM_THE_FUTURE}
 )  # fmt: skip
-_TRANSIENT = frozenset({Rejection.SENDER_UNVERIFIED, Rejection.STATE_UNWRITABLE})
+_TRANSIENT = frozenset(
+    {Rejection.SENDER_UNVERIFIED, Rejection.STATE_UNWRITABLE, Rejection.BROKER_UNAVAILABLE}
+)
 DISCOVERY_DELAY_S = (0.5, 2.0)  # random delay after Home Assistant's birth message
 
 
@@ -103,6 +105,7 @@ class Bus(Protocol):
     """What the bridge needs from the message bus (implemented by mqtt.client.MqttBus)."""
 
     requests: asyncio.Queue[SendRequest]
+    connected: bool
     on_connected: list[Callable[[], None]]
     on_ha_online: list[Callable[[], None]]
 
@@ -145,10 +148,16 @@ class AckWaiter:
         cutoff = self._now() - RECENT_ACK_S
         self._recent = {k: v for k, v in self._recent.items() if v[0] >= cutoff}
 
-    async def wait(self, codes: list[bytes], timeout_s: float) -> int | None:
+    def take(self, codes: list[bytes]) -> int | None:
+        """The round trip of an acknowledgement of one of `codes` that has already arrived."""
         for code in codes:
             if code in self._recent:
                 return self._recent.pop(code)[1]
+        return None
+
+    async def wait(self, codes: list[bytes], timeout_s: float) -> int | None:
+        if (round_trip := self.take(codes)) is not None:
+            return round_trip
         future: asyncio.Future[int] = asyncio.get_running_loop().create_future()
         for code in codes:
             self._waiting[code] = future
@@ -443,9 +452,17 @@ class Bridge:
         wait = self._budget.wait_s(airtime, self._mono())
         if self._mono() + wait > deadline:
             raise _FinalError(DeliveryState.EXPIRED, "airtime_budget")
+        round_trip = None
         if wait > 0:
             log.info("delivery %s waits %.1f s for airtime", item.id, wait)
-            await asyncio.sleep(wait)
+            if acks:  # an earlier attempt may still be acknowledged meanwhile
+                round_trip = await self._acks.wait(acks, wait)
+            else:
+                await asyncio.sleep(wait)
+        if acks and round_trip is None:
+            round_trip = self._acks.take(acks)
+        if round_trip is not None:  # an earlier attempt arrived after all: send nothing more
+            return self._event(item, DeliveryState.CONFIRMED, attempt=attempt, rtt_ms=round_trip)
         if reset_path is not None:
             await session.reset_path(reset_path)  # only now: this attempt will be sent and flood
         self._budget.consume(airtime, self._mono())
@@ -552,6 +569,11 @@ class Bridge:
             return
         decision = await self._judge(event)
         command = decision.command if decision else None
+        if decision is not None and command is not None and not self._bus.connected:
+            # queued until the reconnect, it would trigger automations at any later time
+            log.warning("command %s refused: the broker is unreachable", decision.word)
+            command = None
+            decision = CommandDecision(decision.word, rejection=Rejection.BROKER_UNAVAILABLE)
         if decision is not None and command is not None:
             try:
                 self._ledger.record(command.sender_key, command.sender_timestamp)  # first

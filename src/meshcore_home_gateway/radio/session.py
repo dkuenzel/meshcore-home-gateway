@@ -27,7 +27,7 @@ from typing import TypeVar
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.model import InboundMessage
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import AutoAdd, Push, Response
+from meshcore_home_gateway.protocol.codes import PUSH_MIN, AutoAdd, Push, Response
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
 from meshcore_home_gateway.radio.transport import Transport
 
@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 APP_NAME = "meshcore-home-gateway"
 COMMAND_TIMEOUT_S = 5.0  # the firmware documentation recommends about 5 s per command
-FLUSH_BYTES = 256  # completes any partial frame left in the firmware parser (docs/protocol.md)
+FLUSH_BYTES = 256  # completes any partial frame in the serial parser (docs/protocol.md)
 FLUSH_SETTLE_S = 0.5
 CLOCK_SET_THRESHOLD_S = 2
 CLOCK_AHEAD_WARNING_S = 60
@@ -303,7 +303,10 @@ class CompanionSession:
     # --- internals ------------------------------------------------------------------------------
 
     async def _flush(self) -> None:
-        """Complete any partial frame in the firmware parser, then drop whatever comes back."""
+        """Complete any partial frame in the firmware parser, then drop whatever comes back.
+        Only for transports that need it: over TCP the zeros would break the next frame."""
+        if not self._transport.needs_flush:
+            return
         self._discarding = True
         try:
             await self._transport.write(bytes(FLUSH_BYTES))
@@ -389,7 +392,7 @@ class CompanionSession:
 
     async def _dispatch(self, frame: bytes) -> None:
         code = frame[0]
-        if code >= 0x80:
+        if code >= PUSH_MIN:
             await self._push(frame)
         elif self._pending is not None and code in self._pending.expected:
             self._pending.frames.put_nowait(frame)
@@ -427,8 +430,10 @@ class CompanionSession:
     async def _command(self, request: bytes, expected: Iterable[int]) -> AsyncIterator[_Pending]:
         """Send one command; the yielded queue receives the frames with the expected codes."""
         if self.closed:
-            raise RadioError("session closed")
+            raise self._closed_error()
         async with self._lock:
+            if self.closed:  # it ended while this command waited for the lock: send nothing
+                raise self._closed_error()
             pending = _Pending(frozenset(expected) | {Response.ERR})
             self._pending = pending
             try:
@@ -442,6 +447,9 @@ class CompanionSession:
                 yield pending
             finally:
                 self._pending = None
+
+    def _closed_error(self) -> RadioError:
+        return RadioError(f"session closed: {self._failure}" if self._failure else "session closed")
 
     async def _next(self, pending: _Pending) -> bytes:
         closed = asyncio.create_task(self._closed.wait())

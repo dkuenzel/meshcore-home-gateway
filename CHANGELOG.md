@@ -7,6 +7,22 @@ format and the command line are public interfaces.
 
 ## [Unreleased]
 
+### Fixed
+
+- Over TCP the session no longer sends the 256 zero bytes of the serial resynchronisation: they
+  misaligned the WiFi firmware's frame parser, so no TCP session could start. The TCP emulator
+  in the tests now parses like the WiFi firmware.
+- After a long broker outage the reconnect no longer loses `online`, discovery and state behind a
+  full message queue: only events are bounded (1000, the excess is dropped and logged), and
+  retained documents are not queued while the broker is unreachable.
+- Commands that arrive while the broker is unreachable are refused (`broker_unavailable`) instead
+  of reaching the automations at an arbitrary later time.
+- An acknowledgement that arrives while the next attempt waits for airtime ends the delivery as
+  `confirmed`, without another transmission or path reset.
+- A command queued behind a session that has just ended is no longer written to the radio; the
+  error names the cause.
+- A clean shutdown no longer logs a reconnect warning; an unconfirmed `offline` is logged.
+
 ### Added
 
 - The project is named meshcore-home-gateway (developed as meshcore-bus until 2026-10-22; ADR

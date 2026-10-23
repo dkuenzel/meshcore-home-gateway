@@ -196,9 +196,10 @@ or transport error closes the session and the supervisor reconnects.
 * **Opening.** The serial port runs raw at 115200 baud, exclusively (`TIOCEXCL`), with DTR asserted
   and RTS cleared like the official Python clients: nRF52 radios only send while DTR is set, and
   RTS can reset ESP32 boards. 1200 baud is refused (it reboots nRF52 radios into the bootloader).
-* **Resynchronisation.** The radio's frame parser has no timeout and keeps its state across
-  reconnects, so the session first writes 256 zero bytes and discards everything that arrives in
-  the next 0.5 s.
+* **Resynchronisation.** The radio's serial frame parser has no timeout and keeps its state
+  across reconnects, so over USB the session first writes 256 zero bytes and discards everything
+  that arrives in the next 0.5 s. Over TCP it does not: each connection resets the WiFi parser,
+  and zeros would misalign its 3-byte header reads (protocol.md, section 1).
 
 ```mermaid
 sequenceDiagram
@@ -356,8 +357,11 @@ The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
 
 * QoS 1 throughout. MQTT 3.1.1 with a clean session: requests published while the bridge is
   offline are lost, which is the safer choice for alerts that would otherwise arrive late. Events
-  the bridge publishes while the broker is down are queued in memory (up to 1000) and sent after
-  the reconnect.
+  the bridge publishes while the broker is down are queued in memory (up to 1000, more are
+  dropped and counted in the log) and sent after the reconnect; retained documents are not
+  queued, because the reconnect publishes availability and state again. Commands are refused
+  while the broker is unreachable (`broker_unavailable`): delivered after the reconnect, they
+  would trigger automations at an arbitrary later time.
 * On reconnect, and when Home Assistant announces itself on `homeassistant/status`, the bridge
   republishes availability, discovery and state.
 
@@ -427,7 +431,7 @@ Exit codes: 0 success, 1 failure, 78 configuration error (the systemd unit does 
 | Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted) and within `max_age_s` of the bridge clock. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
-| Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression. |
+| Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
 | Retained send request re-sent on every reconnect | Retained messages on `send/+` are ignored. |
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
@@ -505,7 +509,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Radio unplugged or rebooted | read error, command timeout | session closed, reconnect with back-off; queue waits; an interrupted attempt is repeated | `state.radio = disconnected`; connectivity entity off |
 | Malformed or unexpected answer | decoding | session closed, resynchronised on reconnect | log warning |
 | Radio clock wrong | `CURR_TIME` vs bridge clock | set forward; warn if ahead | log warning; command rejections `too_old` / `from_the_future` |
-| Broker unreachable | paho disconnect | paho reconnects (1..60 s); events queued in memory | availability `offline` via last will |
+| Broker unreachable | paho disconnect | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
 | Bridge crashes or restarts | systemd | restart after 5 s; queued messages are lost | availability; no delivery state for lost messages |
 | Airtime budget exhausted | token bucket | messages wait, then expire | `delivery: expired`; airtime entity |

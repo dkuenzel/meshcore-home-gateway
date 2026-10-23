@@ -21,6 +21,7 @@ CONNECT_TIMEOUT_S = 10.0
 
 class Transport(Protocol):
     description: str
+    needs_flush: bool  # the radio's parser may hold a partial frame from an earlier client
 
     async def open(self) -> None: ...
     async def read(self) -> bytes: ...
@@ -35,6 +36,9 @@ class SerialTransport:
     while DTR is set, and RTS can reset ESP32 boards with an auto-reset circuit. The port is never
     set to 1200 baud (docs/protocol.md, section 1).
     """
+
+    # the serial parser keeps its state across reconnects and ignores zeros while idle
+    needs_flush = True
 
     def __init__(self, device: str, baudrate: int = BAUDRATE) -> None:
         if baudrate == FORBIDDEN_BAUDRATE:
@@ -133,6 +137,10 @@ def _make_raw(fd: int, speed: int) -> None:
 class TcpTransport:
     """TCP connection to a companion radio with WiFi firmware. The interface has no
     authentication: use it only on a trusted, isolated network (docs/design.md, Security)."""
+
+    # every connection starts the WiFi parser afresh, and zeros would misalign its 3-byte
+    # header reads (docs/protocol.md, section 1)
+    needs_flush = False
 
     def __init__(self, host: str, port: int) -> None:
         self.description = f"tcp {host}:{port}"

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, replace
 
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push, Response
+from meshcore_home_gateway.protocol.framing import TO_RADIO, encode_frame
 
 SELF_KEY = bytes(range(0x10, 0x30))
 START_TIME = 1_800_000_000
@@ -67,6 +68,7 @@ class EmulatedRadio:
     disabled: set[int] = field(default_factory=set)  # command codes answered with DISABLED
     unknown: set[int] = field(default_factory=set)  # older firmware: ERR "unsupported", always
     description: str = "emulated radio"
+    needs_flush: bool = True  # parses like the USB serial interface
 
     def __post_init__(self) -> None:
         # own copies: the radio changes them (path reset, one-time errors), tests share originals
@@ -262,8 +264,44 @@ class EmulatedRadio:
         )  # fmt: skip
 
 
+class WifiFrameParser:
+    """Frame parser of the WiFi companion firmware (src/helpers/esp32/SerialWifiInterface.cpp
+    at companion-v1.18.0, :102-161), unlike the serial one: while no header is pending it
+    consumes exactly 3 bytes as a header; a header with type 0 or length 0 is not one
+    (:46-48), and the next 3 bytes are read as a header again. Then it waits for the announced
+    length and keeps the frame only if the type is '<'. A new connection resets it (:57-70).
+    """
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+        self._header: tuple[int, int] | None = None
+
+    def feed(self, data: bytes) -> list[bytes]:
+        """Payloads of the complete frames in `data`."""
+        self._buffer += data
+        payloads: list[bytes] = []
+        while True:
+            if self._header is None:
+                if len(self._buffer) < 3:
+                    return payloads
+                kind, length = self._buffer[0], int.from_bytes(self._buffer[1:3], "little")
+                del self._buffer[:3]
+                if kind != 0 and length != 0:
+                    self._header = (kind, length)
+                continue
+            kind, length = self._header
+            if len(self._buffer) < length:
+                return payloads
+            payload = bytes(self._buffer[:length])
+            del self._buffer[:length]
+            self._header = None
+            if kind == TO_RADIO:
+                payloads.append(payload)
+
+
 class TcpRadioServer:
-    """Serves one EmulatedRadio over TCP from a background thread, like a WiFi companion.
+    """Serves one EmulatedRadio over TCP from a background thread, like a WiFi companion: the
+    bytes pass the WiFi firmware's frame parser (`WifiFrameParser`) before the radio sees them.
 
     The radio lives in the server's event loop; tests read its records after the fact.
     """
@@ -317,9 +355,11 @@ class TcpRadioServer:
                 await writer.drain()
 
         task = asyncio.create_task(pump())
+        parser = WifiFrameParser()  # one per connection, as in the firmware
         try:
             while data := await reader.read(4096):
-                await radio.write(data)
+                for payload in parser.feed(data):
+                    await radio.write(encode_frame(payload))
         except (ConnectionError, OSError):
             pass
         finally:

@@ -11,6 +11,7 @@ import pytest
 from meshcore_home_gateway.core.model import MessageKind
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push, Response
+from meshcore_home_gateway.protocol.framing import encode_frame
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import (
     AckReceived,
@@ -21,7 +22,15 @@ from meshcore_home_gateway.radio.session import (
     RadioError,
     RadioEvent,
 )
-from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
+from meshcore_home_gateway.radio.transport import TcpTransport
+from tests.radio_emulator import (
+    SELF_KEY,
+    START_TIME,
+    EmulatedContact,
+    EmulatedRadio,
+    TcpRadioServer,
+    WifiFrameParser,
+)
 
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
 BOB = EmulatedContact(bytes.fromhex("b2" * 32), "Bob", out_path_len=0x02)
@@ -448,5 +457,49 @@ def test_disabled_feature_is_a_command_failure_with_its_own_reason() -> None:
         with pytest.raises(CommandFailedError) as caught:
             await session.send_channel_text(0, "x", START_TIME)
         assert caught.value.reason == "disabled"
+
+    run(radio, scenario)
+
+
+def test_a_serial_flush_would_misalign_the_wifi_firmware_parser() -> None:
+    """Why the session sends no flush over TCP: 256 zeros are 85 empty headers plus one byte,
+    so the WiFi parser reads every later header one byte off and never sees APP_START."""
+    start = encode_frame(codec.app_start("x"))
+    assert WifiFrameParser().feed(bytes(256) + start) == []
+    assert WifiFrameParser().feed(start) == [codec.app_start("x")]
+
+
+def test_tcp_session_starts_against_the_wifi_firmware_parser() -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        with TcpRadioServer(radio) as server:
+            transport = TcpTransport("127.0.0.1", server.port)
+            session = CompanionSession(transport, events, command_timeout_s=1, set_clock=False)
+            try:
+                info = await asyncio.wait_for(session.start(fetch_messages=False), 5)
+            finally:
+                await session.close()
+        assert info.name == "Bridge"
+        assert not radio.raw_written.startswith(b"\x00")  # no flush over TCP
+
+    asyncio.run(main())
+
+
+def test_a_command_waiting_behind_a_dead_session_is_never_sent() -> None:
+    """A command queued on the lock must not reach the radio after the session ended: the
+    bridge repeats the attempt on the next session, so the radio would send the text twice."""
+    radio = EmulatedRadio(contacts=[ALICE], silent={Command.RESET_PATH})
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        reset = asyncio.create_task(session.reset_path(ALICE.public_key))
+        await asyncio.sleep(0)  # the reset holds the lock and waits for an answer that never comes
+        send = asyncio.create_task(session.send_text(ALICE.public_key[:6], "hi", START_TIME, 0))
+        results = await asyncio.gather(reset, send, return_exceptions=True)
+        assert all(isinstance(r, RadioError) for r in results)
+        assert "no answer from the radio" in str(results[1])  # the cause, not a bare "closed"
+        assert Command.SEND_TXT_MSG not in [payload[0] for payload in radio.received]
 
     run(radio, scenario)

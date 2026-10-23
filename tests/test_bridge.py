@@ -68,6 +68,7 @@ class FakeBus:
         self.on_ha_online: list[Callable[[], None]] = []
         self.published: list[tuple[str, bytes, bool]] = []
         self.stopped = False
+        self.connected = True
 
     async def start(self) -> None:
         for callback in self.on_connected:
@@ -222,6 +223,49 @@ def test_late_acknowledgement_of_an_earlier_attempt_counts(tmp_path: Path) -> No
     scenario(main)
 
 
+def test_acknowledgement_arriving_before_a_retry_ends_the_delivery(tmp_path: Path) -> None:
+    """The acknowledgement of attempt 1 arrives while attempt 2 waits for airtime: nothing is
+    sent again and the stored path is kept."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
+            bus.send("alice", "early")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            bridge._budget._tokens, bridge._budget._rate = 0.0, 2.0  # attempt 2 waits ~0.3 s
+            await asyncio.sleep(0.25)
+            from meshcore_home_gateway.protocol.codec import expected_ack
+            from tests.radio_emulator import SELF_KEY
+
+            radio.acknowledge(expected_ack(NOW, 0, "early", SELF_KEY), 700)
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert (done["attempt"], done["rtt_ms"]) == (1, 700)
+            assert len(radio.texts) == 1
+            assert not radio.path_resets
+
+    scenario(main)
+
+
+def test_command_is_refused_while_the_broker_is_unreachable(tmp_path: Path) -> None:
+    """Queued until the reconnect, an accepted command would reach the automations at any later
+    time; it is refused instead, and the sender can send it again."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.connected = False
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 10)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"] == {
+                "word": "arm", "accepted": False, "reason": "broker_unavailable",
+            }  # fmt: skip
+            bus.connected = True
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 10)  # the retry
+            await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
+
+    scenario(main)
+
+
 @pytest.mark.parametrize(
     ("alias", "payload", "retained", "reason"),
     [
@@ -286,6 +330,7 @@ def test_duplicates_are_suppressed(tmp_path: Path) -> None:
 def test_full_queue_rejects_and_waiting_messages_expire(tmp_path: Path) -> None:
     class Unreachable:
         description = "unreachable"
+        needs_flush = False
 
         async def open(self) -> None:
             raise FileNotFoundError("no such device")

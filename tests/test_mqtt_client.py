@@ -13,6 +13,7 @@ import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway.config import MqttConfig
+from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.mqtt.client import MqttBus, SendRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from tests.conftest import Broker
@@ -140,6 +141,48 @@ def test_disconnect_is_tracked() -> None:
         fake.on_disconnect(fake, None, None, "lost", None)
         await asyncio.sleep(0)
         assert not bus.connected
+
+    asyncio.run(scenario())
+
+
+def test_events_are_bounded_while_the_broker_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """paho's own queue limit would also drop `online`, discovery and state at the reconnect,
+    after a long outage; the bus bounds only the events and skips retained documents, which
+    are published again when the connection is back."""
+    monkeypatch.setattr(client_module, "MAX_QUEUED_EVENTS", 2)
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        assert dict(fake.calls)["max_queued_messages_set"] == (0,)  # no limit inside paho
+        for n in range(4):
+            bus.publish("meshcore/radio1/received", b"%d" % n)
+        bus.publish("meshcore/radio1/state", b"{}", retain=True)
+        assert [p[1] for p in fake.published] == [b"0", b"1"]
+        assert caplog.text.count("dropping events") == 1
+        bus._handle_connected()  # the connection is back: the bound starts again
+        bus.publish("meshcore/radio1/state", b"{}", retain=True)
+        bus.publish("meshcore/radio1/received", b"4")
+        assert [p[1] for p in fake.published][-2:] == [b"{}", b"4"]
+        assert "2 events were dropped" in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_stop_warns_when_offline_is_not_confirmed(caplog: pytest.LogCaptureFixture) -> None:
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        fake.publish = lambda *a, **k: SimpleNamespace(  # type: ignore[method-assign]
+            wait_for_publish=lambda timeout: None, is_published=lambda: False
+        )
+        await bus.start()
+        bus.connected = True
+        await bus.stop()
+        bus._handle_disconnected("Normal disconnection")  # paho reports the clean disconnect
+        assert "offline status not confirmed" in caplog.text
+        assert "reconnecting" not in caplog.text
 
     asyncio.run(scenario())
 

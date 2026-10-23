@@ -36,7 +36,13 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
   that announced a longer frame is not completed: the first command then times out and the bridge
   reconnects; every reconnect feeds the stale frame another 256 bytes and a command until it is
   complete, and restarting the radio clears it at once. Valid frames are at most 176 bytes, so
-  only a client that wrote garbage leaves such a header.
+  only a client that wrote garbage leaves such a header. This is for USB serial only.
+* **The TCP parser is different** (`src/helpers/esp32/SerialWifiInterface.cpp:102-161`): while no
+  header is pending it consumes exactly 3 bytes; a header with type 0 or length 0 is not one
+  (:46-48), and the next 3 bytes are read as a header again. 256 zeros are 85 such headers plus
+  one byte, which shifts every later header by one byte, so the radio never sees `APP_START`.
+  A new TCP connection resets the parser (:57-70), so no stale frame can survive one: the bridge
+  sends no zeros over TCP. `tests/radio_emulator.py` parses TCP input the same way.
 * **DTR on nRF52 boards** (Adafruit TinyUSB core): the USB serial port only sends while DTR is
   asserted; without DTR the radio silently drops every frame but still executes commands. With DTR
   asserted and nobody reading, the firmware's main loop blocks until there is room

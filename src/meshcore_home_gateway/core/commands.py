@@ -34,6 +34,7 @@ class Rejection(StrEnum):
     FROM_THE_FUTURE = "from_the_future"
     SENDER_UNVERIFIED = "sender_unverified"  # the bridge cannot rule out a look-alike sender
     STATE_UNWRITABLE = "state_unwritable"  # the replay ledger could not be saved
+    BROKER_UNAVAILABLE = "broker_unavailable"  # the event could only reach automations late
 
 
 @dataclass(frozen=True, slots=True)

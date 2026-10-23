@@ -22,9 +22,10 @@ def encode_frame(payload: bytes) -> bytes:
 class FrameDecoder:
     """Incremental decoder for frames from the radio.
 
-    Bytes before a start marker are discarded (and counted). A length of zero or above the
-    maximum cannot be a frame: the marker is skipped and the search continues. A partial frame
-    that never completes is dropped by `reset()`, which the session calls after a read timeout.
+    Bytes before a start marker are discarded (and counted in `discarded`). A length of zero or
+    above the maximum cannot be a frame: the marker is skipped and the search continues.
+    `reset()` drops a partial frame; the session calls it after the flush at session start,
+    and each new session has its own decoder.
     """
 
     def __init__(self) -> None:

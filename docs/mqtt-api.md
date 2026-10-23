@@ -29,9 +29,11 @@ mosquitto_pub -h broker.example.org -u client -P secret -q 1 \
   -t meshcore/radio1/send/alerts -m "Water pump stopped"
 ```
 
-Retained messages on these topics are rejected (`reason: retained`): a retained request would be
-sent again after every reconnect. Requests published while the bridge is offline are lost (clean
-session); check `availability` first if it matters.
+Publish requests without the retain flag. The broker forwards a request published with it to the
+running bridge like any other, so it is sent once; the copy the broker keeps would be delivered
+again after every reconnect, so retained messages on these topics are rejected there
+(`reason: retained`). Requests published while the bridge is offline are lost (clean session);
+check `availability` first if it matters.
 
 ## Delivery: `delivery`
 
@@ -115,6 +117,7 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `sender_not_allowed` | the contact's full key is not in `commands.senders` |
 | `sender_unverified` | the bridge fetched the command while connecting (it waited in the radio, or arrived during the connection setup), or the contact table could not be read (also when the radio connection ended first); the sender can send it again |
 | `state_unwritable` | the state file could not be written, so the replay protection could not be kept; the sender can send it again |
+| `broker_unavailable` | the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock |
 
@@ -151,9 +154,20 @@ topic write homeassistant/device/meshcore_home_gateway_radio1/config
 topic read homeassistant/status
 
 user homeassistant
+topic readwrite homeassistant/#
 topic read meshcore/radio1/#
 topic write meshcore/radio1/send/#
 
 user alarm-script
 topic write meshcore/radio1/send/alerts
 ```
+
+Home Assistant needs `homeassistant/#` for discovery and its own birth and status messages. Only
+the gateway may write the event topics (`received`, `command`, `delivery`), because automations
+trust them. When commands are configured, the ACL is not optional: any client that can write
+`command` can trigger the automations.
+
+paho reads every message completely before the gateway can check its size (1 KiB for a send
+request), so a client could exhaust the gateway's memory with one huge request. If no other
+client on the broker needs large messages, cap them in `mosquitto.conf`, for example
+`max_packet_size 65536`.
