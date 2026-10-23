@@ -6,7 +6,7 @@
 transport = "serial"                                   # "serial" (USB) or "tcp" (WiFi firmware)
 device = "/dev/serial/by-id/usb-Example_Radio_0001-if00"
 # host = "192.0.2.10"                                  # tcp only; the interface has no password
-# port = 5000
+# port = 5000                                          # tcp only
 set_clock = true                                       # move the radio clock forward to ours
 
 [mqtt]

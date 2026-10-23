@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,9 +22,13 @@ from paho.mqtt.enums import CallbackAPIVersion
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway import cli as cli_module
 from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
+from meshcore_home_gateway.config import MqttConfig, load_config, parse_config
+from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.protocol.codes import Command
+from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
 from tests.conftest import Broker
 from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
+from tests.test_mqtt_client import FakePaho
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "deploy" / "config.example.toml"
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice\tSmith")
@@ -58,7 +63,8 @@ def test_config_render_writes_a_private_valid_file(tmp_path: Path) -> None:
     answers = tmp_path / "answers"
     answers.write_text(
         "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
-        "mqtt.node_id=radio1\nmqtt.password=secret\ntarget.alerts=channel:1\n",
+        "mqtt.node_id=radio1\nmqtt.username=bridge\nmqtt.password=secret\n"
+        "target.alerts=channel:1\n",
         encoding="utf-8",
     )
     output = tmp_path / "etc" / "config.toml"
@@ -85,6 +91,67 @@ def test_config_render_writes_a_private_valid_file(tmp_path: Path) -> None:
     )
 
 
+RENDER_ANSWERS = (
+    "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
+    "mqtt.node_id=radio1\n"
+)
+
+
+@pytest.mark.parametrize(
+    "where", ["file/config.toml", "directory"], ids=["below-a-file", "onto-a-directory"]
+)
+def test_config_render_reports_an_output_it_cannot_write(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], where: str
+) -> None:
+    answers = tmp_path / "answers"
+    answers.write_text(RENDER_ANSWERS, encoding="utf-8")
+    (tmp_path / "file").write_text("x\n", encoding="utf-8")
+    (tmp_path / "directory").mkdir()
+    output = tmp_path / where
+    command = ["config", "render", "--answers", str(answers), "--output", str(output)]
+    assert main(command) == EX_FAILURE
+    error = capsys.readouterr().err
+    assert f"cannot write {output}" in error
+    assert "Traceback" not in error
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["answers", "directory", "file"]
+
+
+def test_config_render_syncs_the_file_and_its_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash right after the first installation must not leave an empty or no configuration."""
+    output = tmp_path / "config.toml"
+    synced: list[tuple[str, bool]] = []
+    real_fsync = os.fsync
+
+    def fsync(fd: int) -> None:
+        kind = "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
+        synced.append((kind, output.exists()))
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    cli_module.write_private(output, "x = 1\n", None)
+    assert synced == [("file", False), ("directory", True)]  # before and after the rename
+    assert output.read_text(encoding="utf-8") == "x = 1\n"
+
+
+def test_config_render_loads_the_tls_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Like check-config and the service: the installer learns of a missing file at once."""
+    answers = tmp_path / "answers"
+    answers.write_text(
+        f"{RENDER_ANSWERS}mqtt.tls=true\nmqtt.ca_file={tmp_path / 'missing.pem'}\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "config.toml"
+    assert (
+        main(["config", "render", "--answers", str(answers), "--output", str(output)]) == EX_CONFIG
+    )
+    assert "configuration error: mqtt.ca_file: cannot load" in capsys.readouterr().err
+    assert not output.exists()
+
+
 def test_config_answers_prints_the_settings_as_answers(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -103,7 +170,10 @@ def test_config_answers_prints_the_settings_as_answers(
 
 
 def test_probe_lists_channels_and_contacts_over_tcp(capsys: pytest.CaptureFixture[str]) -> None:
-    radio = EmulatedRadio(contacts=[ALICE], channels={0: "Public", 3: "Alerts\x1b[2J\u2028"})
+    behind = int(time.time()) - 3600  # the service would move this clock forward
+    radio = EmulatedRadio(
+        contacts=[ALICE], channels={0: "Public", 3: "Alerts\x1b[2J\u2028"}, clock=behind
+    )
     with TcpRadioServer(radio) as server:
         address = f"127.0.0.1:{server.port}"
         assert main(["probe", "--tcp", address, "--list", "channels"]) == EX_OK
@@ -125,7 +195,8 @@ def test_probe_lists_channels_and_contacts_over_tcp(capsys: pytest.CaptureFixtur
         report = capsys.readouterr().out
         assert "Alerts" in report
         assert "\x1b" not in report  # names cannot reach the terminal as escape sequences
-    assert radio.clock == 1_800_000_000  # probing never sets the radio clock
+    assert radio.clock == behind  # probing never sets the radio clock
+    assert Command.SET_DEVICE_TIME not in radio.commands()
 
 
 def test_probe_leaves_waiting_messages_in_the_radio(capsys: pytest.CaptureFixture[str]) -> None:
@@ -189,6 +260,33 @@ def test_probe_failure_exits_with_failure(capsys: pytest.CaptureFixture[str]) ->
 )
 def test_probe_tcp_addresses(text: str, address: tuple[str, int]) -> None:
     assert cli_module.tcp_address(text) == address
+
+
+def test_the_service_opens_the_configured_radio() -> None:
+    serial = cli_module.transport_for(load_config(EXAMPLE))
+    assert isinstance(serial, SerialTransport)
+    assert serial.device == "/dev/serial/by-id/usb-Example_Radio_0001-if00"
+    tcp = cli_module.transport_for(
+        parse_config(
+            '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\nport = 5001\n'
+            '[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        )
+    )
+    assert isinstance(tcp, TcpTransport)
+    assert tcp.description == "tcp 192.0.2.10:5001"
+
+
+def test_send_and_listen_log_in_with_the_configured_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakePaho()
+    monkeypatch.setattr(client_module, "make_paho_client", lambda _config: fake)
+    with_login = MqttConfig(host="h", node_id="n", username="u", password="p")
+    assert cli_module._mqtt_client(with_login, "send") is fake
+    assert ("username_pw_set", ("u", "p")) in fake.calls
+    fake.calls.clear()
+    cli_module._mqtt_client(MqttConfig(host="h", node_id="n"), "listen")
+    assert "username_pw_set" not in [name for name, _ in fake.calls]
 
 
 @pytest.mark.parametrize(
@@ -317,6 +415,46 @@ def test_listen_ends_when_its_reader_goes_away(tmp_path: Path, broker: Broker) -
             process.stderr.close()
 
 
+@pytest.mark.broker
+def test_listen_prints_a_payload_it_cannot_decode_as_text(tmp_path: Path, broker: Broker) -> None:
+    """Also one nested too deeply for the JSON parser (RecursionError, not ValueError)."""
+    nested = b"[" * 100_000
+    publisher = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    publisher.connect(broker.host, broker.port)
+    publisher.loop_start()
+    publisher.publish(  # retained: delivered as soon as listen subscribes
+        "meshcore/radio1/received", nested, qos=1, retain=True
+    ).wait_for_publish(5)
+    config = broker_config(tmp_path, broker)
+    output = tmp_path / "output"  # a file: the long line would fill a pipe nobody reads yet
+    with output.open("wb") as out:
+        process = subprocess.Popen(  # noqa: S603 - our own command line
+            [sys.executable, "-m", "meshcore_home_gateway", "listen", "--config", str(config),
+             "--topic", "received", "--count", "2"],
+            stdout=out, stderr=subprocess.PIPE,
+        )  # fmt: skip
+    try:
+        for _ in range(100):  # until listen has subscribed and printed both
+            publisher.publish("meshcore/radio1/received", b"{}", qos=1).wait_for_publish(2)
+            if process.poll() is not None:
+                break
+            threading.Event().wait(0.1)
+        assert process.poll() is not None, "listen hangs after a payload it cannot decode"
+        assert process.returncode == EX_OK
+        assert process.stderr is not None
+        assert b"Traceback" not in process.stderr.read()
+    finally:
+        publisher.disconnect()
+        publisher.loop_stop()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        if process.stderr is not None:
+            process.stderr.close()
+    first = json.loads(output.read_text(encoding="utf-8").splitlines()[0])
+    assert first == {"topic": "meshcore/radio1/received", "payload": nested.decode()}
+
+
 def broker_config(tmp_path: Path, broker: Broker) -> Path:
     path = tmp_path / "config.toml"
     path.write_text(
@@ -435,6 +573,32 @@ def test_send_wait_reports_the_result_of_its_own_request(
         fake.stop()
     assert code == EX_OK
     assert json.loads(capsys.readouterr().out)["id"] == "mine"
+
+
+@pytest.mark.broker
+def test_send_wait_ignores_events_of_other_requests(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Other targets with the same text, other texts for the same target, undecodable payloads."""
+
+    def answer(bridge: FakeBridge, text: str) -> None:
+        bridge.client.publish("meshcore/radio1/delivery", b"not json", qos=1)
+        bridge.client.publish("meshcore/radio1/delivery", b"[" * 100_000, qos=1)  # too deep
+        bridge.event(event_type="queued", id="elsewhere", text=text, target="other")
+        bridge.event(event_type="failed", id="elsewhere", text=text, target="other")
+        bridge.event(event_type="queued", id="other", text="somebody else's")
+        bridge.event(event_type="failed", id="other", text="somebody else's")
+        bridge.event(event_type="queued", id="mine", text=text)
+        bridge.event(event_type="sent", id="mine", text=text)
+
+    fake = FakeBridge(broker, answer)
+    try:
+        config = str(broker_config(tmp_path, broker))
+        code = main(["send", "--config", config, "--wait", "5", "alerts", "Hello world"])
+    finally:
+        fake.stop()
+    assert json.loads(capsys.readouterr().out)["id"] == "mine"
+    assert code == EX_OK
 
 
 @pytest.mark.broker

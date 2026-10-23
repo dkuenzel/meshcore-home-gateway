@@ -30,6 +30,7 @@ from meshcore_home_gateway.config import (
     MqttConfig,
     config_answers,
     load_config,
+    parse_config,
     read_text,
     render_config,
 )
@@ -477,7 +478,7 @@ class _DeliveryWatch:
     def on_message(self, _c: Any, _u: Any, message: Any) -> None:
         try:
             event = json.loads(message.payload)
-        except ValueError:
+        except (ValueError, RecursionError):  # also nested too deeply; it would end paho's thread
             return
         if not isinstance(event, dict) or event.get("target") != self._alias:
             return
@@ -590,7 +591,7 @@ def _listen(args: argparse.Namespace) -> int:
             return
         try:
             payload: Any = json.loads(message.payload)
-        except ValueError:
+        except (ValueError, RecursionError):  # also nested too deeply; it would end paho's thread
             payload = message.payload.decode("utf-8", errors="replace")
         try:
             print(_json_text({"topic": message.topic, "payload": payload}), flush=True)
@@ -631,12 +632,24 @@ def _listen(args: argparse.Namespace) -> int:
 
 def _render(args: argparse.Namespace) -> int:
     text = render_config(read_text(args.answers))
+    mqtt = parse_config(text).mqtt
+    if mqtt.tls:  # the certificate and key files must load, as in check-config and at start-up
+        from meshcore_home_gateway.mqtt.client import tls_context  # noqa: PLC0415
+
+        tls_context(mqtt)
     try:
         gid = None if args.group is None else grp.getgrnam(args.group).gr_gid
     except KeyError:
         print(f"meshcore-home-gateway: no group {args.group!r}", file=sys.stderr)
         return EX_FAILURE
-    write_private(args.output, text, gid)
+    try:
+        write_private(args.output, text, gid)
+    except OSError as exc:
+        print(
+            f"meshcore-home-gateway: cannot write {args.output}: {exc.strerror or exc}",
+            file=sys.stderr,
+        )
+        return EX_FAILURE
     print(f"wrote {args.output}")
     return EX_OK
 
@@ -647,13 +660,15 @@ def _answers(args: argparse.Namespace) -> int:
 
 
 def write_private(path: Path, text: str, gid: int | None) -> None:
-    """Write atomically with mode 0640, readable by group `gid`; the file holds the broker
-    password."""
+    """Write atomically and durably (fsync, rename, fsync of the directory) with mode 0640,
+    readable by group `gid`; the file holds the broker password."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.chmod(tmp, 0o640)
         if gid is not None:
             os.chown(tmp, -1, gid)
@@ -662,6 +677,11 @@ def write_private(path: Path, text: str, gid: int | None) -> None:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
         raise
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 if __name__ == "__main__":

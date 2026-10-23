@@ -19,6 +19,7 @@ from meshcore_home_gateway.core.contacts import normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
 
 ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+ID_RULE = "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit"
 TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
@@ -102,7 +103,6 @@ class Config:
     commands: CommandRules = field(default_factory=lambda: CommandRules(frozenset(), frozenset()))
     targets: tuple[Target, ...] = ()
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
-    state_dir: Path = Path("/var/lib/meshcore-home-gateway")
 
 
 def load_config(path: Path) -> Config:
@@ -248,7 +248,10 @@ def _radio(s: _Section) -> RadioConfig:
     transport = s.string("transport", required=True)
     if transport not in ("serial", "tcp"):
         raise ConfigError(f"{s.key('transport')}: must be 'serial' or 'tcp', got {transport!r}")
-    device = s.string("device")
+    for name, used_by in (("device", "serial"), ("host", "tcp"), ("port", "tcp")):
+        if s.has(name) and transport != used_by:  # it would have no effect
+            raise ConfigError(f"{s.key(name)}: only used with transport = {used_by!r}")
+    device = _absolute_path(s, "device")
     host = s.string("host")
     if transport == "serial" and device is None:
         raise ConfigError(f"{s.key('device')}: required for the serial transport")
@@ -263,10 +266,18 @@ def _radio(s: _Section) -> RadioConfig:
     )
 
 
+def _absolute_path(s: _Section, name: str) -> str | None:
+    """A file path that does not depend on the working directory: the service runs in /."""
+    value = s.string(name)
+    if value is not None and not Path(value).is_absolute():
+        raise ConfigError(f"{s.key(name)}: must be an absolute path, got {value!r}")
+    return value
+
+
 def _mqtt(s: _Section) -> MqttConfig:
     node_id = cast(str, s.string("node_id", required=True))
     if not ID_PATTERN.fullmatch(node_id):
-        raise ConfigError(f"{s.key('node_id')}: use 1-32 of a-z, 0-9, '-', '_', got {node_id!r}")
+        raise ConfigError(f"{s.key('node_id')}: use {ID_RULE}, got {node_id!r}")
     base = cast(str, s.string("base_topic", "meshcore"))
     if not all(TOPIC_SEGMENT.fullmatch(part) for part in base.split("/")):
         raise ConfigError(
@@ -274,18 +285,21 @@ def _mqtt(s: _Section) -> MqttConfig:
             f"got {base!r}"
         )
     tls = s.boolean("tls", False)
-    files = {name: s.string(name) for name in ("ca_file", "cert_file", "key_file")}
+    files = {name: _absolute_path(s, name) for name in ("ca_file", "cert_file", "key_file")}
     for name, value in files.items():
         if value is not None and not tls:  # never fall back to a plain connection silently
             raise ConfigError(f"{s.key(name)}: only used with tls = true")
     if files["key_file"] is not None and files["cert_file"] is None:
         raise ConfigError(f"{s.key('key_file')}: needs cert_file")
+    username, password = s.string("username"), s.string("password")
+    if password is not None and username is None:  # the client would not send it
+        raise ConfigError(f"{s.key('password')}: needs username")
     return MqttConfig(
         host=cast(str, s.string("host", required=True)),
         node_id=node_id,
         port=s.integer("port", 1883, 1, 65535),
-        username=s.string("username"),
-        password=s.string("password"),
+        username=username,
+        password=password,
         tls=tls,
         ca_file=files["ca_file"],
         cert_file=files["cert_file"],
@@ -350,7 +364,7 @@ def _targets(s: _Section) -> tuple[Target, ...]:
     for alias in s.names():
         t = s.section(alias)
         if not ID_PATTERN.fullmatch(alias):
-            raise ConfigError(f"{t.key('')[:-1]}: alias must be 1-32 of a-z, 0-9, '-', '_'")
+            raise ConfigError(f"{t.key('')[:-1]}: alias must be {ID_RULE}")
         if t.has("channel") == t.has("contact"):
             raise ConfigError(f"{t.key('')[:-1]}: set exactly one of 'channel' or 'contact'")
         if t.has("channel"):
@@ -417,6 +431,8 @@ def render_config(answers: str) -> str:
             continue
         table, _, name = key.rpartition(".")
         if table == "target":
+            if not ID_PATTERN.fullmatch(name):  # before it becomes a TOML table header
+                raise ConfigError(f"{key}: alias must be {ID_RULE}")
             tables.setdefault(f"targets.{name}", {}).update(_target_answer(key, value))
             continue
         kind = _ANSWER_TYPES.get(key)
@@ -466,7 +482,7 @@ def _answer_value(key: str, value: Any) -> str:
 
 def _target_answer(key: str, value: str) -> dict[str, Any]:
     kind, _, ref = value.partition(":")
-    if kind == "channel" and ref.isdigit():
+    if kind == "channel" and ref.isascii() and ref.isdigit():  # isdigit() alone accepts "²"
         return {"channel": int(ref)}
     if kind == "contact" and ref:
         return {"contact": ref}
