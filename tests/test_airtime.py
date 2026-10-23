@@ -2,7 +2,7 @@
 
 Reference values (none computed by us):
 * TTN airtime calculator test suite, avbentem/airtime-calculator @ af41bc5,
-  TTNC/src/lora/Airtime.test.ts (lines 7, 11, 40, 44, 49-50, 53);
+  src/lora/Airtime.test.ts (lines 7, 11, 40, 44, 49-50, 53);
 * mobilefish.com LoRa tutorial part 17 (rounded to whole milliseconds);
 * tanupoo/lorawan_toa README (`toa.py 12 64 -v`);
 * ifTNT/lora-air-time readme lines 38-45: measured with an SDR on an SX1276;

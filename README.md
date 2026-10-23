@@ -88,7 +88,8 @@ Instead of building the zipapp, you can download it from a
 [release](https://github.com/dkuenzel/meshcore-home-gateway/releases) and verify it with
 `SHA256SUMS` and `gh attestation verify` (docs/deployment.md, section 3).
 `meshcore-home-gateway probe --serial <device>` lists the radio's channels and contacts for the
-configuration. The same steps with explanations: [`docs/deployment.md`](docs/deployment.md),
+configuration; stop the service first (`systemctl stop meshcore-home-gateway`), because the radio
+accepts a single client. The same steps with explanations: [`docs/deployment.md`](docs/deployment.md),
 section 3.
 
 ## Using it
@@ -125,7 +126,7 @@ automations on the event entities *Message*, *Command* and *Delivery*. Examples:
 
 The bridge can make a radio transmit and can trigger home automation, so it is strict by default:
 only configured targets, an airtime budget, commands only from allowlisted full public keys with
-replay protection, retained send requests ignored, nothing executed by the bridge itself. Secure
+replay protection, retained send requests rejected, nothing executed by the bridge itself. Secure
 the broker (authentication, topic ACLs). Prefer USB over the unauthenticated TCP companion
 interface. Details: [`docs/design.md#7-security`](docs/design.md#7-security) and
 [`SECURITY.md`](SECURITY.md).

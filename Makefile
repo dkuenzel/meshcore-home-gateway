@@ -26,8 +26,8 @@ $(VENV)/.installed: requirements/dev.txt pyproject.toml
 	$(BIN)/python -m pip install --quiet --no-deps --no-build-isolation --editable .
 	touch $@
 
-lock: ## Re-resolve requirements/dev.txt with uv, only releases older than COOLDOWN_DAYS
-	uv pip compile requirements/dev.in --universal --python-version 3.11 --generate-hashes \
+lock: ## Re-resolve requirements/dev.txt with uv: the newest releases older than COOLDOWN_DAYS
+	uv pip compile requirements/dev.in --universal --python-version 3.11 --generate-hashes --upgrade \
 	  --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
 	  --output-file requirements/dev.txt
 
@@ -69,7 +69,7 @@ dist: venv ## Wheel, sdist and the single-file zipapp in dist/
 	$(MAKE) --no-print-directory pyz
 
 pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
-	$(BIN)/python tools/build_pyz.py --output dist/$(PYZ)
+	$(BIN)/python tools/build_pyz.py --interpreter '/usr/bin/python3 -I' --output dist/$(PYZ)
 	$(BIN)/python dist/$(PYZ) --version
 
 # The release workflow runs this on the tagged commit after `make check`; locally it is a dry run.

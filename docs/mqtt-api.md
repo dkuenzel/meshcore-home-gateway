@@ -37,7 +37,9 @@ check `availability` first if it matters.
 
 ## Delivery: `delivery`
 
-One event per step. A channel message ends at `sent`; a direct message at `confirmed` or `failed`.
+One event per step. Every request ends with exactly one final event: `rejected` or `duplicate` at
+once; otherwise `expired` or `failed`, or `sent` for a channel message and `confirmed` for a
+direct message.
 
 ```json
 {"event_type": "confirmed", "id": "7f3a91c2", "target": "operator", "text": "Back online",

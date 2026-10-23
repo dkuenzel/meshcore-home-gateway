@@ -12,8 +12,9 @@ make matrix  # tests with every installed Python from 3.11 to 3.14, each in its 
 make help    # all targets
 ```
 
-Requirements: Linux with systemd (for `make unit-check`), Python ≥ 3.11, GNU make, `mosquitto` for
-the integration tests, `uv` only to update the lock file.
+Requirements: Linux with systemd (for `make unit-check`), Python ≥ 3.11 with `venv`
+(`python3-venv` on Debian and Ubuntu), GNU make, `mosquitto` for the integration tests, `uv` only
+to update the lock file.
 
 ## Layout
 
@@ -54,14 +55,16 @@ tools/           build helpers (zipapp)
 
 ### Adding a configuration setting
 
-`config.py` (dataclass and validation), `docs/configuration.md`, `deploy/config.example.toml`, and
-a test in `tests/test_config.py`. If the installer should ask for it, also the answer key in
-`config.render_config` and the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
+`config.py` (dataclass and validation), its answer type in `config._ANSWER_TYPES` (every setting
+needs one: `--reconfigure` writes the configuration back from its answers, and
+`tests/test_config.py` checks that no setting is missing), `docs/configuration.md`,
+`deploy/config.example.toml`, and a test in `tests/test_config.py`. If the installer should ask
+for it, also the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
 
 ## Tool chain updates
 
-`make lock` re-resolves `requirements/dev.txt` from `requirements/dev.in` with hashes, admitting
-only releases at least `COOLDOWN_DAYS` (14) old. Review the diff like code. GitHub Actions are
+`make lock` re-resolves `requirements/dev.txt` from `requirements/dev.in` with hashes and takes
+the newest release of every tool that is at least `COOLDOWN_DAYS` (14) old. Review the diff like code. GitHub Actions are
 pinned to commit SHAs; Dependabot proposes updates with the same cooldown.
 
 ## Release

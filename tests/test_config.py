@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from meshcore_home_gateway import config as config_module
 from meshcore_home_gateway.config import (
     ConfigError,
     config_answers,
@@ -261,6 +262,23 @@ def test_every_setting_can_be_answered() -> None:
 def test_answers_render_back_to_the_same_configuration(text: str) -> None:
     answers = config_answers(text)
     assert parse_config(render_config(answers)) == parse_config(text)
+
+
+def test_every_setting_has_an_answer_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without one, `--reconfigure` could not write the setting back (answers, then render)."""
+    read: set[str] = set()
+    original = config_module._Section.raw
+
+    def raw(self: config_module._Section, name: str) -> object:
+        read.add(self.key(name))
+        return original(self, name)
+
+    monkeypatch.setattr(config_module._Section, "raw", raw)
+    for text in (MINIMAL, FULL):
+        parse_config(text)
+    settings = {key for key in read if "." in key and not key.startswith("targets.")}
+    assert len(settings) > 30
+    assert settings - set(config_module._ANSWER_TYPES) == set()
 
 
 def test_answers_contain_only_the_settings_of_the_file() -> None:

@@ -47,6 +47,7 @@ name = "meshcore_home_gateway"
 include = [
   "docs/", "deploy/", "tests/", "tools/", "requirements/", "Makefile", "CHANGELOG.md",
   "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
+  ".github/", ".githooks/",  # the tests check links into them, `make check` runs their checks
 ]
 
 [tool.ruff]

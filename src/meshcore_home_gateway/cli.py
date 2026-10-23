@@ -1,7 +1,7 @@
 """Command line: `meshcore-home-gateway <command>` (design §6.8, docs/configuration.md).
 
-Exit codes: 0 success, 1 failure (radio, broker, delivery), 78 configuration error (EX_CONFIG;
-the systemd unit does not restart on it).
+Exit codes: 0 success, 1 failure (radio, broker, delivery), 2 usage error (argparse), 78
+configuration error (EX_CONFIG; the systemd unit does not restart on it).
 """
 
 from __future__ import annotations

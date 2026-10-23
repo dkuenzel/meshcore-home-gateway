@@ -52,6 +52,7 @@ STUBS = {
                 printf '%s\tAlice Example\tchat\n%s\tRelay\trepeater\n' "$ALICE" "$RELAY" ;;
               "getent group dialout") printf 'dialout:x:%s:\n' "${CT_DIALOUT_GID:-20}" ;;
               *"config answers"*) cat "$STUB/current" ;;
+              "test -f "*) [[ -e $STUB/current ]] ;;
             esac ;;
         esac
     """,
@@ -498,6 +499,26 @@ def test_answers_pass_every_setting_through(host: Host) -> None:
     assert config.commands.max_age_s == 600
 
 
+def test_a_malformed_answers_line_is_reported_without_its_content(host: Host) -> None:
+    """The line may hold the broker password."""
+    answers = answers_file(host, f"radio.choice={host.serial}\nmqtt.password: s3cret\n")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 1
+    assert "line 2" in result.stderr
+    assert "s3cret" not in result.stderr
+
+
+def test_a_container_id_below_100_is_refused(host: Host) -> None:
+    answers = answers_file(host)
+    answers.write_text(answers.read_text(encoding="utf-8") + "setup=advanced\nct.id=50\n",
+                       encoding="utf-8")  # fmt: skip
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 1
+    assert "at least 100" in result.stderr
+    assert "already used" not in result.stderr
+    assert not host.pct("create")
+
+
 def test_unattended_install_needs_the_radio_named(host: Host) -> None:
     """Without it the first serial device would be taken, possibly a Zigbee stick."""
     result = run_installer(host, "--answers", str(answers_file(host, "mqtt.host=broker\n")))
@@ -526,6 +547,15 @@ def test_update_needs_a_running_container(host: Host) -> None:
     assert "not running" in result.stderr
 
 
+def test_update_refuses_a_container_without_an_installation(host: Host) -> None:
+    """A mistyped container ID must not get packages, a user and a service installed."""
+    (host.root / "ct-106").write_text("running", encoding="utf-8")
+    result = run_installer(host, "--update", "106")
+    assert result.returncode == 1
+    assert "no meshcore-home-gateway installation" in result.stderr
+    assert not [c for c in host.inside() if "apt-get" in c]
+
+
 def test_reconfigure_keeps_the_settings_it_does_not_ask_for(host: Host) -> None:
     existing_container(host)
     answers = answers_file(host, "mqtt.host=new.example.org\n")
@@ -550,6 +580,31 @@ def test_reconfigure_keeps_the_settings_it_does_not_ask_for(host: Host) -> None:
     assert inside.index("systemctl stop meshcore-home-gateway") < next(
         i for i, c in enumerate(inside) if "--list channels" in c
     )
+
+
+def test_reconfigure_keeps_an_anonymous_broker_and_the_default_port(host: Host) -> None:
+    """Settings missing from the file stay at the program's defaults, not the installer's."""
+    existing_container(host)
+    current = host.root / "current"
+    text = current.read_text(encoding="utf-8")
+    text = text.replace("mqtt.username=bridge\n", "").replace("mqtt.password=old-secret\n", "")
+    current.write_text(text + "mqtt.tls=true\n", encoding="utf-8")
+    answers = answers_file(host, "mqtt.host=new.example.org\n")
+    result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    config = host.config()
+    assert (config.mqtt.username, config.mqtt.password) == (None, None)
+    assert (config.mqtt.tls, config.mqtt.port) == (True, 1883)
+
+
+@pytest.mark.parametrize("answer", ["radio.choice=tcp", "ct.memory_mb=512"])
+def test_reconfigure_refuses_answers_it_cannot_apply(host: Host, answer: str) -> None:
+    existing_container(host)
+    answers = answers_file(host, f"{answer}\n")
+    result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
+    assert result.returncode == 1
+    assert answer.partition("=")[0] in result.stderr
+    assert "systemctl stop meshcore-home-gateway" not in host.inside()
 
 
 def test_interactive_reconfigure_offers_the_current_settings(host: Host) -> None:

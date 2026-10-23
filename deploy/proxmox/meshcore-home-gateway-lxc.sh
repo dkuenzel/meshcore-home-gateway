@@ -138,12 +138,14 @@ ask_required() {  # ask_required KEY TEXT DEFAULT: an input that must not stay e
 }
 
 load_answers() {
-  local file=$1 line key
+  local file=$1 line key number=0
   [[ -r $file ]] || die "cannot read answers file $file"
   while IFS= read -r line || [[ -n $line ]]; do
+    number=$(( number + 1 ))
     line=${line%$'\r'}   # files edited on Windows
     [[ -z $line || $line == \#* ]] && continue
-    [[ $line == *=* ]] || die "answers file: expected key=value, got '$line'"
+    # the line number only: the line may hold the broker password
+    [[ $line == *=* ]] || die "answers file line $number: expected key=value"
     key=${line%%=*}
     case $key in
       setup|ct.*|radio.choice|targets.*)
@@ -229,7 +231,7 @@ first_storage() {  # first active storage for a content type (skips the header l
 
 ask_container() {
   CT[id]=$(ask_advanced ct.id input "Container ID" "$(pvesh get /cluster/nextid)")
-  [[ ${CT[id]} =~ ^[1-9][0-9]*$ ]] || die "container ID must be a number"
+  [[ ${CT[id]} =~ ^[1-9][0-9]{2,8}$ ]] || die "container ID must be a number of at least 100"
   pvesh get /cluster/nextid --vmid "${CT[id]}" >/dev/null 2>&1 \
     || die "ID ${CT[id]} is already used by a container or virtual machine"
   CT[hostname]=$(ask_advanced ct.hostname input "Container host name" "meshcore-home-gateway")
@@ -556,6 +558,10 @@ load_current() {  # the settings of an existing installation, as answers
     if [[ $line == *=* ]]; then CURRENT[${line%%=*}]=${line#*=}; fi
   done <<<"$text"
   [[ -v "CURRENT[radio.transport]" ]] || die "container $ctid has no radio configured"
+  # settings missing from the file run with the program's defaults; without these two, ask_bridge
+  # would offer the installer's defaults (a user name, port 8883 with TLS) and write them
+  [[ -v "CURRENT[mqtt.username]" ]] || CURRENT[mqtt.username]=""
+  [[ -v "CURRENT[mqtt.port]" ]] || CURRENT[mqtt.port]=1883
   for line in "${!CURRENT[@]}"; do OUT[$line]=${CURRENT[$line]}; done
 }
 
@@ -614,6 +620,8 @@ install() {
 update() {
   local ctid=$1
   ct_running "$ctid" || die "container $ctid is not running"
+  in_ct "$ctid" test -f "$CONFIG" \
+    || die "container $ctid has no meshcore-home-gateway installation ($CONFIG is missing)"
   install_service "$ctid"
   in_ct "$ctid" systemctl restart meshcore-home-gateway >&2 \
     || die "the service did not restart; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
@@ -621,7 +629,12 @@ update() {
 }
 
 reconfigure() {
-  local ctid=$1
+  local ctid=$1 key
+  for key in "${!ANSWERS[@]}"; do  # the container and the radio connection stay as installed
+    case $key in
+      radio.choice|ct.*) die "--reconfigure cannot apply the answer $key (see docs/deployment.md)" ;;
+    esac
+  done
   ct_running "$ctid" || die "container $ctid is not running"
   load_current "$ctid"
   pass_settings

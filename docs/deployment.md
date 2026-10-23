@@ -15,7 +15,8 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
     commands until 24 hours after it was last seen (configuration.md, `[commands]`; ADR 0009);
   * the *airtime factor* for the legal duty cycle: the firmware allows 50 % by default; for the EU
     band 869.40–869.65 MHz (10 % per hour) the factor is 9 (protocol.md, section 7).
-* **Broker:** an MQTT user for the bridge, ideally with an ACL (mqtt-api.md, last section).
+* **Broker:** an MQTT user for the bridge, with an ACL (mqtt-api.md, last section); the ACL is
+  required when commands are configured.
 * **Home Assistant:** MQTT integration with discovery enabled (the default).
 
 ## 2 Proxmox VE
@@ -79,7 +80,7 @@ pct set 105 --dev0 path=/dev/serial/by-id/usb-<radio>-if00,gid=20,mode=0660
 pct start 105
 pct exec 105 -- getent group dialout    # 20 on Debian; otherwise use that number in dev0
 tar -czf /tmp/meshcore-home-gateway-src.tar.gz src/meshcore_home_gateway tools/build_pyz.py \
-  deploy/systemd/meshcore-home-gateway.service
+  deploy/systemd/meshcore-home-gateway.service deploy/config.example.toml
 pct push 105 /tmp/meshcore-home-gateway-src.tar.gz /root/meshcore-home-gateway-src.tar.gz
 pct enter 105
 ```
@@ -99,10 +100,15 @@ ln -sfn /usr/local/lib/meshcore-home-gateway/current.pyz /usr/local/bin/meshcore
 install -m 0644 /root/src/deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
 systemctl daemon-reload
 meshcore-home-gateway probe --serial /dev/serial/by-id/usb-<radio>-if00
-meshcore-home-gateway config render --answers answers.txt \
-  --output /etc/meshcore-home-gateway/config.toml --group meshcore-home-gateway
+install -D -m 0640 -g meshcore-home-gateway /root/src/deploy/config.example.toml \
+  /etc/meshcore-home-gateway/config.toml
+editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-config
 systemctl enable --now meshcore-home-gateway
 ```
+
+The script writes the configuration from its answers instead (`meshcore-home-gateway config render
+--answers FILE --output /etc/meshcore-home-gateway/config.toml --group meshcore-home-gateway`, with
+the keys of the next section), which gives the same file with the same mode.
 
 * **Unprivileged and with nesting, both set explicitly:** on Proxmox VE 8, `pct create` makes a
   privileged container unless `--unprivileged 1` is given, and on both versions only the web
@@ -151,7 +157,8 @@ password.
 git pull && ./deploy/proxmox/meshcore-home-gateway-lxc.sh --update 105
 # dialogs again
 ./deploy/proxmox/meshcore-home-gateway-lxc.sh --reconfigure 105
-# roll back
+# roll back to an earlier version that is still installed
+pct exec 105 -- ls /usr/local/lib/meshcore-home-gateway/
 pct exec 105 -- ln -sfn meshcore-home-gateway-<old version>.pyz \
   /usr/local/lib/meshcore-home-gateway/current.pyz
 pct exec 105 -- systemctl restart meshcore-home-gateway
@@ -168,7 +175,15 @@ pct stop 105 && pct destroy 105
   do not ask for are kept. Targets and command senders that the radio does not offer (a contact that
   is not a chat contact, a channel slot without a name) are kept as well, and the log names them.
   The service is stopped while the script reads the radio and started again afterwards, also when a
-  step fails.
+  step fails. The container and the radio connection stay as installed: answers for them
+  (`radio.choice`, `ct.*`) stop the script. A TCP radio's address changes with the settings
+  `radio.host` and `radio.port` in an answers file; a serial radio under a new name is passed
+  through again by hand (see Troubleshooting).
+* **Roll back** works for versions that are still in `/usr/local/lib/meshcore-home-gateway/`;
+  every update keeps the earlier files. Check the configuration with the old version first
+  (`pct exec 105 -- python3 -I
+  /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
+  settings added later are refused by older versions.
 
 ## 3 Other Linux systems
 
@@ -234,7 +249,7 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 
 | Symptom | Cause and remedy |
 | --- | --- |
-| `pct start` fails: `Device /dev/serial/by-id/... does not exist` | The radio is unplugged or has a different name: plug it in, or pass the new path with `pct set <id> --dev0 path=<path>,gid=20,mode=0660` |
+| `pct start` fails: `Device /dev/serial/by-id/... does not exist` | The radio is unplugged or has a different name (another radio, other firmware): plug it in, or pass the new path with `pct set <id> --dev0 path=<path>,gid=20,mode=0660` and set the same path as `device` in `[radio]` of `/etc/meshcore-home-gateway/config.toml` |
 | `radio: cannot connect (... No such file or directory)` | Device not passed through: check `pct config <id>` for `dev0` |
 | `radio: cannot connect (no answer from the radio)` | Another program or the phone app holds the radio, or wrong firmware (BLE-only); close the app, check the firmware type |
 | State `disconnected` after re-plugging the radio | The device number changed: `pct reboot <id>` |

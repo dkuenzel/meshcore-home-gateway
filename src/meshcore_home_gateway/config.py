@@ -23,7 +23,7 @@ TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
 MIN_BURST_S = (
-    5.0  # must hold the longest single packet (about 2 s at SF 8 / 62.5 kHz, docs/design.md)
+    5.0  # must hold the longest single packet (about 2 s at SF 8 / 62.5 kHz, configuration.md)
 )
 
 

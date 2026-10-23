@@ -28,8 +28,10 @@ design can be agreed on before the code is written.
 
 ## Development setup
 
-Requirements: Linux with systemd, Python 3.11 or newer, GNU make, and `mosquitto` for the
-integration tests (`apt install mosquitto`; the tests start their own broker on a free port).
+Requirements: Linux with systemd, Python 3.11 or newer with `venv` (on Debian and Ubuntu the
+package `python3-venv`, or `python3.X-venv` for each Python that `make matrix` uses), GNU make,
+and `mosquitto` for the integration tests (`apt install mosquitto`; the tests start their own
+broker on a free port).
 
 ```sh
 make venv     # .venv from the hash-pinned lock file requirements/dev.txt

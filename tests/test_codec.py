@@ -1,8 +1,9 @@
 """Companion protocol codec against golden frames.
 
 The frames were constructed from the byte layouts in the firmware source (MeshCore
-companion-v1.18.0, examples/companion_radio/MyMesh.cpp), independently of this codec; see
-docs/protocol.md, "Golden frames". The 3-byte frame header is stripped where payloads are compared.
+companion-v1.18.0, examples/companion_radio/MyMesh.cpp), independently of this codec; the
+layouts are in docs/protocol.md, sections 1-4. The 3-byte frame header is stripped where payloads
+are compared.
 """
 
 import pytest
@@ -248,7 +249,10 @@ def test_message_with_unknown_text_type_is_a_protocol_error() -> None:
 
 
 def test_expected_ack_code_can_be_recomputed() -> None:
-    """Cross-check of SENT: SHA256(ts || attempt&3 || text || own key)[0:4] (firmware 5.4)."""
+    """Cross-check of SENT: SHA256(ts || attempt&3 || text || own key)[0:4].
+
+    docs/protocol.md section 5, "ACK code" (BaseChatMesh.cpp:451-471).
+    """
     expected = {0: "A37A44B9", 1: "C6F86F73", 2: "694BDB88", 3: "F6B32387"}
     for attempt, code in expected.items():
         assert codec.expected_ack(TS, attempt, "Hello", SELF) == h(code)

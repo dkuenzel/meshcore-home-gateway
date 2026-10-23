@@ -33,6 +33,18 @@ format and the command line are public interfaces.
   state file is moved aside); blank strings are refused as settings.
 - A TCP connect timeout names the radio; the hourly airtime budget in the state document no longer
   shows float artefacts; names from the mesh are quoted in the log.
+- Installer: `--update` refuses a container without an installation instead of installing
+  packages, a user and a service into it; `--reconfigure` keeps an anonymous broker anonymous and
+  a port left at its default, and refuses answers it cannot apply (`radio.choice`, `ct.*`); a
+  malformed answers line is reported by its number, without its content (it may hold the
+  password); container IDs below 100 are refused as invalid, not as taken.
+- `make pyz` builds the zipapp with the isolated interpreter `/usr/bin/python3 -I`, as installed;
+  `make lock` takes the newest releases within the cooldown; the sdist contains `.github/` and
+  `.githooks/`, which its tests and `make check` need.
+- Documentation matches the code: retained send requests are rejected, not ignored; the final
+  delivery states; the `STATUS=` line; exit code 2; what Home Assistant's birth message
+  republishes; topic ACLs are required with commands; manual installation steps, roll back, a
+  renamed serial device and the limits of `--reconfigure` in the deployment guide.
 
 ### Added
 

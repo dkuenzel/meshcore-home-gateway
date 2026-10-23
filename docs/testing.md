@@ -20,9 +20,11 @@ make check       # lint, types, shellcheck, workflow audit, tests, build, unit c
 | Architecture | `tests/test_architecture.py` (the core and the codec import no I/O modules, ADR 0007) | nothing |
 | Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source) | nothing |
 | Radio session and bridge | `tests/test_session.py`, `test_bridge.py` (emulated radio) | nothing |
-| MQTT | `tests/test_mqtt_client.py`, `test_discovery.py`, `test_payloads.py` | `mosquitto` for the tests marked `broker` |
+| MQTT | `tests/test_mqtt_client.py` | `mosquitto` for the tests marked `broker` |
+| Home Assistant discovery, payloads | `tests/test_discovery.py`, `test_payloads.py` | nothing |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
-| Configuration, state, CLI, packaging | `tests/test_config.py`, `test_state.py`, `test_cli.py`, `test_build_pyz.py`, `test_release_notes.py` | nothing |
+| Configuration, state, packaging | `tests/test_config.py`, `test_state.py`, `test_build_pyz.py`, `test_release_notes.py` | nothing |
+| CLI | `tests/test_cli.py` | `mosquitto` for the tests marked `broker` |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
 | Documentation | `tests/test_docs.py` (relative links and headings in every Markdown file) | nothing |
@@ -69,7 +71,7 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 6 | Send a text longer than 160 bytes | truncated with `...` (or `rejected` if `truncate = false`) |
 | 7 | With `ascii_only = true`, send umlauts | B shows the transliteration |
 | 8 | Send the same text twice within the window | second is `duplicate` |
-| 9 | Set `budget_s_per_hour = 1`, send five messages | later ones wait, then `expired` |
+| 9 | Set `budget_s_per_hour = 1` and `burst_s = 5`, send ten messages of about 100 characters at once | the first ones `sent`, the later ones `expired` (`airtime_budget`) without waiting |
 | 10 | B sends a direct message and a channel message | two `received` events with sender, SNR, path length |
 | 11 | B (allowlisted) sends `status` | `command` event `status`; `received` shows `accepted` |
 | 12 | A not allowlisted contact sends `status` | no `command` event; `received` shows `sender_not_allowed` |
