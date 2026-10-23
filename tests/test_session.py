@@ -30,6 +30,7 @@ from tests.radio_emulator import (
     EmulatedRadio,
     TcpRadioServer,
     WifiFrameParser,
+    frame,
 )
 
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
@@ -81,6 +82,28 @@ def test_start_flushes_then_identifies_and_loads_tables() -> None:
     run(radio, scenario)
 
 
+class StaleRadio(EmulatedRadio):
+    """Answers the flush with what a radio may still have queued for an earlier client: a push
+    and the start of a frame whose rest never comes."""
+
+    async def write(self, data: bytes) -> None:
+        if data == bytes(len(data)):  # the flush
+            self.acknowledge(b"\x01\x02\x03\x04")
+            self.emit_raw(frame(bytes([Response.SELF_INFO]) + bytes(9))[:6])
+        await super().write(data)
+
+
+def test_whatever_arrives_during_the_flush_is_dropped() -> None:
+    radio = StaleRadio()
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        info = await session.start()  # the partial frame does not swallow the first answer
+        assert info.name == "Bridge"
+        assert events.empty()  # the stale acknowledgement is not passed on
+
+    run(radio, scenario)
+
+
 def test_clock_is_moved_forward_only() -> None:
     behind = EmulatedRadio(clock=START_TIME)
     run(behind, start_only, now=START_TIME + 100)
@@ -107,6 +130,45 @@ def test_queued_messages_are_drained_at_start_in_both_layouts() -> None:
     run(radio, scenario)
 
 
+def test_channel_data_and_undecodable_messages_are_skipped(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+    radio.queue_direct_message(ALICE.public_key[:6], "first", START_TIME, push=False)
+    radio.queue_direct_message(ALICE.public_key[:6], "?", START_TIME, text_type=9, push=False)
+    radio.queue.append(bytes([Response.CHANNEL_DATA_RECV]) + bytes(12))  # binary, not a text
+    radio.queue_direct_message(ALICE.public_key[:6], "last", START_TIME + 1, push=False)
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        fetched = [events.get_nowait() for _ in range(events.qsize())]
+        texts = [event.message.text for event in fetched if isinstance(event, MessageReceived)]
+        assert texts == ["first", "last"]  # the batch goes on after both
+        assert not session.closed
+
+    caplog.set_level(logging.WARNING)
+    run(radio, scenario)
+    warnings = [record.getMessage() for record in caplog.records]
+    assert len(warnings) == 1  # channel data is skipped quietly: it is no text message
+    assert "undecodable message skipped: message frame 0x10" in warnings[0]
+
+
+def test_messages_fetched_before_a_sync_error_are_still_delivered() -> None:
+    """The radio has handed them over; they must not be lost with the batch."""
+    radio = EmulatedRadio(contacts=[ALICE])
+    radio.queue_direct_message(ALICE.public_key[:6], "kept", START_TIME, push=False)
+    radio.queue.append(bytes([Response.ERR, 4]))  # the next sync is answered with an error
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        with pytest.raises(CommandFailedError, match="sync: bad_state"):
+            await session.start()
+        event = events.get_nowait()
+        assert isinstance(event, MessageReceived)
+        assert event.message.text == "kept"
+
+    run(radio, scenario)
+
+
 def test_message_waiting_push_triggers_a_sync() -> None:
     radio = EmulatedRadio(contacts=[ALICE])
 
@@ -117,6 +179,22 @@ def test_message_waiting_push_triggers_a_sync() -> None:
         assert isinstance(event, MessageReceived)
         assert event.message.text == "status"
         assert event.message.sender_prefix == ALICE.public_key[:6].hex()
+
+    run(radio, scenario)
+
+
+def test_periodic_sync_fetches_a_message_whose_push_was_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session_module, "SYNC_INTERVAL_S", 0.05)
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.queue_direct_message(ALICE.public_key[:6], "unannounced", START_TIME + 50, push=False)
+        event = await asyncio.wait_for(events.get(), 2)
+        assert isinstance(event, MessageReceived)
+        assert event.message.text == "unannounced"
 
     run(radio, scenario)
 
@@ -145,6 +223,9 @@ def test_radio_errors_become_command_failures() -> None:
             await session.send_text(ALICE.public_key[:6], "x", START_TIME, 0)
         with pytest.raises(CommandFailedError, match="not_found"):
             await session.send_text(bytes.fromhex("c3" * 6), "x", START_TIME, 0)
+        radio.errors[Command.RESET_PATH] = 2  # a command otherwise answered with OK
+        with pytest.raises(CommandFailedError, match="reset path: not_found"):
+            await session.reset_path(ALICE.public_key)
         assert not session.closed  # an error answer is not a broken connection
 
     run(radio, scenario)
@@ -173,8 +254,10 @@ def test_noise_and_unexpected_frames_do_not_confuse_commands() -> None:
         await session.start()
         radio.emit_raw(b"debug text\r\n")
         radio.emit(bytes([0x09]) + bytes(4))  # a CURR_TIME nobody asked for
+        radio.emit(bytes([Push.SEND_CONFIRMED, 1]))  # a push too short to decode
         battery = await session.get_battery()
         assert battery.millivolts == 4012
+        assert not session.closed
 
     run(radio, scenario)
 
@@ -208,6 +291,41 @@ def test_unplugging_ends_the_session_with_an_error() -> None:
     run(radio, scenario)
 
 
+def test_battery_heartbeat_notices_a_radio_that_went_silent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A radio that hangs, or a TCP link that died quietly, raises no error: only an unanswered
+    command shows it."""
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.05)
+    radio = EmulatedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.silent.add(Command.GET_BATT_AND_STORAGE)
+        with pytest.raises(RadioError, match="no answer"):
+            await asyncio.wait_for(session.wait_closed(), 2)
+
+    run(radio, scenario)
+
+
+def test_a_failed_write_ends_the_session() -> None:
+    radio = EmulatedRadio()
+
+    async def unplugged(data: bytes) -> None:
+        raise ConnectionError("emulated radio: unplugged")
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.write = unplugged  # type: ignore[method-assign]
+        with pytest.raises(RadioError, match="write failed: emulated radio: unplugged"):
+            await session.get_battery()
+        assert session.closed
+        with pytest.raises(RadioError, match="write failed"):
+            await session.wait_closed()
+
+    run(radio, scenario)
+
+
 def test_advert_marks_contacts_for_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.0)
     radio = EmulatedRadio(contacts=[ALICE])
@@ -222,6 +340,23 @@ def test_advert_marks_contacts_for_refresh(monkeypatch: pytest.MonkeyPatch) -> N
             await asyncio.sleep(0.01)
         assert BOB.public_key.hex() in session.contact_records
         assert session.contacts.resolve(BOB.public_key[:6].hex())[0].name == "Bob"
+
+    run(radio, scenario)
+
+
+def test_full_contact_table_push_rereads_the_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.0)
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        reads = radio.commands().count(Command.GET_CONTACTS)
+        radio.emit(bytes([Push.CONTACTS_FULL]))
+        for _attempt in range(100):
+            if radio.commands().count(Command.GET_CONTACTS) > reads:
+                break
+            await asyncio.sleep(0.01)
+        assert radio.commands().count(Command.GET_CONTACTS) == reads + 1
 
     run(radio, scenario)
 
@@ -428,6 +563,24 @@ def test_malformed_frame_during_maintenance_ends_the_session(
         radio.contacts[0].record = lambda code=Response.CONTACT: bytes([code]) + bytes(10)  # type: ignore[method-assign]
         radio.emit(bytes([Push.ADVERT]) + carol.public_key)
         with pytest.raises(RadioError, match="malformed"):
+            await asyncio.wait_for(session.wait_closed(), 2)
+
+    run(radio, scenario)
+
+
+def test_a_bug_in_the_maintenance_ends_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Else the session would look alive but never fetch a message again."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.0)
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    def broken(_key: str, _held: bool) -> None:
+        raise KeyError("bug")
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        session.on_contact_key = broken  # fails in the table read after the next push
+        radio.emit(bytes([Push.CONTACTS_FULL]))
+        with pytest.raises(RadioError, match="maintenance failed: KeyError"):
             await asyncio.wait_for(session.wait_closed(), 2)
 
     run(radio, scenario)

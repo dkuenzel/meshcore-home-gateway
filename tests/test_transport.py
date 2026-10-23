@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from meshcore_home_gateway.radio import transport as transport_module
-from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport, is_disconnect
+from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
 
 
 @pytest.fixture
@@ -153,13 +153,6 @@ def test_tcp_requires_open() -> None:
     asyncio.run(scenario())
 
 
-def test_disconnect_classification() -> None:
-    assert is_disconnect(ConnectionError("x"))
-    assert is_disconnect(TimeoutError())
-    assert is_disconnect(OSError(errno.EIO, "I/O error"))
-    assert not is_disconnect(ValueError("bug"))
-
-
 def test_serial_asserts_dtr_and_clears_rts(
     pty: tuple[int, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -245,6 +238,27 @@ def test_serial_open_of_something_else_than_a_terminal_fails_cleanly(tmp_path: P
     async def scenario() -> None:
         with pytest.raises(OSError, match="Inappropriate ioctl"):
             await SerialTransport(str(plain)).open()
+
+    asyncio.run(scenario())
+    assert len(os.listdir("/proc/self/fd")) == before  # the descriptor was closed
+
+
+def test_serial_terminal_setup_failure_is_an_os_error_and_closes_the_descriptor(
+    pty: tuple[int, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """termios.error is no OSError: unconverted, the bridge would log a traceback, and the
+    descriptor would keep the exclusive lock until the service restarts."""
+    _, path = pty
+
+    def hung_up(*_: object) -> None:  # the terminal went away after TIOCEXCL
+        raise termios.error(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(termios, "tcsetattr", hung_up)
+    before = len(os.listdir("/proc/self/fd"))
+
+    async def scenario() -> None:
+        with pytest.raises(OSError, match=f"Input/output error: '{path}'"):
+            await SerialTransport(path).open()
 
     asyncio.run(scenario())
     assert len(os.listdir("/proc/self/fd")) == before  # the descriptor was closed
