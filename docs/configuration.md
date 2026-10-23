@@ -34,7 +34,7 @@ would put nRF52 radios into their bootloader.
 | `client_id` | `meshcore-home-gateway-<node_id>` | MQTT client identifier |
 | `keepalive_s` | `60` | keep-alive interval, 10–3600 |
 | `base_topic` | `meshcore` | first topic levels; segments of `A-Z a-z 0-9 - _` separated by `/` |
-| `node_id` | required | this bridge's name in topics and entity IDs; 1–32 of `a-z 0-9 - _` |
+| `node_id` | required | this bridge's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`. Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
 
 A TLS file that cannot be loaded (missing, unreadable, not a certificate or key) is a
 configuration error: `check-config` loads the files, and the service exits with code 78.

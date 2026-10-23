@@ -269,8 +269,11 @@ sequenceDiagram
     B-->>C: delivery: confirmed
 ```
 
-1. **Request.** The alias comes from the topic. Retained requests are rejected (`reason:
-   retained`) and nothing is sent: a retained request would be re-sent at every reconnect. Payloads over 1 KiB or not valid UTF-8 are rejected.
+1. **Request.** The alias comes from the topic. A retained publish made while the bridge is
+   connected arrives without the retain flag (MQTT 3.1.1) and is sent once; the copy the broker
+   keeps arrives flagged at every later connection (reconnect or restart) and is rejected
+   (`reason: retained`), so it is not sent again. Payloads over 1 KiB or not valid UTF-8 are
+   rejected.
 2. **Target.** Only configured aliases exist
    ([ADR 0008](decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)). A contact
    target is bound to a full public key; at send time its 6-byte prefix must match exactly one
@@ -364,7 +367,7 @@ The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
 | --- | --- | --- | --- |
 | `availability` | out | yes | `online` / `offline`, last will `offline` |
 | `state` | out | yes | JSON: radio link, battery, airtime, queue, radio and device info |
-| `send/<alias>` | in | rejected | UTF-8 text to send |
+| `send/<alias>` | in | must not be | UTF-8 text to send |
 | `delivery` | out | no | JSON with `event_type` = delivery state |
 | `received` | out | no | JSON with `event_type` = `contact` or `channel` |
 | `command` | out | no | JSON with `event_type` = command word |
@@ -464,7 +467,7 @@ systemd unit does not restart on it).
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted; a command refused because the broker was unreachable counts too) and within `max_age_s` of the bridge clock. Exact repeats are dropped for an hour, also those of a rejected command. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
-| Retained send request re-sent on every reconnect | Retained messages on `send/+` are rejected (`reason: retained`) and not sent; clear the retained message on the broker. |
+| Retained send request re-sent on every reconnect | A retained request published while the bridge is connected arrives without the flag (MQTT 3.1.1) and is sent once; the copy the broker keeps arrives flagged at every later connection (reconnect or restart) and is rejected (`reason: retained`), not sent. Clear it with an empty retained message on the same topic. |
 | Forged events on the bridge's topics by another broker client (a fake `command` event triggers automations as if an allowlisted sender had sent it) | Topic ACLs: only the bridge user may publish below `<base>/<node>/`, except `send/`. Required when commands are configured (mqtt-api.md, last section); the sender check protects only the radio side. |
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |

@@ -103,10 +103,16 @@ def test_service_end_to_end(
             )
             command = json.loads(watcher.wait("meshcore/radio1/command"))
             assert (command["event_type"], command["args"]) == ("status", "please")
-        finally:
+        finally:  # a failure above stays the reported one; a hanging service must not outlive it
             service.send_signal(signal.SIGTERM)
-            _, errors = service.communicate(timeout=15)
-            watcher.close()
+            try:
+                _, errors = service.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                service.kill()
+                _, errors = service.communicate()
+                errors += b"\nkilled: no exit within 15 s of SIGTERM"
+            finally:
+                watcher.close()
         assert service.returncode == 0, errors.decode()
         assert b"Traceback" not in errors
     assert radio.channel_texts[0][1] == "Gate open"

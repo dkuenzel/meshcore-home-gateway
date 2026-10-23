@@ -127,9 +127,9 @@ automations on the event entities *Message*, *Command* and *Delivery*. Examples:
 
 The bridge can make a radio transmit and can trigger home automation, so it is strict by default:
 only configured targets, an airtime budget, commands only from allowlisted full public keys with
-replay protection, retained send requests rejected, nothing executed by the bridge itself. Secure
-the broker (authentication, topic ACLs). Prefer USB over the unauthenticated TCP companion
-interface. Details: [`docs/design.md#7-security`](docs/design.md#7-security) and
+replay protection, retained send requests rejected on replay, nothing executed by the bridge
+itself. Secure the broker (authentication, topic ACLs). Prefer USB over the unauthenticated TCP
+companion interface. Details: [`docs/design.md#7-security`](docs/design.md#7-security) and
 [`SECURITY.md`](SECURITY.md).
 
 Radio regulation is your responsibility. In the EU band 869.40–869.65 MHz a device may transmit

@@ -1,6 +1,7 @@
 """Home Assistant discovery document (rules from docs/home-assistant.md)."""
 
 import re
+from dataclasses import replace
 from typing import Any
 
 from meshcore_home_gateway import __version__
@@ -61,23 +62,34 @@ def _template_keys(components: dict[str, dict[str, Any]], topic: str) -> set[str
     return keys
 
 
-def test_topic_uses_the_device_path_and_a_safe_object_id() -> None:
-    assert discovery_topic(CONFIG) == "ha/device/meshcore_home_gateway_radio_1/config"
+def test_topic_uses_the_device_path_and_the_node_id() -> None:
+    assert discovery_topic(CONFIG) == "ha/device/meshcore_home_gateway_radio-1/config"
+
+
+def test_node_ids_that_differ_only_in_hyphen_and_underscore_are_distinct_devices() -> None:
+    other = replace(CONFIG, mqtt=replace(CONFIG.mqtt, node_id="radio_1"))
+    assert discovery_topic(other) != discovery_topic(CONFIG)
+    ours = discovery_payload(CONFIG, TOPICS)
+    theirs = discovery_payload(other, Topics(other.mqtt.base_topic, other.mqtt.node_id))
+    assert ours["dev"]["ids"] != theirs["dev"]["ids"]
+    unique_ids = {c["unique_id"] for c in ours["cmps"].values()}
+    assert unique_ids.isdisjoint(c["unique_id"] for c in theirs["cmps"].values())
 
 
 def test_document_has_the_mandatory_parts() -> None:
     doc = discovery_payload(CONFIG, TOPICS)
-    assert doc["dev"]["ids"] == ["meshcore_home_gateway_radio_1"]
+    assert doc["dev"]["ids"] == ["meshcore_home_gateway_radio-1"]
     assert doc["dev"]["name"] == "Mesh radio"
     assert doc["o"]["name"] == "meshcore-home-gateway"
     assert doc["availability"] == [{"topic": "meshcore/radio-1/availability"}]
     assert doc["qos"] == 1
     for key, component in doc["cmps"].items():
         assert component["p"] in {"binary_sensor", "sensor", "event", "notify"}, key
-        assert component["unique_id"] == f"meshcore_home_gateway_radio_1_{key}"
+        assert component["unique_id"] == f"meshcore_home_gateway_radio-1_{key}"
+        # Home Assistant turns the '-' into '_' in the entity ID (home-assistant/tests)
         assert (
             component["default_entity_id"]
-            == f"{component['p']}.meshcore_home_gateway_radio_1_{key}"
+            == f"{component['p']}.meshcore_home_gateway_radio-1_{key}"
         )
 
 

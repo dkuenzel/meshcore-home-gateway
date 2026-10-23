@@ -14,7 +14,7 @@ versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 | `received` | bridge → | no | JSON, `event_type` = `contact` or `channel` |
 | `command` | bridge → | no | JSON, `event_type` = command word |
 | `rx` | bridge → | no | JSON per received packet, only with `publish_rx_log` |
-| `<prefix>/device/meshcore_home_gateway_<node>/config` | bridge → | no | Home Assistant discovery |
+| `<prefix>/device/meshcore_home_gateway_<node_id>/config` | bridge → | no | Home Assistant discovery; `<node_id>` as configured, `-` included |
 
 Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are always present.
 
@@ -178,6 +178,10 @@ topic write meshcore/radio1/send/#
 user alarm-script
 topic write meshcore/radio1/send/alerts
 ```
+
+Write the node ID as configured, also in the discovery topic: for node `radio-1` it is
+`homeassistant/device/meshcore_home_gateway_radio-1/config`. Only Home Assistant's entity IDs
+have `_` for `-`.
 
 Home Assistant needs `homeassistant/#` for discovery and its own birth and status messages. Only
 the gateway may write the event topics (`received`, `command`, `delivery`), because automations

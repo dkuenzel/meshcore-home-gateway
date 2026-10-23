@@ -62,7 +62,7 @@ def _run_broker(tmp_path: Path, *, anonymous: bool) -> Iterator[Broker]:
         [_mosquitto(), "-c", str(conf)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
     )
     deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
+    while time.monotonic() < deadline and process.poll() is None:
         try:
             socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
             break
@@ -70,7 +70,8 @@ def _run_broker(tmp_path: Path, *, anonymous: bool) -> Iterator[Broker]:
             time.sleep(0.05)
     else:
         process.kill()
-        pytest.fail("mosquitto did not start")
+        _, errors = process.communicate(timeout=5)  # also closes the pipe
+        pytest.fail(f"mosquitto did not start: {errors.decode(errors='replace').strip()}")
     try:
         yield Broker("127.0.0.1", port)
     finally:
