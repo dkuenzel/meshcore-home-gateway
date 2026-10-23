@@ -172,7 +172,9 @@ pct stop 105 && pct destroy 105
 * **Update** builds the new zipapp under a temporary name next to the old one and checks the current
   configuration with it; only then it moves it to `meshcore-home-gateway-<version>.pyz`, switches
   the `current.pyz` link and restarts the service. If the configuration does not pass, the old
-  version stays active, also when the version string did not change.
+  version stays active, also when the version string did not change. A newer version can refuse
+  a configuration that an older one accepted (see the changelog); fix the setting it names, for
+  example with `--reconfigure`, and update again.
 * **Reconfigure** reads the current configuration (`meshcore-home-gateway config answers`) and
   offers its values as defaults: an empty password keeps the current one (an empty user name
   removes it), and settings the dialogs do not ask for are kept. Selected targets keep their

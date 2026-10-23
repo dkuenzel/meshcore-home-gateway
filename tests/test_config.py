@@ -368,8 +368,8 @@ def test_answers_keep_unusual_characters() -> None:
 
 
 def test_answers_refuse_values_with_line_breaks() -> None:
-    with pytest.raises(ConfigError, match=r"mqtt\.password"):
-        config_answers(MINIMAL + 'password = "a\\nb"\n')
+    with pytest.raises(ConfigError, match=r"mqtt\.password: contains a line break"):
+        config_answers(MINIMAL + 'username = "u"\npassword = "a\\nb"\n')
 
 
 def test_answers_refuse_list_items_with_commas() -> None:
@@ -400,3 +400,13 @@ def test_home_assistant_status_topic_is_independent_of_the_prefix() -> None:
             parse_config(
                 FULL.replace('prefix = "ha"', f'prefix = "ha"\nstatus_topic = "{invalid}"')
             )
+
+
+@pytest.mark.parametrize("name", ["radio-", "radio_", "a--b", "a-_b"])
+def test_identifiers_that_home_assistant_would_merge_are_refused(name: str) -> None:
+    """Home Assistant collapses runs of '-' and '_' in entity IDs and drops a trailing one, so
+    'radio-' would collide with 'radio'."""
+    with pytest.raises(ConfigError, match="node_id"):
+        parse_config(MINIMAL.replace('node_id = "radio1"', f'node_id = "{name}"'))
+    with pytest.raises(ConfigError, match="alias"):
+        parse_config(MINIMAL + f"[targets.{name}]\nchannel = 1\n")

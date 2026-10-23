@@ -93,11 +93,12 @@ appears on `received`. The bridge executes nothing.
 * Bad, because over TCP the radio drops push frames while its 4-frame send queue is full; a
   look-alike that enters and leaves the table between two reads can then go unseen. Commands
   should come in over USB; the bridge warns when commands are configured with TCP.
-* Good, because replays of captured packets fail, also across restarts.
+* Good, because replays of accepted commands fail, also across restarts.
 * Bad, because a command rejected as `sender_unverified` or `state_unwritable` stores no
   timestamp (a look-alike's must not block the real sender, or the file cannot be written). A
-  replayed copy of its packet is dropped as an exact repeat for an hour; later, or after a
-  restart, it is accepted if it is still within `max_age_s`, at any time with `max_age_s = 0`.
+  replayed copy of its packet is dropped as an exact repeat while it could pass the age check
+  (an hour, or twice `max_age_s` and a minute); after a restart it is accepted if it is still
+  within `max_age_s`, and with `max_age_s = 0` also after the hour.
 * Bad, because senders need a correct clock (the phone apps set it; a handheld without time sync
   may be rejected until its clock is set). `max_age_s = 0` disables the window if needed.
 * Bad, because the contact must be known to the radio with its full key (it has to have advertised
@@ -139,6 +140,7 @@ command. The hardware checklist repeats the restart case.
   a push), and a read per possible command is slow on large tables. Added the memory of keys with
   a sender's prefix, the order of checks and the rejection of commands waiting at connect.
 * Amended on 2026-10-23, before the first release: a rejected command stays an exact repeat
-  instead of being judged again (the radio has acknowledged it, so only a replay repeats it), and
+  instead of being judged again (a retry after a lost acknowledgement and a replay look the same;
+  the sender sends a rejected command anew), the repeat memory covers the age window, and
   `broker_unavailable` stores the timestamp; the remaining gap is listed under Consequences.
 * Revisit if MeshCore adds signed commands or a challenge–response mechanism for companion clients.

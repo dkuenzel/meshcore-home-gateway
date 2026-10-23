@@ -131,13 +131,15 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock; with `max_age_s = 0`, more than a day ahead |
 
-The radio acknowledges a direct message when it receives it, so a rejected command does not come
-back by itself: sent again, it has a newer timestamp. An identical copy of the packet is a replay.
-The bridge drops it as a repeat for an hour; after `broker_unavailable` it has also stored the
-timestamp, so a later copy is a `replay`. After `sender_unverified` (the sender was not verified)
-and `state_unwritable` it has not: a copy that arrives after that hour, or after a restart of the
-gateway, is judged afresh and accepted if it is still within `max_age_s` (always with
-`max_age_s = 0`; [design §7.4](design.md#74-residual-risks)).
+An identical copy of a command's packet, also of a rejected one, is dropped as a repeat: it is
+the sender's retry after a lost acknowledgement or a replay, which cannot be told apart. To have
+a rejected command judged again, the sender sends it anew, with a newer timestamp. The repeat
+memory lasts an hour, or twice `max_age_s` and a minute if that is longer; after
+`broker_unavailable` the bridge has also stored the timestamp, so a later copy is a `replay`.
+After `sender_unverified` (the sender was not verified) and `state_unwritable` it has not: a copy
+that arrives after a restart of the gateway is judged afresh and accepted if it is still within
+`max_age_s`, and with `max_age_s = 0` also one after the hour
+([design §7.4](design.md#74-residual-risks)).
 
 ## State: `state`
 

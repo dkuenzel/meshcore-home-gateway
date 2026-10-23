@@ -7,8 +7,53 @@ format and the command line are public interfaces.
 
 ## [Unreleased]
 
+### Changed
+
+- Settings that would have no effect are configuration errors: `mqtt.password` without
+  `mqtt.username`, `radio.device` with `transport = "tcp"`, `radio.host` or `radio.port` with
+  `transport = "serial"`. `radio.device` and the TLS files must be absolute paths (the service
+  runs in `/`). Node IDs and aliases may not end with `-` or `_` or have two of them in a row
+  (Home Assistant would merge their entity IDs). An update refuses such a configuration and keeps
+  the running version; fix the named setting, for example with `--reconfigure`.
+- The Home Assistant discovery topic, device identifier and unique IDs keep a `-` of
+  `mqtt.node_id`, so node IDs that differ only in `-` and `_` are two devices. Entity IDs are
+  unchanged; a gateway whose node ID contains `-` appears as a new device.
+- The `rejected` and `duplicate` delivery events of send requests refused at once are limited to
+  20 per second (bursts of 100); a log warning counts the rest at most once a minute, so a flood
+  of bad requests cannot push accepted events out of a subscriber's queue on the broker.
+- `make matrix` fails when a Python of `PYTHONS` is missing; the pre-push hook refuses a push
+  with uncommitted changes or of a commit that is not checked out; `make check` builds the
+  zipapp once; a changed lock file gives a fresh virtual environment.
+
 ### Fixed
 
+- Commands: an identical copy of a command's packet, also of a rejected one, stays a duplicate
+  while it could pass the age check (an hour, or twice `max_age_s`); after `broker_unavailable`
+  the sender's timestamp is stored, so a copy is a `replay` also after a restart.
+- On stop the gateway releases the radio first and still publishes the messages the radio has
+  handed over, also one whose answer is on its way (for up to 2 s); they were lost.
+- A direct message is not sent to a look-alike contact that the radio has just added: the gateway
+  reads the contact table again before sending, also after waiting for airtime.
+- Channel texts accepted before the radio's first connection are limited for its real name when
+  they are sent, and deduplicated on the text that is sent.
+- Truncated texts no longer end in half a character: flags, joined emoji, skin tones, keycaps,
+  letters with their marks and the Thai, Lao and halfwidth kana signs that follow a letter stay
+  whole or go before the `...`.
+- A serial port whose terminal setup fails is closed again and reported as a connection error;
+  it kept the exclusive lock until a restart.
+- `listen` and `send --wait` survive payloads nested too deeply for the JSON parser; `config
+  render` reports an output it cannot write, loads the TLS files like `check-config`, checks
+  target aliases before writing them, and syncs the file to disk.
+- Installer: an interrupted run (Ctrl-C, a closed SSH session, kill, a closed output pipe) starts
+  a service stopped by `--reconfigure` again and names a new container to remove; target answers
+  are checked before the container is created and count also when the radio offers no channel or
+  chat contact; `--reconfigure` keeps every alias of a target; without a user name no password
+  is asked; `--update` no longer needs whiptail; the settings check leaves no `__pycache__` in
+  the checkout; a failed lookup of the next container ID or the storages stops the run.
+- Documentation: the airtime bound is stated per run of the service and for the counted airtime
+  (a flood to a far recipient takes more); retries, the time to live, `flood_after`, the
+  connection handshake, resynchronisation, rollback, retained requests, node IDs in topics and
+  the unauthenticated TCP link are described as the code behaves.
 - Over TCP the session no longer sends the 256 zero bytes of the serial resynchronisation: they
   misaligned the WiFi firmware's frame parser, so no TCP session could start. The TCP emulator
   in the tests now parses like the WiFi firmware.

@@ -19,7 +19,13 @@ from meshcore_home_gateway.core.contacts import normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
 
 ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
-ID_RULE = "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit"
+ID_RULE = (
+    "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit, not ending with '-' or '_', "
+    "and no two of them in a row"
+)
+# Home Assistant collapses runs of '-' and '_' in entity IDs and drops a trailing one: 'radio-'
+# would share the entity IDs of 'radio'
+_MERGED_BY_HOME_ASSISTANT = re.compile(r"[-_]{2}|[-_]$")
 TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
@@ -274,9 +280,13 @@ def _absolute_path(s: _Section, name: str) -> str | None:
     return value
 
 
+def _is_id(name: str) -> bool:
+    return bool(ID_PATTERN.fullmatch(name)) and not _MERGED_BY_HOME_ASSISTANT.search(name)
+
+
 def _mqtt(s: _Section) -> MqttConfig:
     node_id = cast(str, s.string("node_id", required=True))
-    if not ID_PATTERN.fullmatch(node_id):
+    if not _is_id(node_id):
         raise ConfigError(f"{s.key('node_id')}: use {ID_RULE}, got {node_id!r}")
     base = cast(str, s.string("base_topic", "meshcore"))
     if not all(TOPIC_SEGMENT.fullmatch(part) for part in base.split("/")):
@@ -363,7 +373,7 @@ def _targets(s: _Section) -> tuple[Target, ...]:
     targets = []
     for alias in s.names():
         t = s.section(alias)
-        if not ID_PATTERN.fullmatch(alias):
+        if not _is_id(alias):
             raise ConfigError(f"{t.key('')[:-1]}: alias must be {ID_RULE}")
         if t.has("channel") == t.has("contact"):
             raise ConfigError(f"{t.key('')[:-1]}: set exactly one of 'channel' or 'contact'")
@@ -431,7 +441,7 @@ def render_config(answers: str) -> str:
             continue
         table, _, name = key.rpartition(".")
         if table == "target":
-            if not ID_PATTERN.fullmatch(name):  # before it becomes a TOML table header
+            if not _is_id(name):  # before it becomes a TOML table header
                 raise ConfigError(f"{key}: alias must be {ID_RULE}")
             tables.setdefault(f"targets.{name}", {}).update(_target_answer(key, value))
             continue

@@ -34,7 +34,7 @@ would put nRF52 radios into their bootloader.
 | `client_id` | `meshcore-home-gateway-<node_id>` | MQTT client identifier |
 | `keepalive_s` | `60` | keep-alive interval, 10–3600 |
 | `base_topic` | `meshcore` | first topic levels; segments of `A-Z a-z 0-9 - _` separated by `/` |
-| `node_id` | required | this bridge's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`, starting with a letter or digit. Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
+| `node_id` | required | this bridge's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`, starting with a letter or digit, not ending with `-` or `_`, no two of them in a row (Home Assistant would merge those). Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
 
 A TLS file that cannot be loaded (missing, unreadable, not a certificate or key) is a
 configuration error: `check-config` and `config render` load the files, and the service exits with
@@ -80,9 +80,12 @@ The only destinations the bridge sends to; publish to `send/<alias>`. The alias 
 | `budget_s_per_hour` | `36` | seconds of transmission per hour for the bridge's messages (1 % of the hour), 0.001–3600 |
 | `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
 
-Within one run of the service, the bridge's transmissions over any interval *T* stay below
-`burst_s + budget_s_per_hour × T / 3600`. The budget is not stored: each start begins with a full
-burst, so every restart within *T* adds up to `burst_s`.
+Within one run of the service, the airtime the bridge counts over any interval *T* stays below
+`burst_s + budget_s_per_hour × T / 3600`. The count is exact for direct sends and for flooded
+sends to recipients up to 4 path bytes away; a flooded attempt to a more distant recipient takes
+up to about 1 s more at EU/UK Narrow ([protocol.md §6](protocol.md#6-on-air-sizes)). The budget is
+not stored: each start begins with a full burst, so every restart within *T* adds up to
+`burst_s`.
 The radio's own traffic (acknowledgements it sends, adverts) is not counted; in the EU band
 869.40–869.65 MHz the device limit is 10 % of every hour. The radio has its own limiter, the
 *airtime factor*, which defaults to 50 % (docs/protocol.md, section 7).

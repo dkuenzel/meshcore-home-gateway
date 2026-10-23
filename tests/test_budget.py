@@ -124,3 +124,12 @@ def test_forgotten_key_is_no_longer_a_duplicate() -> None:
 
 def test_the_hourly_budget_reads_back_as_configured() -> None:
     assert AirtimeBudget(per_hour_s=7.1, burst_s=10.0, now=0.0).per_hour_s == 7.1
+
+
+def test_an_accepted_key_can_be_replaced_by_the_one_it_turned_out_to_be() -> None:
+    dedup = Deduplicator(window_s=10)
+    assert not dedup.is_duplicate("provisional", now=0)
+    dedup.rekey("provisional", "final", now=5)
+    assert not dedup.is_duplicate("provisional", now=6)
+    assert dedup.is_duplicate("final", now=14)
+    assert not dedup.is_duplicate("final", now=15.5)  # the window counts from the replacement

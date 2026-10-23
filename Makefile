@@ -26,9 +26,13 @@ venv: $(VENV)/.installed ## Development environment from the hash-pinned lock fi
 
 # A changed lock gives a fresh environment, as in CI: --clear drops the packages it no longer has.
 # Only an existing environment is cleared, never another directory that VENV names by mistake.
-$(VENV)/.installed: requirements/dev.txt pyproject.toml
+$(VENV)/.locked: requirements/dev.txt
 	$(PYTHON) -m venv $(if $(wildcard $(VENV)/pyvenv.cfg),--clear) $(VENV)
 	$(BIN)/python -m pip install --quiet --require-hashes --no-deps -r requirements/dev.txt
+	touch $@
+
+# Another pyproject.toml (tool settings, metadata) only reinstalls the package itself.
+$(VENV)/.installed: $(VENV)/.locked pyproject.toml
 	$(BIN)/python -m pip install --quiet --no-deps --no-build-isolation --editable .
 	touch $@
 

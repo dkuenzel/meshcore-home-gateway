@@ -61,7 +61,8 @@ STUBS = {
                 [[ -z ${PROBE_FAILS-} ]] || exit 1
                 printf '%b' "${PROBE_CHANNELS:-0\\tPublic\\n1\\tAlerts\\n2\\tpublic\\n}" ;;
               *"--list contacts"*)
-                printf '%s\tAlice Example\tchat\n%s\tRelay\trepeater\n' "$ALICE" "$RELAY" ;;
+                [[ -n ${PROBE_ONLY_REPEATER-} ]] || printf '%s\tAlice Example\tchat\n' "$ALICE"
+                printf '%s\tRelay\trepeater\n' "$RELAY" ;;
               "getent group dialout") printf 'dialout:x:%s:\n' "${CT_DIALOUT_GID:-20}" ;;
               *"config answers"*) cat "$STUB/current" ;;
               "test -f "*) [[ -e $STUB/current ]] ;;
@@ -1040,3 +1041,34 @@ def test_help_and_unknown_options(host: Host) -> None:
     result = run_installer(host, "--bogus")
     assert result.returncode == 1
     assert "unknown option" in result.stderr
+
+
+def test_reconfigure_starts_the_service_again_when_its_output_pipe_is_gone(host: Host) -> None:
+    """`... 2>&1 | tee log` and Ctrl-C: tee is gone too, and a write would raise SIGPIPE."""
+    existing_container(host)
+    answers = answers_file(host, "mqtt.host=new.example.org\n")
+    read, write = os.pipe()
+    os.close(read)  # nobody reads what the installer writes
+    try:
+        result = subprocess.run(  # noqa: S603 - our script with fixed arguments
+            [BASH, str(SCRIPT), "--reconfigure", "105", "--answers", str(answers)],
+            env=installer_env(host, {"PROBE_FAILS": "1"}), stdout=write, stderr=write,
+            timeout=60, check=False,
+        )  # fmt: skip
+    finally:
+        os.close(write)
+    assert result.returncode == 1  # not killed by SIGPIPE (-13)
+    assert host.inside()[-1] == "systemctl start meshcore-home-gateway"
+
+
+@pytest.mark.parametrize("kind", ["contacts", "channels"])
+def test_target_answers_count_also_when_the_radio_offers_none(host: Host, kind: str) -> None:
+    """A new radio without chat contacts, or without named channels."""
+    lines = f"radio.choice={host.serial}\nmqtt.host=broker\n"
+    lines += f"targets.contacts={ALICE}\n" if kind == "contacts" else "targets.channels=3\n"
+    env = {"PROBE_ONLY_REPEATER": "1"} if kind == "contacts" else {"PROBE_CHANNELS": "\\n"}
+    result = run_installer(host, "--answers", str(answers_file(host, lines)), env=env)
+    assert result.returncode == 0, result.stderr
+    targets = {(t.channel_index, t.public_key) for t in host.config().targets}
+    assert ((None, ALICE) if kind == "contacts" else (3, None)) in targets
+    assert sum("warning:" in line for line in result.stderr.splitlines()) == 1

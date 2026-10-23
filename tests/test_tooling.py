@@ -78,7 +78,7 @@ def test_a_changed_lock_gives_a_fresh_environment(tmp_path: Path) -> None:
     assert make("venv", *options).returncode == 0
     stale = next(environment.glob("lib/python*/site-packages")) / "dropped_from_the_lock.py"
     stale.write_text("", encoding="utf-8")
-    os.utime(environment / ".installed", (0, 0))  # older than requirements/dev.txt
+    os.utime(environment / ".locked", (0, 0))  # older than requirements/dev.txt
     refresh = make("venv", *options)
     assert refresh.returncode == 0, refresh.stderr
     assert not stale.exists()
@@ -214,3 +214,23 @@ def test_dependabot_leaves_paho_mqtt_at_the_debian_version() -> None:
     ignore = re.search(r"^    ignore:\n((?:      .*\n)+)", requirements, re.MULTILINE)
     assert ignore is not None
     assert re.search(r'^      - dependency-name: "?paho-mqtt"?\s', ignore[1], re.MULTILINE)
+
+
+def test_a_changed_pyproject_keeps_the_environment(tmp_path: Path) -> None:
+    """Only the lock decides what is installed; clearing for any other change would make
+    `make check` fail without network access."""
+    environment = tmp_path / "venv"
+    wrapper = f'#!/bin/sh\nexec {sys.executable} "$@" --without-pip\n'
+    python = executable(tmp_path / "python", wrapper)
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    executable(tools / "python", "#!/bin/sh\n")
+    options = [f"PYTHON={python}", f"VENV={environment}", f"BIN={tools}"]
+    assert make("venv", *options).returncode == 0
+    kept = next(environment.glob("lib/python*/site-packages")) / "installed_from_the_lock.py"
+    kept.write_text("", encoding="utf-8")
+    os.utime(environment / ".installed", (0, 0))  # older than pyproject.toml, lock unchanged
+    refresh = make("venv", *options)
+    assert refresh.returncode == 0, refresh.stderr
+    assert "--clear" not in refresh.stdout
+    assert kept.exists()

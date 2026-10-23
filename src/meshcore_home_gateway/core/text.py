@@ -79,7 +79,8 @@ def _cut(text: str, max_bytes: int) -> str:
     letter with its marks.
 
     The standard library has no grapheme segmentation (Unicode UAX #29), so `_joined`
-    approximates it for marks, joiners, variation selectors, emoji modifiers, tags and flags. Not
+    approximates it for marks, joiners, variation selectors, emoji modifiers, tags, flags and the
+    few signs of _SIGNS_AFTER. Not
     covered are Indic conjuncts across a virama, prepended marks and Hangul jamo that NFC left
     uncomposed: there a cut can still fall inside what reads as one character.
     """
@@ -92,6 +93,9 @@ def _cut(text: str, max_bytes: int) -> str:
 _ZWJ = "\u200d"
 _JOINERS = "\u200c\u200d"  # zero-width non-joiner and joiner: part of the character before
 _MARKS = frozenset({"Mn", "Mc", "Me"})  # also variation selectors and the keycap mark
+# signs that extend the letter before them although they are no marks (UAX #29 Extend and
+# SpacingMark): Thai and Lao sara am, the halfwidth katakana (semi-)voiced sound marks
+_SIGNS_AFTER = frozenset("\u0e33\u0eb3\uff9e\uff9f")
 _REGIONAL_INDICATORS = "".join(map(chr, range(0x1F1E6, 0x1F200)))  # a flag is a pair
 
 
@@ -100,7 +104,7 @@ def _joined(text: str, i: int) -> bool:
     before, after = text[i - 1], text[i]
     if after in _JOINERS or before == _ZWJ:  # a zero-width joiner also binds the next emoji
         return True
-    if unicodedata.category(after) in _MARKS:
+    if unicodedata.category(after) in _MARKS or after in _SIGNS_AFTER:
         return True
     if "\U0001f3fb" <= after <= "\U0001f3ff" or "\U000e0020" <= after <= "\U000e007f":
         return True  # emoji modifiers (skin tones), tags (flags of regions like Scotland)

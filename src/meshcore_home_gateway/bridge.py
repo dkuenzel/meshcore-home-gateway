@@ -212,7 +212,10 @@ class Bridge:
         self._refusals = RateLimit(REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, now=monotonic())
         self._unpublished = 0  # events of refused requests left out since the last report
         self._next_report = monotonic()
-        self._inbound_dedup = Deduplicator(INBOUND_DEDUP_S)
+        # a copy passes the age check until 2 x max_age_s after the original (the sender's clock
+        # may be max_age_s ahead): the duplicate memory must last as long (ADR 0009)
+        max_age_s = config.commands.max_age_s
+        self._inbound_dedup = Deduplicator(max(INBOUND_DEDUP_S, 2 * max_age_s + 60.0))
         self._acks = AckWaiter(monotonic)
         self._session: CompanionSession | None = None
         self._radio_info: RadioInfo | None = None
@@ -491,6 +494,16 @@ class Bridge:
         reason = "queue_ttl" if self._radio_ready.is_set() else "no_radio"
         return self._event(item, DeliveryState.EXPIRED, reason=reason)
 
+    async def _read_changed_contacts(self, session: CompanionSession, target: Target) -> bool:
+        """For a contact target, read the table again if the radio reported a change: it
+        encrypts for the first contact with the prefix, so the target must be resolved on a
+        table that shows a look-alike added in an earlier slot. False for a channel target."""
+        if target.kind is not MessageKind.CONTACT:
+            return False
+        if session.contacts_outdated:
+            await session.refresh_contacts()
+        return True
+
     async def _attempt(
         self, session: CompanionSession, item: Outgoing, *, attempt: int, timestamp: int,
         deadline: float, acks: list[bytes],
@@ -499,10 +512,7 @@ class Bridge:
         info = session.info
         if info is None:
             raise RadioError("radio not identified")
-        if item.target.kind is MessageKind.CONTACT and session.contacts_outdated:
-            # the radio encrypts for the first contact with the prefix: resolve the target on a
-            # table that shows the change, a look-alike added in an earlier slot included
-            await session.refresh_contacts()
+        await self._read_changed_contacts(session, item.target)
         airtime, reset_path = self._plan(session, item, attempt, info)
         target, text = item.target, item.text  # after planning, which may limit the text
         if airtime > self._budget.capacity_s:
@@ -521,6 +531,8 @@ class Bridge:
             round_trip = self._acks.take(acks)
         if round_trip is not None:  # an earlier attempt arrived after all: send nothing more
             return self._event(item, DeliveryState.CONFIRMED, attempt=attempt, rtt_ms=round_trip)
+        if wait > 0 and await self._read_changed_contacts(session, target):
+            self._resolve(session, target)  # a look-alike may have come while waiting
         if reset_path is not None:
             await session.reset_path(reset_path)  # only now: this attempt will be sent and flood
         self._budget.consume(airtime, self._mono())
@@ -550,9 +562,14 @@ class Bridge:
                 raise _FinalError(DeliveryState.FAILED, "channel_not_configured")
             if item.raw is not None:  # accepted before the radio's name was known: limit it now
                 try:
-                    item.text = prepare_text(item.raw, self._text_policy(target, info))
+                    final = prepare_text(item.raw, self._text_policy(target, info))
                 except TextRejectedError as exc:
                     raise _FinalError(DeliveryState.FAILED, exc.reason) from None
+                if final != item.text:  # deduplicate on the text that is sent
+                    self._dedup.rekey(
+                        (target.alias, item.text), (target.alias, final), self._mono()
+                    )
+                item.text = final
                 size = len(item.text.encode())
             name_bytes = len(info.name.encode())
             if size > MAX_TEXT_BYTES - name_bytes - 2:  # the radio was renamed after queueing
@@ -631,8 +648,9 @@ class Bridge:
             message.sender_prefix if message.kind is MessageKind.CONTACT else message.channel_index
         )
         key = (message.kind, origin, message.sender_timestamp, message.text)
-        # also after a rejection: the radio acknowledged the packet, so the sender does not repeat
-        # it and an identical copy is a replay; a command sent again has a newer timestamp
+        # also after a rejection: an identical copy is the sender's retry after a lost
+        # acknowledgement or a replay, which cannot be told apart; a command sent anew has a newer
+        # timestamp
         if self._inbound_dedup.is_duplicate(key, self._mono()):
             log.debug("duplicate of a received message dropped (sender retry or replay)")
             return

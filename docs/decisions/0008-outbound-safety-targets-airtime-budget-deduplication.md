@@ -48,9 +48,10 @@ both the volume and the reach of what any client can trigger.
 
 ### Consequences
 
-* Good, because the worst case is bounded: over any interval *T*, the bridge transmits at most
+* Good, because the worst case is bounded: over any interval *T*, the bridge counts at most
   `burst_s + budget_s_per_hour × T / 3600` seconds per run of the service (each start begins
-  with a full burst).
+  with a full burst); a flooded attempt to a recipient more than 4 path bytes away takes somewhat
+  more than counted (protocol.md §6).
 * Good, because every refusal is reported on the delivery topic with a reason.
 * Bad, because new destinations need a configuration change (on purpose).
 * Bad, because the airtime estimate does not see the radio's own transmissions (acknowledgements,

@@ -73,7 +73,10 @@ cleanup() {
 trap cleanup EXIT
 trap 'on_error $LINENO' ERR
 # Ctrl-C, kill or a closed SSH session: die restarts a stopped service and names a new container
-trap 'trap "" INT TERM HUP; die "cancelled (interrupted)"' INT TERM HUP
+# PIPE too: after `... | tee log` and Ctrl-C the reader is gone, and the first message of die
+# would end the script before it starts the service again (caught, not ignored, so that the
+# commands it runs get the default SIGPIPE back)
+trap 'trap "" INT TERM HUP PIPE; die "cancelled (interrupted)"' INT TERM HUP PIPE
 
 # --- dialogs --------------------------------------------------------------------------------
 
@@ -515,7 +518,8 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
     sender_items+=("$key" "$name" "$(onoff "$key" "$current_senders")")
   done <<<"$contacts"
 
-  if (( ${#channel_items[@]} )); then
+  # answered targets count also when the radio offers none (a new radio, only repeaters)
+  if (( ${#channel_items[@]} )) || [[ -v "ANSWERS[targets.channels]" ]]; then
     selected=$(ask targets.channels checklist "Channels to send to" "${current_channels#,}" \
       "${channel_items[@]}")
     drop_offered channel channel_name
@@ -530,7 +534,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
         || log "warning: channel $item is not offered by the radio (target $alias)"
     done
   fi
-  if (( ${#contact_items[@]} )); then
+  if (( ${#contact_items[@]} )) || [[ -v "ANSWERS[targets.contacts]" ]]; then
     selected=$(ask targets.contacts checklist "Contacts to send to" "${current_contacts#,}" \
       "${contact_items[@]}")
     drop_offered contact contact_name
