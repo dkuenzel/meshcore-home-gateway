@@ -15,13 +15,22 @@ import math
 
 import pytest
 
+from meshcore_home_gateway.core import airtime
 from meshcore_home_gateway.core.airtime import (
     RECIPROCAL_PATH_BYTES,
     LoRaParams,
     channel_message_bytes,
     direct_attempt_airtime_s,
     direct_message_bytes,
+    direct_poll_costs,
+    flood_poll_costs,
+    flooded_reply_costs,
+    meshcore_lora,
     meshcore_preamble,
+    path_return_bytes,
+    return_path_retry_bytes,
+    telemetry_reply_bytes,
+    telemetry_request_bytes,
     time_on_air_s,
 )
 
@@ -121,3 +130,56 @@ def test_returned_path_packet_is_sized_for_four_path_bytes() -> None:
     path = 4
     firmware = 1 + 1 + path + 2 + 2 + 16 * math.ceil((6 + path) / 16)
     assert firmware == RECIPROCAL_PATH_BYTES
+
+
+# --- telemetry requests (ADR 0018; sizes in docs/protocol.md) ------------------------------------
+
+EU_NARROW = meshcore_lora(62_500.0, 8, 8)
+
+
+def test_meshcore_modulation_takes_its_preamble() -> None:
+    assert LoRaParams(62_500.0, 8, 8, 32) == EU_NARROW
+    assert meshcore_lora(125_000.0, 11, 5).preamble_symbols == 16
+
+
+def test_telemetry_packet_sizes() -> None:
+    """Request: 13 bytes of plaintext in one AES block (BaseChatMesh.cpp:693-698); answer: tag
+    and LPP in blocks; a flooded request is answered by a path return (Mesh.cpp:452-480)."""
+    assert (telemetry_request_bytes(0, False), telemetry_request_bytes(3, False)) == (22, 25)
+    assert telemetry_request_bytes(3, True) == 26  # transport codes instead of the path
+    assert [telemetry_reply_bytes(lpp, 0) for lpp in (8, 12, 13, 19, 34)] == [22, 22, 38, 38, 54]
+    assert telemetry_reply_bytes(19, 2) == 40
+    assert (path_return_bytes(19, 0), path_return_bytes(34, 0)) == (42, 58)
+    assert return_path_retry_bytes(0, 0) == 22
+
+
+@pytest.mark.parametrize(
+    ("lpp_bytes", "mesh_s"),
+    [(8, (0.756, 1.577, 2.398, 3.219)), (19, (0.887, 1.839, 2.791, 3.744)),
+     (34, (1.018, 2.101, 3.185, 4.268))],
+)  # fmt: skip
+def test_direct_poll_costs_count_every_hop_both_ways(
+    lpp_bytes: int, mesh_s: tuple[float, ...]
+) -> None:
+    costs = [direct_poll_costs(hops, hops, lpp_bytes, EU_NARROW) for hops in range(4)]
+    assert tuple(round(c.mesh_s, 3) for c in costs) == mesh_s
+    assert [round(c.own_s, 3) for c in costs] == [0.378, 0.411, 0.411, 0.411]
+
+
+def test_flood_poll_costs_at_the_repeaters_assumed() -> None:
+    costs = flood_poll_costs(19, EU_NARROW)
+    assert (round(costs.own_s, 3), round(costs.mesh_s, 2)) == (0.821, 20.41)
+    assert round(flood_poll_costs(34, EU_NARROW).mesh_s, 2) == 23.16
+    assert round(flood_poll_costs(19, EU_NARROW, repeaters=0).mesh_s, 3) == round(
+        2 * time_on_air_s(26, EU_NARROW) + time_on_air_s(42, EU_NARROW), 3
+    )
+
+
+def test_flood_repeaters_are_read_when_called(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(airtime, "FLOOD_REPEATERS", 0)
+    assert flood_poll_costs(19, EU_NARROW).mesh_s < 2.0
+
+
+def test_a_flooded_reply_costs_its_flood_and_the_path_sent_back() -> None:
+    costs = flooded_reply_costs(19, 0, 0, EU_NARROW)
+    assert (round(costs.own_s, 3), round(costs.mesh_s, 2)) == (0.378, 11.75)

@@ -19,6 +19,7 @@ PUB_KEY_BYTES = 32  # src/MeshCore.h:8
 SIGNATURE_BYTES = 64  # src/MeshCore.h:11
 MAX_PATH_BYTES = 64  # src/MeshCore.h:22
 MAX_ADVERT_DATA_BYTES = 32  # src/MeshCore.h:12; the radio ignores app data beyond (Mesh.cpp:269)
+PAYLOAD_TYPE_RESPONSE = 0x01  # src/Packet.h:20
 PAYLOAD_TYPE_ADVERT = 0x04  # src/Packet.h:23
 _TRANSPORT_ROUTES = (0x00, 0x03)  # ROUTE_TYPE_TRANSPORT_FLOOD and _DIRECT, src/Packet.h:13-16
 _FLOOD_ROUTES = (0x00, 0x01)
@@ -107,3 +108,15 @@ def parse_advert(packet: Packet) -> AdvertData | None:
     if flags & _HAS_NAME:  # the firmware copies the rest and ends it with a NUL
         name = data[i:].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
     return AdvertData(key, timestamp, flags & 0x0F, name or None, latitude, longitude)
+
+
+def flooded_response_hashes(raw: bytes) -> tuple[int, int] | None:
+    """Destination and source hash of a flooded RESPONSE packet, the first two payload bytes
+    before MAC and ciphertext (src/Mesh.cpp:488-509); None for any other packet. Unverified: the
+    radio logs it before it decrypts it."""
+    packet = parse_packet(raw)
+    if packet is None or not packet.flood or packet.payload_type != PAYLOAD_TYPE_RESPONSE:
+        return None
+    if len(packet.payload) < 4:  # the two hashes and the MAC
+        return None
+    return packet.payload[0], packet.payload[1]

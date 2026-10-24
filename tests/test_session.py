@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 import pytest
 
@@ -22,19 +23,26 @@ from meshcore_home_gateway.radio.session import (
     MessageReceived,
     NotSentError,
     PacketLogged,
+    PathChanged,
+    PathReset,
     RadioError,
     RadioEvent,
     StatsRead,
+    TelemetryReceived,
+    TelemetrySent,
 )
 from meshcore_home_gateway.radio.transport import TcpTransport
 from tests.radio_emulator import (
+    LPP_FULL,
     SELF_KEY,
     START_TIME,
     EmulatedContact,
     EmulatedRadio,
+    RemoteCompanion,
     TcpRadioServer,
     WifiFrameParser,
     frame,
+    telemetry_push,
 )
 
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
@@ -561,14 +569,117 @@ def test_cancelled_command_leaves_no_task_behind() -> None:
 
 
 def test_channel_send_and_path_reset() -> None:
-    radio = EmulatedRadio(contacts=[BOB])
+    radio = EmulatedRadio(contacts=[replace(BOB, out_path=b"\x07\x08")])
 
-    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
+        before = session.contact_records
         await session.send_channel_text(0, "hello all", START_TIME + 1)
         await session.reset_path(BOB.public_key)
         assert radio.channel_texts == [(0, "hello all", START_TIME + 1)]
         assert radio.path_resets == [BOB.public_key]
+        # the radio pushes nothing: the cached record is patched as the radio patched its own
+        record = session.contact_records[BOB.public_key.hex()]
+        assert (record.path_known, record.out_path, record.raw[34]) == (False, b"", 0xFF)
+        assert record.raw[35:37] == b"\x07\x08"  # the path bytes stay, as in the radio
+        assert before[BOB.public_key.hex()].path_known  # a table reported keeps its record
+        assert queued(events, (PathReset,)) == [PathReset(BOB.public_key)]
+        assert not session.contacts_outdated  # no re-read for it
+
+    run(radio, scenario)
+
+
+def test_a_telemetry_request_and_its_answer_in_frame_order() -> None:
+    """SENT carries the route and the estimate; the answer is a push, numbered after it when
+    the radio answers at once (the emulator writes both together)."""
+    radio = EmulatedRadio(contacts=[BOB], remotes={BOB.public_key: RemoteCompanion()})
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        sent = await session.request_telemetry(BOB.public_key)
+        assert isinstance(sent, TelemetrySent)
+        assert (sent.flood, sent.timeout_ms) == (False, 500 + (6 * 410 + 250) * 3)
+        answer = await asyncio.wait_for(events.get(), 1)
+        while not isinstance(answer, TelemetryReceived):
+            answer = await asyncio.wait_for(events.get(), 1)
+        assert answer.prefix == BOB.public_key[:6]
+        assert answer.data == LPP_FULL + bytes(9)
+        assert answer.received_at == START_TIME + 100
+        assert answer.seq > sent.seq > 0
+        assert radio.received[-1] == bytes([39, 0, 0, 0]) + BOB.public_key
+
+    run(radio, scenario)
+
+
+def test_a_telemetry_request_is_withdrawn_unwritten_when_its_condition_holds() -> None:
+    radio = EmulatedRadio(contacts=[BOB])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        written = len(radio.received)
+        assert await session.request_telemetry(BOB.public_key, unless=lambda: True) is None
+        assert len(radio.received) == written
+        assert await session.request_telemetry(BOB.public_key, unless=lambda: False) is not None
+
+    run(radio, scenario)
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"), [(1, "unsupported_cmd"), (2, "not_found"), (3, "table_full")]
+)
+def test_a_refused_telemetry_request_names_its_reason(error: int, reason: str) -> None:
+    radio = EmulatedRadio(contacts=[BOB], errors={Command.SEND_TELEMETRY_REQ: error})
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        with pytest.raises(CommandFailedError) as failure:
+            await session.request_telemetry(BOB.public_key)
+        assert failure.value.reason == reason
+        assert not session.closed
+
+    run(radio, scenario)
+
+
+def test_an_answer_pushed_before_sent_is_numbered_before_it() -> None:
+    """The previous request's answer, read before the new request's SENT (its tag was still the
+    radio's), comes out with a lower number."""
+    radio = EmulatedRadio(contacts=[BOB])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.emit(telemetry_push(BOB.public_key, LPP_FULL))
+        sent = await session.request_telemetry(BOB.public_key)
+        assert sent is not None
+        (answer,) = queued(events, (TelemetryReceived,))
+        assert isinstance(answer, TelemetryReceived)
+        assert answer.seq < sent.seq
+
+    run(radio, scenario)
+
+
+def test_path_updates_are_reported_and_mark_the_table() -> None:
+    radio = EmulatedRadio(contacts=[BOB])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.emit(bytes([Push.PATH_UPDATED]) + BOB.public_key)
+        event = await asyncio.wait_for(events.get(), 1)
+        while not isinstance(event, PathChanged):
+            event = await asyncio.wait_for(events.get(), 1)
+        assert event == PathChanged(BOB.public_key)
+        assert session.contacts_outdated
+
+    run(radio, scenario)
+
+
+def test_the_radio_settings_as_modulation() -> None:
+    radio = EmulatedRadio(spreading_factor=11, coding_rate=5)
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        info = await session.start()
+        lora = info.lora
+        assert (lora.bandwidth_hz, lora.spreading_factor, lora.coding_rate) == (62_500.0, 11, 5)
+        assert lora.preamble_symbols == 16
 
     run(radio, scenario)
 

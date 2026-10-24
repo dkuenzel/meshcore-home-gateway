@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 from meshcore_home_gateway.state import (
     AnnouncedComponents,
     CommandLedger,
@@ -14,6 +15,7 @@ from meshcore_home_gateway.state import (
     JsonStateFile,
     RemovedDevice,
     RetainedKeys,
+    TelemetryRecords,
 )
 
 
@@ -180,3 +182,71 @@ def test_contact_device_records_survive_and_skip_foreign_entries(
     foreign.hidden.clear()
     foreign.save()
     assert "cannot store the Home Assistant contact devices: read-only file system" in caplog.text
+
+
+# --- telemetry schedule (ADR 0018) --------------------------------------------------------------
+
+A, B = "a1" * 32, "b2" * 32
+
+
+def test_the_telemetry_schedule_round_trips_relative_to_its_save(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"other": 1})
+    records = TelemetryRecords(store)
+    saved = Saved(
+        {
+            A: SavedContact(812.5, 0, 95.0, 96.0, None, 0, True, 2, 19),
+            B: SavedContact(7200.0, 2, None, 7200.0, 40_000.0, 1, False, 1, 34),
+        },
+        (1200.0,),
+    )
+    records.save(saved, 1_800_000_000.0)
+    assert store.load()["other"] == 1  # only its own key
+    assert records.load(1_800_000_060.0) == (saved, 60.0)
+    assert records.load(1_799_999_000.0) == (saved, 0.0)  # the clock went back
+    raw = json.dumps(store.load()["telemetry"])
+    assert "latitude" not in raw  # no position
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"due_in_s": -1.0},
+        {"due_in_s": float("nan")},
+        {"due_in_s": "1"},
+        {"due_in_s": 1.0, "failures": True},
+        {"due_in_s": 1.0, "failures": 17},
+        {"due_in_s": 1.0, "answered_age_s": -5.0},
+        {"due_in_s": 1.0, "located": 1},
+        {"due_in_s": 1.0, "still": 3},
+        {"due_in_s": 1.0, "lpp_bytes": 0},
+        {"due_in_s": 1.0, "lpp_bytes": 157},
+        [],
+    ],
+)
+def test_invalid_telemetry_entries_are_skipped(tmp_path: Path, entry: object) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    good = {"due_in_s": 10.0, "unknown": "ignored"}
+    store.save({"telemetry": {
+        "version": 1, "saved_at": 0.0, "contacts": {A: entry, B: good, "B2" * 32: good},
+        "floods_age_s": [10.0, -1.0, 4000.0, "x"],
+    }})  # fmt: skip
+    saved, _ = TelemetryRecords(store).load(0.0)
+    assert saved == Saved({B: SavedContact(10.0)}, (10.0,))  # upper-case key: not one
+
+
+def test_an_unknown_or_unreadable_telemetry_schedule_starts_empty(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"telemetry": {"version": 2, "contacts": {A: {"due_in_s": 1.0}}}})
+    assert TelemetryRecords(store).load(0.0) == (None, 0.0)
+    store.save({"telemetry": []})
+    assert TelemetryRecords(store).load(0.0) == (None, 0.0)
+    (tmp_path / "dir").mkdir()
+    unreadable = TelemetryRecords(JsonStateFile(tmp_path / "dir"))
+    assert unreadable.load(0.0) == (None, 0.0)  # an OSError: logged, never raised
+    unreadable.save(Saved(), 0.0)  # logged too
+    capped = {"version": 1, "saved_at": 0.0, "contacts": {A: {"due_in_s": 1e9}}}
+    store.save({"telemetry": capped})
+    saved, _ = TelemetryRecords(store).load(0.0)
+    assert saved is not None
+    assert saved.contacts[A].due_in_s == 7 * 86_400.0

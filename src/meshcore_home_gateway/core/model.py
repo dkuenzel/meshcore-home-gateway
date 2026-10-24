@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
+
+EARTH_RADIUS_M = 6_371_000.0
 
 
 class MessageKind(StrEnum):
@@ -26,6 +29,15 @@ class Position:
 
     latitude: float
     longitude: float
+
+
+def distance_m(a: Position, b: Position) -> float:
+    """Equirectangular distance: exact enough for the tens of metres it decides."""
+    mean = math.radians((a.latitude + b.latitude) / 2)
+    dlon = (b.longitude - a.longitude + 180.0) % 360.0 - 180.0  # across the antimeridian
+    x = math.radians(dlon) * math.cos(mean)
+    y = math.radians(b.latitude - a.latitude)
+    return EARTH_RADIUS_M * math.hypot(x, y)
 
 
 @dataclass(frozen=True, slots=True)

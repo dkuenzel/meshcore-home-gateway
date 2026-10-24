@@ -15,6 +15,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
+from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.budget import RateLimit
 from meshcore_home_gateway.core.contacts import Contact
 from meshcore_home_gateway.core.mesh import (
@@ -36,6 +37,7 @@ from meshcore_home_gateway.core.model import (
     split_sender_name,
 )
 from meshcore_home_gateway.core.profile import ProfileReport
+from meshcore_home_gateway.core.telemetry import Answer
 from meshcore_home_gateway.history import History, NodeRow
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol import codec
@@ -44,6 +46,7 @@ from meshcore_home_gateway.radio.session import (
     AdvertHeard,
     ContactsRead,
     PacketLogged,
+    PathReset,
     RadioEvent,
     StatsRead,
 )
@@ -110,7 +113,8 @@ class Observer:
         self._next_purge = 0.0
         self._heard_rows: list[NodeRow] = []  # from the history, until the first table read
         self._stored_fixes: dict[str, Fix] = {}  # the newest position in the history per contact
-        # called after each table read, before the topics of removed contacts are cleared
+        # called after each table read, before the topics of removed contacts are cleared, and
+        # when a contact has its first position
         self.on_contacts: list[Callable[[Mesh], None]] = []
         # called whenever the heard nodes may have changed; True: a contact joined or left
         self.on_nodes: list[Callable[[bool], None]] = []
@@ -187,6 +191,32 @@ class Observer:
             self._stats(event)
         elif isinstance(event, PacketLogged):
             self._packet(event.rx, event.received_at)
+        elif isinstance(event, PathReset):  # the documents say so before the next table read
+            key = event.public_key.hex()
+            if self.mesh.path_reset(key):
+                self._publish_contact(key)
+
+    def telemetry(self, key: str, answer: Answer) -> None:
+        """An answer the poller matched to the contact it asked (ADR 0018): its position and
+        that the contact was heard. Its readings are not published yet."""
+        tracked = self.mesh.contacts.get(key)
+        if tracked is None:  # it left the table meanwhile
+            return
+        found = lpp.position(answer.payload)
+        had_fix = tracked.fix is not None
+        position, altitude = (found.position, found.altitude_m) if found else (None, None)
+        moved = self.mesh.contact_answered(key, answer.received_at, position, altitude)
+        if moved and tracked.heard is not None:  # at most hourly from answers alone
+            self._store_heard(key, tracked.node, tracked.heard)
+        self._store_fix(key, tracked.fix)
+        self._publish_contact(key)
+        if not had_fix and tracked.fix is not None:
+            self._contacts_changed()  # its device gets a tracker now, not at the next table read
+
+    def radio_tx_1h_s(self) -> int | None:
+        """The radio's own time on air in the last hour, as it counts it; None before two
+        readings of its statistics."""
+        return self._meter.used_s()
 
     def message(self, message: InboundMessage, sender: Contact | None) -> None:
         """A received message, after the bridge published it."""
@@ -255,11 +285,7 @@ class Observer:
             known = self._retained.keys if self._retained else frozenset(records)
             gone = tuple(sorted(known - set(records)))
             change = TableChange(tuple(k for k in change.added if k not in known), gone)
-        for listener in self.on_contacts:
-            try:
-                listener(self.mesh)
-            except Exception:  # a front end's bug must not stop the documents
-                log.exception("contact listener failed")
+        self._contacts_changed()
         for key in change.removed:  # after the devices are gone (Home Assistant reads them)
             self._clear(self._topics.contact(key))
         for key, tracked in self.mesh.contacts.items():
@@ -271,6 +297,13 @@ class Observer:
         self._contact_events(change, before)
         if self._retained is not None:
             self._retained.replace(set(self.mesh.contacts))
+
+    def _contacts_changed(self) -> None:
+        for listener in self.on_contacts:
+            try:
+                listener(self.mesh)
+            except Exception:  # a front end's bug must not stop the documents
+                log.exception("contact listener failed")
 
     def _take_heard_nodes(self) -> None:
         """Nodes from the history that are not contacts become heard nodes again. One already

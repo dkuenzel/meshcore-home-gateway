@@ -7,7 +7,12 @@ import struct
 import pytest
 
 from meshcore_home_gateway.core.model import Position
-from meshcore_home_gateway.protocol.packet import AdvertData, parse_advert, parse_packet
+from meshcore_home_gateway.protocol.packet import (
+    AdvertData,
+    flooded_response_hashes,
+    parse_advert,
+    parse_packet,
+)
 
 KEY = bytes(range(0x40, 0x60))
 TS = 1_760_000_000
@@ -112,3 +117,23 @@ def test_other_packets_are_no_adverts() -> None:
     assert packet is not None
     assert packet.payload_type == 2
     assert parse_advert(packet) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "hashes"),
+    [
+        # flooded RESPONSE (header 0x05), no path yet: destination, source, MAC, ciphertext
+        (bytes([0x05, 0x00, 0x10, 0xA1, 0xBE, 0xEF]) + bytes(32), (0x10, 0xA1)),
+        # after two repeaters, and as a transport flood with its codes
+        (bytes([0x05, 0x02, 0x77, 0x88, 0x10, 0xA1, 0xBE, 0xEF]) + bytes(16), (0x10, 0xA1)),
+        (bytes([0x04, 1, 2, 3, 4, 0x00, 0x10, 0xA1, 0xBE, 0xEF]) + bytes(16), (0x10, 0xA1)),
+        (bytes([0x06, 0x00, 0x10, 0xA1, 0xBE, 0xEF]) + bytes(32), None),  # direct RESPONSE
+        (bytes([0x09, 0x00, 0x10, 0xA1, 0xBE, 0xEF]) + bytes(32), None),  # flooded text
+        (bytes([0x05, 0x00, 0x10, 0xA1, 0xBE]), None),  # no full MAC
+        (b"", None),
+    ],
+)
+def test_flooded_responses_name_their_hashes(raw: bytes, hashes: tuple[int, int] | None) -> None:
+    """A RESPONSE payload starts with the one-byte hashes of destination and source
+    (src/Mesh.cpp:488-509); the gateway reads them to charge a flooded telemetry reply."""
+    assert flooded_response_hashes(raw) == hashes

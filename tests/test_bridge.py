@@ -18,6 +18,7 @@ from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
+from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.mqtt import manage_entities
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
@@ -34,6 +35,7 @@ from meshcore_home_gateway.state import (
     CommandLedger,
     ContactDeviceRecords,
     JsonStateFile,
+    TelemetryRecords,
 )
 from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
 
@@ -162,6 +164,7 @@ async def running(
     observer: Callable[[FakeBus], Observer] | None = None,
     devices: bool = False,
     profile: RadioProfile | None = None,
+    telemetry_lanes: LaneFactory | None = None,
 ) -> AsyncIterator[tuple[Bridge, FakeBus, list[str]]]:
     bus = bus or FakeBus()
     stop, notes = asyncio.Event(), []
@@ -182,6 +185,7 @@ async def running(
         components=AnnouncedComponents(store), observer=observer(bus) if observer else None,
         devices=contact_devices, profile=profile,
         manage_components=AnnouncedComponents(store, "manage_contacts"),
+        telemetry_records=TelemetryRecords(store), telemetry_lanes=telemetry_lanes,
     )  # fmt: skip
     task = asyncio.create_task(bridge.run(stop))
     try:
@@ -631,6 +635,28 @@ def test_attempts_after_the_path_reset_are_budgeted_as_floods(tmp_path: Path) ->
             airtime = [d["airtime_ms"] for d in sent]
             assert len(airtime) == 4
             assert airtime[0] == airtime[1] < airtime[2] == airtime[3]
+
+    scenario(main)
+
+
+def test_after_the_path_reset_the_next_message_is_budgeted_as_a_flood(tmp_path: Path) -> None:
+    """The radio pushes nothing on RESET_PATH: the session's table and the contact's document
+    show the reset before the next read, so the next message plans the flood it will be."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("bob", "Are you there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "failed")
+            bob = await bus.wait_for(f"/contacts/{BOB.public_key.hex()}",
+                                     lambda d: d["path_known"] is False)  # fmt: skip
+            assert bob["path_hops"] is None
+            radio.auto_ack = True
+            bus.send("bob", "Still there?")
+            confirmed = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            sent = [d for d in bus.payloads("/delivery") if d["event_type"] == "sent"]
+            assert sent[-1]["id"] == confirmed["id"]
+            assert sent[-1]["airtime_ms"] == sent[2]["airtime_ms"] > sent[0]["airtime_ms"]
 
     scenario(main)
 

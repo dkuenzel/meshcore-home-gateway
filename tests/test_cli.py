@@ -53,6 +53,7 @@ def test_check_config_summarises_a_valid_file(capsys: pytest.CaptureFixture[str]
     assert "valid" in out
     assert "target     alerts: channel 1" in out
     assert "broker     broker.example.org:1883" in out
+    assert "  telemetry  off\n" in out
 
 
 def test_check_config_reports_errors_with_ex_config(

@@ -29,6 +29,7 @@ class Command(IntEnum):
     DEVICE_QUERY = 22
     GET_CHANNEL = 31
     SET_OTHER_PARAMS = 38
+    SEND_TELEMETRY_REQ = 39  # the one remote request the gateway sends (ADR 0018)
     GET_TUNING_PARAMS = 43
     GET_STATS = 56
     SET_AUTOADD_CONFIG = 58

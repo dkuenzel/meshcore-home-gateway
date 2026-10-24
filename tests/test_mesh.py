@@ -69,11 +69,61 @@ def test_a_telemetry_fix_is_not_replaced_by_an_unchanged_advert_position() -> No
     mesh.restore(ALICE.public_key, None, gps)
     mesh.contacts_read([Node(ALICE.public_key, "Alice", 1, position=HOME)], T)
     assert mesh.contacts[ALICE.public_key].fix == gps
-    assert mesh.contact_fix(ALICE.public_key, Fix(HOME, T + 10, "telemetry"))
-    assert mesh.contacts[ALICE.public_key].fix == Fix(HOME, T + 10, "telemetry")
-    assert mesh.contact_fix(ALICE.public_key, Fix(FIELD, T, "telemetry"))  # older: kept out
-    assert mesh.contacts[ALICE.public_key].fix == Fix(HOME, T + 10, "telemetry")
-    assert not mesh.contact_fix(BOB.public_key, gps)
+    mesh.contact_answered(ALICE.public_key, T + 10, HOME, 3.0)
+    assert mesh.contacts[ALICE.public_key].fix == Fix(HOME, T + 10, "telemetry", 3.0)
+    mesh.contacts_read([Node(ALICE.public_key, "Alice", 1, position=HOME)], T + 20)
+    assert mesh.contacts[ALICE.public_key].fix == Fix(HOME, T + 10, "telemetry", 3.0)
+    assert not mesh.contact_answered(BOB.public_key, T + 30, FIELD, None)  # no contact
+
+
+def test_a_telemetry_answer_moves_its_fix_from_20_m_on() -> None:
+    """The fix's time is when the position changed: a resting companion's answers change
+    nothing, so Home Assistant writes no state per answer."""
+    mesh = Mesh()
+    mesh.contacts_read([ALICE], T)
+    key = ALICE.public_key
+    near = Position(HOME.latitude + 0.0001, HOME.longitude)  # 11 m
+    far = Position(HOME.latitude + 0.0002, HOME.longitude)  # 22 m
+    mesh.contact_answered(key, T + 1, HOME, 40.0)
+    mesh.contact_answered(key, T + 2, near, 41.0)
+    tracked = mesh.contacts[key]
+    assert tracked.fix == Fix(HOME, T + 1, "telemetry", 40.0)
+    assert tracked.position_received_at == T + 2
+    mesh.contact_answered(key, T + 3, far, 42.0)
+    assert tracked.fix == Fix(far, T + 3, "telemetry", 42.0)
+    mesh.contact_answered(key, T + 2.5, HOME, 40.0)  # older than one received: ignored
+    assert tracked.fix == Fix(far, T + 3, "telemetry", 42.0)
+    assert tracked.position_received_at == T + 3
+    mesh.contact_answered(key, T + 4, None, None)  # no position: the last one stays
+    assert tracked.fix == Fix(far, T + 3, "telemetry", 42.0)
+
+
+def test_telemetry_answers_alone_move_last_heard_hourly_and_keep_the_signal() -> None:
+    mesh = Mesh()
+    mesh.contacts_read([ALICE], T)
+    key = ALICE.public_key
+    advert = Heard(T, "advert", Signal(2, 7.5, -90))
+    mesh.contact_heard(key, advert)
+    assert mesh.contact_answered(key, T + 60, None, None)  # after an advert: at once
+    assert mesh.contacts[key].heard == Heard(T + 60, "telemetry", Signal(2, 7.5, -90))
+    assert not mesh.contact_answered(key, T + 60 + 3599, None, None)
+    assert mesh.contacts[key].heard == Heard(T + 60, "telemetry", Signal(2, 7.5, -90))
+    assert mesh.contact_answered(key, T + 60 + 3600, None, None)
+    mesh.contacts_read([BOB], T + 4000)
+    bob = mesh.contacts[BOB.public_key]
+    assert mesh.contact_answered(BOB.public_key, T + 4001, None, None)  # never heard before
+    assert bob.heard == Heard(T + 4001, "telemetry", Signal())
+
+
+def test_a_path_reset_forgets_the_path_until_the_next_read() -> None:
+    mesh = Mesh()
+    mesh.contacts_read([BOB], T)
+    assert mesh.path_reset(BOB.public_key)
+    assert mesh.contacts[BOB.public_key].node.path_hops is None
+    assert not mesh.path_reset(BOB.public_key)  # none left
+    assert not mesh.path_reset(ALICE.public_key)  # no contact
+    change = mesh.contacts_read([Node(BOB.public_key, "Bob", 2)], T + 1)
+    assert not change  # the radio's record says the same now
 
 
 def test_contacts_heard_keep_the_newest_report() -> None:

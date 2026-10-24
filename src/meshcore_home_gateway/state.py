@@ -2,7 +2,8 @@
 
 It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
 Home Assistant components of the last discovery document and the contact devices announced
-(docs/home-assistant.md), and the contacts whose retained documents were published.
+(docs/home-assistant.md), the contacts whose retained documents were published, the radio
+profile's memory (ADR 0020) and the telemetry schedule (ADR 0018).
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 import os
 import tempfile
 from collections.abc import Mapping
@@ -18,7 +20,10 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, TypeGuard
 
+from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core.contacts import is_key
 from meshcore_home_gateway.core.profile import Applied, Attempt, Value
+from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 
 log = logging.getLogger(__name__)
 
@@ -313,6 +318,103 @@ class ProfileRecords:
             self._store.save(data)
         except OSError as exc:
             log.warning("cannot store the radio profile: %s", exc)
+
+
+class TelemetryRecords:
+    """The telemetry schedule (ADR 0018): times relative to when it was saved, no position."""
+
+    _KEY = "telemetry"
+    VERSION = 1
+
+    def __init__(self, store: JsonStateFile) -> None:
+        self._store = store
+
+    def load(self, wall_now: float) -> tuple[Saved | None, float]:
+        """The schedule and the seconds since it was saved (0 if unknown or in the future);
+        invalid entries are skipped. Never raises: an unreadable file is logged."""
+        try:
+            raw = self._store.load().get(self._KEY)
+        except Exception as exc:  # noqa: BLE001 - the schedule starts empty, the gateway goes on
+            log.warning("telemetry: cannot read the saved schedule (%s); starting empty", exc)
+            return None, 0.0
+        if not isinstance(raw, dict) or raw.get("version") != self.VERSION:
+            return None, 0.0
+        saved_at = raw.get("saved_at")
+        elapsed = 0.0
+        if _finite(saved_at) and wall_now > saved_at:
+            elapsed = wall_now - saved_at
+        entries = raw.get("contacts")
+        contacts: dict[str, SavedContact] = {}
+        for key, entry in entries.items() if isinstance(entries, dict) else ():
+            contact = _saved_contact(entry) if isinstance(key, str) and is_key(key) else None
+            if contact is not None:
+                contacts[key] = contact
+        ages = raw.get("floods_age_s")
+        floods = tuple(
+            a for a in ages if _age(a) and a < telemetry.HOUR_S
+        ) if isinstance(ages, list) else ()  # fmt: skip
+        return Saved(contacts, floods[: telemetry.FLOODS_PER_HOUR]), elapsed
+
+    def save(self, saved: Saved, wall_now: float) -> None:
+        """Replace this key only; a failed write is logged and the schedule stays in memory."""
+        entry = {
+            "version": self.VERSION,
+            "saved_at": wall_now,
+            "contacts": {
+                key: {
+                    "due_in_s": c.due_in_s, "failures": c.failures,
+                    "answered_age_s": c.answered_age_s, "polled_age_s": c.polled_age_s,
+                    "flood_age_s": c.flood_age_s, "floods": c.floods, "located": c.located,
+                    "still": c.still, "lpp_bytes": c.lpp_bytes,
+                }
+                for key, c in saved.contacts.items()
+            },
+            "floods_age_s": list(saved.floods_age_s),
+        }  # fmt: skip
+        try:
+            data = self._store.load()
+            data[self._KEY] = entry
+            self._store.save(data)
+        except OSError as exc:
+            log.warning("telemetry: cannot store the schedule: %s", exc)
+
+
+def _saved_contact(entry: object) -> SavedContact | None:
+    if not isinstance(entry, dict):
+        return None
+    due, failures, floods = entry.get("due_in_s"), entry.get("failures", 0), entry.get("floods", 0)
+    answered, polled = entry.get("answered_age_s"), entry.get("polled_age_s")
+    flood = entry.get("flood_age_s")
+    located, still = entry.get("located", False), entry.get("still", telemetry.STILL_POLLS)
+    lpp_bytes = entry.get("lpp_bytes", telemetry.DEFAULT_LPP_BYTES)
+    if (
+        _age(due) and _small(failures, telemetry.MAX_FAILURES)
+        and _small(floods, telemetry.MAX_FAILURES) and _age_or_none(answered)
+        and _age_or_none(polled) and _age_or_none(flood) and isinstance(located, bool)
+        and _small(still, telemetry.STILL_POLLS) and _small(lpp_bytes, telemetry.MAX_LPP_BYTES)
+        and lpp_bytes >= 1
+    ):  # fmt: skip
+        return SavedContact(
+            min(due, telemetry.MAX_DUE_S), failures, answered, polled, flood, floods, located,
+            still, lpp_bytes,
+        )  # fmt: skip
+    return None
+
+
+def _finite(value: object) -> TypeGuard[float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _age(value: object) -> TypeGuard[float]:
+    return _finite(value) and value >= 0
+
+
+def _age_or_none(value: object) -> TypeGuard[float | None]:
+    return value is None or _age(value)
+
+
+def _small(value: object, limit: int) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= limit
 
 
 def _setting(value: object) -> TypeGuard[Value]:

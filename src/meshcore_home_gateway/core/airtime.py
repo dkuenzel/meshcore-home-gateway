@@ -1,4 +1,4 @@
-"""LoRa time on air and the on-air size of MeshCore text packets (ADR 0008).
+"""LoRa time on air and the on-air size of MeshCore packets (ADR 0008, ADR 0018).
 
 Time on air follows the Semtech SX126x datasheet (section 6.1.4, "LoRa Time-on-Air"); the
 values are checked against independent references in tests/test_airtime.py. Packet sizes follow
@@ -79,6 +79,16 @@ def meshcore_preamble(spreading_factor: int) -> int:
     return 32 if spreading_factor <= 8 else 16
 
 
+def meshcore_lora(bandwidth_hz: float, spreading_factor: int, coding_rate: int) -> LoRaParams:
+    """The modulation of a MeshCore radio with these settings."""
+    return LoRaParams(
+        bandwidth_hz=bandwidth_hz,
+        spreading_factor=spreading_factor,
+        coding_rate=coding_rate,
+        preamble_symbols=meshcore_preamble(spreading_factor),
+    )
+
+
 def direct_message_bytes(text_bytes: int, path_bytes: int, flood: bool) -> int:
     """On-air size of a direct text message as this radio first transmits it.
 
@@ -104,3 +114,73 @@ def direct_attempt_airtime_s(text_bytes: int, path_bytes: int, flood: bool, p: L
     if flood:
         airtime += time_on_air_s(RECIPROCAL_PATH_BYTES, p)
     return airtime
+
+
+# --- telemetry requests (ADR 0018) --------------------------------------------------------------
+
+REQUEST_PLAINTEXT_BYTES = 13  # tag 4, type 1, reserved 4, random 4 (BaseChatMesh.cpp:693-698)
+FLOOD_REPEATERS = 20  # repeaters assumed to retransmit a flood: an estimate, see protocol.md
+
+
+@dataclass(frozen=True, slots=True)
+class Costs:
+    own_s: float  # the gateway radio's own transmit time
+    mesh_s: float  # estimated airtime of every transmission a request causes, in all the mesh
+
+
+def telemetry_request_bytes(path_bytes: int, flood: bool) -> int:
+    """A telemetry request as this radio sends it: 22 bytes plus the path direct, 26 flooded."""
+    payload = 4 + CIPHER_BLOCK * math.ceil(REQUEST_PLAINTEXT_BYTES / CIPHER_BLOCK)
+    route = TRANSPORT_CODE_BYTES if flood else path_bytes
+    return HEADER_BYTES + route + PATH_LEN_BYTES + payload
+
+
+def telemetry_reply_bytes(lpp_bytes: int, path_bytes: int) -> int:
+    """The companion's direct answer: tag and LPP in AES blocks (BaseChatMesh.cpp:321-326)."""
+    payload = 4 + CIPHER_BLOCK * math.ceil((4 + lpp_bytes) / CIPHER_BLOCK)
+    return HEADER_BYTES + path_bytes + PATH_LEN_BYTES + payload
+
+
+def path_return_bytes(lpp_bytes: int, return_path_bytes: int) -> int:
+    """The answer to a flooded request as it leaves the companion: path length, path, type,
+    tag and LPP in AES blocks (Mesh.cpp:452-480)."""
+    payload = 4 + CIPHER_BLOCK * math.ceil((6 + return_path_bytes + lpp_bytes) / CIPHER_BLOCK)
+    return HEADER_BYTES + TRANSPORT_CODE_BYTES + PATH_LEN_BYTES + payload
+
+
+def return_path_retry_bytes(flood_path_bytes: int, out_path_bytes: int) -> int:
+    """The path this radio sends back 3 s after a flooded answer (BaseChatMesh.cpp:385-390):
+    path length, the answer's path, a type and 4 random bytes (Mesh.cpp:466-479)."""
+    payload = 4 + CIPHER_BLOCK * math.ceil((6 + flood_path_bytes) / CIPHER_BLOCK)
+    return HEADER_BYTES + out_path_bytes + PATH_LEN_BYTES + payload
+
+
+def direct_poll_costs(hops: int, path_bytes: int, lpp_bytes: int, p: LoRaParams) -> Costs:
+    """A direct request and its direct answer, every transmission both ways: each repeater
+    removes its hash before it forwards (Mesh.cpp:102-107), so transmission k carries
+    hops - k hashes."""
+    per_hop = path_bytes // hops if hops else 0
+    mesh = sum(
+        time_on_air_s(telemetry_request_bytes((hops - k) * per_hop, False), p)
+        + time_on_air_s(telemetry_reply_bytes(lpp_bytes, (hops - k) * per_hop), p)
+        for k in range(hops + 1)
+    )
+    return Costs(time_on_air_s(telemetry_request_bytes(path_bytes, False), p), mesh)
+
+
+def flood_poll_costs(lpp_bytes: int, p: LoRaParams, repeaters: int | None = None) -> Costs:
+    """A flooded request, its flooded path return, both repeated by `repeaters` (None:
+    FLOOD_REPEATERS), and the path this radio sends back 500 ms later (Mesh.cpp:174-177)."""
+    repeaters = FLOOD_REPEATERS if repeaters is None else repeaters
+    request = time_on_air_s(telemetry_request_bytes(0, True), p)
+    answer = time_on_air_s(path_return_bytes(lpp_bytes, 0), p)
+    reciprocal = time_on_air_s(RECIPROCAL_PATH_BYTES, p)
+    return Costs(request + reciprocal, (repeaters + 1) * (request + answer) + reciprocal)
+
+
+def flooded_reply_costs(lpp_bytes: int, hops: int, path_bytes: int, p: LoRaParams) -> Costs:
+    """An answer to a direct request that the companion flooded (it had no path back), repeated
+    by FLOOD_REPEATERS, and the path this radio sends back over its own path 3 s later."""
+    reply = time_on_air_s(telemetry_reply_bytes(lpp_bytes, 0) + TRANSPORT_CODE_BYTES, p)
+    retry = time_on_air_s(return_path_retry_bytes(path_bytes, path_bytes), p)
+    return Costs(retry, (FLOOD_REPEATERS + 1) * reply + (hops + 1) * retry)

@@ -89,6 +89,9 @@ enabled = false
 messages_days = 7
 positions_days = 90
 
+[telemetry]
+enabled = true
+
 [diagnostics]
 publish_rx_log = true
 log_level = "debug"
@@ -493,6 +496,18 @@ def test_a_user_name_with_surrounding_blanks_is_refused(name: str) -> None:
     text = MINIMAL.replace('node_id = "radio1"', f'node_id = "radio1"\nusername = "{name}"')
     with pytest.raises(ConfigError, match=r"mqtt\.username: no blank"):
         parse_config(text.replace("\t", "\\t"))
+
+
+def test_telemetry_is_off_by_default_until_contacts_can_be_excluded() -> None:
+    """ADR 0018 lets a contact be excluded; until that exists, asking every companion of the
+    radio is the user's choice, not a default."""
+    assert parse_config(MINIMAL).telemetry.enabled is False
+    assert parse_config(FULL).telemetry.enabled is True
+    with pytest.raises(ConfigError, match=r"telemetry\.enabled"):
+        parse_config(MINIMAL + '\n[telemetry]\nenabled = "yes"\n')
+    with pytest.raises(ConfigError, match=r"telemetry\.interval_s: unknown setting"):
+        parse_config(MINIMAL + "\n[telemetry]\ninterval_s = 60\n")
+    assert "telemetry.enabled=true" in config_answers(FULL).splitlines()
 
 
 def test_contacts_are_managed_on_request_by_default() -> None:

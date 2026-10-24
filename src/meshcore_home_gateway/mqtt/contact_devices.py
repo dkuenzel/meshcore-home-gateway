@@ -68,10 +68,24 @@ RADIO_CONNECTED = (
 REMOVABLE = (
     "{{ 'online' if value_json is defined and value_json.removable is true else 'offline' }}"
 )
+ACCURACY_KNOWN = (
+    "value_json.position_accuracy_m is defined and value_json.position_accuracy_m is number"
+)
+_POSITION_KEYS = ("latitude", "longitude", "altitude_m", "position_at", "position_source")
+
+
+def _position_attributes(extra: str = "") -> str:
+    return "{" + ", ".join(f"'{k}': value_json.{k}" for k in _POSITION_KEYS) + extra + "}"
+
+
+# the tracker's attributes; gps_accuracy only from telemetry (a number: null would count as 0
+# with a warning), read only where the position is known, so the empty clearing message gives {}
 POSITION_ATTRIBUTES = (
-    "{{ ({'latitude': value_json.latitude, 'longitude': value_json.longitude, "
-    "'altitude_m': value_json.altitude_m, 'position_at': value_json.position_at, "
-    f"'position_source': value_json.position_source}} if {POSITION_KNOWN} else {{}}) | tojson }}}}"
+    "{{ (("
+    + _position_attributes(", 'gps_accuracy': value_json.position_accuracy_m")
+    + f" if {ACCURACY_KNOWN} else "
+    + _position_attributes()
+    + f") if {POSITION_KNOWN} else {{}}) | tojson }}}}"
 )
 
 

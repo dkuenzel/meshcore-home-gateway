@@ -8,6 +8,8 @@ Tasks on one event loop:
 * radio events: acknowledgements and packet log at once, received messages in order
   (deduplicated; command policy with a fresh contact table and a memory of look-alikes);
 * status: retained state document, systemd watchdog and status;
+* telemetry, if enabled: asks the radio's companions one at a time, after the messages
+  (telemetry_poller.py, ADR 0018);
 * the observer gets every report of the radio, every received message and every delivery, for
   the documents of the providers and the history (observer.py).
 """
@@ -28,10 +30,8 @@ from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.airtime import (
-    LoRaParams,
     channel_message_bytes,
     direct_attempt_airtime_s,
-    meshcore_preamble,
     time_on_air_s,
 )
 from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator, RateLimit
@@ -49,6 +49,7 @@ from meshcore_home_gateway.core.model import (
     MessageKind,
     Target,
 )
+from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
@@ -72,18 +73,22 @@ from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.radio.profile import RadioProfile
 from meshcore_home_gateway.radio.session import (
     AckReceived,
+    AdvertHeard,
     Barrier,
     CommandFailedError,
     CompanionSession,
     MessageReceived,
     PacketLogged,
+    PathChanged,
     RadioError,
     RadioEvent,
     RadioInfo,
+    TelemetryReceived,
 )
 from meshcore_home_gateway.radio.transport import Transport
-from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger
+from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger, TelemetryRecords
 from meshcore_home_gateway.systemd import notify, watchdog_interval_s
+from meshcore_home_gateway.telemetry_poller import OutboxActivity, TelemetryPoller
 
 log = logging.getLogger(__name__)
 
@@ -207,7 +212,10 @@ class Bridge:
         devices: ContactDevices | None = None,
         profile: RadioProfile | None = None,
         manage_components: AnnouncedComponents | None = None,
+        telemetry_records: TelemetryRecords | None = None,
+        telemetry_lanes: LaneFactory | None = None,
     ) -> None:
+        """`telemetry_lanes`: builds the telemetry lanes (tests)."""
         self.config = config
         self._components = components
         self._bus = bus
@@ -246,6 +254,14 @@ class Bridge:
         self._watched = frozenset(key[:PREFIX_HEX_DIGITS] for key in config.commands.senders)
         self._seen: dict[str, float] = {}
         self._queue: asyncio.Queue[Outgoing] = asyncio.Queue(maxsize=config.messages.queue_size)
+        self._activity = OutboxActivity(monotonic, self._queue.qsize)  # telemetry yields to it
+        self._telemetry: TelemetryPoller | None = None
+        if config.telemetry.enabled:
+            self._telemetry = TelemetryPoller(
+                self.observer, self.live_session, self._activity, records=telemetry_records,
+                tcp=config.radio.transport == "tcp", monotonic=monotonic, wall_clock=wall_clock,
+                lanes=telemetry_lanes,
+            )  # fmt: skip
         self._budget = AirtimeBudget(
             config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
         )
@@ -266,6 +282,7 @@ class Bridge:
         self._reannounce_birth = False  # it follows Home Assistant's birth message
         self._radio_ready = asyncio.Event()
         self._tasks: list[asyncio.Task[None]] = []
+        self._telemetry_task: asyncio.Task[None] | None = None
 
     # --- life cycle -----------------------------------------------------------------------------
 
@@ -297,8 +314,15 @@ class Bridge:
                     ("status", self._status_loop()),
                 ):
                     self._tasks.append(group.create_task(coroutine, name=name))
+                if self._telemetry is not None:
+                    task = group.create_task(self._telemetry.run(), name="telemetry")
+                    self._telemetry_task = task
+                    self._tasks.append(task)
                 await stop.wait()
                 self._notify("STOPPING=1")
+                if self._telemetry_task is not None:  # no request after this; it saves its schedule
+                    self._telemetry_task.cancel()
+                    await asyncio.wait([self._telemetry_task])
                 await self._finish_inbound(self._tasks[0])  # the radio task
                 for task in self._tasks:
                     task.cancel()
@@ -377,7 +401,7 @@ class Bridge:
             )
         info = session.info
         if info is not None:
-            longest = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, _lora(info))
+            longest = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, info.lora)
             if longest > self._budget.capacity_s:
                 log.warning(
                     "a long direct message takes %.1f s of airtime at the radio's settings, more "
@@ -444,6 +468,7 @@ class Bridge:
         else:
             try:
                 self._queue.put_nowait(Outgoing(event_id, target, text, self._mono(), raw))
+                self._activity.touch()
             except asyncio.QueueFull:
                 self._dedup.forget(key)  # not taken, so a retry must not count as duplicate
                 state, reason = DeliveryState.REJECTED, "queue_full"
@@ -527,6 +552,7 @@ class Bridge:
     async def _outbox_loop(self) -> None:
         while True:
             item = await self._queue.get()
+            self._activity.delivering(True)  # no await before: telemetry sees it at once
             try:
                 await self._deliver(item)
             except asyncio.CancelledError:
@@ -535,6 +561,8 @@ class Bridge:
                 log.exception("delivery %s failed unexpectedly", item.id)
                 failed = self._event(item, DeliveryState.FAILED, reason="internal_error")
                 self._deliver_event(failed)
+            finally:
+                self._activity.delivering(False)
 
     async def _deliver(self, item: Outgoing) -> None:
         """Attempts until the message is confirmed, ends with a reason, or runs out of time.
@@ -667,7 +695,7 @@ class Bridge:
             name_bytes = len(info.name.encode())
             if size > MAX_TEXT_BYTES - name_bytes - 2:  # the radio was renamed after queueing
                 raise _FinalError(DeliveryState.FAILED, "too_long")
-            return time_on_air_s(channel_message_bytes(size, name_bytes), _lora(info)), None
+            return time_on_air_s(channel_message_bytes(size, name_bytes), info.lora), None
         contact = self._resolve(session, target)
         record = session.contact_records[contact.public_key]
         known_flood = record.out_path_len == 0xFF
@@ -677,8 +705,8 @@ class Bridge:
             reset = bytes.fromhex(contact.public_key)
         # from the reset on, assume a flood: the cached record does not show the reset
         flood = known_flood or attempt >= flood_after
-        path_bytes = 0 if flood else _path_bytes(record.out_path_len)
-        return direct_attempt_airtime_s(size, path_bytes, flood, _lora(info)), reset
+        path_bytes = 0 if flood else record.path_bytes or 0
+        return direct_attempt_airtime_s(size, path_bytes, flood, info.lora), reset
 
     def _resolve(self, session: CompanionSession, target: Target) -> Contact:
         key = _key(target)
@@ -710,19 +738,35 @@ class Bridge:
     async def _event_loop(self) -> None:
         while True:
             event = await self._events.get()
+            telemetry = self._telemetry
             if isinstance(event, MessageReceived):
+                self._activity.touch()  # an automation's answer to it goes before telemetry
                 self._messages.put_nowait(event)  # in order, without delaying acks
             elif isinstance(event, AckReceived):
                 self._acks.resolve(event.ack, event.round_trip_ms)
             elif isinstance(event, Barrier):
                 event.done.set()
+            elif isinstance(event, TelemetryReceived):  # only the poller knows whom it asked
+                if telemetry is not None:
+                    self._observe(telemetry.answer, event)
+            elif isinstance(event, PathChanged):
+                if telemetry is not None:
+                    self._observe(telemetry.path_changed, event.public_key)
             else:
                 if isinstance(event, PacketLogged) and self.config.diagnostics.publish_rx_log:
                     rx = event.rx
                     payload = rx_payload(rx.snr_db, rx.rssi_dbm, rx.raw, event.received_at)
                     self._bus.publish(self.topics.rx, encode(payload))
+                if telemetry is not None:
+                    self._telemetry_sees(telemetry, event)
                 self._observe(self.observer.radio_event, event)
             self._events.task_done()  # for the stop (_finish_inbound)
+
+    def _telemetry_sees(self, telemetry: TelemetryPoller, event: RadioEvent) -> None:
+        if isinstance(event, PacketLogged):
+            self._observe(telemetry.packet_logged, event.rx)
+        elif isinstance(event, AdvertHeard) and not event.advert.new:  # a contact's advert
+            self._observe(telemetry.heard, event.advert.public_key.hex())
 
     async def _message_loop(self) -> None:
         while True:
@@ -784,6 +828,12 @@ class Bridge:
         if sender is not None and message.kind is MessageKind.CONTACT:
             self._bus.publish(self.topics.contact_received(sender.public_key), encode(payload))
         self._observe(self.observer.message, message, sender)
+        if (
+            self._telemetry is not None and sender is not None and not event.at_connect
+            and message.kind is MessageKind.CONTACT
+        ):  # fmt: skip
+            # as it arrived; one fetched at connect may have waited in the radio for hours
+            self._observe(self._telemetry.heard, sender.public_key)
         if command is not None:
             name = sender.name if sender else None
             # QoS 0: an event that cannot be delivered now is lost, never delivered late (after
@@ -906,7 +956,25 @@ class Bridge:
             # adds the gateway in the MeshCore app (as a QR code): it needs no write, no airtime
             "contact_link": contact_link(info.name, info.public_key) if info else None,
             "version": __version__,
+            **self._telemetry_state(),
         }
+
+    def _telemetry_state(self) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "telemetry": "off", "telemetry_airtime_1h_s": None, "telemetry_mesh_airtime_1h_s": None,
+        }  # fmt: skip
+        if self._telemetry is None:
+            return state
+        try:
+            own, mesh = self._telemetry.used_s()
+            return {
+                "telemetry": self._telemetry.status,
+                "telemetry_airtime_1h_s": round(own, 3),
+                "telemetry_mesh_airtime_1h_s": round(mesh, 3),
+            }
+        except Exception:  # the rest of the state goes out
+            log.exception("telemetry: state unavailable")
+            return {**state, "telemetry": None}
 
     def _publish_state(self) -> None:
         state = self.state_payload()
@@ -1031,22 +1099,7 @@ def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
     return (info.device.model, info.device.version, info.public_key) if info else None
 
 
-def _lora(info: RadioInfo) -> LoRaParams:
-    sf = info.self_info.spreading_factor
-    return LoRaParams(
-        bandwidth_hz=float(info.self_info.bandwidth_hz),
-        spreading_factor=sf,
-        coding_rate=info.self_info.coding_rate,
-        preamble_symbols=meshcore_preamble(sf),
-    )
-
-
 def _key(target: Target) -> str:
     if target.public_key is None:
         raise ValueError(f"target {target.alias} has no public key")
     return target.public_key
-
-
-def _path_bytes(out_path_len: int) -> int:
-    """Stored path size: bits 0-5 hop count, bits 6-7 hash size minus one."""
-    return (out_path_len & 0x3F) * ((out_path_len >> 6) + 1)
