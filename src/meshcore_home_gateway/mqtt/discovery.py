@@ -33,6 +33,7 @@ RADIO_ATTRIBUTES = (
     "'spreading_factor': value_json.spreading_factor, 'coding_rate': value_json.coding_rate, "
     "'tx_power_dbm': value_json.tx_power_dbm, 'bridge_version': value_json.version} | tojson }}"
 )
+PROFILE_STATES = ["ok", "written", "drift", "differs", "problem"]  # views.settings_document
 STATS_ATTRIBUTES = (
     "{{ {'window_s': value_json.tx_airtime_window_s, 'airtime_factor': value_json.airtime_factor, "
     "'duty_cycle_percent': value_json.duty_cycle_percent} | tojson }}"
@@ -186,7 +187,7 @@ def _mesh_components(
     component: Callable[..., dict[str, Any]], topics: Topics
 ) -> dict[str, dict[str, Any]]:
     """What the observer publishes (ADR 0015): the radio's measurements, the contact table, the
-    nodes heard, and their events."""
+    nodes heard, the managed profile (ADR 0020), and their events."""
     stats = {"entity_category": "diagnostic", "state_topic": topics.stats}
     counter = {"state_class": "total_increasing", "enabled_by_default": False, **stats}
     contacts = {"state_topic": topics.contacts, "json_attributes_topic": topics.contacts}
@@ -253,6 +254,16 @@ def _mesh_components(
         ),
         "node": component(
             "node", "event", "New node", state_topic=topics.node_event, event_types=["new"],
+        ),
+        "profile": component(  # the whole settings document as attributes
+            "profile", "sensor", "Radio profile", device_class="enum", options=PROFILE_STATES,
+            icon="mdi:shield-check-outline", entity_category="diagnostic",
+            state_topic=topics.settings, value_template="{{ value_json.status }}",
+            json_attributes_topic=topics.settings,
+        ),
+        "setting": component(
+            "setting", "event", "Radio setting", state_topic=topics.setting_event,
+            event_types=["written", "failed", "not_taken", "not_converging", "drift"],
         ),
     }  # fmt: skip
 

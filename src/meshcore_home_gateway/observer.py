@@ -35,6 +35,7 @@ from meshcore_home_gateway.core.model import (
     Target,
     split_sender_name,
 )
+from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.history import History, NodeRow
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol import codec
@@ -48,6 +49,7 @@ from meshcore_home_gateway.radio.session import (
 )
 from meshcore_home_gateway.state import RetainedKeys
 from meshcore_home_gateway.views import (
+    SETTING_NAMES,
     HistoryEntry,
     RadioReadings,
     contact_document,
@@ -56,6 +58,8 @@ from meshcore_home_gateway.views import (
     history_document,
     iso,
     nodes_document,
+    setting_value,
+    settings_document,
     stats_document,
 )
 
@@ -103,6 +107,7 @@ class Observer:
         self._stored_fixes: dict[str, Fix] = {}  # the newest position in the history per contact
         # called after each table read, before the topics of removed contacts are cleared
         self.on_contacts: list[Callable[[Mesh], None]] = []
+        self._profiles: dict[str, ProfileReport] = {}  # radio key -> the profile's last report
         self._restore()
 
     def _restore(self) -> None:
@@ -129,6 +134,29 @@ class Observer:
             self._topics.contacts, contacts_document(self.mesh, protected=self._protected)
         )
         self._publish(self._topics.stats, stats_document(self._readings, self._meter, tuning))
+
+    def profile_applied(self, report: ProfileReport) -> None:
+        """The managed profile was reconciled at a connect: the `settings` document, and an
+        event for each setting written or refused at this connect, and for each that is newly
+        given up or newly found changed on the radio (once per run of the gateway)."""
+        self._publish(self._topics.settings, settings_document(report, self._wall()), force=True)
+        before = self._profiles.get(report.radio)
+        self._profiles[report.radio] = report
+        events = [
+            *(("written", k, report.reasons.get(k)) for k in report.written),
+            *(("failed", k, report.reasons.get(k)) for k in report.failed),
+            *(("not_taken", k, report.reasons.get(k)) for k in report.not_taken),
+            *(("not_converging", k, None) for k in report.not_converging
+              if before is None or k not in before.not_converging),
+            *(("drift", k, None) for k, v in report.drift.items()
+              if before is None or before.drift.get(k) != v),
+        ]  # fmt: skip
+        for kind, key, reason in events:
+            self._event(self._topics.setting_event, {
+                "event_type": kind, "setting": SETTING_NAMES[key], "reason": reason,
+                "live": setting_value(key, report.live.get(key)),
+                "desired": setting_value(key, report.desired.get(key)),
+            })  # fmt: skip
 
     def radio_event(self, event: RadioEvent) -> None:
         if isinstance(event, ContactsRead):

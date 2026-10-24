@@ -343,9 +343,43 @@ def test_the_household_comes_first_when_there_are_too_many(tmp_path: Path) -> No
     contacts, bus = devices(tmp_path, limit=2, protected=frozenset({CAROL}))
     favourite = node(BOB, "Bob", flags=ContactFlag.FAVOURITE)
     mesh = mesh_of(node(ALICE, "Alice"), favourite, node(HILL, "Hill", NodeType.REPEATER),
-                   node(CAROL, "Carol"))  # fmt: skip
+                   node(CAROL, "Carol", last_advert=int(NOW)))  # fmt: skip
     contacts.update(mesh)
     assert {t for t, _ in bus.take()} == {topic(CAROL), topic(BOB)}
+
+
+def test_a_protected_contact_gets_its_device_with_its_first_advert(tmp_path: Path) -> None:
+    """The radio profile puts a protected contact on the radio before it was heard: a key and a
+    configured name, nothing to show yet."""
+    contacts, bus = devices(tmp_path, protected=frozenset({CAROL}))
+    mesh = mesh_of(node(ALICE, "Alice"), node(CAROL, "Carol"))
+    contacts.update(mesh)
+    assert [t for t, _ in bus.take()] == [topic(ALICE)]
+    contacts.update(mesh_of(node(ALICE, "Alice"), node(CAROL, "Carol", last_advert=int(NOW)),
+                            mesh=mesh))  # fmt: skip
+    assert [t for t, _ in bus.take()] == [topic(CAROL)]
+    contacts.update(mesh_of(node(ALICE, "Alice"), node(CAROL, "Carol"), mesh=mesh))
+    assert bus.take() == []  # once it has a device, it keeps it
+
+
+def test_a_protected_contact_put_back_on_the_radio_gets_its_device_back(tmp_path: Path) -> None:
+    """Deleted from the radio meanwhile (the phone app): the profile puts it back without an
+    advert, and its device comes back at the same connect, with its entity IDs."""
+    contacts, bus = devices(tmp_path, protected=frozenset({CAROL}))
+    mesh = mesh_of(node(CAROL, "Carol", last_advert=int(NOW)))
+    contacts.update(mesh)
+    ((_, document),) = bus.take()
+    contacts.update(mesh_of(mesh=mesh))  # the first table read of the connect: gone
+    bus.take()
+    contacts.update(mesh_of(node(CAROL, "sender-d4d4"), mesh=mesh))  # put back by the profile
+    ((topic_back, again),) = bus.take()
+    assert topic_back == topic(CAROL)
+
+    def entity_ids(doc: dict[str, Any]) -> set[str]:
+        return {c["default_entity_id"] for c in doc["cmps"].values() if "default_entity_id" in c}
+
+    assert entity_ids(again) == entity_ids(document)
+    assert all("mesh_carol" in e for e in entity_ids(again))
 
 
 def test_a_device_keeps_its_place_and_the_recently_heard_come_next(tmp_path: Path) -> None:

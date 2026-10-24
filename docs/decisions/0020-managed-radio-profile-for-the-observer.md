@@ -54,26 +54,37 @@ keeps deliberate identity changes, and writes nothing in the steady state.
 
 * **Reconcile** per key: desired ≠ last applied → the operator changed the configuration: write
   it. Desired = last applied but live differs → someone changed the radio: an *enforced* key is
-  written back with a warning, a *seed* key is accepted and reported as drift. After writing, the
-  session reads the settings again and compares; values that go through the firmware's float32
-  arithmetic are compared with a tolerance of one thousandth.
+  written back with a warning, a *seed* key is accepted and reported as drift. A radio without a
+  stored entry (its first connect, a replaced radio) gets every difference written. After writing,
+  the session reads the settings again and compares; values that go through the firmware's float32
+  arithmetic are compared with a tolerance of one thousandth. A write that does not read back as
+  written is reported as `not_taken`. What was applied is stored per radio key.
 * **When**: at connect, after the auto-add settings are read and before the contact table is read
   for command decisions, so the policy holds before any message is judged.
 * **Firmware gate**: `manage = "auto"` (default) writes only on tested firmware version codes
   (initially 14, companion 1.18); other firmware is observed and reported. `observe` never writes,
   `always` writes on any firmware at the operator's risk. A command answered with `ERR 1` marks
   its setting `unsupported`.
-* **Convergence guard**: a setting written at three connects in a row is no longer written and is
-  reported as `not_converging` (a firmware that clamps or ignores a value must not wear the flash).
+* **Convergence guard**: a value written at three connects in a row without taking effect is no
+  longer written to that firmware version and is reported as `not_converging` (a firmware that
+  clamps or ignores a value must not wear the flash). The attempt is stored before each setter is
+  sent, so a radio that drops the connection at a setter counts for it and the setters sent before
+  it, and the setters after it, never sent, do not; a new configured value or another firmware
+  version starts afresh.
 * **Visibility**: a retained `settings` document (live, desired, drift, unsupported, mode), one
-  log line per change, a settings event and a diagnostic entity in Home Assistant.
+  log line per change, a settings event (`written`, `failed`, `not_taken`, `not_converging`,
+  `drift`) and a diagnostic entity in Home Assistant.
 * **Display only, never written**: frequency, bandwidth, spreading factor, coding rate, path hash
   mode, transmit power, client repeat, the stored own position (reported, cleared only on request).
 * **Deny list**: the codec has no encoder for setting radio parameters (11), exporting or importing
   the private key (23, 24), raw data and raw packets (25, 65), signing (33–35), setting the BLE PIN
   (37), factory reset (51) and the radio's command line (66); a test fails if one appears.
-* **Installer**: reads the radio (`probe`), asks for the name (default: the current one), shows the
-  plan, and writes only `config.toml`. The service is the radio's only writer.
+* **Installer**: reads the radio (`probe`); in the advanced setup (or with `radio.profile.name`
+  in the answers) it asks for the name (default: the current one). Then it runs `probe` again with
+  the answers as configuration and the service's stored state, read only: the service's own
+  reconcile, so the plan it shows is exact (settings set, kept, given up, unsupported or only
+  reported; protected contacts added or made favourites). It writes only `config.toml`; the
+  service is the radio's only writer.
 
 ### Consequences
 
@@ -92,9 +103,12 @@ keeps deliberate identity changes, and writes nothing in the steady state.
 ### Confirmation
 
 Emulator tests: the first connect writes exactly the differences, the second connect writes
-nothing; a clamped value stops after three connects; `ERR 1` yields `unsupported`; unknown
-firmware only observes; an operator change of the name is written once, a radio change of the
-name is kept and reported. The hardware checklist covers the frames on the reference radio.
+nothing; a value written at three connects in a row without taking effect stops, per firmware
+version, and a new configured value starts afresh; a radio that drops the connection at a setter
+counts as an attempt for that setter and the ones sent before it, not for the setters after it; `ERR 1` yields `unsupported`; unknown firmware only observes; an
+operator change of the name is written once, a radio change of the name is kept and reported;
+`probe` shows the service's plan and writes nothing. The hardware checklist covers the frames on
+the reference radio.
 
 ## Pros and Cons of the Options
 

@@ -16,7 +16,7 @@ import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway.bridge import Bridge
-from meshcore_home_gateway.config import Config, parse_config
+from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.mqtt.client import SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
@@ -25,6 +25,7 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
+from meshcore_home_gateway.radio.profile import RadioProfile
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
 from meshcore_home_gateway.radio.transport import Transport
 from meshcore_home_gateway.state import (
@@ -157,6 +158,7 @@ async def running(
     monotonic: Callable[[], float] = time.monotonic,
     observer: Callable[[FakeBus], Observer] | None = None,
     devices: bool = False,
+    profile: RadioProfile | None = None,
 ) -> AsyncIterator[tuple[Bridge, FakeBus, list[str]]]:
     bus = bus or FakeBus()
     stop, notes = asyncio.Event(), []
@@ -175,7 +177,7 @@ async def running(
         config, bus, transport or (lambda: radio), CommandLedger(store), session_factory=sessions,
         wall_clock=lambda: NOW, monotonic=monotonic, notifier=note,
         components=AnnouncedComponents(store), observer=observer(bus) if observer else None,
-        devices=contact_devices,
+        devices=contact_devices, profile=profile,
     )  # fmt: skip
     task = asyncio.create_task(bridge.run(stop))
     try:
@@ -1857,5 +1859,51 @@ def test_a_device_home_assistant_clears_is_announced_again(tmp_path: Path) -> No
             await bus.wait_for("/config", lambda d: True, since=count)
             await asyncio.sleep(0.05)
             assert len([p for t, p, _ in bus.published if t == own]) == count + 1
+
+    scenario(main)
+
+
+def test_the_profile_of_a_connect_that_fails_later_is_reported_once(tmp_path: Path) -> None:
+    """The radio goes away after the profile wrote (at the channel read): the next connect
+    publishes that connect's report first, with its events once, then its own."""
+    radio = EmulatedRadio(manual_add=False, tuning=(0, 1000), drop_on={Command.GET_CHANNEL})
+    profile = RadioProfile(ProfileConfig(), protected={"e5" * 32: "operator"})
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, profile=profile) as (_, bus, _n):
+            await bus.wait_for("radio1/settings", lambda d: d["status"] == "ok")
+            statuses = [d["status"] for d in bus.payloads("radio1/settings")]
+            assert statuses == ["written", "ok"]
+            first = bus.payloads("radio1/settings")[0]
+            assert first["protected_contacts"]["added"] == ["e5" * 32]
+            events = [(e["event_type"], e["setting"]) for e in bus.payloads("radio1/setting")]
+            assert events == [("written", "manual_add"), ("written", "duty_cycle_percent")]
+
+    scenario(main)
+
+
+def test_the_radio_becomes_an_observer_and_reports_its_settings(tmp_path: Path) -> None:
+    """ADR 0020: written before the first table read, reported in `settings` and as events."""
+    radio = EmulatedRadio(manual_add=False, autoadd_config=0x1F, tuning=(0, 1000))
+    profile = RadioProfile(ProfileConfig())
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, profile=profile) as (_, bus, _n):
+            document = await bus.wait_for("radio1/settings", lambda d: True)
+            assert document["status"] == "written"
+            assert document["settings"]["duty_cycle_percent"] == {
+                "live": 10.0, "desired": 10.0, "state": "written",
+            }  # fmt: skip
+            events = {e["setting"]: e for e in bus.payloads("radio1/setting")}
+            assert set(events) == {"manual_add", "autoadd", "duty_cycle_percent"}
+            assert events["autoadd"] == {
+                "event_type": "written", "setting": "autoadd", "reason": "initial",
+                "live": [], "desired": [],
+            }  # fmt: skip
+            assert any(r for t, _, r in bus.published if t.endswith("radio1/settings"))
+            setters = [c for c in radio.commands() if c in (38, 58, 21)]
+            first_read = radio.commands().index(4)  # GET_CONTACTS
+            assert setters
+            assert all(radio.commands().index(c) < first_read for c in setters)
 
     scenario(main)

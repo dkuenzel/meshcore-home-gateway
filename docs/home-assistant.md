@@ -49,6 +49,8 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `binary_sensor.meshcore_home_gateway_radio1_remote_cli` | problem, diagnostic | a contact may use the radio's command line over the air; attribute `contacts` ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
 | `binary_sensor.meshcore_home_gateway_radio1_advert_position` | problem, diagnostic | a companion's adverts carry its position, which everyone in range can read; attribute `contacts` |
 | `button.meshcore_home_gateway_radio1_show_hidden` | configuration | shows the contacts deleted in Home Assistant again (next section) |
+| `sensor.meshcore_home_gateway_radio1_profile` | enum, diagnostic: `ok`, `written`, `drift`, `differs`, `problem` | the managed radio profile at the last connect; the `settings` document as attributes ([configuration.md](configuration.md#radioprofile)) |
+| `event.meshcore_home_gateway_radio1_setting` | event: `written`, `failed`, `not_taken`, `not_converging`, `drift` | a radio setting set, refused, not taken, given up or found changed |
 | `sensor.meshcore_home_gateway_radio1_uptime`, `..._packets_received`, `..._packets_sent`, `..._receive_errors` | diagnostic | the radio's uptime and packet counters; disabled until enabled in Home Assistant |
 
 A `-` in the node ID becomes `_` in the entity IDs, as in an alias: node `radio-1` gives
@@ -67,7 +69,9 @@ side.
 Every contact in the radio's table gets a device of its own, listed under *Connected devices* on the
 gateway's page ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)). A
 contact added to the radio has its device within seconds; a contact removed loses it. Nothing has to
-be configured. The entities, for a companion named *Alice*:
+be configured. One exception: a contact target or command sender that the radio profile puts on
+the radio before it was ever heard gets its device with its first advert, so its entity IDs come
+from its own name, not from a placeholder. The entities, for a companion named *Alice*:
 
 | Entity | Platform | Content |
 | --- | --- | --- |
@@ -120,6 +124,7 @@ so Home Assistant's map shows each contact once; it turns `unavailable` while no
 | `contacts/<key>` | a contact's sensors and tracker |
 | `contacts/<key>/received`, `contacts/<key>/send` | a contact's message event and notify entity |
 | `homeassistant/show_hidden` | the button *Show hidden contacts* |
+| `settings`, `setting` | *Radio profile* (every key as an attribute) and the event *Radio setting* |
 
 An entities card shows an attribute, such as the text of the last message, without YAML.
 

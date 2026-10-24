@@ -96,6 +96,26 @@ STUBS = {
               *"--list contacts"*)
                 [[ -n ${PROBE_ONLY_REPEATER-} ]] || printf '%s\tAlice Example\tchat\n' "$ALICE"
                 printf '%s\tRelay\trepeater\n' "$RELAY" ;;
+              *'--config $dir/profile.toml'*)  # the plan, with the answers as configuration
+                if [[ -n ${PROBE_PLAN-} ]]; then printf '%b' "$PROBE_PLAN"; exit 0; fi
+                found=$(printf '%b' "${PROBE_PROFILE:-$PROBE_DEFAULT}")
+                current=$(sed -n 's/^name\t//p' <<<"$found")
+                tested=$(sed -n 's/^tested\t//p' <<<"$found")
+                manage=$(sed -n 's/^radio\.profile\.manage=//p' "$STUB/input")
+                name=$(sed -n 's/^radio\.profile\.name=//p' "$STUB/input")
+                case ${manage:-auto}/$tested in
+                  observe/*|auto/no) action=reported ;;
+                  *) action=set ;;
+                esac
+                printf 'name\t%s\ntested\t%s\n' "$current" "$tested"
+                printf 'change\tmanual_add\tfalse\ttrue\t%s\n' "$action"
+                if [[ -n $name && $name != "$current" ]]; then
+                  printf 'change\tname\t"%s"\t"%s"\t%s\n' "$current" "$name" "$action"
+                fi ;;
+              *"--list profile"*)  # a version before the managed profile: no such list
+                [[ -z ${PROBE_NO_PROFILE-} ]] || exit 2
+                [[ -z ${PROBE_PROFILE_FAILS-} ]] || exit 1  # the radio did not answer
+                printf '%b' "${PROBE_PROFILE:-$PROBE_DEFAULT}" ;;
               "getent group dialout") printf 'dialout:x:%s:\n' "${CT_DIALOUT_GID:-20}" ;;
               *"config answers"*) cat "$STUB/current" ;;
               "test -f "*) [[ -e $STUB/current ]] ;;
@@ -252,6 +272,9 @@ def install_stubs(root: Path, real: frozenset[str] = frozenset()) -> Host:
         "#!/usr/bin/env bash\nset -eu\n"
         f"log() {{ local IFS=$'{SEP}'; local line=\"$*\"; line=${{line//$'\\n'/$'{NL}'}}; "
         'printf "%s\\n" "$line" >>"$STUB/calls.log"; }\n'
+        # what `probe --list profile` finds on the radio, unless PROBE_PROFILE says otherwise
+        "PROBE_DEFAULT='name\\tMeshCore-ab12\\ntested\\tyes\\nwrites\\tyes\\n"
+        "change\\tmanual_add\\tfalse\\ttrue\\tset\\n'\n"
     )
     for name, body in STUBS.items():
         if name not in real:
@@ -524,9 +547,11 @@ def test_interactive_advanced_setup_asks_for_everything(host: Host) -> None:
         "yes", "Mesh radio", "yes",  # discovery, device name, ASCII only
         "yes",  # create the container
         "0|1", ALICE, ALICE, "status,arm",  # channels, contacts, senders, words
+        "Mesh gateway",  # the radio's name (the profile)
     ]  # fmt: skip
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
+    assert host.config().radio.profile.name == "Mesh gateway"
     options = create_options(host)
     assert host.pct("create")[0][2] == "106"
     assert options["--net0"] == "name=eth0,bridge=vmbr1,ip=192.0.2.20/24,gw=192.0.2.1"
@@ -1699,3 +1724,166 @@ def test_dialogs_refuse_a_script_piped_into_bash(host: Host) -> None:
     assert result.returncode == 1
     assert 'bash -c "$(wget -qO- URL)"' in result.stderr
     assert not host.calls("whiptail")
+
+
+def test_the_installer_shows_what_the_profile_changes_and_keeps_the_name(host: Host) -> None:
+    """ADR 0020: the radio's name as found unless another is given; the plan is shown."""
+    result = run_installer(host, "--answers", str(answers_file(host)))
+    assert result.returncode == 0, result.stderr
+    assert any("probe --serial" in c and "--list profile" in c for c in host.inside())
+    plan = host.script("--config $dir/profile.toml")  # the answers, not the configuration
+    assert "config render --answers $dir/answers --output $dir/profile.toml" in plan
+    assert "probe --serial " in plan
+    assert "--state-dir /var/lib/meshcore-home-gateway" in plan
+    assert plan.endswith("--list profile")
+    assert "At its next connect the service sets the radio:" in result.stderr
+    assert "  manual_add: false -> true" in result.stderr
+    assert host.config().radio.profile.name is None  # as found
+
+
+def test_the_radio_gets_the_name_of_the_answers(host: Host) -> None:
+    answers = answers_file(host, None)
+    answers.write_text(answers.read_text() + "radio.profile.name=Mesh gateway\n")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    assert host.config().radio.profile.name == "Mesh gateway"
+
+
+def test_a_name_too_long_for_the_radio_is_refused(host: Host) -> None:
+    answers = answers_file(host, None)
+    answers.write_text(answers.read_text() + "radio.profile.name=" + "ä" * 16 + "\n")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode != 0
+    assert "radio.profile.name: 1 to 31 bytes" in result.stderr
+
+
+def test_untested_firmware_and_older_versions_are_reported(host: Host) -> None:
+    untested = "name\\tGateway\\ntested\\tno\\nchange\\tmanual_add\\tfalse\\ttrue\\n"
+    result = run_installer(host, "--answers", str(answers_file(host)),
+                           env={"PROBE_PROFILE": untested})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "firmware is not tested: the service only reports" in result.stderr
+
+
+def test_a_version_without_the_profile_skips_the_step(host: Host) -> None:
+    result = run_installer(host, "--answers", str(answers_file(host)),
+                           env={"PROBE_NO_PROFILE": "1"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "does not manage the radio's settings; skipped" in result.stderr
+
+
+def test_the_plan_is_shown_in_a_dialog(host: Host) -> None:
+    dialog = [
+        "default", str(host.serial), "broker.example.org", "bridge", "pw-secret", "yes",
+        "0|1|2", ALICE, "",
+    ]  # fmt: skip
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    boxes = [c for c in host.calls("whiptail") if "--msgbox" in c]
+    assert any("service sets the radio" in " ".join(c) for c in boxes)
+
+
+def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:
+    """A name cut by the firmware inside a character decodes longer than 31 bytes: it is not
+    managed, so it is not checked, and nothing loops."""
+    cut = "name\\t" + "x" * 30 + "\\ufffd" + "\\ntested\\tyes\\n"
+    result = run_installer(host, "--answers", str(answers_file(host)), env={"PROBE_PROFILE": cut})
+    assert result.returncode == 0, result.stderr
+    assert host.config().radio.profile.name is None
+    dialog = [
+        "default", str(host.serial), "broker.example.org", "bridge", "pw-secret", "yes",
+        "0|1|2", ALICE, "",
+    ]  # fmt: skip
+    second = host.root.parent / "second"
+    second.mkdir()
+    other = install_stubs(second)
+    result = run_installer(other, dialog=dialog, env={"PROBE_PROFILE": cut})
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_plan_names_the_new_name_and_follows_the_mode(host: Host) -> None:
+    answers = answers_file(host, None)
+    answers.write_text(
+        answers.read_text() + "radio.profile.name=Gateway\nradio.profile.manage=observe\n"
+    )
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    assert "With radio.profile.manage = observe the service only reports" in result.stderr
+    assert '  name: "MeshCore-ab12" -> "Gateway"' in result.stderr
+
+
+def test_always_writes_to_untested_firmware(host: Host) -> None:
+    untested = "name\\tGateway\\ntested\\tno\\n"
+    answers = answers_file(host, None)
+    answers.write_text(answers.read_text() + "radio.profile.manage=always\n")
+    result = run_installer(host, "--answers", str(answers), env={"PROBE_PROFILE": untested})
+    assert result.returncode == 0, result.stderr
+    assert "At its next connect the service sets the radio:" in result.stderr
+    assert "only reports" not in result.stderr
+
+
+def test_the_plan_names_what_the_service_leaves_alone(host: Host) -> None:
+    """The actions of the service's own reconcile, with what it stored for the radio."""
+    plan = (
+        "name\\tGateway\\ntested\\tyes\\nwrites\\tyes\\n"
+        'change\\tname\\t"Renamed"\\t"Gateway"\\tkept\\n'
+        "change\\tautoadd\\t0\\t1\\tgiven_up\\n"
+        "change\\tduty_cycle_percent\\t50\\t10\\tunsupported\\n"
+    )
+    result = run_installer(host, "--answers", str(answers_file(host)), env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    assert "sets the radio" not in result.stderr
+    assert "The service leaves alone:" in result.stderr
+    assert '  name: "Renamed" (changed on the radio; kept)' in result.stderr
+    assert "  autoadd: 0, not 1 (did not take effect; no longer set)" in result.stderr
+    assert "  duty_cycle_percent: 50, not 10 (the firmware does not support it)" in result.stderr
+
+
+def test_a_radio_with_the_profile_needs_no_plan(host: Host) -> None:
+    result = run_installer(host, "--answers", str(answers_file(host)),
+                           env={"PROBE_PLAN": "name\\tGateway\\ntested\\tyes\\n"})  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "the radio already has the managed profile" in result.stderr
+
+
+def test_a_name_too_long_is_asked_again_in_the_dialog(host: Host) -> None:
+    dialog = [
+        "advanced",
+        "106", "meshcore-home-gateway", "local-lvm", "4", "512", "vmbr1",
+        "192.0.2.20/24", "192.0.2.1", "local",
+        str(host.serial),
+        "broker.example.org", "no", "1883", "bridge", "pw", "meshcore", "gw1",
+        "yes", "Mesh radio", "yes",
+        "yes",
+        "0|1", ALICE, ALICE, "status,arm",
+        "x" * 32, "Mesh gateway",  # 32 bytes, then one that fits
+    ]  # fmt: skip
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    assert host.config().radio.profile.name == "Mesh gateway"
+    names = [c for c in host.dialogs() if any("Name of the radio" in a for a in c)]
+    assert len(names) == 2
+    assert names[1][-1] == "x" * 32  # the refused name, to correct
+
+
+def test_the_plan_names_the_protected_contacts(host: Host) -> None:
+    plan = (
+        "name\\tGateway\\ntested\\tyes\\nwrites\\tyes\\n"
+        f"contact\\t{ALICE}\\tfavourite\\tAlice Example\\n"
+        f"contact\\t{RELAY}\\tadd\\t\\n"  # no name: the last field stays empty
+    )
+    result = run_installer(host, "--answers", str(answers_file(host)), env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    assert "At its next connect the service sets the radio:" in result.stderr
+    assert f"  contact {ALICE[:12]} Alice Example: made a favourite" in result.stderr
+    assert f"  contact {RELAY[:12]}: added as a favourite" in result.stderr
+
+
+def test_a_radio_that_does_not_answer_stops_the_installation(host: Host) -> None:
+    """Not taken for a version without the profile: the operator would not see the plan."""
+    result = run_installer(host, "--answers", str(answers_file(host)),
+                           env={"PROBE_PROFILE_FAILS": "1"})  # fmt: skip
+    assert result.returncode != 0
+    assert "cannot read the radio's settings" in result.stderr
+    assert "does not manage the radio's settings" not in result.stderr
+    assert not any("enable --now" in c for c in host.inside())

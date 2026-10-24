@@ -9,19 +9,28 @@ PROTOCOL_VERSION = 3  # DEVICE_QUERY app version: >= 3 selects the *_MSG_RECV_V3
 
 
 class Command(IntEnum):
+    """The commands the gateway sends. Never added (ADR 0020, tests/test_codec.py): radio
+    parameters, the private key, raw data and packets, signing, the BLE PIN, factory reset and the
+    radio's command line."""
+
     APP_START = 1
     SEND_TXT_MSG = 2
     SEND_CHANNEL_TXT_MSG = 3
     GET_CONTACTS = 4
     GET_DEVICE_TIME = 5
     SET_DEVICE_TIME = 6
+    SET_ADVERT_NAME = 8
+    ADD_UPDATE_CONTACT = 9
     SYNC_NEXT_MESSAGE = 10
     RESET_PATH = 13
     GET_BATT_AND_STORAGE = 20
+    SET_TUNING_PARAMS = 21
     DEVICE_QUERY = 22
     GET_CHANNEL = 31
+    SET_OTHER_PARAMS = 38
     GET_TUNING_PARAMS = 43
     GET_STATS = 56
+    SET_AUTOADD_CONFIG = 58
     GET_AUTOADD_CONFIG = 59
 
 

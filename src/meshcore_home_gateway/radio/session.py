@@ -24,7 +24,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.model import InboundMessage
@@ -49,6 +49,13 @@ ResponseCodes = frozenset[int]
 _SIMPLE = frozenset({Response.OK, Response.ERR, Response.DISABLED})
 T = TypeVar("T")
 S = TypeVar("S", codec.CoreStats, codec.RadioStats, codec.PacketStats)
+
+
+class ProfileHook(Protocol):
+    """The managed radio profile (radio/profile.py): before and after the first table read."""
+
+    async def before_contacts(self, session: CompanionSession) -> None: ...
+    async def after_contacts(self, session: CompanionSession) -> bool: ...
 
 
 class RadioError(Exception):
@@ -161,6 +168,7 @@ class CompanionSession:
         self.info: RadioInfo | None = None
         self.autoadd: codec.AutoAddConfig | None = None
         self.on_contact_key: Callable[[str, bool], None] | None = None  # key, held as contact
+        self.profile: ProfileHook | None = None  # the managed radio profile (ADR 0020)
         self.contacts_read_at = -1  # command count of the read behind contact_records
         self._contacts_changed_at = -1  # command count at the last contact push
         self._commands_sent = 0
@@ -199,20 +207,60 @@ class CompanionSession:
             codec.get_autoadd_config(), Response.AUTOADD_CONFIG, codec.AutoAddConfig,
             "get auto-add settings",
         )  # fmt: skip
-        _warn_about_contact_adding(self_info, self.autoadd)
         self.tuning = await self._optional(
             codec.get_tuning_params(), Response.TUNING_PARAMS, codec.TuningParams,
             "get tuning parameters",
         )  # fmt: skip
+        await self._apply_profile("before_contacts")  # the policy holds before a message is judged
+        _warn_about_contact_adding(self.info.self_info, self.autoadd)
         if self._set_clock:
             await self._sync_clock()
         await self.refresh_contacts()
+        if await self._apply_profile("after_contacts"):
+            await self.refresh_contacts()
         await self.refresh_channels(device.max_channels)
         await self.read_status()
         if fetch_messages:
             await self.sync_messages(at_connect=True)
             self._tasks.append(asyncio.create_task(self._maintenance(), name="radio-maintenance"))
         return self.info
+
+    async def _apply_profile(self, step: str) -> bool:
+        """A step of the profile; a bug in it is logged and must not keep the radio away."""
+        if self.profile is None:
+            return False
+        try:
+            return bool(await getattr(self.profile, step)(self))
+        except RadioError:
+            raise
+        except Exception:
+            log.exception("radio profile: %s failed", step)
+            return False
+
+    async def write_setting(self, what: str, request: bytes) -> None:
+        """A setter of the profile; CommandFailedError when the radio refuses it."""
+        await self._expect_ok(f"set {what}", request)
+
+    async def write_contact(self, request: bytes) -> None:
+        await self._expect_ok("add or update contact", request)
+        self._contacts_dirty.set()
+
+    async def reread_settings(self) -> None:
+        """Read the settings again after the profile wrote some (SELF_INFO comes with APP_START)."""
+        info = self.info
+        assert info is not None  # noqa: S101 - after the start
+        self_info = await self._expect(
+            codec.app_start(APP_NAME), Response.SELF_INFO, codec.SelfInfo, "app start"
+        )
+        self.info = RadioInfo(self_info, info.device)
+        self.autoadd = await self._optional(
+            codec.get_autoadd_config(), Response.AUTOADD_CONFIG, codec.AutoAddConfig,
+            "get auto-add settings",
+        )  # fmt: skip
+        self.tuning = await self._optional(
+            codec.get_tuning_params(), Response.TUNING_PARAMS, codec.TuningParams,
+            "get tuning parameters",
+        )  # fmt: skip
 
     async def wait_closed(self) -> None:
         """Return when the session ends; re-raise the error that ended it."""

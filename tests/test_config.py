@@ -37,6 +37,12 @@ host = "192.0.2.10"
 port = 5000
 set_clock = false
 
+[radio.profile]
+manage = "observe"
+name = "Gateway Süd"
+duty_cycle_percent = 25.0
+protect_contacts = false
+
 [mqtt]
 host = "192.0.2.20"
 port = 8883
@@ -343,7 +349,10 @@ def settings_read(monkeypatch: pytest.MonkeyPatch, *texts: str) -> set[str]:
 def test_every_setting_has_an_answer_type(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without one, `--reconfigure` could not write the setting back (answers, then render)."""
     read = settings_read(monkeypatch, MINIMAL, FULL)
-    settings = {key for key in read if "." in key and not key.startswith("targets.")}
+    tables = {key.rpartition(".")[0] for key in read}
+    settings = {
+        key for key in read if "." in key and not key.startswith("targets.") and key not in tables
+    }
     assert len(settings) > 30
     assert settings - set(config_module._ANSWER_TYPES) == set()
 

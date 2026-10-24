@@ -20,7 +20,7 @@ import sys
 import tempfile
 import threading
 import unicodedata
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +29,7 @@ from meshcore_home_gateway.config import (
     Config,
     ConfigError,
     MqttConfig,
+    ProfileConfig,
     config_answers,
     load_config,
     parse_config,
@@ -38,7 +39,9 @@ from meshcore_home_gateway.config import (
 from meshcore_home_gateway.protocol.codes import ContactFlag, TelemetryMode
 
 if TYPE_CHECKING:
+    from meshcore_home_gateway.core.profile import Plan
     from meshcore_home_gateway.radio.transport import Transport
+    from meshcore_home_gateway.state import ProfileRecords
 
 EX_OK, EX_FAILURE, EX_CONFIG = 0, 1, 78
 CONNECT_TIMEOUT_S = 10.0
@@ -115,8 +118,20 @@ def _parser() -> argparse.ArgumentParser:
         "--tcp", metavar="HOST[:PORT]", type=tcp_address,
         help="WiFi companion, port 5000 by default; IPv6 as [ADDRESS]:PORT",
     )  # fmt: skip
-    probe.add_argument("--list", choices=["contacts", "channels"], help="tab-separated list only")
+    probe.add_argument(
+        "--list", choices=["contacts", "channels", "profile"], help="tab-separated list only"
+    )
     probe.add_argument("--json", action="store_true", help="everything as JSON")
+    probe.add_argument(
+        "--config", type=Path, default=None,
+        help="show what the [radio.profile] of this configuration changes (default: the "
+        "observer profile without a name)",
+    )  # fmt: skip
+    probe.add_argument(
+        "--state-dir", type=Path, default=None,
+        help="the service's state, read only, for its exact plan (default: $STATE_DIRECTORY or "
+        "/var/lib/meshcore-home-gateway)",
+    )  # fmt: skip
 
     send = command("send", "send a text to a configured target through the broker", _send)
     send.add_argument("alias")
@@ -164,7 +179,11 @@ def _run(args: argparse.Namespace) -> int:
 
 
 async def _serve(config: Config, state_dir: Path) -> int:
-    from meshcore_home_gateway.bridge import Bridge, protected_keys  # noqa: PLC0415 - light start
+    from meshcore_home_gateway.bridge import (  # noqa: PLC0415 - light start
+        Bridge,
+        protected_keys,
+        protected_names,
+    )
     from meshcore_home_gateway.history import History, Retention  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.contact_devices import (  # noqa: PLC0415
@@ -174,11 +193,13 @@ async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.mqtt.discovery import discovery_topic  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
     from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
+    from meshcore_home_gateway.radio.profile import RadioProfile  # noqa: PLC0415
     from meshcore_home_gateway.state import (  # noqa: PLC0415
         AnnouncedComponents,
         CommandLedger,
         ContactDeviceRecords,
         JsonStateFile,
+        ProfileRecords,
         RetainedKeys,
     )
 
@@ -205,6 +226,9 @@ async def _serve(config: Config, state_dir: Path) -> int:
         bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
         protected=protected,
     )  # fmt: skip
+    profile = RadioProfile(
+        config.radio.profile, ProfileRecords(store), protected=protected_names(config)
+    )
     devices = None
     if ha.discovery:  # also with no devices allowed: those of an earlier run are removed
         records = ContactDeviceRecords(store)
@@ -212,6 +236,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     bridge = Bridge(
         config, bus, lambda: transport_for(config), CommandLedger(store),
         components=AnnouncedComponents(store), observer=observer, devices=devices,
+        profile=profile,
     )  # fmt: skip
     try:
         await bridge.run(stop)
@@ -302,14 +327,24 @@ def _check_config(args: argparse.Namespace) -> int:
 
 
 def _probe(args: argparse.Namespace) -> int:
+    from meshcore_home_gateway.bridge import protected_names  # noqa: PLC0415
     from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
+    from meshcore_home_gateway.state import JsonStateFile, ProfileRecords  # noqa: PLC0415
 
     if args.serial:
         transport: Any = SerialTransport(args.serial)
     else:
         transport = TcpTransport(*args.tcp)
+    config = load_config(args.config) if args.config else None
+    profile = config.radio.profile if config else ProfileConfig()
+    # the contacts the service keeps on the radio (targets, command senders), as it does
+    protected = protected_names(config) if config and profile.protect_contacts else {}
+    state_dir = args.state_dir or Path(os.environ.get("STATE_DIRECTORY", DEFAULT_STATE_DIR))
+    records = ProfileRecords(JsonStateFile(state_dir / "state.json", read_only=True))
     try:
-        report = asyncio.run(_probe_radio(transport))
+        report = asyncio.run(
+            _probe_radio(transport, profile, records, protected, configured=config is not None)
+        )
     except Exception as exc:  # noqa: BLE001 - report any failure to the operator
         print(f"meshcore-home-gateway: probe failed: {exc}", file=sys.stderr)
         return EX_FAILURE
@@ -319,6 +354,17 @@ def _probe(args: argparse.Namespace) -> int:
     elif args.list == "contacts":
         for contact in report["contacts"]:
             print(f"{contact['public_key']}\t{_safe_text(contact['name'])}\t{contact['type']}")
+    elif args.list == "profile":  # for the installer: the name, and what the service changes
+        profile = report["profile"]
+        print(f"name\t{_safe_text(report['name'])}")
+        print(f"tested\t{'yes' if profile['firmware_tested'] else 'no'}")
+        print(f"writes\t{'yes' if profile['writes'] else 'no'}")
+        for name, change in profile["changes"].items():
+            live, wanted = _json_text(change["live"]), _json_text(change["profile"])
+            print(f"change\t{name}\t{live}\t{wanted}\t{change['action']}")
+        for key, contact in profile["contacts"].items():
+            # the name last: it may be empty, and a shell's read joins tabs in a row
+            print(f"contact\t{key}\t{contact['action']}\t{_safe_text(contact['name'])}")
     elif args.json:
         print(_json_text(report, indent=2))
     else:
@@ -389,13 +435,23 @@ def _count(text: str) -> int:
     return int(text)
 
 
-async def _probe_radio(transport: Any) -> dict[str, Any]:
+async def _probe_radio(
+    transport: Any,
+    profile: ProfileConfig,
+    records: ProfileRecords,
+    protected: Mapping[str, str],
+    *,
+    configured: bool,
+) -> dict[str, Any]:
+    from meshcore_home_gateway.core import profile as policy  # noqa: PLC0415
+    from meshcore_home_gateway.radio.profile import live_values  # noqa: PLC0415
     from meshcore_home_gateway.radio.session import (  # noqa: PLC0415
         CompanionSession,
         RadioEvent,
         added_types,
         type_names,
     )
+    from meshcore_home_gateway.views import SETTING_NAMES, setting_value  # noqa: PLC0415
 
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()
     session = CompanionSession(transport, events, set_clock=False)
@@ -404,6 +460,34 @@ async def _probe_radio(transport: Any) -> dict[str, Any]:
     finally:
         await session.close()
     me, device, autoadd, tuning = info.self_info, info.device, session.autoadd, session.tuning
+    live = live_values(session)
+    want = policy.desired(
+        me.frequency_khz, name=profile.name, duty_cycle_percent=profile.duty_cycle_percent
+    )
+    mode = policy.Mode(profile.manage)
+    tested = device.firmware_code in policy.TESTED_FIRMWARE
+    # the service's own reconcile, with what it stored for this radio: the exact plan
+    plan = policy.plan(
+        want, records.load(info.public_key), live, mode=mode, firmware_code=device.firmware_code
+    )
+    changes = {
+        SETTING_NAMES[key]: {
+            "live": setting_value(key, live[key]), "profile": setting_value(key, value),
+            "action": _profile_action(key, plan), "reason": plan.reasons.get(key),
+        }
+        for key, value in want.values.items()
+        if live.get(key) is not None and not policy.same(key, live[key], value)
+    }  # fmt: skip
+    contacts = {}  # the protected contacts the service adds or makes favourites
+    for key, name in sorted(protected.items()):
+        record = session.contact_records.get(key)
+        if record is not None and record.flags & ContactFlag.FAVOURITE:
+            continue
+        if plan.observing:
+            action = "missing" if record is None else "not_favourite"
+        else:
+            action = "add" if record is None else "favourite"
+        contacts[key] = {"name": name if record is None else record.name, "action": action}
     return {
         "name": me.name,
         "public_key": info.public_key,
@@ -445,7 +529,29 @@ async def _probe_radio(transport: Any) -> dict[str, Any]:
             )
         ],
         "channels": [{"index": i, "name": n} for i, n in sorted(session.channels.items())],
+        # what the managed profile changes at the service's first connect (ADR 0020)
+        "profile": {
+            "manage": mode.value,
+            "configured": configured,  # false: the default observer profile
+            "firmware_tested": tested,
+            "writes": not plan.observing,
+            "changes": changes,
+            "contacts": contacts,
+        },
     }
+
+
+def _profile_action(key: str, plan: Plan) -> str:
+    """What the service does about a setting that differs from the profile."""
+    if key in plan.writes:
+        return "set"
+    if key in plan.drift:
+        return "kept"  # changed on the radio after the service set it
+    if key in plan.not_converging:
+        return "given_up"  # written at the last connects without effect
+    if key in plan.unsupported:
+        return "unsupported"
+    return "reported"  # observing
 
 
 def _print_report(r: dict[str, Any]) -> None:
@@ -479,6 +585,34 @@ def _print_report(r: dict[str, Any]) -> None:
     print("channels")
     for ch in r["channels"]:
         print(_safe_text(f"  {ch['index']:>3}  {ch['name']}"))
+    from meshcore_home_gateway.core.profile import NOT_CONVERGING_AFTER  # noqa: PLC0415
+
+    profile = r["profile"]
+    source = "configured profile" if profile["configured"] else "default observer profile"
+    if not profile["changes"] and not profile["contacts"]:
+        print(f"profile    the radio matches the {source}")
+        return
+    print(f"profile    differs from the {source}:")
+    if profile["manage"] == "observe":
+        reported = "only reported: radio.profile.manage = observe"
+    else:
+        reported = "only reported: the firmware is untested; radio.profile.manage = always sets it"
+    what = {
+        "set": "set at the next connect", "kept": "changed on the radio; kept",
+        "given_up": f"did not take effect at {NOT_CONVERGING_AFTER} connects; no longer set",
+        "unsupported": "the firmware does not support it", "reported": reported,
+    }  # fmt: skip
+    for name, change in profile["changes"].items():
+        live, wanted = _json_text(change["live"]), _json_text(change["profile"])
+        print(f"  {name}: {live} -> {wanted}  ({what[change['action']]})")
+    doing = {
+        "add": "added as a favourite at the next connect",
+        "favourite": "made a favourite at the next connect",
+        "missing": f"not on the radio; {reported}",
+        "not_favourite": f"no favourite; {reported}",
+    }
+    for key, contact in profile["contacts"].items():
+        print(_safe_text(f"  contact {key[:12]} {contact['name']}  ({doing[contact['action']]})"))
 
 
 def _safe_text(text: str) -> str:

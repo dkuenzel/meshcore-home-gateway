@@ -29,6 +29,7 @@ DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the c
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
 LIB=/usr/local/lib/meshcore-home-gateway
 CONFIG=/etc/meshcore-home-gateway/config.toml
+STATE_DIR=/var/lib/meshcore-home-gateway   # the service's state (StateDirectory=)
 STAGE=/root/meshcore-home-gateway-src      # the program before its installation, in the container
 ANSWERS_FILE=/root/meshcore-home-gateway-answers
 # pct exec passes the host's environment into the container; commands start from a clean one
@@ -41,6 +42,7 @@ declare -A ANSWERS=()   # from --answers FILE
 declare -A CURRENT=()   # settings of the installation being reconfigured
 declare -A OUT=()       # answers for `meshcore-home-gateway config render`
 declare -A CT=()        # container settings
+declare -a PROBE=()     # the radio connection as arguments of `probe` (probe_args)
 INTERACTIVE=1
 ADVANCED=0
 CREATED=""              # container created by this run, named in error messages
@@ -759,21 +761,26 @@ onoff() {  # onoff ITEM LIST: "on" if ITEM is in the comma-separated LIST
   if [[ ,$2, == *,"$1",* ]]; then echo on; else echo off; fi
 }
 
-choose_targets() {  # read channels and contacts from the radio and ask which to use
-  local ctid=$1 channels contacts index name key type item selected alias host
-  local current_channels="" current_contacts="" current_senders=${OUT[commands.senders]-}
-  local -a probe=() channel_items=() contact_items=() sender_items=()
-  local -A channel_name=() contact_name=() alias_of=()
+probe_args() {  # the radio connection as arguments of `probe`, in PROBE
+  local host
   if [[ ${OUT[radio.transport]} == serial ]]; then
-    probe=(--serial "${OUT[radio.device]}")
+    PROBE=(--serial "${OUT[radio.device]}")
   else
     host=${OUT[radio.host]}
     if [[ $host == *:* ]]; then host="[$host]"; fi   # IPv6 address
-    probe=(--tcp "$host:${OUT[radio.port]:-5000}")
+    PROBE=(--tcp "$host:${OUT[radio.port]:-5000}")
   fi
-  channels=$(in_ct "$ctid" meshcore-home-gateway probe "${probe[@]}" --list channels) \
+}
+
+choose_targets() {  # read channels and contacts from the radio and ask which to use
+  local ctid=$1 channels contacts index name key type item selected alias
+  local current_channels="" current_contacts="" current_senders=${OUT[commands.senders]-}
+  local -a channel_items=() contact_items=() sender_items=()
+  local -A channel_name=() contact_name=() alias_of=()
+  probe_args
+  channels=$(in_ct "$ctid" meshcore-home-gateway probe "${PROBE[@]}" --list channels) \
     || die "cannot read the radio (is it connected and not used by another program?)"
-  contacts=$(in_ct "$ctid" meshcore-home-gateway probe "${probe[@]}" --list contacts) \
+  contacts=$(in_ct "$ctid" meshcore-home-gateway probe "${PROBE[@]}" --list contacts) \
     || die "cannot read the radio's contacts"
 
   for key in "${!OUT[@]}"; do  # current targets keep their aliases when selected again
@@ -843,6 +850,89 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
       unset 'OUT[commands.senders]' 'OUT[commands.words]'
     fi
   fi
+}
+
+choose_profile() {  # the radio's name, and what the managed profile changes (ADR 0020)
+  local ctid=$1 lines kind setting live wanted action current="" name contact status=0
+  local sets="" reported="" left="" plan=""
+  local prompt="Name of the radio in the mesh (1-31 bytes; empty: keep the radio's)"
+  probe_args
+  lines=$(in_ct "$ctid" meshcore-home-gateway probe "${PROBE[@]}" --list profile) || status=$?
+  case $status in
+    0) ;;
+    2)  # a usage error: a version before the managed profile, without this list (--reconfigure)
+      log "meshcore-home-gateway in container $ctid does not manage the radio's settings; skipped"
+      return ;;
+    *) die "cannot read the radio's settings (is it connected and not used by another program?)" ;;
+  esac
+  while IFS=$'\t' read -r kind setting _; do
+    if [[ $kind == name ]]; then current=$setting; fi
+  done <<<"$lines"
+  name=$(ask_advanced radio.profile.name input "$prompt" "${OUT[radio.profile.name]:-$current}")
+  if [[ $name == "$current" && ! -v "OUT[radio.profile.name]" ]]; then
+    name=""   # the radio's name as found: not managed, and not checked
+  fi
+  while [[ -n $name ]] && (( $(printf '%s' "$name" | wc -c) > 31 )); do
+    (( INTERACTIVE )) && [[ ! -v "ANSWERS[radio.profile.name]" ]] \
+      || die "radio.profile.name: 1 to 31 bytes, got '$name'"
+    name=$(show_dialog input "$prompt" "$name")
+  done
+  if [[ -n $name ]]; then
+    OUT[radio.profile.name]=$name
+  else
+    unset 'OUT[radio.profile.name]'
+  fi
+  # the service's own plan: the answers as its configuration, with what it stored for the radio
+  lines=$(profile_plan "$ctid") || die "cannot read the radio's settings"
+  while IFS=$'\t' read -r kind setting live wanted action; do
+    case $kind/$action in
+      change/set) sets+="  $setting: $live -> $wanted"$'\n' ;;
+      change/reported) reported+="  $setting: $live -> $wanted"$'\n' ;;
+      change/kept) left+="  $setting: $live (changed on the radio; kept)"$'\n' ;;
+      change/given_up)
+        left+="  $setting: $live, not $wanted (did not take effect; no longer set)"$'\n' ;;
+      change/unsupported)
+        left+="  $setting: $live, not $wanted (the firmware does not support it)"$'\n' ;;
+      contact/*)  # contact KEY ACTION NAME: a contact target or command sender
+        contact="  contact ${setting:0:12}${wanted:+ $wanted}"
+        case $live in
+          add) sets+="$contact: added as a favourite"$'\n' ;;
+          favourite) sets+="$contact: made a favourite"$'\n' ;;
+          missing) reported+="$contact: not on the radio"$'\n' ;;
+          not_favourite) reported+="$contact: no favourite"$'\n' ;;
+        esac ;;
+    esac
+  done <<<"$lines"
+  if [[ -n $sets ]]; then plan+="At its next connect the service sets the radio:"$'\n'$sets; fi
+  if [[ -n $reported && ${OUT[radio.profile.manage]:-auto} == observe ]]; then
+    plan+="With radio.profile.manage = observe the service only reports what differs:"$'\n'$reported
+  elif [[ -n $reported ]]; then
+    plan+="The radio's firmware is not tested: the service only reports what differs"$'\n'"(radio.profile.manage = always sets it anyway):"$'\n'$reported
+  fi
+  if [[ -n $left ]]; then plan+="The service leaves alone:"$'\n'$left; fi
+  if [[ -z $plan ]]; then
+    log "the radio already has the managed profile"
+    return
+  fi
+  log "${plan//$'\n'/$'\n'  }"
+  if (( INTERACTIVE )); then
+    whiptail --title "$TITLE" --msgbox -- "$plan" 20 78 >&2 || true
+  fi
+}
+
+profile_plan() {  # profile_plan CTID: `probe --list profile` with the answers as configuration
+  local ctid=$1 args
+  args=$(printf ' %q' "${PROBE[@]}")
+  # through a pipe and a private directory: the answers hold the broker password
+  write_answers | in_ct_input "$ctid" bash -c "set -e
+    umask 077
+    dir=\$(mktemp -d)
+    trap 'rm -rf \$dir' EXIT
+    cat >\$dir/answers
+    meshcore-home-gateway config render --answers \$dir/answers --output \$dir/profile.toml \
+      >/dev/null
+    meshcore-home-gateway probe$args --config \$dir/profile.toml --state-dir $STATE_DIR \
+      --list profile"
 }
 
 drop_offered() {  # drop_offered KIND OFFERED: forget the targets the dialog asked about again
@@ -948,6 +1038,7 @@ install() {
   if [[ $SOURCE != checkout ]]; then check_settings_in "${CT[id]}"; fi
   check_broker "${CT[id]}"
   choose_targets "${CT[id]}"
+  choose_profile "${CT[id]}"
   configure "${CT[id]}"
   start_service "${CT[id]}"
   CREATED=""
@@ -986,6 +1077,7 @@ reconfigure() {
   STOPPED=$ctid   # first: an interruption during the stop also starts the service again
   in_ct "$ctid" systemctl stop meshcore-home-gateway >&2   # the radio accepts a single client
   choose_targets "$ctid"
+  choose_profile "$ctid"
   configure "$ctid"
   STOPPED=""
   start_service "$ctid"

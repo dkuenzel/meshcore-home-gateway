@@ -33,6 +33,7 @@ HOST_NAME = re.compile(r"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*\.?")
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
 MAX_CONTACT_DEVICES = 1000  # above the largest contact table of current firmware
+MAX_RADIO_NAME_BYTES = 31  # the radio keeps 32 bytes with the terminating NUL
 MIN_BURST_S = (
     5.0  # must hold the longest single packet (about 2 s at SF 8 / 62.5 kHz, configuration.md)
 )
@@ -43,12 +44,23 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileConfig:
+    """The managed radio profile (ADR 0020); the observer's policy itself is fixed."""
+
+    manage: Literal["auto", "observe", "always"] = "auto"
+    name: str | None = None  # None: as found on the radio
+    duty_cycle_percent: float | None = None  # None: 10 % in the 10 % sub-band, else as found
+    protect_contacts: bool = True  # targets and command senders kept on the radio as favourites
+
+
+@dataclass(frozen=True, slots=True)
 class RadioConfig:
     transport: Literal["serial", "tcp"]
     device: str | None = None
     host: str | None = None
     port: int = 5000
     set_clock: bool = True
+    profile: ProfileConfig = field(default_factory=ProfileConfig)
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,6 +297,30 @@ def _radio(s: _Section) -> RadioConfig:
         host=host,
         port=s.integer("port", 5000, 1, 65535),
         set_clock=s.boolean("set_clock", True),
+        profile=_checked(s.section("profile"), _profile),
+    )
+
+
+def _profile(s: _Section) -> ProfileConfig:
+    manage = s.string("manage", "auto")
+    if manage not in ("auto", "observe", "always"):
+        raise ConfigError(f"{s.key('manage')}: one of auto, observe, always, got {manage!r}")
+    name = s.string("name")
+    if name is not None:
+        size = len(name.encode("utf-8"))
+        if not 1 <= size <= MAX_RADIO_NAME_BYTES or any(ord(c) < 0x20 or c == "\x7f" for c in name):
+            raise ConfigError(
+                f"{s.key('name')}: 1 to {MAX_RADIO_NAME_BYTES} bytes of UTF-8 without control "
+                f"characters, got {name!r}"
+            )
+    duty = None
+    if s.has("duty_cycle_percent"):  # the firmware cannot limit below 10 % (ADR 0020)
+        duty = s.number("duty_cycle_percent", 10.0, 10.0, 100.0)
+    return ProfileConfig(
+        manage=cast(Literal["auto", "observe", "always"], manage),
+        name=name,
+        duty_cycle_percent=duty,
+        protect_contacts=s.boolean("protect_contacts", True),
     )
 
 
@@ -464,7 +500,8 @@ def _diagnostics(s: _Section) -> DiagnosticsConfig:
 
 _ANSWER_TYPES: dict[str, type] = {
     "radio.transport": str, "radio.device": str, "radio.host": str, "radio.port": int,
-    "radio.set_clock": bool,
+    "radio.set_clock": bool, "radio.profile.manage": str, "radio.profile.name": str,
+    "radio.profile.duty_cycle_percent": float, "radio.profile.protect_contacts": bool,
     "mqtt.host": str, "mqtt.port": int, "mqtt.username": str, "mqtt.password": str,
     "mqtt.tls": bool, "mqtt.ca_file": str, "mqtt.cert_file": str, "mqtt.key_file": str,
     "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
@@ -536,6 +573,11 @@ def config_answers(text: str) -> str:
                 lines.append(f"target.{name}={kind}:{ref}")
             elif (table, name) == ("commands", "senders"):
                 lines.append(f"commands.senders={','.join(normalise_key(k) for k in value)}")
+            elif isinstance(value, dict):  # a sub-table, such as [radio.profile]
+                lines += [
+                    f"{table}.{name}.{key}={_answer_value(f'{table}.{name}.{key}', item)}"
+                    for key, item in value.items()
+                ]
             else:
                 lines.append(f"{table}.{name}={_answer_value(f'{table}.{name}', value)}")
     return "".join(f"{line}\n" for line in lines)

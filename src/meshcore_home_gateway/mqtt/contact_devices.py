@@ -304,7 +304,10 @@ class ContactDevices:
     def _select(self, mesh: Mesh) -> list[str]:
         """Contacts with a device: those that have one keep it unless the limit went down."""
         records = self._records
-        visible = [t for k, t in mesh.contacts.items() if k not in records.hidden]
+        visible = [
+            t for k, t in mesh.contacts.items()
+            if k not in records.hidden and (k in records.announced or not self._unheard(t))
+        ]  # fmt: skip
 
         def order(group: Iterable[Tracked]) -> list[str]:
             ranked = sorted(group, key=lambda t: priority(t, self._protected))
@@ -320,6 +323,17 @@ class ContactDevices:
                 log.info("Home Assistant: %d contacts without a device "
                          "(homeassistant.contact_devices = %d)", without, self._limit)  # fmt: skip
         return chosen
+
+    def _unheard(self, tracked: Tracked) -> bool:
+        """A protected contact the radio profile put on the radio that never had a device and has
+        not advertised yet: only a key and a placeholder name, which would fix its entity IDs.
+        Its device comes with its first advert; one that had a device gets it back at once."""
+        key = tracked.node.public_key
+        return (
+            key in self._protected
+            and not tracked.node.last_advert
+            and key not in self._records.slugs
+        )
 
     def _announce(self, tracked: Tracked) -> None:
         """Send the contact's document if it changed. A component it had keeps its place;

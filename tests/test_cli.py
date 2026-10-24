@@ -27,11 +27,17 @@ from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.protocol.codes import Command
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
 from tests.conftest import Broker
-from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
+from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio, TcpRadioServer
 from tests.test_mqtt_client import FakePaho
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "deploy" / "config.example.toml"
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice\tSmith")
+
+
+@pytest.fixture(autouse=True)
+def _no_service_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`probe` reads the service's state: not the one of this machine."""
+    monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path / "service-state"))
 
 
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:
@@ -295,6 +301,116 @@ def test_probe_reports_position_telemetry_airtime_and_contact_flags(
     with TcpRadioServer(radio) as server:
         assert main(["probe", "--tcp", f"127.0.0.1:{server.port}", "--json"]) == EX_OK
         assert json.loads(capsys.readouterr().out)["airtime_factor"] is None
+
+
+def test_probe_shows_what_the_profile_changes(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """ADR 0020: the installer shows this before the service writes anything."""
+    radio = EmulatedRadio(manual_add=False, telemetry_modes=0x05, tuning=(0, 1000))
+    state = ["--state-dir", str(tmp_path)]  # nothing stored: the first connect of this radio
+    with TcpRadioServer(radio) as server:
+        address = f"127.0.0.1:{server.port}"
+        assert main(["probe", "--tcp", address, "--json", *state]) == EX_OK
+        profile = json.loads(capsys.readouterr().out)["profile"]
+        initial = {"action": "set", "reason": "initial"}
+        assert profile == {
+            "manage": "auto",
+            "configured": False,
+            "firmware_tested": True,
+            "writes": True,
+            "changes": {
+                "manual_add": {"live": False, "profile": True, **initial},
+                "telemetry": {
+                    "live": {"base": "contacts", "location": "contacts", "environment": "deny"},
+                    "profile": {"base": "deny", "location": "deny", "environment": "deny"},
+                    **initial,
+                },
+                "duty_cycle_percent": {"live": 50.0, "profile": 10.0, **initial},
+            },
+            "contacts": {},  # no configuration: no contact targets, no command senders
+        }
+        assert main(["probe", "--tcp", address, *state]) == EX_OK
+        out = capsys.readouterr().out
+        assert "profile    differs from the default observer profile:\n" in out
+        assert "  manual_add: false -> true  (set at the next connect)\n" in out
+        assert radio.commands().count(38) == 0  # the probe writes nothing
+        assert main(["probe", "--tcp", address, "--list", "profile", *state]) == EX_OK
+        assert capsys.readouterr().out.split("\n")[:5] == [
+            "name\tBridge",
+            "tested\tyes",
+            "writes\tyes",
+            "change\tmanual_add\tfalse\ttrue\tset",
+            (
+                'change\ttelemetry\t{"base": "contacts", "location": "contacts", "environment": '
+                '"deny"}\t{"base": "deny", "location": "deny", "environment": "deny"}\tset'
+            ),
+        ]
+    with TcpRadioServer(EmulatedRadio(tuning=(0, 9000), firmware_code=15)) as server:
+        assert main(["probe", "--tcp", f"127.0.0.1:{server.port}", *state]) == EX_OK
+        assert "profile    the radio matches the default observer profile\n" in (
+            capsys.readouterr().out
+        )
+
+
+def test_probe_follows_what_the_service_stored(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """The service's own reconcile: a name renamed on the radio is kept, a setting that did not
+    take effect is given up, one the firmware refused is left; the state file stays as it is."""
+    radio = EmulatedRadio(manual_add=False, tuning=(0, 1000), name="Renamed")
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[radio.profile]\nname = "Gateway"\n'
+        '[mqtt]\nhost = "h"\nnode_id = "n"\n'
+    )
+    stored = {
+        "values": {"name": "Gateway", "telemetry": 0, "autoadd": 0, "advert_location": 0},
+        "attempts": {"manual_add": {"value": True, "connects": 3, "firmware": 14}},
+        "unsupported": {"airtime_factor_milli": 14},
+    }
+    state = tmp_path / "state" / "state.json"
+    state.parent.mkdir()
+    state.write_text(json.dumps({"radio_profile": {SELF_KEY.hex(): stored}}))
+    before = state.read_bytes()
+    with TcpRadioServer(radio) as server:
+        address = f"127.0.0.1:{server.port}"
+        args = ["--config", str(config), "--state-dir", str(state.parent)]
+        assert main(["probe", "--tcp", address, *args, "--json"]) == EX_OK
+        changes = json.loads(capsys.readouterr().out)["profile"]["changes"]
+        assert {name: change["action"] for name, change in changes.items()} == {
+            "manual_add": "given_up", "duty_cycle_percent": "unsupported", "name": "kept",
+        }  # fmt: skip
+        assert main(["probe", "--tcp", address, *args]) == EX_OK
+        out = capsys.readouterr().out
+        assert "profile    differs from the configured profile:\n" in out
+        assert '  name: "Renamed" -> "Gateway"  (changed on the radio; kept)\n' in out
+        given_up = "(did not take effect at 3 connects; no longer set)"
+        assert f"  manual_add: false -> true  {given_up}\n" in out
+        assert "  duty_cycle_percent: 50.0 -> 10.0  (the firmware does not support it)\n" in out
+    assert state.read_bytes() == before
+
+
+def test_probe_leaves_an_unreadable_state_file_alone(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    (tmp_path / "state.json").write_text("{not json")
+    with TcpRadioServer(EmulatedRadio(manual_add=False)) as server:
+        address = f"127.0.0.1:{server.port}"
+        assert main(["probe", "--tcp", address, "--state-dir", str(tmp_path), "--json"]) == EX_OK
+        changes = json.loads(capsys.readouterr().out)["profile"]["changes"]
+        assert changes["manual_add"]["reason"] == "initial"
+    assert (tmp_path / "state.json").read_text() == "{not json"
+    assert not (tmp_path / "state.json.corrupt").exists()
+
+
+def test_probe_refuses_a_bad_configuration(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text('[radio.profile]\nmanage = "sometimes"\n')
+    assert main(["probe", "--tcp", "127.0.0.1:1", "--config", str(config)]) == EX_CONFIG
+    assert "configuration error" in capsys.readouterr().err
 
 
 def test_probe_failure_exits_with_failure(capsys: pytest.CaptureFixture[str]) -> None:
@@ -841,3 +957,118 @@ def test_send_refuses_a_text_that_is_not_utf8(
     error = capsys.readouterr().err
     assert "not valid UTF-8" in error
     assert "Traceback" not in error
+
+
+def test_probe_shows_the_plan_of_a_configuration(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    radio = EmulatedRadio(frequency_khz=868_100, tuning=(0, 1000), name="Bridge")
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[radio.profile]\nmanage = "observe"\n'
+        'name = "Gateway"\nduty_cycle_percent = 25.0\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+    )
+    with TcpRadioServer(radio) as server:
+        address = f"127.0.0.1:{server.port}"
+        args = ["--config", str(config), "--state-dir", str(tmp_path)]
+        assert main(["probe", "--tcp", address, *args, "--json"]) == EX_OK
+        profile = json.loads(capsys.readouterr().out)["profile"]
+        assert (profile["manage"], profile["writes"]) == ("observe", False)
+        reported = {"action": "reported", "reason": None}
+        assert profile["changes"]["name"] == {"live": "Bridge", "profile": "Gateway", **reported}
+        assert profile["changes"]["duty_cycle_percent"] == {
+            "live": 50.0, "profile": 25.0, **reported,
+        }  # fmt: skip
+        assert main(["probe", "--tcp", address, *args]) == EX_OK
+        assert "  (only reported: radio.profile.manage = observe)\n" in capsys.readouterr().out
+
+
+def test_probe_shows_the_protected_contacts_the_service_writes(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """The contact targets and command senders are part of the plan: a target that is no
+    favourite is made one, a missing sender is added; while observing, both are reported."""
+    sender = "e5" * 32
+    radio = EmulatedRadio(contacts=[ALICE], tuning=(0, 9000))  # the settings match
+    config = tmp_path / "config.toml"
+    text = (
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        f'[targets.alice]\ncontact = "{ALICE.public_key.hex()}"\n'
+        f'[commands]\nsenders = ["{sender}"]\nwords = ["status"]\n'
+    )
+    config.write_text(text)
+    with TcpRadioServer(radio) as server:
+        address = f"127.0.0.1:{server.port}"
+        args = ["--config", str(config), "--state-dir", str(tmp_path)]
+        assert main(["probe", "--tcp", address, *args, "--json"]) == EX_OK
+        profile = json.loads(capsys.readouterr().out)["profile"]
+        assert profile["changes"] == {}
+        assert profile["contacts"] == {
+            ALICE.public_key.hex(): {"name": "Alice\tSmith", "action": "favourite"},
+            sender: {"name": "sender-e5e5", "action": "add"},
+        }
+        assert main(["probe", "--tcp", address, *args, "--list", "profile"]) == EX_OK
+        lines = capsys.readouterr().out.splitlines()
+        assert f"contact\t{ALICE.public_key.hex()}\tfavourite\tAlice Smith" in lines
+        assert f"contact\t{sender}\tadd\tsender-e5e5" in lines
+        assert main(["probe", "--tcp", address, *args]) == EX_OK
+        out = capsys.readouterr().out
+        assert "profile    differs from the configured profile:\n" in out
+        assert (
+            "  contact e5e5e5e5e5e5 sender-e5e5  (added as a favourite at the next connect)\n"
+            in (out)
+        )
+        config.write_text(text.replace("[mqtt]", '[radio.profile]\nmanage = "observe"\n[mqtt]'))
+        assert main(["probe", "--tcp", address, *args, "--json"]) == EX_OK
+        contacts = json.loads(capsys.readouterr().out)["profile"]["contacts"]
+        actions = {key: contact["action"] for key, contact in contacts.items()}
+        assert actions == {ALICE.public_key.hex(): "not_favourite", sender: "missing"}
+        config.write_text(
+            text.replace("[mqtt]", "[radio.profile]\nprotect_contacts = false\n[mqtt]")
+        )
+        assert main(["probe", "--tcp", address, *args, "--json"]) == EX_OK
+        assert json.loads(capsys.readouterr().out)["profile"]["contacts"] == {}
+    assert radio.commands().count(Command.ADD_UPDATE_CONTACT) == 0
+
+
+def test_probe_warns_when_it_cannot_read_the_service_state(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a logging setup (probe), the warning goes to stderr through logging's last
+    resort; the plan then assumes a first connect."""
+    state = tmp_path / "state.json"
+    state.write_text("{}")
+    real = Path.read_bytes
+
+    def read_bytes(path: Path) -> bytes:
+        if path == state:
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    with TcpRadioServer(EmulatedRadio()) as server:
+        address = f"127.0.0.1:{server.port}"
+        assert main(["probe", "--tcp", address, "--state-dir", str(tmp_path), "--json"]) == EX_OK
+    assert f"cannot read {state} (Permission denied); taken as empty" in caplog.text
+    changes = json.loads(capsys.readouterr().out)["profile"]["changes"]
+    assert {change["reason"] for change in changes.values()} == {"initial"}
+
+
+def test_probe_shows_the_name_a_contact_gets_on_the_radio(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """An alias has up to 32 characters, the radio keeps 31 bytes: the plan shows those."""
+    key = "e5" * 32
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        f'[targets.{"x" * 32}]\ncontact = "{key}"\n'
+    )
+    with TcpRadioServer(EmulatedRadio()) as server:
+        args = ["--config", str(config), "--state-dir", str(tmp_path), "--json"]
+        assert main(["probe", "--tcp", f"127.0.0.1:{server.port}", *args]) == EX_OK
+    contacts = json.loads(capsys.readouterr().out)["profile"]["contacts"]
+    assert contacts == {key: {"name": "x" * 31, "action": "add"}}

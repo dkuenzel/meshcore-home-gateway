@@ -82,6 +82,9 @@ class EmulatedRadio:
     drop_on: set[int] = field(default_factory=set)  # command codes that unplug the radio, once
     disabled: set[int] = field(default_factory=set)  # command codes answered with DISABLED
     unknown: set[int] = field(default_factory=set)  # older firmware: ERR "unsupported", always
+    ignored: set[int] = field(default_factory=set)  # setters answered OK without effect
+    firmware_code: int = 14  # FIRMWARE_VER_CODE of companion 1.18
+    frequency_khz: int = 869_618  # in the 10 % sub-band
     description: str = "emulated radio"
     needs_flush: bool = True  # parses like the USB serial interface
 
@@ -91,6 +94,7 @@ class EmulatedRadio:
         self.errors = dict(self.errors)
         self.silent, self.drop_on = set(self.silent), set(self.drop_on)
         self.disabled, self.unknown = set(self.disabled), set(self.unknown)
+        self.ignored = set(self.ignored)
         self.opened = False
         self.received: list[bytes] = []  # every command payload, in order
         self.raw_written = bytearray()
@@ -249,6 +253,10 @@ class EmulatedRadio:
             self.emit(bytes([Response.TUNING_PARAMS]) + struct.pack("<II", *self.tuning))
         elif code == Command.GET_STATS and self.stats:
             self._stats(p[1])
+        elif code in _SETTERS:
+            if code not in self.ignored:
+                self._set(code, p)
+            self.emit(bytes([Response.OK]))
         elif code == Command.RESET_PATH:
             self.path_resets.append(p[1:33])
             for contact in self.contacts:
@@ -257,6 +265,32 @@ class EmulatedRadio:
             self.emit(bytes([Response.OK]))
         else:
             self.emit(bytes([Response.ERR, 1]))
+
+    def _set(self, code: int, p: bytes) -> None:
+        """The setters of the managed profile (MyMesh.cpp:1259-1265, 1328-1346, 1470-1503,
+        2023-2029)."""
+        if code == Command.SET_OTHER_PARAMS:
+            self.manual_add = bool(p[1])
+            if len(p) >= 3:
+                self.telemetry_modes = p[2] & 0x3F
+            if len(p) >= 4:
+                self.advert_location = p[3]
+        elif code == Command.SET_AUTOADD_CONFIG:
+            self.autoadd_config = p[1]
+            if len(p) >= 3:
+                self.autoadd_hops = min(p[2], 64)
+        elif code == Command.SET_TUNING_PARAMS:
+            self.tuning = struct.unpack_from("<II", p, 1)
+        elif code == Command.SET_ADVERT_NAME:
+            self.name = p[1:32].decode("utf-8", errors="replace")
+        elif code == Command.ADD_UPDATE_CONTACT:
+            key, flags = p[1:33], p[34]
+            name = p[100:132].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+            existing = next((c for c in self.contacts if c.public_key == key), None)
+            if existing is not None:
+                existing.flags, existing.name = flags, name
+            else:
+                self.contacts.append(EmulatedContact(key, name, node_type=p[33], flags=flags))
 
     def _send_text(self, p: bytes) -> None:
         attempt, ts, prefix, text = (
@@ -294,16 +328,23 @@ class EmulatedRadio:
             bytes([Response.SELF_INFO, 1, 22, 22]) + SELF_KEY
             + struct.pack("<ii", self.latitude_e6, self.longitude_e6)
             + bytes([0, self.advert_location, self.telemetry_modes, int(self.manual_add)])
-            + struct.pack("<IIBB", 869_618, 62_500, self.spreading_factor, self.coding_rate)
+            + struct.pack("<IIBB", self.frequency_khz, 62_500, self.spreading_factor,
+                          self.coding_rate)
             + self.name.encode()
         )  # fmt: skip
 
     def _device_info(self) -> bytes:
         return (
-            bytes([Response.DEVICE_INFO, 14, 50, self.max_channels]) + bytes(4)
+            bytes([Response.DEVICE_INFO, self.firmware_code, 50, self.max_channels]) + bytes(4)
             + b"15 Oct 2026".ljust(12, b"\x00") + b"Example Radio".ljust(40, b"\x00")
             + b"v1.18.0".ljust(20, b"\x00") + bytes([0, 0])
         )  # fmt: skip
+
+
+_SETTERS = frozenset({
+    Command.SET_OTHER_PARAMS, Command.SET_AUTOADD_CONFIG, Command.SET_TUNING_PARAMS,
+    Command.SET_ADVERT_NAME, Command.ADD_UPDATE_CONTACT,
+})  # fmt: skip
 
 
 class WifiFrameParser:

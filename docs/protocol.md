@@ -78,6 +78,11 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
 | 59 | `GET_AUTOADD_CONFIG` | – (`MyMesh.cpp:2030-2035`); 1.11 and older answer `ERR 1` | `AUTOADD_CONFIG` |
 | 43 | `GET_TUNING_PARAMS` | – (`MyMesh.cpp:1481-1487`) | `TUNING_PARAMS` |
 | 56 | `GET_STATS` | statistics type: 0 core, 1 radio, 2 packets (`MyMesh.cpp:70-73, 1914-1964`); another type gives `ERR 6` | `STATS` |
+| 38 | `SET_OTHER_PARAMS` | manual adding, telemetry modes (bits 0-1 base, 2-3 location, 4-5 environment), advert location policy; an optional fifth byte, the extra acknowledgements, is left out (`MyMesh.cpp:1488-1503`) | `OK` |
+| 58 | `SET_AUTOADD_CONFIG` | the auto-add flags; the optional hop limit byte is left out (`MyMesh.cpp:2023-2029`) | `OK` |
+| 21 | `SET_TUNING_PARAMS` | uint32 receive delay × 1000, uint32 airtime factor × 1000 (`MyMesh.cpp:1470-1480`); the gateway writes the receive delay back as read | `OK` |
+| 8 | `SET_ADVERT_NAME` | the name, at most 31 bytes are kept (`MyMesh.cpp:1259-1265`) | `OK` |
+| 9 | `ADD_UPDATE_CONTACT` | the contact layout of `CONTACT` without the last-modified time (`MyMesh.cpp:194-215, 1328-1346`) | `OK` / `ERR 3` |
 
 Answers `OK` (0) and `ERR` (1, followed by the error code) are generic (`MyMesh.cpp:153-163`).
 Error codes (`MyMesh.cpp:135-140`): 1 unsupported command or frame too short, 2 not found (contact,
@@ -85,6 +90,14 @@ channel; also no free packet buffer for channel sends), 3 table full (direct mes
 long **or** no free packet buffer), 4 bad state, 5 file I/O, 6 illegal argument.
 
 Details that matter:
+
+* Every setter rewrites the radio's preferences file (`savePrefs()`), so the managed profile writes
+  only what differs, one frame per command ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)).
+  The airtime factor is clamped to 0–9 only when the radio starts (`MyMesh.cpp:988`), not when it
+  is set. The gateway has no encoder for radio parameters (11), the private key (23, 24), raw data
+  and packets (25, 65), signing (33–35), the BLE PIN (37), factory reset (51) and the radio's
+  command line (66); `test_the_codec_has_no_command_that_could_harm_the_radio` fails if one
+  appears.
 
 * `SEND_TXT_MSG` looks up the first contact whose key starts with the 6-byte prefix
   (`BaseChatMesh.cpp:874-880`); no match gives `ERR 2`. The text limit is 160 bytes, 158 if

@@ -35,6 +35,7 @@ from meshcore_home_gateway.core.model import (
     InboundMessage,
     MessageKind,
 )
+from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
 from meshcore_home_gateway.mqtt.payloads import (
     command_payload,
@@ -45,6 +46,7 @@ from meshcore_home_gateway.mqtt.payloads import (
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.radio.session import RadioInfo
+from meshcore_home_gateway.views import settings_document
 
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "home-assistant.md"
 SENDER = "a1" * 32
@@ -368,6 +370,36 @@ async def test_packet_sensors_show_the_last_packet_once_enabled(
     await fire(hass, TOPICS.rx, rx_payload(5.25, -97, b"\x01\x02", 1_760_000_000.0))
     assert hass.states.get(f"sensor.{PREFIX}_rx_rssi").state == "-97"
     assert hass.states.get(f"sensor.{PREFIX}_rx_snr").state == "5.25"
+
+
+async def test_the_radio_profile_shows_its_status_and_settings(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """ADR 0020: the settings document as an enum sensor with every setting as attributes, and
+    an event per setting written or found changed."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    report = ProfileReport(
+        "auto", 14, True, False, live={"manual_add": True, "name": "Kitchen radio"},
+        desired={"manual_add": True, "name": "Gateway"}, drift={"name": "Kitchen radio"},
+    )  # fmt: skip
+    await fire(hass, TOPICS.settings, settings_document(report, 1_800_000_000.0), retain=True)
+    sensor = hass.states.get(f"sensor.{PREFIX}_profile")
+    assert sensor.state == "drift"
+    assert sensor.attributes["settings"]["name"] == {
+        "live": "Kitchen radio", "desired": "Gateway", "state": "drift",
+    }  # fmt: skip
+    assert sensor.attributes["options"] == ["ok", "written", "drift", "differs", "problem"]
+    await fire(hass, TOPICS.setting_event, {
+        "event_type": "written", "setting": "manual_add", "reason": "drift", "live": False,
+        "desired": True,
+    })  # fmt: skip
+    event = hass.states.get(f"event.{PREFIX}_setting")
+    assert (event.attributes["event_type"], event.attributes["setting"]) == (
+        "written",
+        "manual_add",
+    )
+    assert problems(caplog) == []
 
 
 # --- events and automations --------------------------------------------------------------------

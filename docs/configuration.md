@@ -21,6 +21,46 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it
 would put nRF52 radios into their bootloader.
 
+## `[radio.profile]`
+
+The gateway keeps its radio set as an *observer*
+([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)): it adds contacts only on
+request (manual adding, no contact type added automatically), denies telemetry to everyone, puts
+no position into its adverts, and in the EU band 869.40–869.65 MHz limits itself to the 10 % duty
+cycle (airtime factor 9). At every connect, before it reads the contact table, it compares the
+radio with this profile and writes only what differs, one command per setting; the radio rewrites
+its preferences file for each. Nothing else is ever written: frequency, bandwidth, spreading
+factor, coding rate, transmit power and the radio's keys stay as they are.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `manage` | `auto` | `auto` writes on tested firmware only (companion 1.18) and only reports on other firmware; `observe` never writes; `always` writes on any firmware |
+| `name` | as found | the radio's name in the mesh, 1–31 bytes of UTF-8. Written when this setting changes; a name changed on the radio later (the phone app) is kept and reported |
+| `duty_cycle_percent` | 10 in 869.40–869.65 MHz, else as found | the radio's own transmit limit, 10–100 (the firmware cannot limit below 10 %; the gateway's own budget is `[airtime]`) |
+| `protect_contacts` | `true` | keep the contact targets and command senders on the radio as favourites; a missing one is added, named after its alias (a command sender without one `sender-` and its first four key digits) until its next advert names it |
+
+At the first connect of a radio its differences are written: a new or replaced radio, the first
+run with the profile, or a radio after a factory reset, which gives it a new key, so the gateway
+takes it for a new radio. Later, a setting changed on the radio (the phone app) is set back with
+a warning in the log, except the name, which is kept and reported; a changed configuration is
+written. A value that does not read back as written is reported (`not_taken`); after three
+connects in a row that sent it, it is no longer written to that firmware version
+(`not_converging`) until the configuration asks for another value, the radio has it, or the
+firmware changes; a setting the firmware does not know is skipped on that firmware
+(`unsupported`). What the radio has, what the profile wants and what
+happened is in the `settings` document ([mqtt-api.md](mqtt-api.md#radio-profile-settings-and-setting))
+and in Home Assistant (*Radio profile*).
+
+`meshcore-home-gateway probe --config /etc/meshcore-home-gateway/config.toml` shows what the
+service will do at its next connect: it reads the service's state (`--state-dir`, by default
+`$STATE_DIRECTORY` or `/var/lib/meshcore-home-gateway`) without changing it and runs the service's
+own comparison; each difference is set, kept (the name, changed on the radio), given up,
+unsupported or only reported, and each contact target or command sender that is missing or no
+favourite is added or made a favourite (or only reported). Stop the service first: the radio
+takes one client. Without `--config` it compares with the plain observer profile, without
+contacts. When it cannot read the state file (run it as root), it says so and assumes a first
+connect.
+
 ## `[mqtt]`
 
 | Key | Default | Meaning |
@@ -91,7 +131,8 @@ not stored: each start begins with a full burst, so every restart within *T* add
 `burst_s`.
 The radio's own traffic (acknowledgements it sends, adverts) is not counted; in the EU band
 869.40–869.65 MHz the device limit is 10 % of every hour. The radio has its own limiter, the
-*airtime factor*, which defaults to 50 % (docs/protocol.md, section 7).
+*airtime factor*, which the firmware sets to 50 % and the managed profile to 10 % in that band
+(`[radio.profile]`, protocol.md section 7).
 
 ## `[commands]`
 
@@ -109,12 +150,12 @@ while the bridge was not running (restart, update, unplugged radio), and those t
 the few seconds of the connection setup. The sender sends them again
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 
-Recommended radio settings (in the MeshCore app, before the bridge takes the radio over): add
-contacts manually and switch off every contact type in the auto-add settings. In manual mode the
-radio still adds the types enabled there, and a contact of any type can send direct messages. A node
-that the radio adds with the 6-byte key prefix of an allowed sender blocks that sender's commands
-until 24 hours after it was last seen; a node that only advertises is not added and does not count.
-The bridge logs a warning at connect when the radio adds contacts on its own, and
+The managed profile (`[radio.profile]`) makes the radio add contacts manually, with every contact
+type switched off in the auto-add settings. In manual mode the radio still adds the types enabled
+there, and a contact of any type can send direct messages. A node that the radio adds with the
+6-byte key prefix of an allowed sender blocks that sender's commands until 24 hours after it was
+last seen; a node that only advertises is not added and does not count. When the profile only
+observes, the bridge logs a warning at connect if the radio adds contacts on its own, and
 `meshcore-home-gateway probe` shows the settings. Connect a radio that takes commands by USB: over
 TCP it drops push frames while its send queue is full (the bridge warns about that too), and a
 host that takes the radio's network address can pose as the radio and forge commands
