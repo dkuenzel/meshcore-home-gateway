@@ -96,6 +96,23 @@ def test_retention_by_age_and_by_count(tmp_path: Path, monkeypatch: pytest.Monke
     assert history.nodes() == []
 
 
+def test_the_position_cap_keeps_the_newest_position_of_every_contact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cap bounds the file, the days bound the time: a contact at rest keeps its one
+    position however many another one adds."""
+    monkeypatch.setattr(history_module, "MAX_POSITIONS", 3)
+    history = opened(tmp_path / "h.sqlite3")
+    resting = Fix(Position(1, 1), T, "telemetry")
+    history.add_position("b2" * 32, resting)
+    moving = [Fix(Position(53 + i / 100, 9), T + 60 * i, "telemetry") for i in range(1, 6)]
+    for fix in moving:
+        history.add_position(KEY, fix)
+    history.purge(T + 600)
+    assert history.last_fixes() == {KEY: moving[-1], "b2" * 32: resting}
+    assert history.trace(KEY, T) == moving[-3:]
+
+
 def test_a_file_that_is_no_database_is_set_aside(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

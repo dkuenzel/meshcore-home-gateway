@@ -72,6 +72,7 @@ class Tracked:
     heard: Heard | None = None
     fix: Fix | None = None
     position_received_at: float | None = None  # the newest telemetry answer with a position
+    restored_heard: Heard | None = None  # last heard as the history knew it at the start
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +116,7 @@ class Mesh:
                 tracked = self.nodes.pop(key, None) or Tracked(node)  # a heard node now added
                 heard, fix = self._restored.pop(key, (None, None))
                 tracked.heard = _newer(tracked.heard, heard)
+                tracked.restored_heard = heard
                 tracked.fix = fix
                 tracked.first_heard = tracked.first_heard or (heard.at if heard else None)
                 previous = None
@@ -191,6 +193,7 @@ class Mesh:
                 tracked.heard = answer
             else:  # an advert or message newer than the answer stays
                 self.contact_heard(key, answer)
+                moved = tracked.heard is answer
         if position is not None:
             tracked.position_received_at = at
             fix = tracked.fix

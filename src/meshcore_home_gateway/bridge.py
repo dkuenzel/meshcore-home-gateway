@@ -741,7 +741,8 @@ class Bridge:
             event = await self._events.get()
             telemetry = self._telemetry
             if isinstance(event, MessageReceived):
-                self._activity.touch()  # an automation's answer to it goes before telemetry
+                if not self._ignored(event.message):  # an automation's answer goes first
+                    self._activity.touch()
                 self._messages.put_nowait(event)  # in order, without delaying acks
             elif isinstance(event, AckReceived):
                 self._acks.resolve(event.ack, event.round_trip_ms)
@@ -780,12 +781,16 @@ class Bridge:
                 log.exception("received message could not be handled")
             self._messages.task_done()
 
-    async def _on_message(self, event: MessageReceived) -> None:
-        message, session = event.message, event.session
-        if (
+    def _ignored(self, message: InboundMessage) -> bool:
+        """A message of a channel the configuration ignores: neither published nor answered."""
+        return (
             message.kind is MessageKind.CHANNEL
             and message.channel_index in self.config.messages.ignore_channels
-        ):
+        )
+
+    async def _on_message(self, event: MessageReceived) -> None:
+        message, session = event.message, event.session
+        if self._ignored(message):
             return
         origin = (
             message.sender_prefix if message.kind is MessageKind.CONTACT else message.channel_index

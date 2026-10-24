@@ -47,8 +47,9 @@ Then, on the gateway: `[telemetry] enabled = true` and restart the service.
 
 * The first request about a minute and a quarter after the radio connects (the airtime lanes
   start empty; EU/UK Narrow), then about every 15 minutes while the companion rests next to the
-  gateway and every 90 seconds while it moves (50 m or more); over repeaters less often (two
-  repeaters: 47 and 4.7 minutes). Without a position in its answers, once an hour.
+  gateway and every 90 seconds while it moves (50 m or more); over repeaters less often (one
+  repeater: 31 and 3.1 minutes, two: 47 and 4.7 minutes). Without a position in its answers, once
+  an hour.
 * A companion that stops answering (out of range, switched off) is asked again after 30 seconds,
   then at least every 30 minutes for a day, or at its normal interval if that is longer (an hour
   without a position, 47 minutes over two repeaters), on the route it had: it is found again that
@@ -81,7 +82,9 @@ Then, on the gateway: `[telemetry] enabled = true` and restart the service.
 * A telemetry position carries an accuracy of 15 m, so Home Assistant counts a companion up to
   15 m outside a zone's radius as inside it.
 * A position is stored in the history (and written by Home Assistant's recorder) only when it
-  moved 20 m or more: a companion at rest adds nothing per answer.
+  moved 20 m or more: a companion at rest adds nothing per answer. The history keeps at most
+  100 000 positions, dropping the oldest first, but never a companion's newest one before
+  `[history] positions_days` is over.
 
 ## Privacy
 

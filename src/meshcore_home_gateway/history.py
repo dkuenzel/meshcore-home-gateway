@@ -25,7 +25,11 @@ log = logging.getLogger(__name__)
 SCHEMA_VERSION = 2  # 2: node.last_advert
 DAY_S = 86_400.0
 MAX_MESSAGES = 10_000
-MAX_POSITIONS = 100_000
+MAX_POSITIONS = 100_000  # in all; each contact keeps its newest
+# the newest position of the contact of row p, as last_fixes() reads it
+_NEWEST_POSITION = (
+    "(SELECT id FROM position WHERE contact_key = p.contact_key ORDER BY at DESC, id DESC LIMIT 1)"
+)
 _SCHEMA = """
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,
@@ -156,7 +160,8 @@ class History:
         )  # fmt: skip
 
     def purge(self, now: float) -> None:
-        """Drop what is older than the retention, and messages and positions beyond their caps."""
+        """Drop what is older than the retention, and messages and positions beyond their caps
+        (the oldest first; never a contact's newest position, which only its age removes)."""
         r = self._retention
         beyond = (
             "DELETE FROM {0} WHERE id <= (SELECT id FROM {0} ORDER BY id DESC LIMIT 1 OFFSET ?)"
@@ -164,7 +169,11 @@ class History:
         self._write("DELETE FROM message WHERE at < ?", (now - r.messages_days * DAY_S,))
         self._write(beyond.format("message"), (MAX_MESSAGES,))
         self._write("DELETE FROM position WHERE at < ?", (now - r.positions_days * DAY_S,))
-        self._write(beyond.format("position"), (MAX_POSITIONS,))
+        self._write(
+            beyond.format("position") + " AND id NOT IN (SELECT " + _NEWEST_POSITION
+            + " FROM (SELECT DISTINCT contact_key FROM position) p)",
+            (MAX_POSITIONS,),
+        )  # fmt: skip
         self._write("DELETE FROM node WHERE heard_at < ?", (now - r.nodes_days * DAY_S,))
 
     def _write(self, sql: str, args: tuple[Any, ...]) -> None:
@@ -190,8 +199,7 @@ class History:
         """The newest position of every contact that has one."""
         rows = self._read(
             "SELECT contact_key, at, latitude, longitude, altitude_m, source FROM position p "
-            "WHERE id = (SELECT id FROM position WHERE contact_key = p.contact_key "
-            "ORDER BY at DESC, id DESC LIMIT 1)",
+            "WHERE id = " + _NEWEST_POSITION,
             (),
         )
         return {

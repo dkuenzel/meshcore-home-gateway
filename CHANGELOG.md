@@ -245,7 +245,8 @@ format and the command line are public interfaces.
 - A local history in `/var/lib/meshcore-home-gateway/history.sqlite3` (SQLite, from the standard
   library; [ADR 0016](docs/decisions/0016-history-in-a-local-sqlite-database.md)): messages,
   positions of contacts, when nodes were last heard. Settings `[history]` `enabled`,
-  `messages_days`, `positions_days` (30 days by default).
+  `messages_days`, `positions_days` (30 days by default); at most 10 000 messages and 100 000
+  positions, of which every contact keeps its newest.
 - `probe` reports what the radio tells about privacy and airtime: its position and whether its
   adverts carry it, who may request its telemetry (base, location, environment), the extra
   acknowledgements, its own duty-cycle factor (`airtime_factor`), and the flags of every contact;

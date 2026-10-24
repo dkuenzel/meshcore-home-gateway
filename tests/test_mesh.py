@@ -275,5 +275,6 @@ def test_last_heard_follows_answers_after_the_clock_was_set_back() -> None:
     assert mesh.contact_answered(key, T - 7200 + 900, None, None)  # the clock went back 2 h
     assert mesh.contacts[key].heard == Heard(T - 6300, "telemetry", Signal())
     mesh.contact_heard(key, Heard(T - 6000, "advert", Signal(1, 5.0, -80)))
-    mesh.contact_answered(key, T - 6100, None, None)  # an answer older than the advert
+    assert not mesh.contact_answered(key, T - 6100, None, None)  # older than the advert: kept
     assert mesh.contacts[key].heard == Heard(T - 6000, "advert", Signal(1, 5.0, -80))
+    assert mesh.contact_answered(key, T - 5900, None, None)  # newer: it moves

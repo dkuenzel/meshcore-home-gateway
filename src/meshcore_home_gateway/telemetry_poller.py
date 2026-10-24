@@ -230,7 +230,6 @@ class TelemetryPoller:
         # key -> the session's serial and the frame number of its newest answer taken
         self._newest: dict[str, tuple[int, int]] = {}
         self._seeded: set[str] = set()  # keys whose heard time the history was asked for
-        self._started = wall_clock()  # what was heard before counts from the history only
         self._own_flood: tuple[str, float] | None = None  # (key, until): its 0x81 is ours
         self._reply_watch: tuple[str, float] | None = None  # (key, until): last direct request
         self._sending: str | None = None  # the request being written, before its SENT
@@ -265,7 +264,6 @@ class TelemetryPoller:
             self._save(at_once=True)
 
     def _restore(self) -> None:
-        self._started = self._wall()
         try:
             saved, elapsed = self._records.load(self._wall()) if self._records else (None, 0.0)
             self._scheduler = core.Scheduler(
@@ -531,9 +529,9 @@ class TelemetryPoller:
         counts as heard, so a companion added before a restart is flooded while it is fresh."""
         self._seeded.add(key)
         tracked = self._observer.mesh.contacts.get(key)
-        heard = tracked.heard if tracked is not None else None
-        if heard is None or heard.how not in SEED_HEARD or heard.at >= self._started:
-            return  # heard in this run: already counted as it came
+        heard = tracked.restored_heard if tracked is not None else None  # not what this run heard
+        if heard is None or heard.how not in SEED_HEARD:
+            return
         age = self._wall() - heard.at
         if 0 <= age <= core.HEARD_RECENTLY_S:  # a clock set back: unknown
             self._heard[key] = max(self._heard.get(key, -math.inf), now - age)

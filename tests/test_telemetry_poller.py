@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -343,6 +344,23 @@ def test_messages_go_first(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
             assert commands.index(Command.SEND_TELEMETRY_REQ) > last_text
             assert commands.count(Command.SEND_TXT_MSG) == 3  # all attempts went first
             assert commands.count(Command.SEND_CHANNEL_TXT_MSG) == 1
+
+    scenario(main)
+
+
+def test_messages_on_an_ignored_channel_do_not_hold_requests_back(tmp_path: Path) -> None:
+    """Nothing answers them: a busy channel the configuration ignores does not stop telemetry."""
+    radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: RemoteCompanion()})
+    ignoring = make_config(extra="[telemetry]\nenabled = true\n", messages="ignore_channels = [0]")
+
+    async def main() -> None:
+        async with running(ignoring, radio, tmp_path, telemetry_lanes=wide):
+            for i in range(150):  # one every 20 ms, for up to 3 s (QUIET_S is 50 ms here)
+                radio.queue_channel_message(0, f"chatter {i}", START_TIME + i)
+                await asyncio.sleep(0.02)
+                if requests(radio):
+                    break
+            assert requests(radio) == 1
 
     scenario(main)
 
@@ -737,9 +755,14 @@ def test_a_silence_during_a_table_read_counts_only_again_over_tcp(
     scenario(main)
 
 
-def test_an_advert_from_before_the_restart_counts_as_heard(tmp_path: Path) -> None:
+@pytest.mark.parametrize("message_waiting", [False, True])
+def test_an_advert_from_before_the_restart_counts_as_heard(
+    tmp_path: Path, message_waiting: bool
+) -> None:
     """The history keeps when a contact last advertised: a companion added before telemetry
-    was switched on (and the service restarted) is flooded while that advert is fresh."""
+    was switched on (and the service restarted) is flooded while that advert is fresh, also
+    when a message it sent meanwhile waited in the radio (fetched at connect: no sign of
+    life, and it must not hide the advert)."""
     path = tmp_path / "history.sqlite3"
     history = History.open(path)
     assert history is not None
@@ -750,6 +773,9 @@ def test_an_advert_from_before_the_restart_counts_as_heard(tmp_path: Path) -> No
     dana = replace(DANA, out_path_len=0xFF)  # without a path too, but last heard by a message
     remotes = {ALICE.public_key: RemoteCompanion(), dana.public_key: RemoteCompanion()}
     radio = EmulatedRadio(contacts=[ALICE, dana], remotes=remotes)
+    if message_waiting:
+        radio.queue_direct_message(ALICE.public_key[:6], "while you were away", START_TIME + 90,
+                                   push=False)  # fmt: skip
     opened: list[History] = []
 
     def observer(bus: FakeBus) -> Observer:
@@ -762,6 +788,8 @@ def test_an_advert_from_before_the_restart_counts_as_heard(tmp_path: Path) -> No
         async with running(config(), radio, tmp_path, observer=observer, telemetry_lanes=wide) as (
             _b, bus, _n,
         ):  # fmt: skip
+            if message_waiting:
+                await bus.wait_for("/received", lambda d: d["text"] == "while you were away")
             await bus.wait_for(f"/contacts/{ALICE.public_key.hex()}", positioned)
             await asyncio.sleep(0.3)
             assert radio.telemetry_requests == [(ALICE.public_key, True)]
@@ -813,13 +841,16 @@ class StandInSession:
             raise self.error
 
 
-def stand_in_poller(session: StandInSession) -> tuple[TelemetryPoller, Observer]:
+def stand_in_poller(
+    session: StandInSession, monotonic: Callable[[], float] = time.monotonic
+) -> tuple[TelemetryPoller, Observer]:
     observer = Observer(FakeBus(), TOPICS, wall_clock=lambda: NOW)
-    activity = OutboxActivity(time.monotonic, lambda: 0)
+    activity = OutboxActivity(monotonic, lambda: 0)
     stand_in = cast(CompanionSession, session)
     poller = TelemetryPoller(
-        observer, lambda: stand_in, activity, records=None, tcp=False, lanes=wide
-    )
+        observer, lambda: stand_in, activity, records=None, tcp=False, monotonic=monotonic,
+        wall_clock=lambda: NOW, lanes=wide,
+    )  # fmt: skip
     return poller, observer
 
 
@@ -851,9 +882,10 @@ def test_a_request_without_sent_counts_only_if_it_was_written(
         assert (len(exported.floods_age_s) == 1) is counted
         assert (poller.used_s()[1] > 20.0) is counted
         if counted and not isinstance(error, asyncio.CancelledError):
-            assert poller._waiter._last == KEY  # its answer is still taken, late
-            assert poller._own_flood is not None
-            assert poller._own_flood[0] == KEY  # and its path is no sign of life
+            poller.path_changed(DANA.public_key)
+            assert KEY not in poller._heard  # the path of its flood is no sign of life
+            poller.answer(answer_of(DANA.public_key, 99))
+            assert [key for key, _ in poller._held] == [KEY]  # its answer is taken, late
 
     asyncio.run(main())
 
@@ -891,3 +923,39 @@ def test_late_answers_are_ordered_by_frame_within_a_session_only() -> None:
         assert poller._newest[KEY] == (2, 5)
 
     asyncio.run(main())
+
+
+def chat_record(contact: EmulatedContact) -> codec.ContactRecord:
+    record = codec.decode(contact.record())
+    assert isinstance(record, codec.ContactRecord)
+    return record
+
+
+def test_an_advert_from_before_the_restart_counts_from_when_it_was_heard() -> None:
+    """Heard 10 minutes before: it may be flooded for 20 minutes more, not 30."""
+    session = StandInSession()
+    session.contact_records = {KEY: chat_record(DANA)}
+    poller, observer = stand_in_poller(session, monotonic=lambda: 5000.0)
+    observer.mesh.restore(KEY, Heard(NOW - 600, "advert", Signal()), None)
+    observer.radio_event(session_module.ContactsRead(session.contact_records, NOW))
+    stand_in = cast(CompanionSession, session)
+    assert [c.heard_at for c in poller._candidates(stand_in, 5000.0)] == [4400.0]
+
+
+def test_heard_times_and_the_marks_of_contacts_that_left_are_dropped() -> None:
+    """A busy mesh while nothing decides (paused) does not grow the poller's memory."""
+    clock = [0.0]
+    session = StandInSession()
+    poller, _observer = stand_in_poller(session, monotonic=lambda: clock[0])
+    for i in range(poller_module.HEARD_KEPT):
+        poller.heard(f"{i:064x}")
+    clock[0] = 2 * telemetry.HEARD_RECENTLY_S + 1
+    poller.heard("ff" * 32)  # one more than kept: the old ones go
+    assert list(poller._heard) == ["ff" * 32]
+    gone = "ee" * 32
+    poller._newest[gone], poller._routes[gone], poller._states[gone] = (1, 1), True, "resting"
+    session.contact_records = {KEY: chat_record(DANA)}
+    poller._candidates(cast(CompanionSession, session), clock[0])
+    assert (gone in poller._newest, gone in poller._routes, gone in poller._states) == (
+        False, False, False,
+    )  # fmt: skip

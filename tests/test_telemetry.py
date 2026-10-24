@@ -226,30 +226,38 @@ def test_a_flooded_reply_is_charged_once() -> None:
     assert s.used_s(2.0)[1] == pytest.approx(0.887 + 11.75, abs=0.01)
 
 
-def test_a_due_flood_does_not_wait_forever_behind_direct_polls() -> None:
-    """Two moving companions saturate the own lane; a flood needs both lanes full. After 10
-    minutes the flood goes first and waits for them: at most 164 s for the own lane, 816 s for
-    the mesh lane, from empty."""
+@pytest.mark.parametrize("heard_every_s", [None, 120.0])
+def test_a_due_flood_does_not_wait_forever_behind_direct_polls(heard_every_s: float | None) -> None:
+    """Two moving companions, asked every 90 s, keep the lanes from filling; a flood needs both
+    lanes full. After 10 minutes the flood goes first and waits for them: at most 164 s for the
+    own lane, 816 s for the mesh lane, from empty. Hearing the contact again does not restart
+    the wait."""
     saved = Saved({
         k: SavedContact(0.0, answered_age_s=10.0, polled_age_s=10.0, located=True, still=0)
         for k in (A, B)
     })  # fmt: skip
     s = Scheduler(0.0, saved=saved)
-    now, polls, step = 0.0, [], 0
+    now, polls, answers = 0.0, [], {A: 0, B: 0}
     while now < 1500.0:
-        candidates = [direct(A), direct(B), pathless(C, heard_at=now)]
+        heard = 0.0 if heard_every_s is None else now - now % heard_every_s
+        candidates = [direct(A), direct(B), pathless(C, heard_at=heard)]
         decision = s.decide(EU, candidates, now)
         if isinstance(decision, float):
             now += max(decision, 0.001)
             continue
         s.sent(decision, flood=decision.flood, now=now)
-        step += 1
-        s.answered(decision.key, now + 1, (HOME[0] + 10 * (step % 2), HOME[1]), 19)
+        if decision.key in answers:  # each moves 111 m between two answers
+            answers[decision.key] += 1
+            cells = (HOME[0] + 10 * (answers[decision.key] % 2), HOME[1])
+            s.answered(decision.key, now + 1, cells, 19)
+        else:
+            s.unanswered(decision.key, now + 9)
         polls.append((now, decision.key))
         now += 1
     flood_at = next(t for t, k in polls if k == C)
     assert 600.0 <= flood_at <= 600.0 + 817.0 + 15.0
     assert len([t for t, k in polls if k != C and t < 600.0]) >= 6  # direct polls went on
+    assert s.interval_s(A, now) == telemetry.MOVING_MIN_S  # still moving
 
 
 # --- intervals, back-off and signs of life ------------------------------------------------------
@@ -490,13 +498,15 @@ def test_a_contact_without_a_path_heard_after_its_last_request_is_due_at_once() 
 
 
 def test_a_flood_planned_while_heard_stays_planned_while_it_waits_for_the_lanes() -> None:
-    """Four companions heard together, each flood needing both lanes full (13.6 min at EU/UK
-    Narrow): all four go out, also those that wait longer than 30 min."""
+    """Five companions heard together, each flood needing both lanes full (13.6 min at EU/UK
+    Narrow): all five go out, also those that wait longer than 30 min, and the fifth once the
+    first flood is an hour old (4 an hour)."""
     s = Scheduler(0.0)
-    keys = (A, B, C, D)
-    candidates = [pathless(k, heard_at=0.0) for k in keys]
+    keys = (A, B, C, D, E)
     now, flooded = 0.0, {}
-    while now < 4000.0:
+    while now < 5000.0:
+        heard = 0.0 if now <= 2 * telemetry.HEARD_RECENTLY_S else None  # as the poller keeps it
+        candidates = [pathless(k, heard_at=heard) for k in keys]
         decision = s.decide(EU, candidates, now)
         if isinstance(decision, float):
             now += max(decision, 0.001)
@@ -506,7 +516,9 @@ def test_a_flood_planned_while_heard_stays_planned_while_it_waits_for_the_lanes(
         flooded[decision.key] = now
         now += 9
     assert set(flooded) == set(keys)
-    assert max(flooded.values()) > telemetry.HEARD_RECENTLY_S
+    times = sorted(flooded.values())
+    assert times[3] > telemetry.HEARD_RECENTLY_S
+    assert times[4] - times[0] >= HOUR
 
 
 def test_the_flood_count_stops_at_the_limit_the_state_file_takes() -> None:
@@ -579,6 +591,15 @@ def test_a_planned_flood_stays_planned_when_heard_again_or_no_longer() -> None:
         flooded[decision.key] = now
         now += 9
     assert set(flooded) == set(keys)
+
+
+def test_a_contact_that_leaves_loses_its_planned_flood() -> None:
+    """Removed (or a look-alike appeared) while its flood waited, and back without being heard
+    again: no flood for the old hearing."""
+    s = Scheduler(0.0)
+    assert isinstance(s.decide(EU, [pathless(A, heard_at=0.0)], 0.0), float)  # planned, waits
+    s.decide(EU, [direct(B)], 100.0)  # A left
+    assert s.decide(EU, [pathless(A)], 6 * HOUR) == telemetry.STEP_S
 
 
 def test_a_planned_flood_survives_a_retry() -> None:

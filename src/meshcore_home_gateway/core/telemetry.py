@@ -7,10 +7,10 @@ candidates, what the radio answered and what was heard, and does what it decides
 * Direct only: a contact with a stored path is asked on it. One without a path is asked by flood
   only when it was heard by other means (an advert, a live message, a path it sent) within
   30 minutes; a flood planned then stays planned (while it waits for the lanes, a retry or the
-  gap) as long as the gateway keeps deciding. At most 4 floods an hour for the gateway and one per
-  contact per 30 minutes, the gap doubling with each flood until a direct answer (up to a day); a
-  contact that has not answered within a day, once a day. The gateway never resets or writes a
-  path for telemetry.
+  hourly limit) as long as the gateway keeps deciding and the contact stays a candidate. At most
+  4 floods an hour for the gateway and one per contact per 30 minutes, the gap doubling with
+  each flood until a direct answer (up to a day); a contact that has not answered within a day,
+  once a day. The gateway never resets or writes a path for telemetry.
 * Two lanes of airtime, separate from the message budget: the gateway's own transmit time and the
   estimated airtime of every transmission a request causes in the mesh. They start empty, so a
   restart adds no burst (a debt is saved and carried over); a request is charged when the radio
@@ -254,10 +254,11 @@ class Scheduler:
                 continue
             poll = self._poll_for(c, s, now)
             planned[c.key] = poll
-            if poll is None or not poll.flood:
-                s.flood_waiting_since = None
-            elif s.flood_waiting_since is None:
-                s.flood_waiting_since = now
+            if poll is not None and poll.flood:
+                if s.flood_waiting_since is None:
+                    s.flood_waiting_since = now
+            elif poll is not None or not self._hour_full(now):
+                s.flood_waiting_since = None  # a path now, or not heard, or its own gap holds
         return planned
 
     def _poll_for(self, c: Candidate, s: _Contact, now: float) -> Poll | None:
@@ -289,9 +290,12 @@ class Scheduler:
             s.due_at = target
             self.version += 1
 
-    def _flood_allowed(self, s: _Contact, now: float) -> bool:
+    def _hour_full(self, now: float) -> bool:
         self._floods = [t for t in self._floods if 0 <= now - t < HOUR_S]
-        if len(self._floods) >= FLOODS_PER_HOUR:
+        return len(self._floods) >= FLOODS_PER_HOUR
+
+    def _flood_allowed(self, s: _Contact, now: float) -> bool:
+        if self._hour_full(now):
             return False
         gap = min(MAX_FLOOD_GAP_S, FLOOD_GAP_S * 2.0**s.floods) if _recent(s, now) else PROBE_GAP_S
         return s.flood_at is None or now - s.flood_at >= gap
@@ -343,10 +347,12 @@ class Scheduler:
 
     def _track(self, candidates: Sequence[Candidate], now: float) -> None:
         """New candidates are due at once; the schedule of one that left is parked for a day,
-        and comes back with its failures and flood times."""
+        and comes back with its failures and flood times, not its planned flood."""
         keys = {c.key for c in candidates}
         for key in [k for k in self._contacts if k not in keys and k != self._in_flight]:
-            self._parked[key] = (now, self._contacts.pop(key))
+            left = self._contacts.pop(key)
+            left.flood_waiting_since = None  # back, it is flooded only when heard again
+            self._parked[key] = (now, left)
             self.version += 1
         restored, self._restored = self._restored, {}  # compared with a table now
         for key, kept in restored.items():

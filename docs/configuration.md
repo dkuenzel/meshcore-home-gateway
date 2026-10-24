@@ -114,7 +114,7 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `queue_ttl_s` | `600` | time to live of a message, 1–86400: no attempt starts after it. Never sent within it, it expires; sent but not acknowledged, it fails when the acknowledgement wait of its last attempt ends (up to 60 s after the time to live) |
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
-| `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels) |
+| `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
 
 ## `[airtime]`
 
@@ -174,7 +174,7 @@ never for nodes the gateway merely heard.
 | --- | --- | --- |
 | `enabled` | `true` | keep the history; with `false` nothing is written (delete the file by hand to remove what is there) |
 | `messages_days` | `30` | days messages are kept, 1–3650; at most 10 000 messages |
-| `positions_days` | `30` | days positions are kept, 1–3650 |
+| `positions_days` | `30` | days positions are kept, 1–3650; at most 100 000 positions, the oldest first, but every contact keeps its newest until it is that old |
 
 The file holds message texts and positions of the household's people: it is readable only by the
 service user. If it cannot be opened or written, the gateway logs it and runs without a history;
