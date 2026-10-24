@@ -148,6 +148,19 @@ format and the command line are public interfaces.
   its last known position), `nodes` (nodes heard but not added, without positions) and `history`
   (the latest messages in and out). Events `contact` (added, removed) and `node` (a node heard for
   the first time).
+- A managed radio profile ([ADR 0020](docs/decisions/0020-managed-radio-profile-for-the-observer.md),
+  `[radio.profile]`): at every connect the gateway sets its radio up as an observer, writing only
+  what differs: contacts added manually only, telemetry denied to everyone, no position in
+  adverts, the 10 % duty cycle in 869.40–869.65 MHz, the name if configured, and the protected
+  contacts (targets, command senders) on the radio as favourites. A change made on the radio is
+  set back with a warning, except the name; untested firmware is only observed. A value that does
+  not take is no longer written after three connects in a row, per firmware version. The result is
+  the `settings` document with `setting` events, and in Home Assistant *Radio profile* and
+  *Radio setting*. `probe` shows what the service will do at its next connect, the protected
+  contacts included (`--config` for the profile of a configuration, `--state-dir` for the
+  service's stored state, read only); the installer asks for the radio's name in the advanced
+  setup and shows that plan. A protected contact put on the radio before it was ever heard gets
+  its Home Assistant device with its first advert.
 - Every contact of the radio is a recipient: `contacts/<key>/send` sends a direct message to a
   companion in the contact table, through the same queue, airtime budget and duplicate check as a
   target ([ADR 0017](docs/decisions/0017-contacts-on-the-radio-each-with-its-own-device.md));

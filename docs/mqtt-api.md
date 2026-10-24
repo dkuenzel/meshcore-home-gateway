@@ -21,8 +21,10 @@ versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 | `contacts/<key>/received` | bridge → | no | the `received` events of messages from that contact |
 | `nodes` | bridge → | yes | JSON: nodes heard but not added |
 | `history` | bridge → | yes | JSON: the latest messages in and out |
+| `settings` | bridge → | yes | JSON: the managed radio profile at the last connect |
 | `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden` or `shown` |
 | `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
+| `setting` | bridge → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
 | `homeassistant/show_hidden` | → bridge | must not be | any payload: show the contacts deleted in Home Assistant again |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/config` | bridge → | no | Home Assistant discovery; `<node_id>` as configured, `-` included |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/contact_<key>/config` | both | no | discovery of each contact's device ([home-assistant.md](home-assistant.md#contacts)); the gateway reads it to notice a device deleted in Home Assistant |
@@ -299,6 +301,49 @@ new, and contacts that are gone (`name` and `type` are then `null`). `hidden` an
 contact device deleted in Home Assistant and shown again; the contact stays on the radio. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
 adverts with invented keys does not flood the bus.
+
+## Radio profile: `settings` and `setting`
+
+What the managed profile found and did at the last connect
+([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md),
+[configuration.md](configuration.md#radioprofile)), published after each connect:
+
+```json
+{"checked_at": "2026-10-18T09:00:00+00:00", "status": "drift", "mode": "auto",
+ "observing": false, "firmware_code": 14, "firmware_tested": true,
+ "settings": {
+   "manual_add": {"live": true, "desired": true, "state": "written"},
+   "autoadd": {"live": [], "desired": [], "state": "ok"},
+   "telemetry": {"live": {"base": "deny", "location": "deny", "environment": "deny"},
+                 "desired": {"base": "deny", "location": "deny", "environment": "deny"},
+                 "state": "ok"},
+   "advert_location": {"live": "none", "desired": "none", "state": "ok"},
+   "duty_cycle_percent": {"live": 10.0, "desired": 10.0, "state": "written"},
+   "name": {"live": "Kitchen radio", "desired": "Gateway", "state": "drift"}},
+ "own_position": false,
+ "protected_contacts": {"added": [], "favoured": ["a1b2…"], "missing": [], "failed": [],
+                        "not_favourite": []}}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `status` | `ok` (the radio has the profile), `written` (set at this connect), `drift` (the name was changed on the radio and is kept), `differs` (a setting or a protected contact differs, but the profile only observes), `problem` (a setting or a protected contact was refused, a setting did not read back as written or does not take, or is unsupported); when several apply, the first of `problem`, `differs`, `drift`, `written`, `ok` |
+| `settings.<name>.live`, `.desired` | after the writes; `desired` is `null` for a setting left as found, `live` `null` for one the firmware does not report |
+| `settings.<name>.state` | `ok`, `written` (set and read back), `drift`, `differs`, `failed` (refused by the radio), `not_taken` (written, but reads back otherwise), `not_converging` (no longer written: it did not take at three connects in a row), `unsupported`, `unmanaged` (left as found), `unknown` (the firmware does not report it) |
+| `autoadd` | `overwrite_oldest` and the contact types the radio adds by itself |
+| `own_position` | the radio keeps a position of its own (reported, never cleared by the gateway) |
+| `protected_contacts` | keys added to the radio, made favourites, refused by the radio (`failed`, usually a full table), and while only observing: missing from the radio, or on it but no favourite (`not_favourite`) |
+
+`setting` reports what happened as an event, with `setting`, `reason` for `written`, `failed`
+and `not_taken` (`initial`: the gateway has nothing stored for this radio; `configured`: the
+configuration asks for a new value; `drift`: the radio was changed), `live` (after the writes) and
+`desired`. `written`, `failed` and `not_taken` come at each connect that writes; `drift` and
+`not_converging` once per run of the gateway and radio, and again when the value changes:
+
+```json
+{"event_type": "written", "setting": "manual_add", "reason": "drift", "live": true,
+ "desired": true}
+```
 
 ## Radio diagnostics: `rx`
 

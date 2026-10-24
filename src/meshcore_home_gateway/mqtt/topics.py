@@ -17,9 +17,11 @@ class Topics:
         self.contacts = f"{self.root}/contacts"  # index of the radio's contact table
         self.nodes = f"{self.root}/nodes"  # nodes heard, not contacts
         self.history = f"{self.root}/history"  # the latest messages in and out
+        self.settings = f"{self.root}/settings"  # the managed radio profile (ADR 0020)
         # events
         self.contact_event = f"{self.root}/contact"  # added, removed; hidden or shown in HA
         self.node_event = f"{self.root}/node"  # a node heard for the first time
+        self.setting_event = f"{self.root}/setting"  # a radio setting written or found changed
         # requests
         self.show_hidden = f"{self.root}/homeassistant/show_hidden"  # contacts deleted in HA
         self._send = f"{self.root}/send/"

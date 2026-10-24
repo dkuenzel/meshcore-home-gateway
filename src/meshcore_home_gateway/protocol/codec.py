@@ -32,6 +32,7 @@ DIRECT_PATH = 0xFF  # path_len of a message that arrived by direct route
 NO_PATH = 0xFF  # out_path_len of a contact without a known path: the radio floods
 MAX_PATH_BYTES = 64  # MAX_PATH_SIZE, src/MeshCore.h:22
 CONTACT_RECORD_BYTES = 147  # the contact layout after the code byte (MyMesh.cpp:171-192)
+MAX_NAME_BYTES = 31  # node_name is 32 bytes with its NUL (NodePrefs.h); longer is cut
 
 
 class ProtocolError(ValueError):
@@ -103,6 +104,65 @@ def get_tuning_params() -> bytes:
 
 def get_stats(kind: StatsType) -> bytes:
     return bytes([Command.GET_STATS, kind])
+
+
+def set_advert_name(name: str) -> bytes:
+    data = name.encode("utf-8")
+    if not data or b"\x00" in data or len(data) > MAX_NAME_BYTES:
+        raise ValueError(f"a radio name is 1 to {MAX_NAME_BYTES} bytes without NUL")
+    return bytes([Command.SET_ADVERT_NAME]) + data
+
+
+def set_other_params(manual_add: bool, telemetry_modes: int, advert_location: int) -> bytes:
+    """Four bytes (MyMesh.cpp:1488-1503): manual adding, the telemetry modes (bits 0-1 base, 2-3
+    location, 4-5 environment) and the advert location policy; the fifth byte, the extra
+    acknowledgements, is left out and keeps its value."""
+    if not 0 <= telemetry_modes <= 0x3F or advert_location not in (0, 1):
+        raise ValueError("telemetry modes are 6 bits, the advert location policy 0 or 1")
+    return bytes([Command.SET_OTHER_PARAMS, int(manual_add), telemetry_modes, advert_location])
+
+
+def set_autoadd_config(flags: int) -> bytes:
+    """The AutoAdd flags only: the hop limit byte is left out and keeps its value
+    (MyMesh.cpp:2023-2029)."""
+    if flags & ~sum(AutoAdd):
+        raise ValueError(f"unknown auto-add flags 0x{flags:02x}")
+    return bytes([Command.SET_AUTOADD_CONFIG, flags])
+
+
+def set_tuning_params(rx_delay_base_milli: int, airtime_factor_milli: int) -> bytes:
+    """Both values x 1000 (MyMesh.cpp:1470-1480); write the receive delay back as read."""
+    return (
+        bytes([Command.SET_TUNING_PARAMS])
+        + _u32(rx_delay_base_milli, "receive delay")
+        + _u32(airtime_factor_milli, "airtime factor")
+    )
+
+
+def add_update_contact(record: ContactRecord, flags: int) -> bytes:
+    """A contact record as the radio sent it, with other flags; the command takes the same
+    layout (MyMesh.cpp:194-215). The last-modified time is left out: the radio sets it."""
+    if len(record.raw) != CONTACT_RECORD_BYTES or not 0 <= flags <= 0xFF:
+        raise ValueError("add_update_contact needs a record read from the radio")
+    raw = record.raw
+    return bytes([Command.ADD_UPDATE_CONTACT]) + raw[:33] + bytes([flags]) + raw[34:143]
+
+
+def radio_name(name: str) -> str:
+    """The name as the radio keeps it: at most MAX_NAME_BYTES of UTF-8, cut between characters."""
+    return name.encode("utf-8")[:MAX_NAME_BYTES].decode("utf-8", "ignore")
+
+
+def new_contact(public_key: bytes, name: str, flags: int) -> bytes:
+    """A companion the radio does not hold yet: no path (it floods), no advert yet; the radio
+    takes name and position from its next advert."""
+    if len(public_key) != KEY_BYTES:
+        raise ValueError("new_contact needs the full 32-byte public key")
+    label = radio_name(name).encode("utf-8").ljust(32, b"\x00")
+    return (
+        bytes([Command.ADD_UPDATE_CONTACT]) + public_key + bytes([1, flags, NO_PATH])
+        + bytes(MAX_PATH_BYTES) + label + struct.pack("<Iii", 0, 0, 0)
+    )  # fmt: skip
 
 
 def reset_path(public_key: bytes) -> bytes:

@@ -264,8 +264,14 @@ sequenceDiagram
   before the next frame is handled, from a table read record by record before the read returns
   (§7.3). Channel slots without a name are not configured and never used (the radio would send
   with an all-zero key).
-* **Contact adding.** At connect the session reads the manual-adding bit and the auto-add settings
-  and warns when the radio adds contacts on its own (§7.2).
+* **Managed profile** ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)).
+  After the auto-add and tuning settings are read and before the contact table is read, the
+  session hands itself to the profile (`radio/profile.py`): a three-way reconcile of desired
+  (configuration), last applied (state file, per radio key) and live (the radio) in
+  `core/profile.py` names what to write; one setter per command, then the settings are read back.
+  After the table read, protected contacts are added or made favourites. A bug there is logged and
+  the connection goes on. When the profile only observes, the session warns if the radio adds
+  contacts on its own (§7.2).
 * **Messages fetched at connect** are marked: they may have arrived while no session listened to
   the radio's pushes (§7.3).
 * **Liveness.** A battery query every 60 s doubles as a heartbeat; with it the session reads the

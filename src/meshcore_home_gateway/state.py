@@ -16,24 +16,36 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, TypeGuard
+
+from meshcore_home_gateway.core.profile import Applied, Attempt, Value
 
 log = logging.getLogger(__name__)
 
 
 class JsonStateFile:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, read_only: bool = False) -> None:
+        """`read_only`: for a look at the service's state (probe): an unreadable file reads as
+        empty and stays where it is; saving is refused."""
         self.path = path
+        self.read_only = read_only
 
     def load(self) -> dict[str, Any]:
         try:
             raw = self.path.read_bytes()
         except FileNotFoundError:
             return {}
+        except OSError as exc:
+            if self.read_only:  # the service's own file, for a look (probe): say so, go on
+                log.warning("cannot read %s (%s); taken as empty", self.path, exc.strerror or exc)
+                return {}
+            raise
         try:
             data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             data = None
+        if not isinstance(data, dict) and self.read_only:
+            return {}
         if not isinstance(data, dict):
             aside = self.path.with_name(self.path.name + ".corrupt")
             self.path.replace(aside)
@@ -43,6 +55,9 @@ class JsonStateFile:
 
     def save(self, data: dict[str, Any]) -> None:
         """Write to a temporary file in the same directory, fsync, then rename over the old one."""
+        if self.read_only:
+            msg = f"{self.path} is opened read-only"
+            raise PermissionError(msg)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name, suffix=".tmp")
         try:
@@ -240,6 +255,80 @@ class RetainedKeys:
             log.warning("cannot store the published %s: %s", self._name, exc)
             return
         self._keys = set(keys)
+
+
+class ProfileRecords:
+    """What the managed radio profile last wrote (ADR 0020), per radio key: a replaced radio
+    starts afresh."""
+
+    _KEY = "radio_profile"
+
+    def __init__(self, store: JsonStateFile) -> None:
+        self._store = store
+
+    def load(self, radio_key: str) -> Applied:
+        raw = self._store.load().get(self._KEY)
+        entry = raw.get(radio_key) if isinstance(raw, dict) else None
+        if not isinstance(entry, dict):
+            return Applied()
+        values, attempts = entry.get("values"), entry.get("attempts")
+        tried: dict[str, Attempt] = {}
+        for key, item in attempts.items() if isinstance(attempts, dict) else ():
+            if not isinstance(item, dict):
+                continue
+            value, connects, firmware = (
+                item.get("value"),
+                item.get("connects"),
+                item.get("firmware"),
+            )
+            if _setting(value) and _count(connects) and _count(firmware):
+                tried[key] = Attempt(value, connects, firmware)
+        return Applied(
+            values={
+                k: v for k, v in values.items() if _setting(v)
+            } if isinstance(values, dict) else {},
+            attempts=tried,
+            unsupported=_int_map(entry.get("unsupported")),
+        )  # fmt: skip
+
+    def save(self, radio_key: str, applied: Applied) -> None:
+        """Store the result; a failed write is logged (the profile keeps its memory of this run,
+        and the next change tries again)."""
+        entry = {
+            "values": dict(applied.values),
+            "attempts": {
+                key: {"value": a.value, "connects": a.connects, "firmware": a.firmware_code}
+                for key, a in applied.attempts.items()
+            },
+            "unsupported": dict(applied.unsupported),
+        }
+        try:
+            data = self._store.load()
+            raw = data.get(self._KEY)
+            radios = raw if isinstance(raw, dict) else {}
+            if radios.get(radio_key) == entry:
+                return
+            data[self._KEY] = {**radios, radio_key: entry}
+            self._store.save(data)
+        except OSError as exc:
+            log.warning("cannot store the radio profile: %s", exc)
+
+
+def _setting(value: object) -> TypeGuard[Value]:
+    return isinstance(value, (bool, int, str))
+
+
+def _count(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _int_map(raw: object) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        key: value for key, value in raw.items()
+        if isinstance(value, int) and not isinstance(value, bool)
+    }  # fmt: skip
 
 
 def _string_map(raw: object) -> dict[str, str]:

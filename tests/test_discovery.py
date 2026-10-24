@@ -7,12 +7,18 @@ from typing import Any
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import parse_config
 from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh
+from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
 from meshcore_home_gateway.mqtt.payloads import rx_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.radio.session import RadioInfo
-from meshcore_home_gateway.views import contacts_document, nodes_document, stats_document
+from meshcore_home_gateway.views import (
+    contacts_document,
+    nodes_document,
+    settings_document,
+    stats_document,
+)
 
 KEY = "a1" * 32
 CONFIG = parse_config(
@@ -101,7 +107,7 @@ def test_entities_and_their_sources() -> None:
         "radio", "battery", "airtime", "airtime_available", "queue", "message", "delivery",
         "command", "send_alerts", "send_alice", "noise_floor", "radio_airtime", "uptime",
         "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
-        "advert_position", "contact", "node", "show_hidden",
+        "advert_position", "contact", "node", "show_hidden", "profile", "setting",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -124,12 +130,20 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.stats: stats_document(None, AirtimeMeter(), None),
         TOPICS.contacts: contacts_document(mesh),
         TOPICS.nodes: nodes_document(mesh),
+        TOPICS.settings: settings_document(ProfileReport("auto", 14, True, False, {}, {}), 0.0),
     }
     for topic, document in documents.items():
         assert _template_keys(cmps, topic) <= set(document), topic
     assert _template_keys(cmps, TOPICS.contacts) >= {"total", "remote_cli_total"}
     for counter in ("packets_received", "packets_sent", "receive_errors", "uptime"):
         assert cmps[counter]["enabled_by_default"] is False
+
+
+def test_the_profile_sensor_names_every_status_the_document_has() -> None:
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["profile"]
+    assert sensor["device_class"] == "enum"
+    assert set(sensor["options"]) == {"ok", "written", "drift", "differs", "problem"}
+    assert "json_attributes_template" not in sensor  # the whole document: no coordinates in it
 
 
 def test_show_hidden_only_with_contact_devices() -> None:

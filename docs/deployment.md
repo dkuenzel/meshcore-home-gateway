@@ -9,12 +9,11 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 * **Radio:** a MeshCore companion radio with USB firmware (or WiFi firmware for TCP), set up with
   the official app: name, radio preset, channels, contacts. Then disconnect the app; the bridge
   must be the radio's only client (protocol.md, section 1).
-* **Radio settings worth checking** in the app:
-  * *add contacts manually*, with every contact type switched off in the auto-add settings: a
-    node that the radio adds with the key prefix of a command sender blocks that sender's
-    commands until 24 hours after it was last seen (configuration.md, `[commands]`; ADR 0009);
-  * the *airtime factor* for the legal duty cycle: the firmware allows 50 % by default; for the EU
-    band 869.40–869.65 MHz (10 % per hour) the factor is 9 (protocol.md, section 7).
+* **Radio settings:** the gateway sets the radio up as an observer at its first connect: contacts
+  added manually only, no telemetry for anyone, no position in adverts, and the 10 % duty cycle in
+  the EU band 869.40–869.65 MHz (configuration.md, `[radio.profile]`; ADR 0020). The installer
+  shows what changes; in the advanced setup it also asks for the radio's name. With firmware other than companion 1.18 it
+  only reports; check the settings in the app then, or set `radio.profile.manage = "always"`.
 * **Broker:** an MQTT user for the bridge, with an ACL (mqtt-api.md, last section); the ACL is
   required when commands are configured. A standalone Mosquitto reads a user added with
   `mosquitto_passwd` only after `systemctl reload mosquitto`.

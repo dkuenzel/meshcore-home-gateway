@@ -61,8 +61,9 @@ from meshcore_home_gateway.mqtt.payloads import (
 )
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
+from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES, radio_name
 from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.radio.profile import RadioProfile
 from meshcore_home_gateway.radio.session import (
     AckReceived,
     CommandFailedError,
@@ -196,6 +197,7 @@ class Bridge:
         components: AnnouncedComponents | None = None,
         observer: Observer | None = None,
         devices: ContactDevices | None = None,
+        profile: RadioProfile | None = None,
     ) -> None:
         self.config = config
         self._components = components
@@ -212,6 +214,7 @@ class Bridge:
             bus, self.topics, protected=protected_keys(config), wall_clock=wall_clock
         )
         self._devices = devices  # the contacts' devices in Home Assistant
+        self._profile = profile  # the managed radio profile (ADR 0020)
         if devices is not None:
             self.observer.on_contacts.append(devices.update)
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
@@ -297,6 +300,7 @@ class Bridge:
                 self._transport_factory(), self._events, self.config.radio.set_clock
             )
             session.on_contact_key = self._contact_key
+            session.profile = self._profile
             try:
                 self._radio_info = await session.start()
             except (RadioError, OSError) as exc:
@@ -309,6 +313,8 @@ class Bridge:
                 delay = RECONNECT_MIN_S
                 max_contacts = self._radio_info.device.max_contacts
                 self._observe(self.observer.radio_connected, max_contacts, session.tuning)
+                for report in self._profile.take_reports() if self._profile else []:
+                    self._observe(self.observer.profile_applied, report)
                 self._check_radio(session)
                 if self.config.homeassistant.discovery and _identity(self._radio_info) != (
                     self._announced
@@ -918,6 +924,14 @@ def protected_keys(config: Config) -> frozenset[str]:
     (ADR 0017)."""
     targets = {t.public_key for t in config.targets if t.public_key is not None}
     return frozenset(targets | set(config.commands.senders))
+
+
+def protected_names(config: Config) -> dict[str, str]:
+    """The protected contacts, each with a name for the radio profile to add it under while the
+    radio lacks it, until its next advert names it (ADR 0020)."""
+    names = {k: f"sender-{k[:4]}" for k in config.commands.senders}
+    targets = {t.public_key: t.alias for t in config.targets if t.public_key is not None}
+    return names | {key: radio_name(alias) for key, alias in targets.items()}
 
 
 def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
