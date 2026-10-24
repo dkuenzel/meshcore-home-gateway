@@ -7,6 +7,23 @@ format and the command line are public interfaces.
 
 ## [Unreleased]
 
+## [1.0.0rc1] - 2026-10-24
+
+The release candidate for 1.0.0: the gateway that has carried messages end to end since its first
+version (the MeshCore app on a companion, the mesh, the gateway's radio, MQTT, Home Assistant and
+back), with slices 1 to 5 of the mesh observer since. The code is that of 0.1.0a1; only the
+version and the rules below changed. 1.0.0 follows once the core steps of the
+[hardware checklist](docs/testing.md#hardware-checklist) pass with this candidate. From 1.0.0 on,
+the MQTT API, the configuration format and the command line follow Semantic Versioning: an
+incompatible change raises the major version, a feature the minor version, a fix the patch
+version.
+
+### Changed
+
+- Versioning ([docs/development.md](docs/development.md#release)): every finished increment of a
+  feature is a pre-release of the minor version it leads to (`1.1.0a1`, `1.1.0a2`, …); a release
+  candidate is what the hardware checklist runs with, and the release follows when it passes.
+
 ## [0.1.0a1] - 2026-10-24
 
 The first pre-release: the bridge (messages both ways, commands from allowlisted contacts,

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The project is in its 0.x phase. Only the latest release receives fixes.
+Only the latest release receives fixes.
 
 ## Reporting a vulnerability
 

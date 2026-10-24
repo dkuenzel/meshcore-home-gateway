@@ -79,18 +79,26 @@ Releases are built, signed and published by the workflow `.github/workflows/rele
 ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)); nobody builds
 release files by hand.
 
-Every finished increment, a slice of the roadmap
-([design §13](design.md#13-roadmap-the-mesh-observer)) or a set of fixes, is published as a
-pre-release `X.Y.ZaN`, so each step is visible, signed and installable: its pull request sets the
-version and the changelog section (step 2), and the merge commit is tagged (step 3). Pre-releases
-skip step 1; their changelog section says so. A release candidate `X.Y.ZrcN` and a release need
-the hardware checklist. `releases/latest` and the installer's default never pick a pre-release
+Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0 on: the
+MQTT API, the configuration format and the command line are the public interfaces; an
+incompatible change raises the major version, a feature (a slice of the roadmap,
+[design §13](design.md#13-roadmap-the-mesh-observer)) the minor version, fixes the patch version.
+
+Every finished increment is published as a pre-release, so each step is visible, signed and
+installable: the increments of a feature as `X.Y.0aN` of the minor version it leads to (the
+telemetry slices 6a, 6b and 6c as `1.1.0a1`, `1.1.0a2`, `1.1.0a3`), fixes as `X.Y.ZaN`. Its pull
+request sets the version and the changelog section (step 2), and the merge commit is tagged
+(step 3); a pre-release skips step 1, and its changelog section says so. A release candidate
+`X.Y.ZrcN` is what the hardware checklist runs with; the release follows when it passes.
+`releases/latest` and the installer's default never pick a pre-release
 ([deployment.md](deployment.md)).
 
-1. Run the [hardware checklist](testing.md#hardware-checklist) with the release candidate.
+1. Run the [hardware checklist](testing.md#hardware-checklist) with the release candidate: the
+   core steps (the bridge end to end) always, and the steps of the features that changed since the
+   last release.
 2. In a pull request: set `__version__` in `src/meshcore_home_gateway/__init__.py` (PEP 440, for
-   example `0.1.0` or `0.2.0rc1`) and move the *Unreleased* entries of `CHANGELOG.md` under
-   `## [X.Y.Z] - YYYY-MM-DD`. `make release` builds the release files into `dist/release/` as a
+   example `1.1.0a1`, `1.1.0rc1` or `1.1.0`) and move the *Unreleased* entries of `CHANGELOG.md`
+   under `## [X.Y.Z] - YYYY-MM-DD`. `make release` builds the release files into `dist/release/` as a
    dry run and only warns about a missing section or an unsupported version form;
    `RELEASE_TAG=vX.Y.Z make release`, as the workflow runs it, fails then. Run that before you
    tag.
