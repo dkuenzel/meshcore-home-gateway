@@ -5,16 +5,20 @@
 The section must exist with a date, as Keep a Changelog writes it (`## [0.1.0] - 2026-11-02`), so
 a release cannot go out without its changelog entry. The version must have one of the forms the
 release workflow tells apart by the end of the tag: X.Y.Z, X.Y.ZaN, bN, rcN, each optionally with
-.devN, and X.Y.Z.postN. `make release` uses it.
+.devN, and X.Y.Z.postN. Links relative to the repository point at the files of the tag (the
+project's Source URL in pyproject.toml), as the release page lives elsewhere. `make release` uses
+it.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import tomllib
 from pathlib import Path
 
-CHANGELOG = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
+ROOT = Path(__file__).resolve().parent.parent
+CHANGELOG = ROOT / "CHANGELOG.md"
 _NEXT_SECTION = re.compile(r"^## ", re.MULTILINE)
 _NUMBER = r"(?:0|[1-9][0-9]*)"
 _RELEASE = rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}"
@@ -24,6 +28,8 @@ _VERSION = re.compile(
     rf"{_RELEASE}(?:(?:a|b|rc){_NUMBER})?(?:\.dev{_NUMBER})?|{_RELEASE}\.post{_NUMBER}"
 )
 _LINK_DEFINITIONS = re.compile(r"(?:^\[[^\]]+\]: \S+\s*$\n?)+\Z", re.MULTILINE)
+# an inline link target without a scheme, not an anchor and not from the site's root
+_RELATIVE_LINK = re.compile(r"\]\((?![A-Za-z][A-Za-z0-9+.-]*:|#|/)")
 
 
 def check_version(version: str) -> None:
@@ -48,6 +54,16 @@ def section(text: str, version: str) -> str:
     return body
 
 
+def absolute_links(text: str, base: str) -> str:
+    """Relative inline link targets prefixed with `base`."""
+    return _RELATIVE_LINK.sub(lambda _: "](" + base, text)
+
+
+def source_url() -> str:
+    with (ROOT / "pyproject.toml").open("rb") as file:
+        return str(tomllib.load(file)["project"]["urls"]["Source"]).rstrip("/")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("version", help="version without the leading v, e.g. 0.1.0")
@@ -55,7 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         check_version(args.version)
-        print(section(args.changelog.read_text(encoding="utf-8"), args.version))
+        notes = section(args.changelog.read_text(encoding="utf-8"), args.version)
+        print(absolute_links(notes, f"{source_url()}/blob/v{args.version}/"))
     except ValueError as exc:
         raise SystemExit(f"release_notes: {exc}") from None
     return 0

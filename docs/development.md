@@ -79,6 +79,14 @@ Releases are built, signed and published by the workflow `.github/workflows/rele
 ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)); nobody builds
 release files by hand.
 
+Every finished increment, a slice of the roadmap
+([design §13](design.md#13-roadmap-the-mesh-observer)) or a set of fixes, is published as a
+pre-release `X.Y.ZaN`, so each step is visible, signed and installable: its pull request sets the
+version and the changelog section (step 2), and the merge commit is tagged (step 3). Pre-releases
+skip step 1; their changelog section says so. A release candidate `X.Y.ZrcN` and a release need
+the hardware checklist. `releases/latest` and the installer's default never pick a pre-release
+([deployment.md](deployment.md)).
+
 1. Run the [hardware checklist](testing.md#hardware-checklist) with the release candidate.
 2. In a pull request: set `__version__` in `src/meshcore_home_gateway/__init__.py` (PEP 440, for
    example `0.1.0` or `0.2.0rc1`) and move the *Unreleased* entries of `CHANGELOG.md` under
@@ -92,7 +100,8 @@ release files by hand.
    zipapp, wheel and sdist reproducibly, adds the systemd unit and the Proxmox installer with the
    version written in (`RELEASE="X.Y.Z"`: run from the release's address, it installs this
    release), writes `SHA256SUMS`, attests every file (Sigstore-signed build provenance) and
-   publishes the GitHub release with the changelog section as notes.
+   publishes the GitHub release with the changelog section as notes (its relative links point at
+   the files of the tag).
 5. Check the result like a user: download a file and run
 
    ```sh

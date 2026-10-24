@@ -17,6 +17,38 @@ format and the command line are public interfaces.
 - After a path reset (a message's flood fallback) the gateway's copy of the contact table and
   `contacts/<key>.path_known` show it at once, so the next message to that contact is budgeted
   as the flood it will be.
+- The history's position cap (100 000) no longer removes a contact's newest position, which only
+  `positions_days` removes: a companion at rest kept a single position, and lost it to the
+  positions of a moving one.
+
+### Added
+
+- Telemetry from the radio's companions ([ADR 0018](docs/decisions/0018-telemetry-pulled-from-the-households-companions.md),
+  `[telemetry] enabled`, **off by default** for now): the gateway asks each companion (chat
+  contact) of the radio for its battery, readings and position with `SEND_TELEMETRY_REQ`, one at
+  a time and after the messages, and takes an answer only for the contact asked. Direct only: a
+  companion without a path is flooded only when it was heard within 30 minutes when the flood is
+  planned, at most 4 floods an hour; the gateway never resets or writes a path for it. Within
+  18 s an hour of the gateway's own transmit time and an estimated 90 s an hour of mesh airtime,
+  both starting empty at every start; about every 15 minutes at rest and 90 seconds while moving
+  for a neighbour, once an hour without a position, backing off for one that does not answer.
+  Positions go to `contacts/<key>` and the contact's tracker, with the new `position_accuracy_m`
+  (15) and `position_received_at`; `state.telemetry`, `telemetry_airtime_1h_s` and
+  `telemetry_mesh_airtime_1h_s`. A guide for setting up the companions:
+  [docs/companions.md](docs/companions.md). **No contact can be excluded yet** (it follows with
+  the next release, which turns telemetry on by default): switched on, it asks every chat contact.
+
+## [0.1.0a1] - 2026-10-24
+
+The first pre-release: the bridge (messages both ways, commands from allowlisted contacts,
+Home Assistant discovery, the Proxmox installer) and slices 1 to 5 of the mesh observer
+([design §13](docs/design.md#13-roadmap-the-mesh-observer)): what the radio reports, documents
+and a local history, a Home Assistant device for every contact, the managed radio profile and
+contact management. Built, signed and attested like a release; the
+[hardware checklist](docs/testing.md#hardware-checklist) was not run for it.
+
+### Changed
+
 - `nodes` is published again after every table read; a contact that leaves the table is listed
   as a heard node again while it counts as heard; an older advert no longer replaces a heard
   node's record, in the history either: it keeps the advert time (history schema 2, migrated at
@@ -155,21 +187,6 @@ format and the command line are public interfaces.
 
 ### Added
 
-- Telemetry from the radio's companions ([ADR 0018](docs/decisions/0018-telemetry-pulled-from-the-households-companions.md),
-  `[telemetry] enabled`, **off by default** for now): the gateway asks each companion (chat
-  contact) of the radio for its battery, readings and position with `SEND_TELEMETRY_REQ`, one at
-  a time and after the messages, and takes an answer only for the contact asked. Direct only: a
-  companion without a path is flooded only when it was heard within 30 minutes when the flood is
-  planned, at most 4 floods
-  an hour; the gateway never resets or writes a path for it. Within 18 s an hour of the gateway's
-  own transmit time and an estimated 90 s an hour of mesh airtime, both starting empty at every
-  start; about every 15 minutes at rest and 90 seconds while moving for a neighbour, once an hour
-  without a position, backing off for one that does not answer. Positions go to
-  `contacts/<key>` and the contact's tracker, with the new `position_accuracy_m` (15) and
-  `position_received_at`; `state.telemetry`, `telemetry_airtime_1h_s` and
-  `telemetry_mesh_airtime_1h_s`. A guide for setting up the companions:
-  [docs/companions.md](docs/companions.md). **No contact can be excluded yet** (it follows with
-  the next release, which turns telemetry on by default): switched on, it asks every chat contact.
 - Contact management on request ([ADR 0017](docs/decisions/0017-contacts-on-the-radio-each-with-its-own-device.md),
   `[contacts] manage`, on by default): `add_contact` takes a public key, a
   `meshcore://contact/add` link or a contact card, `contacts/<key>/remove` removes a contact. A
@@ -245,8 +262,7 @@ format and the command line are public interfaces.
 - A local history in `/var/lib/meshcore-home-gateway/history.sqlite3` (SQLite, from the standard
   library; [ADR 0016](docs/decisions/0016-history-in-a-local-sqlite-database.md)): messages,
   positions of contacts, when nodes were last heard. Settings `[history]` `enabled`,
-  `messages_days`, `positions_days` (30 days by default); at most 10 000 messages and 100 000
-  positions, of which every contact keeps its newest.
+  `messages_days`, `positions_days` (30 days by default).
 - `probe` reports what the radio tells about privacy and airtime: its position and whether its
   adverts carry it, who may request its telemetry (base, location, environment), the extra
   acknowledgements, its own duty-cycle factor (`airtime_factor`), and the flags of every contact;
@@ -304,8 +320,9 @@ format and the command line are public interfaces.
   keeps the current settings and the targets the radio no longer offers.
 - Release workflow (ADR 0013): a tag `vX.Y.Z` builds the zipapp, wheel and sdist reproducibly
   with the same `make` targets as a local check, attests them with Sigstore-signed build
-  provenance and publishes them with `SHA256SUMS` on a GitHub release; `make release` is the local
-  dry run.
+  provenance and publishes them with `SHA256SUMS` on a GitHub release, the version's changelog
+  section as its notes (links to the files of the tag); `make release` is the local dry run.
+  Every finished increment is a pre-release `X.Y.ZaN` (docs/development.md).
 - Continuous integration that runs the same `make` targets as a local check (`make check`,
   `make matrix`), with a pre-push hook, hash-pinned tools with a 14-day cooldown and SHA-pinned
   actions.
