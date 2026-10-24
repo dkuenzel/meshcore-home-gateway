@@ -22,7 +22,7 @@ from meshcore_home_gateway.views import HistoryEntry
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: node.last_advert
 DAY_S = 86_400.0
 MAX_MESSAGES = 10_000
 MAX_POSITIONS = 100_000
@@ -60,9 +60,13 @@ CREATE TABLE node (
     how TEXT NOT NULL,
     hops INTEGER,
     snr_db REAL,
-    rssi_dbm INTEGER
+    rssi_dbm INTEGER,
+    last_advert INTEGER NOT NULL DEFAULT 0
 );
 """
+_MIGRATIONS = {  # from version n to n + 1
+    1: ["ALTER TABLE node ADD COLUMN last_advert INTEGER NOT NULL DEFAULT 0"],
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +83,7 @@ class NodeRow:
     node_type: int
     first_heard: float
     heard: Heard
+    last_advert: int = 0  # the node's clock at the advert behind name and type
 
 
 class NewerSchemaError(Exception):
@@ -134,16 +139,20 @@ class History:
             (key, fix.at, position.latitude, position.longitude, fix.altitude_m, fix.source),
         )
 
-    def node_heard(self, key: str, name: str, node_type: int, heard: Heard) -> None:
+    def node_heard(
+        self, key: str, name: str, node_type: int, heard: Heard, last_advert: int = 0
+    ) -> None:
+        """`last_advert`: the node's clock at the advert that gave name and type."""
         signal = heard.signal
         self._write(
             "INSERT INTO node (key, name, type, first_heard, heard_at, how, hops, snr_db, "
-            "rssi_dbm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET "
-            "name = excluded.name, type = excluded.type, heard_at = excluded.heard_at, "
-            "how = excluded.how, hops = excluded.hops, snr_db = excluded.snr_db, "
-            "rssi_dbm = excluded.rssi_dbm WHERE excluded.heard_at >= node.heard_at",
+            "rssi_dbm, last_advert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (key) DO "
+            "UPDATE SET name = excluded.name, type = excluded.type, "
+            "heard_at = excluded.heard_at, how = excluded.how, hops = excluded.hops, "
+            "snr_db = excluded.snr_db, rssi_dbm = excluded.rssi_dbm, "
+            "last_advert = excluded.last_advert WHERE excluded.heard_at >= node.heard_at",
             (key, name, node_type, heard.at, heard.at, heard.how, signal.hops, signal.snr_db,
-             signal.rssi_dbm),
+             signal.rssi_dbm, last_advert),
         )  # fmt: skip
 
     def purge(self, now: float) -> None:
@@ -192,13 +201,13 @@ class History:
 
     def nodes(self) -> list[NodeRow]:
         rows = self._read(
-            "SELECT key, name, type, first_heard, heard_at, how, hops, snr_db, rssi_dbm "
-            "FROM node ORDER BY heard_at",
+            "SELECT key, name, type, first_heard, heard_at, how, hops, snr_db, rssi_dbm, "
+            "last_advert FROM node ORDER BY heard_at",
             (),
         )
         return [
-            NodeRow(key, name, kind, first, Heard(at, how, Signal(hops, snr, rssi)))
-            for key, name, kind, first, at, how, hops, snr, rssi in rows
+            NodeRow(key, name, kind, first, Heard(at, how, Signal(hops, snr, rssi)), advert)
+            for key, name, kind, first, at, how, hops, snr, rssi, advert in rows
         ]
 
     def trace(self, key: str, since: float) -> list[Fix]:
@@ -246,6 +255,13 @@ def _prepare(db: sqlite3.Connection) -> None:
                 if statement.strip():
                     db.execute(statement)
             db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        return
+    while version < SCHEMA_VERSION:
+        with _transaction(db):
+            for statement in _MIGRATIONS[version]:
+                db.execute(statement)
+            version += 1
+            db.execute(f"PRAGMA user_version = {version}")
 
 
 @contextlib.contextmanager

@@ -1086,6 +1086,29 @@ The entries below are what that page does not cover.
   then `git diff -M --name-status <tag> companion-v1.18.0 -- '*SerialWifiInterface*'` for each:
   `R100` for both files from 1.17.1 and 1.12.0, not from 1.11.0.
 
+* **A factory reset gives the radio a new identity.** `CMD_FACTORY_RESET` formats the file
+  system (on ESP32 also the NVS); at the next start `loadMainIdentity` fails and the radio makes
+  a new random key. A reset radio is therefore a new radio to anyone who knew it, the gateway
+  included. *Verified:* `companion-v1.18.0`; `MyMesh.cpp:1965-1974` calls `formatFileSystem`
+  (`DataStore.cpp:166-182`), `MyMesh.cpp:948-955` creates the identity when none loads. *Here:*
+  the managed profile keys what it applied by the radio's key, so a reset radio gets every
+  difference written as `initial` ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md));
+  its contacts are gone, and the profile puts the protected ones back. *Check:* in the firmware
+  tree, `sed -n '948,955p;1965,1974p' examples/companion_radio/MyMesh.cpp`.
+* **`ADD_UPDATE_CONTACT` overwrites every field of an existing key, and only contacts get the
+  advert replay check.** The command copies type, flags, path, name, advert time and position
+  from the frame into the existing record, or adds a new one: into a free slot, or, with
+  overwrite-oldest on, into that of the oldest non-favourite (`BaseChatMesh.cpp:88-103`); there is
+  no push afterwards. Adverts of contacts with a timestamp not newer than the stored one are
+  dropped as replays; adverts of other nodes are not checked. *Verified:* `companion-v1.18.0`;
+  `MyMesh.cpp:194-217` (`updateContactFromFrame`), `1328-1348`; `BaseChatMesh.cpp:129-139`.
+  *Here:* the gateway refuses to add a key that is already a contact (`already_contact`) and adds
+  a heard node with the time of its signed advert, so the radio drops older replays from then on
+  ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)); its own memory
+  of heard nodes keeps the newest advert's record (`core/mesh.py`). *Check:* in the firmware
+  tree, `sed -n '194,217p;1328,1358p' examples/companion_radio/MyMesh.cpp` and
+  `sed -n '129,139p' src/helpers/BaseChatMesh.cpp`.
+
 Already in protocol.md, with the firmware lines:
 
 * Zeros sent to resynchronise misalign the TCP parser, so the bridge sends them only over USB:

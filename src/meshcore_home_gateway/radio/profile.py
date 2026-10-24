@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from meshcore_home_gateway.config import ProfileConfig
 from meshcore_home_gateway.core import profile as policy
+from meshcore_home_gateway.core.contacts import look_alike
 from meshcore_home_gateway.core.profile import Applied, Mode, ProfileReport, Value
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import ContactFlag, ErrorCode
@@ -156,6 +157,12 @@ class RadioProfile:
                 continue
             if report.observing:
                 (missing if record is None else plain).append(key)
+                continue
+            others = look_alike(key, {*records, *added})
+            if record is None and others:  # the radio could not tell them apart (ADR 0009)
+                refused.append(key)
+                log.warning("radio profile: protected contact %s not added: %s on the radio has "
+                            "the same prefix; remove it", key[:12], others[0][:12])  # fmt: skip
                 continue
             try:
                 if record is None:

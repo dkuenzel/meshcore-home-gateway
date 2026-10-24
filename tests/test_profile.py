@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import struct
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -219,6 +220,39 @@ def test_a_contact_is_written_back_with_other_flags_only() -> None:
     new = codec.new_contact(bytes.fromhex("b2" * 32), "operator", ContactFlag.FAVOURITE)
     assert len(new) == len(frame) == 144
     assert (new[33], new[34], new[35]) == (1, ContactFlag.FAVOURITE, 0xFF)
+
+
+def test_a_new_contact_frame_has_the_type_and_signed_time_and_no_position() -> None:
+    frame = codec.new_contact(bytes.fromhex("d4" * 32), "Dave", 0, node_type=3,
+                              last_advert=1_800_000_000)  # fmt: skip
+    expected = (
+        bytes([Command.ADD_UPDATE_CONTACT]) + bytes.fromhex("d4" * 32) + bytes([3, 0, 0xFF])
+        + bytes(64) + b"Dave".ljust(32, b"\x00") + struct.pack("<Iii", 1_800_000_000, 0, 0)
+    )  # fmt: skip
+    assert frame == expected
+    assert codec.remove_contact(bytes.fromhex("d4" * 32)) == bytes([15]) + bytes.fromhex("d4" * 32)
+
+
+@pytest.mark.parametrize(("flags", "node_type"), [(0x02, 1), (0x10, 1), (0x11, 1), (0, 0), (0, 5)])
+def test_a_new_contact_gets_no_flag_but_the_favourite_and_a_real_type(
+    flags: int, node_type: int
+) -> None:
+    with pytest.raises(ValueError, match="new_contact"):
+        codec.new_contact(bytes(32), "x", flags, node_type=node_type)
+
+
+def test_a_contact_written_back_keeps_its_flags_and_gets_none_but_the_favourite() -> None:
+    """ADR 0017: the gateway never sets the command-line or a telemetry flag; one the user set is
+    kept."""
+    contact = EmulatedContact(bytes.fromhex("a1" * 32), "Alice", flags=0x10)
+    record = codec.decode(contact.record())
+    assert isinstance(record, codec.ContactRecord)
+    assert codec.add_update_contact(record, 0x11)[34] == 0x11  # its own 0x10 stays
+    plain = codec.decode(EmulatedContact(bytes.fromhex("a1" * 32), "Alice").record())
+    assert isinstance(plain, codec.ContactRecord)
+    for flags in (0x10, 0x03, 0x20, 0x80, 0xE1):
+        with pytest.raises(ValueError, match="no flag but the favourite"):
+            codec.add_update_contact(plain, flags)
 
 
 def test_the_codec_has_no_command_that_could_harm_the_radio() -> None:
@@ -694,3 +728,19 @@ def test_a_name_is_cut_between_characters() -> None:
     assert codec.new_contact(b"\x01" * 32, "x" * 30 + "ä", 1)[36 + 64 : 36 + 64 + 32] == (
         b"x" * 30 + b"\x00\x00"
     )
+
+
+def test_a_protected_contact_with_a_look_alike_on_the_radio_is_not_added(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The radio could not tell them apart: the look-alike would receive the protected contact's
+    messages and could pass for it (ADR 0009)."""
+    twin = EmulatedContact(bytes.fromhex("b2" * 6 + "ee" * 26), "Bob?")
+    radio = EmulatedRadio(contacts=[twin])
+    manager = RadioProfile(ProfileConfig(), protected={"b2" * 32: "operator"})
+    asyncio.run(connect(radio, manager))
+    assert [c.public_key for c in radio.contacts] == [twin.public_key]
+    assert manager.report is not None
+    document = settings_document(manager.report, START_TIME)
+    assert document["protected_contacts"]["failed"] == ["b2" * 32]
+    assert "not added: b2b2b2b2b2b2 on the radio has the same prefix" in caplog.text

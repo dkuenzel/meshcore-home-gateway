@@ -307,6 +307,7 @@ def test_every_setting_can_be_answered() -> None:
             "messages.dedup_window_s=60", "messages.queue_size=5", "messages.queue_ttl_s=120",
             "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
             "airtime.burst_s=6.5", "commands.max_age_s=0", "diagnostics.publish_rx_log=true",
+            "contacts.manage=false",
         ]
     )  # fmt: skip
     config = parse_config(render_config(answers))
@@ -320,6 +321,7 @@ def test_every_setting_can_be_answered() -> None:
     assert config.airtime.burst_s == 6.5
     assert config.commands.max_age_s == 0
     assert config.diagnostics.publish_rx_log is True
+    assert config.contacts.manage is False
 
 
 # --- answers from a configuration (the installer's reconfigure mode) ---------------------------
@@ -491,3 +493,12 @@ def test_a_user_name_with_surrounding_blanks_is_refused(name: str) -> None:
     text = MINIMAL.replace('node_id = "radio1"', f'node_id = "radio1"\nusername = "{name}"')
     with pytest.raises(ConfigError, match=r"mqtt\.username: no blank"):
         parse_config(text.replace("\t", "\\t"))
+
+
+def test_contacts_are_managed_on_request_by_default() -> None:
+    assert parse_config(MINIMAL).contacts.manage is True
+    assert parse_config(MINIMAL + "\n[contacts]\nmanage = false\n").contacts.manage is False
+    with pytest.raises(ConfigError, match=r"contacts\.manage"):
+        parse_config(MINIMAL + '\n[contacts]\nmanage = "no"\n')
+    with pytest.raises(ConfigError, match=r"contacts\.add: unknown setting"):
+        parse_config(MINIMAL + "\n[contacts]\nadd = true\n")

@@ -24,9 +24,11 @@ class Topics:
         self.setting_event = f"{self.root}/setting"  # a radio setting written or found changed
         # requests
         self.show_hidden = f"{self.root}/homeassistant/show_hidden"  # contacts deleted in HA
+        self.add_contact = f"{self.root}/add_contact"  # a key, contact link or card (ADR 0017)
         self._send = f"{self.root}/send/"
         self.send_subscription = self._send + "+"
         self.contact_send_subscription = f"{self.contacts}/+/send"
+        self.contact_remove_subscription = f"{self.contacts}/+/remove"
 
     def contact(self, key: str) -> str:
         """The document of one contact (full key, lower-case hex)."""
@@ -40,10 +42,14 @@ class Topics:
         """Messages from one contact (events, as on `received`)."""
         return f"{self.contacts}/{key}/received"
 
-    def key_from_contact_send_topic(self, topic: str) -> str | None:
-        """The `<key>` level of `contacts/<key>/send`, whatever it holds (the bridge rejects one
-        that is no contact's key); None for any other topic."""
-        prefix, suffix = self.contacts + "/", "/send"
+    def contact_remove(self, key: str) -> str:
+        """Requests to remove one contact from the radio."""
+        return f"{self.contacts}/{key}/remove"
+
+    def key_from_contact_topic(self, topic: str, action: str) -> str | None:
+        """The `<key>` level of `contacts/<key>/<action>`, whatever it holds (the bridge rejects
+        one that is no contact's key); None for any other topic."""
+        prefix, suffix = self.contacts + "/", "/" + action
         if not (topic.startswith(prefix) and topic.endswith(suffix)):
             return None
         key = topic[len(prefix) : -len(suffix)]

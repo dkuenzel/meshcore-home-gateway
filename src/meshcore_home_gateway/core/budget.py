@@ -133,10 +133,14 @@ class RateLimit:
 
     def allow(self, now: float) -> bool:
         """Take one event's token if there is one."""
-        elapsed = max(0.0, now - self._last)
-        self._tokens = min(self._capacity, self._tokens + elapsed * self._rate)
-        self._last = max(self._last, now)
-        if self._tokens < 1.0:
+        if not self.ready(now):
             return False
         self._tokens -= 1.0
         return True
+
+    def ready(self, now: float) -> bool:
+        """Whether there is a token, without taking it."""
+        elapsed = max(0.0, now - self._last)
+        self._tokens = min(self._capacity, self._tokens + elapsed * self._rate)
+        self._last = max(self._last, now)
+        return self._tokens >= 1.0

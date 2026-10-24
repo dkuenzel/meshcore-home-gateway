@@ -53,10 +53,12 @@ from meshcore_home_gateway.views import (
     HistoryEntry,
     RadioReadings,
     contact_document,
+    contact_event,
     contacts_document,
     encode,
     history_document,
     iso,
+    look_alike_nodes,
     nodes_document,
     setting_value,
     settings_document,
@@ -85,9 +87,12 @@ class Observer:
         history: History | None = None,
         retained: RetainedKeys | None = None,
         protected: frozenset[str] = frozenset(),
+        manage: bool = False,
         wall_clock: Callable[[], float] = time.time,
     ) -> None:
+        """`manage`: contact add and remove requests are taken (ADR 0017)."""
         self.mesh = Mesh()
+        self.manage = manage
         self._bus = bus
         self._topics = topics
         self._history = history
@@ -108,6 +113,9 @@ class Observer:
         # called after each table read, before the topics of removed contacts are cleared
         self.on_contacts: list[Callable[[Mesh], None]] = []
         self._profiles: dict[str, ProfileReport] = {}  # radio key -> the profile's last report
+        # contact requests whose write went out: (event type, key) -> (request, id); the table
+        # read that shows the change reports it as the request's result
+        self._expected: dict[tuple[str, str], tuple[str, str]] = {}
         self._restore()
 
     def _restore(self) -> None:
@@ -130,9 +138,7 @@ class Observer:
         table read may already have been reported)."""
         self.mesh.max_contacts = max_contacts
         self._tuning = tuning
-        self._publish(
-            self._topics.contacts, contacts_document(self.mesh, protected=self._protected)
-        )
+        self._publish_index()
         self._publish(self._topics.stats, stats_document(self._readings, self._meter, tuning))
 
     def profile_applied(self, report: ProfileReport) -> None:
@@ -177,7 +183,8 @@ class Observer:
         elif sender is not None:
             heard = Heard(message.received_at, "message", signal)
             if self.mesh.contact_heard(sender.public_key, heard):
-                self._store_heard(sender.public_key, sender.name, self._type(sender), heard)
+                self._store_heard(sender.public_key, self.mesh.contacts[sender.public_key].node,
+                                  heard)  # fmt: skip
                 self._publish_contact(sender.public_key)
         self._record(
             HistoryEntry(
@@ -215,7 +222,7 @@ class Observer:
         """Called about once a minute: forget stale heard nodes, purge the history hourly."""
         now = self._wall()
         if self.mesh.forget_nodes(now):
-            self._publish(self._topics.nodes, nodes_document(self.mesh))
+            self._publish_nodes()
         if self._history is not None and now >= self._next_purge:
             self._history.purge(now)
             self._next_purge = now + PURGE_INTERVAL_S
@@ -238,42 +245,67 @@ class Observer:
                 listener(self.mesh)
             except Exception:  # a front end's bug must not stop the documents
                 log.exception("contact listener failed")
-        self._contact_events(change, before)
-        for key in change.removed:
+        for key in change.removed:  # after the devices are gone (Home Assistant reads them)
             self._clear(self._topics.contact(key))
         for key, tracked in self.mesh.contacts.items():
             self._store_fix(key, tracked.fix)
             self._publish_contact(key)
-        self._publish(
-            self._topics.contacts, contacts_document(self.mesh, protected=self._protected)
-        )
+        self._publish_index()
+        self._publish_nodes()  # a node added left them, a contact removed may be back
+        # last: whoever acts on the event finds the device, the documents and the recipient
+        self._contact_events(change, before)
         if self._retained is not None:
             self._retained.replace(set(self.mesh.contacts))
 
     def _take_heard_nodes(self) -> None:
-        """Nodes from the history that are not contacts become heard nodes again."""
+        """Nodes from the history that are not contacts become heard nodes again. One already
+        heard in this run (before the first table read) keeps when it was heard; of the two
+        records, the one of the newer advert stays, also in the history."""
         for row in self._heard_rows:
-            if row.key not in self.mesh.contacts:
-                node = Node(row.key, row.name, row.node_type)
+            if row.key in self.mesh.contacts:
+                continue
+            node = Node(row.key, row.name, row.node_type, last_advert=row.last_advert)
+            tracked = self.mesh.nodes.get(row.key)
+            if tracked is None:
                 self.mesh.node_heard(node, row.heard)
                 tracked = self.mesh.nodes.get(row.key)
-                if tracked is not None:
-                    tracked.first_heard = row.first_heard
+            elif row.last_advert > tracked.node.last_advert:  # this run heard a replay first
+                tracked.node = node
+                if tracked.heard is not None:
+                    self._store_heard(row.key, node, tracked.heard)
+            if tracked is not None:
+                tracked.first_heard = row.first_heard
         self._heard_rows = []
         self.mesh.forget_nodes(self._wall())
-        self._publish(self._topics.nodes, nodes_document(self.mesh))
+        self._publish_nodes()
 
     def _contact_events(self, change: TableChange, before: Mapping[str, Node]) -> None:
         for kind, keys in (("added", change.added), ("removed", change.removed)):
             for key in keys:
                 tracked = self.mesh.contacts.get(key)
                 node = tracked.node if tracked else before.get(key)
-                name = node.name if node else None
-                node_type = type_name(node.node_type) if node else None
-                log.info("contact %s: %r (%s)", kind, name, key[:12])
-                self._event(self._topics.contact_event, {
-                    "event_type": kind, "key": key, "name": name, "type": node_type,
-                })  # fmt: skip
+                request, request_id = self._expected.pop((kind, key), (None, None))
+                on_request = f" on request {request_id}" if request_id else ""
+                log.info("contact %s %r %s%s", key[:12], node.name if node else None, kind,
+                         on_request)  # fmt: skip
+                event = contact_event(kind, key, node, request=request, request_id=request_id)
+                self._event(self._topics.contact_event, event)
+
+    # --- contact requests (ADR 0017) -----------------------------------------------------------
+
+    def expect(self, kind: str, key: str, request: str, request_id: str) -> None:
+        """A request's write goes out now: the table read that shows the change (`added`,
+        `removed`) is its result."""
+        self._expected[(kind, key)] = (request, request_id)
+
+    def request_done(self, kind: str, key: str, result: dict[str, Any]) -> None:
+        """The request's own result, unless a table read already reported it."""
+        if self._expected.pop((kind, key), None) is not None:
+            self.contact_result(result)
+
+    def contact_result(self, result: dict[str, Any]) -> None:
+        """A request's result that no table read reports (refused, failed)."""
+        self._event(self._topics.contact_event, result)
 
     def _advert(self, advert: codec.Advert, at: float) -> None:
         key = advert.public_key.hex()
@@ -284,21 +316,25 @@ class Observer:
         if advert.record is None:  # a contact: its record follows with the next table read
             if self.mesh.contact_heard(key, heard):
                 tracked = self.mesh.contacts[key]
-                self._store_heard(key, tracked.node.name, tracked.node.node_type, heard)
+                self._store_heard(key, tracked.node, heard)
                 self._publish_contact(key)
             return
         node = _node(advert.record)
         new = self.mesh.node_heard(node, heard)
-        self._store_heard(key, node.name, node.node_type, heard)
         if key in self.mesh.contacts:
+            self._store_heard(key, node, heard)
             self._publish_contact(key)
             return
-        self._publish(self._topics.nodes, nodes_document(self.mesh))
+        # the newest advert's record: a replayed older one does not replace it, also not in the
+        # history (its advert time comes back with it after a restart)
+        self._store_heard(key, self.mesh.nodes[key].node, heard)
+        self._publish_nodes()
         if new and self._node_events.allow(at):
             self._event(self._topics.node_event, {
                 "event_type": "new", "key": key, "prefix": key[:12], "name": node.name,
                 "type": type_name(node.node_type), "hops": signal.hops, "snr_db": signal.snr_db,
                 "rssi_dbm": signal.rssi_dbm, "heard_at": iso(at),
+                "look_alike": key in look_alike_nodes(self.mesh, self._protected),
             })  # fmt: skip
 
     def _packet(self, rx: codec.RxLog, at: float) -> None:
@@ -311,9 +347,9 @@ class Observer:
         self._logged = {k: v for k, v in self._logged.items() if at - v[0] <= LOGGED_ADVERT_S}
         self._logged[advert.public_key.hex()] = (at, Signal(hops, rx.snr_db, rx.rssi_dbm))
 
-    def _store_heard(self, key: str, name: str, node_type: int, heard: Heard) -> None:
+    def _store_heard(self, key: str, node: Node, heard: Heard) -> None:
         if self._history is not None:
-            self._history.node_heard(key, name, node_type, heard)
+            self._history.node_heard(key, node.name, node.node_type, heard, node.last_advert)
 
     def _store_fix(self, key: str, fix: Fix | None) -> None:
         if fix is None or self._history is None or self._stored_fixes.get(key) == fix:
@@ -328,8 +364,16 @@ class Observer:
     def _publish_contact(self, key: str) -> None:
         tracked = self.mesh.contacts.get(key)
         if tracked is not None:
-            document = contact_document(tracked, protected=key in self._protected)
+            protected = key in self._protected
+            document = contact_document(tracked, protected=protected, manage=self.manage)
             self._publish(self._topics.contact(key), document)
+
+    def _publish_index(self) -> None:
+        index = contacts_document(self.mesh, protected=self._protected, manage=self.manage)
+        self._publish(self._topics.contacts, index)
+
+    def _publish_nodes(self) -> None:
+        self._publish(self._topics.nodes, nodes_document(self.mesh, protected=self._protected))
 
     # --- radio ----------------------------------------------------------------------------------
 

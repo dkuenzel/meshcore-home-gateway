@@ -104,8 +104,7 @@ class Mesh:
         current = {node.public_key: node for node in nodes}
         removed = tuple(key for key in self.contacts if key not in current)
         added, changed = [], []
-        for key in removed:
-            del self.contacts[key]
+        gone = [self.contacts.pop(key) for key in removed]
         for key, node in current.items():
             tracked = self.contacts.get(key)
             if tracked is None:
@@ -123,7 +122,21 @@ class Mesh:
             tracked.node = node
             self._advert_fix(tracked, previous, at)
             self.contacts[key] = tracked
+        for tracked in gone:  # after the heard nodes just added left them: none of them evicted
+            self._heard_again(tracked, at)
         return TableChange(tuple(added), removed, tuple(changed))
+
+    def _heard_again(self, tracked: Tracked, at: float) -> None:
+        """A contact that left the table is a heard node again while it counts as recently heard
+        (so it can be added back), without what only a contact has: flags, path, position. In its
+        place by the time it was heard; then the limits apply."""
+        if tracked.heard is None or at - tracked.heard.at > self._node_ttl_s:
+            return
+        node = replace(tracked.node, flags=0, path_hops=None, position=None)
+        self.nodes[node.public_key] = Tracked(node, tracked.first_heard, tracked.heard)
+        ordered = sorted(self.nodes.items(), key=lambda item: _heard_at(item[1]))  # stable
+        self.nodes = dict(ordered)
+        self.forget_nodes(at)
 
     def _advert_fix(self, tracked: Tracked, previous: Node | None, at: float) -> None:
         """A position from the contact's record: new when it differs from the record read before;
@@ -174,7 +187,8 @@ class Mesh:
         new = tracked is None
         if tracked is None:
             tracked = Tracked(replace(node, position=None), first_heard=heard.at)
-        tracked.node = replace(node, position=None)
+        if new or node.last_advert >= tracked.node.last_advert:  # a replayed older advert: kept
+            tracked.node = replace(node, position=None)
         tracked.heard = heard
         self.nodes[key] = tracked  # to the end: most recently heard
         self.forget_nodes(heard.at)
@@ -184,11 +198,14 @@ class Mesh:
         """Drop heard nodes beyond the limits; returns their keys."""
         dropped = []
         for key, tracked in list(self.nodes.items()):
-            heard_at = tracked.heard.at if tracked.heard else 0.0
-            if now - heard_at > self._node_ttl_s or len(self.nodes) > self._max_nodes:
+            if now - _heard_at(tracked) > self._node_ttl_s or len(self.nodes) > self._max_nodes:
                 del self.nodes[key]
                 dropped.append(key)
         return dropped
+
+
+def _heard_at(tracked: Tracked) -> float:
+    return tracked.heard.at if tracked.heard else 0.0
 
 
 def _newer(current: Heard | None, other: Heard | None) -> Heard | None:

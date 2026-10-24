@@ -62,6 +62,10 @@ class RadioError(Exception):
     """The radio cannot be used right now (disconnected, timed out, protocol violation)."""
 
 
+class NotSentError(RadioError):
+    """The session ended before the command was sent: the radio never got it."""
+
+
 class CommandFailedError(RadioError):
     """The radio refused a command: ERR with an error name, or `disabled`."""
 
@@ -130,7 +134,17 @@ class StatsRead:
     read_at: float
 
 
-RadioEvent = MessageReceived | AckReceived | PacketLogged | AdvertHeard | ContactsRead | StatsRead
+@dataclass(frozen=True, slots=True)
+class Barrier:
+    """Not from the radio: put on the event queue by a caller that waits until the events before
+    it are handled (`done` is then set)."""
+
+    done: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+RadioEvent = (
+    MessageReceived | AckReceived | PacketLogged | AdvertHeard | ContactsRead | StatsRead | Barrier
+)
 
 
 @dataclass
@@ -242,8 +256,20 @@ class CompanionSession:
         await self._expect_ok(f"set {what}", request)
 
     async def write_contact(self, request: bytes) -> None:
-        await self._expect_ok("add or update contact", request)
-        self._contacts_dirty.set()
+        """ADD_UPDATE_CONTACT. The key counts as held before the radio gets it (ADR 0009); the
+        table counts as changed afterwards, also when no answer came."""
+        self._report_key(request[1 : 1 + codec.KEY_BYTES])
+        try:
+            await self._expect_ok("add or update contact", request)
+        finally:
+            self._contacts_changed()
+
+    async def remove_contact(self, public_key: bytes) -> None:
+        """REMOVE_CONTACT; the table counts as changed afterwards, also when no answer came."""
+        try:
+            await self._expect_ok("remove contact", codec.remove_contact(public_key))
+        finally:
+            self._contacts_changed()
 
     async def reread_settings(self) -> None:
         """Read the settings again after the profile wrote some (SELF_INFO comes with APP_START)."""
@@ -309,6 +335,17 @@ class CompanionSession:
         return ContactBook(Contact(key, rec.name) for key, rec in self.contact_records.items())
 
     @property
+    def commands_sent(self) -> int:
+        """Commands sent in this session: with `refresh_contacts(newer_than=...)`, a read that
+        started after a given command."""
+        return self._commands_sent
+
+    @property
+    def contacts_changed_at(self) -> int:
+        """The command count at the last change of the table the radio reported (or a write)."""
+        return self._contacts_changed_at
+
+    @property
     def contacts_outdated(self) -> bool:
         """The radio has reported a contact change that the table as last read may not show: no
         read has started since (the maintenance task reads it again only after a delay)."""
@@ -363,11 +400,12 @@ class CompanionSession:
 
     async def refresh_contacts(self, *, newer_than: int | None = None) -> None:
         """Read the contact table. With `newer_than`, a read that started after that command count
-        is enough: one in progress is awaited instead of sending another."""
+        is enough: one in progress is awaited instead of sending another, unless the radio
+        reported a change while it ran (then the table read may not show it)."""
         if newer_than is not None:
             async with self._lock:  # wait for the command in progress, perhaps such a read
                 pass
-            if self.contacts_read_at > newer_than:
+            if self.contacts_read_at > max(newer_than, self._contacts_changed_at):
                 return
         records: dict[str, codec.ContactRecord] = {}
         async with self._command(codec.get_contacts(), _CONTACT_CODES) as pending:
@@ -482,7 +520,9 @@ class CompanionSession:
                     if not self._sync_wanted.is_set():
                         await asyncio.sleep(CONTACTS_REFRESH_DELAY_S)  # adverts come in bursts
                     self._contacts_dirty.clear()
-                    await self.refresh_contacts()
+                    # a read that started after the change is enough: a contact request's own,
+                    # also one still in progress
+                    await self.refresh_contacts(newer_than=self.contacts_changed_at)
                 if self._sync_wanted.is_set() or loop.time() >= next_sync:
                     self._sync_wanted.clear()
                     await self.sync_messages()
@@ -562,10 +602,10 @@ class CompanionSession:
     async def _command(self, request: bytes, expected: Iterable[int]) -> AsyncIterator[_Pending]:
         """Send one command; the yielded queue receives the frames with the expected codes."""
         if self.closed:
-            raise self._closed_error()
+            raise self._not_sent()
         async with self._lock:
             if self.closed:  # it ended while this command waited for the lock: send nothing
-                raise self._closed_error()
+                raise self._not_sent()
             pending = _Pending(frozenset(expected) | {Response.ERR})
             self._pending = pending
             try:
@@ -579,6 +619,9 @@ class CompanionSession:
                 yield pending
             finally:
                 self._pending = None
+
+    def _not_sent(self) -> NotSentError:
+        return NotSentError(str(self._closed_error()))
 
     def _closed_error(self) -> RadioError:
         return RadioError(f"session closed: {self._failure}" if self._failure else "session closed")

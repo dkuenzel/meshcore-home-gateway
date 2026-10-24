@@ -12,6 +12,7 @@ import unicodedata
 from dataclasses import dataclass
 
 ELLIPSIS = "..."
+CONTACT_NAME_BYTES = 31  # a name in the radio's contact table, without its NUL
 
 # Characters with a conventional ASCII spelling. Everything else goes through Unicode
 # decomposition (é -> e); what is still not ASCII becomes "?".
@@ -70,10 +71,17 @@ def prepare_text(text: str, policy: TextPolicy) -> str:
         raise TextRejectedError(
             "too_long", f"text too long: {len(encoded)} bytes, limit {policy.max_bytes}"
         )
-    return _cut(cleaned, policy.max_bytes - len(ELLIPSIS)).rstrip() + ELLIPSIS
+    return cut_utf8(cleaned, policy.max_bytes - len(ELLIPSIS)).rstrip() + ELLIPSIS
 
 
-def _cut(text: str, max_bytes: int) -> str:
+def contact_name(text: str) -> str:
+    """A name for the radio's contact table: cleaned like a text, on one line, at most the 31
+    bytes the radio keeps (MAX_NAME_BYTES), cut between whole characters. Possibly empty."""
+    one_line = _clean(unicodedata.normalize("NFC", text)).replace("\n", " ")
+    return cut_utf8(one_line, CONTACT_NAME_BYTES).rstrip()
+
+
+def cut_utf8(text: str, max_bytes: int) -> str:
     """The longest start of `text` within `max_bytes` UTF-8 bytes that ends between two whole
     characters as a reader sees them: a flag, joined emoji, an emoji with its skin tone, a
     letter with its marks.

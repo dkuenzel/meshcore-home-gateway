@@ -105,8 +105,9 @@ def test_contacts_gone_while_the_gateway_was_stopped_are_cleared(tmp_path: Path)
             assert retained(bus, f"{ROOT}/contacts/{'dd' * 32}") == [b""]
             assert retained(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")[-1] != b""
             events = bus.payloads(f"{ROOT}/contact")  # only what changed while stopped
-            assert events == [{"event_type": "removed", "key": "dd" * 32, "name": None,
-                               "type": None}]  # fmt: skip
+            assert events == [{"event_type": "removed", "key": "dd" * 32, "prefix": "dd" * 6,
+                               "name": None, "type": None, "request": None, "id": None,
+                               "reason": None}]  # fmt: skip
 
     scenario(main)
     assert RetainedKeys(store, "contacts").keys == {ALICE.public_key.hex()}
@@ -124,6 +125,7 @@ def test_a_new_node_is_heard_with_its_signal_but_without_its_position(tmp_path: 
                 CAROL.public_key.hex(), "Carol", "repeater",
             )  # fmt: skip
             assert (event["hops"], event["snr_db"], event["rssi_dbm"]) == (3, 5.5, -95)
+            assert event["look_alike"] is False
             nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
             assert "latitude" not in json.dumps(nodes)  # strangers' positions are not kept
             radio.advertise(CAROL)  # heard again: no second event
@@ -296,3 +298,57 @@ def test_a_new_advert_of_a_contact_counts_for_the_contact() -> None:
     assert last(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")["heard_via"] == "advert"
     assert not bus.payloads(f"{ROOT}/node")
     assert last(bus, f"{ROOT}/nodes")["total"] == 0
+
+
+def test_the_history_keeps_the_record_of_the_newest_advert(tmp_path: Path) -> None:
+    """A replayed older advert is heard, but its name does not replace the newer one's, not even
+    after a restart."""
+    path = tmp_path / "history.sqlite3"
+    history = History.open(path)
+    assert history is not None
+    observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW)
+    observer.radio_event(ContactsRead({}, NOW))
+    for name, advert in (("Carol", int(NOW) - 5), ("Mallory", int(NOW) - 500)):
+        record = contact_record(EmulatedContact(bytes.fromhex("c3" * 32), name, last_advert=advert))
+        observer.radio_event(AdvertHeard(codec.Advert(record.public_key, True, record), NOW))
+    assert observer.mesh.nodes["c3" * 32].node.name == "Carol"
+    assert [row.name for row in history.nodes()] == ["Carol"]
+    history.close()
+    history = History.open(path)  # a restart: the advert time comes back with the record
+    assert history is not None
+    observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW + 60)
+    observer.radio_event(ContactsRead({}, NOW + 60))
+    record = contact_record(EmulatedContact(bytes.fromhex("c3" * 32), "Mallory", node_type=1,
+                                            last_advert=int(NOW) - 500))  # fmt: skip
+    observer.radio_event(AdvertHeard(codec.Advert(record.public_key, True, record), NOW + 60))
+    assert observer.mesh.nodes["c3" * 32].node.name == "Carol"
+    assert [(row.name, row.last_advert) for row in history.nodes()] == [("Carol", int(NOW) - 5)]
+    history.close()
+
+
+def test_a_replay_heard_before_the_first_table_read_does_not_win(tmp_path: Path) -> None:
+    """At a start, the radio's pushes can come before the first table read, while the nodes from
+    the history are not in the view yet: the newer advert's record stays, in the history too, and
+    the node keeps the time it was heard in this run."""
+    path = tmp_path / "history.sqlite3"
+    history = History.open(path)
+    assert history is not None
+    carol = contact_record(EmulatedContact(bytes.fromhex("c3" * 32), "Carol", node_type=2,
+                                           last_advert=int(NOW) - 5))  # fmt: skip
+    observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW)
+    observer.radio_event(ContactsRead({}, NOW))
+    observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW))
+    history.close()
+    history = History.open(path)
+    assert history is not None
+    observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW + 30)
+    replay = contact_record(EmulatedContact(bytes.fromhex("c3" * 32), "Mallory", node_type=1,
+                                            last_advert=int(NOW) - 500))  # fmt: skip
+    observer.radio_event(AdvertHeard(codec.Advert(replay.public_key, True, replay), NOW + 30))
+    observer.radio_event(ContactsRead({}, NOW + 30))  # the first table read of this run
+    tracked = observer.mesh.nodes["c3" * 32]
+    assert (tracked.node.name, tracked.node.node_type) == ("Carol", 2)
+    assert tracked.heard is not None
+    assert tracked.heard.at == NOW + 30
+    assert [(row.name, row.last_advert) for row in history.nodes()] == [("Carol", int(NOW) - 5)]
+    history.close()

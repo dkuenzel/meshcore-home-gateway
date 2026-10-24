@@ -84,6 +84,7 @@ class EmulatedRadio:
     unknown: set[int] = field(default_factory=set)  # older firmware: ERR "unsupported", always
     ignored: set[int] = field(default_factory=set)  # setters answered OK without effect
     firmware_code: int = 14  # FIRMWARE_VER_CODE of companion 1.18
+    max_contacts: int = 100  # DEVICE_INFO reports half of it
     frequency_khz: int = 869_618  # in the 10 % sub-band
     description: str = "emulated radio"
     needs_flush: bool = True  # parses like the USB serial interface
@@ -257,6 +258,16 @@ class EmulatedRadio:
             if code not in self.ignored:
                 self._set(code, p)
             self.emit(bytes([Response.OK]))
+        elif code == Command.ADD_UPDATE_CONTACT:
+            self._add_update_contact(p)
+        elif code == Command.REMOVE_CONTACT:  # by the full key, no length check (MyMesh.cpp:1349)
+            gone = next((c for c in self.contacts if c.public_key == p[1:33]), None)
+            if gone is None:
+                self.emit(bytes([Response.ERR, 2]))
+            else:
+                if code not in self.ignored:
+                    self.contacts.remove(gone)
+                self.emit(bytes([Response.OK]))
         elif code == Command.RESET_PATH:
             self.path_resets.append(p[1:33])
             for contact in self.contacts:
@@ -283,14 +294,41 @@ class EmulatedRadio:
             self.tuning = struct.unpack_from("<II", p, 1)
         elif code == Command.SET_ADVERT_NAME:
             self.name = p[1:32].decode("utf-8", errors="replace")
-        elif code == Command.ADD_UPDATE_CONTACT:
-            key, flags = p[1:33], p[34]
-            name = p[100:132].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
-            existing = next((c for c in self.contacts if c.public_key == key), None)
-            if existing is not None:
-                existing.flags, existing.name = flags, name
-            else:
-                self.contacts.append(EmulatedContact(key, name, node_type=p[33], flags=flags))
+
+    def _add_update_contact(self, p: bytes) -> None:
+        """Every field of an existing key is overwritten; a new one needs a free slot, or with
+        overwrite-oldest on takes the oldest non-favourite's (BaseChatMesh.cpp:88-103); type 0
+        lands in one that is never listed (MyMesh.cpp:194-217, 1328-1348)."""
+        key, node_type, flags, path_len = p[1:33], p[33], p[34], p[35]
+        name = p[100:132].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        last_advert, latitude, longitude = (
+            struct.unpack_from("<Iii", p, 132) if len(p) >= 144 else (0, 0, 0)
+        )
+        existing = next((c for c in self.contacts if c.public_key == key), None)
+        if existing is None and len(self.contacts) >= self.max_contacts:
+            oldest = next((c for c in self.contacts if not c.flags & 0x01), None)
+            if not self.autoadd_config & 0x01 or oldest is None:
+                self.emit(bytes([Response.ERR, 3]))
+                return
+            self.overwrite(oldest)
+        self.emit(bytes([Response.OK]))
+        if Command.ADD_UPDATE_CONTACT in self.ignored or (existing is None and node_type == 0):
+            return
+        contact = existing or EmulatedContact(key, name)
+        contact.name, contact.node_type, contact.flags, contact.out_path_len = (
+            name,
+            node_type,
+            flags,
+            path_len,
+        )
+        contact.out_path = p[36 : 36 + (path_len if path_len != 0xFF else 0)]
+        contact.last_advert, contact.latitude_e6, contact.longitude_e6 = (
+            last_advert,
+            latitude,
+            longitude,
+        )
+        if existing is None:
+            self.contacts.append(contact)
 
     def _send_text(self, p: bytes) -> None:
         attempt, ts, prefix, text = (
@@ -335,7 +373,8 @@ class EmulatedRadio:
 
     def _device_info(self) -> bytes:
         return (
-            bytes([Response.DEVICE_INFO, self.firmware_code, 50, self.max_channels]) + bytes(4)
+            bytes([Response.DEVICE_INFO, self.firmware_code, self.max_contacts // 2,
+                   self.max_channels]) + bytes(4)
             + b"15 Oct 2026".ljust(12, b"\x00") + b"Example Radio".ljust(40, b"\x00")
             + b"v1.18.0".ljust(20, b"\x00") + bytes([0, 0])
         )  # fmt: skip
@@ -343,7 +382,7 @@ class EmulatedRadio:
 
 _SETTERS = frozenset({
     Command.SET_OTHER_PARAMS, Command.SET_AUTOADD_CONFIG, Command.SET_TUNING_PARAMS,
-    Command.SET_ADVERT_NAME, Command.ADD_UPDATE_CONTACT,
+    Command.SET_ADVERT_NAME,
 })  # fmt: skip
 
 

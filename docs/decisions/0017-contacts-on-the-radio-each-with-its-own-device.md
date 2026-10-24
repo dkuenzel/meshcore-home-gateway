@@ -63,6 +63,15 @@ and keeps privileges where they are: in `config.toml`.
 * **Who may manage**: adding and removing contacts is on by default in Home Assistant and on the
   command line, because a contact grants no rights; an operator can switch it off in
   `config.toml`.
+* **Firmware gate** (added with the implementation): contacts are written only on firmware the
+  gateway is tested with, like the managed profile's settings ([ADR 0020](0020-managed-radio-profile-for-the-observer.md)):
+  unknown firmware must not be written blindly. `radio.profile.manage = "always"` allows any.
+* **One write, one result**: a request is written at most once (the radio rewrites its contacts
+  file for every change and overwrites every field of an existing key), on the table as the radio
+  has it at that moment, and ends in one `contact` event (none only for refusals beyond the
+  rate limit and for requests still queued at a stop); a node heard advertising is
+  added with the record the radio checked, a link or card only as a claim until the node's first
+  advert ([mqtt-api.md](../mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
 
 ### Consequences
 
@@ -82,7 +91,9 @@ and keeps privileges where they are: in `config.toml`.
 
 Tests: a contact added to the emulated radio yields its device document; a removed one yields the
 removal; sending to a contact goes through the budget and deduplication; a protected contact is
-not removable; a look-alike is refused; the remote-CLI flag is never set and is reported. Contract
+not removable; a look-alike is refused, of a contact and of a protected key not on the radio, and
+the managed profile does not add a protected key next to one; the codec cannot set the remote-CLI
+flag or a telemetry flag, and a contact that has one is reported. Contract
 tests in Home Assistant create and remove a contact device with all its entities.
 
 ## Pros and Cons of the Options

@@ -35,6 +35,7 @@ from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import ContactFlag, NodeType
 from meshcore_home_gateway.state import REMOVAL_KEEP_S, DeviceRecord, RemovedDevice
+from meshcore_home_gateway.views import contact_event
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.observer import Publisher
@@ -388,7 +389,4 @@ class ContactDevices:
     def _event(self, kind: str, key: str) -> None:
         tracked = self._mesh.contacts.get(key) if self._mesh else None
         node = tracked.node if tracked else None
-        self._bus.publish(self._topics.contact_event, encode({
-            "event_type": kind, "key": key, "name": node.name if node else None,
-            "type": type_name(node.node_type) if node else None,
-        }))  # fmt: skip
+        self._bus.publish(self._topics.contact_event, encode(contact_event(kind, key, node)))

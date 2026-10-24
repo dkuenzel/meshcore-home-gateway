@@ -18,7 +18,7 @@ from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
-from meshcore_home_gateway.mqtt.client import SendRequest
+from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -77,6 +77,7 @@ dedup_window_s = 300
 class FakeBus:
     def __init__(self) -> None:
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
+        self.contact_requests: asyncio.Queue[ContactRequest] = asyncio.Queue()
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
         self.on_ha_offline: list[Callable[[], None]] = []

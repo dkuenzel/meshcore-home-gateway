@@ -179,6 +179,20 @@ The file holds message texts and positions of the household's people: it is read
 service user. If it cannot be opened or written, the gateway logs it and runs without a history;
 a file that is not a database is moved aside to `history.sqlite3.corrupt`.
 
+## `[contacts]`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `manage` | `true` | add and remove contacts on request: from the command line (`meshcore-home-gateway contacts`) and MQTT ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)). A contact grants no rights; contact targets and command senders are never removed |
+
+Who may send the requests is the broker's ACL to decide ([mqtt-api.md](mqtt-api.md#securing-the-broker)).
+Contacts are written only on tested firmware, like the managed profile; `radio.profile.manage =
+"always"` allows any. `check-config` and the service warn when two contact targets or command
+senders share their first 6 bytes: the radio names a sender by them only (ADR 0009). The managed
+profile, when it writes, adds the lower key unless the other is on the radio, and never both;
+with `protect_contacts = false` or `manage = "observe"` the gateway adds neither, and refuses
+requests to add either. If both are on the radio, remove one.
+
 ## `[diagnostics]`
 
 | Key | Default | Meaning |

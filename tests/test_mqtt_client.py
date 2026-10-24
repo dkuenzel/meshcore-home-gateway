@@ -16,7 +16,7 @@ from paho.mqtt.reasoncodes import ReasonCode
 
 from meshcore_home_gateway.config import MqttConfig
 from meshcore_home_gateway.mqtt import client as client_module
-from meshcore_home_gateway.mqtt.client import MqttBus, SendRequest
+from meshcore_home_gateway.mqtt.client import ContactRequest, MqttBus, SendRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from tests.conftest import Broker
 
@@ -91,6 +91,7 @@ def test_connection_subscribes_and_announces_availability() -> None:
         await asyncio.wait_for(connected.wait(), 1)
         assert dict(fake.calls)["subscribe"] == (
             [("meshcore/radio1/send/+", 1), ("meshcore/radio1/contacts/+/send", 1),
+             ("meshcore/radio1/add_contact", 1), ("meshcore/radio1/contacts/+/remove", 1),
              ("homeassistant/status", 1)],
         )  # fmt: skip
         assert fake.published[-1] == ("meshcore/radio1/availability", b"online", 1, True)
@@ -233,6 +234,33 @@ def test_send_requests_and_home_assistant_birth_reach_the_loop() -> None:
         await asyncio.sleep(0.05)
         assert bus.requests.empty()
         assert births == [1]
+
+    asyncio.run(scenario())
+
+
+def test_contact_requests_reach_their_own_queue() -> None:
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+
+        def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
+            fake.on_message(
+                fake, None, SimpleNamespace(topic=topic, payload=payload, retain=retain)
+            )
+
+        key = "a1" * 32
+        await asyncio.to_thread(deliver, "meshcore/radio1/add_contact", key.encode())
+        await asyncio.to_thread(deliver, "meshcore/radio1/add_contact", b"old", True)
+        await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key}/remove", b"remove")
+        await asyncio.to_thread(deliver, "meshcore/radio1/contacts/x/y/remove", b"")
+        requests = [await asyncio.wait_for(bus.contact_requests.get(), 1) for _ in range(3)]
+        assert requests == [
+            ContactRequest("add", key.encode(), False), ContactRequest("add", b"old", True),
+            ContactRequest("remove", b"remove", False, key),
+        ]  # fmt: skip
+        await asyncio.sleep(0.05)
+        assert bus.contact_requests.empty()  # a level with a "/" names no contact
+        assert bus.requests.empty()
 
     asyncio.run(scenario())
 
