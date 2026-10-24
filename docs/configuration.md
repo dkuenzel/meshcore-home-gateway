@@ -216,18 +216,19 @@ Fixed by ADR 0018, not settings:
   and 90 s per hour of estimated airtime in the mesh (every hop of request and answer, a flood as
   repeated by 20 repeaters: an estimate nothing measures). Over any interval *T* telemetry stays
   below 0.82 s + 18 s × *T* / 3600 of own transmit time and 20.4 s + 90 s × *T* / 3600 in the
-  mesh at EU/UK Narrow, plus at most one request beyond. The lanes start empty at every start, so
-  unlike `[airtime]` a restart adds no burst: the first request goes out about 76 s after the
-  radio connects (EU/UK Narrow). Requests pause while the radio's own measured transmit time reaches 180 s in an
-  hour.
+  mesh at EU/UK Narrow, plus at most one request beyond. The lanes start empty at every start (a
+  debt is carried over), so unlike `[airtime]` a restart adds no burst: the first request goes out
+  about 76 s after the radio connects (EU/UK Narrow). Requests pause while the radio's own measured
+  transmit time reaches 180 s in an hour.
 * **Intervals**: 1 % of channel time per companion while it moves, 0.1 % at rest, at least 90 s
   and 15 minutes; once an hour without a position. A companion that stops answering is asked again
-  after 30 s, then at least every 30 minutes for a day, then up to every 6 hours.
+  after 30 s, then at least every 30 minutes for a day (or at its normal interval, if that is
+  longer: an hour without a position), then up to every 6 hours.
 * **Routes**: direct only. A companion without a stored path is asked by flood only when it was
   heard within 30 minutes (an advert, a message, a path it sent), at most 4 floods an hour and one
   per companion per 30 minutes; one that has not answered within a day, once a day. The gateway
   never resets or writes a path for telemetry: a companion whose path a message's flood fallback
-  (`flood_after`) reset is asked again once it advertises or sends something.
+  (`flood_after`) reset is asked again once it advertises or sends something, then at once.
 
 Needs: the radio adds contacts by hand only, no type automatically (the managed profile sets
 that; otherwise requests pause, because a node the radio adds could take a companion's place in

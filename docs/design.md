@@ -637,31 +637,38 @@ sequenceDiagram
   one, at most 60 s after its wait; an answer read before a request's `SENT` belongs to the one
   before (frame numbers). It is taken only on a table that shows every change the radio reported
   (held up to 15 s for the re-read), with the prefix still unique; a late answer older than one
-  taken is dropped. The binary answer 0x8C carries no sender and is never read.
+  taken is dropped (frame numbers within a session, not the wall clock, which may be set back).
+  The binary answer 0x8C carries no sender and is never read.
 * **Messages first.** No request while the outbox has a message, is delivering one (which includes
   waiting for its acknowledgement), or had one or received one in the last 10 s; a message queued
   while a request waits for the radio withdraws it unwritten. A message queued after the request
   went out is sent at once; it may share the channel with the request's answer for about a second
   (direct), or with a flood for up to its timeout.
 * **Routes.** Direct only: a contact with a stored path is asked on it. One without a path is asked
-  by flood only when it was heard by other means within 30 minutes (an advert, a message as it
-  arrived, a path it sent; never its own telemetry answers, never a message fetched at connect,
-  never the path of the gateway's own flood), at most 4 floods an hour for the gateway and one per
+  by flood only when it was heard by other means within 30 minutes of when the flood is planned
+  (an advert, also one from before it was added, a message as it arrived, a path it sent; never its
+  own telemetry answers, never a message fetched at connect, never the path of the gateway's own
+  flood): heard after its last request, it is due at once, and a flood planned while it counted as
+  heard stays planned while it waits for the lanes. At most 4 floods an hour for the gateway and one per
   contact per 30 minutes, the gap doubling with each flood until a direct answer (up to a day); a
   contact that has not answered within a day gets one flood a day. A flooded request teaches both
   sides a path, so the next requests go direct. **The gateway never resets or writes a path for
   telemetry:** a stored path that no longer works stays until the companion sends a path or a
   message's flood fallback resets it (§6.2); a contact whose path was reset is then asked again
   only once it is heard. A companion away when an alert to it fell back to a flood is therefore
-  found again when it advertises or sends a message, not by itself.
+  found again when it advertises or sends a message, not by itself. A request written whose
+  `SENT` never came (the link broke) counts as sent as planned, so a reconnect does not repeat a
+  flood.
 * **Lanes.** Two token buckets, separate from the message budget: 18 s an hour of the gateway's own
   transmit time and 90 s an hour of estimated airtime in the mesh (every hop of request and answer;
   a flood as repeated by 20 repeaters, an assumption). Both start empty at every start (a restart
-  adds no burst) and when the radio's settings change, and hold the costliest planned request, a
+  adds no burst; a debt is saved and carried over, less what the stop paid back) and when the
+  radio's settings change (the debt carried over again), and hold the costliest planned request, a
   flood (0.821 s and 20.4 s at EU/UK Narrow). A request is charged in full when the radio reports
   it sent, answered or not; a flood the radio sent for a request planned direct, and a flooded
   answer the packet log shows, are charged as what they were, as a debt the refill pays back first.
-  A direct request costing more than a lane holds (more than 18 hops at EU/UK Narrow) is not sent.
+  A direct request costing more than a lane holds is not sent (at EU/UK Narrow more than 18 hops
+  for a 19-byte answer with one-byte path hashes; fewer with longer hashes or answers).
   A due flood waits at most 10 minutes behind direct requests, then goes first. Over any interval
   *T* telemetry's own transmit time is at most `0.821 + 18 × T / 3600` s plus one charge beyond the
   level, and its estimated mesh airtime `20.4 + 90 × T / 3600` s plus one; the radio's measured
@@ -674,11 +681,13 @@ sequenceDiagram
   stays, so slow drift adds up and jitter never counts). A new contact counts as resting.
 * **Back-off.** An unanswered request is retried after 30 s once (a contact that answered within a
   day, asked directly), then asked at its interval doubling with every failure: at least every
-  `max(30 min, its interval)` while it answered within the day, so it is found again about 30
-  minutes after it comes back without sending anything; up to 6 h after a day without an answer
-  and for one that never answered. Hearing it by other means ends the back-off: the next request
-  follows its interval after the last one, never sooner. Over TCP a timeout during a table listing
-  (when the radio's push queue drops frames) counts only the second time in a row.
+  `max(30 min, its interval)` while it answered within the day, so it is found again that long
+  after it comes back without sending anything (30 min for a neighbour at rest, an hour without a
+  position); up to 6 h after a day without an answer and for one that never answered. Hearing it by
+  other means ends the back-off: the next request follows its interval after the last one, never
+  sooner (a contact without a path: at once, see Routes). Over TCP a timeout during a table
+  listing, one that ran or was still running in the wait (when the radio's push queue drops
+  frames), counts only the second time in a row.
 * **Refusals.** `ERR 1` switches telemetry off until the radio reconnects (firmware without the
   command, or a later one that dropped it); `ERR 2` skips the contact until the next table read;
   `ERR 3` (no free packet buffer) pauses requests for 60 s. A disconnect during the wait counts
@@ -686,8 +695,9 @@ sequenceDiagram
 * **Positions** go to the contact's document and its tracker (§6.6); readings, the answer's time
   and a per-contact state follow with the next release.
 * **Persistence.** The schedule (per contact the due time, failures, the times of its last answer,
-  request and flood, whether it was last moving, the size of its answers; the gateway's floods of
-  the last hour) is kept under `telemetry` in the state file, relative to the time it was saved,
+  request and flood, whether it was last moving, the size of its answers, since when it left the
+  candidates; the gateway's floods of the last hour and the lanes' debt) is kept under
+  `telemetry` in the state file, relative to the time it was saved,
   without positions. It is saved every 5 minutes after a change, at once after a flood (before its
   wait, so a crash cannot repeat it) and at the stop. A contact that left the candidates keeps its
   schedule for a day.
@@ -816,7 +826,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
 | State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
 | Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
-| Companion silent (away, switched off, no permission) | no telemetry answer within the wait | one retry after 30 s, then a back-off: at least every 30 min for a day on its stored path, then up to 6 h; never a flood unless heard | log info per state change |
+| Companion silent (away, switched off, no permission) | no telemetry answer within the wait | one retry after 30 s, then a back-off: at least every `max(30 min, its interval)` for a day on its stored path, then up to 6 h; never a flood unless heard | log info per state change |
 | Telemetry answer from another contact or a look-alike | prefix, table | dropped; with a look-alike in the table nobody with that prefix is asked | log debug or warning |
 | Radio adds contacts on its own, or transmitted 180 s in the last hour | settings, statistics | telemetry paused | `state.telemetry = paused`; log warning |
 | Radio without `SEND_TELEMETRY_REQ` | `ERR 1` | telemetry off until it reconnects | `state.telemetry = unsupported` |

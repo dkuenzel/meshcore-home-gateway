@@ -15,16 +15,17 @@ import pytest
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import telemetry_poller as poller_module
 from meshcore_home_gateway.config import Config
-from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core import lpp, telemetry
 from meshcore_home_gateway.core.airtime import Costs
 from meshcore_home_gateway.core.budget import AirtimeBudget
-from meshcore_home_gateway.protocol.codes import Command
+from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.radio import session as session_module
-from meshcore_home_gateway.radio.session import TelemetryReceived
+from meshcore_home_gateway.radio.session import CompanionSession, TelemetryReceived
 from meshcore_home_gateway.state import JsonStateFile
 from meshcore_home_gateway.telemetry_poller import AnswerWaiter, OutboxActivity
 from tests.radio_emulator import (
     LPP_FULL,
+    START_TIME,
     EmulatedContact,
     EmulatedRadio,
     RemoteCompanion,
@@ -144,14 +145,80 @@ def test_a_contact_without_a_path_is_flooded_only_once_it_was_heard(tmp_path: Pa
             document = await bus.wait_for(f"/contacts/{key}", positioned)
             assert radio.telemetry_requests == [(ALICE.public_key, True)]
             assert (document["path_known"], document["path_hops"]) == (True, 1)
+            assert no_path_writes(radio)
 
     scenario(main)
 
 
-def test_the_path_of_its_own_flood_is_no_sign_of_life(tmp_path: Path) -> None:
+def no_path_writes(radio: EmulatedRadio) -> bool:
+    """Telemetry never resets or writes a path, nor any contact."""
+    writes = {Command.RESET_PATH, Command.ADD_UPDATE_CONTACT, Command.REMOVE_CONTACT}
+    return not radio.path_resets and not writes & set(radio.commands())
+
+
+def test_a_live_message_lets_a_contact_without_a_path_be_flooded(tmp_path: Path) -> None:
+    """A message as it arrives is a sign of life; one fetched at connect is not: it may have
+    waited in the radio for hours."""
+    radio = EmulatedRadio(contacts=[ALICE], remotes={ALICE.public_key: RemoteCompanion()})
+    radio.queue_direct_message(ALICE.public_key[:6], "old news", START_TIME - 7200, push=False)
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            await bus.wait_for("/received", lambda d: d["text"] == "old news")
+            await asyncio.sleep(0.4)
+            assert requests(radio) == 0
+            radio.queue_direct_message(ALICE.public_key[:6], "home soon", START_TIME + 50)
+            await bus.wait_for(f"/contacts/{ALICE.public_key.hex()}", positioned)
+            assert radio.telemetry_requests == [(ALICE.public_key, True)]
+
+    scenario(main)
+
+
+def test_the_advert_of_a_node_added_later_counts(tmp_path: Path) -> None:
+    """A companion is heard advertising, then added (from Home Assistant, without a path): its
+    advert counts as heard, so it is flooded."""
+    radio = EmulatedRadio(remotes={ALICE.public_key: RemoteCompanion()})
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            radio.advertise(ALICE)  # NEW_ADVERT: not a contact yet
+            await bus.wait_for("/nodes", lambda d: d["total"] == 1)
+            radio.contacts.append(replace(ALICE))
+            radio.emit(bytes([Push.CONTACTS_FULL]))  # the radio's table changed: read again
+            await bus.wait_for(f"/contacts/{ALICE.public_key.hex()}", positioned)
+            assert radio.telemetry_requests == [(ALICE.public_key, True)]
+
+    scenario(main)
+
+
+def test_a_flood_whose_sent_never_came_counts_as_sent(tmp_path: Path) -> None:
+    """The request was written, then the link broke: the radio may have flooded it, so it
+    counts, and the reconnect does not flood the contact again."""
+    radio = EmulatedRadio(
+        contacts=[ALICE], remotes={ALICE.public_key: RemoteCompanion()},
+        drop_on={Command.SEND_TELEMETRY_REQ},
+    )  # fmt: skip
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _):
+            radio.advertise(ALICE)
+            await until(lambda: requests(radio) == 1)
+            await bus.wait_for("/state", lambda d: d["radio"] == "disconnected")
+            await bus.wait_for("/state", lambda d: d["radio"] == "connected")
+            await asyncio.sleep(0.6)  # three retry times
+            assert requests(radio) == 1
+            assert bridge.state_payload()["telemetry_mesh_airtime_1h_s"] > 20
+
+    scenario(main)
+
+
+@pytest.mark.parametrize("same_write", [False, True], ids=["after-sent", "before-sent"])
+def test_the_path_of_its_own_flood_is_no_sign_of_life(tmp_path: Path, same_write: bool) -> None:
     """Only a path the contact sent by itself counts as heard by other means: the 0x81 of the
-    gateway's own flood comes with the answer (here even before the poller sees SENT)."""
-    radio = EmulatedRadio(contacts=[ALICE], remotes={ALICE.public_key: RemoteCompanion(hops=1)})
+    gateway's own flood comes with the answer, after SENT as on the radio, or even before the
+    poller sees SENT."""
+    remote = RemoteCompanion(hops=1, same_write=same_write)
+    radio = EmulatedRadio(contacts=[ALICE], remotes={ALICE.public_key: remote})
     key = ALICE.public_key.hex()
 
     async def main() -> None:
@@ -220,6 +287,7 @@ def test_silence_retries_once_then_backs_off(
             ]  # fmt: skip
             document = bus.payloads(f"/contacts/{KEY}")[-1]
             assert document["latitude"] == 50.12345  # the last position stays
+            assert no_path_writes(radio)
 
     scenario(main)
 
@@ -293,24 +361,109 @@ def test_telemetry_stops_where_it_cannot_work(
     scenario(main)
 
 
+def timed(radio: EmulatedRadio) -> list[float]:
+    """The times of the telemetry requests the radio gets."""
+    times: list[float] = []
+    handle = radio._handle
+
+    def recording(p: bytes) -> None:
+        if p[0] == Command.SEND_TELEMETRY_REQ:
+            times.append(time.monotonic())
+        handle(p)
+
+    radio._handle = recording  # type: ignore[method-assign]
+    return times
+
+
 def test_a_busy_radio_pauses_the_polls(tmp_path: Path) -> None:
-    """ERR 3: no packet buffer free; nothing was sent or charged."""
+    """ERR 3: no packet buffer free; nothing was sent or charged, and every request waits 60 s,
+    also to another companion."""
+    eve = EmulatedContact(bytes.fromhex("e5" * 32), "Eve", out_path_len=0x00)
+    remotes = {DANA.public_key: RemoteCompanion(), eve.public_key: RemoteCompanion()}
     radio = EmulatedRadio(
-        contacts=[DANA], remotes={DANA.public_key: RemoteCompanion()},
-        errors={Command.SEND_TELEMETRY_REQ: 3},
-    )  # fmt: skip
+        contacts=[DANA, eve], remotes=remotes, errors={Command.SEND_TELEMETRY_REQ: 3}
+    )
+    times = timed(radio)
 
     async def main() -> None:
         async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _n):
             await bus.wait_for(f"/contacts/{KEY}", positioned)
-            assert requests(radio) == 2
-            assert bridge.state_payload()["telemetry_airtime_1h_s"] == pytest.approx(0.378, 1e-2)
+            await bus.wait_for(f"/contacts/{eve.public_key.hex()}", positioned)
+            assert requests(radio) == 3
+            assert times[1] - times[0] >= poller_module.BUSY_PAUSE_S
+            used = bridge.state_payload()["telemetry_airtime_1h_s"]
+            assert used == pytest.approx(2 * 0.378, abs=0.01)  # the refused one cost nothing
 
     scenario(main)
 
 
-def test_a_flooded_answer_is_charged_from_the_packet_log(tmp_path: Path) -> None:
-    remote = RemoteCompanion(flood_reply=True)
+def test_a_contact_the_radio_lacks_waits_for_the_next_table_read(tmp_path: Path) -> None:
+    """ERR 2: the table as read is behind the radio's; the contact is skipped until a read."""
+    radio = EmulatedRadio(
+        contacts=[DANA], remotes={DANA.public_key: RemoteCompanion()},
+        errors={Command.SEND_TELEMETRY_REQ: 2},
+    )  # fmt: skip
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            await until(lambda: requests(radio) == 1)
+            await asyncio.sleep(0.6)  # three retry times
+            assert requests(radio) == 1
+            radio.emit(bytes([Push.CONTACTS_FULL]))
+            await bus.wait_for(f"/contacts/{KEY}", positioned)
+            assert requests(radio) == 2
+
+    scenario(main)
+
+
+def test_the_radios_own_time_on_air_pauses_telemetry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The backstop: from 180 s of the radio's measured transmit time in an hour, nothing is
+    asked; the warning comes once, although the number changes with every reading."""
+    caplog.set_level(logging.INFO, LOGGER)
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.05)
+    radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: RemoteCompanion()})
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (bridge, _bus, _notes):  # empty lanes
+            radio.tx_airtime_s = 41 + 180
+            await until(lambda: bridge.state_payload()["telemetry"] == "paused")
+            radio.tx_airtime_s = 41 + 200
+            await asyncio.sleep(0.3)
+            assert requests(radio) == 0
+            assert caplog.text.count("telemetry paused") == 1
+
+    scenario(main)
+
+
+def test_a_message_queued_while_a_request_waits_for_the_radio_withdraws_it(
+    tmp_path: Path, quick_intervals: None
+) -> None:
+    radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: RemoteCompanion()})
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _):
+            await bus.wait_for(f"/contacts/{KEY}", positioned)  # the first; the next in 0.5 s
+            session, poller = bridge.live_session(), bridge._telemetry
+            assert session is not None
+            assert poller is not None
+            async with session._lock:  # another command holds the radio
+                await until(lambda: poller._sending == KEY)
+                bus.send("alerts", "intruder")
+                await until(lambda: bridge._activity.busy)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            await until(lambda: requests(radio) == 2)
+            commands = radio.commands()
+            second = [i for i, c in enumerate(commands) if c == Command.SEND_TELEMETRY_REQ][1]
+            assert commands.index(Command.SEND_CHANNEL_TXT_MSG) < second
+
+    scenario(main)
+
+
+@pytest.mark.parametrize("same_write", [False, True], ids=["after-sent", "before-sent"])
+def test_a_flooded_answer_is_charged_from_the_packet_log(tmp_path: Path, same_write: bool) -> None:
+    remote = RemoteCompanion(flood_reply=True, same_write=same_write)
     radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: remote})
 
     async def main() -> None:
@@ -395,8 +548,11 @@ def test_the_outbox_is_quiet_only_after_a_while_without_messages() -> None:
     asyncio.run(main())
 
 
+SESSION = CompanionSession(EmulatedRadio(), asyncio.Queue())
+
+
 def answer_of(key: bytes, seq: int) -> TelemetryReceived:
-    return TelemetryReceived(key[:6], LPP_FULL, 0.0, seq)
+    return TelemetryReceived(key[:6], LPP_FULL, 0.0, seq, SESSION)
 
 
 def test_the_waiter_takes_the_answer_of_the_contact_asked() -> None:
@@ -460,3 +616,67 @@ def test_the_waiter_takes_a_late_answer_within_its_window_only() -> None:
         assert len(late) == 1
 
     asyncio.run(main())
+
+
+def test_over_tcp_a_silence_during_a_table_read_still_running_counts_only_again(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, quick_intervals: None
+) -> None:
+    """The radio's WiFi queue drops pushes during a listing; a read that started during the
+    wait and still runs when it ends counts too (the test radio is reached over TCP)."""
+    caplog.set_level(logging.DEBUG, LOGGER)
+    remote = RemoteCompanion()
+    radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: remote})
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            await bus.wait_for(f"/contacts/{KEY}", positioned)
+            remote.lpp = None
+            radio.silent = {Command.GET_CONTACTS}  # the read runs until the session gives up
+            await until(lambda: requests(radio) == 2)
+            radio.advertise(DANA)  # a read 0.05 s later, still running when the wait ends
+            await until(lambda: "no answer during a table read" in caplog.text)
+            radio.silent = set()
+
+    scenario(main)
+
+
+class ReorderingRadio(EmulatedRadio):
+    """Writes an older answer to the previous request before the next request's SENT."""
+
+    def __init__(self, older: bytes, newer: bytes, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.older, self.newer = older, newer
+
+    def _telemetry(self, key: bytes) -> None:
+        if len(self.telemetry_requests) == 1:  # the second request
+            self.emit(telemetry_push(key, self.older))
+            super()._telemetry(key)
+            self.emit(telemetry_push(key, self.newer))
+            return
+        super()._telemetry(key)
+
+
+def test_an_older_answer_read_before_sent_never_replaces_a_newer_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The answer to the previous request, read before this request's SENT, is taken as late
+    only if it is not older than one already taken (frame numbers, not the wall clock)."""
+    monkeypatch.setattr(telemetry, "PROBE_S", 0.3)  # the unanswered first request: again soon
+    older = bytes.fromhex("018807a5f2014ead002f12")
+    newer = bytes.fromhex("018807a62a014ead002f12")  # 56 cells (620 m) further north
+    found = lpp.position(lpp.decode(newer))
+    assert found is not None
+    radio = ReorderingRadio(
+        older, newer, contacts=[DANA], remotes={DANA.public_key: RemoteCompanion(lpp=None)}
+    )
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            await until(lambda: requests(radio) == 2, within_s=5)  # the first went unanswered
+            document = await bus.wait_for(f"/contacts/{KEY}", positioned)
+            assert document["latitude"] == found.position.latitude
+            await asyncio.sleep(0.3)
+            latest = bus.payloads(f"/contacts/{KEY}")[-1]
+            assert latest["latitude"] == found.position.latitude
+
+    scenario(main)

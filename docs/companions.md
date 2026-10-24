@@ -49,14 +49,15 @@ Then, on the gateway: `[telemetry] enabled = true` and restart the service.
   gateway and every 90 seconds while it moves (50 m or more); over repeaters less often (two
   repeaters: 47 and 4.7 minutes). Without a position in its answers, once an hour.
 * A companion that stops answering (out of range, switched off) is asked again after 30 seconds,
-  then at least every 30 minutes for a day, on the route it had: it is found again within about 30
-  minutes of coming back, without pressing anything. An advert or a message from it brings its next
+  then at least every 30 minutes for a day, or at its normal interval if that is longer (an hour
+  without a position, 47 minutes over two repeaters), on the route it had: it is found again that
+  long after coming back, without pressing anything. An advert or a message from it brings its next
   request forward to its normal interval. After a day without an answer, and for a companion that
   never answered, the requests thin out to one every 6 hours.
 * **Exception:** when the gateway sent the companion a message while it was away and the message
   fell back to a flood, the radio forgot the companion's route. It is then asked again only once
-  it advertises or sends a message: the gateway never floods a companion it has not heard within
-  30 minutes, and never writes a route for telemetry.
+  it advertises or sends a message, and then at once: the gateway never floods a companion it has
+  not heard within 30 minutes, and never writes a route for telemetry.
 * Its tracker in Home Assistant (`device_tracker.mesh_<name>`) appears with the first position.
   Its *Last heard* follows adverts and messages at once and telemetry answers at most once an
   hour.

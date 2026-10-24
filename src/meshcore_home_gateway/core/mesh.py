@@ -176,7 +176,8 @@ class Mesh:
         While only its answers are heard, `heard` moves at most every HEARD_REFRESH_S and keeps
         the signal of the last advert or message (an answer reports none). The fix changes when
         the position moved FIX_MOVED_M or came from an advert: its time is when it changed, not
-        when it was last confirmed. A position older than the newest one received is ignored."""
+        when it was last confirmed. Answers come in the order the poller took them (by frame,
+        not by the wall clock, which may be set back)."""
         tracked = self.contacts.get(key)
         if tracked is None:
             return False
@@ -184,8 +185,7 @@ class Mesh:
         moved = heard is None or heard.how != "telemetry" or at - heard.at >= HEARD_REFRESH_S
         if moved:
             self.contact_heard(key, Heard(at, "telemetry", heard.signal if heard else Signal()))
-        newest = tracked.position_received_at
-        if position is not None and (newest is None or at > newest):
+        if position is not None:
             tracked.position_received_at = at
             fix = tracked.fix
             if (

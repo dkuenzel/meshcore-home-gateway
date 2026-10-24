@@ -6,15 +6,17 @@ candidates, what the radio answered and what was heard, and does what it decides
 * One request in flight for the whole gateway: the firmware keeps one pending request.
 * Direct only: a contact with a stored path is asked on it. One without a path is asked by flood
   only when it was heard by other means (an advert, a live message, a path it sent) within
-  30 minutes, at most 4 floods an hour for the gateway and one per contact per 30 minutes
-  (doubling while its floods go unanswered); a contact that has not answered within a day, once
-  a day. The gateway never resets or writes a path for telemetry.
+  30 minutes of when the flood was planned, at most 4 floods an hour for the gateway and one per
+  contact per 30 minutes, the gap doubling with each flood until a direct answer (up to a day); a
+  contact that has not answered within a day, once a day. The gateway never resets or writes a
+  path for telemetry.
 * Two lanes of airtime, separate from the message budget: the gateway's own transmit time and the
   estimated airtime of every transmission a request causes in the mesh. They start empty, so a
-  restart adds no burst; a request is charged when the radio reports it sent.
+  restart adds no burst (a debt is saved and carried over); a request is charged when the radio
+  reports it sent.
 * Intervals from a share of channel time per contact: 1 % while it moves, 0.1 % at rest, once an
   hour without a position; a contact that stops answering is asked less often (back-off), on its
-  stored path at least every 30 minutes while it answered within the day.
+  stored path at least every max(30 minutes, its interval) while it answered within the day.
 
 Constants are read when used, so tests can change them. Positions never leave this module:
 the movement reference is kept in memory only.
@@ -105,12 +107,15 @@ class SavedContact:
     located: bool = False  # the last answer carried a position
     still: int = STILL_POLLS  # answers in a row under 50 m: below STILL_POLLS it moves
     lpp_bytes: int = DEFAULT_LPP_BYTES
+    parked_age_s: float | None = None  # how long it has not been a candidate; None: it was one
 
 
 @dataclass(frozen=True, slots=True)
 class Saved:
     contacts: Mapping[str, SavedContact] = field(default_factory=dict)
     floods_age_s: tuple[float, ...] = ()  # the gateway's floods within the last hour
+    own_debt_s: float = 0.0  # airtime the lanes owed when saved
+    mesh_debt_s: float = 0.0
 
 
 LaneFactory = Callable[[Costs, float], tuple[AirtimeBudget, AirtimeBudget]]
@@ -174,6 +179,7 @@ class Scheduler:
         self._floods: list[float] = []
         self._in_flight: str | None = None
         self._gap_until = -math.inf
+        self._owed = (0.0, 0.0, now)  # lane debts carried over (own, mesh) and since when
         self.version = 0  # changes with every change of the schedule
         self.urgent = False  # a flood was sent since the last export: save at once
         if saved is not None:
@@ -243,7 +249,9 @@ class Scheduler:
 
     def _poll_for(self, c: Candidate, s: _Contact, now: float) -> Poll | None:
         if c.path_bytes is None:  # the radio would flood: only if heard recently
-            if _fresh(s.heard_at, now) and self._flood_allowed(s, now):
+            # judged when the flood was first planned: waiting for the lanes does not void it
+            planned = s.flood_waiting_since if s.flood_waiting_since is not None else now
+            if _fresh(s.heard_at, planned) and self._flood_allowed(s, now):
                 return Poll(c.key, True, self._flood_costs(s), "flood")
             return None
         purpose = "retry" if s.failures and _recent(s, now) else "poll"
@@ -251,13 +259,17 @@ class Scheduler:
         return Poll(c.key, False, costs, purpose)
 
     def _sign_of_life(self, s: _Contact, now: float) -> None:
-        """Heard by other means after the last unanswered request: the back-off ends, the next
-        request follows the normal interval after the last one, never sooner (ADR 0018)."""
-        if not s.failures or s.polled_at is None or s.heard_at is None:
+        """Heard by other means after the last request. A contact without a path is due at once:
+        it may be flooded only while it was heard recently. Otherwise the back-off ends, and the
+        next request follows the normal interval after the last one, never sooner (ADR 0018)."""
+        if s.heard_at is None or (s.polled_at is not None and s.heard_at <= s.polled_at):
             return
-        if s.heard_at <= s.polled_at:
+        if s.path_bytes is None:
+            target = now
+        elif s.failures and s.polled_at is not None:
+            target = s.polled_at + self._interval(s, now)
+        else:
             return
-        target = s.polled_at + self._interval(s, now)
         if s.due_at > target:
             s.due_at = target
             self.version += 1
@@ -298,12 +310,21 @@ class Scheduler:
         return min(cap, base * 2.0 ** (s.failures - 1))
 
     def _use(self, lora: LoRaParams, now: float) -> None:
-        """Lanes for the radio's settings, empty; new settings start them afresh."""
+        """Lanes for the radio's settings, empty; new settings start them afresh. A debt is
+        carried over: from the last run, or from the lanes of the settings before."""
         if lora == self._lora:
             return
+        if self._own is not None and self._mesh is not None:
+            self._owed = (_debt(self._own, now), _debt(self._mesh, now), now)
         self._lora = lora
         capacity = airtime.flood_poll_costs(DEFAULT_LPP_BYTES, lora)
         self._own, self._mesh = self._lanes_factory(capacity, now)
+        own, mesh, since = self._owed
+        for lane, owed in ((self._own, own), (self._mesh, mesh)):
+            left = owed - lane.per_hour_s / HOUR_S * max(0.0, now - since)  # paid back meanwhile
+            if left > 0:
+                lane.owe(left, now)
+        self._owed = (0.0, 0.0, now)
 
     def _track(self, candidates: Sequence[Candidate], now: float) -> None:
         """New candidates are due at once; the schedule of one that left is parked for a day,
@@ -342,7 +363,7 @@ class Scheduler:
             if flood:
                 s.flood_at = now
                 if _recent(s, now):
-                    s.floods += 1
+                    s.floods = min(MAX_FAILURES, s.floods + 1)
             s.polled_at, s.last_flood = now, flood
             s.flood_waiting_since = None
         self._in_flight = poll.key
@@ -452,9 +473,10 @@ class Scheduler:
     # --- persistence ----------------------------------------------------------------------------
 
     def export(self, now: float) -> Saved:
-        """The schedule for the state file, also of parked contacts."""
+        """The schedule for the state file, also of parked contacts, and the lanes' debt."""
         self.urgent = False
-        everyone = {**{k: s for k, (_, s) in self._parked.items()}, **self._contacts}
+        parked = {k: (since, s) for k, (since, s) in self._parked.items()}
+        everyone = {**parked, **{k: (None, s) for k, s in self._contacts.items()}}
 
         def age(t: float | None) -> float | None:
             return None if t is None else max(0.0, now - t)
@@ -464,12 +486,16 @@ class Scheduler:
                 due_in_s=min(MAX_DUE_S, max(0.0, s.due_at - now)), failures=s.failures,
                 answered_age_s=age(s.answered_at), polled_age_s=age(s.polled_at),
                 flood_age_s=age(s.flood_at), floods=s.floods, located=s.located,
-                still=s.still, lpp_bytes=s.lpp_bytes,
+                still=s.still, lpp_bytes=s.lpp_bytes, parked_age_s=age(since),
             )
-            for key, s in everyone.items()
+            for key, (since, s) in everyone.items()
         }  # fmt: skip
         floods = tuple(now - t for t in self._floods if 0 <= now - t < HOUR_S)
-        return Saved(contacts, floods)
+        if self._own is not None and self._mesh is not None:
+            own, mesh = _debt(self._own, now), _debt(self._mesh, now)
+        else:  # not built yet: what was carried over, less what was paid back since
+            own, mesh = self._owed_now(now)
+        return Saved(contacts, floods, own, mesh)
 
     def _restore(self, saved: Saved, now: float, elapsed: float) -> None:
         def at(age: float | None) -> float | None:
@@ -482,8 +508,15 @@ class Scheduler:
                 polled_at=at(c.polled_age_s), flood_at=at(c.flood_age_s), floods=c.floods,
                 located=c.located, still=c.still, lpp_bytes=c.lpp_bytes,
             )  # fmt: skip
-            self._parked[key] = (now, s)  # until it is a candidate again
+            since = at(c.parked_age_s)
+            self._parked[key] = (now if since is None else since, s)  # until it is a candidate
         self._floods = [now - (a + elapsed) for a in saved.floods_age_s if a + elapsed < HOUR_S]
+        self._owed = (saved.own_debt_s, saved.mesh_debt_s, now - elapsed)
+
+    def _owed_now(self, now: float) -> tuple[float, float]:
+        own, mesh, since = self._owed
+        paid = max(0.0, now - since) / HOUR_S
+        return max(0.0, own - OWN_S_PER_HOUR * paid), max(0.0, mesh - MESH_S_PER_HOUR * paid)
 
     # --- helpers ----------------------------------------------------------------------------------
 
@@ -498,6 +531,10 @@ class Scheduler:
         if lane is None:
             raise RuntimeError("no decision yet: the lanes are not built")
         return lane
+
+
+def _debt(lane: AirtimeBudget, now: float) -> float:
+    return max(0.0, -lane.available_s(now))
 
 
 def _movement(s: _Contact, cells: tuple[int, int] | None) -> None:

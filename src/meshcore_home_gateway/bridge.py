@@ -765,7 +765,7 @@ class Bridge:
     def _telemetry_sees(self, telemetry: TelemetryPoller, event: RadioEvent) -> None:
         if isinstance(event, PacketLogged):
             self._observe(telemetry.packet_logged, event.rx)
-        elif isinstance(event, AdvertHeard) and not event.advert.new:  # a contact's advert
+        elif isinstance(event, AdvertHeard):  # checked by the radio; a node added later counts
             self._observe(telemetry.heard, event.advert.public_key.hex())
 
     async def _message_loop(self) -> None:

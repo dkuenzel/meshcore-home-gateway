@@ -624,6 +624,57 @@ def test_a_telemetry_request_is_withdrawn_unwritten_when_its_condition_holds() -
     run(radio, scenario)
 
 
+def test_the_condition_is_checked_once_the_request_holds_the_lock() -> None:
+    """A message queued while the request waits behind another command withdraws it; one that
+    went before the request had the lock does not."""
+    radio = EmulatedRadio(contacts=[BOB])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        for before, after, sent in ((False, True, False), (True, False, True)):
+            busy = [before]
+            written = radio.commands().count(Command.SEND_TELEMETRY_REQ)
+
+            def outbox_busy(flag: list[bool] = busy) -> bool:
+                return flag[0]
+
+            async with session._lock:  # another command holds the radio
+                task = asyncio.create_task(
+                    session.request_telemetry(BOB.public_key, unless=outbox_busy)
+                )
+                await asyncio.sleep(0.01)
+                busy[0] = after
+            result = await task
+            assert (result is not None) is sent
+            assert radio.commands().count(Command.SEND_TELEMETRY_REQ) == written + sent
+
+    run(radio, scenario)
+
+
+def test_a_table_read_counts_as_started_before_it_ends() -> None:
+    """Over TCP an answer lost during a listing must be told from silence also while the
+    listing still runs when the wait ends."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        before = session.commands_sent
+        seen: list[tuple[int, int]] = []
+        original = session._next
+
+        async def watched(pending: object) -> bytes:
+            seen.append((session.contacts_read_started_at, session.contacts_read_at))
+            return await original(pending)  # type: ignore[arg-type]
+
+        session._next = watched  # type: ignore[method-assign]
+        await session.refresh_contacts()
+        started, finished = seen[0]
+        assert started > before >= finished  # started, not yet finished
+        assert session.contacts_read_at == session.contacts_read_started_at == started
+
+    run(radio, scenario)
+
+
 @pytest.mark.parametrize(
     ("error", "reason"), [(1, "unsupported_cmd"), (2, "not_found"), (3, "table_full")]
 )

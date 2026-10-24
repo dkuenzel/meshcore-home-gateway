@@ -58,8 +58,10 @@ class RemoteCompanion:
 
     lpp: bytes | None = LPP_FULL
     hops: int = 0  # the path the radio learns from a flood (one-byte hashes)
-    auto: bool = True  # answer at once; False: the test calls EmulatedRadio.answer_telemetry()
+    auto: bool = True  # answer by itself; False: the test calls EmulatedRadio.answer_telemetry()
     flood_reply: bool = False  # floods its answer to a direct request: the packet log shows it
+    same_write: bool = False  # answer in the same write as SENT, not a moment later
+    delay_s: float = 0.05  # how long after SENT it answers (the firmware's is 300 ms and more)
 
 
 @dataclass
@@ -409,6 +411,14 @@ class EmulatedRadio:
         self._asked = (key, flood)
         remote = self.remotes.get(key)
         if remote is not None and remote.auto:
+            if remote.same_write:
+                self.answer_telemetry()
+            else:
+                asyncio.get_running_loop().call_later(remote.delay_s, self._answer_if, key)
+
+    def _answer_if(self, key: bytes) -> None:
+        """The delayed answer, if this request is still the radio's pending one."""
+        if self._asked is not None and self._asked[0] == key:
             self.answer_telemetry()
 
     def _stats(self, kind: int) -> None:

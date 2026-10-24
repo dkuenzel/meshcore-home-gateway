@@ -196,9 +196,11 @@ def test_the_telemetry_schedule_round_trips_relative_to_its_save(tmp_path: Path)
     saved = Saved(
         {
             A: SavedContact(812.5, 0, 95.0, 96.0, None, 0, True, 2, 19),
-            B: SavedContact(7200.0, 2, None, 7200.0, 40_000.0, 1, False, 1, 34),
+            B: SavedContact(7200.0, 2, None, 7200.0, 40_000.0, 1, False, 1, 34, 3600.0),
         },
         (1200.0,),
+        0.4,
+        11.5,
     )
     records.save(saved, 1_800_000_000.0)
     assert store.load()["other"] == 1  # only its own key
@@ -221,6 +223,7 @@ def test_the_telemetry_schedule_round_trips_relative_to_its_save(tmp_path: Path)
         {"due_in_s": 1.0, "still": 3},
         {"due_in_s": 1.0, "lpp_bytes": 0},
         {"due_in_s": 1.0, "lpp_bytes": 157},
+        {"due_in_s": 1.0, "parked_age_s": -1.0},
         [],
     ],
 )
@@ -245,6 +248,10 @@ def test_an_unknown_or_unreadable_telemetry_schedule_starts_empty(tmp_path: Path
     unreadable = TelemetryRecords(JsonStateFile(tmp_path / "dir"))
     assert unreadable.load(0.0) == (None, 0.0)  # an OSError: logged, never raised
     unreadable.save(Saved(), 0.0)  # logged too
+    huge = {"version": 1, "saved_at": 10**400, "contacts": {A: {"due_in_s": 10**400}},
+            "own_debt_s": 10**400, "mesh_debt_s": -1.0}  # fmt: skip
+    store.save({"telemetry": huge})
+    assert TelemetryRecords(store).load(0.0) == (Saved({}, (), 0.0, 0.0), 0.0)  # never raises
     capped = {"version": 1, "saved_at": 0.0, "contacts": {A: {"due_in_s": 1e9}}}
     store.save({"telemetry": capped})
     saved, _ = TelemetryRecords(store).load(0.0)

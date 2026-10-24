@@ -119,7 +119,8 @@ class TelemetryReceived:
     prefix: bytes
     data: bytes
     received_at: float
-    seq: int  # the frame's number in this session
+    seq: int  # the frame's number in its session
+    session: CompanionSession  # numbers are compared only within one session
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +234,7 @@ class CompanionSession:
         self.on_contact_key: Callable[[str, bool], None] | None = None  # key, held as contact
         self.profile: ProfileHook | None = None  # the managed radio profile (ADR 0020)
         self.contacts_read_at = -1  # command count of the read behind contact_records
+        self.contacts_read_started_at = -1  # command count of the newest read, also one running
         self._contacts_changed_at = -1  # command count at the last contact push
         self._commands_sent = 0
         self._frames_read = 0
@@ -495,7 +497,7 @@ class CompanionSession:
                 return
         records: dict[str, codec.ContactRecord] = {}
         async with self._command(codec.get_contacts(), _CONTACT_CODES) as pending:
-            started = self._commands_sent
+            started = self.contacts_read_started_at = self._commands_sent
             while True:
                 decoded = self._decode(await self._next(pending), "get contacts")
                 if isinstance(decoded, codec.Err):
@@ -678,7 +680,7 @@ class CompanionSession:
                 await self._events.put(PathChanged(decoded.public_key))
         elif isinstance(decoded, codec.TelemetryResponse):  # a prefix, not a key: none reported
             await self._events.put(
-                TelemetryReceived(decoded.prefix, decoded.data, self._wall(), seq)
+                TelemetryReceived(decoded.prefix, decoded.data, self._wall(), seq, self)
             )
         elif frame[0] == Push.CONTACTS_FULL:
             self._contacts_changed()

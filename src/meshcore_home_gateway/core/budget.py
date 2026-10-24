@@ -69,6 +69,11 @@ class AirtimeBudget:
         self._tokens -= airtime_s
         self._log.append((now, airtime_s))
 
+    def owe(self, airtime_s: float, now: float) -> None:
+        """Start from a debt spent before this bucket existed (not counted in `used_s`)."""
+        self._refill(now)
+        self._tokens -= airtime_s
+
     def used_s(self, now: float, window_s: float = HOUR_S) -> float:
         """Airtime spent in the last `window_s` seconds (for status reports)."""
         while self._log and self._log[0][0] <= now - window_s:

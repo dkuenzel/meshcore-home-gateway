@@ -91,11 +91,23 @@ def test_a_telemetry_answer_moves_its_fix_from_20_m_on() -> None:
     assert tracked.position_received_at == T + 2
     mesh.contact_answered(key, T + 3, far, 42.0)
     assert tracked.fix == Fix(far, T + 3, "telemetry", 42.0)
-    mesh.contact_answered(key, T + 2.5, HOME, 40.0)  # older than one received: ignored
-    assert tracked.fix == Fix(far, T + 3, "telemetry", 42.0)
-    assert tracked.position_received_at == T + 3
     mesh.contact_answered(key, T + 4, None, None)  # no position: the last one stays
     assert tracked.fix == Fix(far, T + 3, "telemetry", 42.0)
+    assert tracked.position_received_at == T + 3
+    mesh.contact_answered(key, T - 50, HOME, 40.0)  # the wall clock was set back: still taken
+    assert tracked.fix == Fix(HOME, T - 50, "telemetry", 40.0)
+
+
+def test_a_telemetry_position_replaces_an_advert_fix_at_any_distance() -> None:
+    """Its source and accuracy count, not only the distance (design §6.6)."""
+    mesh = Mesh()
+    mesh.contacts_read([Node(ALICE.public_key, "Alice", 1, position=HOME)], T)
+    tracked = mesh.contacts[ALICE.public_key]
+    assert tracked.fix is not None
+    assert tracked.fix.source == "advert"
+    five_m = Position(HOME.latitude + 0.000045, HOME.longitude)
+    mesh.contact_answered(ALICE.public_key, T + 10, five_m, 7.0)
+    assert tracked.fix == Fix(five_m, T + 10, "telemetry", 7.0)
 
 
 def test_telemetry_answers_alone_move_last_heard_hourly_and_keep_the_signal() -> None:

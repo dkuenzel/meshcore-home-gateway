@@ -353,7 +353,12 @@ class TelemetryRecords:
         floods = tuple(
             a for a in ages if _age(a) and a < telemetry.HOUR_S
         ) if isinstance(ages, list) else ()  # fmt: skip
-        return Saved(contacts, floods[: telemetry.FLOODS_PER_HOUR]), elapsed
+        own, mesh = raw.get("own_debt_s", 0.0), raw.get("mesh_debt_s", 0.0)
+        return Saved(
+            contacts, floods[: telemetry.FLOODS_PER_HOUR],
+            min(own, telemetry.HOUR_S) if _age(own) else 0.0,
+            min(mesh, telemetry.HOUR_S) if _age(mesh) else 0.0,
+        ), elapsed  # fmt: skip
 
     def save(self, saved: Saved, wall_now: float) -> None:
         """Replace this key only; a failed write is logged and the schedule stays in memory."""
@@ -365,11 +370,13 @@ class TelemetryRecords:
                     "due_in_s": c.due_in_s, "failures": c.failures,
                     "answered_age_s": c.answered_age_s, "polled_age_s": c.polled_age_s,
                     "flood_age_s": c.flood_age_s, "floods": c.floods, "located": c.located,
-                    "still": c.still, "lpp_bytes": c.lpp_bytes,
+                    "still": c.still, "lpp_bytes": c.lpp_bytes, "parked_age_s": c.parked_age_s,
                 }
                 for key, c in saved.contacts.items()
             },
             "floods_age_s": list(saved.floods_age_s),
+            "own_debt_s": saved.own_debt_s,
+            "mesh_debt_s": saved.mesh_debt_s,
         }  # fmt: skip
         try:
             data = self._store.load()
@@ -384,25 +391,31 @@ def _saved_contact(entry: object) -> SavedContact | None:
         return None
     due, failures, floods = entry.get("due_in_s"), entry.get("failures", 0), entry.get("floods", 0)
     answered, polled = entry.get("answered_age_s"), entry.get("polled_age_s")
-    flood = entry.get("flood_age_s")
+    flood, parked = entry.get("flood_age_s"), entry.get("parked_age_s")
     located, still = entry.get("located", False), entry.get("still", telemetry.STILL_POLLS)
     lpp_bytes = entry.get("lpp_bytes", telemetry.DEFAULT_LPP_BYTES)
     if (
         _age(due) and _small(failures, telemetry.MAX_FAILURES)
         and _small(floods, telemetry.MAX_FAILURES) and _age_or_none(answered)
-        and _age_or_none(polled) and _age_or_none(flood) and isinstance(located, bool)
+        and _age_or_none(polled) and _age_or_none(flood) and _age_or_none(parked)
+        and isinstance(located, bool)
         and _small(still, telemetry.STILL_POLLS) and _small(lpp_bytes, telemetry.MAX_LPP_BYTES)
         and lpp_bytes >= 1
     ):  # fmt: skip
         return SavedContact(
             min(due, telemetry.MAX_DUE_S), failures, answered, polled, flood, floods, located,
-            still, lpp_bytes,
+            still, lpp_bytes, parked,
         )  # fmt: skip
     return None
 
 
 def _finite(value: object) -> TypeGuard[float]:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:  # an int too large for a float
+        return False
 
 
 def _age(value: object) -> TypeGuard[float]:

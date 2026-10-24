@@ -168,8 +168,8 @@ def test_floods_at_most_four_an_hour_and_one_a_day_to_a_contact_that_never_answe
 
 
 def test_floods_to_a_contact_that_answered_double_their_gap() -> None:
-    """A companion whose path the outbox reset: flooded when heard, 30 min apart, then 60, 120;
-    a direct answer starts the spacing again."""
+    """A companion whose path the outbox reset: flooded when heard; the gap is 30 min x 2^floods,
+    so after the first flood 60, then 120 and 240 min."""
     s = Scheduler(0.0, lanes=wide)
     ask(s, [direct(A)], 0.0)
     now, floods = 10.0, []
@@ -460,3 +460,85 @@ def test_views_before_any_decision() -> None:
 
 
 Factory = Callable[[Costs, float], tuple[AirtimeBudget, AirtimeBudget]]
+
+
+# --- review findings: paths, freshness, debt, persistence ----------------------------------------
+
+
+def test_a_contact_without_a_path_heard_after_its_last_request_is_due_at_once() -> None:
+    """A path-less contact may be flooded only while it was heard recently, so a sign of life
+    makes it due at once, also between its requests (an hour apart without a position)."""
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0, cells=None)  # answers without a position: next in an hour
+    heard = 1200.0  # its path was reset meanwhile (a message's flood fallback); it advertises
+    decision = poll(s, [pathless(A, heard_at=heard)], heard)
+    assert (decision.flood, decision.purpose) == (True, "flood")
+
+
+def test_a_flood_planned_while_heard_stays_planned_while_it_waits_for_the_lanes() -> None:
+    """Four companions heard together, each flood needing both lanes full (13.6 min at EU/UK
+    Narrow): all four go out, also those that wait longer than 30 min."""
+    s = Scheduler(0.0)
+    keys = (A, B, C, D)
+    candidates = [pathless(k, heard_at=0.0) for k in keys]
+    now, flooded = 0.0, {}
+    while now < 4000.0:
+        decision = s.decide(EU, candidates, now)
+        if isinstance(decision, float):
+            now += max(decision, 0.001)
+            continue
+        s.sent(decision, flood=True, now=now)
+        s.unanswered(decision.key, now + 9)
+        flooded[decision.key] = now
+        now += 9
+    assert set(flooded) == set(keys)
+    assert max(flooded.values()) > telemetry.HEARD_RECENTLY_S
+
+
+def test_the_flood_count_stops_at_the_limit_the_state_file_takes() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0)
+    for i in range(20):
+        now = 10.0 + i * 100.0
+        p = Poll(A, True, Costs(0.0, 0.0), "flood")
+        s.sent(p, flood=True, now=now)
+        s.answered(A, now + 1, HOME, 19)
+    assert s.export(3000.0).contacts[A].floods == telemetry.MAX_FAILURES
+
+
+def test_a_debt_survives_a_restart_and_new_radio_settings() -> None:
+    """A flooded answer is charged beyond the level: the debt is saved, so a restart does not
+    forgive it, and carried over to the lanes of new settings."""
+    s = Scheduler(0.0)
+    sent = due_at(s, [direct(A)], 0.0, 200.0)
+    s.sent(poll(s, [direct(A)], sent), flood=False, now=sent)
+    s.flooded_reply(A, sent + 1)  # 11.75 s in the mesh, beyond the level
+    s.answered(A, sent + 2, HOME, 19)
+    saved = s.export(sent + 2)
+    refilled = 90.0 / 3600 * (sent + 2)  # the mesh lane filled while the own lane did
+    assert saved.mesh_debt_s == pytest.approx(0.887 + 11.75 - refilled, abs=0.01)
+    assert saved.own_debt_s > 0
+    restarted = Scheduler(1000.0, saved=saved, elapsed_s=10.0)
+    fresh = Scheduler(1000.0)
+    late = due_at(restarted, [direct(B)], 1000.0, 3000.0)
+    owed = saved.mesh_debt_s - 90.0 / 3600 * 10.0  # paid back while it was stopped
+    assert late - 1000.0 == pytest.approx((owed + 0.887) / (90.0 / 3600), abs=0.5)
+    assert due_at(fresh, [direct(B)], 1000.0, 3000.0) == pytest.approx(1075.57, abs=0.01)
+    # new radio settings carry the debt over
+    other = meshcore_lora(125_000.0, 8, 8)
+    t = sent + 2
+    s.decide(other, [direct(A)], t)
+    assert s.export(t).mesh_debt_s == pytest.approx(saved.mesh_debt_s, abs=0.01)
+
+
+def test_a_departed_contact_keeps_its_schedule_for_a_day_across_restarts() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    s.decide(EU, [direct(A)], 0.0)
+    s.decide(EU, [direct(B)], 100.0)  # A left the table
+    saved = s.export(80_000.0)
+    assert saved.contacts[A].parked_age_s == pytest.approx(79_900.0)
+    assert saved.contacts[B].parked_age_s is None
+    r = Scheduler(0.0, saved=saved, elapsed_s=1000.0, lanes=wide)
+    r.decide(EU, [direct(B)], 6000.0)  # a day after it left
+    assert A not in r.export(6000.0).contacts
+    assert B in r.export(6000.0).contacts
