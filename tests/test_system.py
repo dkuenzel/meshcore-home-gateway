@@ -26,6 +26,7 @@ from tests.conftest import Broker
 from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
 
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
+DAVE = EmulatedContact(bytes.fromhex("d4" * 32), "Dave", last_advert=1_800_000_000)
 SRC = Path(__file__).resolve().parent.parent / "src"
 
 
@@ -106,6 +107,21 @@ def test_service_end_to_end(
             )
             command = json.loads(watcher.wait("meshcore/radio1/command"))
             assert (command["event_type"], command["args"]) == ("status", "please")
+
+            # Home Assistant's select: a heard node, picked by its label (ADR 0017)
+            controls = "homeassistant/device/meshcore_home_gateway_radio1/manage_contacts/config"
+            assert "add_node" in json.loads(watcher.wait(controls))["cmps"]
+            server.call(lambda: radio.advertise(DAVE))
+            watcher.wait(
+                "meshcore/radio1/nodes",
+                lambda p: any(n["key"] == "d4" * 32 for n in json.loads(p)["nodes"]),
+            )
+            label = f"{'d4' * 6}…{'d4' * 4} Dave"
+            watcher.client.publish("meshcore/radio1/homeassistant/add_node", label, qos=1)
+            added = json.loads(watcher.wait(
+                "meshcore/radio1/contact", lambda p: json.loads(p)["key"] == "d4" * 32
+            ))  # fmt: skip
+            assert (added["event_type"], added["request"]) == ("added", "add")
         finally:  # a failure above stays the reported one; a hanging service must not outlive it
             service.send_signal(signal.SIGTERM)
             try:
@@ -118,6 +134,13 @@ def test_service_end_to_end(
                 watcher.close()
         assert service.returncode == 0, errors.decode()
         assert b"Traceback" not in errors
+    # the controls that add contacts keep their own record: neither document removes the other's
+    state = json.loads((tmp_path / "state" / "state.json").read_text(encoding="utf-8"))
+    assert state["ha_components"]["radio"] == "binary_sensor"
+    assert "add_node" not in state["ha_components"]
+    assert state["ha_components_manage_contacts"] == {"add_node": "select", "add_contact": "text"}
+    assert not state.get("ha_removed")
+    assert not state.get("ha_removed_manage_contacts")
     history = History.open(tmp_path / "state" / "history.sqlite3")
     assert history is not None
     assert {m.text for m in history.recent_messages(5)} == {"Gate open", "Hello", "status please"}

@@ -118,17 +118,21 @@ class Deduplicator:
             del self._accepted[oldest_key]
 
 
+_ROUNDING = 1e-9
+
+
 class RateLimit:
     """Token bucket over events: at most `burst` at once, refilled at `per_s` per second."""
 
-    def __init__(self, per_s: float, burst: float, now: float) -> None:
+    def __init__(self, per_s: float, burst: float, now: float, tokens: float | None = None) -> None:
+        """`tokens`: those at the start, if not a full burst."""
         if per_s <= 0.0 or burst < 1.0:
             raise ValueError(
                 f"rate limit needs a positive rate and a burst of at least 1: {per_s}, {burst}"
             )
         self._rate = per_s
         self._capacity = burst
-        self._tokens = burst
+        self._tokens = burst if tokens is None else max(0.0, min(burst, tokens))
         self._last = now
 
     def allow(self, now: float) -> bool:
@@ -143,4 +147,10 @@ class RateLimit:
         elapsed = max(0.0, now - self._last)
         self._tokens = min(self._capacity, self._tokens + elapsed * self._rate)
         self._last = max(self._last, now)
-        return self._tokens >= 1.0
+        return self._tokens >= 1.0 - _ROUNDING  # a refill to exactly 1 can come out just below
+
+    def wait_s(self, now: float) -> float:
+        """How long until there is a token; 0 if there is one."""
+        if self.ready(now):
+            return 0.0
+        return (1.0 - self._tokens) / self._rate

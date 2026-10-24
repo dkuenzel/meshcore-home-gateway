@@ -28,7 +28,9 @@ versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 | `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
 | `setting` | bridge → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
 | `homeassistant/show_hidden` | → bridge | must not be | any payload: show the contacts deleted in Home Assistant again |
+| `homeassistant/add_node` | → bridge | must not be | the label of a heard node, as Home Assistant's select offers it: add it to the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/config` | bridge → | no | Home Assistant discovery; `<node_id>` as configured, `-` included |
+| `<prefix>/device/meshcore_home_gateway_<node_id>/manage_contacts/config` | both | no | discovery of the controls that add contacts, on the gateway's device ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/contact_<key>/config` | both | no | discovery of each contact's device ([home-assistant.md](home-assistant.md#contacts)); the gateway reads it to notice a device deleted in Home Assistant |
 
 Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are always present.
@@ -228,7 +230,8 @@ empty retained message, also if that happened while the gateway was stopped.
 ```
 
 The index lists the contacts most recently heard first, up to 32 KiB. `max` is the radio's table
-size; `manage` whether the gateway takes add and remove requests (`[contacts] manage`). `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
+size; `manage` whether the gateway takes add and remove requests: `[contacts] manage`, and,
+once the radio is known, firmware the gateway is tested with or `radio.profile.manage = "always"`. `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
 (flag 0x10; the gateway never sets it, remove such contacts), `advert_position` companions whose
 adverts carried a position, which everyone in range can read.
 
@@ -248,7 +251,7 @@ adverts carried a position, which everyone in range can read.
 | `type` | `chat` (a companion: someone's radio), `repeater`, `room`, `sensor` |
 | `flags` | `favourite`, `telemetry_base`, `telemetry_location`, `telemetry_environment` (what this contact may request from the gateway's radio), `remote_cli`; unknown bits as one hex value |
 | `protected` | a configured contact target or command sender ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
-| `removable` | a remove request would be taken: contacts are managed, and this one is not protected |
+| `removable` | a remove request would be taken: `manage` of the index, and this contact is not protected |
 | `verified` | the radio holds the time of a signed advert of this key, so name and type are the key holder's own: a node the gateway heard advertising is `true` at once; one it had not heard (added from a link, a card or a bare key) is `false` until its first advert |
 | `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods |
 | `last_advert_at` | the contact's clock at its newest advert |
@@ -337,14 +340,20 @@ gateway is offline is lost (clean session), and a stop drops those still queued.
   3 room server, 4 sensor; without one a companion);
 * a contact card: `meshcore://` and the hex of an advert packet, as the app exports a contact.
 
-`contacts/<key>/remove` takes any payload; `<key>` is the full key in lower-case hex. Either
+`homeassistant/add_node` takes the label of a heard node, `<first 12 key digits>…<last 8> <name>`
+(room servers and sensors with ` (room)` or ` (sensor)` added), as the select *Add heard node* of
+Home Assistant offers it; the gateway resolves the digits among
+the nodes it heard and the contacts (the name is not compared), and adds the node with its own
+advert. It is subscribed only with Home Assistant's discovery on.
+
+`contacts/<key>/remove` takes any payload; `<key>` is the full key in lower-case hex. Each
 request may be a JSON object instead (its first character `{`): `{"contact": "…", "id": "…"}` and
 `{"id": "…"}`. The `id` (1 to 64 of `A-Z a-z 0-9 . _ : -`) comes back in the request's result;
 without one the gateway makes one of 8 hex digits. Other keys are ignored.
 
 A request is checked at once, in this order: size (1 KiB), UTF-8, the JSON envelope, retained,
-the key or text, `[contacts] manage`, the gateway's own key, protected (remove), and a free place
-in the queue (8 requests wait at most). Then one at a time: the radio must be connected and on
+the key, text or label, `[contacts] manage`, the gateway's own key, protected (remove), and a free
+place in the queue (8 requests wait at most). Then one at a time: the radio must be connected and on
 tested firmware (as the managed profile: `radio.profile.manage = "always"` allows any), a token
 of the radio-work budget is taken (10 at once, then 1 a minute: every request that reaches the
 radio reads its table), the table is read again if it changed, and the rules apply to it. A
@@ -372,6 +381,7 @@ signature is not checked. A bare key without a name gets its first 12 digits.
 | `invalid_link` | add | no key, contact link or contact card (an empty text too) |
 | `unsupported_link` | add | another `meshcore://` link (channels are not managed) |
 | `unsupported_type` | add | a type other than 1 to 4 |
+| `unknown_node` | add | the label names no heard node or contact, or more than one |
 | `unknown_contact` | remove | the topic level is no key as the gateway writes it, or the contact is not in the table |
 | `management_off` | both | `[contacts] manage = false` |
 | `own_key` | add | the gateway's own key (its link pasted back) |
@@ -472,6 +482,7 @@ topic write meshcore/radio1/contacts/+/send
 topic write meshcore/radio1/add_contact
 topic write meshcore/radio1/contacts/+/remove
 topic write meshcore/radio1/homeassistant/show_hidden
+topic write meshcore/radio1/homeassistant/add_node
 
 user alarm-script
 topic write meshcore/radio1/send/alerts

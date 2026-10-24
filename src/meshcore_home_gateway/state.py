@@ -117,18 +117,19 @@ class AnnouncedComponents:
     received one (it may be down, or the broker), and sending one again does no harm.
     """
 
-    _KEY = "ha_components"
-    _REMOVED = "ha_removed"  # key -> {"p": platform, "since": unix time}
-
-    def __init__(self, store: JsonStateFile) -> None:
+    def __init__(self, store: JsonStateFile, document: str | None = None) -> None:
+        """`document`: another discovery document of the gateway's device (its object ID)."""
         self._store = store
+        suffix = f"_{document}" if document else ""
+        self._key = f"ha_components{suffix}"
+        self._removed = f"ha_removed{suffix}"  # key -> {"p": platform, "since": unix time}
 
     def replace(self, current: Mapping[str, str], now: float) -> dict[str, str]:
         """Store the current components; return the pending removals (key -> platform)."""
         data = self._store.load()
-        previous = _string_map(data.get(self._KEY))
+        previous = _string_map(data.get(self._key))
         removed: dict[str, dict[str, Any]] = {}
-        raw = data.get(self._REMOVED)
+        raw = data.get(self._removed)
         for key, entry in raw.items() if isinstance(raw, dict) else ():
             if (
                 isinstance(entry, dict)
@@ -143,9 +144,9 @@ class AnnouncedComponents:
             key: entry for key, entry in removed.items()
             if key not in current and now - entry["since"] < REMOVAL_KEEP_S
         }  # fmt: skip
-        if previous != current or data.get(self._REMOVED, {}) != removed:
-            data[self._KEY] = dict(current)
-            data[self._REMOVED] = removed
+        if previous != current or data.get(self._removed, {}) != removed:
+            data[self._key] = dict(current)
+            data[self._removed] = removed
             try:
                 self._store.save(data)
             except OSError as exc:  # pending removals come back from `previous` next time

@@ -49,6 +49,9 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `binary_sensor.meshcore_home_gateway_radio1_remote_cli` | problem, diagnostic | a contact may use the radio's command line over the air; attribute `contacts` ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
 | `binary_sensor.meshcore_home_gateway_radio1_advert_position` | problem, diagnostic | a companion's adverts carry its position, which everyone in range can read; attribute `contacts` |
 | `button.meshcore_home_gateway_radio1_show_hidden` | configuration | shows the contacts deleted in Home Assistant again (next section) |
+| `select.meshcore_home_gateway_radio1_add_node` | select, configuration | *Add heard node*: adds the heard node picked to the radio ([below](#adding-and-removing-contacts)) |
+| `text.meshcore_home_gateway_radio1_add_contact` | text, configuration | *Add contact (key or link)*: adds the contact of a public key or contact link |
+| `binary_sensor.meshcore_home_gateway_radio1_look_alike` | problem, diagnostic | a heard node has the first 6 key bytes of a contact, a protected key or another heard node, so the radio could not tell them apart; attributes `nodes` (at most 16 keys) and `total` |
 | `sensor.meshcore_home_gateway_radio1_profile` | enum, diagnostic: `ok`, `written`, `drift`, `differs`, `problem` | the managed radio profile at the last connect; the `settings` document as attributes ([configuration.md](configuration.md#radioprofile)) |
 | `event.meshcore_home_gateway_radio1_setting` | event: `written`, `failed`, `not_taken`, `not_converging`, `drift` | a radio setting set, refused, not taken, given up or found changed |
 | `sensor.meshcore_home_gateway_radio1_uptime`, `..._packets_received`, `..._packets_sent`, `..._receive_errors` | diagnostic | the radio's uptime and packet counters; disabled until enabled in Home Assistant |
@@ -60,9 +63,10 @@ devices, but the entity IDs of the one announced second end in `_2`; pick node I
 more than that. Node IDs and aliases that Home Assistant would shorten further (a trailing `-` or
 `_`, two of them in a row) are refused by the configuration check.
 
-All entities share the gateway's availability topic and turn `unavailable` when it is offline.
-The state values come from retained documents, so they are back right after a restart of either
-side.
+All entities share the gateway's availability topic and turn `unavailable` when it is offline;
+the controls that change the radio's contacts also while the radio is not connected or contact
+management is off (also on untested firmware). The state values come from retained documents, so they are back right after a
+restart of either side.
 
 ## Contacts
 
@@ -81,10 +85,11 @@ from its own name, not from a placeholder. The entities, for a companion named *
 | `sensor.mesh_alice_hops` | diagnostic | repeaters the last packet passed (*unknown*: direct, or not known) |
 | `sensor.mesh_alice_snr` | signal strength (dB), diagnostic | its signal-to-noise ratio |
 | `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | the contact's position; only once one is known |
+| `button.mesh_alice_remove` | configuration | *Remove from radio* ([below](#adding-and-removing-contacts)); `unavailable` for a contact target or command sender |
 
 Components exist only where they have data: repeaters and sensors get no notify and message
 entities, room servers no notify entity, and the tracker appears with the first position (today
-from the contact's adverts, later from telemetry). A component, once there, stays as long as the
+from the contact's adverts, later from telemetry). Every contact has the remove button. A component, once there, stays as long as the
 contact does (Home Assistant would clear the whole device when the gateway removed a disabled
 one). The tracker is the only entity with coordinates,
 so Home Assistant's map shows each contact once; it turns `unavailable` while no position is known.
@@ -107,12 +112,92 @@ so Home Assistant's map shows each contact once; it turns `unavailable` while no
 * A contact device whose entity was disabled by hand: removing it makes Home Assistant log
   *No device components to cleanup*, which is harmless.
 
+## Adding and removing contacts
+
+The gateway adds contacts to the radio and removes them on request, so a new handheld needs
+neither a phone app nor a PC
+([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)). With
+`[contacts] manage = false` the controls stay and are `unavailable`, and so they are while the
+radio runs firmware the gateway is not tested with (as for the managed profile;
+`radio.profile.manage = "always"` allows any). Every request ends in an
+event of *Contact* (`event.meshcore_home_gateway_radio1_contact`): `added` or `removed`, or
+`refused` or `failed` with a `reason` ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
+
+**Add a node that advertised.** Bob sends an advert from his handheld. Within half a minute the
+gateway's device offers him in *Add heard node*, as `b0b0b0b0b0b0…12121212 Bob`: the first 12 and
+the last 8 digits of his key, then his name; room servers and sensors end in ` (room)` or
+` (sensor)`. Compare the digits with his screen and pick him. The
+radio gets his record as it heard it, signed by his key; his device appears within seconds, with
+`notify.mesh_bob`. The select offers the 20 most recently heard companions, room servers and
+sensors, ordered by name; repeaters only by key or link. Nodes whose first 6 key bytes another
+node has are not offered: *Look-alike node heard* names them. The select shows nothing chosen
+after a pick, so the same choice can be made again.
+
+**Add by key or link.** Paste a public key (64 hex digits) or a contact link
+(`meshcore://contact/add?…`, the text of a MeshCore QR code, for example read with the phone's
+camera) into *Add contact (key or link)*. Home Assistant refuses other text before it sends it.
+A link's name and type are claims until the node's first advert replaces them; a key without a
+name gets its first 12 digits. Contact cards (`meshcore://` and the hex of an advert) are not
+taken: the field ends at 255 characters, and a card cut there would still be read, with a cut
+name. Add them with `meshcore-home-gateway contacts add`. The field can keep the text after
+sending; clear it before the next one.
+
+**Remove.** *Remove from radio* on the contact's device page (*Configuration*). It is
+`unavailable` for a contact target or command sender (protected), with management off or on
+untested firmware, and while the radio or the gateway is away. After a removal the radio drops the node's direct messages, messages queued to
+it fail with `unknown_contact`, and its device goes; while it counts as heard, it is offered again
+in *Add heard node*, and adding it back restores the device with its name, area and labels.
+*Delete* on the device page is something else: it hides the contact in Home Assistant only
+([Contacts](#contacts)), and the contact stays on the radio.
+
+**The gateway in the MeshCore app.** The radio drops direct messages from nodes it has not
+added, and the app on a phone does the same: the phone's owner adds the gateway by scanning its
+contact link as a QR code. The link is the attribute `contact_link` of
+`binary_sensor.meshcore_home_gateway_radio1_radio`; a Markdown card shows it:
+
+```yaml
+type: markdown
+title: Add the gateway in the MeshCore app
+content: >-
+  {% set link = state_attr('binary_sensor.meshcore_home_gateway_radio1_radio', 'contact_link') %}
+  {% if link %}<ha-qr-code data="{{ link | e }}" scale="4"></ha-qr-code>{% else %}The radio is not
+  known yet.{% endif %}
+```
+
+The link carries the radio's name and key, no position, and adding it needs no airtime. The
+command line prints it too: `meshcore-home-gateway contacts link`.
+
+**On a dashboard.** The device page presses *Remove from radio* without asking; on a dashboard the
+button's row can ask first, and like the device page it cannot be pressed while the button is
+`unavailable`:
+
+```yaml
+type: entities
+title: Mesh contacts
+entities:
+  - entity: select.meshcore_home_gateway_radio1_add_node
+  - entity: text.meshcore_home_gateway_radio1_add_contact
+  - entity: button.mesh_bob_remove
+    name: Remove Bob from the radio
+    confirmation:
+      text: Remove Bob from the radio? His direct messages are dropped until he is added again.
+```
+
+Keep the button's own row: a row of `type: button` with a `tap_action` stays pressable while the
+button is `unavailable`, asks, and then does nothing.
+
+**Who may.** Anyone who can use these controls changes the radio's table: in Home Assistant every
+user can press a button and set a select or text. The broker's ACL decides which clients may write
+the topics ([mqtt-api.md](mqtt-api.md#securing-the-broker)); `manage = false` switches the
+requests off for all of them.
+
 ## What reaches Home Assistant
 
 | MQTT | In Home Assistant |
 | --- | --- |
 | `state`: `radio`, `battery_v`, `airtime_1h_s`, `airtime_available_s`, `queue` | the sensors above |
-| `state`: `radio_name`, `public_key`, `model`, `firmware`, `frequency_mhz`, `bandwidth_khz`, `spreading_factor`, `coding_rate`, `tx_power_dbm`, `version` | attributes of the radio link (`version` as `bridge_version`) |
+| `state`: `radio_name`, `public_key`, `model`, `firmware`, `frequency_mhz`, `bandwidth_khz`, `spreading_factor`, `coding_rate`, `tx_power_dbm`, `contact_link`, `version` | attributes of the radio link (`version` as `bridge_version`) |
+| `state`: `radio`; `contacts`: `manage`; `contacts/<key>`: `removable` | whether the controls that change the contacts are available |
 | `state`: `airtime_budget_s_per_hour` | attribute of *Airtime available* |
 | `received`, `delivery`, `command` | every key becomes an attribute of the event entity, also the nested `command` object |
 | `rx`: `rssi_dbm`, `snr_db` | the packet sensors; `raw`, `length` and `received_at` stay on MQTT |
@@ -120,10 +205,12 @@ so Home Assistant's map shows each contact once; it turns `unavailable` while no
 | `stats`: `noise_floor_dbm`, `tx_airtime_1h_s`, `uptime_s`, `packets_received`, `packets_sent`, `receive_errors` | the radio's sensors; `tx_airtime_window_s`, `airtime_factor`, `duty_cycle_percent` as attributes of *Radio transmit time last hour* |
 | `contacts`: `total`, `max`, `remote_cli…`, `advert_position…` | *Contacts* and the two problem sensors |
 | `nodes`: `total` | *Nodes heard* |
+| `nodes`: `look_alike`, `look_alike_total` | *Look-alike node heard* |
 | `contact`, `node` | the events *Contact* and *New node* |
 | `contacts/<key>` | a contact's sensors and tracker |
 | `contacts/<key>/received`, `contacts/<key>/send` | a contact's message event and notify entity |
 | `homeassistant/show_hidden` | the button *Show hidden contacts* |
+| `homeassistant/add_node`, `add_contact`, `contacts/<key>/remove` | *Add heard node*, *Add contact (key or link)*, *Remove from radio* |
 | `settings`, `setting` | *Radio profile* (every key as an attribute) and the event *Radio setting* |
 
 An entities card shows an attribute, such as the text of the last message, without YAML.
@@ -218,6 +305,18 @@ test without Home Assistant, in the gateway's container:
   bring the device back for a moment and log *Unable to remove unknown dispatcher*, which is
   harmless. The state file keeps the announced devices, the pending removals, the hidden contacts
   and the slugs of the entity IDs.
+* The select and the text that add contacts have a discovery topic of their own on the gateway's
+  device, `homeassistant/device/meshcore_home_gateway_radio1/manage_contacts/config`: the select's
+  options exist only in discovery and follow the heard nodes, at most every 30 seconds, at once
+  when a contact joined or left the table (as after an add or a removal), and at most 70 times in
+  an hour, 2 more for each start of the gateway: Home Assistant warns from the 101st change of an
+  entity's capabilities within an hour. In the first minutes after a start, and after many
+  changes, a change can wait up to a minute.
+  While the broker is away they wait; the announcement after the reconnect sends the current
+  ones, or, with no change left in the budget, those sent before, and the current ones within a
+  minute. Home Assistant
+  keeps the entity when its options change. The gateway watches that topic like its own and
+  announces again when Home Assistant clears it.
 * To retire the gateway, stop it (or set `homeassistant.discovery = false`), then delete its
   device and its contacts' devices in Home Assistant.
 * Events are never retained: Home Assistant ignores replayed retained events.
@@ -232,8 +331,9 @@ integration of the release pinned in
 [`home-assistant/requirements.in`](../home-assistant/requirements.in): the entity IDs above, the
 device pages, sensors and attributes, availability, the removal of components and of contact
 devices (also after a restart of Home Assistant), a device deleted by the user, the map, the
-Markdown card and the two actions of the first steps, and the examples below, exactly as written
-here (`make ha-test`, [testing.md](testing.md)).
+controls that add and remove contacts, the Markdown cards, the actions of the first steps and the
+dashboard, and the examples below, exactly as written here (`make ha-test`,
+[testing.md](testing.md)).
 
 ## Examples
 
@@ -300,6 +400,32 @@ mode: queued
 
 Do not report a failed delivery over the mesh to the same target: when the radio cannot reach it,
 the report fails too and uses airtime.
+
+Get told when a contact was not added or removed (a node already on the radio is left out):
+
+```yaml
+alias: Mesh contact not changed
+triggers:
+  - trigger: event.received
+    target:
+      entity_id: event.meshcore_home_gateway_radio1_contact
+    options:
+      event_type: [refused, failed]
+conditions:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.reason != 'already_contact' }}"
+actions:
+  - action: persistent_notification.create
+    data:
+      title: Mesh contact not changed
+      message: >-
+        {% set a = trigger.to_state.attributes %}
+        {{ a.request }} {{ a.prefix or 'no key' }}: {{ a.reason }}
+mode: queued
+```
+
+A notification renders Markdown, so the message has only machine values: the name a node claims
+would be markup.
 
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.

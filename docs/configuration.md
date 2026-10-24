@@ -183,7 +183,7 @@ a file that is not a database is moved aside to `history.sqlite3.corrupt`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `manage` | `true` | add and remove contacts on request: from the command line (`meshcore-home-gateway contacts`) and MQTT ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)). A contact grants no rights; contact targets and command senders are never removed |
+| `manage` | `true` | add and remove contacts on request: from Home Assistant ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), the command line (`meshcore-home-gateway contacts`) and MQTT ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)). A contact grants no rights; contact targets and command senders are never removed. With `false` the controls in Home Assistant are `unavailable` |
 
 Who may send the requests is the broker's ACL to decide ([mqtt-api.md](mqtt-api.md#securing-the-broker)).
 Contacts are written only on tested firmware, like the managed profile; `radio.profile.manage =

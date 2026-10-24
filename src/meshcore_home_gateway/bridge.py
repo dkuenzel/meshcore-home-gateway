@@ -51,8 +51,12 @@ from meshcore_home_gateway.core.model import (
 )
 from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
-from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
+from meshcore_home_gateway.mqtt.contact_devices import (
+    ContactDevices,
+    contact_discovery_subscription,
+)
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
+from meshcore_home_gateway.mqtt.manage_entities import ManageEntities, manage_topic
 from meshcore_home_gateway.mqtt.payloads import (
     command_payload,
     delivery_payload,
@@ -202,6 +206,7 @@ class Bridge:
         observer: Observer | None = None,
         devices: ContactDevices | None = None,
         profile: RadioProfile | None = None,
+        manage_components: AnnouncedComponents | None = None,
     ) -> None:
         self.config = config
         self._components = components
@@ -222,6 +227,14 @@ class Bridge:
         self._profile = profile  # the managed radio profile (ADR 0020)
         if devices is not None:
             self.observer.on_contacts.append(devices.update)
+        self._manage: ManageEntities | None = None  # Home Assistant's controls to add contacts
+        if config.homeassistant.discovery:
+            self._manage = ManageEntities(
+                config, self.topics, bus, self.observer.mesh, records=manage_components,
+                protected=protected_keys(config), monotonic=monotonic, wall_clock=wall_clock,
+                connected=lambda: bus.connected,
+            )  # fmt: skip
+            self.observer.on_nodes.append(self._manage.nodes_changed)
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
         self._contacts = ContactManager(
             config, self.observer, self._events, self.live_session,
@@ -329,6 +342,9 @@ class Bridge:
                 delay = RECONNECT_MIN_S
                 max_contacts = self._radio_info.device.max_contacts
                 self._observe(self.observer.radio_connected, max_contacts, session.tuning)
+                # untested firmware takes no request: the documents and the controls say so
+                takes = self._contacts.takes_requests(self._radio_info)
+                self._observe(self.observer.set_manage, takes)
                 for report in self._profile.take_reports() if self._profile else []:
                     self._observe(self.observer.profile_applied, report)
                 self._check_radio(session)
@@ -904,10 +920,11 @@ class Bridge:
         self._publish_announcements()
 
     def _ha_device_message(self, topic: str, payload: bytes, retained: bool) -> None:
-        """A message on a discovery topic of the gateway. An empty one on its own device's topic
-        comes from Home Assistant, which clears it when it removes a disabled entity (or the user
-        deletes the device): the entities come back with the next announcement."""
-        if topic != discovery_topic(self.config):
+        """A message on a discovery topic of the gateway. An empty one on a topic of its own
+        device (the main document, the controls that add contacts) comes from Home Assistant,
+        which clears it when it removes a disabled entity (or the user deletes the device): the
+        entities come back with the next announcement."""
+        if topic not in (discovery_topic(self.config), manage_topic(self.config)):
             if self._devices is not None:
                 self._observe(self._devices.discovery_message, topic, payload, retained)
             return
@@ -933,6 +950,8 @@ class Bridge:
                 self._bus.publish(topic, encode(bind))
             document = discovery_payload(self.config, self.topics, info, self._removed)
             self._bus.publish(topic, encode(document))
+            if (manage := self._manage) is not None:
+                self._observe(manage.announce)
             self._announced = _identity(self._radio_info)
             if (devices := self._devices) is not None:
                 self._observe(lambda: devices.announce_all(birth=birth))
@@ -949,6 +968,16 @@ class Bridge:
     def _announce_due(self) -> None:
         birth, self._reannounce = self._reannounce_birth, None
         self._publish_announcements(birth=birth)
+
+
+def ha_device_topics(config: Config) -> list[str]:
+    """The gateway's discovery topics it watches, to notice what Home Assistant clears there:
+    its own, and either the contact devices' (whose subscription takes the controls' topic, one
+    level below the gateway's device too) or the controls' alone."""
+    if not config.homeassistant.discovery:
+        return []
+    below = contact_discovery_subscription(config) if config.homeassistant.contact_devices else None
+    return [discovery_topic(config), below or manage_topic(config)]
 
 
 def protected_keys(config: Config) -> frozenset[str]:

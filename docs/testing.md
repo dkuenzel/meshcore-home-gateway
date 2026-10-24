@@ -21,7 +21,8 @@ make ha-test     # the gateway's documents in a real Home Assistant (needs Pytho
 ```
 
 `home-assistant/tests/test_contract.py` feeds the discovery document, the state document and the
-event payloads into the MQTT integration of the Home Assistant release that
+event payloads, `test_contact_devices.py` the contacts' devices and `test_manage_contacts.py` the
+controls that add and remove contacts into the MQTT integration of the Home Assistant release that
 `pytest-homeassistant-custom-component` pins (`home-assistant/requirements.in`; the environment is
 installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-homeassistant`, about
 900 MB). It checks what [home-assistant.md](home-assistant.md) promises, including the example
@@ -32,18 +33,18 @@ home-assistant.md.
 
 | Suite | Files | Needs |
 | --- | --- | --- |
-| Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py` | nothing |
+| Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py` | nothing |
 | Architecture | `tests/test_architecture.py` (the core and the codec import no I/O modules, ADR 0007) | nothing |
-| Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source) | nothing |
-| Radio session and bridge | `tests/test_session.py`, `test_bridge.py` (emulated radio) | nothing |
+| Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source), `test_packet.py`, `test_links.py` | nothing |
+| Radio session and bridge | `tests/test_session.py`, `test_bridge.py`, `test_observer.py`, `test_contact_manager.py`, `test_profile.py` (emulated radio) | nothing |
 | MQTT | `tests/test_mqtt_client.py` | `mosquitto` for the tests marked `broker` |
-| Home Assistant discovery, payloads | `tests/test_discovery.py`, `test_payloads.py` | nothing |
+| Documents, Home Assistant discovery, payloads | `tests/test_views.py`, `test_discovery.py`, `test_payloads.py`, `test_contact_devices.py`, `test_manage_entities.py` | nothing |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
-| Configuration, state, packaging | `tests/test_config.py`, `test_state.py`, `test_build_pyz.py`, `test_release_notes.py` | nothing |
-| CLI | `tests/test_cli.py` | `mosquitto` for the tests marked `broker` |
+| Configuration, state, history, packaging | `tests/test_config.py`, `test_state.py`, `test_history.py`, `test_build_pyz.py`, `test_release_notes.py` | nothing |
+| CLI | `tests/test_cli.py`, `test_cli_contacts.py` | `mosquitto` for the tests marked `broker` |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
-| Documentation | `tests/test_docs.py` (relative links and headings in every Markdown file) | nothing |
+| Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py` | nothing |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
@@ -77,7 +78,10 @@ version, and record the firmware versions, radio models and results in the pull 
 (the `pct` part), 19 and 20 apply to the Proxmox installer only.
 
 Setup: radio **A** on the gateway (USB), radio **B** as a handheld or phone companion in range,
-both on the same channel settings; B knows A as a contact and the reverse.
+both on the same channel settings; B knows A as a contact and the reverse. Steps 21–28 add and
+remove B: for them take B out of `[targets]` and `commands.senders` and restart the service,
+because the gateway never removes a contact target or command sender (and the managed profile
+adds it back).
 
 | # | Step | Expected |
 | --- | --- | --- |
@@ -107,3 +111,5 @@ both on the same channel settings; B knows A as a contact and the reverse.
 | 24 | Fill the table (or use a radio with a small table) with overwrite off; add one more | `refused` `table_full` before anything is written; with the profile only observing and overwrite on, the same |
 | 25 | Scan the QR code of the gateway's `contact_link` with the MeshCore app | the app adds the gateway as a companion; nothing is written to A |
 | 26 | After the add of step 21, replay one of B's older adverts (a second radio with a captured packet, test radio only) | the radio drops it; after a removal, B's next advert arrives as a new node |
+| 27 | In Home Assistant, with B not a contact of A (`contacts remove` it first, check with `contacts list`): B advertises; pick B in *Add heard node* on the gateway's device; then *Remove from radio* on B's device; then paste B's contact link into *Add contact (key or link)* | B is offered within 30 s with the first 12 and last 8 digits of its key; `added`, B's device appears; `removed`, the device goes and B is offered again; `added` once more. With `[contacts] manage = false` all three are `unavailable` |
+| 28 | Add the QR card and the dashboard row of home-assistant.md with B's entity ID; press the row's button; add B again, set `[contacts] manage = false` and restart | the card shows a QR code (step 25 scans it); the row asks before it removes, and after the removal it says that the entity is missing; with management off the row's button is disabled |

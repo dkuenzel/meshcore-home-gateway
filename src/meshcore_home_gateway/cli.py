@@ -192,11 +192,12 @@ def _contacts_parser(commands: argparse._SubParsersAction[argparse.ArgumentParse
     add = contacts_command("add", "add a contact to the radio", _contacts_add)
     add.add_argument(
         "contact", help="a public key (64 hex digits), a heard node as KEY12…KEY8 (the first 12 "
-        "and the last 8 digits of its key), a contact link or a contact card",
+        "and the last 8 digits of its key, the name after them optional, as Home Assistant lists "
+        "it), a contact link or a contact card",
     )  # fmt: skip
     add.add_argument("--wait", type=_wait_seconds, default=30.0, metavar="SECONDS", help=wait_help)
     remove = contacts_command("remove", "remove a contact from the radio", _contacts_remove)
-    remove.add_argument("contact", help="its public key, or KEY12…KEY8")
+    remove.add_argument("contact", help="its public key, or KEY12…KEY8 (a name may follow)")
     remove.add_argument(
         "--wait", type=_wait_seconds, default=30.0, metavar="SECONDS", help=wait_help
     )
@@ -217,16 +218,14 @@ def _run(args: argparse.Namespace) -> int:
 async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.bridge import (  # noqa: PLC0415 - light start
         Bridge,
+        ha_device_topics,
         protected_keys,
         protected_names,
     )
     from meshcore_home_gateway.history import History, Retention  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
-    from meshcore_home_gateway.mqtt.contact_devices import (  # noqa: PLC0415
-        ContactDevices,
-        contact_discovery_subscription,
-    )
-    from meshcore_home_gateway.mqtt.discovery import discovery_topic  # noqa: PLC0415
+    from meshcore_home_gateway.mqtt.contact_devices import ContactDevices  # noqa: PLC0415
+    from meshcore_home_gateway.mqtt.manage_entities import OBJECT_ID  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
     from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
     from meshcore_home_gateway.radio.profile import RadioProfile  # noqa: PLC0415
@@ -246,12 +245,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
     ha = config.homeassistant
     ha_status = ha.status_topic if ha.discovery else None
-    watch: list[str] = []  # what Home Assistant clears on the gateway's discovery topics
-    if ha.discovery:
-        watch.append(discovery_topic(config))
-        if ha.contact_devices:
-            watch.append(contact_discovery_subscription(config))
-    bus = MqttBus(config.mqtt, topics, ha_status, ha_devices=watch)
+    bus = MqttBus(config.mqtt, topics, ha_status, ha_devices=ha_device_topics(config))
     store = JsonStateFile(state_dir / "state.json")
     history = None
     if config.history.enabled:
@@ -272,7 +266,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     bridge = Bridge(
         config, bus, lambda: transport_for(config), CommandLedger(store),
         components=AnnouncedComponents(store), observer=observer, devices=devices,
-        profile=profile,
+        profile=profile, manage_components=AnnouncedComponents(store, OBJECT_ID),
     )  # fmt: skip
     try:
         await bridge.run(stop)
@@ -912,7 +906,8 @@ def _listen(args: argparse.Namespace) -> int:
 
 RETAINED_WAIT_S = 2.0  # for the gateway's retained documents; brokers send them on SUBACK
 _FULL_KEY = re.compile(r"[0-9a-fA-F]{64}")
-_LABEL = re.compile(r"([0-9a-fA-F]{12})(?:…|\.\.\.)([0-9a-fA-F]{8})")  # as HA lists heard nodes
+# a heard node as Home Assistant's select lists it, the name after the digits optional
+_LABEL = re.compile(r"([0-9a-fA-F]{12})(?:…|\.\.\.)([0-9a-fA-F]{8})(?: .*)?")
 
 
 class _Retained:

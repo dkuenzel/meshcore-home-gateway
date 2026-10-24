@@ -142,3 +142,33 @@ def test_a_rate_limit_can_be_asked_without_taking_a_token() -> None:
     assert limit.allow(0.0)
     assert not limit.ready(0.5)
     assert limit.ready(1.0)
+
+
+def test_a_rate_limit_says_how_long_until_its_next_token() -> None:
+    limit = RateLimit(per_s=0.5, burst=2.0, now=0.0)
+    assert limit.wait_s(0.0) == 0.0
+    assert limit.allow(0.0)
+    assert limit.allow(0.0)
+    assert limit.wait_s(0.0) == pytest.approx(2.0)
+    assert limit.wait_s(1.5) == pytest.approx(0.5)
+    assert limit.wait_s(2.0) == 0.0
+
+
+def test_a_rate_limit_can_start_with_fewer_tokens_than_its_burst() -> None:
+    limit = RateLimit(per_s=1.0, burst=10.0, now=0.0, tokens=2.0)
+    assert limit.allow(0.0)
+    assert limit.allow(0.0)
+    assert not limit.allow(0.0)
+    assert RateLimit(per_s=1.0, burst=3.0, now=0.0, tokens=9.0).wait_s(0.0) == 0.0
+
+
+def test_a_token_refilled_to_its_rounding_counts() -> None:
+    """Waiting exactly the time wait_s() names gives the token, also when the sum rounds just
+    below 1 (here to 0.9999999999999987): a timer set for that wait must not find it missing
+    again, with a wait too short to move the clock."""
+    start = 2102.857904154225
+    limit = RateLimit(per_s=1 / 60, burst=10.0, now=start, tokens=0.2586578335426704)
+    now = start + limit.wait_s(start)
+    assert limit.wait_s(now) == 0.0
+    assert limit.allow(now)
+    assert limit.wait_s(now) > 1.0

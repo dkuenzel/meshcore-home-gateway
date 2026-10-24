@@ -160,6 +160,22 @@ format and the command line are public interfaces.
   new `refused` (nothing was written) or `failed`; every `contact` event now carries `prefix`,
   `request`, `id` and `reason`. A queue of 8 requests and a budget of radio work (10, then 1 a
   minute) bound the radio's load; refusals are limited like those of send requests.
+- Contact management in Home Assistant (docs/home-assistant.md): on the gateway's device the
+  select *Add heard node* (the 20 most recently heard companions, room servers and sensors that
+  are no look-alikes, as `<first 12 key digits>…<last 8> <name>`, rooms and sensors marked) and
+  the text *Add contact (key or link)*, in a discovery document of their own
+  (`…/manage_contacts/config`); *Remove from radio* on every contact's device; the problem sensor
+  *Look-alike node heard*; the attribute `contact_link` of the radio link, with a QR card for the
+  MeshCore app. The controls are available while the radio is connected and management is on (a
+  remove button not for a protected contact); `contacts.manage` and `contacts/<key>.removable` are
+  now `false` on firmware the gateway is not tested with, unless `radio.profile.manage =
+  "always"`. The select's options change at most every 30 seconds (at once after an add or a
+  removal) and 70 times an hour (2 more for each start of the gateway), below Home Assistant's
+  warning limit. New request topic `homeassistant/add_node` (the select's label; refused
+  `unknown_node` when it names no heard node or contact), subscribed with Home Assistant's
+  discovery; `contacts add` and `remove` take a label with the name after it, as the select
+  lists it. Examples: a dashboard row that asks
+  before it removes, an automation that reports refused and failed requests.
 - `meshcore-home-gateway contacts list|add|remove|link`: through the broker, with the full key
   shown to compare; a heard node is named by its first 12 and last 8 key digits, never by a bare
   prefix. `listen --topic contact|node`.

@@ -36,7 +36,7 @@ class LinkContact:
     public_key: str  # 64 lower-case hex digits
     name: str | None  # claimed; None: none given
     node_type: int  # claimed; 1 for a bare key
-    source: str  # "key", "link" or "card"
+    source: str  # "key", "link" or "card"; "heard" for a heard node picked by its label
 
 
 def parse_contact_text(text: str) -> LinkContact:

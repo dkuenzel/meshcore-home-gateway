@@ -43,10 +43,11 @@ class SendRequest:
 class ContactRequest:
     """A request to change the radio's contact table (ADR 0017)."""
 
-    kind: str  # "add" (add_contact) or "remove" (contacts/<key>/remove)
+    kind: str  # "add" (add_contact, homeassistant/add_node) or "remove" (contacts/<key>/remove)
     payload: bytes
     retained: bool
     key: str | None = None  # remove: the topic's <key> level, as it came
+    node_label: bool = False  # add: the text is the label of a heard node (add_node)
 
 
 class PahoLike(Protocol):
@@ -201,8 +202,9 @@ class MqttBus:
         ]  # fmt: skip
         if self._ha_status:
             subscriptions.append((self._ha_status, 1))
-        if self._ha_devices:
-            subscriptions += [(topic, 1) for topic in (*self._ha_devices, self._topics.show_hidden)]
+        if self._ha_devices:  # the requests of Home Assistant's controls, with its topics
+            ha_requests = (self._topics.show_hidden, self._topics.add_node)
+            subscriptions += [(topic, 1) for topic in (*self._ha_devices, *ha_requests)]
         client.subscribe(subscriptions)
         client.publish(self._topics.availability, ONLINE, qos=1, retain=True)
         self._call(self._handle_connected)
@@ -254,14 +256,7 @@ class MqttBus:
             ):
                 callback()
             return
-        if any(_matches(subscription, topic) for subscription in self._ha_devices):
-            for device_callback in self.on_ha_device:
-                device_callback(topic, payload, retained)
-            return
-        if self._ha_devices and topic == self._topics.show_hidden:
-            if not retained:  # a request, not a left-over
-                for callback in self.on_show_hidden:
-                    callback()
+        if self._ha_devices and self._ha_message(topic, payload, retained):
             return
         alias = self._topics.alias_from_send_topic(topic)
         if alias is not None:
@@ -277,6 +272,24 @@ class MqttBus:
         key = self._topics.key_from_contact_topic(topic, "remove")
         if key is not None:
             self.contact_requests.put_nowait(ContactRequest("remove", payload, retained, key))
+
+    def _ha_message(self, topic: str, payload: bytes, retained: bool) -> bool:
+        """The gateway's discovery topics and the requests of Home Assistant's controls; False
+        for any other topic."""
+        if any(_matches(subscription, topic) for subscription in self._ha_devices):
+            for device_callback in self.on_ha_device:
+                device_callback(topic, payload, retained)
+        elif topic == self._topics.show_hidden:
+            if not retained:  # a request, not a left-over
+                for callback in self.on_show_hidden:
+                    callback()
+        elif topic == self._topics.add_node:  # a retained one is refused, with an event
+            self.contact_requests.put_nowait(
+                ContactRequest("add", payload, retained, node_label=True)
+            )
+        else:
+            return False
+        return True
 
 
 def _matches(subscription: str, topic: str) -> bool:

@@ -112,6 +112,8 @@ class Observer:
         self._stored_fixes: dict[str, Fix] = {}  # the newest position in the history per contact
         # called after each table read, before the topics of removed contacts are cleared
         self.on_contacts: list[Callable[[Mesh], None]] = []
+        # called whenever the heard nodes may have changed; True: a contact joined or left
+        self.on_nodes: list[Callable[[bool], None]] = []
         self._profiles: dict[str, ProfileReport] = {}  # radio key -> the profile's last report
         # contact requests whose write went out: (event type, key) -> (request, id); the table
         # read that shows the change reports it as the request's result
@@ -140,6 +142,18 @@ class Observer:
         self._tuning = tuning
         self._publish_index()
         self._publish(self._topics.stats, stats_document(self._readings, self._meter, tuning))
+
+    def set_manage(self, manage: bool) -> None:
+        """Whether add and remove requests are taken now (`[contacts] manage`, and the radio's
+        firmware): the documents say so, and Home Assistant's controls follow them. Before the
+        first table read the documents of the last run stay as they are."""
+        if manage == self.manage:
+            return
+        self.manage = manage
+        if not self._first_read:
+            for key in self.mesh.contacts:
+                self._publish_contact(key)
+            self._publish_index()
 
     def profile_applied(self, report: ProfileReport) -> None:
         """The managed profile was reconciled at a connect: the `settings` document, and an
@@ -232,6 +246,7 @@ class Observer:
     def _contacts_read(self, records: Mapping[str, codec.ContactRecord], at: float) -> None:
         before = {key: tracked.node for key, tracked in self.mesh.contacts.items()}
         change = self.mesh.contacts_read((_node(r) for r in records.values()), at)
+        joined_or_left = bool(change.added or change.removed)  # the heard nodes change with it
         if self._first_read:
             # compared with the contacts published in the last run, not with nothing: a start
             # announces only what changed while the gateway was stopped
@@ -251,7 +266,7 @@ class Observer:
             self._store_fix(key, tracked.fix)
             self._publish_contact(key)
         self._publish_index()
-        self._publish_nodes()  # a node added left them, a contact removed may be back
+        self._publish_nodes(read=joined_or_left)  # an added node left them, a removed one is back
         # last: whoever acts on the event finds the device, the documents and the recipient
         self._contact_events(change, before)
         if self._retained is not None:
@@ -277,7 +292,7 @@ class Observer:
                 tracked.first_heard = row.first_heard
         self._heard_rows = []
         self.mesh.forget_nodes(self._wall())
-        self._publish_nodes()
+        self._publish_nodes(read=True)
 
     def _contact_events(self, change: TableChange, before: Mapping[str, Node]) -> None:
         for kind, keys in (("added", change.added), ("removed", change.removed)):
@@ -372,8 +387,13 @@ class Observer:
         index = contacts_document(self.mesh, protected=self._protected, manage=self.manage)
         self._publish(self._topics.contacts, index)
 
-    def _publish_nodes(self) -> None:
+    def _publish_nodes(self, *, read: bool = False) -> None:
         self._publish(self._topics.nodes, nodes_document(self.mesh, protected=self._protected))
+        for listener in self.on_nodes:
+            try:
+                listener(read)
+            except Exception:  # a front end's bug must not stop the documents
+                log.exception("node listener failed")
 
     # --- radio ----------------------------------------------------------------------------------
 

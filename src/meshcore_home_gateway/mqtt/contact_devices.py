@@ -5,8 +5,11 @@ one level below the gateway's device ID, so one subscription sees all of them an
 one contact only. Rules checked against Home Assistant 2026.10 (home-assistant/tests):
 
 * Components only with data: a position tracker once the contact has a position, sending and
-  messages only for node types that send texts. Only the tracker carries coordinates, because the
-  map shows every entity with `latitude` and `longitude` attributes. None is disabled by default:
+  messages only for node types that send texts. The button that removes the contact from the
+  radio is on every one and available while a request would be taken (not for a protected
+  contact, not with management off, not while the radio is away). Only the tracker carries
+  coordinates, because the map shows every entity with `latitude` and `longitude` attributes.
+  None is disabled by default:
   Home Assistant clears the discovery topic itself when it removes a device with a disabled
   entity, and warns about the echo.
 * Entity IDs `<platform>.mesh_<slug>_<component>`, the slug taken from the contact's name when
@@ -57,6 +60,14 @@ _LETTERS = str.maketrans({
 })  # fmt: skip
 _OBJECT = re.compile(r"contact_([0-9a-f]{64})")
 POSITION_KNOWN = "value_json.latitude is number and value_json.longitude is number"
+# `is defined`, `is true`: a document retained by an earlier version, without the key, reads as
+# offline and logs no warning in Home Assistant (docs/platform-notes.md)
+RADIO_CONNECTED = (
+    "{{ 'online' if value_json is defined and value_json.radio == 'connected' else 'offline' }}"
+)
+REMOVABLE = (
+    "{{ 'online' if value_json is defined and value_json.removable is true else 'offline' }}"
+)
 POSITION_ATTRIBUTES = (
     "{{ ({'latitude': value_json.latitude, 'longitude': value_json.longitude, "
     "'altitude_m': value_json.altitude_m, 'position_at': value_json.position_at, "
@@ -138,6 +149,17 @@ def contact_payload(
         components["send"] = component(  # no name: the device's main feature, named like it
             "send", "notify", "", name=None, command_topic=topics.contact_send(key)
         )
+    components["remove"] = component(  # on every contact; available while it would be taken
+        "remove", "button", "_remove", name="Remove from radio",
+        command_topic=topics.contact_remove(key), payload_press="remove",
+        entity_category="config", icon="mdi:account-remove",
+        availability=[
+            {"topic": topics.availability},
+            {"topic": topics.state, "value_template": RADIO_CONNECTED},
+            {"topic": document, "value_template": REMOVABLE},
+        ],
+        availability_mode="all",
+    )  # fmt: skip
     if tracked.fix is not None or "position" in kept:
         components["position"] = component(
             "position", "device_tracker", "", name="Position", source_type="gps",

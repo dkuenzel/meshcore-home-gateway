@@ -8,6 +8,7 @@ targets are bound to the full key and a prefix must resolve to exactly one conta
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
@@ -93,3 +94,35 @@ def add_refusal(
 def remove_refusal(key: str, *, table: Iterable[str]) -> str | None:
     """Why the key cannot be removed from the radio's table as read, or None."""
     return None if key in set(table) else "unknown_contact"
+
+
+# --- labels: a node for a person to pick (Home Assistant's select, the command line) ----------
+
+LABEL_SUFFIX_HEX_DIGITS = 8
+LABEL_TYPES = frozenset({1, 3, 4})  # chat, room server, sensor: the heard nodes offered by label
+_LABEL_TYPE = {3: " (room)", 4: " (sensor)"}
+_LABEL = re.compile(r"([0-9a-fA-F]{12})(?:…|\.\.\.)([0-9a-fA-F]{8})(?: |\Z)")
+_UNSAFE = frozenset({"Cc", "Cf", "Zl", "Zp"})  # control, format (direction), line breaks
+
+
+def node_label(key: str, name: str, node_type: int) -> str:
+    """`<first 12 digits>…<last 8 digits> <name>`, with ` (room)` or ` (sensor)`: the key comes
+    first, so no name can push it aside or imitate it. A person compares both parts with the
+    node's own screen; an attacker can copy the first 6 bytes of a key, not the rest (ADR 0009)."""
+    plain = " ".join(
+        "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in name).split()
+    )
+    named = f" {plain}" if plain else ""
+    start, end = key[:PREFIX_HEX_DIGITS], key[-LABEL_SUFFIX_HEX_DIGITS:]
+    return f"{start}…{end}{named}{_LABEL_TYPE.get(node_type, '')}"
+
+
+def key_from_label(label: str, keys: Iterable[str]) -> str | None:
+    """The one key whose first 12 and last 8 digits a label names (the name after them is not
+    compared: it may have changed since); None if there is none or more than one."""
+    match = _LABEL.match(label.strip())
+    if match is None:
+        return None
+    start, end = match.group(1).lower(), match.group(2).lower()
+    found = {k for k in keys if k.startswith(start) and k.endswith(end)}
+    return found.pop() if len(found) == 1 else None

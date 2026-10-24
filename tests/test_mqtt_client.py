@@ -287,8 +287,9 @@ def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
         await bus.start()
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         subscriptions = dict(fake.calls)["subscribe"][0]
-        assert subscriptions[-3:] == [
+        assert subscriptions[-4:] == [
             (own, 1), (watch, 1), ("meshcore/radio1/homeassistant/show_hidden", 1),
+            ("meshcore/radio1/homeassistant/add_node", 1),
         ]  # fmt: skip
 
         def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
@@ -304,10 +305,18 @@ def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
         await asyncio.to_thread(deliver, "homeassistant/status", b"offline")
         await asyncio.to_thread(deliver, "meshcore/radio1/homeassistant/show_hidden", b"show")
         await asyncio.to_thread(deliver, "meshcore/radio1/homeassistant/show_hidden", b"x", True)
+        label = "b0b0b0b0b0b0…12121212 Bob".encode()  # the select's choice
+        await asyncio.to_thread(deliver, "meshcore/radio1/homeassistant/add_node", label)
+        await asyncio.to_thread(deliver, "meshcore/radio1/homeassistant/add_node", b"x", True)
         await asyncio.sleep(0.05)
         assert seen == [(device, b"", False), (device, b"", True), (own, b"", False)]
         assert (shown, offline) == ([1], [1])
         assert bus.requests.empty()
+        picked = [bus.contact_requests.get_nowait() for _ in range(2)]
+        assert picked == [
+            ContactRequest("add", label, False, node_label=True),
+            ContactRequest("add", b"x", True, node_label=True),  # refused there, with an event
+        ]  # fmt: skip
 
     asyncio.run(scenario())
 
@@ -319,6 +328,7 @@ def test_without_contact_devices_their_topics_are_not_watched() -> None:
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         topics = [topic for topic, _ in dict(fake.calls)["subscribe"][0]]
         assert "meshcore/radio1/homeassistant/show_hidden" not in topics
+        assert "meshcore/radio1/homeassistant/add_node" not in topics
         assert not any(topic.startswith("homeassistant/device") for topic in topics)
 
     asyncio.run(scenario())
