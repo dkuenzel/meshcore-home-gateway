@@ -74,8 +74,10 @@ The automated tests emulate the radio. This checklist covers what an emulator ca
 links, acknowledgements over the air, a USB cable pulled out, the watchdog of a real systemd. It is
 the same for every installation and needs no particular hardware: any two MeshCore radios with
 companion firmware will do. Run it before every release and after raising the supported firmware
-version, and record the firmware versions, radio models and results in the pull request. Steps 15
-(the `pct` part), 19 and 20 apply to the Proxmox installer only.
+version, and record the firmware versions, radio models and results in the pull request. The
+core steps 1–4, 10–12, 15, 16 and 18 test the bridge end to end and are run for every release
+(docs/development.md); the others where their feature changed. Steps 15 (the `pct` part), 19 and
+20 apply to the Proxmox installer only.
 
 Setup: radio **A** on the gateway (USB), radio **B** as a handheld or phone companion in range,
 both on the same channel settings; B knows A as a contact and the reverse. Steps 21–28 add and

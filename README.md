@@ -43,11 +43,12 @@ flowchart LR
 
 ## Status
 
-Version 0.x, alpha. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and
-Home Assistant 2026.10 (2026.8 or newer is required). The MQTT API, the configuration format and the command line may still
-change between minor versions; see [`CHANGELOG.md`](CHANGELOG.md). Every finished step is
-published as a signed pre-release on the repository's releases page; the first release follows
-the [hardware checklist](docs/testing.md#hardware-checklist).
+Version 1.0 release candidate. Developed against MeshCore companion firmware 1.18.0 (protocol
+version 3) and Home Assistant 2026.10 (2026.8 or newer is required). From 1.0.0 on, the MQTT API,
+the configuration format and the command line follow Semantic Versioning; see
+[`CHANGELOG.md`](CHANGELOG.md). Every finished step is published as a signed pre-release on the
+repository's releases page; 1.0.0 follows the
+[hardware checklist](docs/testing.md#hardware-checklist).
 
 ## Quick start
 
