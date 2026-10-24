@@ -17,11 +17,15 @@ versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 | `stats` | bridge → | yes | JSON: the radio's own measurements |
 | `contacts` | bridge → | yes | JSON index of the radio's contact table |
 | `contacts/<key>` | bridge → | yes | JSON per contact, `<key>` its full public key in lower-case hex; cleared (empty retained message) when the contact leaves the table |
+| `contacts/<key>/send` | → bridge | must not be | UTF-8 text for a companion in the contact table |
+| `contacts/<key>/received` | bridge → | no | the `received` events of messages from that contact |
 | `nodes` | bridge → | yes | JSON: nodes heard but not added |
 | `history` | bridge → | yes | JSON: the latest messages in and out |
-| `contact` | bridge → | no | JSON, `event_type` = `added` or `removed` |
+| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden` or `shown` |
 | `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
+| `homeassistant/show_hidden` | → bridge | must not be | any payload: show the contacts deleted in Home Assistant again |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/config` | bridge → | no | Home Assistant discovery; `<node_id>` as configured, `-` included |
+| `<prefix>/device/meshcore_home_gateway_<node_id>/contact_<key>/config` | both | no | discovery of each contact's device ([home-assistant.md](home-assistant.md#contacts)); the gateway reads it to notice a device deleted in Home Assistant |
 
 Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are always present.
 
@@ -46,6 +50,16 @@ when it is sent (truncated, or `failed` with `too_long`).
 mosquitto_pub -h broker.example.org -u client -P secret -q 1 \
   -t meshcore/radio1/send/alerts -m "Water pump stopped"
 ```
+
+**To a contact**: `contacts/<key>/send` sends a direct message to a companion in the radio's
+contact table, `<key>` its full public key in lower-case hex, with the same cleaning, queue,
+airtime budget and duplicate check as a target
+([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)). The deliveries
+name the key as `target`. A key that is not in the table as the gateway last read it is rejected
+(`unknown_contact`, also for a key in upper case or a prefix), and so is a repeater, room server or
+sensor (`not_a_companion`). Channels are
+reached through targets only: a channel reaches everyone who has its secret. A broker ACL decides
+who may write `contacts/+/send`.
 
 Publish requests without the retain flag. The broker forwards a request published with it to the
 running bridge like any other, so it is sent once; the copy the broker keeps would be delivered
@@ -76,7 +90,7 @@ the send topics gets no event for the excess, which the log counts (at most once
 | `failed` | given up | `no_acknowledgement` (sent, but not acknowledged in time), `unknown_contact`, `ambiguous_target`, `channel_not_configured`, `too_long`, `exceeds_airtime_burst`, `internal_error` (a bug; see the log), the radio's refusals: `disabled` or an error name such as `not_found`, `table_full`, `error_<code>` |
 | `expired` | never sent within `queue_ttl_s` | `no_radio`, `queue_ttl` (waited behind other messages), `airtime_budget` |
 | `duplicate` | same target and text within `dedup_window_s` | – |
-| `rejected` | not accepted | `unknown_target`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full` |
+| `rejected` | not accepted | `unknown_target`, `unknown_contact`, `not_a_companion`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full` |
 
 `id` is a random identifier per request. In final events, `attempt` is the number of
 transmissions so far (0 if the message never left). Retries of a direct message keep the radio
@@ -281,7 +295,8 @@ outgoing messages the recipient. `state` is the final delivery state of an outgo
 
 `contact` reports a contact that appeared in or left the radio's table (`added`, `removed`).
 After a start of the gateway, it reports what changed while it was stopped: contacts that are
-new, and contacts that are gone (`name` and `type` are then `null`). `node` reports a node heard for the first time
+new, and contacts that are gone (`name` and `type` are then `null`). `hidden` and `shown` report a
+contact device deleted in Home Assistant and shown again; the contact stays on the radio. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
 adverts with invented keys does not flood the bus.
 
@@ -302,19 +317,21 @@ Give the bridge its own user. With Mosquitto, an ACL along these lines keeps cli
 ```text
 user meshcore-home-gateway
 topic readwrite meshcore/radio1/#
-topic write homeassistant/device/meshcore_home_gateway_radio1/config
+topic readwrite homeassistant/device/meshcore_home_gateway_radio1/#
 topic read homeassistant/status
 
 user homeassistant
 topic readwrite homeassistant/#
 topic read meshcore/radio1/#
 topic write meshcore/radio1/send/#
+topic write meshcore/radio1/contacts/+/send
+topic write meshcore/radio1/homeassistant/show_hidden
 
 user alarm-script
 topic write meshcore/radio1/send/alerts
 ```
 
-Write the node ID as configured, also in the discovery topic: for node `radio-1` it is
+Write the node ID as configured, also in the discovery topics: for node `radio-1` it is
 `homeassistant/device/meshcore_home_gateway_radio-1/config`. Only Home Assistant's entity IDs
 have `_` for `-`.
 

@@ -901,6 +901,75 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `components/mqtt/__init__.py` lines 373 and 398 (`async_register_admin_service` at 2026.10.0,
   `hass.services.async_register` at 2026.9.4) and `components/notify/services.py` line 36 (a plain
   entity service); no contract test.
+* **A device discovery topic may have a node ID level, `<prefix>/device/<node_id>/<object_id>/config`,
+  and works like one without; one subscription with `+` for the object ID sees all devices below
+  that node ID, and does not match the one-level topic.** *Verified:* 2026.10.0,
+  `test_every_contact_gets_a_device_below_the_gateway` and the removal tests in
+  [`home-assistant/tests/test_contact_devices.py`](../home-assistant/tests/test_contact_devices.py);
+  source `components/mqtt/discovery.py` lines 60-63 (`TOPIC_MATCHER`). Home Assistant's own guide
+  calls leaving out the node ID best practice; the gateway deviates on purpose. *Here:*
+  `contact_discovery_topic()` in `src/meshcore_home_gateway/mqtt/contact_devices.py`, one device
+  per contact ([home-assistant.md, Contacts](home-assistant.md#contacts)). *Check:* `make ha-test`.
+* **An empty document on a device topic removes only what Home Assistant discovered since its own
+  start; for anything else it warns `No device components to cleanup` and does nothing. Each
+  component sent first as a placeholder under its `unique_id` binds what it kept, and the empty
+  document then removes the device. Sent again for a device Home Assistant has already removed,
+  the placeholders bring it back for a moment, and it logs `Unable to remove unknown dispatcher`
+  per entity.** *Verified:* 2026.10.0, `test_the_removal_works_after_a_restart_of_home_assistant`
+  (a reload of the MQTT entry forgets what was discovered, as a restart does) and
+  `test_a_removal_sent_again_after_home_assistant_started_leaves_nothing`; source
+  `components/mqtt/discovery.py` lines 244-295. *Here:* `ContactDevices._send_removal()` always
+  sends the placeholders first, and sends a removal once more only after a birth message when
+  Home Assistant may not have been running. *Check:* drop the placeholder `publish` in
+  `_send_removal()` and run `make ha-test`.
+* **When Home Assistant removes a disabled entity of a device-discovered device, it publishes an
+  empty retained message on the device's discovery topic itself, once per disabled entity; the
+  broker hands it back, and Home Assistant removes every entity of the device (the further copies
+  warn `No device components to cleanup`).** This also happens when the gateway removes a single
+  disabled component: switching the rx log off removed the gateway's whole device. A disabled
+  placeholder that binds nothing creates a disabled entity and has the same effect. *Verified:*
+  2026.10.0, `test_a_disabled_component_goes_without_losing_the_device_for_long` and
+  `test_an_entity_the_user_disabled_never_hides_the_contact`; a probe with two contact entities
+  disabled by default gave two such publishes; without disabled entities, none. Source:
+  `components/mqtt/entity.py` lines 758-777 (`async_clear_discovery_topic_if_entity_removed`).
+  *Here:* placeholders are enabled; contact devices have no entity disabled by default and never
+  lose a single component; the gateway watches its own device's topic and announces again when it
+  is cleared (`Bridge._ha_device_message()`); an empty contact document it did not send within
+  `ECHO_S` of a removal of its own is a deletion by the user
+  ([home-assistant.md, Contacts](home-assistant.md#contacts)). *Check:* put
+  `"enabled_by_default": False` back into `placeholder()` and run `make ha-test`.
+* **Deleting a device in Home Assistant publishes one empty retained message, QoS 0, on its
+  discovery topic; a re-announced device gets its old device ID, name, area and entity settings
+  back, except entity IDs the user renamed, which return to `default_entity_id`.** A live
+  subscriber gets the message without the retain flag, and the broker stores nothing, so only a
+  client connected at that moment notices. *Verified:* 2026.10.0,
+  `test_a_device_the_user_deletes_stays_hidden_until_shown` (WebSocket command
+  `config/device_registry/remove`; the older `config/device_registry/remove_config_entry` logs that
+  it goes in 2027.9); source `components/mqtt/entity.py` lines 758-767 and 1461-1487. *Here:*
+  `ContactDevices.discovery_message()` takes an empty document it did not send as the user hiding
+  the contact. *Check:* `make ha-test`.
+* **`default_entity_id` gives the entity ID only if it is free; otherwise Home Assistant appends
+  `_2`.** *Verified:* 2026.10.0, `test_equal_names_on_two_gateways_get_numbered_entity_ids`; source
+  `components/mqtt/entity.py` lines 1468-1475 (`async_generate_entity_id`). *Here:* the gateway
+  makes equal contact names distinct itself (four digits of the key), which keeps the IDs
+  independent of the order of discovery. *Check:* `make ha-test`.
+* **The map shows every entity whose attributes have numeric `latitude` and `longitude`, of any
+  domain; a tracker's `gps_accuracy` widens the zone test, so a large one puts it `home`.** A
+  tracker whose attributes are `{}` keeps its last position; `null` coordinates reset it with a
+  warning. A component's own `availability` list replaces the device's. *Verified:* 2026.10.0,
+  `test_the_contact_document_fills_its_entities` (only the tracker and `zone.home` have
+  coordinates) and `test_a_tracker_without_a_position_leaves_the_map`; source
+  `components/mqtt/device_tracker.py` lines 160-235, `components/device_tracker/entity.py` lines
+  386-387, frontend `src/panels/lovelace/cards/hui-map-card.ts` (`show_all`). *Here:* only the
+  contact trackers carry coordinates, without `gps_accuracy`; their availability adds the
+  condition that a position is known. *Check:* `make ha-test`.
+* **For each new subscription Home Assistant subscribes to the topic again, so the broker sends
+  its retained message again; each subscription takes only the first retained message.**
+  *Verified:* source `components/mqtt/client.py` lines 949-962 (queued subscriptions) and
+  1350-1356. *Here:* the entities of a contact device announced later get the retained
+  availability; the tests deliver it again after a new device (`online()` in
+  `home-assistant/tests/test_contact_devices.py`). *Check:*
+  `src 2026.10.0 components/mqtt/client.py | sed -n 949,962p`.
 * **A sensor's unit must be one of its device class's units, or that component is dropped; a
   template result `None`, as from a JSON `null`, makes the sensor `unknown`.** *Verified:*
   2026.10.0, probe: unit `volt` on the battery sensor left 12 of 13 entities and logged that the

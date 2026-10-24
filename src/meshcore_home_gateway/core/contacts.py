@@ -14,6 +14,12 @@ from dataclasses import dataclass
 KEY_HEX_DIGITS = 64
 PREFIX_HEX_DIGITS = 12
 _HEX = re.compile(r"[0-9a-f]+")
+_LOWER_HEX = re.compile(r"[0-9a-f]{64}")
+
+
+def is_key(text: str) -> bool:
+    """A full public key as the gateway writes it: 64 lower-case hex digits."""
+    return len(text) == KEY_HEX_DIGITS and _LOWER_HEX.fullmatch(text) is not None
 
 
 def normalise_key(key: str) -> str:

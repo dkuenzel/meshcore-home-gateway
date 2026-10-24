@@ -1,7 +1,8 @@
 """Small persistent state in one JSON file, written atomically.
 
-It holds the newest accepted command timestamp per sender (replay protection, ADR 0009) and the
-Home Assistant components of the last discovery document (docs/home-assistant.md).
+It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
+Home Assistant components of the last discovery document and the contact devices announced
+(docs/home-assistant.md), and the contacts whose retained documents were published.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import logging
 import os
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -137,6 +139,79 @@ class AnnouncedComponents:
 
 
 REMOVAL_KEEP_S = 30 * 86_400.0
+
+
+@dataclass(slots=True)
+class DeviceRecord:
+    """A contact device announced to Home Assistant: the slug of its entity IDs, chosen when it
+    first appeared, and every component it was announced with (key -> platform)."""
+
+    slug: str
+    components: dict[str, str]
+
+
+@dataclass(slots=True)
+class RemovedDevice:
+    components: dict[str, str]
+    since: float
+
+
+class ContactDeviceRecords:
+    """The contact devices announced to Home Assistant, the removals still pending (until Home
+    Assistant's next start), the contacts the user deleted there, which stay hidden, and the slug
+    of every contact that had a device, so that its entity IDs stay when it comes back."""
+
+    _KEY = "ha_contact_devices"
+
+    def __init__(self, store: JsonStateFile) -> None:
+        self._store = store
+        raw = store.load().get(self._KEY)
+        data = raw if isinstance(raw, dict) else {}
+        self.announced: dict[str, DeviceRecord] = {}
+        self.removed: dict[str, RemovedDevice] = {}
+        self.hidden: set[str] = set()
+        self.slugs: dict[str, str] = _string_map(data.get("slugs"))
+        announced, removed, hidden = data.get("announced"), data.get("removed"), data.get("hidden")
+        for key, entry in announced.items() if isinstance(announced, dict) else ():
+            if isinstance(entry, dict) and isinstance(slug := entry.get("slug"), str):
+                self.announced[key] = DeviceRecord(slug, _string_map(entry.get("cmps")))
+                self.slugs.setdefault(key, slug)
+        for key, entry in removed.items() if isinstance(removed, dict) else ():
+            if isinstance(entry, dict) and isinstance(since := entry.get("since"), (int, float)):
+                self.removed[key] = RemovedDevice(_string_map(entry.get("cmps")), float(since))
+        self.hidden = (
+            {k for k in hidden if isinstance(k, str)} if isinstance(hidden, list) else set()
+        )
+        self._saved = self._data()
+
+    def save(self) -> None:
+        """Store the records if they changed; a failed write is logged (the next change tries
+        again, and pending removals are sent again at the next start)."""
+        data = self._data()
+        if data == self._saved:
+            return
+        stored = self._store.load()
+        stored[self._KEY] = data
+        try:
+            self._store.save(stored)
+        except OSError as exc:
+            log.warning("cannot store the Home Assistant contact devices: %s", exc)
+            return
+        self._saved = data
+
+    def _data(self) -> dict[str, Any]:
+        return {
+            "announced": {
+                key: {"slug": r.slug, "cmps": dict(r.components)}
+                for key, r in self.announced.items()
+            },
+            "removed": {
+                key: {"cmps": dict(r.components), "since": r.since}
+                for key, r in self.removed.items()
+            },
+            "hidden": sorted(self.hidden),
+            "slugs": dict(sorted(self.slugs.items())),
+        }
 
 
 class RetainedKeys:

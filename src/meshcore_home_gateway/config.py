@@ -32,6 +32,7 @@ TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
 HOST_NAME = re.compile(r"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*\.?")
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CHANNEL_INDEX_MAX = 255  # one byte in the protocol; the radio's own limit is checked at runtime
+MAX_CONTACT_DEVICES = 1000  # above the largest contact table of current firmware
 MIN_BURST_S = (
     5.0  # must hold the longest single packet (about 2 s at SF 8 / 62.5 kHz, configuration.md)
 )
@@ -76,6 +77,7 @@ class HomeAssistantConfig:
     prefix: str = "homeassistant"
     device_name: str = "MeshCore radio"
     status_topic: str = "homeassistant/status"
+    contact_devices: int = 50  # contacts with a device of their own (ADR 0017)
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,6 +389,7 @@ def _homeassistant(s: _Section) -> HomeAssistantConfig:
         prefix=prefix,
         device_name=cast(str, s.string("device_name", "MeshCore radio")),
         status_topic=status_topic,
+        contact_devices=s.integer("contact_devices", 50, 0, MAX_CONTACT_DEVICES),
     )
 
 
@@ -467,6 +470,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
     "homeassistant.discovery": bool, "homeassistant.prefix": str,
     "homeassistant.device_name": str, "homeassistant.status_topic": str,
+    "homeassistant.contact_devices": int,
     "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,

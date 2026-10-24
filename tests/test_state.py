@@ -9,7 +9,10 @@ import pytest
 from meshcore_home_gateway.state import (
     AnnouncedComponents,
     CommandLedger,
+    ContactDeviceRecords,
+    DeviceRecord,
     JsonStateFile,
+    RemovedDevice,
     RetainedKeys,
 )
 
@@ -133,3 +136,34 @@ def test_retained_keys_are_remembered_and_survive_an_unwritable_state(
     keys.replace({"cc" * 32})
     assert keys.keys == {"bb" * 32}  # unchanged: the next change tries again
     assert "cannot store the published retained_contacts: read-only file system" in caplog.text
+
+
+def test_contact_device_records_survive_and_skip_foreign_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    records = ContactDeviceRecords(store)
+    assert (records.announced, records.removed, records.hidden) == ({}, {}, set())
+    records.announced["aa" * 32] = DeviceRecord("alice", {"send": "notify"})
+    records.removed["bb" * 32] = RemovedDevice({"hops": "sensor"}, 1.5)
+    records.hidden.add("cc" * 32)
+    records.save()
+    again = ContactDeviceRecords(store)
+    assert again.announced == {"aa" * 32: DeviceRecord("alice", {"send": "notify"})}
+    assert again.removed == {"bb" * 32: RemovedDevice({"hops": "sensor"}, 1.5)}
+    assert again.hidden == {"cc" * 32}
+    store.save({**store.load(), "ha_contact_devices": {
+        "announced": {"dd" * 32: {"slug": 7}, "ee" * 32: {"slug": "e", "cmps": {"x": 1}}},
+        "removed": {"ff" * 32: {"since": "never"}}, "hidden": ["11" * 32, None],
+    }})  # fmt: skip
+    foreign = ContactDeviceRecords(store)
+    assert foreign.announced == {"ee" * 32: DeviceRecord("e", {})}
+    assert (foreign.removed, foreign.hidden) == ({}, {"11" * 32})
+
+    def fail(_data: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(store, "save", fail)
+    foreign.hidden.clear()
+    foreign.save()
+    assert "cannot store the Home Assistant contact devices: read-only file system" in caplog.text

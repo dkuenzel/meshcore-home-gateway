@@ -49,10 +49,13 @@ directory where `check-config` is started.
 | `prefix` | `homeassistant` | discovery prefix (as set in Home Assistant's MQTT options); one topic level of `A-Z a-z 0-9 - _` |
 | `device_name` | `MeshCore radio` | name of the device in Home Assistant |
 | `status_topic` | `homeassistant/status` | topic of Home Assistant's birth message (MQTT options, *birth message*); it does not follow `prefix`. Segments of `A-Z a-z 0-9 - _` separated by `/` |
+| `contact_devices` | `50` | contacts that get a device of their own, 0–1000; `0` removes them ([home-assistant.md](home-assistant.md#contacts)) |
 
 ## `[targets.<alias>]`
 
-The only destinations the bridge sends to; publish to `send/<alias>`. The alias is 1–32 of
+Named destinations; publish to `send/<alias>`. Channels can be reached only through a target;
+companions in the radio's contact table also through `contacts/<key>/send`
+([mqtt-api.md](mqtt-api.md#sending-sendalias)). The alias is 1–32 of
 `a-z 0-9 - _`, starting with a letter or digit. Set exactly one of:
 
 | Key | Meaning |

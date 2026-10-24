@@ -90,8 +90,9 @@ def test_connection_subscribes_and_announces_availability() -> None:
         await asyncio.to_thread(fake.on_connect, fake, None, None, reason, None)
         await asyncio.wait_for(connected.wait(), 1)
         assert dict(fake.calls)["subscribe"] == (
-            [("meshcore/radio1/send/+", 1), ("homeassistant/status", 1)],
-        )
+            [("meshcore/radio1/send/+", 1), ("meshcore/radio1/contacts/+/send", 1),
+             ("homeassistant/status", 1)],
+        )  # fmt: skip
         assert fake.published[-1] == ("meshcore/radio1/availability", b"online", 1, True)
         assert bus.connected
 
@@ -213,15 +214,84 @@ def test_send_requests_and_home_assistant_birth_reach_the_loop() -> None:
             message = SimpleNamespace(topic=topic, payload=payload, retain=retain)
             fake.on_message(fake, None, message)
 
+        key = "a1" * 32
         await asyncio.to_thread(deliver, "meshcore/radio1/send/alerts", b"Gate open")
         await asyncio.to_thread(deliver, "meshcore/radio1/send/alerts", b"old", True)
         await asyncio.to_thread(deliver, "homeassistant/status", b"online")
         await asyncio.to_thread(deliver, "homeassistant/status", b"offline")
+        await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key}/send", b"Hi")
+        await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key.upper()}/send", b"no")
+        await asyncio.to_thread(deliver, "meshcore/radio1/contacts", b"{}")
         first = await asyncio.wait_for(bus.requests.get(), 1)
         second = await asyncio.wait_for(bus.requests.get(), 1)
+        third = await asyncio.wait_for(bus.requests.get(), 1)
         assert first == SendRequest("alerts", b"Gate open", retained=False)
         assert second == SendRequest("alerts", b"old", retained=True)
+        assert third == SendRequest(key, b"Hi", retained=False, contact=True)
+        fourth = await asyncio.wait_for(bus.requests.get(), 1)  # rejected by the bridge
+        assert fourth == SendRequest(key.upper(), b"no", retained=False, contact=True)
+        await asyncio.sleep(0.05)
+        assert bus.requests.empty()
         assert births == [1]
+
+    asyncio.run(scenario())
+
+
+def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
+    """The gateway watches its discovery topics, to notice what Home Assistant clears there (a
+    contact device the user deleted, the gateway's own device), its offline status, and the
+    request to show deleted contact devices again."""
+
+    async def scenario() -> None:
+        fake = FakePaho()
+        config = MqttConfig(host="broker.example.org", node_id="radio1")
+        own = "homeassistant/device/meshcore_home_gateway_radio1/config"
+        watch = "homeassistant/device/meshcore_home_gateway_radio1/+/config"
+        bus = MqttBus(
+            config, TOPICS, "homeassistant/status", lambda _: fake, ha_devices=[own, watch]
+        )
+        seen: list[tuple[str, bytes, bool]] = []
+        shown: list[int] = []
+        offline: list[int] = []
+        bus.on_ha_device.append(lambda *message: seen.append(message))
+        bus.on_show_hidden.append(lambda: shown.append(1))
+        bus.on_ha_offline.append(lambda: offline.append(1))
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        subscriptions = dict(fake.calls)["subscribe"][0]
+        assert subscriptions[-3:] == [
+            (own, 1), (watch, 1), ("meshcore/radio1/homeassistant/show_hidden", 1),
+        ]  # fmt: skip
+
+        def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
+            fake.on_message(
+                fake, None, SimpleNamespace(topic=topic, payload=payload, retain=retain)
+            )
+
+        device = "homeassistant/device/meshcore_home_gateway_radio1/contact_x/config"
+        await asyncio.to_thread(deliver, device, b"")
+        await asyncio.to_thread(deliver, device, b"", True)
+        await asyncio.to_thread(deliver, own, b"")
+        await asyncio.to_thread(deliver, "homeassistant/device/other/config", b"")
+        await asyncio.to_thread(deliver, "homeassistant/status", b"offline")
+        await asyncio.to_thread(deliver, "meshcore/radio1/homeassistant/show_hidden", b"show")
+        await asyncio.to_thread(deliver, "meshcore/radio1/homeassistant/show_hidden", b"x", True)
+        await asyncio.sleep(0.05)
+        assert seen == [(device, b"", False), (device, b"", True), (own, b"", False)]
+        assert (shown, offline) == ([1], [1])
+        assert bus.requests.empty()
+
+    asyncio.run(scenario())
+
+
+def test_without_contact_devices_their_topics_are_not_watched() -> None:
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        topics = [topic for topic, _ in dict(fake.calls)["subscribe"][0]]
+        assert "meshcore/radio1/homeassistant/show_hidden" not in topics
+        assert not any(topic.startswith("homeassistant/device") for topic in topics)
 
     asyncio.run(scenario())
 

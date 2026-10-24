@@ -417,6 +417,19 @@ def test_home_assistant_status_topic_is_independent_of_the_prefix() -> None:
             )
 
 
+def test_contact_devices_are_limited() -> None:
+    assert parse_config(FULL).homeassistant.contact_devices == 50
+    none = parse_config(FULL.replace('prefix = "ha"', 'prefix = "ha"\ncontact_devices = 0'))
+    assert none.homeassistant.contact_devices == 0
+    for invalid in ("-1", "1001", "true", '"10"'):
+        with pytest.raises(ConfigError, match="contact_devices"):
+            parse_config(
+                FULL.replace('prefix = "ha"', f'prefix = "ha"\ncontact_devices = {invalid}')
+            )
+    rendered = render_config(ANSWERS + "homeassistant.contact_devices=8\n")
+    assert parse_config(rendered).homeassistant.contact_devices == 8
+
+
 @pytest.mark.parametrize("name", ["radio-", "radio_", "a--b", "a-_b"])
 def test_identifiers_that_home_assistant_would_merge_are_refused(name: str) -> None:
     """Home Assistant collapses runs of '-' and '_' in entity IDs and drops a trailing one, so

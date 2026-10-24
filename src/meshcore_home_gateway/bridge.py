@@ -40,7 +40,7 @@ from meshcore_home_gateway.core.commands import (
     command_word,
     evaluate_command,
 )
-from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact
+from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact, is_key
 from meshcore_home_gateway.core.model import (
     DeliveryEvent,
     DeliveryState,
@@ -50,6 +50,7 @@ from meshcore_home_gateway.core.model import (
 )
 from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
 from meshcore_home_gateway.mqtt.client import SendRequest
+from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
 from meshcore_home_gateway.mqtt.payloads import (
     command_payload,
@@ -61,6 +62,7 @@ from meshcore_home_gateway.mqtt.payloads import (
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
+from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.radio.session import (
     AckReceived,
     CommandFailedError,
@@ -111,6 +113,9 @@ class Bus(Protocol):
     connected: bool
     on_connected: list[Callable[[], None]]
     on_ha_online: list[Callable[[], None]]
+    on_ha_offline: list[Callable[[], None]]
+    on_ha_device: list[Callable[[str, bytes, bool], None]]
+    on_show_hidden: list[Callable[[], None]]
 
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
@@ -190,6 +195,7 @@ class Bridge:
         notifier: Callable[[str], bool] = notify,
         components: AnnouncedComponents | None = None,
         observer: Observer | None = None,
+        devices: ContactDevices | None = None,
     ) -> None:
         self.config = config
         self._components = components
@@ -205,6 +211,9 @@ class Bridge:
         self.observer = observer or Observer(
             bus, self.topics, protected=protected_keys(config), wall_clock=wall_clock
         )
+        self._devices = devices  # the contacts' devices in Home Assistant
+        if devices is not None:
+            self.observer.on_contacts.append(devices.update)
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
         self._messages: asyncio.Queue[MessageReceived] = asyncio.Queue()
         # keys with the 6-byte prefix of an allowed command sender, as the radio named them:
@@ -228,15 +237,21 @@ class Bridge:
         self._radio_info: RadioInfo | None = None
         self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
         self._removed: dict[str, str] | None = None  # earlier components, removed in this run
+        self._reannounce: asyncio.TimerHandle | None = None  # a scheduled announcement
+        self._reannounce_birth = False  # it follows Home Assistant's birth message
         self._radio_ready = asyncio.Event()
         self._tasks: list[asyncio.Task[None]] = []
 
     # --- life cycle -----------------------------------------------------------------------------
 
     async def run(self, stop: asyncio.Event) -> None:
-        self._bus.on_connected.append(self._publish_announcements)
+        self._bus.on_connected.append(self._connected)
         self._bus.on_connected.append(lambda: self._observe(self.observer.publish_all))
-        self._bus.on_ha_online.append(self._schedule_announcements)
+        self._bus.on_ha_online.append(lambda: self._schedule_announcements(birth=True))
+        self._bus.on_ha_device.append(self._ha_device_message)
+        if (devices := self._devices) is not None:
+            self._bus.on_ha_offline.append(lambda: self._observe(devices.ha_offline))
+            self._bus.on_show_hidden.append(lambda: self._observe(devices.show_hidden))
         await self._bus.start()
         self._notify("READY=1")
         try:
@@ -420,8 +435,11 @@ class Bridge:
             raw = request.payload.decode("utf-8")
         except UnicodeDecodeError:
             raise _FinalError(DeliveryState.REJECTED, "invalid_utf8") from None
-        target = self._targets.get(request.alias)
-        if target is None:
+        if request.contact:
+            target = self._contact_target(request.alias)
+        elif (configured := self._targets.get(request.alias)) is not None:
+            target = configured
+        else:
             raise _FinalError(DeliveryState.REJECTED, "unknown_target")
         try:
             text = prepare_text(raw, self._text_policy(target, self._radio_info))
@@ -429,6 +447,22 @@ class Bridge:
             raise _FinalError(DeliveryState.REJECTED, exc.reason) from None
         name_unknown = target.kind is MessageKind.CHANNEL and self._radio_info is None
         return target, text, raw if name_unknown else None
+
+    def _contact_target(self, key: str) -> Target:
+        """A companion of the radio's table as last read, as a recipient (ADR 0017); its alias
+        is its full key. Repeaters, room servers and sensors do not take texts from it."""
+        tracked = self.observer.mesh.contacts.get(key) if is_key(key) else None
+        if tracked is None:  # also a key in upper case or a prefix: keys as the gateway writes them
+            raise _FinalError(DeliveryState.REJECTED, "unknown_contact")
+        if tracked.node.node_type != NodeType.CHAT:
+            raise _FinalError(DeliveryState.REJECTED, "not_a_companion")
+        return Target(key, MessageKind.CONTACT, public_key=key)
+
+    def _target_of(self, alias: str) -> Target | None:
+        target = self._targets.get(alias)
+        if target is None and is_key(alias):
+            return Target(alias, MessageKind.CONTACT, public_key=alias)
+        return target
 
     def _text_policy(self, target: Target, info: RadioInfo | None) -> TextPolicy:
         """Without the radio's name, a channel text gets the limit of the shortest one."""
@@ -620,7 +654,7 @@ class Bridge:
         log.info("delivery %s to %r: %s%s", event.id, event.target, event.state.value,
                  f" ({event.reason})" if event.reason else "")  # fmt: skip
         self._bus.publish(self.topics.delivery, encode(delivery_payload(event)))
-        self._observe(self.observer.delivery, event, self._targets.get(event.target))
+        self._observe(self.observer.delivery, event, self._target_of(event.target))
 
     # --- radio events ---------------------------------------------------------------------------
 
@@ -696,6 +730,8 @@ class Bridge:
         log.debug("text: %r", message.text)
         payload = received_payload(message, sender, target, decision)
         self._bus.publish(self.topics.received, encode(payload))
+        if sender is not None and message.kind is MessageKind.CONTACT:
+            self._bus.publish(self.topics.contact_received(sender.public_key), encode(payload))
         self._observe(self.observer.message, message, sender)
         if command is not None:
             name = sender.name if sender else None
@@ -823,7 +859,26 @@ class Bridge:
         self._bus.publish(self.topics.state, encode(state), retain=True)
         self._notify(f"STATUS=radio {state['radio']}, queue {state['queue']}")
 
-    def _publish_announcements(self) -> None:
+    def _connected(self) -> None:
+        """The broker connected: Home Assistant may have restarted unseen meanwhile."""
+        if self._devices is not None:
+            self._observe(self._devices.ha_offline)
+        self._publish_announcements()
+
+    def _ha_device_message(self, topic: str, payload: bytes, retained: bool) -> None:
+        """A message on a discovery topic of the gateway. An empty one on its own device's topic
+        comes from Home Assistant, which clears it when it removes a disabled entity (or the user
+        deletes the device): the entities come back with the next announcement."""
+        if topic != discovery_topic(self.config):
+            if self._devices is not None:
+                self._observe(self._devices.discovery_message, topic, payload, retained)
+            return
+        if payload or retained or self._reannounce is not None:
+            return
+        log.info("Home Assistant cleared the gateway's device; announcing it again")
+        self._schedule_announcements()
+
+    def _publish_announcements(self, *, birth: bool = False) -> None:
         if self.config.homeassistant.discovery:
             if self._removed is None:  # first announcement: what earlier runs had and this lacks
                 current = discovery_payload(self.config, self.topics)["cmps"]
@@ -841,11 +896,21 @@ class Bridge:
             document = discovery_payload(self.config, self.topics, info, self._removed)
             self._bus.publish(topic, encode(document))
             self._announced = _identity(self._radio_info)
+            if (devices := self._devices) is not None:
+                self._observe(lambda: devices.announce_all(birth=birth))
         self._publish_state()
 
-    def _schedule_announcements(self) -> None:
+    def _schedule_announcements(self, *, birth: bool = False) -> None:
+        if self._reannounce is not None:  # one is due: it counts as after a birth if one was
+            birth = birth or self._reannounce_birth
+            self._reannounce.cancel()
+        self._reannounce_birth = birth
         delay = random.uniform(*DISCOVERY_DELAY_S)  # noqa: S311 - spreading load only
-        asyncio.get_running_loop().call_later(delay, self._publish_announcements)
+        self._reannounce = asyncio.get_running_loop().call_later(delay, self._announce_due)
+
+    def _announce_due(self) -> None:
+        birth, self._reannounce = self._reannounce_birth, None
+        self._publish_announcements(birth=birth)
 
 
 def protected_keys(config: Config) -> frozenset[str]:

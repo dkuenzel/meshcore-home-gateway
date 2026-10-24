@@ -18,14 +18,34 @@ class Topics:
         self.nodes = f"{self.root}/nodes"  # nodes heard, not contacts
         self.history = f"{self.root}/history"  # the latest messages in and out
         # events
-        self.contact_event = f"{self.root}/contact"  # a contact added, removed, renamed
+        self.contact_event = f"{self.root}/contact"  # added, removed; hidden or shown in HA
         self.node_event = f"{self.root}/node"  # a node heard for the first time
+        # requests
+        self.show_hidden = f"{self.root}/homeassistant/show_hidden"  # contacts deleted in HA
         self._send = f"{self.root}/send/"
         self.send_subscription = self._send + "+"
+        self.contact_send_subscription = f"{self.contacts}/+/send"
 
     def contact(self, key: str) -> str:
         """The document of one contact (full key, lower-case hex)."""
         return f"{self.contacts}/{key}"
+
+    def contact_send(self, key: str) -> str:
+        """Texts to send to one contact."""
+        return f"{self.contacts}/{key}/send"
+
+    def contact_received(self, key: str) -> str:
+        """Messages from one contact (events, as on `received`)."""
+        return f"{self.contacts}/{key}/received"
+
+    def key_from_contact_send_topic(self, topic: str) -> str | None:
+        """The `<key>` level of `contacts/<key>/send`, whatever it holds (the bridge rejects one
+        that is no contact's key); None for any other topic."""
+        prefix, suffix = self.contacts + "/", "/send"
+        if not (topic.startswith(prefix) and topic.endswith(suffix)):
+            return None
+        key = topic[len(prefix) : -len(suffix)]
+        return key if key and "/" not in key else None
 
     def send(self, alias: str) -> str:
         return self._send + alias

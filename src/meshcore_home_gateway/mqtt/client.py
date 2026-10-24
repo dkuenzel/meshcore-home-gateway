@@ -13,7 +13,7 @@ import asyncio
 import logging
 import ssl
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -33,9 +33,10 @@ RECONNECT_MIN_S, RECONNECT_MAX_S = 1, 60
 
 @dataclass(frozen=True, slots=True)
 class SendRequest:
-    alias: str
+    alias: str  # a configured target, or the full key of a contact (`contact` is then true)
     payload: bytes
     retained: bool
+    contact: bool = False
 
 
 class PahoLike(Protocol):
@@ -95,10 +96,15 @@ class MqttBus:
         topics: Topics,
         ha_status_topic: str | None,
         client_factory: Callable[[MqttConfig], PahoLike] = make_paho_client,
+        *,
+        ha_devices: Sequence[str] = (),
     ) -> None:
+        """`ha_devices`: subscriptions to the gateway's discovery topics, to notice what Home
+        Assistant clears there (with the request to show deleted contact devices again)."""
         self._config = config
         self._topics = topics
         self._ha_status = ha_status_topic
+        self._ha_devices = tuple(ha_devices)
         self._client = client_factory(config)
         self._loop: asyncio.AbstractEventLoop | None = None
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
@@ -109,6 +115,9 @@ class MqttBus:
         self._answered = False  # paho thread: the broker answered the current attempt
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
+        self.on_ha_offline: list[Callable[[], None]] = []
+        self.on_ha_device: list[Callable[[str, bytes, bool], None]] = []
+        self.on_show_hidden: list[Callable[[], None]] = []
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
@@ -175,9 +184,13 @@ class MqttBus:
             log.warning("MQTT: connection refused: %s (%s; test the login with: "
                         "meshcore-home-gateway check-config --broker)", reason, user)  # fmt: skip
             return
-        subscriptions = [(self._topics.send_subscription, 1)]
+        subscriptions = [
+            (self._topics.send_subscription, 1), (self._topics.contact_send_subscription, 1),
+        ]  # fmt: skip
         if self._ha_status:
             subscriptions.append((self._ha_status, 1))
+        if self._ha_devices:
+            subscriptions += [(topic, 1) for topic in (*self._ha_devices, self._topics.show_hidden)]
         client.subscribe(subscriptions)
         client.publish(self._topics.availability, ONLINE, qos=1, retain=True)
         self._call(self._handle_connected)
@@ -224,10 +237,32 @@ class MqttBus:
 
     def _handle_message(self, topic: str, payload: bytes, retained: bool) -> None:
         if self._ha_status and topic == self._ha_status:
-            if payload == ONLINE:
-                for callback in self.on_ha_online:
+            for callback in {ONLINE: self.on_ha_online, OFFLINE: self.on_ha_offline}.get(
+                payload, []
+            ):
+                callback()
+            return
+        if any(_matches(subscription, topic) for subscription in self._ha_devices):
+            for device_callback in self.on_ha_device:
+                device_callback(topic, payload, retained)
+            return
+        if self._ha_devices and topic == self._topics.show_hidden:
+            if not retained:  # a request, not a left-over
+                for callback in self.on_show_hidden:
                     callback()
             return
         alias = self._topics.alias_from_send_topic(topic)
         if alias is not None:
             self.requests.put_nowait(SendRequest(alias, payload, retained))
+            return
+        key = self._topics.key_from_contact_send_topic(topic)
+        if key is not None:
+            self.requests.put_nowait(SendRequest(key, payload, retained, contact=True))
+
+
+def _matches(subscription: str, topic: str) -> bool:
+    """MQTT topic filter matching for filters with single-level wildcards ('+')."""
+    pattern, levels = subscription.split("/"), topic.split("/")
+    return len(pattern) == len(levels) and all(
+        p in ("+", t) for p, t in zip(pattern, levels, strict=True)
+    )

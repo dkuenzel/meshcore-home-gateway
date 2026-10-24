@@ -101,6 +101,8 @@ class Observer:
         self._next_purge = 0.0
         self._heard_rows: list[NodeRow] = []  # from the history, until the first table read
         self._stored_fixes: dict[str, Fix] = {}  # the newest position in the history per contact
+        # called after each table read, before the topics of removed contacts are cleared
+        self.on_contacts: list[Callable[[Mesh], None]] = []
         self._restore()
 
     def _restore(self) -> None:
@@ -203,6 +205,11 @@ class Observer:
             known = self._retained.keys if self._retained else frozenset(records)
             gone = tuple(sorted(known - set(records)))
             change = TableChange(tuple(k for k in change.added if k not in known), gone)
+        for listener in self.on_contacts:
+            try:
+                listener(self.mesh)
+            except Exception:  # a front end's bug must not stop the documents
+                log.exception("contact listener failed")
         self._contact_events(change, before)
         for key in change.removed:
             self._clear(self._topics.contact(key))

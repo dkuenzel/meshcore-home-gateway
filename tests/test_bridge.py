@@ -19,13 +19,20 @@ from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.mqtt.client import SendRequest
+from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.payloads import received_payload
+from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
 from meshcore_home_gateway.radio.transport import Transport
-from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger, JsonStateFile
+from meshcore_home_gateway.state import (
+    AnnouncedComponents,
+    CommandLedger,
+    ContactDeviceRecords,
+    JsonStateFile,
+)
 from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
 
 NOW = START_TIME + 100
@@ -71,6 +78,9 @@ class FakeBus:
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
+        self.on_ha_offline: list[Callable[[], None]] = []
+        self.on_ha_device: list[Callable[[str, bytes, bool], None]] = []
+        self.on_show_hidden: list[Callable[[], None]] = []
         self.published: list[tuple[str, bytes, bool]] = []
         self.qos: dict[str, set[int]] = {}
         self.stopped = False
@@ -87,12 +97,19 @@ class FakeBus:
         self.published.append((topic, payload, retain))
         self.qos.setdefault(topic, set()).add(qos)
 
-    def send(self, alias: str, text: str | bytes, retained: bool = False) -> None:
+    def send(
+        self, alias: str, text: str | bytes, retained: bool = False, *, contact: bool = False
+    ) -> None:
         payload = text.encode() if isinstance(text, str) else text
-        self.requests.put_nowait(SendRequest(alias, payload, retained))
+        self.requests.put_nowait(SendRequest(alias, payload, retained, contact=contact))
 
     def payloads(self, suffix: str) -> list[dict[str, Any]]:
-        return [json.loads(p) for t, p, _ in self.published if t.endswith(suffix)]
+        """Payloads on the topics ending in `suffix`; those of single contacts only if the suffix
+        names contacts."""
+        return [
+            json.loads(p) for t, p, _ in self.published
+            if t.endswith(suffix) and ("contact" in suffix or "/contact" not in t)
+        ]  # fmt: skip
 
     async def wait_for(
         self, suffix: str, check: Callable[[dict[str, Any]], bool], within_s: float = 3,
@@ -139,6 +156,7 @@ async def running(
     bus: FakeBus | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     observer: Callable[[FakeBus], Observer] | None = None,
+    devices: bool = False,
 ) -> AsyncIterator[tuple[Bridge, FakeBus, list[str]]]:
     bus = bus or FakeBus()
     stop, notes = asyncio.Event(), []
@@ -148,10 +166,16 @@ async def running(
         return True
 
     store = JsonStateFile(tmp_path / "state.json")
+    topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
+    contact_devices = None
+    if devices:
+        records = ContactDeviceRecords(store)
+        contact_devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: NOW)
     bridge = Bridge(
         config, bus, transport or (lambda: radio), CommandLedger(store), session_factory=sessions,
         wall_clock=lambda: NOW, monotonic=monotonic, notifier=note,
         components=AnnouncedComponents(store), observer=observer(bus) if observer else None,
+        devices=contact_devices,
     )  # fmt: skip
     task = asyncio.create_task(bridge.run(stop))
     try:
@@ -1489,7 +1513,7 @@ def test_components_of_an_earlier_configuration_are_removed(tmp_path: Path) -> N
             documents = bus.payloads("/config")
             assert len(documents) % 2 == 0  # each announcement: the placeholder, then removal
             for bind, document in zip(documents[::2], documents[1::2], strict=True):
-                assert bind["cmps"]["send_old"]["enabled_by_default"] is False
+                assert bind["cmps"]["send_old"]["name"] == "Removed"  # enabled: see placeholder()
                 assert document["cmps"]["send_old"] == {"p": "notify"}
                 assert document["cmps"]["radio"]["p"] == "binary_sensor"
 
@@ -1555,7 +1579,8 @@ def test_a_removal_binds_the_component_first(tmp_path: Path) -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
             documents = bus.payloads("/config")
             first, second = documents[0]["cmps"]["send_old"], documents[1]["cmps"]["send_old"]
-            assert first["enabled_by_default"] is False
+            assert first["name"] == "Removed"
+            assert "enabled_by_default" not in first  # Home Assistant would clear the device
             assert first["unique_id"] == "meshcore_home_gateway_radio1_send_old"
             assert second == {"p": "notify"}
             assert documents[0]["cmps"]["radio"] == documents[1]["cmps"]["radio"]
@@ -1689,5 +1714,148 @@ def test_a_rejected_command_cannot_be_replayed_while_its_age_window_lasts(
         finally:
             stop.set()
             await asyncio.wait_for(task, 5)
+
+    scenario(main)
+
+
+def test_any_contact_is_a_recipient(tmp_path: Path) -> None:
+    """ADR 0017: contacts/<key>/send reaches a contact that is no configured target, through the
+    same queue, deduplication and acknowledgement; the delivery names the key."""
+    carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol")
+    repeater = EmulatedContact(bytes.fromhex("e5" * 32), "Hilltop", node_type=2)
+    radio = EmulatedRadio(contacts=[ALICE, BOB, carol, repeater])
+    key = carol.public_key.hex()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for("radio1/contacts", lambda d: d["total"] == 4)
+            bus.send(key, "Dinner is ready", contact=True)
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert (done["target"], done["text"]) == (key, "Dinner is ready")
+            bus.send(key, "Dinner is ready", contact=True)
+            dup = await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
+            assert dup["target"] == key
+            bus.send("dd" * 32, "nobody", contact=True)
+            refused = await bus.wait_for("/delivery", lambda d: d["event_type"] == "rejected")
+            assert (refused["target"], refused["reason"]) == ("dd" * 32, "unknown_contact")
+            bus.send(key.upper(), "upper case", contact=True)  # keys as the gateway writes them
+            refused = await bus.wait_for("/delivery", lambda d: d["target"] == key.upper())
+            assert (refused["event_type"], refused["reason"]) == ("rejected", "unknown_contact")
+            bus.send(repeater.public_key.hex(), "hello", contact=True)
+            refused = await bus.wait_for(
+                "/delivery", lambda d: d.get("reason") == "not_a_companion"
+            )
+            assert refused["event_type"] == "rejected"
+            history = await bus.wait_for("/history", lambda d: d["total"] == 1)
+            assert (history["messages"][0]["name"], history["messages"][0]["contact_key"]) == (
+                "Carol", key,
+            )  # fmt: skip
+            assert radio.texts[0].prefix == carol.public_key[:6]
+
+    scenario(main)
+
+
+def test_messages_of_a_contact_also_go_to_its_own_topic(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(ALICE.public_key[:6], "hello", NOW - 5)
+            topic = f"radio1/contacts/{ALICE.public_key.hex()}/received"
+            event = await bus.wait_for(topic, lambda e: e["text"] == "hello")
+            assert event == bus.payloads("radio1/received")[-1]
+            radio.queue_channel_message(0, "Bob: hi all", NOW - 4)
+            await bus.wait_for("radio1/received", lambda e: e["event_type"] == "channel")
+            assert len(bus.payloads(topic)) == 1  # channel messages are no contact's
+
+    scenario(main)
+
+
+def test_contacts_get_their_devices_in_home_assistant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0017: a contact added to the radio gets its device, one removed loses it, one the user
+    deleted in Home Assistant stays hidden until shown again."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.01)
+    carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol")
+    radio = EmulatedRadio(contacts=[ALICE, BOB], manual_add=False)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+
+    def device_topic(key: str) -> str:
+        return f"homeassistant/device/meshcore_home_gateway_radio1/contact_{key}/config"
+
+    def sent(key: str) -> list[bytes]:
+        return [p for t, p, _ in bus.published if t == device_topic(key)]
+
+    def gateway_documents() -> list[bytes]:
+        own = "homeassistant/device/meshcore_home_gateway_radio1/config"
+        return [p for t, p, _ in bus.published if t == own]
+
+    async def until(check: Callable[[], bool]) -> None:
+        async def poll() -> None:
+            while True:
+                if check():
+                    return
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(poll(), 3)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, bus=bus, devices=True) as (b, _, _n):
+            await until(lambda: bool(sent(alice) and sent(bob)))
+            assert json.loads(sent(alice)[-1])["dev"]["name"] == "Alice"
+            gateway = bus.payloads("/config")[-1]["cmps"]
+            assert gateway["show_hidden"]["command_topic"].endswith("/homeassistant/show_hidden")
+
+            radio.contacts.append(carol)  # added
+            radio.emit(bytes([Push.NEW_ADVERT]) + carol.public_key)
+            await until(lambda: bool(sent(carol.public_key.hex())))
+
+            radio.contacts.remove(BOB)  # removed: placeholders, then the empty document
+            radio.emit(bytes([Push.NEW_ADVERT]) + ALICE.public_key)
+            await until(lambda: sent(bob)[-1:] == [b""])
+            assert json.loads(sent(bob)[-2])["cmps"]["send"]["name"] == "Removed"
+
+            for deleted in bus.on_ha_device:  # the user deletes Alice's device
+                deleted(device_topic(alice), b"", False)
+            hidden = await bus.wait_for("radio1/contact", lambda e: e["event_type"] == "hidden")
+            assert (hidden["key"], hidden["name"]) == (alice, "Alice")
+            count, gateway = len(sent(alice)), len(gateway_documents())
+            for birth in bus.on_ha_online:  # Home Assistant starts: Alice stays away
+                birth()
+            await until(lambda: len(gateway_documents()) > gateway)
+            await asyncio.sleep(0.05)
+            assert len(sent(alice)) == count
+            assert sent(bob)[-2:] == [sent(bob)[-4], b""]  # the removal once more: it may
+            # not have been running when it was sent first
+
+            for show in bus.on_show_hidden:
+                show()
+            await until(lambda: len(sent(alice)) == count + 1)
+            assert b.observer.mesh.contacts.keys() == {alice, carol.public_key.hex()}
+
+    bus = FakeBus()
+    scenario(main)
+
+
+def test_a_device_home_assistant_clears_is_announced_again(tmp_path: Path) -> None:
+    """Home Assistant clears the gateway's discovery topic when it removes a disabled entity
+    (or the user deletes the device): the entities come back with an announcement."""
+    own = "homeassistant/device/meshcore_home_gateway_radio1/config"
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
+            count = len([p for t, p, _ in bus.published if t == own])
+            for message in bus.on_ha_device:
+                message(own, b"", True)  # a left-over: not live
+                message(own, b"{}", False)
+            await asyncio.sleep(0.05)
+            assert len([p for t, p, _ in bus.published if t == own]) == count
+            for message in bus.on_ha_device:  # several at once, as Home Assistant sends them
+                for _ in range(3):
+                    message(own, b"", False)
+            await bus.wait_for("/config", lambda d: True, since=count)
+            await asyncio.sleep(0.05)
+            assert len([p for t, p, _ in bus.published if t == own]) == count + 1
 
     scenario(main)
