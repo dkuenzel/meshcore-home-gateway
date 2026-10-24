@@ -328,7 +328,7 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 | --- | --- |
 | `pct start` fails: `Device /dev/serial/by-id/... does not exist` | The radio is unplugged or has a different name (another radio, other firmware): plug it in, or pass the new path with `pct set <id> --dev0 path=<path>,gid=20,mode=0660` and set the same path as `device` in `[radio]` of `/etc/meshcore-home-gateway/config.toml` |
 | `radio: cannot connect (... No such file or directory)` | Device not passed through: check `pct config <id>` for `dev0` |
-| `radio: cannot connect (no answer from the radio)` | Another program or the phone app holds the radio, or wrong firmware (BLE-only); close the app, check the firmware type |
+| `radio: cannot connect (no answer from the radio)` | Another program or the phone app holds the radio, or wrong firmware: a BLE-only build, or a USB build made without its USB interface (four of the release builds, among them the T-Echo Lite's with display: [platform-notes.md](platform-notes.md#meshcore-companion-firmware)); close the app, check the firmware type |
 | State `disconnected` after re-plugging the radio | The device number changed: `pct reboot <id>` |
 | State `disconnected`, log shows `connection lost` every few minutes | USB power or cable; check `dmesg` on the host |
 | `delivery: failed`, reason `unknown_contact` | The contact is not in the radio's contact table or has a different key; `meshcore-home-gateway probe` shows the table |
