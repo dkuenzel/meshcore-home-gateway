@@ -350,9 +350,11 @@ class TelemetryRecords:
             if contact is not None:
                 contacts[key] = contact
         ages = raw.get("floods_age_s")
-        floods = tuple(
-            a for a in ages if _age(a) and a < telemetry.HOUR_S
-        ) if isinstance(ages, list) else ()  # fmt: skip
+        floods = (
+            tuple(sorted(a for a in ages if _age(a) and a < telemetry.HOUR_S))
+            if isinstance(ages, list)
+            else ()
+        )  # fmt: skip
         own, mesh = raw.get("own_debt_s", 0.0), raw.get("mesh_debt_s", 0.0)
         return Saved(
             contacts, floods[: telemetry.FLOODS_PER_HOUR],

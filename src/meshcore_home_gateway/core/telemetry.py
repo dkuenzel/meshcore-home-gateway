@@ -6,7 +6,8 @@ candidates, what the radio answered and what was heard, and does what it decides
 * One request in flight for the whole gateway: the firmware keeps one pending request.
 * Direct only: a contact with a stored path is asked on it. One without a path is asked by flood
   only when it was heard by other means (an advert, a live message, a path it sent) within
-  30 minutes of when the flood was planned, at most 4 floods an hour for the gateway and one per
+  30 minutes; a flood planned then stays planned (while it waits for the lanes, a retry or the
+  gap) as long as the gateway keeps deciding. At most 4 floods an hour for the gateway and one per
   contact per 30 minutes, the gap doubling with each flood until a direct answer (up to a day); a
   contact that has not answered within a day, once a day. The gateway never resets or writes a
   path for telemetry.
@@ -52,6 +53,7 @@ AWAY_S = 1800.0  # a contact that answered within a day is asked at least this o
 PROBE_GAP_S = 86_400.0  # floods to a contact that has not answered within a day
 MAX_FLOOD_GAP_S = 86_400.0
 FLOOD_MAX_WAIT_S = 600.0  # a due flood waits at most this long behind direct polls
+PLAN_KEEP_S = 300.0  # planned floods are dropped after this long without a decision (radio away)
 PARK_S = 86_400.0  # the schedule of a contact that left the candidates is kept this long
 RETRY_S = 30.0
 POLL_GAP_S = 10.0  # after every outcome of a request the radio sent
@@ -150,7 +152,8 @@ class _Contact:
     hops: int | None = None
     path_bytes: int | None = None
     heard_at: float | None = None
-    flood_waiting_since: float | None = None  # a due flood first planned
+    flood_waiting_since: float | None = None  # when its flood was planned (while heard)
+    tried_at: float | None = None  # the newest request not sent (refused, withdrawn)
     reply_charged: float | None = None  # the request whose flooded answer was charged
 
 
@@ -176,6 +179,8 @@ class Scheduler:
         self._mesh: AirtimeBudget | None = None
         self._contacts: dict[str, _Contact] = {}
         self._parked: dict[str, tuple[float, _Contact]] = {}  # key -> (since, schedule)
+        self._restored: dict[str, _Contact] = {}  # candidates of the last run, not yet compared
+        self._decided_at: float | None = None
         self._floods: list[float] = []
         self._in_flight: str | None = None
         self._gap_until = -math.inf
@@ -195,6 +200,10 @@ class Scheduler:
     def decide(self, lora: LoRaParams, candidates: Sequence[Candidate], now: float) -> Poll | float:
         """The next request to send now, or how long to sleep before deciding again."""
         self._use(lora, now)
+        if self._decided_at is not None and now - self._decided_at > PLAN_KEEP_S:
+            for s in self._contacts.values():  # no decision for a while: plans are stale
+                s.flood_waiting_since = None
+        self._decided_at = now
         self._track(candidates, now)
         planned = self._plan(candidates, now)
         if self._in_flight is not None:
@@ -232,14 +241,18 @@ class Scheduler:
         return sleep
 
     def _plan(self, candidates: Sequence[Candidate], now: float) -> dict[str, Poll | None]:
-        """What each due candidate would be asked; also when a due flood was first planned."""
+        """What each due candidate would be asked; also when a flood was first planned. A plan
+        survives while the contact is not due (a retry)."""
         planned: dict[str, Poll | None] = {}
         for c in candidates:
             if c.key == self._in_flight:
                 continue
             s = self._contacts[c.key]
             self._sign_of_life(s, now)
-            poll = self._poll_for(c, s, now) if s.due_at <= now else None
+            if s.due_at > now:
+                planned[c.key] = None
+                continue
+            poll = self._poll_for(c, s, now)
             planned[c.key] = poll
             if poll is None or not poll.flood:
                 s.flood_waiting_since = None
@@ -249,9 +262,9 @@ class Scheduler:
 
     def _poll_for(self, c: Candidate, s: _Contact, now: float) -> Poll | None:
         if c.path_bytes is None:  # the radio would flood: only if heard recently
-            # judged when the flood was first planned: waiting for the lanes does not void it
-            planned = s.flood_waiting_since if s.flood_waiting_since is not None else now
-            if _fresh(s.heard_at, planned) and self._flood_allowed(s, now):
+            # once planned, a later hearing or none does not void it (it waits for the lanes)
+            heard = s.flood_waiting_since is not None or _fresh(s.heard_at, now)
+            if heard and self._flood_allowed(s, now):
                 return Poll(c.key, True, self._flood_costs(s), "flood")
             return None
         purpose = "retry" if s.failures and _recent(s, now) else "poll"
@@ -259,10 +272,12 @@ class Scheduler:
         return Poll(c.key, False, costs, purpose)
 
     def _sign_of_life(self, s: _Contact, now: float) -> None:
-        """Heard by other means after the last request. A contact without a path is due at once:
-        it may be flooded only while it was heard recently. Otherwise the back-off ends, and the
-        next request follows the normal interval after the last one, never sooner (ADR 0018)."""
-        if s.heard_at is None or (s.polled_at is not None and s.heard_at <= s.polled_at):
+        """Heard by other means after the last request (sent or tried). A contact without a path
+        is due at once: it may be flooded only while it was heard recently. Otherwise the
+        back-off ends, and the next request follows the normal interval after the last one,
+        never sooner (ADR 0018)."""
+        last = max((t for t in (s.polled_at, s.tried_at) if t is not None), default=None)
+        if s.heard_at is None or (last is not None and s.heard_at <= last):
             return
         if s.path_bytes is None:
             target = now
@@ -333,6 +348,10 @@ class Scheduler:
         for key in [k for k in self._contacts if k not in keys and k != self._in_flight]:
             self._parked[key] = (now, self._contacts.pop(key))
             self.version += 1
+        restored, self._restored = self._restored, {}  # compared with a table now
+        for key, kept in restored.items():
+            if key not in keys:  # left while the gateway was stopped: parked from now
+                self._parked[key] = (now, kept)
         for key in [k for k, (since, _) in self._parked.items() if now - since > PARK_S]:
             del self._parked[key]
             self.version += 1
@@ -340,7 +359,7 @@ class Scheduler:
             s = self._contacts.get(c.key)
             if s is None:
                 parked = self._parked.pop(c.key, None)
-                s = parked[1] if parked else _Contact(due_at=now)
+                s = restored.get(c.key) or (parked[1] if parked else _Contact(due_at=now))
                 self._contacts[c.key] = s
                 self.version += 1
             s.hops, s.path_bytes, s.heard_at = c.hops, c.path_bytes, c.heard_at
@@ -423,7 +442,7 @@ class Scheduler:
         s = self._contacts.get(key)
         if s is not None:
             s.due_at = now + (RETRY_S if after_s is None else after_s)
-            s.flood_waiting_since = None
+            s.tried_at = now  # a sign of life before it does not bring it forward
             self.version += 1
 
     def flooded_reply(self, key: str, now: float) -> None:
@@ -475,8 +494,9 @@ class Scheduler:
     def export(self, now: float) -> Saved:
         """The schedule for the state file, also of parked contacts, and the lanes' debt."""
         self.urgent = False
-        parked = {k: (since, s) for k, (since, s) in self._parked.items()}
-        everyone = {**parked, **{k: (None, s) for k, s in self._contacts.items()}}
+        parked: dict[str, tuple[float | None, _Contact]] = dict(self._parked)
+        current = {**self._restored, **self._contacts}
+        everyone = {**parked, **{k: (None, s) for k, s in current.items()}}
 
         def age(t: float | None) -> float | None:
             return None if t is None else max(0.0, now - t)
@@ -509,7 +529,10 @@ class Scheduler:
                 located=c.located, still=c.still, lpp_bytes=c.lpp_bytes,
             )  # fmt: skip
             since = at(c.parked_age_s)
-            self._parked[key] = (now if since is None else since, s)  # until it is a candidate
+            if since is None:  # a candidate when saved: until compared with the next table
+                self._restored[key] = s
+            else:
+                self._parked[key] = (since, s)
         self._floods = [now - (a + elapsed) for a in saved.floods_age_s if a + elapsed < HOUR_S]
         self._owed = (saved.own_debt_s, saved.mesh_debt_s, now - elapsed)
 

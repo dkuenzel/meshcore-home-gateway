@@ -37,8 +37,9 @@ versions.
 8. *Position Settings*: "GPS Mode" **Enabled**. *Public Info*: "Share Position in Advert" **off**:
    an advert reaches everyone in range.
 9. Send the gateway one message from the companion. It teaches both radios a route, so the first
-   request goes direct; without it the gateway floods a request only once it hears the companion
-   (an advert, a message).
+   request goes direct; without it the gateway floods a request only while it has heard the
+   companion within the last 30 minutes (an advert, also the one it was added from or one heard
+   before a restart, or a message as it arrived).
 
 Then, on the gateway: `[telemetry] enabled = true` and restart the service.
 
@@ -56,8 +57,9 @@ Then, on the gateway: `[telemetry] enabled = true` and restart the service.
   never answered, the requests thin out to one every 6 hours.
 * **Exception:** when the gateway sent the companion a message while it was away and the message
   fell back to a flood, the radio forgot the companion's route. It is then asked again only once
-  it advertises or sends a message, and then at once: the gateway never floods a companion it has
-  not heard within 30 minutes, and never writes a route for telemetry.
+  it advertises or sends a message, and then at once: the gateway floods a companion only when it
+  heard it within 30 minutes (the flood may go out later while it waits for its airtime), and it
+  never writes a route for telemetry.
 * Its tracker in Home Assistant (`device_tracker.mesh_<name>`) appears with the first position.
   Its *Last heard* follows adverts and messages at once and telemetry answers at most once an
   hour.

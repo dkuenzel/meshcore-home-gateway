@@ -159,7 +159,8 @@ format and the command line are public interfaces.
   `[telemetry] enabled`, **off by default** for now): the gateway asks each companion (chat
   contact) of the radio for its battery, readings and position with `SEND_TELEMETRY_REQ`, one at
   a time and after the messages, and takes an answer only for the contact asked. Direct only: a
-  companion without a path is flooded only when it was heard within 30 minutes, at most 4 floods
+  companion without a path is flooded only when it was heard within 30 minutes when the flood is
+  planned, at most 4 floods
   an hour; the gateway never resets or writes a path for it. Within 18 s an hour of the gateway's
   own transmit time and an estimated 90 s an hour of mesh airtime, both starting empty at every
   start; about every 15 minutes at rest and 90 seconds while moving for a neighbour, once an hour

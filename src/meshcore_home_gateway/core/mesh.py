@@ -182,9 +182,15 @@ class Mesh:
         if tracked is None:
             return False
         heard = tracked.heard
-        moved = heard is None or heard.how != "telemetry" or at - heard.at >= HEARD_REFRESH_S
+        moved = (
+            heard is None or heard.how != "telemetry" or not 0 <= at - heard.at < HEARD_REFRESH_S
+        )
         if moved:
-            self.contact_heard(key, Heard(at, "telemetry", heard.signal if heard else Signal()))
+            answer = Heard(at, "telemetry", heard.signal if heard else Signal())
+            if heard is not None and heard.how == "telemetry":  # also after the clock went back
+                tracked.heard = answer
+            else:  # an advert or message newer than the answer stays
+                self.contact_heard(key, answer)
         if position is not None:
             tracked.position_received_at = at
             fix = tracked.fix

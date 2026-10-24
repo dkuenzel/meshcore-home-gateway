@@ -257,3 +257,15 @@ def test_an_unknown_or_unreadable_telemetry_schedule_starts_empty(tmp_path: Path
     saved, _ = TelemetryRecords(store).load(0.0)
     assert saved is not None
     assert saved.contacts[A].due_in_s == 7 * 86_400.0
+
+
+def test_the_newest_floods_of_the_hour_are_kept(tmp_path: Path) -> None:
+    """Only four count against the hourly limit: the newest, so a restart frees nothing early."""
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"telemetry": {
+        "version": 1, "saved_at": 0.0, "contacts": {},
+        "floods_age_s": [3300.0, 2700.0, 2100.0, 1500.0, 300.0],
+    }})  # fmt: skip
+    saved, _ = TelemetryRecords(store).load(0.0)
+    assert saved is not None
+    assert saved.floods_age_s == (300.0, 1500.0, 2100.0, 2700.0)

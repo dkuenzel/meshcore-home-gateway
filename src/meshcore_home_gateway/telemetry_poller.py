@@ -34,7 +34,6 @@ from meshcore_home_gateway.protocol.packet import flooded_response_hashes
 from meshcore_home_gateway.radio.session import (
     CommandFailedError,
     CompanionSession,
-    NotSentError,
     RadioError,
     TelemetryReceived,
     TelemetrySent,
@@ -53,6 +52,10 @@ MEASURED_TX_LIMIT_S = 180  # the radio's own time on air per hour (5 %) from whi
 HOLD_MAX_S = 15.0  # an answer waits this long for a table that shows every reported change
 OUTDATED_WAIT_S = 1.0  # while the radio reported a change that the table as read may not show
 HELD_ANSWERS = 4
+LOST_SENT_WINDOW_S = 120.0  # a request written whose SENT never came: its answer counts this long
+SEED_HEARD = frozenset({"advert"})  # what the history's "last heard" may seed (not a message:
+#   one fetched at connect may have waited in the radio for hours)
+HEARD_KEPT = 512  # heard times kept before old ones are dropped
 
 
 class OutboxActivity:
@@ -119,6 +122,11 @@ class AnswerWaiter:
         """Before the request is written: its answer can come before the poller sees SENT."""
         self._armed, self._early, self._sent = key, [], False
         self._future = asyncio.get_running_loop().create_future()
+
+    def assume_sent(self, key: str, until: float) -> None:
+        """A request written whose SENT never came: the radio may hold its tag, so its answer
+        is taken as late until `until`."""
+        self._last, self._late_until = key, until
 
     def disarm(self) -> None:
         """No SENT: the radio still holds the previous request, its window stays."""
@@ -219,8 +227,10 @@ class TelemetryPoller:
         self._held: deque[tuple[str, TelemetryReceived]] = deque(maxlen=HELD_ANSWERS)
         self._wake = asyncio.Event()
         self._heard: dict[str, float] = {}  # key -> heard by other means (monotonic)
-        # key -> the session and frame number of its newest answer taken
-        self._newest: dict[str, tuple[CompanionSession, int]] = {}
+        # key -> the session's serial and the frame number of its newest answer taken
+        self._newest: dict[str, tuple[int, int]] = {}
+        self._seeded: set[str] = set()  # keys whose heard time the history was asked for
+        self._started = wall_clock()  # what was heard before counts from the history only
         self._own_flood: tuple[str, float] | None = None  # (key, until): its 0x81 is ours
         self._reply_watch: tuple[str, float] | None = None  # (key, until): last direct request
         self._sending: str | None = None  # the request being written, before its SENT
@@ -255,6 +265,7 @@ class TelemetryPoller:
             self._save(at_once=True)
 
     def _restore(self) -> None:
+        self._started = self._wall()
         try:
             saved, elapsed = self._records.load(self._wall()) if self._records else (None, 0.0)
             self._scheduler = core.Scheduler(
@@ -389,21 +400,34 @@ class TelemetryPoller:
         self._waiter.arm(poll.key)
         # pushes read before this task sees SENT: the route is known only then
         self._sending, self._early_path, self._early_reply = poll.key, False, False
+        before: list[int] = []
+
+        def busy() -> bool:  # runs with the lock, right before the write
+            before.append(session.commands_sent)
+            return self._outbox.busy
+
+        def written() -> bool:
+            return bool(before) and session.commands_sent > before[0]
+
         try:
-            sent = await session.request_telemetry(
-                bytes.fromhex(poll.key), unless=lambda: self._outbox.busy
-            )
+            sent = await session.request_telemetry(bytes.fromhex(poll.key), unless=busy)
         except CommandFailedError as exc:
             self._not_sent()
             self._refused(session, poll, exc.reason)
             return None
-        except NotSentError:  # nothing was written
+        except asyncio.CancelledError:  # the stop: a written request is in the last save
+            if written():
+                self._scheduler.sent(poll, flood=poll.flood, now=self._mono())
+            raise
+        except RadioError:  # no SENT: not written, or written and the link broke
             self._not_sent()
-            self._scheduler.retry(poll.key, self._mono())
-            return None
-        except RadioError:  # written, but no SENT came: perhaps sent, so counted as planned
-            self._not_sent()
-            self._scheduler.sent(poll, flood=poll.flood, now=self._mono())
+            if written():  # perhaps sent: counted as planned, its answer taken late
+                now = self._mono()
+                self._scheduler.sent(poll, flood=poll.flood, now=now)
+                until = now + LOST_SENT_WINDOW_S
+                self._waiter.assume_sent(poll.key, until)
+                if poll.flood:
+                    self._own_flood = (poll.key, until)
             self._scheduler.retry(poll.key, self._mono())
             self._save(at_once=self._scheduler.urgent)
             return None
@@ -427,7 +451,8 @@ class TelemetryPoller:
 
     async def _accept(self, key: str, event: TelemetryReceived, *, late: bool) -> None:
         newest = self._newest.get(key)
-        if late and newest is not None and newest[0] is event.session and event.seq <= newest[1]:
+        same_session = newest is not None and newest[0] == event.session_serial
+        if late and newest is not None and same_session and event.seq <= newest[1]:
             log.debug("telemetry %s: late answer older than one taken, dropped", key[:12])
             return
         session = await self._fresh_table()
@@ -445,7 +470,7 @@ class TelemetryPoller:
             key, now, found.cells if found else None, payload.lpp_bytes,
             route=(record.path_hops, record.path_bytes), late=late,
         )  # fmt: skip
-        self._newest[key] = (event.session, event.seq)
+        self._newest[key] = (event.session_serial, event.seq)
         if self._own_flood is not None and self._own_flood[0] == key:
             self._own_flood = None  # its path came before its answer: later ones are the contact's
         log.debug("telemetry %s: answer of %d bytes, %d of them readings%s", key[:12],
@@ -485,16 +510,36 @@ class TelemetryPoller:
         prefixes = Counter(key[:PREFIX_HEX_DIGITS] for key in records)
         if info is not None:
             prefixes[info.public_key[:PREFIX_HEX_DIGITS]] += 1
-        self._heard = {k: t for k, t in self._heard.items() if now - t <= 2 * core.HEARD_RECENTLY_S}
+        self._prune_heard(now)
+        for kept in (self._newest, self._routes, self._states):  # contacts that left
+            for key in [k for k in kept if k not in records]:
+                del kept[key]
         chosen = []
         for key, record in records.items():
             if record.node_type != NodeType.CHAT or prefixes[key[:PREFIX_HEX_DIGITS]] > 1:
                 continue  # companions only, never a look-alike
             if self._absent.get(key) == session.contacts_read_at:
                 continue  # the radio lacked it on the table as read
+            if key not in self._seeded:
+                self._seed(key, now)
             heard = self._heard.get(key)
             chosen.append(Candidate(key, record.path_hops, record.path_bytes, heard))
         return chosen
+
+    def _seed(self, key: str, now: float) -> None:
+        """An advert from before this run (the history keeps when a contact was last heard)
+        counts as heard, so a companion added before a restart is flooded while it is fresh."""
+        self._seeded.add(key)
+        tracked = self._observer.mesh.contacts.get(key)
+        heard = tracked.heard if tracked is not None else None
+        if heard is None or heard.how not in SEED_HEARD or heard.at >= self._started:
+            return  # heard in this run: already counted as it came
+        age = self._wall() - heard.at
+        if 0 <= age <= core.HEARD_RECENTLY_S:  # a clock set back: unknown
+            self._heard[key] = max(self._heard.get(key, -math.inf), now - age)
+
+    def _prune_heard(self, now: float) -> None:
+        self._heard = {k: t for k, t in self._heard.items() if now - t <= 2 * core.HEARD_RECENTLY_S}
 
     def _refused(self, session: CompanionSession, poll: Poll, reason: str) -> None:
         now = self._mono()
@@ -544,7 +589,10 @@ class TelemetryPoller:
 
     def heard(self, key: str) -> None:
         """The contact was heard by other means: an advert, a message as it arrived."""
-        self._heard[key] = self._mono()
+        now = self._mono()
+        self._heard[key] = now
+        if len(self._heard) > HEARD_KEPT:  # a busy mesh while nothing decides (paused)
+            self._prune_heard(now)
         self._wake.set()
 
     def path_changed(self, public_key: bytes) -> None:

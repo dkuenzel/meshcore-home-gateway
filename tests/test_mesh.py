@@ -265,3 +265,15 @@ def test_a_contact_back_among_the_heard_nodes_evicts_none_added_in_the_same_read
     mesh.contacts_read([dave], T)
     assert mesh.contacts["d4" * 32].heard == Heard(T - 300, "advert")
     assert list(mesh.nodes) == ["c3" * 32, ALICE.public_key]
+
+
+def test_last_heard_follows_answers_after_the_clock_was_set_back() -> None:
+    mesh = Mesh()
+    mesh.contacts_read([ALICE], T)
+    key = ALICE.public_key
+    mesh.contact_answered(key, T, None, None)
+    assert mesh.contact_answered(key, T - 7200 + 900, None, None)  # the clock went back 2 h
+    assert mesh.contacts[key].heard == Heard(T - 6300, "telemetry", Signal())
+    mesh.contact_heard(key, Heard(T - 6000, "advert", Signal(1, 5.0, -80)))
+    mesh.contact_answered(key, T - 6100, None, None)  # an answer older than the advert
+    assert mesh.contacts[key].heard == Heard(T - 6000, "advert", Signal(1, 5.0, -80))

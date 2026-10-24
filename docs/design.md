@@ -645,11 +645,14 @@ sequenceDiagram
   went out is sent at once; it may share the channel with the request's answer for about a second
   (direct), or with a flood for up to its timeout.
 * **Routes.** Direct only: a contact with a stored path is asked on it. One without a path is asked
-  by flood only when it was heard by other means within 30 minutes of when the flood is planned
-  (an advert, also one from before it was added, a message as it arrived, a path it sent; never its
-  own telemetry answers, never a message fetched at connect, never the path of the gateway's own
-  flood): heard after its last request, it is due at once, and a flood planned while it counted as
-  heard stays planned while it waits for the lanes. At most 4 floods an hour for the gateway and one per
+  by flood only when it was heard by other means within 30 minutes when the flood is planned (an
+  advert, also one from before it was added or, as the history keeps it, from before a restart; a
+  message as it arrived; a path it sent; never its own telemetry answers, never a message fetched
+  at connect, never the path of the gateway's own flood, never an advert of a repeater, room or
+  sensor the radio did not add). Heard after its last request (sent or tried), it is due at once.
+  A flood once planned stays planned while it waits for the lanes, a retry or the flood gap,
+  however the contact is heard meanwhile, as long as the gateway keeps deciding (plans are dropped
+  after 5 minutes without a decision, the radio away). At most 4 floods an hour for the gateway and one per
   contact per 30 minutes, the gap doubling with each flood until a direct answer (up to a day); a
   contact that has not answered within a day gets one flood a day. A flooded request teaches both
   sides a path, so the next requests go direct. **The gateway never resets or writes a path for
@@ -657,8 +660,10 @@ sequenceDiagram
   message's flood fallback resets it (§6.2); a contact whose path was reset is then asked again
   only once it is heard. A companion away when an alert to it fell back to a flood is therefore
   found again when it advertises or sends a message, not by itself. A request written whose
-  `SENT` never came (the link broke) counts as sent as planned, so a reconnect does not repeat a
-  flood.
+  `SENT` never came (the link broke, or the gateway stopped) counts as sent as planned, so a
+  reconnect or a restart does not repeat a flood, and its answer is still taken as late for two
+  minutes. A request refused or withdrawn counts as tried: a sign of life from before it does not
+  bring it forward again.
 * **Lanes.** Two token buckets, separate from the message budget: 18 s an hour of the gateway's own
   transmit time and 90 s an hour of estimated airtime in the mesh (every hop of request and answer;
   a flood as repeated by 20 repeaters, an assumption). Both start empty at every start (a restart
@@ -697,7 +702,8 @@ sequenceDiagram
 * **Persistence.** The schedule (per contact the due time, failures, the times of its last answer,
   request and flood, whether it was last moving, the size of its answers, since when it left the
   candidates; the gateway's floods of the last hour and the lanes' debt) is kept under
-  `telemetry` in the state file, relative to the time it was saved,
+  `telemetry` in the state file, relative to the time it was saved (a contact of the last run
+  keeps its schedule until a table read lacks it, however long the radio was away),
   without positions. It is saved every 5 minutes after a change, at once after a flood (before its
   wait, so a crash cannot repeat it) and at the stop. A contact that left the candidates keeps its
   schedule for a day.

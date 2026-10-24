@@ -438,12 +438,26 @@ def test_a_restored_schedule_tolerates_a_clock_that_went_back() -> None:
     assert r.export(0.0).floods_age_s == (100.0,)
 
 
-def test_a_restored_contact_that_never_comes_back_is_dropped_after_a_day() -> None:
-    saved = Saved({A: SavedContact(0.0)})
+def test_a_restored_contact_that_never_comes_back_is_dropped_a_day_after_the_first_table() -> None:
+    """Time without the radio does not count: a candidate of the last run leaves the
+    candidates only when a table read lacks it."""
+    saved = Saved({A: SavedContact(0.0, failures=3)})
     r = Scheduler(0.0, saved=saved, lanes=wide)
-    assert A in r.export(10.0).contacts
+    assert r.export(90_000.0).contacts[A].parked_age_s is None  # no table seen yet
     r.decide(EU, [direct(B)], 90_000.0)
-    assert A not in r.export(90_000.0).contacts
+    assert r.export(90_000.0).contacts[A].parked_age_s == 0.0
+    r.decide(EU, [direct(B)], 90_000.0 + telemetry.PARK_S + 1)
+    assert A not in r.export(90_000.0 + telemetry.PARK_S + 1).contacts
+
+
+def test_a_restored_candidate_keeps_its_schedule_however_long_the_radio_was_away() -> None:
+    saved = Saved({A: SavedContact(0.0, failures=3, flood_age_s=100.0)})
+    r = Scheduler(0.0, saved=saved, lanes=wide)
+    again = Scheduler(0.0, saved=r.export(3600.0), elapsed_s=90_000.0, lanes=wide)
+    again.decide(EU, [pathless(A)], 0.0)
+    kept = again.export(0.0).contacts[A]
+    assert kept.failures == 3
+    assert kept.flood_age_s == pytest.approx(100.0 + 3600.0 + 90_000.0)
 
 
 def test_constants_are_read_when_used(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -542,3 +556,73 @@ def test_a_departed_contact_keeps_its_schedule_for_a_day_across_restarts() -> No
     r.decide(EU, [direct(B)], 6000.0)  # a day after it left
     assert A not in r.export(6000.0).contacts
     assert B in r.export(6000.0).contacts
+
+
+# --- review round two: plans, retries, carried debt -----------------------------------------------
+
+
+def test_a_planned_flood_stays_planned_when_heard_again_or_no_longer() -> None:
+    """Hearing the contact again does not restart its plan, and nor does losing the heard time
+    (the poller keeps it an hour): four companions heard together are all flooded."""
+    s = Scheduler(0.0)
+    keys = (A, B, C, D)
+    now, flooded = 0.0, {}
+    while now < 4000.0:
+        heard = now if now < 600.0 else None  # heard again and again, then forgotten
+        candidates = [pathless(k, heard_at=heard) for k in keys]
+        decision = s.decide(EU, candidates, now)
+        if isinstance(decision, float):
+            now += max(decision, 0.001)
+            continue
+        s.sent(decision, flood=True, now=now)
+        s.unanswered(decision.key, now + 9)
+        flooded[decision.key] = now
+        now += 9
+    assert set(flooded) == set(keys)
+
+
+def test_a_planned_flood_survives_a_retry() -> None:
+    """Withdrawn for a message, or ERR 3: the flood planned while the contact was heard goes
+    out after the retry, also when the hearing is older than 30 minutes by then."""
+    s = Scheduler(0.0, lanes=wide)
+    flood = poll(s, [pathless(A, heard_at=0.0)], 1700.0)
+    s.retry(A, 1700.0, after_s=200.0)  # no free packet buffer
+    assert isinstance(s.decide(EU, [pathless(A, heard_at=0.0)], 1800.0), float)  # not yet
+    again = poll(s, [pathless(A, heard_at=0.0)], 1900.0)
+    assert (again.key, again.flood) == (flood.key, True)
+
+
+def test_plans_are_dropped_when_nothing_was_decided_for_a_while() -> None:
+    """The radio was away: a flood planned before is not sent for an old hearing."""
+    s = Scheduler(0.0)
+    assert isinstance(s.decide(EU, [pathless(A, heard_at=0.0)], 0.0), float)  # waits for lanes
+    later = telemetry.PLAN_KEEP_S + 1000.0
+    assert s.decide(EU, [pathless(A, heard_at=None)], later) == telemetry.STEP_S
+
+
+def test_a_sign_of_life_does_not_undo_a_retry_delay() -> None:
+    """A refusal sets a delay without a request sent: hearing the contact before it must not
+    bring it forward again (no tight loop of refused requests)."""
+    s = Scheduler(0.0, lanes=wide)
+    poll(s, [pathless(A, heard_at=10.0)], 20.0)
+    s.retry(A, 20.0, after_s=300.0)  # refused
+    assert isinstance(s.decide(EU, [pathless(A, heard_at=10.0)], 21.0), float)
+    ask(s, [direct(B)], 30.0)  # resting: due 15 min after
+    ask(s, [direct(B)], 930.0, answer=False)  # then silent: retried after 30 s
+    ask(s, [direct(B)], 965.0, answer=False)  # backed off to 30 min
+    heard = [direct(B, heard_at=1100.0)]  # a sign of life: due 15 min after the last request
+    p = poll(s, heard, 1865.0)
+    s.retry(p.key, 1865.0, after_s=300.0)  # refused
+    assert isinstance(s.decide(EU, heard, 1866.0), float)
+    assert poll(s, heard, 2165.0).key == B
+
+
+def test_a_debt_carried_over_is_paid_back_also_before_the_first_decision() -> None:
+    saved = Saved({}, (), own_debt_s=0.5, mesh_debt_s=20.0)
+    r = Scheduler(100.0, saved=saved, elapsed_s=200.0)
+    exported = r.export(100.0 + 400.0)  # never decided: the radio was not there
+    assert exported.mesh_debt_s == pytest.approx(20.0 - 90.0 * 600.0 / 3600)
+    assert exported.own_debt_s == pytest.approx(0.0)  # 0.5 s paid back at 18 s/h in 100 s
+    again = Scheduler(1000.0, saved=exported, elapsed_s=0.0)
+    first = due_at(again, [direct(A)], 1000.0, 3000.0)
+    assert first - 1000.0 == pytest.approx((exported.mesh_debt_s + 0.887) / (90.0 / 3600), abs=0.5)

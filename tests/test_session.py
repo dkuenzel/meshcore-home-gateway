@@ -589,10 +589,12 @@ def test_channel_send_and_path_reset() -> None:
     run(radio, scenario)
 
 
-def test_a_telemetry_request_and_its_answer_in_frame_order() -> None:
-    """SENT carries the route and the estimate; the answer is a push, numbered after it when
-    the radio answers at once (the emulator writes both together)."""
-    radio = EmulatedRadio(contacts=[BOB], remotes={BOB.public_key: RemoteCompanion()})
+@pytest.mark.parametrize("same_write", [False, True], ids=["later", "with-sent"])
+def test_a_telemetry_request_and_its_answer_in_frame_order(same_write: bool) -> None:
+    """SENT carries the route and the estimate; the answer is a push, numbered after it, also
+    when the radio writes both together, before the caller resumes."""
+    remote = RemoteCompanion(same_write=same_write)
+    radio = EmulatedRadio(contacts=[BOB], remotes={BOB.public_key: remote})
 
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()

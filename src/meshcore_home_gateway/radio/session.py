@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import itertools
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
@@ -120,7 +121,7 @@ class TelemetryReceived:
     data: bytes
     received_at: float
     seq: int  # the frame's number in its session
-    session: CompanionSession  # numbers are compared only within one session
+    session_serial: int  # numbers are compared only within one session
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +239,7 @@ class CompanionSession:
         self._contacts_changed_at = -1  # command count at the last contact push
         self._commands_sent = 0
         self._frames_read = 0
+        self.serial = next(_SERIALS)  # tells this session's frame numbers from another's
         self.contact_records: dict[str, codec.ContactRecord] = {}
         self.channels: dict[int, str] = {}
         self.battery: codec.Battery | None = None
@@ -680,7 +682,7 @@ class CompanionSession:
                 await self._events.put(PathChanged(decoded.public_key))
         elif isinstance(decoded, codec.TelemetryResponse):  # a prefix, not a key: none reported
             await self._events.put(
-                TelemetryReceived(decoded.prefix, decoded.data, self._wall(), seq, self)
+                TelemetryReceived(decoded.prefix, decoded.data, self._wall(), seq, self.serial)
             )
         elif frame[0] == Push.CONTACTS_FULL:
             self._contacts_changed()
@@ -781,6 +783,7 @@ class CompanionSession:
             raise CommandFailedError(name, "disabled")
 
 
+_SERIALS = itertools.count(1)
 _CONTACT_CODES = frozenset({Response.CONTACTS_START, Response.CONTACT, Response.END_OF_CONTACTS})
 _SYNC_CODES = codec.MESSAGE_CODES | {Response.NO_MORE_MESSAGES}
 

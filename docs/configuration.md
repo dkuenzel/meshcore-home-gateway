@@ -225,7 +225,8 @@ Fixed by ADR 0018, not settings:
   after 30 s, then at least every 30 minutes for a day (or at its normal interval, if that is
   longer: an hour without a position), then up to every 6 hours.
 * **Routes**: direct only. A companion without a stored path is asked by flood only when it was
-  heard within 30 minutes (an advert, a message, a path it sent), at most 4 floods an hour and one
+  heard within 30 minutes when the flood is planned (an advert, a message, a path it sent; the
+  flood may go out later while it waits for its airtime), at most 4 floods an hour and one
   per companion per 30 minutes; one that has not answered within a day, once a day. The gateway
   never resets or writes a path for telemetry: a companion whose path a message's flood fallback
   (`flood_after`) reset is asked again once it advertises or sends something, then at once.

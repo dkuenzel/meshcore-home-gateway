@@ -67,6 +67,7 @@ from meshcore_home_gateway.mqtt.payloads import (
 )
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES, radio_name
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.protocol.links import contact_link
@@ -765,7 +766,7 @@ class Bridge:
     def _telemetry_sees(self, telemetry: TelemetryPoller, event: RadioEvent) -> None:
         if isinstance(event, PacketLogged):
             self._observe(telemetry.packet_logged, event.rx)
-        elif isinstance(event, AdvertHeard):  # checked by the radio; a node added later counts
+        elif isinstance(event, AdvertHeard) and _may_be_asked(event.advert):
             self._observe(telemetry.heard, event.advert.public_key.hex())
 
     async def _message_loop(self) -> None:
@@ -1097,6 +1098,13 @@ def protected_names(config: Config) -> dict[str, str]:
 
 def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
     return (info.device.model, info.device.version, info.public_key) if info else None
+
+
+def _may_be_asked(advert: codec.Advert) -> bool:
+    """A checked advert of a contact, or of a companion the radio did not add: added later,
+    it is asked for telemetry while its advert is fresh."""
+    record = advert.record
+    return not advert.new or (record is not None and record.node_type == NodeType.CHAT)
 
 
 def _key(target: Target) -> str:
