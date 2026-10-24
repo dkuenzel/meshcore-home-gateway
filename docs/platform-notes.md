@@ -1026,7 +1026,9 @@ The entries below are what that page does not cover.
   `muzi_base_uno_companion_radio_usb`. For the T-Echo Lite,
   `LilyGo_T-Echo-Lite_non_shell_companion_radio_usb`, the build for the board without display, has
   it; it uses the same board files without the display driver, so on a board with display it
-  runs with the display unused. *Verified:*
+  runs, but nothing is ever drawn: the e-paper, which keeps an image without power, goes on
+  showing what the previous firmware drew, and a start screen that never changes is the sign of
+  this build. *Verified:*
   `companion-v1.18.0`; `examples/companion_radio/main.cpp:67-71` declares and `main.cpp:257-261`
   registers the USB interface only under `ENABLE_USB_INTERFACE`, and `MultiSerialInterface`
   (`src/helpers/MultiSerialInterface.h`) adds no interface of its own; `build.sh:232` builds every
@@ -1034,16 +1036,19 @@ The entries below are what that page does not cover.
   (`variants/lilygo_techo_lite/platformio.ini:105-125`, `variants/meshnology_w12/platformio.ini:126-143`,
   `variants/muzi_base/platformio.ini:103-120` and `:230-247`) and the sections they extend set
   none of the interface flags; a script that resolves `extends` and `${...}` as PlatformIO does
-  found these four among all 222 environments that build the companion. All four are the same
-  on `dev` at `02c99229` (2026-10-22). On a radio (field report, 2026-10-24): a T-Echo Lite with
-  display, flashed with the `non_shell` USB build of 1.18.0, exchanged messages with the gateway
-  in both directions. *Here:* the gateway reports
+  found these four among all 222 environments that build the companion. The `non_shell`
+  environments (`variants/lilygo_techo_lite/platformio.ini:127-215`) set no `DISPLAY_CLASS`, and
+  `variants/lilygo_techo_lite/target.cpp:22-25` creates the display and its button only with one.
+  All four are the same on `dev` at `02c99229` (2026-10-22). On a radio (field report, 2026-10-24):
+  a T-Echo Lite with display, flashed with the `non_shell` USB build of 1.18.0, exchanged messages
+  with the gateway in both directions. *Here:* the gateway reports
   `no answer from the radio`, and the troubleshooting table of
   [deployment.md](deployment.md#5-troubleshooting) names this cause; no client can work around it.
   *Check:* in the tree above, `sed -n '67,71p;257,261p' examples/companion_radio/main.cpp`, then
   `grep -n ENABLE_USB_INTERFACE platformio.ini variants/lilygo_techo_lite/platformio.ini
   variants/meshnology_w12/platformio.ini variants/muzi_base/platformio.ini`: the only hit is line
-  203, in the T-Echo Lite's `non_shell` USB environment.
+  203, in the T-Echo Lite's `non_shell` USB environment. On the radio, with the `non_shell` build a
+  button press or a new message leaves the e-paper as it is.
 
 Already in protocol.md, with the firmware lines:
 
