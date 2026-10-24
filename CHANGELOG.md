@@ -9,6 +9,13 @@ format and the command line are public interfaces.
 
 ### Changed
 
+- `nodes` is published again after every table read; a contact that leaves the table is listed
+  as a heard node again while it counts as heard; an older advert no longer replaces a heard
+  node's record, in the history either: it keeps the advert time (history schema 2, migrated at
+  start). The `contact` event comes after the contact's documents.
+- The managed profile does not add a protected contact while another contact has its first
+  6 bytes (`protected_contacts.failed`); `check-config` and the service warn about two protected
+  keys with one prefix.
 - The installer suggests no MQTT user name any more: the dialog's field starts empty, and an
   answers file without `mqtt.username` logs in without one (so `mqtt.password` alone is refused;
   before, both took the user name `meshcore-home-gateway`).
@@ -140,6 +147,25 @@ format and the command line are public interfaces.
 
 ### Added
 
+- Contact management on request ([ADR 0017](docs/decisions/0017-contacts-on-the-radio-each-with-its-own-device.md),
+  `[contacts] manage`, on by default): `add_contact` takes a public key, a
+  `meshcore://contact/add` link or a contact card, `contacts/<key>/remove` removes a contact. A
+  node the gateway heard is added with the record the radio checked; a link or card only claims
+  name and type until the node's first advert (`contacts/<key>.verified`), and a card's
+  signature is not checked. Contact targets and command senders are never removed; a key with
+  the first 6 bytes of a contact or a protected key is refused; the gateway sets no flag but the
+  favourite; nothing is written on untested firmware unless `radio.profile.manage = "always"`.
+  A request ends in one `contact` event (none only for refusals beyond the rate limit and requests
+  queued at a stop): `added` or `removed` with its `request` and `id`, the
+  new `refused` (nothing was written) or `failed`; every `contact` event now carries `prefix`,
+  `request`, `id` and `reason`. A queue of 8 requests and a budget of radio work (10, then 1 a
+  minute) bound the radio's load; refusals are limited like those of send requests.
+- `meshcore-home-gateway contacts list|add|remove|link`: through the broker, with the full key
+  shown to compare; a heard node is named by its first 12 and last 8 key digits, never by a bare
+  prefix. `listen --topic contact|node`.
+- `state.contact_link` (the gateway's own contact link, for a QR code), `contacts.manage`,
+  `contacts/<key>.removable` and `.verified`, `nodes[].look_alike`, `nodes.look_alike` and
+  `look_alike_total`, `node.look_alike`.
 - Documents for every front end, retained on the broker and published when they change
   ([ADR 0015](docs/decisions/0015-provider-neutral-documents-on-the-bus.md), docs/mqtt-api.md):
   `stats` (the radio's own measurements: noise floor, its real time on air in the last hour,

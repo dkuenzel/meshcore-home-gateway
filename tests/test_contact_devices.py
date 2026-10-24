@@ -421,7 +421,8 @@ def test_a_device_deleted_in_home_assistant_stays_hidden(tmp_path: Path) -> None
     contacts.discovery_message(topic(ALICE), b"", retained=False)  # the user deleted it
     ((event_topic, event),) = bus.take()
     assert event_topic == "meshcore/radio1/contact"
-    assert event == {"event_type": "hidden", "key": ALICE, "name": "Alice", "type": "chat"}
+    assert event == {"event_type": "hidden", "key": ALICE, "prefix": ALICE[:12], "name": "Alice",
+                     "type": "chat", "request": None, "id": None, "reason": None}  # fmt: skip
     contacts.update(mesh)
     contacts.announce_all()
     assert bus.take() == []

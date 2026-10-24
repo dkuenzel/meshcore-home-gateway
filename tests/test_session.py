@@ -20,6 +20,7 @@ from meshcore_home_gateway.radio.session import (
     CompanionSession,
     ContactsRead,
     MessageReceived,
+    NotSentError,
     PacketLogged,
     RadioError,
     RadioEvent,
@@ -808,3 +809,83 @@ def test_statistics_of_another_type_end_the_session() -> None:
         assert session.closed
 
     run(radio, scenario)
+
+
+def test_a_contact_write_names_its_key_first_and_marks_the_table_changed() -> None:
+    """The key counts as held before the radio has it (ADR 0009); the table counts as outdated
+    after the write, also when the radio refused it."""
+    radio = EmulatedRadio(contacts=[ALICE], errors={Command.ADD_UPDATE_CONTACT: 3})
+    dave = bytes.fromhex("d4" * 32)
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start(fetch_messages=False)
+        keys: list[str] = []
+        session.on_contact_key = lambda key, held: keys.append(key[:4])
+        sent_before = len(radio.received)
+
+        def outdated() -> bool:
+            return session.contacts_outdated
+
+        with pytest.raises(CommandFailedError, match="table_full"):
+            await session.write_contact(codec.new_contact(dave, "Dave", 0))
+        assert keys == ["d4d4"]
+        assert outdated()
+        await session.refresh_contacts()
+        assert not outdated()
+        await session.write_contact(codec.new_contact(dave, "Dave", 0))
+        assert outdated()
+        await session.remove_contact(dave)
+        assert radio.received[-1] == bytes([Command.REMOVE_CONTACT]) + dave
+        assert len(radio.received) == sent_before + 4
+        with pytest.raises(CommandFailedError, match="not_found"):
+            await session.remove_contact(dave)
+
+    run(radio, scenario)
+
+
+def test_a_command_after_the_session_ended_was_not_sent() -> None:
+    """The contact manager tells a write the radio never got (nothing changed) from one whose
+    answer was lost (the outcome is unknown)."""
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start(fetch_messages=False)
+        radio.disconnect()
+        await session.wait_closed()
+        with pytest.raises(NotSentError):
+            await session.write_contact(codec.new_contact(bytes(32), "x", 0))
+
+    with pytest.raises(RadioError):
+        run(radio, scenario)
+
+
+class SlowTable(EmulatedRadio):
+    """The end of a table read arrives late, as from a radio with many contacts."""
+
+    async def read(self) -> bytes:
+        data = await super().read()
+        if len(data) > 3 and data[3] == Response.END_OF_CONTACTS:
+            await asyncio.sleep(0.3)
+        return data
+
+
+@pytest.mark.parametrize("message_waiting", [False, True], ids=["after its delay", "at once"])
+def test_the_table_is_not_read_again_after_a_contact_request_read_it(
+    monkeypatch: pytest.MonkeyPatch, message_waiting: bool
+) -> None:
+    """The maintenance task wakes on the write; a read begun after it is enough, also while it
+    is still running (a large table) and when a message waits (no delay then)."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
+    radio = SlowTable(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        reads = radio.commands().count(Command.GET_CONTACTS)
+        if message_waiting:
+            radio.queue_direct_message(ALICE.public_key[:6], "hi", START_TIME + 50)
+        await session.write_contact(codec.new_contact(bytes.fromhex("d4" * 32), "Dave", 0))
+        await session.refresh_contacts(newer_than=session.commands_sent)  # the request's read
+        await asyncio.sleep(0.6)
+        assert radio.commands().count(Command.GET_CONTACTS) == reads + 1
+
+    run(radio, scenario, timeout_s=1.0)

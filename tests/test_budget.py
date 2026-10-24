@@ -133,3 +133,12 @@ def test_an_accepted_key_can_be_replaced_by_the_one_it_turned_out_to_be() -> Non
     assert not dedup.is_duplicate("provisional", now=6)
     assert dedup.is_duplicate("final", now=14)
     assert not dedup.is_duplicate("final", now=15.5)  # the window counts from the replacement
+
+
+def test_a_rate_limit_can_be_asked_without_taking_a_token() -> None:
+    limit = RateLimit(1.0, 1.0, now=0.0)
+    assert limit.ready(0.0)
+    assert limit.ready(0.0)  # still there
+    assert limit.allow(0.0)
+    assert not limit.ready(0.5)
+    assert limit.ready(1.0)

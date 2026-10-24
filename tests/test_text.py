@@ -2,7 +2,13 @@
 
 import pytest
 
-from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
+from meshcore_home_gateway.core.text import (
+    TextPolicy,
+    TextRejectedError,
+    contact_name,
+    cut_utf8,
+    prepare_text,
+)
 
 UTF8 = TextPolicy(max_bytes=20)
 ASCII = TextPolicy(max_bytes=40, ascii_only=True)
@@ -145,3 +151,27 @@ def test_truncation_keeps_signs_that_follow_their_letter(
 ) -> None:
     """These belong to the letter before them although they are no marks (Unicode UAX #29)."""
     assert prepare_text(text, TextPolicy(max_bytes)) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Bob", "Bob"),
+        ("  Bob\n the\thiker \u202e ", "Bob the hiker"),  # one line, no direction override
+        ("x" * 29 + "äb", "x" * 29 + "ä"),  # 31 bytes
+        ("x" * 30 + "ä", "x" * 30),  # "ä" would not fit
+        ("x" * 27 + "\U0001f44d\U0001f3fd", "x" * 27),  # an emoji with its skin tone: not cut
+        ("x" * 23 + "\U0001f1e9\U0001f1ea", "x" * 23 + "\U0001f1e9\U0001f1ea"),  # a flag fits
+        ("x" * 25 + "\U0001f1e9\U0001f1ea", "x" * 25),  # a flag would not fit whole
+        ("e\u0301" * 16, "\u00e9" * 15),  # NFC first: 2 bytes each
+        ("\x00\x01", ""),
+    ],
+)
+def test_a_contact_name_fits_the_radio_between_whole_characters(name: str, expected: str) -> None:
+    assert contact_name(name) == expected
+    assert len(contact_name(name).encode()) <= 31
+
+
+def test_cut_utf8_keeps_whole_characters() -> None:
+    assert cut_utf8("aä", 2) == "a"
+    assert cut_utf8("abc", 10) == "abc"

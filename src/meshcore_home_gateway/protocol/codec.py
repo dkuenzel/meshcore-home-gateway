@@ -13,11 +13,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Position, TextType
+from meshcore_home_gateway.core.text import cut_utf8
 from meshcore_home_gateway.protocol.codes import (
     PROTOCOL_VERSION,
     AutoAdd,
     Command,
+    ContactFlag,
     ErrorCode,
+    NodeType,
     Push,
     Response,
     StatsType,
@@ -144,25 +147,46 @@ def add_update_contact(record: ContactRecord, flags: int) -> bytes:
     layout (MyMesh.cpp:194-215). The last-modified time is left out: the radio sets it."""
     if len(record.raw) != CONTACT_RECORD_BYTES or not 0 <= flags <= 0xFF:
         raise ValueError("add_update_contact needs a record read from the radio")
+    allowed = record.flags | int(ContactFlag.FAVOURITE)  # bits the contact has stay (the user's)
+    if flags & ~allowed & 0xFF:  # ints: an IntFlag's complement covers its members only
+        raise ValueError(f"add_update_contact adds no flag but the favourite, got 0x{flags:02x}")
     raw = record.raw
     return bytes([Command.ADD_UPDATE_CONTACT]) + raw[:33] + bytes([flags]) + raw[34:143]
 
 
 def radio_name(name: str) -> str:
-    """The name as the radio keeps it: at most MAX_NAME_BYTES of UTF-8, cut between characters."""
-    return name.encode("utf-8")[:MAX_NAME_BYTES].decode("utf-8", "ignore")
+    """The name as the radio keeps it: at most MAX_NAME_BYTES of UTF-8, cut between characters
+    as a reader sees them."""
+    return cut_utf8(name, MAX_NAME_BYTES)
 
 
-def new_contact(public_key: bytes, name: str, flags: int) -> bytes:
-    """A companion the radio does not hold yet: no path (it floods), no advert yet; the radio
-    takes name and position from its next advert."""
+def new_contact(
+    public_key: bytes, name: str, flags: int, *, node_type: int = NodeType.CHAT,
+    last_advert: int = 0,
+) -> bytes:  # fmt: skip
+    """A node the radio does not hold yet: no path (it floods), no position; the radio takes name,
+    type and position from its next advert. `last_advert`: the timestamp of a signed advert the
+    radio reported (a later replay of an older one is then dropped), else 0. Flags only none or
+    favourite: the gateway never grants the command line or telemetry (ADR 0017)."""
     if len(public_key) != KEY_BYTES:
         raise ValueError("new_contact needs the full 32-byte public key")
+    if flags not in (0, ContactFlag.FAVOURITE):
+        raise ValueError(f"new_contact sets no flag but the favourite, got 0x{flags:02x}")
+    if node_type not in (NodeType.CHAT, NodeType.REPEATER, NodeType.ROOM_SERVER, NodeType.SENSOR):
+        raise ValueError(f"new_contact needs a node type 1 to 4, got {node_type}")
     label = radio_name(name).encode("utf-8").ljust(32, b"\x00")
+    position = struct.pack("<ii", 0, 0)  # none: the radio takes it from the next advert
     return (
-        bytes([Command.ADD_UPDATE_CONTACT]) + public_key + bytes([1, flags, NO_PATH])
-        + bytes(MAX_PATH_BYTES) + label + struct.pack("<Iii", 0, 0, 0)
+        bytes([Command.ADD_UPDATE_CONTACT]) + public_key + bytes([node_type, flags, NO_PATH])
+        + bytes(MAX_PATH_BYTES) + label + _u32(last_advert, "advert time") + position
     )  # fmt: skip
+
+
+def remove_contact(public_key: bytes) -> bytes:
+    """REMOVE_CONTACT (MyMesh.cpp:1349-1358): by the full key; the radio checks no length."""
+    if len(public_key) != KEY_BYTES:
+        raise ValueError("remove_contact needs the full 32-byte public key")
+    return bytes([Command.REMOVE_CONTACT]) + public_key
 
 
 def reset_path(public_key: bytes) -> bytes:

@@ -15,7 +15,7 @@ from typing import Any
 
 from meshcore_home_gateway.core import profile
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS
-from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh, Tracked, type_name
+from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh, Node, Tracked, type_name
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, TelemetryMode
 
@@ -81,7 +81,9 @@ def _heard(tracked: Tracked) -> dict[str, Any]:
     }
 
 
-def contact_document(tracked: Tracked, *, protected: bool = False) -> dict[str, Any]:
+def contact_document(
+    tracked: Tracked, *, protected: bool = False, manage: bool = False
+) -> dict[str, Any]:
     """`contacts/<key>`: one contact of the radio and what the gateway learned about it."""
     node, fix = tracked.node, tracked.fix
     return {
@@ -93,6 +95,9 @@ def contact_document(tracked: Tracked, *, protected: bool = False) -> dict[str, 
         "favourite": bool(node.flags & ContactFlag.FAVOURITE),
         "remote_cli": bool(node.flags & ContactFlag.REMOTE_CLI),
         "protected": protected,
+        "removable": manage and not protected,  # a remove request would be accepted
+        # the radio holds a signed advert of this key: name and type are its holder's own
+        "verified": node.last_advert > 0,
         "path_known": node.path_hops is not None,
         "path_hops": node.path_hops,
         "last_advert_at": iso(node.last_advert) if node.last_advert else None,
@@ -107,7 +112,9 @@ def contact_document(tracked: Tracked, *, protected: bool = False) -> dict[str, 
     }
 
 
-def contacts_document(mesh: Mesh, *, protected: Iterable[str] = ()) -> dict[str, Any]:
+def contacts_document(
+    mesh: Mesh, *, protected: Iterable[str] = (), manage: bool = False
+) -> dict[str, Any]:
     """`contacts`: the index of the radio's contact table, most recently heard first."""
     keep = set(protected)
 
@@ -134,6 +141,7 @@ def contacts_document(mesh: Mesh, *, protected: Iterable[str] = ()) -> dict[str,
     return {
         "total": total,
         "max": mesh.max_contacts,
+        "manage": manage,  # add and remove requests are taken
         "remote_cli": remote_cli[:WARNING_KEYS],
         "remote_cli_total": len(remote_cli),
         "advert_position": shared[:WARNING_KEYS],
@@ -143,8 +151,19 @@ def contacts_document(mesh: Mesh, *, protected: Iterable[str] = ()) -> dict[str,
     }
 
 
-def nodes_document(mesh: Mesh) -> dict[str, Any]:
+def look_alike_nodes(mesh: Mesh, protected: Iterable[str] = ()) -> set[str]:
+    """Heard nodes whose 6-byte prefix another node has: a contact, a protected key or another
+    heard node. The radio could not tell them apart (ADR 0009): a look-alike of a contact or a
+    protected key is refused; of heard nodes, the one added first keeps the prefix."""
+    counts: dict[str, int] = {}
+    for key in {*mesh.contacts, *protected, *mesh.nodes}:
+        counts[key[:PREFIX_HEX_DIGITS]] = counts.get(key[:PREFIX_HEX_DIGITS], 0) + 1
+    return {key for key in mesh.nodes if counts[key[:PREFIX_HEX_DIGITS]] > 1}
+
+
+def nodes_document(mesh: Mesh, *, protected: Iterable[str] = ()) -> dict[str, Any]:
     """`nodes`: nodes the radio heard but did not add, most recently heard first; no positions."""
+    flagged = look_alike_nodes(mesh, protected)
     entries = (
         {
             "key": t.node.public_key,
@@ -152,12 +171,38 @@ def nodes_document(mesh: Mesh) -> dict[str, Any]:
             "name": t.node.name,
             "type": type_name(t.node.node_type),
             "first_heard_at": iso(t.first_heard),
+            "look_alike": t.node.public_key in flagged,
             **_heard(t),
         }
         for t in reversed(mesh.nodes.values())
     )
-    kept, total = bounded(entries, ATTRIBUTE_LIMIT_BYTES)
-    return {"total": total, "truncated": len(kept) < total, "nodes": kept}
+    warning = sorted(flagged)
+    head = {
+        "total": len(mesh.nodes), "truncated": True, "look_alike": warning[:WARNING_KEYS],
+        "look_alike_total": len(warning), "nodes": [],
+    }  # fmt: skip
+    kept, total = bounded(entries, ATTRIBUTE_LIMIT_BYTES - len(encode(head)))  # all within it
+    return {**head, "total": total, "truncated": len(kept) < total, "nodes": kept}
+
+
+def contact_event(
+    kind: str, key: str | None, node: Node | None = None, *, name: str | None = None,
+    node_type: int | None = None, request: str | None = None, request_id: str | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:  # fmt: skip
+    """A `contact` event: what changed in the table, or a request's result. Name and type from
+    the node, else as given (a request's claim)."""
+    kind_of = node.node_type if node else node_type
+    return {
+        "event_type": kind,
+        "key": key,
+        "prefix": key[:PREFIX_HEX_DIGITS] if key else None,
+        "name": node.name if node else name,
+        "type": type_name(kind_of) if kind_of is not None else None,
+        "request": request,
+        "id": request_id,
+        "reason": reason,
+    }
 
 
 # --- radio --------------------------------------------------------------------------------------

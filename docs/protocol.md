@@ -82,7 +82,8 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
 | 58 | `SET_AUTOADD_CONFIG` | the auto-add flags; the optional hop limit byte is left out (`MyMesh.cpp:2023-2029`) | `OK` |
 | 21 | `SET_TUNING_PARAMS` | uint32 receive delay × 1000, uint32 airtime factor × 1000 (`MyMesh.cpp:1470-1480`); the gateway writes the receive delay back as read | `OK` |
 | 8 | `SET_ADVERT_NAME` | the name, at most 31 bytes are kept (`MyMesh.cpp:1259-1265`) | `OK` |
-| 9 | `ADD_UPDATE_CONTACT` | the contact layout of `CONTACT` without the last-modified time (`MyMesh.cpp:194-215, 1328-1346`) | `OK` / `ERR 3` |
+| 9 | `ADD_UPDATE_CONTACT` | the contact layout of `CONTACT` without the last-modified time, 144 bytes with the code (`MyMesh.cpp:194-217, 1328-1348`) | `OK` / `ERR 3` |
+| 15 | `REMOVE_CONTACT` | full 32-byte public key (`MyMesh.cpp:1349-1358`) | `OK` / `ERR 2` |
 
 Answers `OK` (0) and `ERR` (1, followed by the error code) are generic (`MyMesh.cpp:153-163`).
 Error codes (`MyMesh.cpp:135-140`): 1 unsupported command or frame too short, 2 not found (contact,
@@ -99,6 +100,20 @@ Details that matter:
   command line (66); `test_the_codec_has_no_command_that_could_harm_the_radio` fails if one
   appears.
 
+* `ADD_UPDATE_CONTACT` overwrites **every field** of an existing key (type, flags, path, name,
+  advert time, position). A new key needs room in the table, else `ERR 3`; with overwrite-oldest
+  on (`SET_AUTOADD_CONFIG`) the radio takes the slot of the oldest non-favourite instead and
+  pushes `CONTACT_DELETED` for it (`BaseChatMesh.cpp:88-103`), so the gateway counts the table
+  itself and refuses a full one before writing. With
+  fewer than 144 bytes the position of a new contact is undefined, with 148 the frame sets the
+  last-modified time (`MyMesh.cpp:194-217, 1328-1348`). It sends no push, checks no key prefix
+  against the table, and type 0 lands in a slot that is never listed. The radio checks an advert's
+  timestamp against the stored one only for contacts (`BaseChatMesh.cpp:129-139`), so a contact
+  written with the time of a signed advert drops older replays. The gateway adds contacts with
+  144 bytes, flags 0 or favourite, no path and no position
+  ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
+* `REMOVE_CONTACT` reads the key without checking the frame's length (`MyMesh.cpp:1349-1358`); the
+  gateway always sends 33 bytes. Both commands mark the contacts file for a write 5 s later.
 * `SEND_TXT_MSG` looks up the first contact whose key starts with the 6-byte prefix
   (`BaseChatMesh.cpp:874-880`); no match gives `ERR 2`. The text limit is 160 bytes, 158 if
   `attempt > 3` (`BaseChatMesh.cpp:451-454`). An all-zero prefix matches an unused anonymous slot

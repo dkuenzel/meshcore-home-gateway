@@ -18,11 +18,13 @@ versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 | `contacts` | bridge → | yes | JSON index of the radio's contact table |
 | `contacts/<key>` | bridge → | yes | JSON per contact, `<key>` its full public key in lower-case hex; cleared (empty retained message) when the contact leaves the table |
 | `contacts/<key>/send` | → bridge | must not be | UTF-8 text for a companion in the contact table |
+| `contacts/<key>/remove` | → bridge | must not be | any payload, or JSON `{"id": "…"}`: remove that contact from the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
+| `add_contact` | → bridge | must not be | a public key, contact link or contact card, or JSON `{"contact": "…", "id": "…"}`: add a contact to the radio |
 | `contacts/<key>/received` | bridge → | no | the `received` events of messages from that contact |
 | `nodes` | bridge → | yes | JSON: nodes heard but not added |
 | `history` | bridge → | yes | JSON: the latest messages in and out |
 | `settings` | bridge → | yes | JSON: the managed radio profile at the last connect |
-| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden` or `shown` |
+| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `refused` or `failed` |
 | `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
 | `setting` | bridge → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
 | `homeassistant/show_hidden` | → bridge | must not be | any payload: show the contacts deleted in Home Assistant again |
@@ -181,8 +183,12 @@ Retained; published at start, on every change of the radio link and every 60 s.
  "airtime_budget_s_per_hour": 36.0, "queue": 0, "radio_name": "Gateway",
  "public_key": "…", "model": "…", "firmware": "v1.18.0", "frequency_mhz": 869.618,
  "bandwidth_khz": 62.5, "spreading_factor": 8, "coding_rate": 8, "tx_power_dbm": 22,
+ "contact_link": "meshcore://contact/add?name=Gateway&public_key=…&type=1",
  "version": "0.1.0"}
 ```
+
+`contact_link` adds the gateway in the MeshCore app, for example as a QR code (`null` until the
+radio is known). It carries no position.
 
 ## Radio statistics: `stats`
 
@@ -215,21 +221,21 @@ The radio's contact table, as the gateway last read it: an index, and one docume
 empty retained message, also if that happened while the gateway was stopped.
 
 ```json
-{"total": 2, "max": 350, "remote_cli": [], "remote_cli_total": 0, "advert_position": [],
- "advert_position_total": 0, "truncated": false,
+{"total": 2, "max": 350, "manage": true, "remote_cli": [], "remote_cli_total": 0,
+ "advert_position": [], "advert_position_total": 0, "truncated": false,
  "contacts": [{"key": "a1b2…", "name": "Alice", "type": "chat",
                "heard_at": "2026-10-18T09:00:02+00:00", "protected": true}]}
 ```
 
 The index lists the contacts most recently heard first, up to 32 KiB. `max` is the radio's table
-size. `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
+size; `manage` whether the gateway takes add and remove requests (`[contacts] manage`). `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
 (flag 0x10; the gateway never sets it, remove such contacts), `advert_position` companions whose
 adverts carried a position, which everyone in range can read.
 
 ```json
 {"key": "a1b2…", "prefix": "a1b2c3d4e5f6", "name": "Alice", "type": "chat",
  "flags": ["favourite"], "favourite": true, "remote_cli": false, "protected": true,
- "path_known": true, "path_hops": 2, "last_advert_at": "2026-10-18T08:55:00+00:00",
+ "removable": false, "verified": true, "path_known": true, "path_hops": 2, "last_advert_at": "2026-10-18T08:55:00+00:00",
  "first_heard_at": "2026-10-11T18:00:00+00:00", "heard_at": "2026-10-18T09:00:02+00:00",
  "heard_via": "message", "hops": 2, "snr_db": 7.25, "rssi_dbm": null,
  "latitude": 53.55, "longitude": 9.99, "altitude_m": null,
@@ -242,6 +248,8 @@ adverts carried a position, which everyone in range can read.
 | `type` | `chat` (a companion: someone's radio), `repeater`, `room`, `sensor` |
 | `flags` | `favourite`, `telemetry_base`, `telemetry_location`, `telemetry_environment` (what this contact may request from the gateway's radio), `remote_cli`; unknown bits as one hex value |
 | `protected` | a configured contact target or command sender ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
+| `removable` | a remove request would be taken: contacts are managed, and this one is not protected |
+| `verified` | the radio holds the time of a signed advert of this key, so name and type are the key holder's own: a node the gateway heard advertising is `true` at once; one it had not heard (added from a link, a card or a bare key) is `false` until its first advert |
 | `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods |
 | `last_advert_at` | the contact's clock at its newest advert |
 | `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`); `hops` `null` for a direct route; `rssi_dbm` only from adverts |
@@ -251,16 +259,26 @@ adverts carried a position, which everyone in range can read.
 ## Nodes heard: `nodes`
 
 Nodes the radio heard advertising but did not add (it adds contacts only on request), most
-recently heard first: the last 50 of the last 7 days, at most 15 KiB. **No positions**: the
-gateway does not keep where strangers are.
+recently heard first: the last 50 of the last 7 days, at most 15 KiB. A contact that leaves the
+table is listed again while it counts as heard (among the last 50, within 7 days), so it can be
+added back. **No positions**: the gateway does not keep where strangers are.
 
 ```json
-{"total": 1, "truncated": false,
+{"total": 1, "truncated": false, "look_alike": [], "look_alike_total": 0,
  "nodes": [{"key": "c3d4…", "prefix": "c3d4e5f6a7b8", "name": "Hilltop", "type": "repeater",
-            "first_heard_at": "2026-10-17T20:00:00+00:00",
+            "first_heard_at": "2026-10-17T20:00:00+00:00", "look_alike": false,
             "heard_at": "2026-10-18T09:00:00+00:00", "heard_via": "advert", "hops": 3,
             "snr_db": 5.5, "rssi_dbm": -95}]}
 ```
+
+`look_alike` marks a node whose 6-byte prefix another node has: a contact, a protected key or
+another heard node. The radio names a node by that prefix in messages and sends, so it could not
+tell them apart ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)): a
+look-alike of a contact or a protected key is refused; of two heard nodes with one prefix, the one
+added first keeps it and the other is refused from then on, so compare the full key with the
+node's own screen before adding a flagged one. The top-level list names up to 16 of them,
+`look_alike_total` counts them all. An older advert of a heard node does not replace the record
+of its newest one, also not after a restart.
 
 `hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert; that log is not
 authenticated, so treat them as a hint.
@@ -289,18 +307,99 @@ outgoing messages the recipient. `state` is the final delivery state of an outgo
 ## Contact and node events: `contact`, `node`
 
 ```json
-{"event_type": "added", "key": "a1b2…", "name": "Alice", "type": "chat"}
+{"event_type": "added", "key": "a1b2…", "prefix": "a1b2c3d4e5f6", "name": "Alice",
+ "type": "chat", "request": null, "id": null, "reason": null}
 {"event_type": "new", "key": "c3d4…", "prefix": "c3d4e5f6a7b8", "name": "Hilltop",
  "type": "repeater", "hops": 3, "snr_db": 5.5, "rssi_dbm": -95,
- "heard_at": "2026-10-18T09:00:00+00:00"}
+ "heard_at": "2026-10-18T09:00:00+00:00", "look_alike": false}
 ```
 
-`contact` reports a contact that appeared in or left the radio's table (`added`, `removed`).
-After a start of the gateway, it reports what changed while it was stopped: contacts that are
-new, and contacts that are gone (`name` and `type` are then `null`). `hidden` and `shown` report a
+`contact` reports a contact that appeared in or left the radio's table (`added`, `removed`), and
+the results of contact requests (`refused`, `failed`, and `added` or `removed` with `request` and
+`id`; see [managing contacts](#managing-contacts-add_contact-and-contactskeyremove)). After a
+start of the gateway, it reports what changed while it was stopped: contacts that are new, and
+contacts that are gone (`name` and `type` are then `null`). `hidden` and `shown` report a
 contact device deleted in Home Assistant and shown again; the contact stays on the radio. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
 adverts with invented keys does not flood the bus.
+
+## Managing contacts: `add_contact` and `contacts/<key>/remove`
+
+Requests to change the radio's contact table ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md),
+on unless `[contacts] manage = false`). Requests must not be retained; one published while the
+gateway is offline is lost (clean session), and a stop drops those still queued.
+
+`add_contact` takes, as text, one of:
+
+* a public key: 64 hex digits, in any case;
+* a contact link: `meshcore://contact/add?public_key=…&name=…&type=…` (the MeshCore app's QR
+  codes): exactly one `public_key`, at most one `name` and one `type` (1 companion, 2 repeater,
+  3 room server, 4 sensor; without one a companion);
+* a contact card: `meshcore://` and the hex of an advert packet, as the app exports a contact.
+
+`contacts/<key>/remove` takes any payload; `<key>` is the full key in lower-case hex. Either
+request may be a JSON object instead (its first character `{`): `{"contact": "…", "id": "…"}` and
+`{"id": "…"}`. The `id` (1 to 64 of `A-Z a-z 0-9 . _ : -`) comes back in the request's result;
+without one the gateway makes one of 8 hex digits. Other keys are ignored.
+
+A request is checked at once, in this order: size (1 KiB), UTF-8, the JSON envelope, retained,
+the key or text, `[contacts] manage`, the gateway's own key, protected (remove), and a free place
+in the queue (8 requests wait at most). Then one at a time: the radio must be connected and on
+tested firmware (as the managed profile: `radio.profile.manage = "always"` allows any), a token
+of the radio-work budget is taken (10 at once, then 1 a minute: every request that reaches the
+radio reads its table), the table is read again if it changed, and the rules apply to it. A
+request is written at most once and never repeated; then the table is read back.
+
+**Names.** A node the gateway heard advertising is added with its name, type and advert time as
+the radio checked them (a later replay of an older advert is then dropped by the radio). A link
+or card only claims name and type: they are written as given (on one line, at most 31 bytes),
+the time as 0, and the node's first advert replaces them (`verified` turns `true`). A contact card's
+signature is not checked. A bare key without a name gets its first 12 digits.
+
+**Results.** A request ends in one `contact` event (for the exceptions see below) that carries `request` (`add`, `remove`),
+`id`, `key` (`null` if the request named no valid key), `prefix`, and `name` and `type` as known:
+
+| `event_type` | Meaning |
+| --- | --- |
+| `added`, `removed` | the table read shows the change: the request's result. The device, the documents and the recipient exist when it arrives |
+| `refused` | a check said no; **nothing was written** |
+| `failed` | the write went to the radio, and the change is not confirmed |
+
+| Reason (`refused`) | Request | Meaning |
+| --- | --- | --- |
+| `too_large`, `invalid_utf8`, `retained` | both | as for send requests |
+| `invalid_request` | both | a bad JSON envelope or `id` |
+| `invalid_link` | add | no key, contact link or contact card (an empty text too) |
+| `unsupported_link` | add | another `meshcore://` link (channels are not managed) |
+| `unsupported_type` | add | a type other than 1 to 4 |
+| `unknown_contact` | remove | the topic level is no key as the gateway writes it, or the contact is not in the table |
+| `management_off` | both | `[contacts] manage = false` |
+| `own_key` | add | the gateway's own key (its link pasted back) |
+| `protected` | remove | a contact target or command sender, also with `protect_contacts = false` |
+| `busy` | both | 8 requests are waiting |
+| `no_radio` | both | the radio is not connected, or the connection ended before the write was sent |
+| `untested_firmware` | both | firmware the gateway is not tested with, unless `radio.profile.manage = "always"` |
+| `rate_limited` | both | the radio-work budget is spent |
+| `already_contact` | add | the key is in the table (adding it would overwrite every field of it) |
+| `look_alike` | add | another key in the table or a protected key has the same first 6 bytes |
+| `table_full` | add | the table is full; the gateway never lets the radio make room |
+| the radio's error name | both | the radio refused the table read |
+
+| Reason (`failed`) | Meaning |
+| --- | --- |
+| `table_full`, `not_found`, `illegal_arg`, `unsupported_cmd`, `disabled`, `error_<code>` | the radio refused the write |
+| `not_confirmed` | the radio answered OK, but its table does not show the change |
+| `outcome_unknown` | the connection ended after the write went out; the next table read shows the truth as `added` or `removed` with `request: null` |
+| `internal_error` | a bug; see the log |
+
+`refused` events are limited to 20 per second (bursts of 100); the log counts the rest at most
+once a minute, so a flood of bad requests cannot flood the bus. Such a request then has no event,
+nor has one still queued when the gateway stops; otherwise every request has exactly one.
+
+What follows a removal: the radio drops the node's direct messages; messages queued to it fail
+with `unknown_contact`; a removed look-alike of a command sender keeps that sender
+`sender_ambiguous` for 24 hours (ADR 0009). A removed contact is offered again among the heard
+nodes while it counts as heard.
 
 ## Radio profile: `settings` and `setting`
 
@@ -370,6 +469,8 @@ topic readwrite homeassistant/#
 topic read meshcore/radio1/#
 topic write meshcore/radio1/send/#
 topic write meshcore/radio1/contacts/+/send
+topic write meshcore/radio1/add_contact
+topic write meshcore/radio1/contacts/+/remove
 topic write meshcore/radio1/homeassistant/show_hidden
 
 user alarm-script

@@ -12,6 +12,7 @@ from meshcore_home_gateway.views import (
     RadioReadings,
     bounded,
     contact_document,
+    contact_event,
     contacts_document,
     encode,
     flag_names,
@@ -36,8 +37,8 @@ def test_a_contact_document_has_every_key_and_iso_times() -> None:
     assert document == {
         "key": KEY, "prefix": "a1a1a1a1a1a1", "name": "Alice", "type": "chat",
         "flags": ["favourite", "remote_cli"], "favourite": True, "remote_cli": True,
-        "protected": True, "path_known": True, "path_hops": 2,
-        "last_advert_at": "2027-01-15T07:59:00+00:00",
+        "protected": True, "removable": False, "verified": True, "path_known": True,
+        "path_hops": 2, "last_advert_at": "2027-01-15T07:59:00+00:00",
         "first_heard_at": "2027-01-15T08:00:05+00:00",
         "heard_at": "2027-01-15T08:00:05+00:00", "heard_via": "message", "hops": 2,
         "snr_db": 6.25, "rssi_dbm": -97, "latitude": 53.55, "longitude": 9.99,
@@ -145,3 +146,51 @@ def test_flags_and_bounds_helpers() -> None:
     assert (kept, total) == ([{"a": "x" * 10}], 3)  # the order is kept: nothing after a cut
     assert iso(None) is None
     assert Fix(Position(1, 2), T, "advert").altitude_m is None
+
+
+def test_contact_management_in_the_documents() -> None:
+    mesh = Mesh()
+    mesh.contacts_read(
+        [Node(KEY, "Alice", 1, last_advert=0), Node("b2" * 32, "Bob", 1, last_advert=5)], T
+    )
+    alice = contact_document(mesh.contacts[KEY], manage=True)
+    assert (alice["removable"], alice["verified"]) == (True, False)  # added from a link
+    assert contact_document(mesh.contacts[KEY], protected=True, manage=True)["removable"] is False
+    assert contact_document(mesh.contacts["b2" * 32])["removable"] is False  # not managed
+    assert contacts_document(mesh, manage=True)["manage"] is True
+
+
+def test_look_alike_nodes_are_flagged() -> None:
+    """A heard node with the prefix of a contact, a protected key or another heard node."""
+    mesh = Mesh()
+    mesh.contacts_read([Node(KEY, "Alice", 1)], T)
+    twin, other, third = "a1" * 6 + "ee" * 26, "b2" * 6 + "00" * 26, "b2" * 6 + "11" * 26
+    for key in (twin, other, third, "c3" * 6 + "00" * 26, "d4" * 32):
+        mesh.node_heard(Node(key, "x", 1), Heard(T, "advert"))
+    document = nodes_document(mesh, protected=["c3" * 6 + "ff" * 26])
+    flagged = {n["key"] for n in document["nodes"] if n["look_alike"]}
+    assert flagged == {twin, other, third, "c3" * 6 + "00" * 26}
+    assert document["look_alike"] == sorted(flagged)
+    assert document["look_alike_total"] == 4
+
+
+def test_the_nodes_document_stays_within_its_bound_with_its_warnings() -> None:
+    mesh = Mesh(max_nodes=200)
+    for i in range(200):  # every one a look-alike of the next
+        key = f"{i // 2:012x}" + f"{i:052x}"
+        mesh.node_heard(Node(key, HOSTILE * 3, 1), Heard(T, "advert"))
+    document = nodes_document(mesh)
+    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
+    assert document["truncated"] is True
+    assert len(document["look_alike"]) == 16
+    assert document["look_alike_total"] == 200
+
+
+def test_every_contact_event_has_every_key() -> None:
+    event = contact_event("refused", None, request="add", request_id="x1", reason="invalid_link")
+    assert event == {
+        "event_type": "refused", "key": None, "prefix": None, "name": None, "type": None,
+        "request": "add", "id": "x1", "reason": "invalid_link",
+    }  # fmt: skip
+    claimed = contact_event("added", KEY, name="Hill", node_type=3)
+    assert (claimed["prefix"], claimed["type"]) == (KEY[:12], "room")

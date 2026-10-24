@@ -120,7 +120,7 @@ def test_a_newer_schema_is_left_alone(tmp_path: Path, caplog: pytest.LogCaptureF
     assert History.open(path) is None
     assert path.exists()
     assert not (tmp_path / "history.sqlite3.corrupt").exists()
-    assert "schema version 99 is newer than 1" in caplog.text
+    assert "schema version 99 is newer than 2" in caplog.text
 
 
 def test_a_history_that_cannot_be_opened_is_none(
@@ -152,3 +152,30 @@ def test_write_and_read_errors_switch_the_history_off(
     assert other.nodes() == []
     assert other.broken
     assert "history cannot be read" in caplog.text
+
+
+def test_a_version_1_history_gets_the_advert_time_of_its_nodes(tmp_path: Path) -> None:
+    """Schema 1 (before contact management) had no advert time; its rows read as 0."""
+    path = tmp_path / "history.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE node (key TEXT PRIMARY KEY, name TEXT NOT NULL, type INTEGER NOT NULL, "
+        "first_heard REAL NOT NULL, heard_at REAL NOT NULL, how TEXT NOT NULL, hops INTEGER, "
+        "snr_db REAL, rssi_dbm INTEGER)"
+    )
+    for table in ("message (id INTEGER PRIMARY KEY)", "position (id INTEGER PRIMARY KEY)"):
+        db.execute(f"CREATE TABLE {table}")
+    db.execute("INSERT INTO node VALUES ('c3', 'Carol', 2, 1.0, 2.0, 'advert', NULL, NULL, NULL)")
+    db.execute("PRAGMA user_version = 1")
+    db.commit()
+    db.close()
+    history = History.open(path)
+    assert history is not None
+    ((row,),) = [history.nodes()]
+    assert (row.name, row.last_advert) == ("Carol", 0)
+    history.node_heard("c3", "Carol", 2, Heard(3.0, "advert"), 1_800_000_000)
+    assert history.nodes()[0].last_advert == 1_800_000_000
+    history.close()
+    db = sqlite3.connect(path)
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+    db.close()

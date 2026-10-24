@@ -144,3 +144,62 @@ def test_the_airtime_meter_counts_the_last_hour_across_restarts() -> None:
     assert (meter.used_s(), meter.span_s()) == (60, 3600)
     meter.add(T + 70 * 60 + 30, 69)
     assert (meter.used_s(), meter.span_s()) == (60, 3630)
+
+
+def test_a_contact_that_leaves_the_table_is_a_heard_node_again_in_its_place() -> None:
+    """It can be added back; without what only a contact has; in the order it was heard."""
+    mesh = Mesh()
+    alice = Node(ALICE.public_key, "Alice", 1, flags=0x11, path_hops=2, position=HOME)
+    mesh.contacts_read([alice, BOB], T)
+    mesh.contact_heard(ALICE.public_key, Heard(T - 100, "message"))
+    carol, dave = Node("c3" * 32, "Carol", 1), Node("d4" * 32, "Dave", 1)
+    mesh.node_heard(carol, Heard(T - 200, "advert"))
+    mesh.node_heard(dave, Heard(T - 50, "advert"))
+    change = mesh.contacts_read([], T)
+    assert set(change.removed) == {ALICE.public_key, BOB.public_key}
+    assert list(mesh.nodes) == ["c3" * 32, ALICE.public_key, "d4" * 32]  # Bob was never heard
+    back = mesh.nodes[ALICE.public_key]
+    assert (back.node.flags, back.node.path_hops, back.node.position, back.fix) == (
+        0, None, None, None,
+    )  # fmt: skip
+    small = Mesh(max_nodes=2)
+    small.node_heard(carol, Heard(T - 200, "advert"))
+    small.node_heard(dave, Heard(T - 50, "advert"))
+    small.contacts_read([ALICE], T)
+    small.contact_heard(ALICE.public_key, Heard(T - 100, "message"))
+    small.contacts_read([], T)
+    assert list(small.nodes) == [ALICE.public_key, "d4" * 32]  # the least recently heard goes
+
+
+def test_a_contact_not_heard_lately_is_forgotten_when_it_leaves() -> None:
+    mesh = Mesh()
+    mesh.contacts_read([ALICE], T)
+    mesh.contact_heard(ALICE.public_key, Heard(T - 8 * 86_400, "message"))
+    mesh.contacts_read([], T)
+    assert mesh.nodes == {}
+
+
+def test_a_replayed_older_advert_does_not_replace_the_heard_record() -> None:
+    mesh = Mesh()
+    newer = Node("c3" * 32, "Carol", 1, last_advert=int(T) - 10)
+    older = Node("c3" * 32, "Mallory", 3, last_advert=int(T) - 900)
+    mesh.node_heard(newer, Heard(T - 5, "advert"))
+    assert not mesh.node_heard(older, Heard(T, "advert"))
+    tracked = mesh.nodes["c3" * 32]
+    assert (tracked.node.name, tracked.node.node_type) == ("Carol", 1)
+    assert tracked.heard is not None
+    assert tracked.heard.at == T  # but heard
+
+
+def test_a_contact_back_among_the_heard_nodes_evicts_none_added_in_the_same_read() -> None:
+    """One read shows Alice removed and Dave, the least recently heard node, added: Dave keeps
+    what the gateway heard of him."""
+    mesh = Mesh(max_nodes=2)
+    carol, dave = Node("c3" * 32, "Carol", 1), Node("d4" * 32, "Dave", 1)
+    mesh.node_heard(dave, Heard(T - 300, "advert"))
+    mesh.node_heard(carol, Heard(T - 200, "advert"))
+    mesh.contacts_read([ALICE], T)
+    mesh.contact_heard(ALICE.public_key, Heard(T - 100, "message"))
+    mesh.contacts_read([dave], T)
+    assert mesh.contacts["d4" * 32].heard == Heard(T - 300, "advert")
+    assert list(mesh.nodes) == ["c3" * 32, ALICE.public_key]

@@ -250,7 +250,7 @@ def _mesh_components(
         ),
         "contact": component(
             "contact", "event", "Contact", state_topic=topics.contact_event,
-            event_types=["added", "removed", "hidden", "shown"],
+            event_types=["added", "removed", "hidden", "shown", "refused", "failed"],
         ),
         "node": component(
             "node", "event", "New node", state_topic=topics.node_event, event_types=["new"],

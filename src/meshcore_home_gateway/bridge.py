@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.airtime import (
     LoRaParams,
     channel_message_bytes,
@@ -49,7 +50,7 @@ from meshcore_home_gateway.core.model import (
     Target,
 )
 from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
-from meshcore_home_gateway.mqtt.client import SendRequest
+from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
 from meshcore_home_gateway.mqtt.payloads import (
@@ -63,9 +64,11 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES, radio_name
 from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.radio.profile import RadioProfile
 from meshcore_home_gateway.radio.session import (
     AckReceived,
+    Barrier,
     CommandFailedError,
     CompanionSession,
     MessageReceived,
@@ -111,6 +114,7 @@ class Bus(Protocol):
     """What the bridge needs from the message bus (implemented by mqtt.client.MqttBus)."""
 
     requests: asyncio.Queue[SendRequest]
+    contact_requests: asyncio.Queue[ContactRequest]
     connected: bool
     on_connected: list[Callable[[], None]]
     on_ha_online: list[Callable[[], None]]
@@ -213,11 +217,16 @@ class Bridge:
         self.observer = observer or Observer(
             bus, self.topics, protected=protected_keys(config), wall_clock=wall_clock
         )
+        self.observer.manage = config.contacts.manage
         self._devices = devices  # the contacts' devices in Home Assistant
         self._profile = profile  # the managed radio profile (ADR 0020)
         if devices is not None:
             self.observer.on_contacts.append(devices.update)
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        self._contacts = ContactManager(
+            config, self.observer, self._events, self.live_session,
+            protected=protected_keys(config), monotonic=monotonic,
+        )  # fmt: skip
         self._messages: asyncio.Queue[MessageReceived] = asyncio.Queue()
         # keys with the 6-byte prefix of an allowed command sender, as the radio named them:
         # key -> when last seen; only these are kept, so the memory stays small (ADR 0009)
@@ -248,6 +257,11 @@ class Bridge:
     # --- life cycle -----------------------------------------------------------------------------
 
     async def run(self, stop: asyncio.Event) -> None:
+        for warning in protected_look_alikes(self.config):
+            log.warning("%s", warning)
+        if self.config.contacts.manage and self.config.radio.transport == "tcp":
+            log.warning("contact management over TCP: heard nodes are best effort, the radio "
+                        "drops its pushes while no client is connected")  # fmt: skip
         self._bus.on_connected.append(self._connected)
         self._bus.on_connected.append(lambda: self._observe(self.observer.publish_all))
         self._bus.on_ha_online.append(lambda: self._schedule_announcements(birth=True))
@@ -262,6 +276,8 @@ class Bridge:
                 for name, coroutine in (
                     ("radio", self._radio_loop()),
                     ("requests", self._request_loop()),
+                    ("contact requests", self._contact_request_loop()),
+                    ("contacts", self._contacts.run()),
                     ("outbox", self._outbox_loop()),
                     ("events", self._event_loop()),
                     ("messages", self._message_loop()),
@@ -385,6 +401,17 @@ class Bridge:
     async def _request_loop(self) -> None:
         while True:
             self._accept(await self._bus.requests.get())
+
+    async def _contact_request_loop(self) -> None:
+        while True:
+            self._contacts.accept(await self._bus.contact_requests.get())
+
+    def live_session(self) -> CompanionSession | None:
+        """The session, while the radio is connected."""
+        session = self._session
+        if session is None or session.closed or not self._radio_ready.is_set():
+            return None
+        return session
 
     def _accept(self, request: SendRequest) -> None:
         event_id = secrets.token_hex(4)
@@ -671,6 +698,8 @@ class Bridge:
                 self._messages.put_nowait(event)  # in order, without delaying acks
             elif isinstance(event, AckReceived):
                 self._acks.resolve(event.ack, event.round_trip_ms)
+            elif isinstance(event, Barrier):
+                event.done.set()
             else:
                 if isinstance(event, PacketLogged) and self.config.diagnostics.publish_rx_log:
                     rx = event.rx
@@ -830,6 +859,7 @@ class Bridge:
             if watchdog:
                 self._notify("WATCHDOG=1")
             self._report_unpublished()  # the end of a flood of refused requests
+            self._contacts.report_unpublished()
             self._observe(self.observer.tick)
             if self._mono() >= next_state:
                 self._publish_state()
@@ -857,6 +887,8 @@ class Bridge:
             "spreading_factor": info.self_info.spreading_factor if info else None,
             "coding_rate": info.self_info.coding_rate if info else None,
             "tx_power_dbm": info.self_info.tx_power_dbm if info else None,
+            # adds the gateway in the MeshCore app (as a QR code): it needs no write, no airtime
+            "contact_link": contact_link(info.name, info.public_key) if info else None,
             "version": __version__,
         }
 
@@ -924,6 +956,38 @@ def protected_keys(config: Config) -> frozenset[str]:
     (ADR 0017)."""
     targets = {t.public_key for t in config.targets if t.public_key is not None}
     return frozenset(targets | set(config.commands.senders))
+
+
+def protected_look_alikes(config: Config) -> list[str]:
+    """Warnings about protected keys with one 6-byte prefix: the radio names a sender by its
+    prefix only, so it can hold one of them (ADR 0009); the managed profile adds them in key
+    order."""
+    roles: dict[str, list[str]] = {}
+    for target in config.targets:
+        if target.public_key is not None:
+            roles.setdefault(target.public_key, []).append(f"target {target.alias}")
+    for key in config.commands.senders:
+        roles.setdefault(key, []).append("command sender")
+    keys = sorted(roles)
+
+    def named(key: str) -> str:
+        return f"{key[:12]}…{key[-8:]} ({', '.join(roles[key])})"
+
+    profile = config.radio.profile
+    writes = profile.protect_contacts and profile.manage != "observe"
+    warnings = []
+    for i, a in enumerate(keys):
+        for b in (k for k in keys[i + 1 :] if k[:12] == a[:12]):
+            if writes:  # in key order, and never next to the other
+                outcome = (f"the managed profile, when it writes, adds {a[:12]}…{a[-8:]} unless "
+                           "the other is on the radio, never both")  # fmt: skip
+            else:
+                outcome = "the gateway adds neither, and refuses requests to add either"
+            warnings.append(
+                f"protected contacts {named(a)} and {named(b)} have the same first 6 bytes: the "
+                f"radio names a sender by them only (ADR 0009); {outcome}"
+            )
+    return warnings
 
 
 def protected_names(config: Config) -> dict[str, str]:

@@ -39,6 +39,16 @@ class SendRequest:
     contact: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class ContactRequest:
+    """A request to change the radio's contact table (ADR 0017)."""
+
+    kind: str  # "add" (add_contact) or "remove" (contacts/<key>/remove)
+    payload: bytes
+    retained: bool
+    key: str | None = None  # remove: the topic's <key> level, as it came
+
+
 class PahoLike(Protocol):
     """The part of `paho.mqtt.client.Client` the adapter uses (lets tests pass a fake)."""
 
@@ -108,6 +118,7 @@ class MqttBus:
         self._client = client_factory(config)
         self._loop: asyncio.AbstractEventLoop | None = None
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
+        self.contact_requests: asyncio.Queue[ContactRequest] = asyncio.Queue()
         self.connected = False
         self._queued = 0  # events published since the connection was lost
         self._dropped = 0
@@ -186,6 +197,7 @@ class MqttBus:
             return
         subscriptions = [
             (self._topics.send_subscription, 1), (self._topics.contact_send_subscription, 1),
+            (self._topics.add_contact, 1), (self._topics.contact_remove_subscription, 1),
         ]  # fmt: skip
         if self._ha_status:
             subscriptions.append((self._ha_status, 1))
@@ -255,9 +267,16 @@ class MqttBus:
         if alias is not None:
             self.requests.put_nowait(SendRequest(alias, payload, retained))
             return
-        key = self._topics.key_from_contact_send_topic(topic)
+        key = self._topics.key_from_contact_topic(topic, "send")
         if key is not None:
             self.requests.put_nowait(SendRequest(key, payload, retained, contact=True))
+            return
+        if topic == self._topics.add_contact:
+            self.contact_requests.put_nowait(ContactRequest("add", payload, retained))
+            return
+        key = self._topics.key_from_contact_topic(topic, "remove")
+        if key is not None:
+            self.contact_requests.put_nowait(ContactRequest("remove", payload, retained, key))
 
 
 def _matches(subscription: str, topic: str) -> bool:

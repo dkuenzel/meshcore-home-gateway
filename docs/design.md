@@ -533,7 +533,11 @@ the file.
 | `meshcore-home-gateway check-config` | Validate the configuration (and load the TLS files) and print a summary. |
 | `meshcore-home-gateway probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
 | `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
-| `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines. |
+| `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines (`received`, `command`, `delivery`, `state`, `contact`, `node`). |
+| `meshcore-home-gateway contacts list [--json]` | The radio's contacts and the heard nodes, from the retained documents (tab-separated: kind, key, type, `protected`/`removable`/`look_alike`, heard, name). |
+| `meshcore-home-gateway contacts add [--wait S] CONTACT` | Add a contact: a full key, a heard node as `KEY12…KEY8`, a contact link or card; prints the full key to compare. Exit 0 on `added` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline, 2 when the text is no key, link or card, or a label names no single node. |
+| `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
+| `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
 
@@ -767,7 +771,7 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 2 | Documents and history: radio statistics, contact index and one document per contact, heard nodes, recent messages, contact and node events; SQLite history | 0015, 0016 |
 | 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; every companion a recipient; statistics and contact sensors on the gateway's device | 0017 |
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
-| 5 | Contact management from Home Assistant and the command line | 0017 |
+| 5 | Contact management: the gateway, the MQTT requests and the command line (delivered), then the Home Assistant controls | 0017 |
 | 6 | Telemetry and positions of the household's companions, with traces on the map | 0018 |
 | 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
 | 8 | Generated dashboards for desktop and mobile | 0021 |
