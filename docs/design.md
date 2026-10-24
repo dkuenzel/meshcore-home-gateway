@@ -2,8 +2,8 @@
 
 | | |
 | --- | --- |
-| Status | Accepted for 0.1 |
-| Date | 2026-10-18 |
+| Status | Accepted for 0.1; the observer (§13) accepted 2026-10-23 |
+| Date | 2026-10-18, extended 2026-10-23 |
 | Decisions | [`docs/decisions/`](decisions/README.md) |
 
 ## 1 Summary
@@ -37,7 +37,12 @@ flowchart LR
 ```
 
 In scope: text messages to and from configured contacts and channels, delivery state, commands,
-status, Home Assistant discovery, deployment on Proxmox VE and on any systemd-based Linux.
+status, Home Assistant discovery, deployment on Proxmox VE and on any systemd-based Linux. Since
+[ADR 0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md) the gateway is also the
+household's **mesh observer**: it harvests what the radio reports (positions, heard nodes, the
+radio's own statistics), manages the radio's contacts, pulls telemetry and positions from the
+household's own companions, keeps a local history, and offers all of it as provider-neutral
+documents for Home Assistant and later front ends (§13).
 
 ## 3 Goals and non-goals
 
@@ -53,10 +58,15 @@ status, Home Assistant discovery, deployment on Proxmox VE and on any systemd-ba
 | G6 | Minimal supply chain: Python standard library plus the distribution's `paho-mqtt`. |
 | G7 | Installation on Proxmox VE in one step, configured through dialogs. |
 | G8 | Observable: availability, radio link, battery, airtime use, logs, watchdog. |
+| G9 | Observer: contacts with their own Home Assistant devices, heard nodes, positions and telemetry of the household's companions, the radio's measured duty cycle; nothing about the household leaks to the mesh ([ADR 0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md)). |
+| G10 | One set of provider-neutral documents for every front end, with a local history ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md), [ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)). |
+| G11 | In the household's language: English, German, Dutch, Polish, French ([ADR 0019](decisions/0019-internationalisation-with-gettext.md)). |
 
 **Non-goals**
 
-* Repeater and room-server administration, telemetry requests, maps, firmware updates.
+* Repeater and room-server administration, requests to nodes that are not the household's
+  contacts, firmware updates, changing the radio's frequency or modulation
+  ([ADR 0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md)).
 * BLE as a transport (possible later as another adapter).
 * Several radios in one process: run one instance per radio (topics are per node).
 * Persisting the outgoing queue across restarts: a restart drops queued messages without a final
@@ -662,9 +672,36 @@ the tests with every supported Python version, like the CI matrix, and fails if 
 | Neutral, English-language project under MIT | [0011](decisions/0011-neutral-english-language-project-under-mit.md) |
 | Project name | [0012](decisions/0012-project-name-meshcore-home-gateway.md) |
 | Signed releases with artifact attestations | [0013](decisions/0013-signed-releases-with-github-artifact-attestations.md) |
+| The gateway as the household's mesh observer | [0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md) |
+| Provider-neutral documents on the bus | [0015](decisions/0015-provider-neutral-documents-on-the-bus.md) |
+| History in a local SQLite database | [0016](decisions/0016-history-in-a-local-sqlite-database.md) |
+| Contacts on the radio, each with its own device | [0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md) |
+| Telemetry pulled from the household's companions | [0018](decisions/0018-telemetry-pulled-from-the-households-companions.md) |
+| Internationalisation with gettext | [0019](decisions/0019-internationalisation-with-gettext.md) |
+| Managed radio profile for the observer | [0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
+| Generated dashboards for desktop and mobile | [0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) |
 
 ## 12 Open questions and future work
 
 * BLE transport as a further adapter, for radios without USB data or WiFi.
 * Priorities in the outgoing queue (an alert overtaking a status message).
 * MQTT 5 features: message expiry for send requests, response topics for correlation.
+
+## 13 Roadmap: the mesh observer
+
+The observer ([ADR 0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md)) is built
+in slices, each a release-ready step with its own tests, Home Assistant first:
+
+| Slice | Content | Records |
+| --- | --- | --- |
+| 1 | Read what the radio already sends: positions in contact records and adverts, nodes heard, contact flags, the radio's settings, statistics and duty-cycle factor | – |
+| 2 | Documents and history: radio statistics, contact index and one document per contact, heard nodes, recent messages, contact and node events; SQLite history | 0015, 0016 |
+| 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; statistics and contact sensors on the gateway's device | 0017 |
+| 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
+| 5 | Contact management from Home Assistant and the command line; every contact a recipient | 0017 |
+| 6 | Telemetry and positions of the household's companions, with traces on the map | 0018 |
+| 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
+| 8 | Generated dashboards for desktop and mobile | 0021 |
+
+Later: a terminal dashboard and a web dashboard on the same documents, Home Assistant as a
+control surface for selected radio settings, the household's own repeaters.
