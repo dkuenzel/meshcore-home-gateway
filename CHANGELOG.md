@@ -155,6 +155,10 @@ format and the command line are public interfaces.
 - Design document, architecture decision records, protocol reference (MeshCore companion
   firmware 1.18.0), MQTT API, Home Assistant, configuration, deployment, testing and development
   documentation.
+- Documentation: the four USB release builds of MeshCore 1.18.0 that have no USB interface, among
+  them the T-Echo Lite's with display, and what the gateway reports for them; the T-Echo Lite's
+  `non_shell` USB build, which works but never draws on the e-paper (platform notes,
+  troubleshooting).
 - Companion protocol subset: framing with resynchronisation, command encoders, decoders for
   responses, pushes and messages in the legacy and the version 3 layout; device information of
   older firmware (80 and 81 bytes) and the auto-add answer of firmware 1.12 and 1.13 (without the
