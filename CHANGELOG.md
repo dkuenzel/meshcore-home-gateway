@@ -9,6 +9,14 @@ format and the command line are public interfaces.
 
 ### Changed
 
+- `contacts/<key>.heard_via` can be `telemetry`: a companion heard only by its telemetry answers
+  moves `heard_at` (and *Last heard*) at most once an hour, and `hops`, `snr_db` and `rssi_dbm`
+  stay those of its last advert or message. `position_at` is when the position last changed. A
+  contact's tracker carries `gps_accuracy` 15 for a position from telemetry, so a companion up to
+  15 m outside a zone counts as inside.
+- After a path reset (a message's flood fallback) the gateway's copy of the contact table and
+  `contacts/<key>.path_known` show it at once, so the next message to that contact is budgeted
+  as the flood it will be.
 - `nodes` is published again after every table read; a contact that leaves the table is listed
   as a heard node again while it counts as heard; an older advert no longer replaces a heard
   node's record, in the history either: it keeps the advert time (history schema 2, migrated at
@@ -147,6 +155,20 @@ format and the command line are public interfaces.
 
 ### Added
 
+- Telemetry from the radio's companions ([ADR 0018](docs/decisions/0018-telemetry-pulled-from-the-households-companions.md),
+  `[telemetry] enabled`, **off by default** for now): the gateway asks each companion (chat
+  contact) of the radio for its battery, readings and position with `SEND_TELEMETRY_REQ`, one at
+  a time and after the messages, and takes an answer only for the contact asked. Direct only: a
+  companion without a path is flooded only when it was heard within 30 minutes, at most 4 floods
+  an hour; the gateway never resets or writes a path for it. Within 18 s an hour of the gateway's
+  own transmit time and an estimated 90 s an hour of mesh airtime, both starting empty at every
+  start; about every 15 minutes at rest and 90 seconds while moving for a neighbour, once an hour
+  without a position, backing off for one that does not answer. Positions go to
+  `contacts/<key>` and the contact's tracker, with the new `position_accuracy_m` (15) and
+  `position_received_at`; `state.telemetry`, `telemetry_airtime_1h_s` and
+  `telemetry_mesh_airtime_1h_s`. A guide for setting up the companions:
+  [docs/companions.md](docs/companions.md). **No contact can be excluded yet** (it follows with
+  the next release, which turns telemetry on by default): switched on, it asks every chat contact.
 - Contact management on request ([ADR 0017](docs/decisions/0017-contacts-on-the-radio-each-with-its-own-device.md),
   `[contacts] manage`, on by default): `add_contact` takes a public key, a
   `meshcore://contact/add` link or a contact card, `contacts/<key>/remove` removes a contact. A

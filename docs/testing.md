@@ -33,10 +33,10 @@ home-assistant.md.
 
 | Suite | Files | Needs |
 | --- | --- | --- |
-| Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py` | nothing |
+| Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py`, `test_lpp.py` (CayenneLPP frames), `test_telemetry.py` (the telemetry schedule on a set clock) | nothing |
 | Architecture | `tests/test_architecture.py` (the core and the codec import no I/O modules, ADR 0007) | nothing |
 | Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source), `test_packet.py`, `test_links.py` | nothing |
-| Radio session and bridge | `tests/test_session.py`, `test_bridge.py`, `test_observer.py`, `test_contact_manager.py`, `test_profile.py` (emulated radio) | nothing |
+| Radio session and bridge | `tests/test_session.py`, `test_bridge.py`, `test_observer.py`, `test_contact_manager.py`, `test_profile.py`, `test_telemetry_poller.py` (emulated radio, with remote companions that answer telemetry) | nothing |
 | MQTT | `tests/test_mqtt_client.py` | `mosquitto` for the tests marked `broker` |
 | Documents, Home Assistant discovery, payloads | `tests/test_views.py`, `test_discovery.py`, `test_payloads.py`, `test_contact_devices.py`, `test_manage_entities.py` | nothing |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
@@ -113,3 +113,23 @@ adds it back).
 | 26 | After the add of step 21, replay one of B's older adverts (a second radio with a captured packet, test radio only) | the radio drops it; after a removal, B's next advert arrives as a new node |
 | 27 | In Home Assistant, with B not a contact of A (`contacts remove` it first, check with `contacts list`): B advertises; pick B in *Add heard node* on the gateway's device; then *Remove from radio* on B's device; then paste B's contact link into *Add contact (key or link)* | B is offered within 30 s with the first 12 and last 8 digits of its key; `added`, B's device appears; `removed`, the device goes and B is offered again; `added` once more. With `[contacts] manage = false` all three are `unavailable` |
 | 28 | Add the QR card and the dashboard row of home-assistant.md with B's entity ID; press the row's button; add B again, set `[contacts] manage = false` and restart | the card shows a QR code (step 25 scans it); the row asks before it removes, and after the removal it says that the entity is missing; with management off the row's button is disabled |
+
+Steps 29–40 need B to be a companion **with GPS**, set up as [companions.md](companions.md)
+describes and in A's table, A adding contacts by hand only; a repeater for the steps with hops;
+optionally C, a tracker board that keeps a stored position. `[telemetry] enabled = true`;
+`log_level = "debug"` where the log is read.
+
+| # | Step | Expected |
+| --- | --- | --- |
+| 29 | Start the service with B beside A, then behind one repeater | the first request about 76 s after `connected` (EU/UK Narrow), direct; `contacts/<B>`: the position, `position_source` `telemetry`, `position_accuracy_m` 15; then about every 15 min at rest (47 min over two repeaters); `state.telemetry_airtime_1h_s` plausible against `stats.tx_airtime_1h_s` |
+| 30 | On B: telemetry requests "No"; "From Specific Contacts" with the gateway allowed nothing, base only, base and location, everything; remove the gateway from B's contacts | silence; silence; battery only; with position; with environment; silence. Requests on B's path only, never a flood or a path reset |
+| 31 | B: GPS off; on without a fix; C with GPS off; B at rest indoors for an hour | without position: the tracker keeps the last one, `position_received_at` stops; C keeps sending its stored position; at rest no history rows and no tracker states |
+| 32 | Walk B 200 m away and back, within range | moving: requests about every 90 s; resting again after two answers under 50 m; a history row and a trace point per move of 20 m or more |
+| 33 | Carry B out of direct range but within the mesh (a repeater hears both); after two unanswered requests, send the gateway a message from B | no path reset by the gateway; B's app floods the message after its direct attempts fail, A stores the path B sends (0x81); the next request goes direct over the repeater and is answered |
+| 34 | Debug log of answers, direct and after a flood; force a timeout (B two hops away) | padding stripped (19 bytes with 9 or 6 zero bytes); a late answer after the next request appears as an ignored 0x8C |
+| 35 | Send messages to B while telemetry runs, also during a large table read and right after a flooded request | no request between a message's send and its confirmation, nor within 10 s after; how long a message sent right after a flooded request waits (log times of the send and of the radio's transmission) |
+| 36 | Stop and start the service five times within 10 minutes | no request within 75 s of any start; B's next request at its saved due time; `state.json` `telemetry` holds no position |
+| 37 | Radio over TCP (if available): repeat 29 during a large table read; switch automatic adding on, then only repeater adding | a silence during the read is retried without back-off; with automatic adding of any type `state.telemetry` is `paused` |
+| 38 | Carry B out of all range silently (no message, no advert) for an hour, bring it back | no path reset, no flood; direct requests at most 30 min apart while it is away; B's position updates within 30 min of its return |
+| 39 | B two hops away, with its path to the gateway reset on B (it floods its answer), `publish_rx_log` on | a flooded RESPONSE in the packet log after a direct request; `telemetry_mesh_airtime_1h_s` rises by the direct request plus about 12.6 s; A sends its path back 3 s later; the next answer comes direct |
+| 40 | As 38, and send B a message 10 min after it left | the message: two direct attempts, a path reset, a flood, `failed`; `contacts/<B>.path_known` `false` at once; no request to B until it advertises after its return; then one flood, the path, direct requests again |

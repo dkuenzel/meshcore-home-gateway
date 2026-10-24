@@ -81,18 +81,23 @@ from its own name, not from a placeholder. The entities, for a companion named *
 | --- | --- | --- |
 | `notify.mesh_alice` | notify, named like the device | sends a direct message, through the same queue, airtime budget and duplicate check as a target |
 | `event.mesh_alice_message` | event: `contact` | each message from the contact, with the attributes of `received` |
-| `sensor.mesh_alice_last_heard` | timestamp | when the gateway last heard the contact (advert, message) |
-| `sensor.mesh_alice_hops` | diagnostic | repeaters the last packet passed (*unknown*: direct, or not known) |
-| `sensor.mesh_alice_snr` | signal strength (dB), diagnostic | its signal-to-noise ratio |
-| `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | the contact's position; only once one is known |
+| `sensor.mesh_alice_last_heard` | timestamp | when the gateway last heard the contact (advert, message; its telemetry answers at most once an hour) |
+| `sensor.mesh_alice_hops` | diagnostic | repeaters the last advert or message passed (*unknown*: direct, or not known) |
+| `sensor.mesh_alice_snr` | signal strength (dB), diagnostic | its signal-to-noise ratio, of its last advert or message |
+| `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at` (when it last changed), `position_source` (`advert`, `telemetry`); `gps_accuracy` 15 for a position from telemetry | the contact's position; only once one is known |
 | `button.mesh_alice_remove` | configuration | *Remove from radio* ([below](#adding-and-removing-contacts)); `unavailable` for a contact target or command sender |
 
 Components exist only where they have data: repeaters and sensors get no notify and message
-entities, room servers no notify entity, and the tracker appears with the first position (today
-from the contact's adverts, later from telemetry). Every contact has the remove button. A component, once there, stays as long as the
+entities, room servers no notify entity, and the tracker appears with the first position, from
+the contact's telemetry ([companions.md](companions.md), `[telemetry]`) or its adverts. Every
+contact has the remove button. A component, once there, stays as long as the
 contact does (Home Assistant would clear the whole device when the gateway removed a disabled
 one). The tracker is the only entity with coordinates,
 so Home Assistant's map shows each contact once; it turns `unavailable` while no position is known.
+Its attributes change only when the position moved 20 m or more, so a companion at rest adds no
+state per answer. With `gps_accuracy` Home Assistant counts a companion up to 15 m outside a zone's
+radius as inside it. Positions do not expire yet: a tracker keeps the last one until a newer one
+comes, so it is no presence source for an alarm on its own.
 
 * **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
@@ -208,6 +213,7 @@ requests off for all of them.
 | `nodes`: `look_alike`, `look_alike_total` | *Look-alike node heard* |
 | `contact`, `node` | the events *Contact* and *New node* |
 | `contacts/<key>` | a contact's sensors and tracker |
+| `state`: `telemetry`, `telemetry_airtime_1h_s`, `telemetry_mesh_airtime_1h_s` | not yet: they stay on MQTT in this release |
 | `contacts/<key>/received`, `contacts/<key>/send` | a contact's message event and notify entity |
 | `homeassistant/show_hidden` | the button *Show hidden contacts* |
 | `homeassistant/add_node`, `add_contact`, `contacts/<key>/remove` | *Add heard node*, *Add contact (key or link)*, *Remove from radio* |
@@ -448,4 +454,6 @@ recorder:
 ```
 
 The contacts' trackers store their positions in the history too, which draws their traces on the
-map; exclude `device_tracker.mesh_*` as well to keep no traces.
+map: a companion that moves writes one state per 20 m it moved, at most about one per telemetry
+answer (every 90 s or more). Exclude `device_tracker.mesh_*` as well to keep no traces; a
+`person` that a tracker belongs to keeps its own copy of the position.

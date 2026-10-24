@@ -961,8 +961,19 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   coordinates) and `test_a_tracker_without_a_position_leaves_the_map`; source
   `components/mqtt/device_tracker.py` lines 160-235, `components/device_tracker/entity.py` lines
   386-387, frontend `src/panels/lovelace/cards/hui-map-card.ts` (`show_all`). *Here:* only the
-  contact trackers carry coordinates, without `gps_accuracy`; their availability adds the
-  condition that a position is known. *Check:* `make ha-test`.
+  contact trackers carry coordinates; their availability adds the condition that a position is
+  known. A position from telemetry carries `gps_accuracy` 15, so a companion up to 15 m outside a
+  zone's radius is in it (`test_a_position_from_telemetry_carries_its_accuracy`: 110 m from a
+  100 m `zone.home` is `home`); an advert's carries none (0). A `gps_accuracy` that is not a number
+  counts as 0 with a warning (`components/mqtt/device_tracker.py` lines 194-214), so the template
+  sets it only where the document has a number. *Check:* `make ha-test`.
+* **An MQTT tracker writes its state only when its attributes as rendered change.** The gateway's
+  `position_at` is when the position last changed, not when it was last received, so a companion
+  at rest writes no state (and no recorder row) per telemetry answer. *Verified:* 2026.10.0,
+  `test_a_position_from_telemetry_carries_its_accuracy` (an answer at rest leaves `last_updated`);
+  source `components/mqtt/entity.py` lines 532-542 and 1708-1735 (the attributes the message
+  callback compares before it writes).
+  *Check:* `make ha-test`.
 * **For each new subscription Home Assistant subscribes to the topic again, so the broker sends
   its retained message again; each subscription takes only the first retained message.**
   *Verified:* source `components/mqtt/client.py` lines 949-962 (queued subscriptions) and

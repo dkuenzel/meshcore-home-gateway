@@ -181,6 +181,50 @@ async def test_the_contact_document_fills_its_entities(
     assert problems(caplog) == []
 
 
+async def test_a_position_from_telemetry_carries_its_accuracy(
+    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # fmt: skip
+    """A telemetry position has `gps_accuracy` 15, which widens the zone test: 110 m from the
+    centre of a 100 m home zone is `home`. An advert's has none (0). A resting companion's
+    answers change no tracker state."""
+    await with_gateway(hass)
+    near_home = Position(hass.config.latitude + 110 / 111_195, hass.config.longitude)
+    mesh = mesh_of(ALICE_NODE, HILL_NODE)
+    mesh.contact_answered(ALICE, NOW, near_home, 12.0)
+    gateway_devices(broker, store).update(mesh)
+    await broker.deliver(hass)
+    await online(hass)
+    first = contact_document(mesh.contacts[ALICE])
+    await fire(hass, TOPICS.contact(ALICE), first, retain=True)
+    await fire(hass, TOPICS.contact(HILL), contact_document(mesh.contacts[HILL]), retain=True)
+    alice = hass.states.get("device_tracker.mesh_alice")
+    assert alice.state == "home"
+    assert alice.attributes["gps_accuracy"] == 15
+    assert (alice.attributes["position_source"], alice.attributes["altitude_m"]) == (
+        "telemetry", 12.0,
+    )  # fmt: skip
+    hill = hass.states.get("device_tracker.mesh_hilltop")
+    assert hill.attributes["gps_accuracy"] == 0
+    mesh.contact_answered(ALICE, NOW + 900, near_home, 12.0)  # the next answer, at rest
+    document = contact_document(mesh.contacts[ALICE])
+    assert document != first  # its time received moved
+    await fire(hass, TOPICS.contact(ALICE), document)
+    assert hass.states.get("device_tracker.mesh_alice").last_updated == alice.last_updated
+    moved = Position(near_home.latitude + 30 / 111_195, near_home.longitude)  # 30 m on
+    mesh.contact_answered(ALICE, NOW + 1800, moved, 12.0)
+    await fire(hass, TOPICS.contact(ALICE), contact_document(mesh.contacts[ALICE]))
+    assert hass.states.get("device_tracker.mesh_alice").attributes["latitude"] == pytest.approx(
+        moved.latitude
+    )
+    old = contact_document(mesh.contacts[HILL])  # a document of an earlier version: no warning
+    del old["position_accuracy_m"], old["position_received_at"]
+    await fire(hass, TOPICS.contact(HILL), {**old, "latitude": 52.2})
+    hill = hass.states.get("device_tracker.mesh_hilltop")
+    assert (hill.attributes["latitude"], hill.attributes["gps_accuracy"]) == (52.2, 0)
+    assert problems(caplog) == []
+
+
 async def test_a_tracker_without_a_position_leaves_the_map(
     hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,

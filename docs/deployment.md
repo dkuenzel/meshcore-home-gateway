@@ -314,7 +314,9 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
   `/var/lib/meshcore-home-gateway/state.json` (the newest accepted command time per sender; without
   it a restored system accepts older recorded commands again until a sender sends a new one, within
   `max_age_s`; the Home Assistant components last announced; the contacts whose documents are
-  published). `history.sqlite3` next to it holds the history ([configuration](configuration.md));
+  published; the radio profile's memory; the telemetry schedule: per companion when it is next
+  due, its unanswered requests, when it last answered, was asked and flooded, and whether it was
+  last moving, no positions). `history.sqlite3` next to it holds the history ([configuration](configuration.md));
   copy it only with the service stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
 * **Retained documents** stay on the broker after the gateway is removed. Clear them with, for
   example, `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
