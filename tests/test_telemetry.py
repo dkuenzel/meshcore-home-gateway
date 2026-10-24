@@ -228,10 +228,10 @@ def test_a_flooded_reply_is_charged_once() -> None:
 
 @pytest.mark.parametrize("heard_every_s", [None, 120.0])
 def test_a_due_flood_does_not_wait_forever_behind_direct_polls(heard_every_s: float | None) -> None:
-    """Two moving companions, asked every 90 s, keep the lanes from filling; a flood needs both
-    lanes full. After 10 minutes the flood goes first and waits for them: at most 164 s for the
-    own lane, 816 s for the mesh lane, from empty. Hearing the contact again does not restart
-    the wait."""
+    """Two moving companions, asked every 90 s, keep the own lane from filling; a flood needs
+    both lanes full. After 10 minutes (the first decision after it: 603.4 s) the flood goes
+    first and waits for the mesh lane, which holds 8.88 of its 20.41 s by then: at 1064.7 s, with
+    no direct poll in between. Hearing the contact again does not restart the wait."""
     saved = Saved({
         k: SavedContact(0.0, answered_age_s=10.0, polled_age_s=10.0, located=True, still=0)
         for k in (A, B)
@@ -255,8 +255,9 @@ def test_a_due_flood_does_not_wait_forever_behind_direct_polls(heard_every_s: fl
         polls.append((now, decision.key))
         now += 1
     flood_at = next(t for t, k in polls if k == C)
-    assert 600.0 <= flood_at <= 600.0 + 817.0 + 15.0
+    assert flood_at == pytest.approx(603.4 + (20.409 - 8.878) / 0.025, abs=0.5)
     assert len([t for t, k in polls if k != C and t < 600.0]) >= 6  # direct polls went on
+    assert not [t for t, k in polls if k != C and 600.0 < t < flood_at]  # then the flood first
     assert s.interval_s(A, now) == telemetry.MOVING_MIN_S  # still moving
 
 
@@ -521,6 +522,30 @@ def test_a_flood_planned_while_heard_stays_planned_while_it_waits_for_the_lanes(
     assert times[4] - times[0] >= HOUR
 
 
+def test_a_companion_heard_while_the_hourly_limit_holds_is_planned_for_it() -> None:
+    """At a fast preset (62.5 kHz, SF7, CR5) four floods fill the hour within 23 minutes; a fifth
+    companion heard after them waits for the hour, it is not lost when its hearing gets older
+    than 30 minutes meanwhile."""
+    fast = meshcore_lora(62_500.0, 7, 5)
+    s = Scheduler(0.0)
+    keys = (A, B, C, D, E)
+    now, flooded = 0.0, {}
+    while now < 5000.0:
+        candidates = [pathless(k, heard_at=0.0 if now <= HOUR else None) for k in keys[:4]]
+        heard = 1400.0 if 1400.0 <= now <= 1400.0 + HOUR else None  # as the poller keeps it
+        candidates.append(pathless(E, heard_at=heard))
+        decision = s.decide(fast, candidates, now)
+        if isinstance(decision, float):
+            now += max(decision, 0.001)
+            continue
+        s.sent(decision, flood=True, now=now)
+        s.unanswered(decision.key, now + 9)
+        flooded[decision.key] = now
+        now += 9
+    assert set(flooded) == set(keys)
+    assert flooded[E] >= min(flooded.values()) + HOUR
+
+
 def test_the_flood_count_stops_at_the_limit_the_state_file_takes() -> None:
     s = Scheduler(0.0, lanes=wide)
     ask(s, [direct(A)], 0.0)
@@ -600,6 +625,24 @@ def test_a_contact_that_leaves_loses_its_planned_flood() -> None:
     assert isinstance(s.decide(EU, [pathless(A, heard_at=0.0)], 0.0), float)  # planned, waits
     s.decide(EU, [direct(B)], 100.0)  # A left
     assert s.decide(EU, [pathless(A)], 6 * HOUR) == telemetry.STEP_S
+
+
+def test_a_planned_flood_ends_when_the_contacts_own_gap_holds_again() -> None:
+    """Planned and retried while its last answer turns a day old: its gap grows from an hour to
+    a day, the plan ends, and it is not flooded later for that hearing."""
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0)  # answers at 2 s
+    flood = poll(s, [pathless(A, heard_at=4990.0)], 5000.0)  # its path was reset; heard
+    s.sent(flood, flood=True, now=5000.0)
+    s.unanswered(A, 5009.0)  # the next flood an hour after this one
+    heard = 86_300.0  # 100 s before the answer is a day old
+    assert poll(s, [pathless(A, heard_at=heard)], heard).flood
+    s.retry(A, heard, after_s=300.0)  # refused
+    now = heard + 1
+    while now < 95_000.0:
+        candidate = pathless(A, heard_at=heard if now - heard <= HOUR else None)
+        assert not isinstance(s.decide(EU, [candidate], now), Poll), f"flooded at {now}"
+        now += 60.0
 
 
 def test_a_planned_flood_survives_a_retry() -> None:

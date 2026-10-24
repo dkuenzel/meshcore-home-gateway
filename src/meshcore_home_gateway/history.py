@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 SCHEMA_VERSION = 2  # 2: node.last_advert
 DAY_S = 86_400.0
 MAX_MESSAGES = 10_000
-MAX_POSITIONS = 100_000  # in all; each contact keeps its newest
+MAX_POSITIONS = 100_000  # beyond it the oldest go, except each contact's newest
 _SCHEMA = """
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,

@@ -59,8 +59,8 @@ Then, on the gateway: `[telemetry] enabled = true` and restart the service.
 * **Exception:** when the gateway sent the companion a message while it was away and the message
   fell back to a flood, the radio forgot the companion's route. It is then asked again only once
   it advertises or sends a message, and then at once: the gateway floods a companion only when it
-  heard it within 30 minutes (the flood may go out later while it waits for its airtime), and it
-  never writes a route for telemetry.
+  heard it within 30 minutes (the flood may go out later while it waits for its airtime or for the
+  limit of 4 floods an hour), and it never writes a route for telemetry.
 * Its tracker in Home Assistant (`device_tracker.mesh_<name>`) appears with the first position.
   Its *Last heard* follows adverts and messages at once and telemetry answers at most once an
   hour.
@@ -82,9 +82,9 @@ Then, on the gateway: `[telemetry] enabled = true` and restart the service.
 * A telemetry position carries an accuracy of 15 m, so Home Assistant counts a companion up to
   15 m outside a zone's radius as inside it.
 * A position is stored in the history (and written by Home Assistant's recorder) only when it
-  moved 20 m or more: a companion at rest adds nothing per answer. The history keeps at most
-  100 000 positions, dropping the oldest first, but never a companion's newest one before
-  `[history] positions_days` is over.
+  moved 20 m or more: a companion at rest adds nothing per answer. Beyond 100 000 positions the
+  history drops the oldest first, never a companion's newest one, which goes only when it is
+  older than `[history] positions_days`.
 
 ## Privacy
 

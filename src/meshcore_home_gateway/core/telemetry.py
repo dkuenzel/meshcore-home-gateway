@@ -252,20 +252,23 @@ class Scheduler:
             if s.due_at > now:
                 planned[c.key] = None
                 continue
-            poll = self._poll_for(c, s, now)
-            planned[c.key] = poll
-            if poll is not None and poll.flood:
+            planned[c.key] = self._poll_for(c, s, now)
+            if self._flood_wanted(c, s, now):  # also while the hourly limit holds
                 if s.flood_waiting_since is None:
                     s.flood_waiting_since = now
-            elif poll is not None or not self._hour_full(now):
-                s.flood_waiting_since = None  # a path now, or not heard, or its own gap holds
+            else:
+                s.flood_waiting_since = None  # a path now, not heard, or its own gap holds
         return planned
 
+    def _flood_wanted(self, c: Candidate, s: _Contact, now: float) -> bool:
+        """Without a path, heard recently (once planned, a later hearing or none does not void
+        it) and its own flood gap over."""
+        heard = s.flood_waiting_since is not None or _fresh(s.heard_at, now)
+        return c.path_bytes is None and heard and self._gap_over(s, now)
+
     def _poll_for(self, c: Candidate, s: _Contact, now: float) -> Poll | None:
-        if c.path_bytes is None:  # the radio would flood: only if heard recently
-            # once planned, a later hearing or none does not void it (it waits for the lanes)
-            heard = s.flood_waiting_since is not None or _fresh(s.heard_at, now)
-            if heard and self._flood_allowed(s, now):
+        if c.path_bytes is None:  # the radio would flood
+            if self._flood_wanted(c, s, now) and not self._hour_full(now):
                 return Poll(c.key, True, self._flood_costs(s), "flood")
             return None
         purpose = "retry" if s.failures and _recent(s, now) else "poll"
@@ -294,9 +297,7 @@ class Scheduler:
         self._floods = [t for t in self._floods if 0 <= now - t < HOUR_S]
         return len(self._floods) >= FLOODS_PER_HOUR
 
-    def _flood_allowed(self, s: _Contact, now: float) -> bool:
-        if self._hour_full(now):
-            return False
+    def _gap_over(self, s: _Contact, now: float) -> bool:
         gap = min(MAX_FLOOD_GAP_S, FLOOD_GAP_S * 2.0**s.floods) if _recent(s, now) else PROBE_GAP_S
         return s.flood_at is None or now - s.flood_at >= gap
 

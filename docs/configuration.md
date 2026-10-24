@@ -174,7 +174,7 @@ never for nodes the gateway merely heard.
 | --- | --- | --- |
 | `enabled` | `true` | keep the history; with `false` nothing is written (delete the file by hand to remove what is there) |
 | `messages_days` | `30` | days messages are kept, 1–3650; at most 10 000 messages |
-| `positions_days` | `30` | days positions are kept, 1–3650; at most 100 000 positions, the oldest first, but every contact keeps its newest until it is that old |
+| `positions_days` | `30` | days positions are kept, 1–3650; beyond 100 000 positions the oldest go first, except each contact's newest, which only its age removes |
 
 The file holds message texts and positions of the household's people: it is readable only by the
 service user. If it cannot be opened or written, the gateway logs it and runs without a history;
@@ -226,8 +226,9 @@ Fixed by ADR 0018, not settings:
   longer: an hour without a position), then up to every 6 hours.
 * **Routes**: direct only. A companion without a stored path is asked by flood only when it was
   heard within 30 minutes when the flood is planned (an advert, a message, a path it sent; the
-  flood may go out later while it waits for its airtime), at most 4 floods an hour and one
-  per companion per 30 minutes; one that has not answered within a day, once a day. The gateway
+  flood may go out later while it waits for its airtime or the hourly limit, with several
+  companions waiting an hour or more), at most 4 floods an hour and one per companion per
+  30 minutes; one that has not answered within a day, once a day. The gateway
   never resets or writes a path for telemetry: a companion whose path a message's flood fallback
   (`flood_after`) reset is asked again once it advertises or sends something, then at once.
 

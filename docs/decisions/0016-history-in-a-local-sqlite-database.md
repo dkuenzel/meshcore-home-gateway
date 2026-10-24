@@ -44,8 +44,8 @@ handles the access pattern with indexes, and is crash safe with its write-ahead 
   longitude, altitude, source: telemetry or advert), readings (contact, time, quantity, value:
   battery, temperature, humidity, …), sightings (node, time, hops, SNR, RSSI, how it was heard).
 * **Retention** by age and by row count per table, purged hourly; defaults: messages 30 days or
-  10 000 rows, positions and readings 30 days (positions also at most 100 000 rows, never a
-  contact's newest), sightings 7 days. Positions are stored only for contacts, never for nodes
+  10 000 rows, positions and readings 30 days (positions also beyond 100 000 rows, the oldest
+  first, except each contact's newest), sightings 7 days. Positions are stored only for contacts, never for nodes
   the gateway merely heard ([ADR 0014](0014-the-gateway-as-the-households-mesh-observer.md),
   privacy).
 * **Separate from the state file:** the replay ledger and the announced components stay in the
