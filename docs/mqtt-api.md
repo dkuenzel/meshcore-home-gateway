@@ -14,9 +14,24 @@ versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
 | `received` | bridge → | no | JSON, `event_type` = `contact` or `channel` |
 | `command` | bridge → | no | JSON, `event_type` = command word |
 | `rx` | bridge → | no | JSON per received packet, only with `publish_rx_log` |
+| `stats` | bridge → | yes | JSON: the radio's own measurements |
+| `contacts` | bridge → | yes | JSON index of the radio's contact table |
+| `contacts/<key>` | bridge → | yes | JSON per contact, `<key>` its full public key in lower-case hex; cleared (empty retained message) when the contact leaves the table |
+| `nodes` | bridge → | yes | JSON: nodes heard but not added |
+| `history` | bridge → | yes | JSON: the latest messages in and out |
+| `contact` | bridge → | no | JSON, `event_type` = `added` or `removed` |
+| `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/config` | bridge → | no | Home Assistant discovery; `<node_id>` as configured, `-` included |
 
 Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are always present.
+
+The retained JSON topics are the gateway's *documents* ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)):
+every front end (Home Assistant through discovery, other home automation systems through their
+MQTT bindings, later dashboards) reads the same ones. A document is published when it changes
+and again after every reconnect to the broker. Units are in the key names, machine values are in
+lower case, and texts from the mesh (names, messages) are plain data: never interpret them as
+markup. Within a major version keys are only added; ignore keys you do not know. Lists are
+bounded in size and carry `total` and `truncated`.
 
 ## Sending: `send/<alias>`
 
@@ -153,6 +168,123 @@ Retained; published at start, on every change of the radio link and every 60 s.
  "version": "0.1.0"}
 ```
 
+## Radio statistics: `stats`
+
+Retained; from the radio's own counters (`GET_STATS`), read with the battery every 60 s. `null`
+while the radio has not reported them, or when its firmware does not have them.
+
+```json
+{"read_at": "2026-10-18T09:00:00+00:00", "uptime_s": 3600, "queue_length": 0, "errors": [],
+ "noise_floor_dbm": -118, "last_rssi_dbm": -97, "last_snr_db": 6.5, "tx_airtime_s": 41,
+ "rx_airtime_s": 300, "tx_airtime_1h_s": 12, "tx_airtime_window_s": 3600,
+ "packets_received": 120, "packets_sent": 30, "packets_sent_flood": 10,
+ "packets_sent_direct": 20, "packets_received_flood": 70, "packets_received_direct": 50,
+ "receive_errors": 2, "storage_used_kb": 12, "storage_total_kb": 976, "airtime_factor": 9.0,
+ "duty_cycle_percent": 10.0}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `uptime_s`, `tx_airtime_s`, `rx_airtime_s`, `packets_*`, `receive_errors` | since the radio booted; `tx_airtime_s` counts everything the radio sent: messages, acknowledgements, adverts, repeats |
+| `tx_airtime_1h_s` | the radio's time on air within the last hour (or within `tx_airtime_window_s`, while the gateway has watched for less than an hour; a restart of the radio is bridged): its real duty cycle, unlike the gateway's own estimate `airtime_1h_s` in `state` |
+| `errors` | the radio's error flags: `queue_full`, `cad_timeout`, `start_rx_timeout` |
+| `airtime_factor`, `duty_cycle_percent` | the radio's own transmit limit, `1 / (1 + factor)` ([protocol.md §7](protocol.md#7-radio-parameters-and-time-on-air)); `null` on firmware without `GET_TUNING_PARAMS` |
+| `receive_errors` | `null` before firmware 1.18 |
+
+## Contacts: `contacts` and `contacts/<key>`
+
+The radio's contact table, as the gateway last read it: an index, and one document per contact
+([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)). Subscribe to
+`contacts/+` for all contacts. When a contact leaves the table, its topic is cleared with an
+empty retained message, also if that happened while the gateway was stopped.
+
+```json
+{"total": 2, "max": 350, "remote_cli": [], "remote_cli_total": 0, "advert_position": [],
+ "advert_position_total": 0, "truncated": false,
+ "contacts": [{"key": "a1b2…", "name": "Alice", "type": "chat",
+               "heard_at": "2026-10-18T09:00:02+00:00", "protected": true}]}
+```
+
+The index lists the contacts most recently heard first, up to 32 KiB. `max` is the radio's table
+size. `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
+(flag 0x10; the gateway never sets it, remove such contacts), `advert_position` companions whose
+adverts carried a position, which everyone in range can read.
+
+```json
+{"key": "a1b2…", "prefix": "a1b2c3d4e5f6", "name": "Alice", "type": "chat",
+ "flags": ["favourite"], "favourite": true, "remote_cli": false, "protected": true,
+ "path_known": true, "path_hops": 2, "last_advert_at": "2026-10-18T08:55:00+00:00",
+ "first_heard_at": "2026-10-11T18:00:00+00:00", "heard_at": "2026-10-18T09:00:02+00:00",
+ "heard_via": "message", "hops": 2, "snr_db": 7.25, "rssi_dbm": null,
+ "latitude": 53.55, "longitude": 9.99, "altitude_m": null,
+ "position_at": "2026-10-18T08:55:00+00:00", "position_source": "advert",
+ "advert_position": true}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `type` | `chat` (a companion: someone's radio), `repeater`, `room`, `sensor` |
+| `flags` | `favourite`, `telemetry_base`, `telemetry_location`, `telemetry_environment` (what this contact may request from the gateway's radio), `remote_cli`; unknown bits as one hex value |
+| `protected` | a configured contact target or command sender ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
+| `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods |
+| `last_advert_at` | the contact's clock at its newest advert |
+| `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`); `hops` `null` for a direct route; `rssi_dbm` only from adverts |
+| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) or reported by itself (`telemetry`); `position_at` is when the gateway learned it (for an advert read at start, the time of the newest advert) |
+| `advert_position` | its adverts carried a position: everyone in range can read it |
+
+## Nodes heard: `nodes`
+
+Nodes the radio heard advertising but did not add (it adds contacts only on request), most
+recently heard first: the last 50 of the last 7 days, at most 15 KiB. **No positions**: the
+gateway does not keep where strangers are.
+
+```json
+{"total": 1, "truncated": false,
+ "nodes": [{"key": "c3d4…", "prefix": "c3d4e5f6a7b8", "name": "Hilltop", "type": "repeater",
+            "first_heard_at": "2026-10-17T20:00:00+00:00",
+            "heard_at": "2026-10-18T09:00:00+00:00", "heard_via": "advert", "hops": 3,
+            "snr_db": 5.5, "rssi_dbm": -95}]}
+```
+
+`hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert; that log is not
+authenticated, so treat them as a hint.
+
+## History: `history`
+
+The latest messages in and out (up to 50, at most 15 KiB), newest first. They are kept in the
+gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
+[configuration](configuration.md)).
+
+```json
+{"total": 2, "truncated": false,
+ "messages": [{"at": "2026-10-18T09:01:00+00:00", "direction": "out", "kind": "contact",
+               "contact_key": "a1b2…", "channel_index": null, "name": "Alice",
+               "text": "Back soon", "state": "confirmed", "hops": null, "snr_db": null},
+              {"at": "2026-10-18T09:00:02+00:00", "direction": "in", "kind": "channel",
+               "contact_key": null, "channel_index": 0, "name": "Carol", "text": "On my way",
+               "state": null, "hops": 1, "snr_db": 6.25}]}
+```
+
+`name` is the sender's contact name, for channels the **claimed** name from the text; for
+outgoing messages the recipient. `state` is the final delivery state of an outgoing message
+(`confirmed`, `failed`, `expired`, or `sent` for a channel). Requests refused at once
+(`rejected`, `duplicate`) are not in the history.
+
+## Contact and node events: `contact`, `node`
+
+```json
+{"event_type": "added", "key": "a1b2…", "name": "Alice", "type": "chat"}
+{"event_type": "new", "key": "c3d4…", "prefix": "c3d4e5f6a7b8", "name": "Hilltop",
+ "type": "repeater", "hops": 3, "snr_db": 5.5, "rssi_dbm": -95,
+ "heard_at": "2026-10-18T09:00:00+00:00"}
+```
+
+`contact` reports a contact that appeared in or left the radio's table (`added`, `removed`).
+After a start of the gateway, it reports what changed while it was stopped: contacts that are
+new, and contacts that are gone (`name` and `type` are then `null`). `node` reports a node heard for the first time
+in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
+adverts with invented keys does not flood the bus.
+
 ## Radio diagnostics: `rx`
 
 With `diagnostics.publish_rx_log = true`, one event per packet the radio receives, before it
@@ -187,8 +319,8 @@ Write the node ID as configured, also in the discovery topic: for node `radio-1`
 have `_` for `-`.
 
 Home Assistant needs `homeassistant/#` for discovery and its own birth and status messages. Only
-the gateway may write the event topics (`received`, `command`, `delivery`), because automations
-trust them. When commands are configured, the ACL is not optional: any client that can write
+the gateway may write the event topics (`received`, `command`, `delivery`, `contact`, `node`) and
+the documents, because automations and dashboards trust them. When commands are configured, the ACL is not optional: any client that can write
 `command` can trigger the automations.
 
 paho reads every message completely before the gateway can check its size (1 KiB for a send

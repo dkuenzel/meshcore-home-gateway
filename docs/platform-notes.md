@@ -748,7 +748,7 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `test_a_null_device_field_would_reject_the_whole_document` (`mdl`); probe: `null` in `mf`,
   `name`, `mdl`, `sw`, `hw`, `sn`, `sa` or `mdl_id` left 0 of 13 entities, each with that warning
   for its field. *Here:* `discovery_payload()` adds model, firmware and key only once they are
-  known ([design.md, 6.6](design.md#66-home-assistant)). *Check:* `make ha-test`.
+  known ([design.md, 6.7](design.md#67-home-assistant)). *Check:* `make ha-test`.
 * **Deleting one entity of a device-discovered device in Home Assistant removes all the device's
   entities, until the gateway announces again.** Home Assistant publishes an empty retained
   payload on the entity's discovery topic, which for device discovery is the whole device. The
@@ -777,7 +777,7 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   announce it again without one component, and list the entities.
 * **A bare `{"p": <platform>}` removes only a component that Home Assistant has discovered since
   its own start.** Stated, with the gateway's placeholder for this case, in
-  [design.md, 6.6](design.md#66-home-assistant);
+  [design.md, 6.7](design.md#67-home-assistant);
   [home-assistant.md, How discovery behaves](home-assistant.md#how-discovery-behaves) describes
   the effect. Verified with 2026.10.0 by
   `test_a_component_is_removed_also_after_a_restart_of_home_assistant`.

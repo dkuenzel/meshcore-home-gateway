@@ -12,7 +12,7 @@ FORBIDDEN = {
     "meshcore_home_gateway.cli", "meshcore_home_gateway.state", "meshcore_home_gateway.systemd",
     "meshcore_home_gateway.config",
 }  # fmt: skip
-PURE = sorted([*PACKAGE.glob("core/*.py"), *PACKAGE.glob("protocol/*.py")])
+PURE = sorted([*PACKAGE.glob("core/*.py"), *PACKAGE.glob("protocol/*.py"), PACKAGE / "views.py"])
 
 
 def imported_modules(path: Path) -> set[str]:

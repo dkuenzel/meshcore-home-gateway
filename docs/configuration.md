@@ -117,6 +117,24 @@ TCP it drops push frames while its send queue is full (the bridge warns about th
 host that takes the radio's network address can pose as the radio and forge commands
 ([design §7.2](design.md#72-threats-and-mitigations)).
 
+## `[history]`
+
+The gateway keeps a history in `/var/lib/meshcore-home-gateway/history.sqlite3`: messages in and
+out, positions of contacts, and when each node was last heard
+([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)). It fills the `history`
+document after a restart, and later the position traces. Positions are kept only for contacts,
+never for nodes the gateway merely heard.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | keep the history; with `false` nothing is written (delete the file by hand to remove what is there) |
+| `messages_days` | `30` | days messages are kept, 1–3650; at most 10 000 messages |
+| `positions_days` | `30` | days positions are kept, 1–3650 |
+
+The file holds message texts and positions of the household's people: it is readable only by the
+service user. If it cannot be opened or written, the gateway logs it and runs without a history;
+a file that is not a database is moved aside to `history.sqlite3.corrupt`.
+
 ## `[diagnostics]`
 
 | Key | Default | Meaning |

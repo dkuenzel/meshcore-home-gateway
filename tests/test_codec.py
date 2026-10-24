@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import pytest
 
-from meshcore_home_gateway.core.model import MessageKind, TextType
+from meshcore_home_gateway.core.model import MessageKind, Position, TextType
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import ErrorCode, StatsType, TelemetryMode
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
@@ -165,7 +165,7 @@ def test_contacts_stream() -> None:
         latitude_e6=53_550_000, longitude_e6=9_990_000, raw=payload(bob)[1:],
     )  # fmt: skip
     assert isinstance(contact, codec.ContactRecord)
-    assert contact.position == codec.Position(53.55, 9.99)
+    assert contact.position == Position(53.55, 9.99)
     assert (contact.path_known, contact.path_hops, contact.path_hashes) == (False, None, [])
     new_advert = codec.decode(payload(bob.replace("3E 94 00 03", "3E 94 00 8A", 1)))
     assert new_advert == codec.Advert(public_key=PEER, new=True, record=contact)
@@ -246,7 +246,7 @@ def test_self_info_position_policies_and_telemetry_modes() -> None:
     )  # fmt: skip
     info = codec.decode(h(frame))
     assert isinstance(info, codec.SelfInfo)
-    assert info.position == codec.Position(53.55, -9.99)
+    assert info.position == Position(53.55, -9.99)
     assert (info.multi_acks, info.advert_location, info.manual_add_contacts) == (1, 1, True)
     assert info.telemetry_base is TelemetryMode.ALLOW_ALL
     assert info.telemetry_location is TelemetryMode.BY_CONTACT

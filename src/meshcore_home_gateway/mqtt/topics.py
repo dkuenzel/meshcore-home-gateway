@@ -12,8 +12,20 @@ class Topics:
         self.command = f"{self.root}/command"  # authorised commands only
         self.delivery = f"{self.root}/delivery"  # life cycle of outgoing messages
         self.rx = f"{self.root}/rx"  # optional radio diagnostics per packet
+        # documents of the providers (ADR 0015), retained
+        self.stats = f"{self.root}/stats"  # the radio's own measurements
+        self.contacts = f"{self.root}/contacts"  # index of the radio's contact table
+        self.nodes = f"{self.root}/nodes"  # nodes heard, not contacts
+        self.history = f"{self.root}/history"  # the latest messages in and out
+        # events
+        self.contact_event = f"{self.root}/contact"  # a contact added, removed, renamed
+        self.node_event = f"{self.root}/node"  # a node heard for the first time
         self._send = f"{self.root}/send/"
         self.send_subscription = self._send + "+"
+
+    def contact(self, key: str) -> str:
+        """The document of one contact (full key, lower-case hex)."""
+        return f"{self.contacts}/{key}"
 
     def send(self, alias: str) -> str:
         return self._send + alias

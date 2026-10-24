@@ -164,13 +164,16 @@ def _run(args: argparse.Namespace) -> int:
 
 
 async def _serve(config: Config, state_dir: Path) -> int:
-    from meshcore_home_gateway.bridge import Bridge  # noqa: PLC0415 - keep CLI start-up light
+    from meshcore_home_gateway.bridge import Bridge, protected_keys  # noqa: PLC0415 - light start
+    from meshcore_home_gateway.history import History, Retention  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
+    from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
     from meshcore_home_gateway.state import (  # noqa: PLC0415
         AnnouncedComponents,
         CommandLedger,
         JsonStateFile,
+        RetainedKeys,
     )
 
     stop = asyncio.Event()
@@ -181,11 +184,23 @@ async def _serve(config: Config, state_dir: Path) -> int:
     ha_status = config.homeassistant.status_topic if config.homeassistant.discovery else None
     bus = MqttBus(config.mqtt, topics, ha_status)
     store = JsonStateFile(state_dir / "state.json")
+    history = None
+    if config.history.enabled:
+        retention = Retention(config.history.messages_days, config.history.positions_days)
+        history = History.open(state_dir / "history.sqlite3", retention)
+    observer = Observer(
+        bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
+        protected=protected_keys(config),
+    )  # fmt: skip
     bridge = Bridge(
         config, bus, lambda: transport_for(config), CommandLedger(store),
-        components=AnnouncedComponents(store),
+        components=AnnouncedComponents(store), observer=observer,
     )  # fmt: skip
-    await bridge.run(stop)
+    try:
+        await bridge.run(stop)
+    finally:
+        if history is not None:
+            history.close()
     log.info("meshcore-home-gateway stopped")
     return EX_OK
 

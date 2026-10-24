@@ -21,6 +21,14 @@ class TextType(IntEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Position:
+    """WGS 84, degrees."""
+
+    latitude: float
+    longitude: float
+
+
+@dataclass(frozen=True, slots=True)
 class InboundMessage:
     """A message the radio received.
 

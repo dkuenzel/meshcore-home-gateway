@@ -78,6 +78,11 @@ channel = 1
 [targets.alice]
 contact = "{KEY}"
 
+[history]
+enabled = false
+messages_days = 7
+positions_days = 90
+
 [diagnostics]
 publish_rx_log = true
 log_level = "debug"
@@ -116,6 +121,15 @@ def test_full_configuration_is_read_completely() -> None:
     assert (alerts.alias, alerts.kind, alerts.channel_index) == ("alerts", MessageKind.CHANNEL, 1)
     assert (alice.kind, alice.public_key) == (MessageKind.CONTACT, KEY)
     assert config.diagnostics.log_level == "debug"
+    assert (config.history.enabled, config.history.messages_days) == (False, 7.0)
+    assert config.history.positions_days == 90.0
+
+
+def test_the_history_is_on_by_default_and_bounded() -> None:
+    history = parse_config(MINIMAL).history
+    assert (history.enabled, history.messages_days, history.positions_days) == (True, 30.0, 30.0)
+    with pytest.raises(ConfigError, match=r"history\.messages_days: must be between 1\.0 and"):
+        parse_config(MINIMAL + "\n[history]\nmessages_days = 0\n")
 
 
 @pytest.mark.parametrize(

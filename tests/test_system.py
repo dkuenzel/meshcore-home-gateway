@@ -21,6 +21,7 @@ import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway.cli import EX_OK, main
+from meshcore_home_gateway.history import History
 from tests.conftest import Broker
 from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
 
@@ -83,6 +84,8 @@ def test_service_end_to_end(
             watcher.wait("meshcore/radio1/availability", lambda p: p == b"online")
             watcher.wait("meshcore/radio1/state", lambda p: json.loads(p)["radio"] == "connected")
             watcher.wait("homeassistant/device/meshcore_home_gateway_radio1/config")
+            index = json.loads(watcher.wait("meshcore/radio1/contacts"))  # retained documents
+            assert index["contacts"][0]["key"] == "a1" * 32
 
             assert (
                 main(["send", "--config", str(config), "--wait", "10", "alerts", "Gate open"])
@@ -115,6 +118,10 @@ def test_service_end_to_end(
                 watcher.close()
         assert service.returncode == 0, errors.decode()
         assert b"Traceback" not in errors
+    history = History.open(tmp_path / "state" / "history.sqlite3")
+    assert history is not None
+    assert {m.text for m in history.recent_messages(5)} == {"Gate open", "Hello", "status please"}
+    history.close()
     assert radio.channel_texts[0][1] == "Gate open"
     assert [t.text for t in radio.texts] == ["Hello"]
     assert radio.clock > behind + 20  # the service moved the radio clock forward
