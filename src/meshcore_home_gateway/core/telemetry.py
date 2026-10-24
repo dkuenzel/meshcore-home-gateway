@@ -7,8 +7,9 @@ candidates, what the radio answered and what was heard, and does what it decides
 * Direct only: a contact with a stored path is asked on it. One without a path is asked by flood
   only when it was heard by other means (an advert, a live message, a path it sent) within
   30 minutes; a flood planned then stays planned (while it waits for the lanes, a retry or the
-  hourly limit) as long as the gateway keeps deciding and the contact stays a candidate. At most
-  4 floods an hour for the gateway and one per contact per 30 minutes, the gap doubling with
+  hourly limit) as long as the gateway keeps deciding, the contact stays a candidate without a
+  path and its own gap stays over (it grows to a day when its last answer turns a day old). At
+  most 4 floods an hour for the gateway and one per contact per 30 minutes, the gap doubling with
   each flood until a direct answer (up to a day); a contact that has not answered within a day,
   once a day. The gateway never resets or writes a path for telemetry.
 * Two lanes of airtime, separate from the message budget: the gateway's own transmit time and the
@@ -167,12 +168,14 @@ def _fresh(t: float | None, now: float) -> bool:
 
 class Scheduler:
     def __init__(
-        self, now: float, *, saved: Saved | None = None, elapsed_s: float = 0.0,
+        self, now: float, *, saved: Saved | None = None, elapsed_s: float | None = 0.0,
         lanes: LaneFactory | None = None,
     ) -> None:  # fmt: skip
         """`saved` and `elapsed_s`: the schedule of the last run and the time since it was
-        saved. `lanes`: builds the lanes (tests); they are built at the first decision, when
-        the radio's settings are known."""
+        saved; None if unknown (the clock went back), counted as nothing except for the last
+        answers, which then count as more than a day old (fewer requests, never more).
+        `lanes`: builds the lanes (tests); they are built at the first decision, when the radio's
+        settings are known."""
         self._lanes_factory = lanes or build_lanes
         self._lora: LoRaParams | None = None
         self._own: AirtimeBudget | None = None
@@ -188,7 +191,7 @@ class Scheduler:
         self.version = 0  # changes with every change of the schedule
         self.urgent = False  # a flood was sent since the last export: save at once
         if saved is not None:
-            self._restore(saved, now, max(0.0, elapsed_s))
+            self._restore(saved, now, elapsed_s)
 
     @property
     def in_flight(self) -> str | None:
@@ -524,14 +527,21 @@ class Scheduler:
             own, mesh = self._owed_now(now)
         return Saved(contacts, floods, own, mesh)
 
-    def _restore(self, saved: Saved, now: float, elapsed: float) -> None:
+    def _restore(self, saved: Saved, now: float, elapsed_s: float | None) -> None:
+        elapsed = 0.0 if elapsed_s is None else max(0.0, elapsed_s)
+
         def at(age: float | None) -> float | None:
             return None if age is None else now - (age + elapsed)
+
+        def answered(age: float | None) -> float | None:
+            if age is None or elapsed_s is not None:
+                return at(age)
+            return now - max(age, ANSWERED_RECENTLY_S + 1.0)  # how long ago is unknown
 
         for key, c in saved.contacts.items():
             s = _Contact(
                 due_at=now + max(0.0, min(MAX_DUE_S, c.due_in_s) - elapsed),
-                failures=c.failures, answered_at=at(c.answered_age_s),
+                failures=c.failures, answered_at=answered(c.answered_age_s),
                 polled_at=at(c.polled_age_s), flood_at=at(c.flood_age_s), floods=c.floods,
                 located=c.located, still=c.still, lpp_bytes=c.lpp_bytes,
             )  # fmt: skip

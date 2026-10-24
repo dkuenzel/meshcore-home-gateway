@@ -205,7 +205,7 @@ def test_the_telemetry_schedule_round_trips_relative_to_its_save(tmp_path: Path)
     records.save(saved, 1_800_000_000.0)
     assert store.load()["other"] == 1  # only its own key
     assert records.load(1_800_000_060.0) == (saved, 60.0)
-    assert records.load(1_799_999_000.0) == (saved, 0.0)  # the clock went back
+    assert records.load(1_799_999_000.0) == (saved, None)  # the clock went back: unknown
     raw = json.dumps(store.load()["telemetry"])
     assert "latitude" not in raw  # no position
 
@@ -251,7 +251,7 @@ def test_an_unknown_or_unreadable_telemetry_schedule_starts_empty(tmp_path: Path
     huge = {"version": 1, "saved_at": 10**400, "contacts": {A: {"due_in_s": 10**400}},
             "own_debt_s": 10**400, "mesh_debt_s": -1.0}  # fmt: skip
     store.save({"telemetry": huge})
-    assert TelemetryRecords(store).load(0.0) == (Saved({}, (), 0.0, 0.0), 0.0)  # never raises
+    assert TelemetryRecords(store).load(0.0) == (Saved({}, (), 0.0, 0.0), None)  # never raises
     capped = {"version": 1, "saved_at": 0.0, "contacts": {A: {"due_in_s": 1e9}}}
     store.save({"telemetry": capped})
     saved, _ = TelemetryRecords(store).load(0.0)

@@ -654,18 +654,19 @@ sequenceDiagram
   flood is planned also while the hourly limit holds. A flood once planned stays planned while it
   waits for the lanes, a retry or the hourly limit, however the contact is heard meanwhile, as long
   as the gateway keeps deciding (plans are dropped after 5 minutes without a decision, the radio
-  away) and the contact stays a candidate (one that leaves loses its plan). At most 4 floods an hour
-  for the gateway and one per contact per 30 minutes, the gap doubling with each flood until a
-  direct answer (up to a day); a contact that has not answered within a day gets one flood a day. A
-  flooded request teaches both sides a path, so the next requests go direct. **The gateway never
-  resets or writes a path for telemetry:** a stored path that no longer works stays until the
-  companion sends a path or a message's flood fallback resets it (§6.2); a contact whose path was
-  reset is then asked again only once it is heard. A companion away when an alert to it fell back to
-  a flood is therefore found again when it advertises or sends a message, not by itself. A request
-  written whose `SENT` never came (the link broke, or the gateway stopped) counts as sent as
-  planned, so a reconnect or a restart does not repeat a flood, and its answer is still taken as
-  late for two minutes. A request refused or withdrawn counts as tried: a sign of life from before
-  it does not bring it forward again.
+  away) and the contact stays a candidate without a path and its own gap stays over (one that leaves
+  loses its plan, and so does one whose gap grows to a day when its last answer turns a day old; a
+  restart drops every plan). At most 4 floods an hour for the gateway and one per contact per 30
+  minutes, the gap doubling with each flood until a direct answer (up to a day); a contact that has
+  not answered within a day gets one flood a day. A flooded request teaches both sides a path, so
+  the next requests go direct. **The gateway never resets or writes a path for telemetry:** a stored
+  path that no longer works stays until the companion sends a path or a message's flood fallback
+  resets it (§6.2); a contact whose path was reset is then asked again only once it is heard. A
+  companion away when an alert to it fell back to a flood is therefore found again when it
+  advertises or sends a message, not by itself. A request written whose `SENT` never came (the link
+  broke, or the gateway stopped) counts as sent as planned, so a reconnect or a restart does not
+  repeat a flood, and its answer is still taken as late for two minutes. A request refused or
+  withdrawn counts as tried: a sign of life from before it does not bring it forward again.
 * **Lanes.** Two token buckets, separate from the message budget: 18 s an hour of the gateway's own
   transmit time and 90 s an hour of estimated airtime in the mesh (every hop of request and answer;
   a flood as repeated by 20 repeaters, an assumption). Both start empty at every start (a restart
@@ -708,7 +709,9 @@ sequenceDiagram
   keeps its schedule until a table read lacks it, however long the radio was away),
   without positions. It is saved every 5 minutes after a change, at once after a flood (before its
   wait, so a crash cannot repeat it) and at the stop. A contact that left the candidates keeps its
-  schedule for a day.
+  schedule for a day. When the clock went back while the gateway was stopped, the time stopped is
+  unknown: it counts as nothing, except that every last answer counts as more than a day old
+  (fewer requests until the next answer, never more).
 
 ## 7 Security
 

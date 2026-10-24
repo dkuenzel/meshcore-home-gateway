@@ -447,6 +447,32 @@ def test_a_restored_schedule_tolerates_a_clock_that_went_back() -> None:
     assert r.export(0.0).floods_age_s == (100.0,)
 
 
+@pytest.mark.parametrize("elapsed", [0.0, None])
+def test_after_the_clock_went_back_a_restored_answer_counts_as_a_day_old(
+    elapsed: float | None,
+) -> None:
+    """How long the gateway was stopped is unknown when the clock went back (elapsed None): a
+    contact that answered 22 h before the save may have been silent for more than a day, so it
+    gets one flood a day, not the doubling gaps of one that answered within the day."""
+    saved = Saved({A: SavedContact(
+        0.0, failures=1, answered_age_s=22 * HOUR, polled_age_s=10.0, flood_age_s=10.0, floods=1,
+    )})  # fmt: skip
+    r = Scheduler(0.0, saved=saved, elapsed_s=elapsed, lanes=wide)
+    floods, now = [], 0.0
+    while now < 6 * HOUR:
+        decision = r.decide(EU, [pathless(A, heard_at=now)], now)
+        if isinstance(decision, Poll):
+            floods.append(now)
+            r.sent(decision, flood=True, now=now)
+            r.unanswered(A, now + 9)
+        now += 60.0
+    if elapsed is None:
+        assert floods == []
+        assert r.view(A, 0.0) == "no_answer"
+    else:  # answered within the day: an hour after its last flood
+        assert floods[0] == pytest.approx(HOUR, abs=60.0)
+
+
 def test_a_restored_contact_that_never_comes_back_is_dropped_a_day_after_the_first_table() -> None:
     """Time without the radio does not count: a candidate of the last run leaves the
     candidates only when a table read lacks it."""
@@ -627,22 +653,39 @@ def test_a_contact_that_leaves_loses_its_planned_flood() -> None:
     assert s.decide(EU, [pathless(A)], 6 * HOUR) == telemetry.STEP_S
 
 
-def test_a_planned_flood_ends_when_the_contacts_own_gap_holds_again() -> None:
-    """Planned and retried while its last answer turns a day old: its gap grows from an hour to
-    a day, the plan ends, and it is not flooded later for that hearing."""
+@pytest.mark.parametrize("hour_full_first", [True, False])
+def test_a_planned_flood_ends_when_the_contacts_own_gap_holds_again(hour_full_first: bool) -> None:
+    """Planned while the hourly limit holds, or planned, refused and then held by it, as its last
+    answer turns a day old: its gap grows from an hour to a day, the plan ends, and it is not
+    flooded later for that hearing, also once the hour has room again."""
     s = Scheduler(0.0, lanes=wide)
     ask(s, [direct(A)], 0.0)  # answers at 2 s
-    flood = poll(s, [pathless(A, heard_at=4990.0)], 5000.0)  # its path was reset; heard
-    s.sent(flood, flood=True, now=5000.0)
-    s.unanswered(A, 5009.0)  # the next flood an hour after this one
-    heard = 86_300.0  # 100 s before the answer is a day old
-    assert poll(s, [pathless(A, heard_at=heard)], heard).flood
-    s.retry(A, heard, after_s=300.0)  # refused
-    now = heard + 1
+    flood = poll(s, [pathless(A, heard_at=1990.0)], 2000.0)  # its path was reset; heard
+    s.sent(flood, flood=True, now=2000.0)
+    s.unanswered(A, 2009.0)  # its next flood an hour after this one, a day once it is silent
+    heard = 86_300.0  # 102 s before the answer is a day old
+    others_from = heard - 300.0 if hour_full_first else heard + 10.0  # four floods fill the hour
+    refused = False
+    now = 85_900.0
     while now < 95_000.0:
-        candidate = pathless(A, heard_at=heard if now - heard <= HOUR else None)
-        assert not isinstance(s.decide(EU, [candidate], now), Poll), f"flooded at {now}"
-        now += 60.0
+        a_heard = heard if heard <= now <= heard + HOUR else None  # as the poller keeps it
+        candidates = [pathless(A, heard_at=a_heard)]
+        if now >= others_from:
+            candidates += [pathless(k, heard_at=others_from) for k in (B, C, D, E)]
+        decision = s.decide(EU, candidates, now)
+        if isinstance(decision, float):
+            now += min(max(decision, 0.001), 60.0)
+            continue
+        if decision.key == A:
+            assert not refused, f"A flooded at {now}"
+            assert not hour_full_first, f"A asked at {now} while the hour was full"
+            s.retry(A, now, after_s=300.0)  # refused (no free packet buffer, a message)
+            refused = True
+            continue
+        s.sent(decision, flood=True, now=now)
+        s.unanswered(decision.key, now + 9)
+        now += 9
+    assert refused is not hour_full_first
 
 
 def test_a_planned_flood_survives_a_retry() -> None:

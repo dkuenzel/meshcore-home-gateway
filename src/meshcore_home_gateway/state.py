@@ -329,9 +329,10 @@ class TelemetryRecords:
     def __init__(self, store: JsonStateFile) -> None:
         self._store = store
 
-    def load(self, wall_now: float) -> tuple[Saved | None, float]:
-        """The schedule and the seconds since it was saved (0 if unknown or in the future);
-        invalid entries are skipped. Never raises: an unreadable file is logged."""
+    def load(self, wall_now: float) -> tuple[Saved | None, float | None]:
+        """The schedule and the seconds since it was saved (None if unknown: no time saved, or
+        the clock went back); invalid entries are skipped. Never raises: an unreadable file is
+        logged."""
         try:
             raw = self._store.load().get(self._KEY)
         except Exception as exc:  # noqa: BLE001 - the schedule starts empty, the gateway goes on
@@ -340,9 +341,7 @@ class TelemetryRecords:
         if not isinstance(raw, dict) or raw.get("version") != self.VERSION:
             return None, 0.0
         saved_at = raw.get("saved_at")
-        elapsed = 0.0
-        if _finite(saved_at) and wall_now > saved_at:
-            elapsed = wall_now - saved_at
+        elapsed = wall_now - saved_at if _finite(saved_at) and wall_now >= saved_at else None
         entries = raw.get("contacts")
         contacts: dict[str, SavedContact] = {}
         for key, entry in entries.items() if isinstance(entries, dict) else ():
