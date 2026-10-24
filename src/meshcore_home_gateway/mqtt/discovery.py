@@ -25,13 +25,16 @@ DOCUMENTATION_URL = (
     "https://github.com/dkuenzel/meshcore-home-gateway/blob/main/docs/home-assistant.md"
 )
 # the static facts of the state document, as attributes of the radio link entity; the values that
-# change by themselves have their own sensors (Home Assistant's guidance for attributes)
+# change by themselves have their own sensors (Home Assistant's guidance for attributes). Keys
+# that a document retained by an earlier version lacks are read with .get or `is defined`, which
+# log no warning in Home Assistant (docs/platform-notes.md).
 RADIO_ATTRIBUTES = (
     "{{ {'radio_name': value_json.radio_name, 'public_key': value_json.public_key, "
     "'model': value_json.model, 'firmware': value_json.firmware, "
     "'frequency_mhz': value_json.frequency_mhz, 'bandwidth_khz': value_json.bandwidth_khz, "
     "'spreading_factor': value_json.spreading_factor, 'coding_rate': value_json.coding_rate, "
-    "'tx_power_dbm': value_json.tx_power_dbm, 'bridge_version': value_json.version} | tojson }}"
+    "'tx_power_dbm': value_json.tx_power_dbm, 'bridge_version': value_json.version, "
+    "'contact_link': value_json.get('contact_link')} | tojson }}"
 )
 PROFILE_STATES = ["ok", "written", "drift", "differs", "problem"]  # views.settings_document
 STATS_ATTRIBUTES = (
@@ -158,10 +161,7 @@ def discovery_payload(
         components[key] = component(
             key, "notify", f"Send to {target.alias}", command_topic=topics.send(target.alias)
         )
-    for key, platform in (removed or {}).items():
-        if key not in components:
-            stand_in = placeholder(f"{uid}_{key}", platform, topics) if bind else None
-            components[key] = stand_in or {"p": platform}
+    with_removed(components, uid, topics, removed, bind=bind)
     device: dict[str, Any] = {
         "ids": [uid],
         "name": config.homeassistant.device_name,
@@ -181,6 +181,18 @@ def discovery_payload(
 
 def origin() -> dict[str, str]:
     return {"name": "meshcore-home-gateway", "sw": __version__, "url": DOCUMENTATION_URL}
+
+
+def with_removed(
+    components: dict[str, dict[str, Any]], uid: str, topics: Topics,
+    removed: Mapping[str, str] | None, *, bind: bool,
+) -> None:  # fmt: skip
+    """Add the removed components (key -> platform) to a document: as placeholders with `bind`,
+    else as `{"p": platform}`, which removes them."""
+    for key, platform in (removed or {}).items():
+        if key not in components:
+            stand_in = placeholder(f"{uid}_{key}", platform, topics) if bind else None
+            components[key] = stand_in or {"p": platform}
 
 
 def _mesh_components(
@@ -248,6 +260,19 @@ def _mesh_components(
             ),
             **contacts,
         ),
+        "look_alike": component(
+            "look_alike", "binary_sensor", "Look-alike node heard", device_class="problem",
+            entity_category="diagnostic", state_topic=topics.nodes,
+            value_template=(
+                "{{ 'ON' if value_json.look_alike_total is defined "
+                "and value_json.look_alike_total > 0 else 'OFF' }}"
+            ),
+            json_attributes_topic=topics.nodes,
+            json_attributes_template=(
+                "{{ {'nodes': value_json.get('look_alike', []), "
+                "'total': value_json.get('look_alike_total', 0)} | tojson }}"
+            ),
+        ),
         "contact": component(
             "contact", "event", "Contact", state_topic=topics.contact_event,
             event_types=["added", "removed", "hidden", "shown", "refused", "failed"],
@@ -276,6 +301,8 @@ _REQUIRED: dict[str, dict[str, Any]] = {
     "notify": {"command_topic": "{root}/removed"},
     "button": {"command_topic": "{root}/removed"},
     "device_tracker": {"state_topic": "{root}/removed"},
+    "select": {"command_topic": "{root}/removed", "options": ["removed"]},
+    "text": {"command_topic": "{root}/removed"},
 }
 
 

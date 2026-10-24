@@ -489,7 +489,11 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Contact, New node | `event` | `contact`, `node` |
 | Noise floor, Radio transmit time last hour, uptime and packet counters | `sensor`, diagnostic; the counters disabled by default | `stats` |
 | Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` |
+| Look-alike node heard | `binary_sensor` (problem) | `nodes` → `look_alike_total` |
 | Show hidden contacts | `button` | → `homeassistant/show_hidden` |
+| Add heard node | `select`, its own document | the heard nodes' labels → `homeassistant/add_node` |
+| Add contact (key or link) | `text`, its own document | → `add_contact` |
+| Remove from radio | `button` on each contact's device | → `contacts/<key>/remove` |
 
 All entities share the availability topic, so they become unavailable when the bridge is offline.
 The document names the radio's model, firmware and key once the radio is known and is sent again
@@ -516,6 +520,26 @@ or is shown again. At most `homeassistant.contact_devices` contacts get a device
 device while it stays in the table, and free places go to protected contacts, favourites,
 companions and the most recently heard, in that order.
 
+The controls that add contacts (`mqtt/manage_entities.py`) have a discovery document of their own,
+`…/manage_contacts/config`, whose components join the gateway's device: the select's options exist
+only in discovery and follow the heard nodes, sent at most every 30 seconds but at once when a
+contact joined or left the table, and at most 10 changes at once, then one a minute, also with
+announcements and from a fresh start, which begins with 2 (Home Assistant warns from the 101st
+change of an entity's capabilities within an hour, counts across the gateway's restarts, and writes
+its entity registry for each); the main document with its placeholders is not sent again for them.
+A label puts 12 and 8 key digits before the name, so no name can push the digits aside; the gateway
+resolves a label against the heard nodes and the contacts as they are when the request arrives. The
+text's pattern takes keys and contact links only: the field ends at 255 characters, and a contact
+card cut there would still parse, with a cut name. The select, the text and each contact's remove
+button are available while the gateway is online, the radio connected and management on (on
+firmware the gateway is tested with, as the worker requires), the button also only for a contact
+that is not protected; templates read keys that older documents lack with `is defined`, `is true`
+or `.get()`, so retained documents of an earlier version read as unavailable without a warning.
+Option changes wait while the broker is away: the reconnect announces the current ones, or, with no
+change left in the budget, those sent before, and the current ones within a minute. Components of
+the controls' document that a later version drops are removed like those of the main document; the
+state file keeps them apart.
+
 ### 6.8 Configuration
 
 One TOML file, `/etc/meshcore-home-gateway/config.toml`, owner `root`, group
@@ -535,7 +559,7 @@ the file.
 | `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
 | `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines (`received`, `command`, `delivery`, `state`, `contact`, `node`). |
 | `meshcore-home-gateway contacts list [--json]` | The radio's contacts and the heard nodes, from the retained documents (tab-separated: kind, key, type, `protected`/`removable`/`look_alike`, heard, name). |
-| `meshcore-home-gateway contacts add [--wait S] CONTACT` | Add a contact: a full key, a heard node as `KEY12…KEY8`, a contact link or card; prints the full key to compare. Exit 0 on `added` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline, 2 when the text is no key, link or card, or a label names no single node. |
+| `meshcore-home-gateway contacts add [--wait S] CONTACT` | Add a contact: a full key, a heard node as `KEY12…KEY8` (a name may follow, as Home Assistant's select lists it), a contact link or card; prints the full key to compare. Exit 0 on `added` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline, 2 when the text is no key, link or card, or a label names no single node. |
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
 | `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
@@ -771,7 +795,7 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 2 | Documents and history: radio statistics, contact index and one document per contact, heard nodes, recent messages, contact and node events; SQLite history | 0015, 0016 |
 | 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; every companion a recipient; statistics and contact sensors on the gateway's device | 0017 |
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
-| 5 | Contact management: the gateway, the MQTT requests and the command line (delivered), then the Home Assistant controls | 0017 |
+| 5 | Contact management: the gateway, the MQTT requests, the command line and the Home Assistant controls (add a heard node, add by key or link, remove; the gateway's QR code) | 0017 |
 | 6 | Telemetry and positions of the household's companions, with traces on the map | 0018 |
 | 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
 | 8 | Generated dashboards for desktop and mobile | 0021 |

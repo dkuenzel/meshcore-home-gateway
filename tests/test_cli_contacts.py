@@ -13,6 +13,7 @@ import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway.cli import EX_FAILURE, EX_OK, EX_USAGE, main
+from meshcore_home_gateway.core.contacts import node_label
 from tests.conftest import Broker
 from tests.test_cli import broker_config
 
@@ -121,9 +122,11 @@ def test_add_a_heard_node_by_its_label(
     try:
         assert run(tmp_path, broker, "add", DAVE_LABEL) == EX_OK
         assert run(tmp_path, broker, "add", DAVE_LABEL.replace("…", "...")) == EX_OK
+        # as Home Assistant's select lists it: the name after the digits
+        assert run(tmp_path, broker, "add", node_label(DAVE, "Dave", 3)) == EX_OK
     finally:
         gateway.stop()
-    assert [json.loads(p)["contact"] for _, p in gateway.requests] == [DAVE, DAVE]
+    assert [json.loads(p)["contact"] for _, p in gateway.requests] == [DAVE, DAVE, DAVE]
     assert "'Node d4'" in capsys.readouterr().err
 
 
@@ -214,10 +217,12 @@ def test_remove_by_key_or_label(
     try:
         assert run(tmp_path, broker, "remove", ERIN.upper()) == EX_OK
         assert run(tmp_path, broker, "remove", f"{ERIN[:12]}...{ERIN[-8:]}") == EX_OK
+        assert run(tmp_path, broker, "remove", f"{ERIN[:12]}…{ERIN[-8:]} Erin") == EX_OK
         assert run(tmp_path, broker, "remove", ERIN[:12]) == EX_USAGE
+        assert run(tmp_path, broker, "remove", f"{ERIN[:12]}…{ERIN[-8:]}Erin") == EX_USAGE
     finally:
         gateway.stop()
-    assert [t for t, _ in gateway.requests] == [f"{ROOT}/contacts/{ERIN}/remove"] * 2
+    assert [t for t, _ in gateway.requests] == [f"{ROOT}/contacts/{ERIN}/remove"] * 3
     assert set(json.loads(gateway.requests[0][1])) == {"id"}
     err = capsys.readouterr().err
     assert "the radio drops its direct messages" in err

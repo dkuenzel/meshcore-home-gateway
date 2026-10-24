@@ -16,6 +16,7 @@ from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import contact_manager as manager_module
 from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.mesh import Heard, Node
+from meshcore_home_gateway.mqtt import manage_entities
 from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
@@ -39,16 +40,17 @@ def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
     monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
+    monkeypatch.setattr(manage_entities, "OPTIONS_INTERVAL_S", 0.05)
 
 
 def request(
     bus: FakeBus, kind: str, body: str | bytes | dict[str, Any], *, key: str | None = None,
-    retained: bool = False,
+    retained: bool = False, node_label: bool = False,
 ) -> None:  # fmt: skip
     if isinstance(body, dict):
         body = json.dumps(body)
     payload = body.encode() if isinstance(body, str) else body
-    bus.contact_requests.put_nowait(ContactRequest(kind, payload, retained, key))
+    bus.contact_requests.put_nowait(ContactRequest(kind, payload, retained, key, node_label))
 
 
 async def result(bus: FakeBus, request_id: str, within_s: float = 3) -> dict[str, Any]:
@@ -266,15 +268,20 @@ def test_untested_firmware_is_not_written_unless_the_profile_says_always(tmp_pat
     dave = DAVE.public_key.hex()
 
     async def main() -> None:
+        bob = BOB.public_key.hex()
         radio = EmulatedRadio(contacts=[ALICE, BOB], firmware_code=15)
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
             request(bus, "add", {"contact": dave, "id": "untested"})
             assert (await result(bus, "untested"))["reason"] == "untested_firmware"
+            # the documents say that no request is taken, and Home Assistant's controls follow
+            assert bus.payloads(f"{ROOT}/contacts")[-1]["manage"] is False
+            assert bus.payloads(f"{ROOT}/contacts/{bob}")[-1]["removable"] is False
         radio = EmulatedRadio(contacts=[ALICE, BOB], firmware_code=15)
         config = make_config('[radio.profile]\nmanage = "always"')
         async with running(config, radio, tmp_path) as (_, bus, _n):
             request(bus, "add", {"contact": dave, "id": "always"})
             assert (await result(bus, "always"))["event_type"] == "added"
+            assert bus.payloads(f"{ROOT}/contacts")[-1]["manage"] is True
 
     scenario(main)
 
@@ -646,3 +653,89 @@ def test_a_refusal_names_a_node_heard_after_its_request_was_taken() -> None:
         assert (event["reason"], event["name"], event["type"]) == ("no_radio", "Hilltop", "room")
 
     asyncio.run(main())
+
+
+# --- Home Assistant's select of the heard nodes ---------------------------------------------------
+
+
+def options(document: dict[str, Any]) -> list[str]:
+    """The options of the select in the document of Home Assistant's controls."""
+    offered: list[str] = document["cmps"]["add_node"]["options"]
+    return offered
+
+
+def label(node: EmulatedContact) -> str:
+    key = node.public_key.hex()
+    return f"{key[:12]}…{key[-8:]} {node.name}"
+
+
+def test_a_heard_node_picked_in_the_select_is_added(tmp_path: Path) -> None:
+    """It advertises, the select offers it by its label, the user picks it: added with its own
+    advert, and no longer offered."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    dave = DAVE.public_key.hex()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            await heard(bus, radio, DAVE)
+            await bus.wait_for("/manage_contacts/config", lambda d: label(DAVE) in options(d))
+            request(bus, "add", label(DAVE), node_label=True)
+            event = await bus.wait_for(f"{ROOT}/contact", lambda e: e["event_type"] in FINAL)
+            assert (event["event_type"], event["key"], event["request"]) == ("added", dave, "add")
+            assert event["id"] is not None  # made by the gateway
+            (frame,) = contact_writes(radio)
+            assert struct.unpack_from("<I", frame, 132)[0] == DAVE.last_advert
+            await bus.wait_for("/manage_contacts/config", lambda d: label(DAVE) not in options(d))
+
+    scenario(main)
+
+
+@pytest.mark.parametrize(
+    ("body", "reason", "named"),
+    [
+        (label(DAVE), "unknown_node", False),  # not heard
+        ("Dave", "unknown_node", False),
+        (label(EmulatedContact(BOB.public_key, "Bob")), "already_contact", True),
+        ({"contact": label(EmulatedContact(BOB.public_key, "Bob")), "id": "env"},
+         "already_contact", True),
+    ],
+)  # fmt: skip
+def test_a_label_is_refused_with_its_reason(
+    tmp_path: Path, body: str | dict[str, Any], reason: str, named: bool
+) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    bob = BOB.public_key.hex()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            request(bus, "add", body, node_label=True)
+            event = await bus.wait_for(f"{ROOT}/contact", lambda e: e["event_type"] == "refused")
+            assert (event["reason"], event["request"]) == (reason, "add")
+            assert event["key"] == (bob if named else None)
+            if isinstance(body, dict):
+                assert event["id"] == "env"
+            await asyncio.sleep(0.1)
+            assert contact_writes(radio) == []
+
+    scenario(main)
+
+
+def test_a_retained_label_is_refused_and_management_off_names_the_node(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    dave = DAVE.public_key.hex()
+
+    async def main() -> None:
+        async with running(make_config("[contacts]\nmanage = false"), radio, tmp_path) as (
+            _, bus, _n,
+        ):  # fmt: skip
+            await heard(bus, radio, DAVE)
+            request(bus, "add", label(DAVE), node_label=True, retained=True)
+            request(bus, "add", label(DAVE), node_label=True)
+            await bus.wait_for(f"{ROOT}/contact", lambda _e: len(results(bus)) == 2)
+            first, second = results(bus)
+            assert (first["reason"], first["key"]) == ("retained", dave)
+            assert (second["reason"], second["key"], second["name"]) == (
+                "management_off", dave, "Dave",
+            )  # fmt: skip
+
+    scenario(main)

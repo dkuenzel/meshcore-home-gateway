@@ -26,7 +26,12 @@ from typing import Any
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core import profile as policy
 from meshcore_home_gateway.core.budget import RateLimit
-from meshcore_home_gateway.core.contacts import add_refusal, is_key, remove_refusal
+from meshcore_home_gateway.core.contacts import (
+    add_refusal,
+    is_key,
+    key_from_label,
+    remove_refusal,
+)
 from meshcore_home_gateway.core.mesh import Node
 from meshcore_home_gateway.core.text import contact_name
 from meshcore_home_gateway.mqtt.client import ContactRequest
@@ -40,6 +45,7 @@ from meshcore_home_gateway.radio.session import (
     NotSentError,
     RadioError,
     RadioEvent,
+    RadioInfo,
 )
 from meshcore_home_gateway.views import contact_event
 
@@ -76,7 +82,7 @@ class Job:
     kind: str  # "add" or "remove"
     key: str
     request_id: str
-    source: str  # add: "key", "link", "card"; remove: "topic"
+    source: str  # add: "key", "link", "card", "heard" (a label); remove: "topic"
     name: str | None = None  # add: claimed (link, card)
     node_type: int | None = 1  # add: claimed; remove: None until the table names it
     heard: Node | None = None  # add: the record of the node's signed advert, if it was heard
@@ -111,6 +117,16 @@ class ContactManager:
     def manage(self) -> bool:
         return self._config.contacts.manage
 
+    def takes_requests(self, info: RadioInfo | None) -> bool:
+        """Whether requests can be written on this radio: the switch, and firmware the gateway
+        is tested with (as the managed profile: ADR 0020's firmware gate) unless the profile
+        says `always`. Without a radio, the switch alone."""
+        return self.manage and (info is None or self._firmware_allowed(info))
+
+    def _firmware_allowed(self, info: RadioInfo) -> bool:
+        tested = info.device.firmware_code in policy.TESTED_FIRMWARE
+        return tested or self._config.radio.profile.manage == "always"
+
     # --- accept ---------------------------------------------------------------------------------
 
     def accept(self, request: ContactRequest) -> None:
@@ -133,6 +149,10 @@ class ContactManager:
         if request.kind == "remove":  # the level is any text: logged with %r, never echoed
             seen.key = request.key if request.key is not None and is_key(request.key) else None
             target = None if seen.key else "unknown_contact"
+        elif request.node_label:  # Home Assistant's select: a heard node (or a contact)
+            seen.claim = self._labelled(text)
+            seen.key = seen.claim.public_key if seen.claim else None
+            target = None if seen.claim else "unknown_node"
         else:
             try:
                 seen.claim = parse_contact_text(text)
@@ -176,6 +196,15 @@ class ContactManager:
         if kind == "add" and not isinstance(contact, str):
             raise _RefusedError("invalid_request")  # an empty text is judged as a text
         return contact if isinstance(contact, str) else ""
+
+    def _labelled(self, label: str) -> LinkContact | None:
+        """The node a label names, among the heard nodes and the contacts, as known now."""
+        mesh = self._observer.mesh
+        key = key_from_label(label, {*mesh.nodes, *mesh.contacts})
+        tracked = (mesh.nodes.get(key) or mesh.contacts.get(key)) if key else None
+        if key is None or tracked is None:
+            return None
+        return LinkContact(key, tracked.node.name, tracked.node.node_type, "heard")
 
     def _job(self, kind: str, key: str, request_id: str, claim: LinkContact | None) -> Job:
         if not self.manage:
@@ -222,9 +251,8 @@ class ContactManager:
         if session is None or session.closed or session.info is None:
             raise _RefusedError("no_radio")
         info = session.info
-        tested = info.device.firmware_code in policy.TESTED_FIRMWARE
-        if not tested and self._config.radio.profile.manage != "always":
-            raise _RefusedError("untested_firmware")  # as the profile: ADR 0020's firmware gate
+        if not self._firmware_allowed(info):
+            raise _RefusedError("untested_firmware")
         if not self._work.allow(self._mono()):
             raise _RefusedError("rate_limited")
         await self._fresh_table(session)

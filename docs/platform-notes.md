@@ -1015,6 +1015,63 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   ([ADR 0002](decisions/0002-standalone-bridge-instead-of-home-assistant-integration.md));
   source `util/package.py` lines 156-161 at 2026.10.0.
 
+* **A select's options exist only in its discovery configuration; announced again with other
+  options, the select keeps its entity and shows the new ones. A state that renders `None` sets it
+  to *unknown*.** *Verified:* 2026.10.0, `test_new_options_keep_the_entity` and
+  `test_a_choice_publishes_the_label_and_the_select_stays_unchosen` in
+  [`home-assistant/tests/test_manage_contacts.py`](../home-assistant/tests/test_manage_contacts.py)
+  (the registry entry keeps its ID; a choice publishes the option, QoS 1, not retained); source
+  `components/mqtt/select.py` line 126 (`payload.lower() == "none"`). *Here:* the controls that
+  add contacts have a discovery document of their own (`src/meshcore_home_gateway/mqtt/manage_entities.py`),
+  so changing options does not send the gateway's main document again; `value_template: "None"`
+  keeps the select unchosen, so the same node can be picked again. *Check:* `make ha-test`.
+* **Home Assistant warns when an entity changes its capabilities (a select's options) more than
+  100 times within an hour, and it updates the entity registry, which it saves to disk, for every
+  change.** The warning asks for a bug report against Home Assistant's MQTT integration.
+  *Verified:* 2026.10.0, source `helpers/entity.py` line 84 (`CAPABILITIES_UPDATE_LIMIT = 100`)
+  and lines 1227-1265 (a rolling 3600 s window, the warning once per entity, then
+  `async_update_entity`); `test_more_than_100_option_changes_in_an_hour_make_home_assistant_warn`
+  in [`home-assistant/tests/test_manage_contacts.py`](../home-assistant/tests/test_manage_contacts.py).
+  Home Assistant keeps the count on the entity, which outlives the gateway's announcements and
+  restarts. *Here:* the select's options change at most 10 times at once, then once a minute,
+  70 times in any hour, also when a node in range renames itself with every advert; an
+  announcement without a token for a change repeats the options sent before, and a start of the
+  gateway begins with the 2 changes it needs, so each start adds at most 2 (Home Assistant warns
+  only if the gateway starts more than about 15 times in an hour while a node renames itself)
+  (`OPTIONS_PER_S`, `OPTIONS_BURST`,
+  `OPTIONS_AT_START` in `src/meshcore_home_gateway/mqtt/manage_entities.py`,
+  `test_a_node_that_renames_itself_cannot_flood_home_assistant`). *Check:* `make ha-test`.
+* **A text entity's state must fit its own length limits and pattern, or Home Assistant raises
+  `ValueError` writing it; `text.set_value` refuses a value that does not fit with `ValueError`
+  before anything is published. Both use `re.match`, so a `$` also matches before a final line
+  break.** *Verified:* 2026.10.0, source `components/text/__init__.py` lines 130-152 (state) and
+  `components/text/services.py` lines 16-34 (the action);
+  `test_other_text_is_refused_before_it_is_sent` (a contact card, a short key, 300 characters).
+  *Here:* the pattern of *Add contact (key or link)* allows the empty state with `^$`, keys and
+  contact links only, with spaces around them as a copied key often has, and at most 255
+  characters; the gateway strips the text it gets, so spaces and a final line break do no harm.
+  The frontend uses the same pattern as an HTML `pattern`, which compiles it with the `v` flag;
+  it is valid there. *Check:* `make ha-test`.
+* **A template that prints, tests or iterates a key that `value_json` lacks logs a warning; `is
+  defined`, `is true` and `.get()` log nothing.** *Verified:* 2026.10.0, source
+  `helpers/template/__init__.py` lines 732-762 (`LoggingUndefined`: `__str__`, `__iter__`,
+  `__bool__`); the contract tests feed documents without the keys added with contact management
+  and assert no warning (`test_the_controls_need_the_radio_and_management`,
+  `test_the_remove_button_is_available_while_a_request_would_be_taken`,
+  `test_a_look_alike_node_is_a_problem`, `test_the_qr_card_shows_the_gateways_contact_link`).
+  *Here:* templates that read a key newer than the first documents guard it (`is defined`, `is
+  true`, `.get()`), so a document that an earlier version left retained reads as `offline` or
+  `off`; `value_json is defined` also covers a payload that is no JSON, such as the empty message
+  that clears a contact's document. *Check:* drop `is defined` from the `look_alike` value
+  template in `src/meshcore_home_gateway/mqtt/discovery.py` and run `make ha-test`
+  (`test_a_look_alike_node_is_a_problem` fails).
+* **Deleting a device in Home Assistant clears every discovery topic of it: the gateway's main
+  document and the one of its controls.** *Verified:* 2026.10.0,
+  `test_deleting_the_gateway_device_clears_the_controls_topic_too` (an empty retained payload, QoS
+  0, on both topics). *Here:* the gateway watches both topics and announces again; with
+  `contact_devices = 0` it subscribes the controls' topic by itself (`_serve()` in
+  `src/meshcore_home_gateway/cli.py`). *Check:* `make ha-test`.
+
 ## Home Assistant dashboards
 
 * **A Markdown card parses what its template puts out as Markdown, after the template's own
@@ -1039,6 +1096,27 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   the contract tests checks the form of its output. *Check:* `printf
   '![](https://example.org/p.png)' | npx marked@18.0.14` prints an `<img>`; `printf
   '<div>![](https://example.org/p.png)</div>' | npx marked@18.0.14` prints the input unchanged.
+
+* **A Markdown card can show a QR code: `ha-qr-code` with `data` and `scale` is on the
+  sanitiser's allow list. A button entity's own row in an entities card is disabled while the
+  button is unavailable and asks first when the row has `confirmation`; a row of `type: button`
+  stays pressable then, asks, and its `button.press` reaches no entity (Home Assistant only logs
+  a warning). The more-info dialog presses at once.** *Verified:* read in the frontend bundle
+  `20260930.4` (Home Assistant 2026.10.0 pins `20260930.2`), not run in a browser: the markdown
+  worker's whitelist
+  `"ha-qr-code":["data","scale","width","margin","error-correction-level","center-image"]` and the
+  element loaded for `ha-qr-code` in a card; `hui-button-entity-row` with `.disabled` for
+  `unavailable` and `this._config?.confirmation` before `button.press`; `hui-button-row` without
+  `.disabled`, its action run after the action's `confirmation`; the more-info control without a
+  confirmation. In 2026.10.0 `button.press` on an unavailable entity publishes nothing: source
+  `helpers/service.py` line 726 keeps only available entities. *Here:* the QR card and the
+  dashboard row of [home-assistant.md](home-assistant.md#adding-and-removing-contacts) use the
+  button's own row; the contract tests check the card's markup
+  (`test_the_qr_card_shows_the_gateways_contact_link`) and the row's form and press
+  (`test_the_dashboard_button_removes_the_contact`); the browser part is step 28 of the
+  [hardware checklist](testing.md#hardware-checklist). *Check:*
+  `grep -o '"ha-qr-code":\[[^]]*\]'` over `hass_frontend/frontend_latest/*.js` of the
+  `home-assistant-frontend` wheel.
 
 ## MeshCore companion firmware
 

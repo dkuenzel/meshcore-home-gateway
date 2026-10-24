@@ -24,6 +24,7 @@ class Topics:
         self.setting_event = f"{self.root}/setting"  # a radio setting written or found changed
         # requests
         self.show_hidden = f"{self.root}/homeassistant/show_hidden"  # contacts deleted in HA
+        self.add_node = f"{self.root}/homeassistant/add_node"  # a heard node by its label (HA)
         self.add_contact = f"{self.root}/add_contact"  # a key, contact link or card (ADR 0017)
         self._send = f"{self.root}/send/"
         self.send_subscription = self._send + "+"

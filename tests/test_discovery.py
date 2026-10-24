@@ -8,7 +8,7 @@ from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import parse_config
 from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh
 from meshcore_home_gateway.core.profile import ProfileReport
-from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
+from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic, placeholder
 from meshcore_home_gateway.mqtt.payloads import rx_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
@@ -49,7 +49,7 @@ RADIO = RadioInfo(
 STATE_KEYS = {
     "radio", "battery_v", "airtime_1h_s", "airtime_available_s", "airtime_budget_s_per_hour",
     "queue", "radio_name", "public_key", "model", "firmware", "frequency_mhz", "bandwidth_khz",
-    "spreading_factor", "coding_rate", "tx_power_dbm", "version",
+    "spreading_factor", "coding_rate", "tx_power_dbm", "contact_link", "version",
 }  # fmt: skip
 
 
@@ -66,8 +66,14 @@ def _template_keys(components: dict[str, dict[str, Any]], topic: str) -> set[str
     for component in components.values():
         if topic in (component.get("state_topic"), component.get("json_attributes_topic")):
             for option in ("value_template", "json_attributes_template"):
-                keys |= set(re.findall(r"value_json\.(\w+)", component.get(option, "")))
+                keys |= template_keys(component.get(option, ""))
     return keys
+
+
+def template_keys(template: str) -> set[str]:
+    """The keys a template reads: `value_json.key` and `value_json.get('key', …)`."""
+    read = set(re.findall(r"value_json\.(\w+)", template)) - {"get"}
+    return read | set(re.findall(r"value_json\.get\('(\w+)'", template))
 
 
 def test_topic_uses_the_device_path_and_the_node_id() -> None:
@@ -107,7 +113,7 @@ def test_entities_and_their_sources() -> None:
         "radio", "battery", "airtime", "airtime_available", "queue", "message", "delivery",
         "command", "send_alerts", "send_alice", "noise_floor", "radio_airtime", "uptime",
         "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
-        "advert_position", "contact", "node", "show_hidden", "profile", "setting",
+        "advert_position", "look_alike", "contact", "node", "show_hidden", "profile", "setting",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -183,6 +189,27 @@ def test_every_state_value_reaches_home_assistant() -> None:
     assert cmps["airtime_available"]["unit_of_measurement"] == "s"
     assert "budget_s_per_hour" in cmps["airtime_available"]["json_attributes_template"]
     assert "radio_name" in cmps["radio"]["json_attributes_template"]
+    # newer than the state documents of earlier versions: read without a warning there
+    assert "value_json.get('contact_link')" in cmps["radio"]["json_attributes_template"]
+
+
+def test_a_look_alike_node_is_a_problem() -> None:
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["look_alike"]
+    assert (sensor["p"], sensor["device_class"]) == ("binary_sensor", "problem")
+    assert sensor["entity_category"] == "diagnostic"
+    assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.nodes
+    assert "look_alike_total is defined" in sensor["value_template"]  # earlier documents
+    assert "value_json.get('look_alike', [])" in sensor["json_attributes_template"]
+
+
+def test_select_and_text_components_can_be_removed() -> None:
+    """The controls that add contacts are removed like any component: placeholders bind what
+    Home Assistant kept from an earlier run (home-assistant/tests)."""
+    for platform in ("select", "text"):
+        stand_in = placeholder(f"uid_{platform}", platform, TOPICS)
+        assert stand_in is not None
+        assert stand_in["command_topic"] == "meshcore/radio-1/removed"
+    assert placeholder("uid_select", "select", TOPICS)["options"] == ["removed"]  # type: ignore[index]
 
 
 def test_packet_sensors_only_with_the_rx_log_and_disabled_by_default() -> None:

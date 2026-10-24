@@ -76,6 +76,19 @@ def test_announced_components_report_the_ones_that_are_gone(tmp_path: Path) -> N
     assert components.replace({}, now=0.0) == {}
 
 
+def test_each_discovery_document_keeps_its_own_components(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    main, controls = AnnouncedComponents(store), AnnouncedComponents(store, "manage_contacts")
+    main.replace({"radio": "binary_sensor"}, now=0.0)
+    controls.replace({"add_node": "select", "add_group": "select"}, now=0.0)
+    assert controls.replace({"add_node": "select"}, now=1.0) == {"add_group": "select"}
+    assert main.replace({"radio": "binary_sensor"}, now=1.0) == {}
+    data = store.load()
+    assert data["ha_components"] == {"radio": "binary_sensor"}
+    assert data["ha_components_manage_contacts"] == {"add_node": "select"}
+    assert data["ha_removed_manage_contacts"]["add_group"]["p"] == "select"
+
+
 def test_a_component_that_comes_back_is_no_longer_removed(tmp_path: Path) -> None:
     components = AnnouncedComponents(JsonStateFile(tmp_path / "state.json"))
     components.replace({"send_a": "notify"}, now=0.0)

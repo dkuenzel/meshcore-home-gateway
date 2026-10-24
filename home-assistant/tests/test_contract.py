@@ -37,6 +37,7 @@ from meshcore_home_gateway.core.model import (
 )
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
+from meshcore_home_gateway.mqtt.manage_entities import manage_payload, manage_topic
 from meshcore_home_gateway.mqtt.payloads import (
     command_payload,
     delivery_payload,
@@ -45,6 +46,7 @@ from meshcore_home_gateway.mqtt.payloads import (
 )
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
+from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.radio.session import RadioInfo
 from meshcore_home_gateway.views import settings_document
 
@@ -91,14 +93,14 @@ def state_document(*, known: bool) -> dict[str, Any]:
         "airtime_available_s": 36.0, "airtime_budget_s_per_hour": 36.0, "queue": 0,
         "radio_name": None, "public_key": None, "model": None, "firmware": None,
         "frequency_mhz": None, "bandwidth_khz": None, "spreading_factor": None,
-        "coding_rate": None, "tx_power_dbm": None, "version": __version__,
+        "coding_rate": None, "tx_power_dbm": None, "contact_link": None, "version": __version__,
     }  # fmt: skip
     if known:
         state.update(
             radio="connected", battery_v=4.012, airtime_1h_s=3.2, airtime_available_s=9.4,
             queue=2, radio_name="Gateway", public_key=RADIO_KEY, model="Heltec V3",
             firmware="v1.18.0", frequency_mhz=869.618, bandwidth_khz=62.5, spreading_factor=8,
-            coding_rate=8, tx_power_dbm=22,
+            coding_rate=8, tx_power_dbm=22, contact_link=contact_link("Gateway", RADIO_KEY),
         )  # fmt: skip
     return state
 
@@ -156,8 +158,10 @@ async def test_discovery_creates_the_documented_entities(
 ) -> None:
     document = discovery_payload(CONFIG, TOPICS)
     await announce(hass, document)
+    controls = manage_payload(CONFIG, TOPICS, [])  # the controls that add contacts
+    await fire(hass, manage_topic(CONFIG), controls)
     ids = entity_ids(hass)
-    assert len(ids) == len(document["cmps"])
+    assert len(ids) == len(document["cmps"]) + len(controls["cmps"])
     documented = {
         name for name in re.findall(rf"\b[a-z_]+\.{PREFIX}_\w+", GUIDE.read_text(encoding="utf-8"))
         if not name.endswith("_")  # `..._send_<alias>` and `..._rx_snr` written as a pattern
@@ -417,7 +421,7 @@ async def test_the_documented_automations_work(
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
     automations = guide_automations()
-    assert len(automations) == 3
+    assert len(automations) == 4  # the contacts' one: tests/test_manage_contacts.py
     assert await async_setup_component(hass, "persistent_notification", {})
     assert await async_setup_component(hass, "automation", {"automation": automations})
     await hass.async_block_till_done()
@@ -480,7 +484,7 @@ async def test_the_markdown_card_of_the_first_steps_shows_the_last_message(
 ) -> None:
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
-    card = Template(guide_block("type: markdown")["content"], hass)
+    card = Template(guide_block("type: markdown\ntitle: Last mesh message")["content"], hass)
     assert card.async_render(parse_result=False).strip() == "none yet"
     message = InboundMessage(
         MessageKind.CONTACT, "Hello", 1_760_000_000, 1_760_000_001.0, sender_prefix=SENDER[:12]
@@ -511,7 +515,7 @@ async def test_the_markdown_card_keeps_a_hostile_text_inert(
     escaped text stays text (CommonMark: a blank line ends the block)."""
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
-    card = Template(guide_block("type: markdown")["content"], hass)
+    card = Template(guide_block("type: markdown\ntitle: Last mesh message")["content"], hass)
     message = InboundMessage(kind, text, 1_760_000_000, 1_760_000_001.0, sender_prefix=SENDER[:12],
                              channel_index=1 if kind is MessageKind.CHANNEL else None)  # fmt: skip
     await fire(hass, TOPICS.received, received_payload(message, sender, "alerts"))

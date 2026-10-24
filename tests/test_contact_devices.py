@@ -27,6 +27,7 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import ContactFlag, NodeType
 from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
 from meshcore_home_gateway.views import contact_document
+from tests.test_discovery import STATE_KEYS, template_keys
 
 ALICE, BOB, HILL, CAROL = "a1" * 32, "b2" * 32, "c3" * 32, "d4" * 32
 NOW = 1_800_000_000.0
@@ -112,7 +113,7 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
     tracked = Tracked(node(ALICE, "Alice"))
     document = contact_payload(CONFIG, TOPICS, tracked, "alice")
     cmps = document["cmps"]
-    assert set(cmps) == {"last_heard", "hops", "snr", "message", "send"}
+    assert set(cmps) == {"last_heard", "hops", "snr", "message", "send", "remove"}
     assert cmps["send"]["name"] is None  # named like the device
     assert cmps["send"]["command_topic"] == f"meshcore/radio1/contacts/{ALICE}/send"
     assert cmps["message"]["state_topic"] == f"meshcore/radio1/contacts/{ALICE}/received"
@@ -122,7 +123,7 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
     assert "name" not in cmps["snr"]  # Home Assistant names it after its class, translated
     assert {c["default_entity_id"] for c in cmps.values()} == {
         "sensor.mesh_alice_last_heard", "sensor.mesh_alice_hops", "sensor.mesh_alice_snr",
-        "event.mesh_alice_message", "notify.mesh_alice",
+        "event.mesh_alice_message", "notify.mesh_alice", "button.mesh_alice_remove",
     }  # fmt: skip
     for key, component in cmps.items():
         assert component["unique_id"] == f"{GATEWAY}_contact_{ALICE}_{key}"
@@ -133,12 +134,30 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
     assert document["availability"] == [{"topic": "meshcore/radio1/availability"}]
 
 
+def test_the_remove_button_is_available_only_while_a_request_would_be_taken() -> None:
+    """Its availability replaces the device's: the gateway online, the radio connected, the
+    contact removable. A document an earlier version retained, or one that is no JSON (an empty
+    one clears the topic), reads as offline (home-assistant/tests)."""
+    cmps = contact_payload(CONFIG, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
+    button = cmps["remove"]
+    assert (button["p"], button["entity_category"]) == ("button", "config")
+    assert button["command_topic"] == f"meshcore/radio1/contacts/{ALICE}/remove"
+    assert button["availability_mode"] == "all"
+    assert [a["topic"] for a in button["availability"]] == [
+        "meshcore/radio1/availability", "meshcore/radio1/state",
+        f"meshcore/radio1/contacts/{ALICE}",
+    ]  # fmt: skip
+    for entry in button["availability"][1:]:
+        assert entry["value_template"].startswith("{{ 'online' if value_json is defined and ")
+    assert "value_json.removable is true" in button["availability"][2]["value_template"]
+
+
 def test_a_repeater_with_a_position_gets_a_tracker_only() -> None:
     """Only the tracker carries coordinates: the map shows every entity that has them."""
     repeater = node(HILL, "Hilltop", NodeType.REPEATER, position=Position(52.1, 9.2))
     mesh = mesh_of(repeater)
     cmps = contact_payload(CONFIG, TOPICS, mesh.contacts[HILL], "hilltop")["cmps"]
-    assert set(cmps) == {"last_heard", "hops", "snr", "position"}
+    assert set(cmps) == {"last_heard", "hops", "snr", "position", "remove"}
     tracker = cmps["position"]
     assert tracker["default_entity_id"] == "device_tracker.mesh_hilltop"
     assert tracker["json_attributes_topic"] == f"meshcore/radio1/contacts/{HILL}"
@@ -164,6 +183,7 @@ def test_every_template_reads_a_key_of_its_document() -> None:
     documents = {
         TOPICS.contact(ALICE): set(contact_document(tracked)),
         TOPICS.contact_received(ALICE): set(_received()),
+        TOPICS.state: STATE_KEYS,
     }
     for component in cmps.values():
         templates = [
@@ -171,7 +191,7 @@ def test_every_template_reads_a_key_of_its_document() -> None:
             component.get("json_attributes_template", ""),
             *(a.get("value_template", "") for a in component.get("availability", [])),
         ]
-        read = {k for t in templates for k in re.findall(r"value_json\.(\w+)", t)}
+        read = {k for t in templates for k in template_keys(t)}
         sources = {component.get("state_topic"), component.get("json_attributes_topic")}
         sources |= {a["topic"] for a in component.get("availability", [])}
         known = set().union(*(documents.get(s, set()) for s in sources))
@@ -218,7 +238,7 @@ def test_a_removed_contact_loses_its_device(tmp_path: Path) -> None:
     (bind_topic, bind), (empty_topic, empty) = bus.take()
     assert bind_topic == empty_topic == topic(ALICE)
     assert empty is None
-    assert set(bind["cmps"]) == {"last_heard", "hops", "snr", "message", "send"}
+    assert set(bind["cmps"]) == {"last_heard", "hops", "snr", "message", "send", "remove"}
     assert all("enabled_by_default" not in c for c in bind["cmps"].values())
     assert bind["cmps"]["send"]["unique_id"] == f"{GATEWAY}_contact_{ALICE}_send"
 

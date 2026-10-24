@@ -94,7 +94,8 @@ removal; sending to a contact goes through the budget and deduplication; a prote
 not removable; a look-alike is refused, of a contact and of a protected key not on the radio, and
 the managed profile does not add a protected key next to one; the codec cannot set the remote-CLI
 flag or a telemetry flag, and a contact that has one is reported. Contract
-tests in Home Assistant create and remove a contact device with all its entities.
+tests in Home Assistant create and remove a contact device with all its entities, and drive the
+controls that add a heard node by its label, add a key or link and remove a contact.
 
 ## Pros and Cons of the Options
 

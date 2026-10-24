@@ -300,6 +300,58 @@ def test_a_new_advert_of_a_contact_counts_for_the_contact() -> None:
     assert last(bus, f"{ROOT}/nodes")["total"] == 0
 
 
+def test_node_listeners_learn_of_every_change_and_cannot_stop_the_documents(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Home Assistant's select of the heard nodes follows them (mqtt/manage_entities.py): at
+    once after a table read, else at a bounded rate."""
+    bus = FakeBus()
+    clock = [NOW]
+    observer = Observer(bus, TOPICS, wall_clock=lambda: clock[0])
+    calls: list[bool] = []
+    observer.on_nodes.append(calls.append)
+
+    def broken(_read: bool) -> None:
+        raise RuntimeError("bug")
+
+    observer.on_nodes.append(broken)
+    alice, bob, carol = contact_record(ALICE), contact_record(BOB), contact_record(CAROL)
+    observer.radio_event(ContactsRead({ALICE.public_key.hex(): alice}, NOW))
+    assert calls
+    assert set(calls) == {True}
+    calls.clear()
+    observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW + 1))
+    assert calls == [False]
+    assert last(bus, f"{ROOT}/nodes")["total"] == 1  # published although a listener failed
+    # the radio reads its table after every advert: unchanged, it is no reason to hurry
+    observer.radio_event(ContactsRead({ALICE.public_key.hex(): alice}, NOW + 3))
+    observer.radio_event(ContactsRead({k.public_key.hex(): r for k, r in
+                                       ((ALICE, alice), (BOB, bob))}, NOW + 4))  # fmt: skip
+    assert calls == [False, False, True]  # Bob joined
+    clock[0] = NOW + 8 * 86_400  # Carol is forgotten
+    observer.tick()
+    assert calls == [False, False, True, False]
+    assert "node listener failed" in caplog.text
+
+
+def test_the_switch_the_worker_applies_is_published() -> None:
+    """Untested firmware takes no request (ADR 0020's firmware gate): `manage` and
+    `removable` say so after the first table read; before it, the last run's documents stay."""
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, manage=True, wall_clock=lambda: NOW)
+    observer.set_manage(False)
+    assert bus.published == []
+    alice = contact_record(ALICE)
+    observer.radio_event(ContactsRead({ALICE.public_key.hex(): alice}, NOW))
+    assert last(bus, f"{ROOT}/contacts")["manage"] is False
+    observer.set_manage(True)
+    assert last(bus, f"{ROOT}/contacts")["manage"] is True
+    assert last(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")["removable"] is True
+    count = len(bus.published)
+    observer.set_manage(True)
+    assert len(bus.published) == count
+
+
 def test_the_history_keeps_the_record_of_the_newest_advert(tmp_path: Path) -> None:
     """A replayed older advert is heard, but its name does not replace the newer one's, not even
     after a restart."""

@@ -120,11 +120,11 @@ def friendly(hass: HomeAssistant, entity_id: str) -> str:
 
 ALICE_IDS = {
     "notify.mesh_alice", "event.mesh_alice_message", "sensor.mesh_alice_last_heard",
-    "sensor.mesh_alice_hops", "sensor.mesh_alice_snr",
+    "sensor.mesh_alice_hops", "sensor.mesh_alice_snr", "button.mesh_alice_remove",
 }  # fmt: skip
 HILL_IDS = {
     "device_tracker.mesh_hilltop", "sensor.mesh_hilltop_last_heard", "sensor.mesh_hilltop_hops",
-    "sensor.mesh_hilltop_snr",
+    "sensor.mesh_hilltop_snr", "button.mesh_hilltop_remove",
 }  # fmt: skip
 
 

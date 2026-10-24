@@ -15,9 +15,10 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
-from meshcore_home_gateway.bridge import Bridge
+from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
+from meshcore_home_gateway.mqtt import manage_entities
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.payloads import received_payload
@@ -37,6 +38,7 @@ from meshcore_home_gateway.state import (
 from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
 
 NOW = START_TIME + 100
+GATEWAY_DOCUMENT = "/meshcore_home_gateway_radio1/config"  # its main discovery document
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
 BOB = EmulatedContact(bytes.fromhex("b2" * 32), "Bob", out_path_len=0x02)
 TWIN = EmulatedContact(ALICE.public_key[:6] + bytes(range(26)), "Mallory")  # same prefix
@@ -179,6 +181,7 @@ async def running(
         wall_clock=lambda: NOW, monotonic=monotonic, notifier=note,
         components=AnnouncedComponents(store), observer=observer(bus) if observer else None,
         devices=contact_devices, profile=profile,
+        manage_components=AnnouncedComponents(store, "manage_contacts"),
     )  # fmt: skip
     task = asyncio.create_task(bridge.run(stop))
     try:
@@ -1357,8 +1360,8 @@ def test_state_discovery_and_systemd_notifications(tmp_path: Path) -> None:
             before = sum(t.endswith("/config") for t, _, _ in bus.published)
             for callback in bus.on_ha_online:
                 callback()
-            await asyncio.sleep(0.05)
-            assert sum(t.endswith("/config") for t, _, _ in bus.published) == before + 1
+            await asyncio.sleep(0.05)  # the gateway's document and that of its contact controls
+            assert sum(t.endswith("/config") for t, _, _ in bus.published) == before + 2
             assert all(retain for t, _, retain in bus.published if t.endswith("/state"))
             assert not any(retain for t, _, retain in bus.published if t.endswith("/delivery"))
         assert notes.index("READY=1") < notes.index("STOPPING=1")
@@ -1475,7 +1478,7 @@ def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
-            documents = bus.payloads("/config")
+            documents = bus.payloads(GATEWAY_DOCUMENT)
             assert "mdl" not in documents[0]["dev"]  # announced on connect, radio not yet known
             assert documents[-1]["dev"]["mdl"] == "Example Radio"
             assert documents[-1]["dev"]["sn"] == SELF_KEY.hex()
@@ -1484,7 +1487,7 @@ def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:
             await bus.wait_for("/state", lambda s: s["radio"] == "disconnected", since=states)
             states = len(bus.payloads("/state"))
             await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=states)
-            assert len(bus.payloads("/config")) == count  # the same radio again
+            assert len(bus.payloads(GATEWAY_DOCUMENT)) == count  # the same radio again
             assert not any(retain for t, _, retain in bus.published if t.endswith("/config"))
 
     scenario(main)
@@ -1498,7 +1501,7 @@ def test_discovery_can_be_switched_off(tmp_path: Path) -> None:
             for callback in bus.on_ha_online:  # Home Assistant announces itself
                 callback()
             await asyncio.sleep(0.05)
-            assert not bus.payloads("/config")
+            assert not bus.payloads("/config")  # neither the gateway's nor any other
             assert bus.payloads("/state")[-1]["radio"] == "connected"
 
     scenario(main)
@@ -1513,7 +1516,7 @@ def test_components_of_an_earlier_configuration_are_removed(tmp_path: Path) -> N
 
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
-            documents = bus.payloads("/config")
+            documents = bus.payloads(GATEWAY_DOCUMENT)
             assert len(documents) % 2 == 0  # each announcement: the placeholder, then removal
             for bind, document in zip(documents[::2], documents[1::2], strict=True):
                 assert bind["cmps"]["send_old"]["name"] == "Removed"  # enabled: see placeholder()
@@ -1564,7 +1567,7 @@ def test_a_removal_survives_a_run_that_never_reached_the_broker(tmp_path: Path) 
 
     async def online_run() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
-            documents = bus.payloads("/config")
+            documents = bus.payloads(GATEWAY_DOCUMENT)
             removing = [d for d in documents if d["cmps"].get("send_old") == {"p": "notify"}]
             assert removing  # still sent: the first run reached nobody
 
@@ -1580,7 +1583,7 @@ def test_a_removal_binds_the_component_first(tmp_path: Path) -> None:
 
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
-            documents = bus.payloads("/config")
+            documents = bus.payloads(GATEWAY_DOCUMENT)
             first, second = documents[0]["cmps"]["send_old"], documents[1]["cmps"]["send_old"]
             assert first["name"] == "Removed"
             assert "enabled_by_default" not in first  # Home Assistant would clear the device
@@ -1807,7 +1810,7 @@ def test_contacts_get_their_devices_in_home_assistant(
         async with running(make_config(), radio, tmp_path, bus=bus, devices=True) as (b, _, _n):
             await until(lambda: bool(sent(alice) and sent(bob)))
             assert json.loads(sent(alice)[-1])["dev"]["name"] == "Alice"
-            gateway = bus.payloads("/config")[-1]["cmps"]
+            gateway = bus.payloads(GATEWAY_DOCUMENT)[-1]["cmps"]
             assert gateway["show_hidden"]["command_topic"].endswith("/homeassistant/show_hidden")
 
             radio.contacts.append(carol)  # added
@@ -1862,6 +1865,105 @@ def test_a_device_home_assistant_clears_is_announced_again(tmp_path: Path) -> No
             assert len([p for t, p, _ in bus.published if t == own]) == count + 1
 
     scenario(main)
+
+
+@pytest.mark.parametrize("devices", [True, False])
+def test_the_controls_that_add_contacts_come_back_when_cleared(
+    tmp_path: Path, devices: bool
+) -> None:
+    """Their own discovery topic, below the gateway's device: Home Assistant clears it with the
+    gateway's when the user deletes the device. The contact devices are left alone."""
+    own = "homeassistant/device/meshcore_home_gateway_radio1/config"
+    controls = "homeassistant/device/meshcore_home_gateway_radio1/manage_contacts/config"
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    def sent(topic: str) -> int:
+        return len([p for t, p, _ in bus.published if t == topic])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, bus=bus, devices=devices) as (_, _b, _n):
+            count = sent(own)
+            assert sent(controls) == count  # announced with the gateway's document
+            document = json.loads(next(p for t, p, _ in bus.published if t == controls))
+            assert set(document["cmps"]) == {"add_node", "add_contact"}
+            for message in bus.on_ha_device:
+                message(controls, b"", True)  # a left-over: not live
+                message(controls, b"{}", False)  # the gateway's own, back
+            await asyncio.sleep(0.05)
+            assert (sent(own), sent(controls)) == (count, count)
+            for message in bus.on_ha_device:
+                message(controls, b"", False)
+            await bus.wait_for("/manage_contacts/config", lambda d: True, since=count)
+            await asyncio.sleep(0.05)
+            assert (sent(own), sent(controls)) == (count + 1, count + 1)
+            assert not bus.payloads("radio1/contact")  # no contact device was taken as deleted
+
+    bus = FakeBus()
+    scenario(main)
+
+
+def test_a_control_of_an_earlier_version_is_removed_by_the_service(tmp_path: Path) -> None:
+    """The controls' document keeps its own record in the state file (state.py): placeholders
+    first, then the document without the component, at every announcement of the run."""
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"ha_components_manage_contacts": {"add_node": "select", "add_group": "select"},
+                "ha_components": {"radio": "binary_sensor"}})  # fmt: skip
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _n):
+            documents = bus.payloads("/manage_contacts/config")
+            assert len(documents) % 2 == 0
+            for bind, document in zip(documents[::2], documents[1::2], strict=True):
+                assert bind["cmps"]["add_group"]["name"] == "Removed"
+                assert document["cmps"]["add_group"] == {"p": "select"}
+            gateway = bus.payloads(GATEWAY_DOCUMENT)[-1]["cmps"]
+            assert "add_node" not in gateway  # the main document takes nothing of the other
+
+    scenario(main)
+    data = store.load()
+    assert data["ha_components_manage_contacts"] == {"add_node": "select", "add_contact": "text"}
+    assert "add_group" in data["ha_removed_manage_contacts"]
+    assert "add_node" not in data["ha_components"]
+
+
+def test_the_select_leaves_out_a_look_alike_of_a_protected_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Alice is a command sender, but not on this radio: a node with her first 6 bytes would be
+    refused, so it is not offered."""
+    monkeypatch.setattr(manage_entities, "OPTIONS_INTERVAL_S", 0.05)
+    radio = EmulatedRadio(contacts=[BOB])
+    dave = EmulatedContact(bytes.fromhex("d4" * 32), "Dave", last_advert=int(NOW) - 5)
+
+    def labels(document: dict[str, Any]) -> list[str]:
+        options: list[str] = document["cmps"]["add_node"]["options"]
+        return options
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            radio.advertise(TWIN)
+            radio.advertise(dave)
+            await bus.wait_for("/manage_contacts/config",
+                               lambda d: any(o.endswith(" Dave") for o in labels(d)))  # fmt: skip
+            nodes = bus.payloads("radio1/nodes")[-1]
+            assert TWIN.public_key.hex() in nodes["look_alike"]
+            assert not any(
+                "Mallory" in o for o in labels(bus.payloads("/manage_contacts/config")[-1])
+            )
+
+    scenario(main)
+
+
+def test_the_service_watches_the_discovery_topics_it_announces() -> None:
+    own = "homeassistant/device/meshcore_home_gateway_radio1/config"
+    assert ha_device_topics(make_config()) == [
+        own, "homeassistant/device/meshcore_home_gateway_radio1/+/config",
+    ]  # fmt: skip
+    without = make_config(extra="[homeassistant]\ncontact_devices = 0")
+    assert ha_device_topics(without) == [
+        own, "homeassistant/device/meshcore_home_gateway_radio1/manage_contacts/config",
+    ]  # fmt: skip
+    assert ha_device_topics(make_config(extra="[homeassistant]\ndiscovery = false")) == []
 
 
 def test_the_profile_of_a_connect_that_fails_later_is_reported_once(tmp_path: Path) -> None:

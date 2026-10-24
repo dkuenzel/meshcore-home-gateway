@@ -6,7 +6,9 @@ from meshcore_home_gateway.core.contacts import (
     Contact,
     ContactBook,
     add_refusal,
+    key_from_label,
     look_alike,
+    node_label,
     normalise_key,
     remove_refusal,
 )
@@ -79,3 +81,49 @@ def test_the_rules_of_an_add_in_their_order() -> None:
 def test_only_a_contact_on_the_radio_can_be_removed() -> None:
     assert remove_refusal(A, table=[A, B]) is None
     assert remove_refusal(C, table=[A, B]) == "unknown_contact"
+
+
+# --- labels ------------------------------------------------------------------------------------
+
+
+def test_a_label_starts_with_the_key_and_ends_with_the_name() -> None:
+    assert node_label(A, "Alice", 1) == f"{A[:12]}…{A[-8:]} Alice"
+    assert node_label(B, "Hilltop", 3) == f"{B[:12]}…{B[-8:]} Hilltop (room)"
+    assert node_label(B, "Weather", 4).endswith(" Weather (sensor)")
+    assert node_label(A, "", 1) == f"{A[:12]}…{A[-8:]}"
+
+
+def test_a_label_keeps_a_hostile_name_on_one_plain_line() -> None:
+    """Line breaks, direction overrides and other invisible characters cannot move or imitate
+    the key digits a person compares."""
+    hostile = "\u202e" + "Bob\nb2b2b2b2b2b2…b2b2b2b2\u200b  x"
+    label = node_label(A, hostile, 1)
+    assert label == f"{A[:12]}…{A[-8:]} Bob b2b2b2b2b2b2…b2b2b2b2 x"
+    assert key_from_label(label, [A, B]) == A  # the leading digits name the node, not the name
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        f"{A[:12]}…{A[-8:]} Alice", f"{A[:12]}…{A[-8:]}", f"{A[:12]}...{A[-8:]} Alice",
+        f"  {A[:12].upper()}…{A[-8:].upper()} renamed since  ",
+    ],
+)  # fmt: skip
+def test_a_label_names_its_key(label: str) -> None:
+    assert key_from_label(label, [A, A_TWIN, B]) == A
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "", "Alice", f"{A[:12]}…{A[-8:]}x", f"{A[:12]}…{A[-7:]} Alice", f"x{A[:12]}…{A[-8:]}",
+        f"{A[:12]}…{A[-8:]}\nAlice", f"{B[:12]}…{A[-8:]}",
+    ],
+)  # fmt: skip
+def test_a_label_without_its_key_names_nothing(label: str) -> None:
+    assert key_from_label(label, [A, B]) is None
+
+
+def test_a_label_that_two_keys_share_names_neither() -> None:
+    twin = A[:12] + "00" * 22 + A[-8:]
+    assert key_from_label(node_label(A, "Alice", 1), [A, twin]) is None
