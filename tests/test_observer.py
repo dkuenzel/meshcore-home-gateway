@@ -1,0 +1,298 @@
+"""The observer through the bridge, with the emulated radio: the providers' documents, events and
+the history (ADR 0014-0016)."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import struct
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from meshcore_home_gateway.bridge import protected_keys
+from meshcore_home_gateway.history import History
+from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import Push
+from meshcore_home_gateway.radio.session import AdvertHeard, ContactsRead
+from meshcore_home_gateway.state import JsonStateFile, RetainedKeys
+from meshcore_home_gateway.views import iso
+from tests.radio_emulator import EmulatedContact, EmulatedRadio
+from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
+
+ROOT = "meshcore/radio1"
+TOPICS = Topics("meshcore", "radio1")
+CAROL = EmulatedContact(bytes.fromhex("c3" * 32), "Carol", node_type=2, latitude_e6=53_550_000,
+                        longitude_e6=9_990_000, last_advert=int(NOW) - 5)  # fmt: skip
+
+
+def retained(bus: FakeBus, topic: str) -> list[bytes]:
+    return [p for t, p, keep in bus.published if t == topic and keep]
+
+
+def last(bus: FakeBus, topic: str) -> dict[str, Any]:
+    document: dict[str, Any] = json.loads(retained(bus, topic)[-1])
+    return document
+
+
+def advert_log(contact: EmulatedContact, hops: int, snr_q: int = 22, rssi: int = -95) -> bytes:
+    """LOG_RX_DATA with the flooded advert the radio heard (src/Packet.cpp:65-85)."""
+    app = bytes([0x80 | contact.node_type]) + contact.name.encode()
+    payload = contact.public_key + struct.pack("<I", contact.last_advert) + bytes(64) + app
+    raw = bytes([0x11, hops]) + bytes(range(hops)) + payload
+    return bytes([Push.LOG_RX_DATA, snr_q & 0xFF, rssi & 0xFF]) + raw
+
+
+def test_contacts_are_published_one_document_each_with_an_index(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            index = last(bus, f"{ROOT}/contacts")
+            assert index["total"] == 2
+            assert index["max"] == 100
+            assert {c["key"] for c in index["contacts"]} == {
+                ALICE.public_key.hex(),
+                BOB.public_key.hex(),
+            }
+            alice = last(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")
+            assert (alice["name"], alice["type"], alice["protected"]) == ("Alice", "chat", True)
+            assert alice["path_known"] is False
+            bob = last(bus, f"{ROOT}/contacts/{BOB.public_key.hex()}")
+            assert (bob["path_hops"], bob["protected"]) == (2, True)
+            stats = last(bus, f"{ROOT}/stats")
+            assert (stats["uptime_s"], stats["noise_floor_dbm"]) == (3600, -118)
+            assert stats["duty_cycle_percent"] == 50.0  # factor 1: the factory default
+
+    scenario(main)
+
+
+def test_a_removed_contact_clears_its_document_and_is_announced(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.overwrite(BOB)  # the radio dropped it, and reads the table again
+            event = await bus.wait_for(f"{ROOT}/contact", lambda e: e["event_type"] == "removed")
+            assert (event["key"], event["name"], event["type"]) == (
+                BOB.public_key.hex(), "Bob", "chat",
+            )  # fmt: skip
+            assert len(bus.payloads(f"{ROOT}/contact")) == 1  # the start announced nothing
+            topic = f"{ROOT}/contacts/{BOB.public_key.hex()}"
+            await asyncio.sleep(0.05)
+            assert retained(bus, topic)[-1] == b""  # the retained document is cleared
+            assert last(bus, f"{ROOT}/contacts")["total"] == 1
+
+    scenario(main)
+
+
+def test_contacts_gone_while_the_gateway_was_stopped_are_cleared(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    RetainedKeys(store, "contacts").replace({ALICE.public_key.hex(), "dd" * 32})
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    def observer(bus: FakeBus) -> Observer:
+        return Observer(bus, TOPICS, retained=RetainedKeys(store, "contacts"),
+                        wall_clock=lambda: NOW)  # fmt: skip
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            await bus.wait_for(f"{ROOT}/contacts", lambda d: d["total"] == 1)
+            assert retained(bus, f"{ROOT}/contacts/{'dd' * 32}") == [b""]
+            assert retained(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")[-1] != b""
+            events = bus.payloads(f"{ROOT}/contact")  # only what changed while stopped
+            assert events == [{"event_type": "removed", "key": "dd" * 32, "name": None,
+                               "type": None}]  # fmt: skip
+
+    scenario(main)
+    assert RetainedKeys(store, "contacts").keys == {ALICE.public_key.hex()}
+
+
+def test_a_new_node_is_heard_with_its_signal_but_without_its_position(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.emit(advert_log(CAROL, hops=3))
+            radio.advertise(CAROL)
+            event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
+            assert (event["key"], event["name"], event["type"]) == (
+                CAROL.public_key.hex(), "Carol", "repeater",
+            )  # fmt: skip
+            assert (event["hops"], event["snr_db"], event["rssi_dbm"]) == (3, 5.5, -95)
+            nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
+            assert "latitude" not in json.dumps(nodes)  # strangers' positions are not kept
+            radio.advertise(CAROL)  # heard again: no second event
+            await asyncio.sleep(0.1)
+            assert len(bus.payloads(f"{ROOT}/node")) == 1
+
+    scenario(main)
+
+
+def test_contacts_heard_by_advert_and_message_and_the_history(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            key = ALICE.public_key.hex()
+            radio.emit(advert_log(ALICE, hops=1))
+            radio.advertise(ALICE)
+            doc = await bus.wait_for(f"{ROOT}/contacts/{key}", lambda d: d["heard_via"] == "advert")
+            assert doc["hops"] == 1
+            radio.queue_direct_message(ALICE.public_key[:6], "hi there", int(NOW) - 10)
+            doc = await bus.wait_for(
+                f"{ROOT}/contacts/{key}", lambda d: d["heard_via"] == "message"
+            )
+            radio.queue_channel_message(0, "Carol: on my way", int(NOW) - 5)
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 2)
+            channel, direct = history["messages"]
+            assert (direct["direction"], direct["text"], direct["contact_key"]) == (
+                "in", "hi there", key,
+            )  # fmt: skip
+            assert (channel["kind"], channel["name"], channel["text"]) == (
+                "channel", "Carol", "on my way",
+            )  # fmt: skip
+            bus.send("alice", "Back soon")
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 3)
+            out = history["messages"][0]
+            assert (out["direction"], out["state"], out["name"]) == ("out", "confirmed", "Alice")
+
+    scenario(main)
+
+
+def test_the_history_survives_a_restart(tmp_path: Path) -> None:
+    path = tmp_path / "history.sqlite3"
+    config = make_config()
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        observers.append(history)
+        return Observer(bus, TOPICS, history=history, protected=protected_keys(config),
+                        wall_clock=lambda: NOW)  # fmt: skip
+
+    observers: list[History] = []
+
+    async def first() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, CAROL])  # one per event loop
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            radio.queue_channel_message(0, "Dave: remember me", int(NOW) - 5)
+            await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+
+    async def second() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, CAROL])
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            assert history["messages"][0]["text"] == "remember me"
+            carol = last(bus, f"{ROOT}/contacts/{CAROL.public_key.hex()}")
+            assert (carol["latitude"], carol["position_source"]) == (53.55, "advert")
+
+    scenario(first)
+    scenario(second)
+    for history in observers:
+        history.close()
+    stored = History.open(path)
+    assert stored is not None
+    assert list(stored.last_fixes()) == [CAROL.public_key.hex()]  # stored once, not per run
+    assert len(stored.trace(CAROL.public_key.hex(), 0)) == 1
+    stored.close()
+
+
+def test_a_failing_observer_does_not_stop_messages(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    def broken(*_: object) -> None:
+        raise RuntimeError("bug in a view")
+
+    monkeypatch.setattr(Observer, "message", broken)
+    monkeypatch.setattr(Observer, "delivery", broken)
+    caplog.set_level(logging.ERROR)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(ALICE.public_key[:6], "status", int(NOW) - 10)
+            await bus.wait_for(f"{ROOT}/command", lambda e: e["event_type"] == "status")
+            bus.send("alice", "still works")
+            await bus.wait_for(f"{ROOT}/delivery", lambda e: e["event_type"] == "confirmed")
+
+    scenario(main)
+    assert "observer failed" in caplog.text
+
+
+class Clock:
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def contact_record(contact: EmulatedContact) -> codec.ContactRecord:
+    decoded = codec.decode(contact.record())
+    assert isinstance(decoded, codec.ContactRecord)
+    return decoded
+
+
+def test_heard_nodes_come_back_after_a_restart_and_expire(tmp_path: Path) -> None:
+    path, clock = tmp_path / "history.sqlite3", Clock(NOW)
+    history = History.open(path)
+    assert history is not None
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=clock)
+    observer.radio_event(ContactsRead({}, NOW))
+    carol = contact_record(CAROL)
+    observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW))
+    history.close()
+
+    history = History.open(path)
+    assert history is not None
+    clock.now = NOW + 3600
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=clock)
+    observer.radio_event(ContactsRead({}, clock.now))
+    nodes = last(bus, f"{ROOT}/nodes")
+    assert [(n["name"], n["first_heard_at"]) for n in nodes["nodes"]] == [("Carol", iso(NOW))]
+    clock.now = NOW + 8 * 86_400  # beyond the memory of heard nodes, and a purge is due
+    observer.tick()
+    assert last(bus, f"{ROOT}/nodes")["total"] == 0
+    assert [row.name for row in history.nodes()] == ["Carol"]  # the history keeps 30 days
+    clock.now = NOW + 31 * 86_400
+    observer.tick()  # the next purge is due an hour after the first
+    assert history.nodes() == []
+    history.close()
+
+
+def test_documents_are_published_again_when_the_broker_reconnects() -> None:
+    """The MQTT adapter drops retained messages while the broker is away: a reconnect sends the
+    current documents again, and the clearing of a removed contact's topic too."""
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
+    alice, bob = contact_record(ALICE), contact_record(BOB)
+    keys = (ALICE.public_key.hex(), BOB.public_key.hex())
+    observer.radio_event(ContactsRead(dict(zip(keys, (alice, bob), strict=True)), NOW))
+    observer.radio_event(ContactsRead({keys[0]: alice}, NOW + 1))  # Bob was removed
+    current = {t: p for t, p, keep in bus.published if keep}
+    bus.published.clear()
+    observer.publish_all()
+    again = {t: p for t, p, keep in bus.published if keep}
+    assert again == current | {f"{ROOT}/history": again[f"{ROOT}/history"]}
+    assert again[f"{ROOT}/contacts/{keys[1]}"] == b""  # cleared again
+    assert again[f"{ROOT}/contacts/{keys[0]}"] != b""
+
+
+def test_a_new_advert_of_a_contact_counts_for_the_contact() -> None:
+    """Firmware 1.11 also sends NEW_ADVERT for a contact it has just added."""
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
+    alice = contact_record(ALICE)
+    observer.radio_event(ContactsRead({ALICE.public_key.hex(): alice}, NOW))
+    observer.radio_event(AdvertHeard(codec.Advert(alice.public_key, True, alice), NOW + 1))
+    assert last(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")["heard_via"] == "advert"
+    assert not bus.payloads(f"{ROOT}/node")
+    assert last(bus, f"{ROOT}/nodes")["total"] == 0

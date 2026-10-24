@@ -139,6 +139,34 @@ class AnnouncedComponents:
 REMOVAL_KEEP_S = 30 * 86_400.0
 
 
+class RetainedKeys:
+    """Keys of the per-object retained topics the gateway published (the contacts), so that it can
+    clear the topics of objects that went away while it was stopped."""
+
+    def __init__(self, store: JsonStateFile, name: str) -> None:
+        self._store = store
+        self._name = f"retained_{name}"
+        raw = store.load().get(self._name)
+        self._keys = {k for k in raw if isinstance(k, str)} if isinstance(raw, list) else set()
+
+    @property
+    def keys(self) -> frozenset[str]:
+        return frozenset(self._keys)
+
+    def replace(self, keys: set[str]) -> None:
+        """Store the published keys; a failed write is logged (the next change tries again)."""
+        if keys == self._keys:
+            return
+        data = self._store.load()
+        data[self._name] = sorted(keys)
+        try:
+            self._store.save(data)
+        except OSError as exc:
+            log.warning("cannot store the published %s: %s", self._name, exc)
+            return
+        self._keys = set(keys)
+
+
 def _string_map(raw: object) -> dict[str, str]:
     if not isinstance(raw, dict):
         return {}

@@ -20,6 +20,7 @@ from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.mqtt.client import SendRequest
 from meshcore_home_gateway.mqtt.payloads import received_payload
+from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
@@ -137,6 +138,7 @@ async def running(
     sessions: Callable[..., CompanionSession] = fast_sessions,
     bus: FakeBus | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    observer: Callable[[FakeBus], Observer] | None = None,
 ) -> AsyncIterator[tuple[Bridge, FakeBus, list[str]]]:
     bus = bus or FakeBus()
     stop, notes = asyncio.Event(), []
@@ -149,7 +151,7 @@ async def running(
     bridge = Bridge(
         config, bus, transport or (lambda: radio), CommandLedger(store), session_factory=sessions,
         wall_clock=lambda: NOW, monotonic=monotonic, notifier=note,
-        components=AnnouncedComponents(store),
+        components=AnnouncedComponents(store), observer=observer(bus) if observer else None,
     )  # fmt: skip
     task = asyncio.create_task(bridge.run(stop))
     try:

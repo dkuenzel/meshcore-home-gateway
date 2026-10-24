@@ -7,7 +7,9 @@ Tasks on one event loop:
   retry, flood, report every step on the delivery topic;
 * radio events: acknowledgements and packet log at once, received messages in order
   (deduplicated; command policy with a fresh contact table and a memory of look-alikes);
-* status: retained state document, systemd watchdog and status.
+* status: retained state document, systemd watchdog and status;
+* the observer gets every report of the radio, every received message and every delivery, for
+  the documents of the providers and the history (observer.py).
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ from meshcore_home_gateway.mqtt.payloads import (
     rx_payload,
 )
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
 from meshcore_home_gateway.radio.session import (
     AckReceived,
@@ -186,6 +189,7 @@ class Bridge:
         monotonic: Callable[[], float] = time.monotonic,
         notifier: Callable[[str], bool] = notify,
         components: AnnouncedComponents | None = None,
+        observer: Observer | None = None,
     ) -> None:
         self.config = config
         self._components = components
@@ -198,6 +202,9 @@ class Bridge:
         self._notify = notifier
         self.topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
         self._targets = {t.alias: t for t in config.targets}
+        self.observer = observer or Observer(
+            bus, self.topics, protected=protected_keys(config), wall_clock=wall_clock
+        )
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
         self._messages: asyncio.Queue[MessageReceived] = asyncio.Queue()
         # keys with the 6-byte prefix of an allowed command sender, as the radio named them:
@@ -228,6 +235,7 @@ class Bridge:
 
     async def run(self, stop: asyncio.Event) -> None:
         self._bus.on_connected.append(self._publish_announcements)
+        self._bus.on_connected.append(lambda: self._observe(self.observer.publish_all))
         self._bus.on_ha_online.append(self._schedule_announcements)
         await self._bus.start()
         self._notify("READY=1")
@@ -284,6 +292,8 @@ class Bridge:
                 self._session = session
                 self._radio_ready.set()
                 delay = RECONNECT_MIN_S
+                max_contacts = self._radio_info.device.max_contacts
+                self._observe(self.observer.radio_connected, max_contacts, session.tuning)
                 self._check_radio(session)
                 if self.config.homeassistant.discovery and _identity(self._radio_info) != (
                     self._announced
@@ -610,6 +620,7 @@ class Bridge:
         log.info("delivery %s to %r: %s%s", event.id, event.target, event.state.value,
                  f" ({event.reason})" if event.reason else "")  # fmt: skip
         self._bus.publish(self.topics.delivery, encode(delivery_payload(event)))
+        self._observe(self.observer.delivery, event, self._targets.get(event.target))
 
     # --- radio events ---------------------------------------------------------------------------
 
@@ -620,10 +631,12 @@ class Bridge:
                 self._messages.put_nowait(event)  # in order, without delaying acks
             elif isinstance(event, AckReceived):
                 self._acks.resolve(event.ack, event.round_trip_ms)
-            elif isinstance(event, PacketLogged) and self.config.diagnostics.publish_rx_log:
-                rx = event.rx
-                payload = rx_payload(rx.snr_db, rx.rssi_dbm, rx.raw, event.received_at)
-                self._bus.publish(self.topics.rx, encode(payload))
+            else:
+                if isinstance(event, PacketLogged) and self.config.diagnostics.publish_rx_log:
+                    rx = event.rx
+                    payload = rx_payload(rx.snr_db, rx.rssi_dbm, rx.raw, event.received_at)
+                    self._bus.publish(self.topics.rx, encode(payload))
+                self._observe(self.observer.radio_event, event)
             self._events.task_done()  # for the stop (_finish_inbound)
 
     async def _message_loop(self) -> None:
@@ -683,6 +696,7 @@ class Bridge:
         log.debug("text: %r", message.text)
         payload = received_payload(message, sender, target, decision)
         self._bus.publish(self.topics.received, encode(payload))
+        self._observe(self.observer.message, message, sender)
         if command is not None:
             name = sender.name if sender else None
             # QoS 0: an event that cannot be delivered now is lost, never delivered late (after
@@ -757,6 +771,13 @@ class Bridge:
                 return target.alias
         return None
 
+    def _observe(self, call: Callable[..., None], *args: Any) -> None:
+        """Hand something to the observer: a bug in the views must not stop messages."""
+        try:
+            call(*args)
+        except Exception:
+            log.exception("observer failed")
+
     # --- status ---------------------------------------------------------------------------------
 
     async def _status_loop(self) -> None:
@@ -767,6 +788,7 @@ class Bridge:
             if watchdog:
                 self._notify("WATCHDOG=1")
             self._report_unpublished()  # the end of a flood of refused requests
+            self._observe(self.observer.tick)
             if self._mono() >= next_state:
                 self._publish_state()
                 next_state = self._mono() + STATUS_INTERVAL_S
@@ -824,6 +846,13 @@ class Bridge:
     def _schedule_announcements(self) -> None:
         delay = random.uniform(*DISCOVERY_DELAY_S)  # noqa: S311 - spreading load only
         asyncio.get_running_loop().call_later(delay, self._publish_announcements)
+
+
+def protected_keys(config: Config) -> frozenset[str]:
+    """Contacts the gateway must keep: configured contact targets and command senders
+    (ADR 0017)."""
+    targets = {t.public_key for t in config.targets if t.public_key is not None}
+    return frozenset(targets | set(config.commands.senders))
 
 
 def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:

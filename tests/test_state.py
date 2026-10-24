@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger, JsonStateFile
+from meshcore_home_gateway.state import (
+    AnnouncedComponents,
+    CommandLedger,
+    JsonStateFile,
+    RetainedKeys,
+)
 
 
 def test_missing_file_reads_as_empty(tmp_path: Path) -> None:
@@ -107,3 +112,24 @@ def test_a_failed_save_leaves_no_temporary_file_and_keeps_the_ledger(
     assert ledger.last("aa" * 32) == 100
     assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
     assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100
+
+
+def test_retained_keys_are_remembered_and_survive_an_unwritable_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    keys = RetainedKeys(store, "contacts")
+    assert keys.keys == frozenset()
+    keys.replace({"aa" * 32})
+    assert RetainedKeys(store, "contacts").keys == {"aa" * 32}
+    store.save({**store.load(), "retained_contacts": ["bb" * 32, 7]})  # foreign entries skipped
+    assert RetainedKeys(store, "contacts").keys == {"bb" * 32}
+
+    def fail(_data: object) -> None:
+        raise OSError("read-only file system")
+
+    keys = RetainedKeys(store, "contacts")
+    monkeypatch.setattr(store, "save", fail)
+    keys.replace({"cc" * 32})
+    assert keys.keys == {"bb" * 32}  # unchanged: the next change tries again
+    assert "cannot store the published retained_contacts: read-only file system" in caplog.text

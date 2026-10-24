@@ -12,7 +12,7 @@ import struct
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
+from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Position, TextType
 from meshcore_home_gateway.protocol.codes import (
     PROTOCOL_VERSION,
     AutoAdd,
@@ -189,16 +189,9 @@ class SelfInfo:
         return _mode(self.telemetry_modes >> 4)
 
 
-@dataclass(frozen=True, slots=True)
-class Position:
-    """WGS 84 degrees, as the firmware stores them: int32 in 10^-6 degrees."""
-
-    latitude: float
-    longitude: float
-
-
 def position(latitude_e6: int, longitude_e6: int) -> Position | None:
-    """None for 0, 0: the firmware's value for "no position" (BaseChatMesh.cpp:108-120)."""
+    """A position from the firmware's int32 values in 10^-6 degrees; None for 0, 0, its value
+    for "no position" (BaseChatMesh.cpp:108-120)."""
     if latitude_e6 == 0 and longitude_e6 == 0:
         return None
     return Position(latitude_e6 / 1_000_000, longitude_e6 / 1_000_000)

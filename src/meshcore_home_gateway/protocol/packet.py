@@ -12,7 +12,8 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
-from meshcore_home_gateway.protocol.codec import Position, position
+from meshcore_home_gateway.core.model import Position
+from meshcore_home_gateway.protocol.codec import position
 
 PUB_KEY_BYTES = 32  # src/MeshCore.h:8
 SIGNATURE_BYTES = 64  # src/MeshCore.h:11

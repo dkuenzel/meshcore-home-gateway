@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from meshcore_home_gateway.protocol.codec import Position
+from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.protocol.packet import AdvertData, parse_advert, parse_packet
 
 KEY = bytes(range(0x40, 0x60))

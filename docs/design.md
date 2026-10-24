@@ -151,12 +151,17 @@ flowchart TB
 | `core.budget` | Airtime token bucket; event rate limit; duplicate suppression. |
 | `core.contacts` | Resolve 6-byte key prefixes to full keys; detect ambiguity. |
 | `core.commands` | Decide whether a message is an authorised command. |
+| `core.mesh` | The observer's view of the mesh: contacts with when they were heard and where they are, nodes heard but not added; the radio's measured airtime over an hour. |
 | `core.model` | Data classes shared by all layers. |
 | `protocol.framing` | Frame encoder and incremental decoder. |
 | `protocol.codec` | Command encoders and response decoders. |
+| `protocol.packet` | On-air packets from the radio's packet log, and the adverts in them. |
+| `views` | Providers: the documents of the MQTT API, built from the core's state (pure). |
 | `radio.transport` | Serial port (termios) and TCP byte streams. |
 | `radio.session` | Connection handshake, request/response, pushes, message sync, time sync. |
 | `bridge` | Outbound queue with delivery and retries, inbound handling, status reporting, supervision. |
+| `observer` | Feeds the mesh view and the history from the radio's reports, messages and deliveries; publishes the documents. |
+| `history` | The local history in SQLite. |
 | `mqtt.topics`, `mqtt.payloads` | Topic layout and JSON payloads of the public API. |
 | `mqtt.discovery` | Home Assistant device discovery document. |
 | `mqtt.client` | paho-mqtt adapter: connection, last will, subscriptions, hand-over to the event loop. |
@@ -402,6 +407,8 @@ The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
 | `received` | out | no | JSON with `event_type` = `contact` or `channel` |
 | `command` | out | no | JSON with `event_type` = command word |
 | `rx` | out | no | JSON per received packet: SNR, RSSI, raw bytes (optional) |
+| `stats`, `contacts`, `contacts/<key>`, `nodes`, `history` | out | yes | JSON documents of the observer (§6.6) |
+| `contact`, `node` | out | no | JSON: a contact added or removed; a node heard for the first time |
 
 * QoS 1 throughout, except command events. MQTT 3.1.1 with a clean session: requests published
   while the bridge is
@@ -418,7 +425,42 @@ The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
   announces itself on `homeassistant.status_topic` (default `homeassistant/status`), discovery and
   state (availability is retained, so Home Assistant receives it with its subscription).
 
-### 6.6 Home Assistant
+### 6.6 Observer: documents and history
+
+The bridge hands the observer everything the radio reports (contact tables, checked adverts,
+statistics, the packet log), every received message and every final delivery
+([ADR 0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md)). The observer keeps the
+core's view of the mesh, writes the history
+([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
+documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
+`contacts` and `contacts/<key>`, `nodes`, `history`, and the events `contact` and `node`.
+
+```mermaid
+flowchart LR
+    S[radio.session] -- "contact tables, adverts,<br/>statistics, packet log" --> BR[bridge]
+    BR -- "the same, messages,<br/>deliveries" --> OB[observer]
+    OB <--> M[core.mesh]
+    OB <--> H[(history<br/>SQLite)]
+    OB -- state --> V[views]
+    V -- documents --> OB
+    OB -- "retained documents,<br/>events" --> MQ[MQTT]
+```
+
+* **Only changes are published**: the observer remembers the last payload per topic; after a
+  reconnect to the broker it publishes them all again. The topic of a contact that left the table
+  is cleared with an empty retained message; the keys of published contacts are kept in the state
+  file, so contacts removed while the gateway was stopped are cleared at its first table read.
+* **Signals of adverts**: the radio logs every packet before it handles it, and pushes `ADVERT` or
+  `NEW_ADVERT` only for adverts whose signature it accepted. The observer takes hops, SNR and RSSI
+  from a logged advert of the same key within 10 s before such a push; the logged content itself is
+  never trusted (protocol.md, section 4).
+* **Positions** come from contact records (the radio keeps the position of a contact's newest
+  advert that carried one) and, later, from the contacts' own telemetry; a position is stored when
+  it changes. Nodes that are not contacts keep none.
+* **Failures stay local**: an exception in the observer is logged and does not stop messages,
+  deliveries or commands; a history that cannot be written switches itself off for the run.
+
+### 6.7 Home Assistant
 
 The bridge publishes one device-based discovery document
 ([ADR 0010](decisions/0010-home-assistant-through-mqtt-device-discovery.md)); entities and example
@@ -447,7 +489,7 @@ under the old unique_id (it binds a leftover entity, or creates an invisible dis
 the removal. The state file keeps these removals pending for 30 days, because the gateway cannot
 tell when Home Assistant has received them.
 
-### 6.7 Configuration
+### 6.8 Configuration
 
 One TOML file, `/etc/meshcore-home-gateway/config.toml`, owner `root`, group
 `meshcore-home-gateway`, mode 0640 (it holds the broker password). Unknown keys are errors. Every
@@ -456,7 +498,7 @@ setting is in [`configuration.md`](configuration.md). The installer writes the f
 creates a missing directory with mode 0755 whatever the umask, so that the service user reaches
 the file.
 
-### 6.8 Command line
+### 6.9 Command line
 
 | Command | Purpose |
 | --- | --- |
@@ -471,7 +513,7 @@ the file.
 Exit codes: 0 success, 1 failure, 2 usage error (invalid arguments), 78 configuration error (the
 systemd unit does not restart on it).
 
-### 6.9 Logging and observability
+### 6.10 Logging and observability
 
 * Logs go to standard error; under systemd (`JOURNAL_STREAM` set) without time stamps, because the
   journal adds them. Level from the configuration.

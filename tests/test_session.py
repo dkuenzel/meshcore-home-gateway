@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
-from meshcore_home_gateway.core.model import MessageKind
+from meshcore_home_gateway.core.model import MessageKind, Position
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push, Response
 from meshcore_home_gateway.protocol.framing import encode_frame
@@ -786,7 +786,7 @@ def test_adverts_are_reported_with_the_record_of_a_node_not_added() -> None:
         assert (node.advert.new, node.received_at) == (True, START_TIME + 100)
         assert node.advert.record is not None
         assert node.advert.record.name == "Carol"
-        assert node.advert.record.position == codec.Position(53.55, 9.99)
+        assert node.advert.record.position == Position(53.55, 9.99)
 
     run(radio, scenario)
 

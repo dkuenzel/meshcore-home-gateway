@@ -97,6 +97,15 @@ class AirtimeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class HistoryConfig:
+    """The local history (ADR 0016)."""
+
+    enabled: bool = True
+    messages_days: float = 30.0
+    positions_days: float = 30.0
+
+
+@dataclass(frozen=True, slots=True)
 class DiagnosticsConfig:
     publish_rx_log: bool = False
     log_level: str = "info"
@@ -111,6 +120,7 @@ class Config:
     airtime: AirtimeConfig = field(default_factory=AirtimeConfig)
     commands: CommandRules = field(default_factory=lambda: CommandRules(frozenset(), frozenset()))
     targets: tuple[Target, ...] = ()
+    history: HistoryConfig = field(default_factory=HistoryConfig)
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
 
 
@@ -247,6 +257,7 @@ def _build(root: _Section) -> Config:
         airtime=_checked(root.section("airtime"), _airtime),
         commands=_checked(root.section("commands"), _commands),
         targets=_targets(root.section("targets")),
+        history=_checked(root.section("history"), _history),
         diagnostics=_checked(root.section("diagnostics"), _diagnostics),
     )
     root.check_unknown()
@@ -431,6 +442,14 @@ def _targets(s: _Section) -> tuple[Target, ...]:
     return tuple(targets)
 
 
+def _history(s: _Section) -> HistoryConfig:
+    return HistoryConfig(
+        enabled=s.boolean("enabled", True),
+        messages_days=s.number("messages_days", 30.0, 1.0, 3650.0),
+        positions_days=s.number("positions_days", 30.0, 1.0, 3650.0),
+    )
+
+
 def _diagnostics(s: _Section) -> DiagnosticsConfig:
     level = cast(str, s.string("log_level", "info"))
     if level not in LOG_LEVELS:
@@ -453,6 +472,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "messages.flood_after": int, "messages.ignore_channels": list,
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
+    "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
     "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
 }  # fmt: skip
 
