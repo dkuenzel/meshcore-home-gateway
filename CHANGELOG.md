@@ -7,6 +7,15 @@ format and the command line are public interfaces.
 
 ## [Unreleased]
 
+## [0.1.0a1] - 2026-10-24
+
+The first pre-release: the bridge (messages both ways, commands from allowlisted contacts,
+Home Assistant discovery, the Proxmox installer) and slices 1 to 5 of the mesh observer
+([design §13](docs/design.md#13-roadmap-the-mesh-observer)): what the radio reports, documents
+and a local history, a Home Assistant device for every contact, the managed radio profile and
+contact management. Built, signed and attested like a release; the
+[hardware checklist](docs/testing.md#hardware-checklist) was not run for it.
+
 ### Changed
 
 - `nodes` is published again after every table read; a contact that leaves the table is listed
@@ -280,8 +289,9 @@ format and the command line are public interfaces.
   keeps the current settings and the targets the radio no longer offers.
 - Release workflow (ADR 0013): a tag `vX.Y.Z` builds the zipapp, wheel and sdist reproducibly
   with the same `make` targets as a local check, attests them with Sigstore-signed build
-  provenance and publishes them with `SHA256SUMS` on a GitHub release; `make release` is the local
-  dry run.
+  provenance and publishes them with `SHA256SUMS` on a GitHub release, the version's changelog
+  section as its notes (links to the files of the tag); `make release` is the local dry run.
+  Every finished increment is a pre-release `X.Y.ZaN` (docs/development.md).
 - Continuous integration that runs the same `make` targets as a local check (`make check`,
   `make matrix`), with a pre-push hook, hash-pinned tools with a 14-day cooldown and SHA-pinned
   actions.

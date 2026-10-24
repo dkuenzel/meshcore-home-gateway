@@ -732,7 +732,9 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   longer offers; `--answers <file>` installs without dialogs.
 * **Backup:** the configuration file and `/var/lib/meshcore-home-gateway/state.json`.
 * **Releases** ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)):
-  a tag `vX.Y.Z` runs `.github/workflows/release.yml`. A read-only job runs `make check` and
+  every finished increment is a pre-release `vX.Y.ZaN`, a release candidate and a release need
+  the hardware checklist ([development.md](development.md#release)). A tag runs
+  `.github/workflows/release.yml`. A read-only job runs `make check` and
   `make release` (reproducible zipapp, wheel and sdist, `SHA256SUMS`, notes from the changelog);
   a second job, the only one with write permissions, attests every file with Sigstore-signed build
   provenance and publishes the GitHub release. Users verify a file with `sha256sum --check` and
@@ -748,7 +750,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Contract | discovery, payloads and the documented automations in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`) |
 | Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a manual check drives the real whiptail |
 | Static | style, types, shell, workflows, unit file | ruff, mypy --strict, shellcheck, zizmor, systemd-analyze (verify, exposure score) |
-| Hardware | real radios | checklist in [`testing.md`](testing.md), before each release |
+| Hardware | real radios | checklist in [`testing.md`](testing.md), before each release candidate and release (not for the pre-releases of increments) |
 
 `make check` runs everything except the hardware checklist, locally and in CI; `make matrix` runs
 the tests with every supported Python version, like the CI matrix, and fails if one is missing.

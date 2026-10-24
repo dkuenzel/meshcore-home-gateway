@@ -45,7 +45,9 @@ flowchart LR
 
 Version 0.x, alpha. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and
 Home Assistant 2026.10 (2026.8 or newer is required). The MQTT API, the configuration format and the command line may still
-change between minor versions; see [`CHANGELOG.md`](CHANGELOG.md).
+change between minor versions; see [`CHANGELOG.md`](CHANGELOG.md). Every finished step is
+published as a signed pre-release on the repository's releases page; the first release follows
+the [hardware checklist](docs/testing.md#hardware-checklist).
 
 ## Quick start
 
@@ -57,7 +59,8 @@ On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root:
 bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
 ```
 
-Before the first release, use `main`'s copy instead:
+Before the first release, use a pre-release's own installer (its address is on the releases
+page) or `main`'s copy:
 `bash -c "$(wget -qO- https://raw.githubusercontent.com/dkuenzel/meshcore-home-gateway/main/deploy/proxmox/meshcore-home-gateway-lxc.sh)"`. Nothing is stored on the host: the program is downloaded (from
 a release: checked against its `SHA256SUMS`) inside the new container.
 

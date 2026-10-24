@@ -108,3 +108,31 @@ def test_the_command_line_checks_the_version_first(tmp_path: Path) -> None:
     changelog.write_text("## [1.0.0rc1.post1] - 2026-11-02\n\n- Notes.\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="version"):
         release_notes.main(["1.0.0rc1.post1", "--changelog", str(changelog)])
+
+
+def test_relative_links_point_at_the_files_of_the_tag() -> None:
+    """A release page lives under /releases/tag/: a link relative to the repository would
+    break there."""
+    base = "https://github.com/example/project/blob/v0.2.0/"
+    text = (
+        "See [the design](docs/design.md#13-roadmap), [ADR 1](docs/decisions/0001-x.md), "
+        "[a site](https://example.org/a), [mail](mailto:a@example.org), [here](#fixed) and "
+        "[root](/LICENSE)."
+    )
+    assert release_notes.absolute_links(text, base) == (
+        f"See [the design]({base}docs/design.md#13-roadmap), "
+        f"[ADR 1]({base}docs/decisions/0001-x.md), "
+        "[a site](https://example.org/a), [mail](mailto:a@example.org), [here](#fixed) and "
+        "[root](/LICENSE)."
+    )
+
+
+def test_the_command_line_links_to_the_repository_of_the_project(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text("## [1.0.0] - 2026-11-02\n\n- [Docs](docs/x.md).\n", encoding="utf-8")
+    assert release_notes.main(["1.0.0", "--changelog", str(changelog)]) == 0
+    source = release_notes.source_url()  # the project's Source URL in pyproject.toml
+    assert source.startswith("https://github.com/")
+    assert capsys.readouterr().out == f"- [Docs]({source}/blob/v1.0.0/docs/x.md).\n"
