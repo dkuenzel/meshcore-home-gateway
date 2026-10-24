@@ -24,9 +24,9 @@ is a state change of its own, also two events within the same millisecond.
 
 ## Entities
 
-One device, named after `homeassistant.device_name`. Once the radio has connected, the device page
-shows its model, firmware and public key (as serial number). The entities, with their IDs for
-node `radio1`:
+One device for the gateway, named after `homeassistant.device_name`, and one for each contact of
+the radio (next section). Once the radio has connected, the gateway's device page shows its model,
+firmware and public key (as serial number). Its entities, with their IDs for node `radio1`:
 
 | Entity | Platform | Content |
 | --- | --- | --- |
@@ -40,6 +40,16 @@ node `radio1`:
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
+| `sensor.meshcore_home_gateway_radio1_contacts` | count | contacts in the radio's table; attribute `max` |
+| `sensor.meshcore_home_gateway_radio1_nodes` | count | nodes heard in the last 7 days that are not contacts |
+| `event.meshcore_home_gateway_radio1_contact` | event: `added`, `removed`, `hidden`, `shown` | a contact added to or removed from the radio, or hidden in Home Assistant and shown again |
+| `event.meshcore_home_gateway_radio1_node` | event: `new` | a node heard for the first time |
+| `sensor.meshcore_home_gateway_radio1_noise_floor` | signal strength (dBm), diagnostic | the radio's noise floor |
+| `sensor.meshcore_home_gateway_radio1_radio_airtime` | duration (s), diagnostic | what the radio itself counted as sent in the last hour, adverts and acknowledgements included; attributes `window_s`, `airtime_factor`, `duty_cycle_percent` |
+| `binary_sensor.meshcore_home_gateway_radio1_remote_cli` | problem, diagnostic | a contact may use the radio's command line over the air; attribute `contacts` ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
+| `binary_sensor.meshcore_home_gateway_radio1_advert_position` | problem, diagnostic | a companion's adverts carry its position, which everyone in range can read; attribute `contacts` |
+| `button.meshcore_home_gateway_radio1_show_hidden` | configuration | shows the contacts deleted in Home Assistant again (next section) |
+| `sensor.meshcore_home_gateway_radio1_uptime`, `..._packets_received`, `..._packets_sent`, `..._receive_errors` | diagnostic | the radio's uptime and packet counters; disabled until enabled in Home Assistant |
 
 A `-` in the node ID becomes `_` in the entity IDs, as in an alias: node `radio-1` gives
 `sensor.meshcore_home_gateway_radio_1_battery`. The discovery topic, the device and the unique
@@ -49,8 +59,49 @@ more than that. Node IDs and aliases that Home Assistant would shorten further (
 `_`, two of them in a row) are refused by the configuration check.
 
 All entities share the gateway's availability topic and turn `unavailable` when it is offline.
-The state values come from the retained state document, so they are back right after a restart of
-either side.
+The state values come from retained documents, so they are back right after a restart of either
+side.
+
+## Contacts
+
+Every contact in the radio's table gets a device of its own, listed under *Connected devices* on the
+gateway's page ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)). A
+contact added to the radio has its device within seconds; a contact removed loses it. Nothing has to
+be configured. The entities, for a companion named *Alice*:
+
+| Entity | Platform | Content |
+| --- | --- | --- |
+| `notify.mesh_alice` | notify, named like the device | sends a direct message, through the same queue, airtime budget and duplicate check as a target |
+| `event.mesh_alice_message` | event: `contact` | each message from the contact, with the attributes of `received` |
+| `sensor.mesh_alice_last_heard` | timestamp | when the gateway last heard the contact (advert, message) |
+| `sensor.mesh_alice_hops` | diagnostic | repeaters the last packet passed (*unknown*: direct, or not known) |
+| `sensor.mesh_alice_snr` | signal strength (dB), diagnostic | its signal-to-noise ratio |
+| `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | the contact's position; only once one is known |
+
+Components exist only where they have data: repeaters and sensors get no notify and message
+entities, room servers no notify entity, and the tracker appears with the first position (today
+from the contact's adverts, later from telemetry). A component, once there, stays as long as the
+contact does (Home Assistant would clear the whole device when the gateway removed a disabled
+one). The tracker is the only entity with coordinates,
+so Home Assistant's map shows each contact once; it turns `unavailable` while no position is known.
+
+* **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
+  appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
+  IDs, also when the contact leaves the table and comes back. Two contacts with the same name: the second gets the first four digits of its key added.
+  Home Assistant numbers an ID that is already taken (another gateway with the same contact) with
+  `_2`.
+* **Too many contacts**: at most `homeassistant.contact_devices` (default 50) get a device, first
+  protected contacts (targets, command senders), then favourites, then companions, then the most
+  recently heard; a contact keeps its device as long as it stays in the table. `0` switches the
+  contact devices off and removes them.
+* **Delete a device** on its page in Home Assistant to hide that contact: the gateway notices and
+  does not announce it again, until the contact leaves the radio's table or *Show hidden contacts*
+  on the gateway's device is pressed. The contact stays on the radio. When the device comes back,
+  Home Assistant restores its name, area and the entities' settings, except renamed entity IDs,
+  which return to the IDs above. A deletion made while the gateway is not connected to the broker
+  is not noticed; the device comes back with the next announcement.
+* A contact device whose entity was disabled by hand: removing it makes Home Assistant log
+  *No device components to cleanup*, which is harmless.
 
 ## What reaches Home Assistant
 
@@ -61,7 +112,14 @@ either side.
 | `state`: `airtime_budget_s_per_hour` | attribute of *Airtime available* |
 | `received`, `delivery`, `command` | every key becomes an attribute of the event entity, also the nested `command` object |
 | `rx`: `rssi_dbm`, `snr_db` | the packet sensors; `raw`, `length` and `received_at` stay on MQTT |
-| `send/<alias>` | the notify entities |
+| `send/<alias>` | the notify entities of the targets |
+| `stats`: `noise_floor_dbm`, `tx_airtime_1h_s`, `uptime_s`, `packets_received`, `packets_sent`, `receive_errors` | the radio's sensors; `tx_airtime_window_s`, `airtime_factor`, `duty_cycle_percent` as attributes of *Radio transmit time last hour* |
+| `contacts`: `total`, `max`, `remote_cli…`, `advert_position…` | *Contacts* and the two problem sensors |
+| `nodes`: `total` | *Nodes heard* |
+| `contact`, `node` | the events *Contact* and *New node* |
+| `contacts/<key>` | a contact's sensors and tracker |
+| `contacts/<key>/received`, `contacts/<key>/send` | a contact's message event and notify entity |
+| `homeassistant/show_hidden` | the button *Show hidden contacts* |
 
 An entities card shows an attribute, such as the text of the last message, without YAML.
 
@@ -119,6 +177,9 @@ tap_action:
     message: Test from Home Assistant
 ```
 
+**Send to a contact.** Each companion contact has its own notify entity, named like the contact,
+used in the same way: `entity_id: notify.mesh_alice`.
+
 **See whether it arrived.** *Delivery* shows each step as an event: `queued`, then `sent` (final
 for a channel) and `confirmed` when the recipient of a direct message acknowledged it, or `failed`
 or `expired` with a `reason` attribute ([mqtt-api.md](mqtt-api.md#delivery-delivery)). The same
@@ -133,28 +194,41 @@ test without Home Assistant, in the gateway's container:
   Home Assistant the entities are back with the birth message, without any action.
 * A component of an earlier configuration (a removed target, command words or the rx log switched
   off) is removed by the gateway, also when Home Assistant restarted in between: each announcement
-  sends a disabled placeholder under the old ID, which Home Assistant binds, and then the removal.
-  The state file keeps a removal pending for 30 days, since the gateway cannot see whether Home
+  sends a placeholder under the old ID, which Home Assistant binds, and then the removal. The
+  state file keeps a removal pending for 30 days, since the gateway cannot see whether Home
   Assistant received it; Home Assistant must have run in that time. A leftover entity can be
-  deleted under *Settings → Entities*. Delete only one that the gateway no longer announces:
-  deleting a current entity clears the whole device's discovery topic, so all its entities go
-  until the gateway announces again (restart the gateway;
-  [platform-notes.md](platform-notes.md#home-assistant-mqtt)).
-* To retire the gateway, stop it (or set `homeassistant.discovery = false`), then delete the device
-  in Home Assistant.
+  deleted under *Settings → Entities*.
+* When Home Assistant removes a disabled entity (the packet sensors after the rx log was switched
+  off, an entity disabled by hand), or a current entity is deleted, it clears the whole device's
+  discovery topic, and all its entities go. The gateway watches that topic and announces again a
+  moment later, which brings them back; Home Assistant logs *No device components to cleanup*
+  meanwhile ([platform-notes.md](platform-notes.md#home-assistant-mqtt)). For the same reason the
+  gateway's device comes back when it is deleted while the gateway runs: stop the gateway first.
+* Each contact device has its own discovery topic one level below the gateway's,
+  `homeassistant/device/meshcore_home_gateway_radio1/contact_<key>/config`. The gateway subscribes
+  to them to notice a device deleted in Home Assistant, which publishes an empty retained message
+  there. A contact that left the table is removed in the same way as a component, placeholders
+  first and then the empty document; if Home Assistant may not have been running then (no birth
+  message seen since the gateway connected), once more after its next birth message. That can
+  bring the device back for a moment and log *Unable to remove unknown dispatcher*, which is
+  harmless. The state file keeps the announced devices, the pending removals, the hidden contacts
+  and the slugs of the entity IDs.
+* To retire the gateway, stop it (or set `homeassistant.discovery = false`), then delete its
+  device and its contacts' devices in Home Assistant.
 * Events are never retained: Home Assistant ignores replayed retained events.
 * `notify.send_message` publishes only `message`; `title` is dropped by Home Assistant. Send
   through the notify entities rather than `mqtt.publish`, which since 2026.10 needs an
   administrator when a user starts it.
 
 These rules come from Home Assistant's MQTT discovery code (`homeassistant/components/mqtt/`:
-`schemas.py`, `discovery.py`, `event.py`, `notify.py`). The contract tests in
-[`home-assistant/tests/`](../home-assistant/tests/test_contract.py) check them with the real MQTT
+`schemas.py`, `discovery.py`, `entity.py`, `event.py`, `notify.py`, `device_tracker.py`). The
+contract tests in [`home-assistant/tests/`](../home-assistant/tests/) check them with the real MQTT
 integration of the release pinned in
 [`home-assistant/requirements.in`](../home-assistant/requirements.in): the entity IDs above, the
-device page, sensors and attributes, availability, the removal of components, the Markdown card
-and the two actions of the first steps, and the examples below, exactly as written here
-(`make ha-test`, [testing.md](testing.md)).
+device pages, sensors and attributes, availability, the removal of components and of contact
+devices (also after a restart of Home Assistant), a device deleted by the user, the map, the
+Markdown card and the two actions of the first steps, and the examples below, exactly as written
+here (`make ha-test`, [testing.md](testing.md)).
 
 ## Examples
 
@@ -231,11 +305,16 @@ The event's keys are in `trigger.to_state.attributes`, for example `args` of a c
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in
 `.storage/core.restore_state` (restored after a restart). To keep them out of the history,
-exclude the entity from the recorder:
+exclude the message entities from the recorder, those of the contacts with one pattern:
 
 ```yaml
 recorder:
   exclude:
     entities:
       - event.meshcore_home_gateway_radio1_message
+    entity_globs:
+      - event.mesh_*_message*
 ```
+
+The contacts' trackers store their positions in the history too, which draws their traces on the
+map; exclude `device_tracker.mesh_*` as well to keep no traces.

@@ -107,9 +107,12 @@ format and the command line are public interfaces.
 - Command events are published with QoS 0: after a broker loss that the gateway had not noticed
   yet (one to two `keepalive_s`), a command could still reach the automations after the
   reconnect, at any later time; now it is lost and the sender can send it again.
-- Removing components in Home Assistant also works after Home Assistant restarted (a disabled
+- Removing components in Home Assistant also works after Home Assistant restarted (a
   placeholder binds the old entity first) and after a run that reached neither broker nor Home
-  Assistant (removals stay pending for 30 days).
+  Assistant (removals stay pending for 30 days). The placeholder is enabled, and the gateway
+  announces again when Home Assistant clears its device's topic: removing a disabled entity, such
+  as the packet sensors after `diagnostics.publish_rx_log` was switched off, made Home Assistant
+  clear the topic itself, which took every entity of the gateway away until its next start.
 - Events queued while the broker is down are no longer logged as refused.
 - Texts: in ASCII mode invisible format characters (soft hyphen, zero-width space) are dropped
   instead of becoming `?`; a text of only such characters is rejected as empty; `send` refuses a
@@ -137,6 +140,34 @@ format and the command line are public interfaces.
 
 ### Added
 
+- Documents for every front end, retained on the broker and published when they change
+  ([ADR 0015](docs/decisions/0015-provider-neutral-documents-on-the-bus.md), docs/mqtt-api.md):
+  `stats` (the radio's own measurements: noise floor, its real time on air in the last hour,
+  packet counters, uptime, error flags, its duty-cycle setting), `contacts` (index of the radio's
+  contact table) and `contacts/<key>` (one per contact: when and how it was last heard, its path,
+  its last known position), `nodes` (nodes heard but not added, without positions) and `history`
+  (the latest messages in and out). Events `contact` (added, removed) and `node` (a node heard for
+  the first time).
+- Every contact of the radio is a recipient: `contacts/<key>/send` sends a direct message to a
+  companion in the contact table, through the same queue, airtime budget and duplicate check as a
+  target ([ADR 0017](docs/decisions/0017-contacts-on-the-radio-each-with-its-own-device.md));
+  rejected as `unknown_contact` or `not_a_companion`. Messages of a contact also arrive on
+  `contacts/<key>/received`.
+- A Home Assistant device for every contact, linked to the gateway's device, which appears when
+  the contact is added to the radio and goes when it is removed (docs/home-assistant.md,
+  *Contacts*): a notify entity to message it, its messages as events, when it was last heard, hops
+  and signal, and a tracker once its position is known. Entity IDs `mesh_<name>_…`, kept when the
+  contact is renamed. A device deleted in Home Assistant hides the contact there (event `hidden`)
+  until *Show hidden contacts* is pressed. At most `homeassistant.contact_devices` contacts (default
+  50) get a device, the household first.
+- Entities on the gateway's device for the new documents: *Contacts*, *Nodes heard*, the events
+  *Contact* and *New node*, *Noise floor*, *Radio transmit time last hour*, problem sensors for a
+  contact with remote access and for a companion whose adverts carry its position, and the radio's
+  uptime and packet counters (disabled until enabled).
+- A local history in `/var/lib/meshcore-home-gateway/history.sqlite3` (SQLite, from the standard
+  library; [ADR 0016](docs/decisions/0016-history-in-a-local-sqlite-database.md)): messages,
+  positions of contacts, when nodes were last heard. Settings `[history]` `enabled`,
+  `messages_days`, `positions_days` (30 days by default).
 - `probe` reports what the radio tells about privacy and airtime: its position and whether its
   adverts carry it, who may request its telemetry (base, location, environment), the extra
   acknowledgements, its own duty-cycle factor (`airtime_factor`), and the flags of every contact;

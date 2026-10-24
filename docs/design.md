@@ -462,9 +462,10 @@ flowchart LR
 
 ### 6.7 Home Assistant
 
-The bridge publishes one device-based discovery document
-([ADR 0010](decisions/0010-home-assistant-through-mqtt-device-discovery.md)); entities and example
-automations are in [`home-assistant.md`](home-assistant.md).
+The bridge publishes one device-based discovery document for itself
+([ADR 0010](decisions/0010-home-assistant-through-mqtt-device-discovery.md)) and one for each
+contact ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)); entities
+and example automations are in [`home-assistant.md`](home-assistant.md).
 
 | Entity | Platform | Source |
 | --- | --- | --- |
@@ -478,16 +479,36 @@ automations are in [`home-assistant.md`](home-assistant.md).
 | Delivery | `event` (delivery states) | `delivery` |
 | Command | `event` (configured words) | `command` |
 | Send to *alias* | `notify`, one per target | `send/<alias>` |
+| Contacts, Nodes heard | `sensor` | `contacts` → `total`, `nodes` → `total` |
+| Contact, New node | `event` | `contact`, `node` |
+| Noise floor, Radio transmit time last hour, uptime and packet counters | `sensor`, diagnostic; the counters disabled by default | `stats` |
+| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` |
+| Show hidden contacts | `button` | → `homeassistant/show_hidden` |
 
 All entities share the availability topic, so they become unavailable when the bridge is offline.
 The document names the radio's model, firmware and key once the radio is known and is sent again
 when they change; unknown fields are left out, because Home Assistant rejects a document with a
 null device field. Components of an earlier run that the configuration no longer has are
 removed: Home Assistant removes a component only when it is sent as `{"p": <platform>}` and only if
-it has discovered it since its own start, so each announcement first sends a disabled placeholder
-under the old unique_id (it binds a leftover entity, or creates an invisible disabled one), then
-the removal. The state file keeps these removals pending for 30 days, because the gateway cannot
-tell when Home Assistant has received them.
+it has discovered it since its own start, so each announcement first sends a placeholder under the
+old unique_id (it binds a leftover entity, or creates one for a moment), then the removal. The
+state file keeps these removals pending for 30 days, because the gateway cannot tell when Home
+Assistant has received them. The placeholders are enabled: when Home Assistant removes a disabled
+entity, it clears the whole device's discovery topic itself. The gateway subscribes to that topic
+and announces again when Home Assistant clears it.
+
+Each contact's device (`mqtt/contact_devices.py`) sits on its own topic one level below the
+gateway's device ID and follows the radio's table: it is announced after a table read, updated
+when its document changes, and removed with placeholders first and then an empty document, once
+more after Home Assistant's next birth message if it may not have been running. Its components
+exist only with data (sending for companions, messages for companions and room servers, the
+tracker once a position is known) and are never removed one by one; only the tracker has
+coordinates. Entity IDs use a slug of the contact's name kept from its first appearance, also when
+it comes back. The gateway subscribes to these topics: an empty document it did not send is the user
+deleting the device in Home Assistant, and the contact stays hidden there until it leaves the table
+or is shown again. At most `homeassistant.contact_devices` contacts get a device; one keeps its
+device while it stays in the table, and free places go to protected contacts, favourites,
+companions and the most recently heard, in that order.
 
 ### 6.8 Configuration
 
@@ -738,9 +759,9 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | --- | --- | --- |
 | 1 | Read what the radio already sends: positions in contact records and adverts, nodes heard, contact flags, the radio's settings, statistics and duty-cycle factor | – |
 | 2 | Documents and history: radio statistics, contact index and one document per contact, heard nodes, recent messages, contact and node events; SQLite history | 0015, 0016 |
-| 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; statistics and contact sensors on the gateway's device | 0017 |
+| 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; every companion a recipient; statistics and contact sensors on the gateway's device | 0017 |
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
-| 5 | Contact management from Home Assistant and the command line; every contact a recipient | 0017 |
+| 5 | Contact management from Home Assistant and the command line | 0017 |
 | 6 | Telemetry and positions of the household's companions, with traces on the map | 0018 |
 | 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
 | 8 | Generated dashboards for desktop and mobile | 0021 |

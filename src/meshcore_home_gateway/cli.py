@@ -167,11 +167,17 @@ async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.bridge import Bridge, protected_keys  # noqa: PLC0415 - light start
     from meshcore_home_gateway.history import History, Retention  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
+    from meshcore_home_gateway.mqtt.contact_devices import (  # noqa: PLC0415
+        ContactDevices,
+        contact_discovery_subscription,
+    )
+    from meshcore_home_gateway.mqtt.discovery import discovery_topic  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
     from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
     from meshcore_home_gateway.state import (  # noqa: PLC0415
         AnnouncedComponents,
         CommandLedger,
+        ContactDeviceRecords,
         JsonStateFile,
         RetainedKeys,
     )
@@ -181,20 +187,31 @@ async def _serve(config: Config, state_dir: Path) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
-    ha_status = config.homeassistant.status_topic if config.homeassistant.discovery else None
-    bus = MqttBus(config.mqtt, topics, ha_status)
+    ha = config.homeassistant
+    ha_status = ha.status_topic if ha.discovery else None
+    watch: list[str] = []  # what Home Assistant clears on the gateway's discovery topics
+    if ha.discovery:
+        watch.append(discovery_topic(config))
+        if ha.contact_devices:
+            watch.append(contact_discovery_subscription(config))
+    bus = MqttBus(config.mqtt, topics, ha_status, ha_devices=watch)
     store = JsonStateFile(state_dir / "state.json")
     history = None
     if config.history.enabled:
         retention = Retention(config.history.messages_days, config.history.positions_days)
         history = History.open(state_dir / "history.sqlite3", retention)
+    protected = protected_keys(config)
     observer = Observer(
         bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
-        protected=protected_keys(config),
+        protected=protected,
     )  # fmt: skip
+    devices = None
+    if ha.discovery:  # also with no devices allowed: those of an earlier run are removed
+        records = ContactDeviceRecords(store)
+        devices = ContactDevices(config, topics, bus, records, protected=protected)
     bridge = Bridge(
         config, bus, lambda: transport_for(config), CommandLedger(store),
-        components=AnnouncedComponents(store), observer=observer,
+        components=AnnouncedComponents(store), observer=observer, devices=devices,
     )  # fmt: skip
     try:
         await bridge.run(stop)

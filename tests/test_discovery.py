@@ -6,11 +6,13 @@ from typing import Any
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import parse_config
+from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
 from meshcore_home_gateway.mqtt.payloads import rx_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.radio.session import RadioInfo
+from meshcore_home_gateway.views import contacts_document, nodes_document, stats_document
 
 KEY = "a1" * 32
 CONFIG = parse_config(
@@ -84,7 +86,7 @@ def test_document_has_the_mandatory_parts() -> None:
     assert doc["availability"] == [{"topic": "meshcore/radio-1/availability"}]
     assert doc["qos"] == 1
     for key, component in doc["cmps"].items():
-        assert component["p"] in {"binary_sensor", "sensor", "event", "notify"}, key
+        assert component["p"] in {"binary_sensor", "sensor", "event", "notify", "button"}, key
         assert component["unique_id"] == f"meshcore_home_gateway_radio-1_{key}"
         # Home Assistant turns the '-' into '_' in the entity ID (home-assistant/tests)
         assert (
@@ -97,7 +99,9 @@ def test_entities_and_their_sources() -> None:
     cmps = discovery_payload(CONFIG, TOPICS)["cmps"]
     assert set(cmps) == {
         "radio", "battery", "airtime", "airtime_available", "queue", "message", "delivery",
-        "command", "send_alerts", "send_alice",
+        "command", "send_alerts", "send_alice", "noise_floor", "radio_airtime", "uptime",
+        "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
+        "advert_position", "contact", "node", "show_hidden",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -109,6 +113,31 @@ def test_entities_and_their_sources() -> None:
     assert cmps["send_alerts"]["command_topic"] == "meshcore/radio-1/send/alerts"
     for event in ("message", "delivery", "command"):
         assert "device_class" not in cmps[event]  # only doorbell/button/motion would be valid
+
+
+def test_every_template_reads_a_key_of_its_document() -> None:
+    """The observer's documents (views.py) have every key the templates read, also when
+    nothing is known yet."""
+    cmps = discovery_payload(CONFIG, TOPICS)["cmps"]
+    mesh = Mesh()
+    documents = {
+        TOPICS.stats: stats_document(None, AirtimeMeter(), None),
+        TOPICS.contacts: contacts_document(mesh),
+        TOPICS.nodes: nodes_document(mesh),
+    }
+    for topic, document in documents.items():
+        assert _template_keys(cmps, topic) <= set(document), topic
+    assert _template_keys(cmps, TOPICS.contacts) >= {"total", "remote_cli_total"}
+    for counter in ("packets_received", "packets_sent", "receive_errors", "uptime"):
+        assert cmps[counter]["enabled_by_default"] is False
+
+
+def test_show_hidden_only_with_contact_devices() -> None:
+    none = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, contact_devices=0))
+    assert "show_hidden" not in discovery_payload(none, TOPICS)["cmps"]
+    button = discovery_payload(CONFIG, TOPICS)["cmps"]["show_hidden"]
+    assert button["command_topic"] == "meshcore/radio-1/homeassistant/show_hidden"
+    assert button["entity_category"] == "config"
 
 
 def test_command_entity_only_with_command_words() -> None:

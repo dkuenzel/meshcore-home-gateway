@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -100,14 +99,6 @@ def state_document(*, known: bool) -> dict[str, Any]:
             coding_rate=8, tx_power_dbm=22,
         )  # fmt: skip
     return state
-
-
-@pytest.fixture
-async def mqtt(
-    hass: HomeAssistant, mock_hass_config: None, mqtt_mock_entry: Callable[..., Any]
-) -> Any:
-    """The MQTT integration, set up; what Home Assistant publishes is recorded."""
-    return await mqtt_mock_entry()
 
 
 async def fire(hass: HomeAssistant, topic: str, payload: Any, *, retain: bool = False) -> None:
@@ -287,6 +278,50 @@ node_id = "radio1"
         assert registry.async_get_entity_id(platform, "mqtt", unique_id) is None
     assert f"notify.{PREFIX}_send_alerts" in entity_ids(hass)
     assert problems(caplog) == []
+
+
+async def test_a_disabled_component_goes_without_losing_the_device_for_long(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The packet sensors are disabled by default. Removing a disabled entity makes Home
+    Assistant clear the device's topic itself, and the broker hands that back to it: all the
+    device's entities go. The gateway sees it and announces again, which restores them; the
+    removal, sent again, then finds nothing disabled and Home Assistant stays quiet."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    fewer = parse_config(f"""
+[radio]
+transport = "tcp"
+host = "192.0.2.10"
+[mqtt]
+host = "broker.example.org"
+node_id = "radio1"
+[commands]
+senders = ["{SENDER}"]
+words = ["status", "arm"]
+{TARGETS}
+""")
+    removed = {"rx_rssi": "sensor", "rx_snr": "sensor"}
+    expected = set(discovery_payload(fewer, TOPICS)["cmps"])
+
+    async def announce_removal() -> list[tuple[Any, ...]]:
+        mqtt.async_publish.reset_mock()
+        await announce(hass, discovery_payload(fewer, TOPICS, None, removed, bind=True))
+        await announce(hass, discovery_payload(fewer, TOPICS, None, removed))
+        published = [c.args[:4] for c in mqtt.async_publish.call_args_list]
+        for topic, payload, _qos, _retain in published:  # what the broker hands back
+            await fire(hass, topic, "" if payload is None else payload)
+        return published
+
+    cleared = await announce_removal()
+    assert {(t, p, r) for t, p, _q, r in cleared} == {(discovery_topic(CONFIG), None, True)}
+    assert entity_ids(hass) == set()  # until the gateway announces again
+    assert await announce_removal() == []  # the gateway's answer to the cleared topic
+    assert {e.rsplit("_radio1_", 1)[1] for e in entity_ids(hass)} == {
+        k.replace("-", "_") for k in expected
+    }
+    assert {p.split(":")[0] for p in problems(caplog)} == {
+        "WARNING homeassistant.components.mqtt.discovery"
+    }  # "No device components to cleanup" for the copies of the cleared topic
 
 
 # --- state -------------------------------------------------------------------------------------
