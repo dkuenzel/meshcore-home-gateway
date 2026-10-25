@@ -457,9 +457,9 @@ def test_growth_needs_an_entry_that_makes_a_minor_release(repo: Repo) -> None:
     with pytest.raises(plan.PlanError) as refused:
         plan.check(base)
     assert str(refused.value) == (
-        "the public interface of v1.0.0 grows, but CHANGELOG.md has only fixes since: describe it"
-        " under ### Added or ### Changed (the next release is then a minor one; a false alarm is"
-        f' waived in {plan.WAIVERS} under "1.0.0"):\n  {TX}'
+        "the public interface of v1.0.0 grows or changes, but CHANGELOG.md has only fixes since:"
+        " describe it under ### Added or ### Changed (the next release is then a minor one; a"
+        f' false alarm is waived in {plan.WAIVERS} under "1.0.0"):\n  {TX}'
     )
     repo.commit("1.0.0", "## [Unreleased]\n\n" + OUT, interface=snapshot(GROWN))
     with pytest.raises(plan.PlanError, match=re.escape("but CHANGELOG.md has no entry since")):
@@ -581,7 +581,11 @@ def test_a_waiver_under_another_key_than_a_release_is_refused(repo: Repo, key: s
     waivers = snapshot({"1.0.0": {}, key: {REMOVED: "never published"}})
     (repo.path / plan.WAIVERS).write_text(waivers, encoding="utf-8")
     repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(NEW))
-    with pytest.raises(plan.PlanError, match=re.escape(f'the key "{key}" is no release X.Y.Z')):
+    expected = (
+        f'the key "{key}" is not a final release written X.Y.Z; findings against v1.0.0 go under'
+        ' "1.0.0"'
+    )
+    with pytest.raises(plan.PlanError, match=re.escape(expected)):
         plan.check(base)
 
 
@@ -624,9 +628,117 @@ def test_a_branch_without_the_last_release_is_told_to_merge(repo: Repo) -> None:
     released(repo, ("1.1.0rc1", section("1.1.0rc1", "tx.") + OUT), ("1.1.0", history))
     repo.git("checkout", "-q", "feature")
     with pytest.raises(
-        plan.PlanError, match=re.escape("HEAD does not contain v1.1.0: merge main and run again")
+        plan.PlanError,
+        match=re.escape("HEAD does not contain v1.1.0: merge origin/main and run again"),
     ):
         plan.check(base)
+
+
+def _clone(origin: Repo, path: Path, *options: str) -> None:
+    """A clone of `origin` with the tags, as `git fetch --tags origin` gives them."""
+    origin.git("clone", "-q", *options, f"file://{origin.path}", str(path))
+    subprocess.run(  # noqa: S603 - fixed arguments in a temporary repository
+        [GIT, "fetch", "-q", "--tags", "origin"], cwd=path, env=origin.env, check=True
+    )
+
+
+def _checked(path: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 - the tool with fixed arguments
+        [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check", "--base", "HEAD"],
+        cwd=path, env=env, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+
+
+def test_a_shallow_clone_is_told_to_fetch_the_history(tmp_path: Path) -> None:
+    """Without the history between the tag and HEAD, HEAD cannot be shown to contain the tag;
+    merging changes nothing. Cloud sessions clone 50 commits deep."""
+    (tmp_path / "origin").mkdir()
+    origin = Repo(tmp_path / "origin")
+    after_1_0_0(origin)
+    origin.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(OLD))
+    _clone(origin, tmp_path / "full")
+    assert _checked(tmp_path / "full", origin.env).stdout.endswith(f"{COMPATIBLE}\n")
+    shallow = tmp_path / "shallow"
+    _clone(origin, shallow, "--depth", "1")
+    run = _checked(shallow, origin.env)
+    refusal = (
+        "release_plan: a shallow clone: git fetch --unshallow and run again (it does not show"
+        " whether HEAD contains v1.0.0)\n"
+    )
+    assert (run.returncode, run.stderr) == (1, refusal)
+    subprocess.run(  # noqa: S603 - fixed arguments in a temporary repository
+        [GIT, "fetch", "-q", "--unshallow"], cwd=shallow, env=origin.env, check=True
+    )
+    assert _checked(shallow, origin.env).stdout.endswith(f"{COMPATIBLE}\n")
+
+
+def test_a_clone_without_the_tag_of_the_last_release_is_told_to_fetch_it(repo: Repo) -> None:
+    """A fork synced with the main repository has its commits but not its tags: compared with
+    an older release, or with none, a removal would pass."""
+    base = after_1_0_0(repo)
+    repo.git("tag", "-d", "v1.0.0")
+    repo.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(NEW))
+    expected = (
+        "CHANGELOG.md has 1.0.0, but there is no tag v1.0.0 here: fetch the tags of the main"
+        " repository"
+    )
+    with pytest.raises(plan.PlanError, match=re.escape(expected)):
+        plan.check(base)
+    fix = "## [Unreleased]\n\n" + section("1.0.1rc1", "x.", kind="Fixed") + OUT
+    repo.commit("1.0.1rc1", fix, interface=snapshot(OLD))
+    with pytest.raises(plan.PlanError, match=re.escape(expected)):
+        plan.check(base)
+
+
+def test_the_release_that_is_not_tagged_yet_needs_no_tag(repo: Repo) -> None:
+    """The pull request of 1.0.0 and the job on main that tags it: the changelog has 1.0.0."""
+    released(repo, ("1.0.0rc1", FIRST))
+    base = repo.git("rev-parse", "HEAD").strip()
+    repo.commit("1.0.0", "## [Unreleased]\n\n" + OUT)
+    assert plan.check(base) == f"releases v1.0.0\n{NONE}"
+    assert plan.tag(base) == ("v1.0.0", False, True)
+
+
+def test_the_section_of_a_release_stays_as_tagged(repo: Repo) -> None:
+    """Merging the release into a branch can move the branch's entries of [Unreleased] into the
+    release's section without a conflict: they would count for no later release."""
+    base = after_1_0_0(repo)
+    moved = "## [Unreleased]\n\n" + OUT.replace("- Out.\n", "- Out.\n- A fix.\n", 1)
+    repo.commit("1.0.0", moved, interface=snapshot(OLD))
+    with pytest.raises(plan.PlanError) as refused:
+        plan.check(base)
+    assert str(refused.value) == (
+        "CHANGELOG.md: the section of 1.0.0 differs from the one at v1.0.0 (a merge can move"
+        " entries of [Unreleased] into it): entries since go above it"
+    )
+    repo.commit("1.0.0", unreleased("Fixed", "A fix."), interface=snapshot(OLD))
+    assert plan.check(base) == f"no release: __version__ stays 1.0.0\n{COMPATIBLE}"
+
+
+def test_a_release_the_branch_does_not_contain_yet_is_not_its_concern(repo: Repo) -> None:
+    """A branch from 1.0.0, while main released 1.1.0a1: it is compared with 1.0.0."""
+    base = after_1_0_0(repo)
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(OLD))
+    repo.git("checkout", "-q", "main")
+    released(repo, ("1.1.0a1", "## [Unreleased]\n\n" + section("1.1.0a1", "tx.") + OUT))
+    repo.git("checkout", "-q", "feature")
+    assert plan.check(base) == f"no release: __version__ stays 1.0.0\n{COMPATIBLE}"
+
+
+def test_the_check_says_that_it_reads_the_commit(
+    repo: Repo, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = after_1_0_0(repo)
+    assert plan.main(["check", "--base", base]) == 0
+    assert capsys.readouterr().err == ""
+    (repo.path / plan.INTERFACE).write_text(snapshot(NEW), encoding="utf-8")
+    (repo.path / plan.WAIVERS).write_text("{}\n", encoding="utf-8")
+    assert plan.main(["check", "--base", base]) == 0  # a note, no refusal
+    assert capsys.readouterr().err == (
+        "release_plan: the check reads HEAD; commit first (tests/public_interface.json,"
+        " tests/public_interface_waivers.json changed)\n"
+    )
 
 
 @pytest.mark.parametrize(

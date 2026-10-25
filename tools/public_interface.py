@@ -6,10 +6,10 @@ Standard library only, and it never imports the package: release_plan runs under
 and loads this file by its path, as the tests do.
 
 A snapshot is JSON. Below the paths in RECORDS each child is a *record*, whose keys are attribute
-names compared by RULES, with values of the shape SHAPES give; an attribute without a rule, or a
-value of another shape, is a FormatError, so tracking a new one is a deliberate change here. An
-attribute absent from a record means what its rule says: no unit, any string, exactly one value,
-and, for the attributes that mean nothing when absent, not recorded yet, which is growth.
+names that ATTRIBUTES gives a rule and a shape of values; an attribute not there, or a value of
+another shape, is a FormatError, so tracking a new one is a deliberate change here. An attribute
+absent from a record means what its rule says: no unit, any string, exactly one value, and, for
+the attributes that mean nothing when absent, not recorded yet, which is growth.
 Everywhere else a dict is a collection (a key that disappears is breaking), a list is a set of
 values (a value that disappears is breaking), and a scalar stays equal; only the option groups
 of a command have a comparison of their own (`_groups`). Sets are compared value by value, so
@@ -24,7 +24,7 @@ import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 FORMAT = 1  # a new format comes with a converter of the older ones, so releases stay comparable
 
@@ -61,8 +61,8 @@ class Finding:
 
 
 class FormatError(ValueError):
-    """The snapshots cannot be compared: another format, or a record that RULES or SHAPES do
-    not cover."""
+    """The snapshots cannot be compared: another format, or a record that ATTRIBUTES does not
+    cover."""
 
 
 # (old, new, old record, new record) -> kind or None
@@ -162,43 +162,50 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else [value]
 
 
-RULES: dict[str, Rule] = {
-    # mqtt.publish
-    "retained": _equal, "qos": _equal, "payload": _equal, "cleared": _kept_flag,
-    # config and cli
-    "type": _type, "default": _default, "required": _required, "min": _minimum, "max": _maximum,
-    "choices": _choices, "answer": _answer, "takes_value": _equal, "nargs": _nargs,
-    "name": _equal, "output": _equal, "identity": _ignored, "conditional": _conditional,
-    # homeassistant
-    "id": _equal, "topic": _equal, "platform": _equal, "entity_id": _equal, "unit": _unit,
-    "event_types": _values, "options": _values, "attributes": _values, "node_types": _values,
-}  # fmt: skip
-
-Shape = tuple[str, Callable[[Any], bool]]  # what a value is, for the error; whether it is
+class Shape(NamedTuple):
+    what: str  # what a value is, for the error
+    fits: Callable[[Any], bool]
 
 
 def _listed(value: Any, item: Callable[[Any], bool]) -> bool:
     return isinstance(value, list) and all(item(v) for v in value)
 
 
-_FLAG: Shape = ("true or false", lambda v: isinstance(v, bool))
-_INTEGER: Shape = ("an integer", lambda v: isinstance(v, int) and not isinstance(v, bool))
-_NUMBER: Shape = ("a number", lambda v: isinstance(v, float) or _INTEGER[1](v))
-_TEXT: Shape = ("a string", lambda v: isinstance(v, str))
-_TEXTS: Shape = ("a list of strings", lambda v: _listed(v, _TEXT[1]))
-_TEXT_OR_INTEGER: Shape = ("a string or an integer", lambda v: _TEXT[1](v) or _INTEGER[1](v))
+_FLAG = Shape("true or false", lambda v: isinstance(v, bool))
+_INTEGER = Shape("an integer", lambda v: isinstance(v, int) and not isinstance(v, bool))
+_NUMBER = Shape("a number", lambda v: isinstance(v, float) or _INTEGER.fits(v))
+_TEXT = Shape("a string", lambda v: isinstance(v, str))
+_TEXTS = Shape("a list of strings", lambda v: _listed(v, _TEXT.fits))
+_TEXT_OR_INTEGER = Shape("a string or an integer", lambda v: _TEXT.fits(v) or _INTEGER.fits(v))
+_DEFAULT = Shape("a JSON scalar or list", lambda v: isinstance(v, str | int | float | list))
+_CHOICES = Shape("a list of strings and integers", lambda v: _listed(v, _TEXT_OR_INTEGER.fits))
+_ATTRIBUTES = Shape("a string or a list of strings", lambda v: _TEXT.fits(v) or _TEXTS.fits(v))
 
-# the attributes of RULES, each with the shape of its values
-SHAPES: dict[str, Shape] = {
-    "retained": _FLAG, "qos": _INTEGER, "payload": _TEXT, "cleared": _FLAG,
-    "type": _TEXT, "required": _FLAG, "min": _NUMBER, "max": _NUMBER, "answer": _TEXT,
-    "default": ("a JSON scalar or list", lambda v: isinstance(v, str | int | float | list)),
-    "choices": ("a list of strings and integers", lambda v: _listed(v, _TEXT_OR_INTEGER[1])),
-    "takes_value": _FLAG, "nargs": _TEXT_OR_INTEGER, "name": _TEXT, "output": _TEXT,
-    "identity": _FLAG, "conditional": _FLAG,
-    "id": _TEXT, "topic": _TEXT, "platform": _TEXT, "entity_id": _TEXT, "unit": _TEXT,
-    "event_types": _TEXTS, "options": _TEXTS, "node_types": _TEXTS,
-    "attributes": ("a string or a list of strings", lambda v: _TEXT[1](v) or _TEXTS[1](v)),
+
+class Attribute(NamedTuple):
+    rule: Rule  # how a difference counts
+    shape: Shape  # what its values are
+
+
+# every attribute a record may have
+ATTRIBUTES: dict[str, Attribute] = {
+    # mqtt.publish
+    "retained": Attribute(_equal, _FLAG), "qos": Attribute(_equal, _INTEGER),
+    "payload": Attribute(_equal, _TEXT), "cleared": Attribute(_kept_flag, _FLAG),
+    # config and cli
+    "type": Attribute(_type, _TEXT), "default": Attribute(_default, _DEFAULT),
+    "required": Attribute(_required, _FLAG), "min": Attribute(_minimum, _NUMBER),
+    "max": Attribute(_maximum, _NUMBER), "choices": Attribute(_choices, _CHOICES),
+    "answer": Attribute(_answer, _TEXT), "takes_value": Attribute(_equal, _FLAG),
+    "nargs": Attribute(_nargs, _TEXT_OR_INTEGER), "name": Attribute(_equal, _TEXT),
+    "output": Attribute(_equal, _TEXT), "identity": Attribute(_ignored, _FLAG),
+    "conditional": Attribute(_conditional, _FLAG),
+    # homeassistant
+    "id": Attribute(_equal, _TEXT), "topic": Attribute(_equal, _TEXT),
+    "platform": Attribute(_equal, _TEXT), "entity_id": Attribute(_equal, _TEXT),
+    "unit": Attribute(_unit, _TEXT), "event_types": Attribute(_values, _TEXTS),
+    "options": Attribute(_values, _TEXTS), "attributes": Attribute(_values, _ATTRIBUTES),
+    "node_types": Attribute(_values, _TEXTS),
 }  # fmt: skip
 
 
@@ -261,14 +268,14 @@ def _check_records(node: Any, path: tuple[str, ...]) -> None:
         elif not isinstance(value, dict):
             msg = f"{_name(here)}: a record must be an object, got {_show(value)}"
             raise FormatError(msg)
-        elif unknown := sorted(value.keys() - RULES.keys()):
+        elif unknown := sorted(value.keys() - ATTRIBUTES.keys()):
             msg = f"{_name(here)}: no rule for the attribute {unknown[0]!r}"
             raise FormatError(msg)
         else:
             for attribute, item in sorted(value.items()):
-                what, fits = SHAPES[attribute]
-                if not fits(item):
-                    msg = f"{_name((*here, attribute))}: expected {what}, got {_show(item)}"
+                shape = ATTRIBUTES[attribute].shape
+                if not shape.fits(item):
+                    msg = f"{_name((*here, attribute))}: expected {shape.what}, got {_show(item)}"
                     raise FormatError(msg)
 
 
@@ -278,14 +285,14 @@ def _check_groups(groups: Any, path: tuple[str, ...]) -> None:
             isinstance(group, dict)
             and group.keys() == {"options", "required"}
             and bool(group["options"])
-            and _TEXTS[1](group["options"])
-            and _FLAG[1](group["required"])
+            and _listed(group["options"], lambda names: bool(names) and _TEXTS.fits(names))
+            and _FLAG.fits(group["required"])
         )
 
     if not isinstance(groups, list) or not all(fits(group) for group in groups):
         msg = (
-            f'{_name(path)}: expected a list of {{"options": [strings], "required": true or'
-            f" false}}, got {_show(groups)}"
+            f'{_name(path)}: expected a list of {{"options": [[the names of a member]],'
+            f' "required": true or false}}, got {_show(groups)}'
         )
         raise FormatError(msg)
 
@@ -346,14 +353,25 @@ def _record(
         if before == after:
             continue
         here = (*path, attribute)
-        kind = RULES[attribute](before, after, old, new)  # _check_records: each has a rule
+        kind = ATTRIBUTES[attribute].rule(before, after, old, new)  # _check_records: each has one
         if kind == EACH:
             _each(_as_list(before), _as_list(after), here, out)
         elif kind is not None:
             out.append(Finding(kind, _name(here), f"{_show(before)} -> {_show(after)}"))
 
 
-Group = tuple[frozenset[str], bool]  # the members of a mutually exclusive group; required
+Member = frozenset[str]  # an option by all its names (its aliases), or a positional by its name
+
+
+class Group(NamedTuple):
+    """A mutually exclusive group of a command."""
+
+    members: frozenset[Member]
+    required: bool
+
+    @property
+    def names(self) -> frozenset[str]:
+        return frozenset().union(*self.members)
 
 
 def _groups(
@@ -362,7 +380,8 @@ def _groups(
     """The mutually exclusive groups of a command, old and new: a call that worked must still
     work. A new exclusion between two options that both existed breaks one; so does a required
     group that holds no member of an old required group (an option required on its own counts
-    as a group of one), or that such a member left while it still exists."""
+    as a group of one), or that such a member left while it still exists. The names of one
+    member are one option: an alias excludes none of them."""
     before, after = _read_groups(old), _read_groups(new)
     existed, exists = _members(old), _members(new)
     excluded_before, excluded = _exclusions(before), _exclusions(after)
@@ -373,32 +392,37 @@ def _groups(
         if pair <= exists:  # else the option itself is gone, which is a finding of its own
             what = f"{_pair(pair)} no longer exclude each other"
             out.append(Finding(CHANGED, _group(path, excluded_before[pair]), what))
-    required = [members for members, needed in before if needed]
-    alone = [frozenset([name]) for name, entry in old.get("options", {}).items() if _needed(entry)]
-    required_now = [members for members, needed in after if needed]
-    for members in sorted(set(required_now) - set(required), key=sorted):
-        here = _group(path, members)
-        bases = [kept for group in (*required, *alone) if (kept := group & exists) & members]
+    required = {group.names: group for group in before if group.required}
+    alone = [
+        frozenset([name]) for name, entry in old.get("options", {}).items() if entry.get("required")
+    ]
+    required_now = {group.names: group for group in after if group.required}
+    for names in sorted(required_now.keys() - required.keys(), key=sorted):
+        here = _group(path, required_now[names].members)
+        bases = [kept for base in (*required, *alone) if (kept := base & exists) & names]
         if not bases:
-            what = "now required" if (members, False) in before else "new and required"
-            out.append(Finding(BREAKING, here, what))
+            loose = any(group.names == names for group in before)
+            out.append(Finding(BREAKING, here, "now required" if loose else "new and required"))
             continue
         base = frozenset().union(*bases)
         out.extend(  # a call with it alone no longer satisfies the group
             Finding(BREAKING, here, f"no longer satisfied by {_show(name)}")
-            for name in sorted(base - members)
+            for name in sorted(base - names)
         )
-        for name in sorted(members - base):
+        for name in sorted(names - base):
             kind = CHANGED if name in existed else ADDED
             out.append(Finding(kind, here, f"also satisfied by {_show(name)}"))
-    for members in required:
-        kept = members & exists
+    for names, group in required.items():
+        kept = names & exists
         if kept and not any(kept & now for now in required_now):
-            out.append(Finding(CHANGED, _group(path, members), "no longer required"))
+            out.append(Finding(CHANGED, _group(path, group.members), "no longer required"))
 
 
 def _read_groups(command: dict[str, Any]) -> list[Group]:
-    return [(frozenset(group["options"]), group["required"]) for group in command.get("groups", [])]
+    return [
+        Group(frozenset(frozenset(names) for names in group["options"]), group["required"])
+        for group in command.get("groups", [])
+    ]
 
 
 def _members(command: dict[str, Any]) -> frozenset[str]:
@@ -407,23 +431,23 @@ def _members(command: dict[str, Any]) -> frozenset[str]:
     return frozenset(command.get("options", {})) | {p["name"] for p in positionals if "name" in p}
 
 
-def _needed(entry: Any) -> bool:
-    return isinstance(entry, dict) and entry.get("required") is True
-
-
-def _exclusions(groups: list[Group]) -> dict[frozenset[str], frozenset[str]]:
-    """Each pair of members that exclude each other, with the group that makes it so."""
+def _exclusions(groups: list[Group]) -> dict[frozenset[str], frozenset[Member]]:
+    """Each pair of names of two members that exclude each other, with the group that makes it
+    so."""
     return {
-        frozenset([a, b]): members
-        for members, _ in groups
-        for a in members
-        for b in members
+        frozenset([a, b]): group.members
+        for group in groups
+        for one in group.members
+        for other in group.members - {one}
+        for a in one
+        for b in other
         if a < b
     }
 
 
-def _group(path: tuple[str, ...], members: frozenset[str]) -> str:
-    return _name((*path, " | ".join(sorted(members))))
+def _group(path: tuple[str, ...], members: frozenset[Member]) -> str:
+    """A group as a finding names it: its members, each by its names joined by "/"."""
+    return _name((*path, " | ".join(sorted("/".join(sorted(names)) for names in members))))
 
 
 def _pair(pair: frozenset[str]) -> str:

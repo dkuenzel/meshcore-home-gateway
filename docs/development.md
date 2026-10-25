@@ -161,7 +161,8 @@ dashboards and statistics refer to:
 **Platforms.** A major version keeps its floors: Python 3.11 with paho-mqtt 2.x (Debian 13 for
 the installer), Home Assistant 2026.8, and MeshCore companion firmware 1.18.0 (protocol version
 3). Raising a floor is breaking; supporting more is not. A firmware version tested in addition is
-an addition; dropping a tested one is breaking.
+an addition; dropping a tested one is breaking. The snapshot below records the tested firmware
+versions (`TESTED_FIRMWARE`); the floors stay with review.
 
 **Not public:** the Python modules, the files in the state directory (the gateway migrates
 them), and log messages.
@@ -171,39 +172,48 @@ them), and log messages.
 - `tests/public_interface.json` records the structural part of the four interfaces, computed from
   the code by `tests/public_interface.py`. `tests/test_public_interface.py` fails when the code
   and the snapshot differ.
-- After a deliberate change, `make interface` writes the snapshot again and lists what changed:
-  breaking, changed (a default, a wider range) or added, one finding per fact (each value
-  removed from a list is one). Review its diff like code.
+- After a deliberate change, `make interface` writes the snapshot again and lists what changed
+  against the committed snapshot: breaking, changed (a default, a wider range) or added, one
+  finding per fact (each value removed from a list is one). Review its diff like code. A merge
+  conflict in `tests/public_interface.json` is resolved by `make interface`, not by hand.
 - The CI job *release plan* (`make release-plan`) compares the snapshot with the one of the last
   release on every pull request and push, and its log shows the result. A finding that removes or
   narrows needs a `**Breaking:**` entry (or a `### Removed` section) since that release, which
   makes the next release a major one. A finding that adds or changes needs an entry since then
-  that makes the next release at least a minor one (`### Added` or `### Changed`): growth never
-  ships in a patch. A release must contain the snapshot, so the releases after it are compared
-  with it.
+  that makes the next release at least a minor one (`### Added` or `### Changed`): neither
+  growth nor a change ships in a patch. A release must contain the snapshot, so the releases
+  after it are compared with it. Only these findings need a changelog entry: removing what no
+  release had needs none.
 - Once the changelog makes the next release a major one, further breaks pass; the log lists every
   break the release takes, and review gives each its own `**Breaking:**` entry.
 - A false alarm (something recorded that was never interface, or a fix that adds what was
-  missing) is waived with a reason in `tests/public_interface_waivers.json`, for that release
-  only. The file maps the last release (`X.Y.Z`, as the refusal names it) to the findings, each as
-  the refusal shows it, and a reason for each:
+  missing) is waived with a reason in `tests/public_interface_waivers.json`, until the next
+  release; the key is the last release (`X.Y.Z`, as the refusal names it). The file maps it to
+  the findings, each as the refusal shows it, and a reason for each:
   `{"1.0.0": {"mqtt > publish > <base_topic>/<node_id>/rx: removed": "never published"}}`. A
   waiver covers that one finding: another value removed from the same list, or another bound,
   needs its own.
 - A positional argument is recorded with its name, so that arguments in another order show. A
   rename alone reads as breaking too; since no script can tell, it is waived. A command's
   subcommand is a positional too, and its mutually exclusive option groups are recorded with
-  whether one of them is required: a new exclusion between options that existed, or a required
-  group that a call of before need not satisfy, is breaking.
-- The snapshot does not see, so review keeps: the JSON types and nullability of keys; the size
-  limits and list bounds of MQTT; the value lists that are not under `mqtt > values` (the
-  `reason` of deliveries, contact and setting events, each setting's `state`, `heard_via`,
-  `position_source`, and `direction`, `kind` and `state` in the history); the string formats of
-  settings; the forms an option's value takes (`--tcp`'s HOST[:PORT], the keys, labels, links and
-  cards `contacts add` accepts); the values inside machine-readable lines (the actions and the
-  yes and no of `probe --list profile`, the marks of `contacts list`); publishing again after a
-  reconnect; the exit status of each case; the platform floors; meanings and units of values;
-  rules between settings; the texts a request accepts.
+  whether one of them is required, each option by all its names: a new exclusion between
+  options that existed, or a required group that a call of before need not satisfy, is
+  breaking; a new alias is an addition.
+- The snapshot does not see, so review keeps:
+  - the JSON types and nullability of keys;
+  - the size limits and list bounds of MQTT;
+  - the value lists that are not under `mqtt > values`: the `reason` of deliveries, contact and
+    setting events, each setting's `state`, `heard_via`, `position_source`, and `direction`,
+    `kind` and `state` in the history;
+  - the string formats of settings;
+  - the forms an option's value takes: `--tcp`'s HOST[:PORT], the keys, labels, links and cards
+    `contacts add` accepts;
+  - the values inside machine-readable lines: the actions and the yes and no of
+    `probe --list profile`, the marks of `contacts list`;
+  - publishing again after a reconnect;
+  - the exit status of each case;
+  - the platform floors: Python, paho-mqtt, Home Assistant, the firmware and protocol versions;
+  - meanings and units of values, rules between settings, and the texts a request accepts.
 
 ## Release
 
@@ -237,9 +247,12 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version
    written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed. The
    same check compares the public interface with that of the last release
-   ([Compatibility](#compatibility)), also when the version does not change.
+   ([Compatibility](#compatibility)), also when the version does not change. The section of a
+   release stays as it was tagged: after merging `main`, the branch's entries must still be under
+   *Unreleased* (git can move them into the newest section without a conflict).
    `git fetch --tags origin && make release-plan` runs the check locally (it needs the tags; on a
-   branch that does not contain the last release it refuses: merge `main` first);
+   branch that does not contain the last release it refuses: merge `origin/main` first). It reads
+   the commit, not the working tree, so commit first.
    `RELEASE_TAG=vX.Y.Z make release` builds the release files into `dist/release/` as the
    workflow does. A pull request that keeps `__version__` releases nothing.
 3. After the merge, CI on `main` tags the merge commit once every job passed on it, and starts

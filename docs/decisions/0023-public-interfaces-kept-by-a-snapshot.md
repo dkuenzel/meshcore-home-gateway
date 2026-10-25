@@ -53,7 +53,8 @@ could drift from the code.
   state classes are left to review for now.
 * **Within a major version each interface only grows.** The policy lists, for each one, what is
   compatible and what is breaking. Not interface: abbreviated options (a new option can make one
-  ambiguous), texts for people, log messages, the Python modules and the state directory.
+  ambiguous), texts for people, log messages, the Python modules and the files in the state
+  directory.
   Raising a platform floor is breaking: Python 3.11 with paho-mqtt 2.x (Debian 13 for the
   installer), Home Assistant 2026.8, MeshCore companion firmware 1.18.0. The Proxmox
   installer's options and its answers file only grow, like the configuration; the snapshot
@@ -62,15 +63,17 @@ could drift from the code.
   without a radio or a broker: the MQTT adapter with a recording paho client below the bridge's
   publish paths, a recorder on the configuration parser, a walk of the argument parser, the
   commands' own output with the radio emulator for `probe`, and Home Assistant's discovery
-  builders. It records structure only: topics with retained flag and QoS, subscriptions and the
-  last will, key paths, value lists declared in one place or emitted where Home Assistant is told
-  of them, settings with type, default, bounds and the choices the parser takes, commands with
-  their subcommands, options with type and the bounds their type function takes, mutually
-  exclusive option groups and whether one is required, named positionals, the columns of the
-  tab-separated lists, the JSON keys of `probe --json`, `contacts list --json` and `listen`, the
-  keys `config answers` prints, the default paths, and the discovery facts above.
-  `tests/test_public_interface.py` fails when snapshot and code differ; `make interface` writes it
-  again and lists what changed.
+  builders. It records structure only. For MQTT: topics with retained flag and QoS,
+  subscriptions and the last will, key paths, and the value lists declared in one place or
+  emitted where Home Assistant is told of them. For the configuration: settings with type,
+  default, bounds and the choices the parser takes. For the command line: commands with their
+  subcommands, options with type and the bounds their type function takes, mutually exclusive
+  option groups (each option by all its names) and whether one is required, and named
+  positionals; also the columns of the tab-separated lists, the JSON keys of `probe --json`,
+  `contacts list --json` and `listen`, the keys `config answers` prints, the exit codes and the
+  default paths. For Home Assistant: the discovery facts above. Besides, the firmware versions
+  tested. `tests/test_public_interface.py` fails when snapshot and code differ; `make interface`
+  writes it again and lists what changed.
 * **The comparison** `tools/public_interface.py` classifies each difference as breaking, changed
   (compatible, but users notice it: a default, a wider range) or added. Attributes of a record are
   compared by a rule each, and an attribute without a rule, or a value of another shape, is an
@@ -102,14 +105,16 @@ could drift from the code.
 * Bad, because the snapshot does not see all that the policy promises; JSON types and
   nullability, the size limits and list bounds of MQTT, the value lists outside `mqtt > values`
   (the reasons among them), string formats, the forms an option's value takes, the values inside
-  machine-readable lines, publishing after a reconnect, exit statuses, platform floors, meanings,
-  units of values, rules between settings and the texts a request accepts stay with review and
-  the written policy ([docs/development.md](../development.md#compatibility) lists them).
+  machine-readable lines, publishing after a reconnect, the exit status of each case, platform
+  floors, meanings, units of values, rules between settings and the texts a request accepts stay
+  with review and the written policy ([docs/development.md](../development.md#compatibility)
+  lists them).
 * Bad, because a fix that adds what was missing, or widens a bound that was too narrow, needs an
   Added or Changed entry and so a minor release, or a waiver.
 * Bad, because surface behind a setting that the fixture does not switch on is missing until the
-  fixture gets it; a test that every topic of the layout is recorded closes that gap for MQTT,
-  and the fixture's contact must fill every field, so that components that need data are there.
+  fixture gets it. A test that every topic of the layout is recorded closes that gap for MQTT
+  topics; keys and values behind a switch need the switch on in `MAXIMAL_TEXT`. The fixture's
+  contact must fill every field, so that components that need data are there.
 * Neutral, because most feature pull requests touch the one snapshot file; a conflict is resolved
   by `make interface` after merging `main`.
 

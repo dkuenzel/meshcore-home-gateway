@@ -10,7 +10,10 @@ import copy
 import dataclasses
 import json
 import logging
+import os
 import re
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -42,8 +45,8 @@ def current() -> dict[str, Any]:
 
 def test_the_snapshot_is_the_code(current: dict[str, Any]) -> None:
     committed = interface.SNAPSHOT.read_text(encoding="utf-8")
-    if tool.render(current) != committed:
-        pytest.fail(interface.explain(tool.compare(json.loads(committed), current)), pytrace=False)
+    if tool.render(current) != committed:  # as `python -m tests.public_interface` says it
+        pytest.fail(interface._report(committed, current, written=False), pytrace=False)
 
 
 def test_the_extractor_gives_the_same_snapshot_again(current: dict[str, Any]) -> None:
@@ -92,8 +95,27 @@ def test_placeholders_never_meet_real_names() -> None:
     )
 
 
+def test_the_configuration_is_recorded_in_a_fresh_state() -> None:
+    """`placeholders` runs inside the recorder on the parser: it must not parse a configuration
+    itself, or a test run alone (-k, --lf) would recurse."""
+    interface.maximal.cache_clear()
+    assert "mqtt.node_id" in interface._reads(interface.MINIMAL)
+    interface.maximal.cache_clear()
+    assert "mqtt.node_id" in interface.config()
+
+
+def test_the_extractor_imports_without_the_private_names_it_reads() -> None:
+    """A renamed helper of the code fails the tests of the interface, not their collection."""
+    code = "from meshcore_home_gateway import cli; del cli._count; import tests.public_interface"
+    run = subprocess.run(  # noqa: S603 - the interpreter with a fixed program
+        [sys.executable, "-c", code], cwd=interface.ROOT, capture_output=True, text=True,
+        check=False, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )  # fmt: skip
+    assert run.returncode == 0, run.stderr
+
+
 def test_a_fixture_value_left_in_the_snapshot_is_refused() -> None:
-    with pytest.raises(AssertionError, match="qmissedq"):
+    with pytest.raises(AssertionError, match=re.escape("['qmissedq']: add to placeholders()")):
         interface.refuse_leftovers({"mqtt": {"documents": {"qmissedq": []}}})
     with pytest.raises(AssertionError, match=interface.KEY[:8]):
         interface.refuse_leftovers(
@@ -106,6 +128,19 @@ def test_an_error_logged_while_computing_is_refused() -> None:
     as a missing topic."""
     with pytest.raises(AssertionError, match="observer failed"), interface.refusing_errors():
         logging.getLogger("meshcore_home_gateway.bridge").error("observer failed")
+
+
+def test_an_error_logged_before_a_later_failure_is_shown_with_it() -> None:
+    """A producer's bug is logged and swallowed; the guard that then fails names its effect."""
+
+    def computing() -> None:
+        with interface.refusing_errors():
+            logging.getLogger("meshcore_home_gateway.observer").error("contact listener failed")
+            raise AssertionError("contact:event_type: Home Assistant declares values no path emits")
+
+    with pytest.raises(AssertionError, match="contact listener failed") as refused:
+        computing()
+    assert "no path emits" in str(refused.value.__context__)
 
 
 def test_an_event_loop_that_fails_fails_the_snapshot_at_once(
@@ -246,9 +281,15 @@ def test_the_command_line_with_a_snapshot_it_cannot_read(
 ) -> None:
     path = _with_snapshot(monkeypatch, tmp_path, current, '{"format": 0}\n')
     assert interface.main([]) == 1
-    assert "cannot be compared with the code: snapshot format 0" in capsys.readouterr().err
+    assert capsys.readouterr().err == (
+        f"{path} cannot be compared with the code: snapshot format 0, this tool reads 1;"
+        " `make interface` writes it again\n"
+    )
     assert interface.main(["--write"]) == 0
-    assert "cannot be compared" in capsys.readouterr().out
+    assert capsys.readouterr().out == (
+        f"{path} cannot be compared with the code: snapshot format 0, this tool reads 1\n"
+        f"wrote {path}\n"
+    )
     assert path.read_text(encoding="utf-8") == tool.render(current)
 
 
@@ -258,10 +299,16 @@ def test_a_difference_in_form_only_is_explained() -> None:
 
 def test_the_advice_names_the_release_each_kind_makes() -> None:
     found = [tool.Finding(kind, "x", "y") for kind in (tool.BREAKING, tool.CHANGED, tool.ADDED)]
-    breaking, _, changed, _, added, _ = interface._findings(found)
+    breaking, _, changed, _, added, _, against = interface._findings(found)
     assert "a major one; a false alarm: a waiver, docs/development.md#compatibility" in breaking
     assert changed.endswith("(the next release is then a minor one):")
     assert added.endswith("(the next release is then a minor one):")
+    assert against == (  # a removal of what only main had needs no entry
+        "These kinds are against the committed snapshot. What needs a changelog entry is what"
+        " `git fetch --tags origin && make release-plan` reports against the last release: a"
+        " removal of something no release had needs none."
+    )
+    assert interface._findings([]) == []
 
 
 # --- the comparator, on a small synthetic snapshot ------------------------------------------------
@@ -328,7 +375,7 @@ SMALL: dict[str, Any] = {
                     "--tcp": {"takes_value": True, "type": "host[:port]", "min": 1, "max": 65535},
                 },
                 "positionals": {},
-                "groups": [{"options": ["--serial", "--tcp"], "required": True}],
+                "groups": [{"options": [["--serial"], ["--tcp"]], "required": True}],
             },
             "run": {
                 "options": {"--state-dir": {"takes_value": True, "type": "path"}},
@@ -389,6 +436,7 @@ SMALL: dict[str, Any] = {
             },
         },
     },
+    "platforms": {"tested_firmware": [14]},
 }
 
 Mutation = Callable[[dict[str, Any]], object]
@@ -488,6 +536,7 @@ BREAKING: dict[str, Mutation] = {
         d, "homeassistant", "components", "contact", "send", "node_types"
     ).remove("chat"),
     "device id": lambda d: d["homeassistant"]["devices"]["gateway"].update(id="mhg_<node_id>"),
+    "tested firmware dropped": lambda d: d["platforms"]["tested_firmware"].remove(14),
     "section removed": lambda d: d.pop("homeassistant"),
 }
 
@@ -550,7 +599,8 @@ COMPATIBLE: dict[str, Mutation] = {
     "node type added": lambda d: at(
         d, "homeassistant", "components", "contact", "send", "node_types"
     ).append("room"),
-    "section added": lambda d: d.update({"platforms": {"python": "3.11"}}),
+    "firmware tested in addition": lambda d: d["platforms"]["tested_firmware"].append(15),
+    "section added": lambda d: d.update({"installer": {"answers": ["setup"]}}),
 }
 # compatible, but users notice them: listed under Changed; the others are additions
 CHANGED = {
@@ -602,13 +652,15 @@ FLAG = {"takes_value": False}
 
 
 def grouped(*path: str, options: list[str], required: bool) -> Mutation:
-    """A mutation that gives the command at `path` this group (new options take no value)."""
+    """A mutation that gives the command at `path` this group, a member's names joined by "/"
+    (new options take no value)."""
 
     def change(d: dict[str, Any]) -> None:
         command = at(d, *path)
-        for name in options:
+        members = sorted(sorted(member.split("/")) for member in options)
+        for name in (name for names in members for name in names):
             command["options"].setdefault(name, FLAG)
-        command.setdefault("groups", []).append({"options": options, "required": required})
+        command.setdefault("groups", []).append({"options": members, "required": required})
 
     return change
 
@@ -623,6 +675,20 @@ def regrouped(options: list[str], required: bool = True) -> Mutation:
     return change
 
 
+def aliased(option: str, alias: str) -> Mutation:
+    """A mutation that gives probe's `option` another name, in its group too."""
+
+    def change(d: dict[str, Any]) -> None:
+        command = at(d, *PROBE)
+        command["options"][alias] = copy.deepcopy(command["options"][option])
+        for group in command["groups"]:
+            group["options"] = sorted(
+                sorted([*names, alias]) if option in names else names for names in group["options"]
+            )
+
+    return change
+
+
 def excluding(path: str, first: str, second: str) -> tuple[str, str]:
     return path, f'"{first}" and "{second}" exclude each other'
 
@@ -633,6 +699,8 @@ WIDER = f"{C}probe > groups > --json | --serial | --tcp"
 JOINED = f"{C}probe > groups > --ble | --serial | --tcp"
 LISTEN_GROUP = f"{C}listen > groups > --count | --topic"
 OUTPUT_GROUP = f"{C}probe > groups > --json | --list"
+ALIASED = f"{C}probe > groups > --serial | --tcp/--tcp-address"
+RENAMED = f"{C}probe > groups > --host/--tcp | --serial"
 GROUPS: dict[str, tuple[Mutation, set[tuple[str, str]]]] = {
     # breaking
     "a required group of new options": (
@@ -679,6 +747,22 @@ GROUPS: dict[str, tuple[Mutation, set[tuple[str, str]]]] = {
             ("added", ": ".join(excluding(JOINED, "--ble", "--serial"))),
             ("added", ": ".join(excluding(JOINED, "--ble", "--tcp"))),
             ("added", f'{JOINED}: also satisfied by "--ble"'),
+        },
+    ),
+    "an alias of a grouped option": (  # still the same option: it excludes none of its names
+        aliased("--tcp", "--tcp-address"),
+        {
+            ("added", f"{C}probe > options > --tcp-address: new"),
+            ("added", ": ".join(excluding(ALIASED, "--serial", "--tcp-address"))),
+            ("added", f'{ALIASED}: also satisfied by "--tcp-address"'),
+        },
+    ),
+    "a rename that keeps the old name": (
+        aliased("--tcp", "--host"),
+        {
+            ("added", f"{C}probe > options > --host: new"),
+            ("added", ": ".join(excluding(RENAMED, "--host", "--serial"))),
+            ("added", f'{RENAMED}: also satisfied by "--host"'),
         },
     ),
     "a group of new options, not required": (
@@ -768,9 +852,9 @@ def test_the_extractor_records_groups_and_subcommands() -> None:
     commands.add_parser("run").add_subparsers(dest="what")
     out: dict[str, Any] = {}
     interface._commands(parser, "", out)
-    assert out["x"]["groups"] == [  # an option by its longest name
-        {"options": ["--json", "--list"], "required": False},
-        {"options": ["--serial", "--tcp"], "required": True},
+    assert out["x"]["groups"] == [  # an option by all its names
+        {"options": [["--json"], ["--list"]], "required": False},
+        {"options": [["--serial", "-s"], ["--tcp"]], "required": True},
     ]
     assert out["x"]["positionals"] == {
         "1": {"name": "name", "required": True, "takes_value": True},
@@ -780,6 +864,22 @@ def test_the_extractor_records_groups_and_subcommands() -> None:
         "options": {},
         "positionals": {"1": {"name": "what", "takes_value": True}},
     }
+
+
+def test_names_of_one_length_in_another_order_are_no_change() -> None:
+    """argparse calls the option by its first name; the snapshot lists every name."""
+
+    def recorded(*names: str) -> dict[str, Any]:
+        parser = argparse.ArgumentParser(prog="x")
+        where = parser.add_mutually_exclusive_group(required=True)
+        where.add_argument("--serial")
+        where.add_argument(*names, dest="tcp")
+        out: dict[str, Any] = {}
+        interface._commands(parser, "", out)
+        return {"format": 1, "cli": {"commands": out}}
+
+    assert recorded("--tcp", "--net") == recorded("--net", "--tcp")
+    assert tool.compare(recorded("--tcp", "--net"), recorded("--net", "--tcp")) == []
 
 
 def test_a_positional_without_values_is_not_required_on_any_python() -> None:
@@ -943,6 +1043,12 @@ def test_a_record_that_is_no_object_is_refused() -> None:
         ((*PROBE, "groups"), [{"options": "--tcp", "required": True}], "probe > groups: expected"),
         ((*PROBE, "groups"), [{"options": ["--tcp"]}], 'groups: expected a list of {"options"'),
         ((*PROBE, "groups"), {"options": ["--tcp"], "required": True}, "groups: expected a list"),
+        (
+            (*PROBE, "groups"),
+            [{"options": ["--tcp"], "required": True}],
+            "probe > groups: expected",
+        ),
+        ((*PROBE, "groups"), [{"options": [[]], "required": True}], "probe > groups: expected"),
     ],
 )
 def test_a_value_of_another_shape_is_refused(
@@ -951,10 +1057,6 @@ def test_a_value_of_another_shape_is_refused(
     doc = mutated(lambda d: at(d, *path[:-1]).update({path[-1]: value}))
     with pytest.raises(tool.FormatError, match=re.escape(expected)):
         tool.compare(SMALL, doc)
-
-
-def test_every_attribute_has_a_rule_and_a_shape() -> None:
-    assert tool.RULES.keys() == tool.SHAPES.keys()
 
 
 def test_another_format_is_refused() -> None:
@@ -1042,7 +1144,7 @@ GUARDS: dict[str, tuple[Callable[[], object], str]] = {
     ),
     "a bound the table lacks": (
         lambda: interface._bounds(cli._wait_seconds, interface._Type("seconds", 0.0)),
-        "seconds: refuses 1000000000: give _TYPES its max",
+        "seconds: refuses 1000000000: give it its max in _types()",
     ),
     "a unique ID not by key": (
         lambda: interface._components({"k": _sensor("other_k")}, "dev"),
@@ -1066,7 +1168,10 @@ GUARDS: dict[str, tuple[Callable[[], object], str]] = {
     ),
     "a field of the contact at its default": (
         lambda: interface._filled(Node(interface.KEY, "Alice", NodeType.CHAT)),
-        "fill Node.flags in the fixture of homeassistant() in tests/public_interface.py",
+        (
+            "fill Node.flags, Node.path_hops, Node.last_advert, Node.position in _tracked() in"
+            " tests/public_interface.py"
+        ),
     ),
     "a field inside the contact at its default": (
         lambda: interface._filled(
@@ -1074,7 +1179,7 @@ GUARDS: dict[str, tuple[Callable[[], object], str]] = {
                 interface._tracked(NodeType.CHAT), heard=Heard(1.0, "message", Signal(hops=1))
             )
         ),
-        "fill Signal.snr_db in the fixture",
+        "fill Signal.snr_db, Signal.rssi_dbm in _tracked()",
     ),
 }
 
@@ -1147,11 +1252,74 @@ def test_a_parameter_the_recorder_reads_must_stay(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(
         AssertionError,
         match=re.escape(
-            "config._Section.integer no longer takes lo: update _setting in"
+            "config._Section.integer no longer takes lo: update _KINDS and _setting in"
             " tests/public_interface.py"
         ),
     ):
         interface._reads(interface.MINIMAL)
+
+
+def _probing_elsewhere(monkeypatch: pytest.MonkeyPatch, *commands: str, sub: str = "") -> None:
+    """These commands, as the code calls them, keep their state in another directory: `sub`
+    below $STATE_DIRECTORY if it is set and `sub` given, else one of their own."""
+    for name in commands:
+        command = getattr(cli, name)
+
+        def elsewhere(args: argparse.Namespace, command: Callable[..., int] = command) -> int:
+            if not sub:
+                args.state_dir = Path("/srv/elsewhere")
+            elif "STATE_DIRECTORY" in os.environ:
+                args.state_dir = Path(os.environ["STATE_DIRECTORY"]) / sub
+            return command(args)
+
+        monkeypatch.setattr(cli, name, elsewhere)
+
+
+def test_run_and_probe_must_use_one_state_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _probing_elsewhere(monkeypatch, "_probe")
+    with pytest.raises(
+        AssertionError,
+        match=re.escape(
+            "run uses the state directory /var/lib/meshcore-home-gateway, probe /srv/elsewhere:"
+            " record each"
+        ),
+    ):
+        interface._state_directory(tmp_path, interface._probe_report(tmp_path))
+
+
+def test_the_state_directory_must_be_the_one_the_variable_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _probing_elsewhere(monkeypatch, "_run", "_probe", sub="gateway")
+    with pytest.raises(
+        AssertionError,
+        match=re.escape(f"STATE_DIRECTORY={tmp_path / 'named'}: state in {tmp_path}/named/gateway"),
+    ):
+        interface._state_directory(tmp_path, interface._probe_report(tmp_path))
+
+
+def test_config_answers_must_print_every_setting_with_an_answer_type(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The installer writes the configuration back from them (`--reconfigure`)."""
+    monkeypatch.setitem(configuration._ANSWER_TYPES, "history.vacuum_days", int)
+    with pytest.raises(
+        AssertionError,
+        match=re.escape(
+            "config answers prints no line for ['history.vacuum_days']: set each in ANSWERED in"
+            " tests/public_interface.py"
+        ),
+    ):
+        interface._answers(tmp_path)
+    monkeypatch.delitem(configuration._ANSWER_TYPES, "history.vacuum_days")
+    monkeypatch.delitem(configuration._ANSWER_TYPES, "mqtt.password")
+    with pytest.raises(
+        AssertionError,
+        match=re.escape("config answers prints ['mqtt.password'], which have no answer type"),
+    ):
+        interface._answers(tmp_path)
 
 
 def _refused(_: list[str]) -> int:

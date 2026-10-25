@@ -7,7 +7,8 @@ without a radio or a broker; tests/public_interface.json is its snapshot.
 It records the structure only: topics with their retained flag and QoS, the subscriptions and the
 last will, the key paths of the documents, the value lists the code declares in one place or
 emits where Home Assistant is told of them, every setting, command, option (with its bounds) and
-option group, the machine-readable outputs and the answers, and what Home Assistant refers to.
+option group, the machine-readable outputs and the answers, what Home Assistant refers to, and
+the firmware versions tested.
 The fixture's names are words that no real name contains (the slug "s" once turned "sensor" into
 "<slug>ensor"); `placeholders` turns them into the snapshot's placeholders, which belong to its
 format and are never renamed.
@@ -165,6 +166,67 @@ words = ["{WORD}"]
 [diagnostics]
 publish_rx_log = true
 """
+# every setting with an answer type, for `config answers` (MINIMAL adds radio.device)
+ANSWERED = f"""
+[radio]
+transport = "tcp"
+host = "192.0.2.10"
+port = 5000
+set_clock = false
+[radio.profile]
+manage = "observe"
+name = "Gateway"
+duty_cycle_percent = 25.0
+protect_contacts = false
+[mqtt]
+host = "broker.example.org"
+port = 8883
+username = "gateway"
+password = "secret"
+tls = true
+ca_file = "/etc/ssl/certs/ca.pem"
+cert_file = "/etc/ssl/certs/client.pem"
+key_file = "/etc/ssl/private/client.pem"
+client_id = "gateway"
+keepalive_s = 30
+base_topic = "{BASE}"
+node_id = "{NODE}"
+[homeassistant]
+discovery = true
+prefix = "{PREFIX}"
+device_name = "Gateway"
+status_topic = "{STATUS}"
+contact_devices = 10
+[messages]
+ascii_only = true
+truncate = false
+dedup_window_s = 120
+queue_size = 5
+queue_ttl_s = 60
+max_attempts = 4
+flood_after = 3
+ignore_channels = [0]
+[airtime]
+budget_s_per_hour = 72
+burst_s = 12
+[commands]
+senders = ["{KEY}"]
+words = ["{WORD}"]
+max_age_s = 300
+[targets.{ALIAS}]
+contact = "{KEY}"
+[targets.{CHANNEL_ALIAS}]
+channel = 1
+[history]
+enabled = false
+messages_days = 7
+positions_days = 90
+[contacts]
+manage = false
+[diagnostics]
+publish_rx_log = true
+log_level = "debug"
+"""
 
 
 @functools.cache
@@ -174,10 +236,10 @@ def maximal() -> Config:
     return parse_config(MAXIMAL_TEXT)
 
 
-@functools.cache
 def gateway_device() -> str:
-    """The gateway's device in Home Assistant, which holds the node ID."""
-    return device_id(maximal())
+    """The gateway's device in Home Assistant, which holds the node ID. No configuration is parsed
+    for it: `placeholders` runs inside the recorder on the parser (_reads)."""
+    return device_id(cast(Config, SimpleNamespace(mqtt=SimpleNamespace(node_id=NODE))))
 
 
 _DOCUMENTS = "<base_topic>/<node_id>/"  # the topics of the documents and events
@@ -214,6 +276,7 @@ def surface() -> dict[str, Any]:
             "config": config(),
             "cli": command_line(Path(tmp)),
             "homeassistant": homeassistant(),
+            "platforms": {"tested_firmware": sorted(profile.TESTED_FIRMWARE)},  # firmware codes
         }
     refuse_leftovers(doc)
     return cast(dict[str, Any], _sorted(doc))
@@ -231,8 +294,9 @@ class _Records(logging.Handler):
 @contextlib.contextmanager
 def refusing_errors() -> Iterator[None]:
     """Fail on an error logged inside: the bridge and the managers log an exception instead of
-    raising it, so a broken path would only show as a topic missing from the snapshot. Warnings
-    of the scenario stay off standard error."""
+    raising it, so a broken path would only show as a topic missing from the snapshot; also when
+    a later guard fails because of it, which then shows as the context. Warnings of the scenario
+    stay off standard error."""
     handler = _Records()
     root = logging.getLogger()
     root.addHandler(handler)
@@ -240,9 +304,10 @@ def refusing_errors() -> Iterator[None]:
         yield
     finally:
         root.removeHandler(handler)
-    errors = [handler.format(r) for r in handler.records if r.levelno >= logging.ERROR]
-    if errors:
-        raise AssertionError("logged while computing the public interface:\n" + "\n".join(errors))
+        errors = [handler.format(r) for r in handler.records if r.levelno >= logging.ERROR]
+        if errors:
+            message = "logged while computing the public interface:\n" + "\n".join(errors)
+            raise AssertionError(message)
 
 
 def refuse_leftovers(doc: dict[str, Any]) -> None:
@@ -250,7 +315,7 @@ def refuse_leftovers(doc: dict[str, Any]) -> None:
     text = json.dumps(doc)
     keys = {key[:8] for key in (KEY, KEY_B, KEY_N) if key[:8] in text}
     if left := sorted(set(_LEFTOVER.findall(text)) | keys):
-        raise AssertionError(f"fixture values left in the snapshot: {left}")
+        raise AssertionError(f"fixture values left in the snapshot: {left}: add to placeholders()")
 
 
 def _sorted(value: Any) -> Any:
@@ -407,7 +472,7 @@ async def _published(tmp: Path) -> _Paho:
         client_factory=lambda _: client, ha_devices=ha_device_topics(config),
     )  # fmt: skip
     await bus.start()
-    bus._paho_connected(client, None, None, SimpleNamespace(is_failure=False), None)
+    client.on_connect(client, None, None, SimpleNamespace(is_failure=False), None)  # as paho
     await asyncio.sleep(0)  # the connection reaches the event loop
     store = JsonStateFile(tmp / "state.json")
     records = ContactDeviceRecords(store)
@@ -591,8 +656,8 @@ def _transport(value: str) -> dict[str, str | None]:
 
 
 def _choice_keys() -> dict[str, tuple[Sequence[str], Callable[[str], dict[str, str | None]]]]:
-    """The strings that the parser checks against a list after reading them: the candidates (the
-    dataclass's Literal), and what a file sets besides each value."""
+    """The strings that the parser checks against a list after reading them: the candidates (a
+    Literal of the dataclass, or the module's list), and what a file sets besides each value."""
     return {
         "radio.transport": (_literal(configuration.RadioConfig, "transport"), _transport),
         "radio.profile.manage": (_literal(ProfileConfig, "manage"), lambda _: {}),
@@ -648,8 +713,8 @@ def _reads(text: str) -> dict[str, dict[str, Any]]:
         for parameter in _KINDS[method][1]:  # else its bound or flag would vanish unnoticed
             if parameter not in signature.parameters:
                 raise AssertionError(
-                    f"config._Section.{method} no longer takes {parameter}: update _setting in"
-                    " tests/public_interface.py"
+                    f"config._Section.{method} no longer takes {parameter}: update _KINDS and"
+                    " _setting in tests/public_interface.py"
                 )
 
         def read(section: Any, name: str, *args: Any, **kwargs: Any) -> Any:
@@ -734,12 +799,18 @@ class _Type:
     argument: Callable[[float], str] = str  # the text that gives this number
 
 
-_TYPES: dict[Any, _Type] = {
-    Path: _Type("path"),
-    cli.tcp_address: _Type("host[:port]", 1, 65535, lambda port: f"192.0.2.10:{port:g}"),
-    cli._wait_seconds: _Type("seconds", 0.0, cli.MAX_WAIT_S),
-    cli._count: _Type("count", 0),
-}
+@functools.cache
+def _types() -> dict[Any, _Type]:
+    """The type functions of options, by the name the snapshot gives them; on first use, so that
+    a renamed one fails the tests of the interface rather than their collection."""
+    return {
+        Path: _Type("path"),
+        cli.tcp_address: _Type("host[:port]", 1, 65535, lambda port: f"192.0.2.10:{port:g}"),
+        cli._wait_seconds: _Type("seconds", 0.0, cli.MAX_WAIT_S),
+        cli._count: _Type("count", 0),
+    }
+
+
 _FAR = 10**9  # beyond every bound: a number type without a bound takes it
 # how few values a positional takes, by nargs (an integer: that many); it is required unless none
 _FEWEST: dict[Any, int] = {None: 1, "?": 0, "*": 0, "+": 1, argparse.REMAINDER: 0}
@@ -756,7 +827,7 @@ def command_line(tmp: Path) -> dict[str, Any]:
             f"probe --list {listing}": _printed([*probe, "--list", listing])
             for listing in commands["probe"]["options"]["--list"]["choices"]
         }
-        paths = {"config": str(cli.DEFAULT_CONFIG), **_state_directory(tmp)}
+    paths = {"config": str(cli.DEFAULT_CONFIG), **_state_directory(tmp, report)}
     keyed_by_data = ("profile.changes", "profile.contacts")
     exit_codes = {
         "ok": cli.EX_OK, "failure": cli.EX_FAILURE, "usage": cli.EX_USAGE,
@@ -800,7 +871,7 @@ def _commands(parser: argparse.ArgumentParser, path: str, out: dict[str, Any]) -
             positionals[place] = _argument(action, _fewest(action) > 0) | {"name": _named(action)}
     entry: dict[str, Any] = {"options": options, "positionals": positionals}
     if groups := [_group(group) for group in parser._mutually_exclusive_groups]:
-        entry["groups"] = sorted(groups, key=lambda group: cast(list[str], group["options"]))
+        entry["groups"] = sorted(groups, key=lambda group: cast(list[list[str]], group["options"]))
     out[path or parser.prog] = entry
     if commands is not None:
         for name, command in commands.choices.items():
@@ -823,9 +894,10 @@ def _fewest(action: argparse.Action) -> int:
 
 
 def _group(group: argparse._MutuallyExclusiveGroup) -> dict[str, Any]:
-    """A mutually exclusive group: its options by their longest name, or positionals by name."""
+    """A mutually exclusive group: each member by all its names (an option and its aliases), a
+    positional by its name."""
     members = [
-        max(action.option_strings, key=len) if action.option_strings else _named(action)
+        sorted(action.option_strings) if action.option_strings else [_named(action)]
         for action in group._group_actions
     ]
     return {"options": sorted(members), "required": group.required}
@@ -840,8 +912,8 @@ def _argument(action: argparse.Action, required: bool) -> dict[str, Any]:
     if action.nargs not in (None, 0):
         entry["nargs"] = action.nargs
     if action.type is not None:
-        if (kind := _TYPES.get(action.type)) is None:
-            raise AssertionError(f"{action.dest}: name the type {action.type!r} in _TYPES")
+        if (kind := _types().get(action.type)) is None:
+            raise AssertionError(f"{action.dest}: name the type {action.type!r} in _types()")
         entry |= {"type": kind.name, **_bounds(cast(Callable[[str], Any], action.type), kind)}
     default = action.default  # `is`: a default of 0 or 0.0 equals False
     if default is not None and default is not False and default is not argparse.SUPPRESS:
@@ -867,7 +939,7 @@ def _bounds(function: Callable[[str], Any], kind: _Type) -> dict[str, float]:
         if bound is None:
             if not taken(outward * _FAR):
                 raise AssertionError(
-                    f"{kind.name}: refuses {outward * _FAR}: give _TYPES its {name}"
+                    f"{kind.name}: refuses {outward * _FAR}: give it its {name} in _types()"
                 )
             continue
         beyond = (
@@ -876,7 +948,7 @@ def _bounds(function: Callable[[str], Any], kind: _Type) -> dict[str, float]:
             else bound + outward
         )
         if not taken(bound) or taken(beyond):
-            raise AssertionError(f"{kind.name}: its {name} is not {bound}: correct it in _TYPES")
+            raise AssertionError(f"{kind.name}: its {name} is not {bound}: correct it in _types()")
         bounds[name] = bound
     return bounds
 
@@ -923,18 +995,19 @@ def _printed(argv: list[str], *, empty: bool = False) -> str:
 _STATE_DIRECTORY = "STATE_DIRECTORY"
 
 
-def _state_directory(tmp: Path) -> dict[str, str]:
+def _state_directory(tmp: Path, report: dict[str, Any]) -> dict[str, str]:
     """The state directory of `run` and `probe` without --state-dir: the default, and the
-    variable of the environment that names another (systemd's StateDirectory= sets it)."""
+    variable of the environment that names another (systemd's StateDirectory= sets it). `probe`
+    reports `report`, without a radio."""
     config = _written(tmp / "state.toml", MINIMAL)
-    used: list[Path] = []
+    used: dict[str, Path] = {}
 
     async def serve(_: Config, state_dir: Path) -> int:
-        used.append(state_dir)
+        used["run"] = state_dir
         return cli.EX_OK
 
     def store(path: Path, **_: Any) -> JsonStateFile:
-        used.append(path.parent)
+        used["probe"] = path.parent
         return JsonStateFile(tmp / "probe.json", read_only=True)
 
     found: list[Path] = []
@@ -946,13 +1019,15 @@ def _state_directory(tmp: Path) -> dict[str, str]:
                 os.environ[_STATE_DIRECTORY] = str(named)
             patches.enter_context(mock.patch.object(cli, "setup_logging"))
             patches.enter_context(mock.patch.object(cli, "_serve", serve))
+            patches.enter_context(_probing(report))
             patches.enter_context(mock.patch("meshcore_home_gateway.state.JsonStateFile", store))
             used.clear()
             _printed(["run", "--config", str(config)], empty=True)
             _printed(["probe", "--tcp", "192.0.2.10", "--json"])
-        if len(used) != 2 or used[0] != used[1]:  # both document the same default
-            raise AssertionError(f"run and probe use the state directories {used}: record each")
-        found.append(used[0])
+        run, probe = used.get("run"), used.get("probe")
+        if run is None or probe != run:  # both document the same default
+            raise AssertionError(f"run uses the state directory {run}, probe {probe}: record each")
+        found.append(run)
     default, by_environment = found
     if by_environment not in (default, tmp / "named"):
         raise AssertionError(f"{_STATE_DIRECTORY}={tmp / 'named'}: state in {by_environment}")
@@ -1002,28 +1077,16 @@ def _contacts_list(tmp: Path, *more: str, session: type[_Documents] = _Documents
         return _printed(["contacts", "list", "--config", str(config), *more])
 
 
-class _Broker:
+class _Broker(_Paho):
     """The paho client of `listen`: it connects at once and delivers one message on the first
     topic subscribed, a marker for the documents and events of `mqtt > documents`."""
-
-    on_connect: Any = None
-    on_message: Any = None
-
-    def connect(self, *_: Any) -> None:
-        pass
 
     def loop_start(self) -> None:
         self.on_connect(self, None, None, SimpleNamespace(is_failure=False), None)
 
-    def subscribe(self, topics: list[tuple[str, int]]) -> None:
-        message = SimpleNamespace(topic=topics[0][0], payload=b'{"<message>": true}', retain=False)
+    def subscribe(self, topic: list[tuple[str, int]]) -> None:
+        message = SimpleNamespace(topic=topic[0][0], payload=b'{"<message>": true}', retain=False)
         self.on_message(self, None, message)
-
-    def disconnect(self) -> None:
-        pass
-
-    def loop_stop(self) -> None:
-        pass
 
 
 def _listened(tmp: Path) -> Any:
@@ -1034,15 +1097,25 @@ def _listened(tmp: Path) -> Any:
 
 
 def _answers(tmp: Path) -> dict[str, list[str]]:
-    """The keys that `config answers` prints for MAXIMAL_TEXT (`config render` and the installer
-    read them), and the forms of a target's value."""
-    config = _written(tmp / "answers.toml", MAXIMAL_TEXT)
+    """The keys that `config answers` prints (`config render` and the installer read them back),
+    which must be those of every setting with an answer type, and the forms of a target's
+    value."""
     keys, targets = [], []
-    for line in _printed(["config", "answers", "--config", str(config)]).splitlines():
-        key, _, value = placeholders(line).partition("=")
-        keys.append(key)
-        if key == "target.<alias>":
-            targets.append(re.sub(r"\d+", "<index>", value))
+    for name, text in (("answered", ANSWERED), ("minimal", MINIMAL)):
+        config = _written(tmp / f"{name}.toml", text)
+        for line in _printed(["config", "answers", "--config", str(config)]).splitlines():
+            key, _, value = placeholders(line).partition("=")
+            keys.append(key)
+            if key == "target.<alias>":
+                targets.append(re.sub(r"\d+", "<index>", value))
+    expected = {*configuration._ANSWER_TYPES, "target.<alias>"}
+    if missing := sorted(expected - set(keys)):
+        raise AssertionError(
+            f"config answers prints no line for {missing}: set each in ANSWERED in"
+            " tests/public_interface.py, or find why config_answers no longer prints it"
+        )
+    if extra := sorted(set(keys) - expected):
+        raise AssertionError(f"config answers prints {extra}, which have no answer type")
     return {"keys": keys, "target.<alias>": targets}
 
 
@@ -1111,6 +1184,16 @@ def _tracked(node_type: int) -> Tracked:
 
 def _filled(value: Any) -> None:
     """Every field of `value` and of the dataclasses in it differs from its default."""
+    if unfilled := _unfilled(value):
+        raise AssertionError(
+            f"fill {', '.join(unfilled)} in _tracked() in tests/public_interface.py, so that"
+            " components that need them are recorded"
+        )
+
+
+def _unfilled(value: Any) -> list[str]:
+    """The fields of `value` and of the dataclasses in it that are at their default."""
+    found = []
     for item in dataclasses.fields(value):
         given = getattr(value, item.name)
         if item.default_factory is not dataclasses.MISSING:
@@ -1118,12 +1201,10 @@ def _filled(value: Any) -> None:
         else:
             default = item.default
         if given == default:
-            raise AssertionError(
-                f"fill {type(value).__name__}.{item.name} in the fixture of homeassistant() in"
-                " tests/public_interface.py, so that components that need it are recorded"
-            )
-        if dataclasses.is_dataclass(given):
-            _filled(given)
+            found.append(f"{type(value).__name__}.{item.name}")
+        elif dataclasses.is_dataclass(given):
+            found += _unfilled(given)
+    return found
 
 
 def _components(found: dict[str, dict[str, Any]], device: str) -> dict[str, dict[str, Any]]:
@@ -1178,12 +1259,20 @@ _ADVICE = {
 }
 
 
+# the release plan compares with the last release, `make interface` with the committed snapshot
+_AGAINST = (
+    "These kinds are against the committed snapshot. What needs a changelog entry is what `git"
+    " fetch --tags origin && make release-plan` reports against the last release: a removal of"
+    " something no release had needs none."
+)
+
+
 def _findings(findings: Sequence[Finding]) -> list[str]:
     lines: list[str] = []
     for kind, advice in _ADVICE.items():
         if found := [f"  {finding}" for finding in findings if finding.kind == kind]:
             lines += [advice, *found]
-    return lines
+    return [*lines, _AGAINST] if lines else []
 
 
 def explain(findings: Sequence[Finding]) -> str:
@@ -1206,8 +1295,9 @@ def _report(committed: str, current: dict[str, Any], *, written: bool) -> str:
     """What the code changed against the committed snapshot, also if that cannot be read."""
     try:
         findings = tool.compare(json.loads(committed), current)
-    except ValueError as exc:  # not JSON, or not this format (FormatError)
-        return f"{_shown(SNAPSHOT)} cannot be compared with the code: {exc}"
+    except ValueError as exc:  # not JSON (a merge conflict), or not this format (FormatError)
+        unreadable = f"{_shown(SNAPSHOT)} cannot be compared with the code: {exc}"
+        return unreadable if written else f"{unreadable}; `make interface` writes it again"
     if not written:
         return explain(findings)
     return "\n".join(_findings(findings)) or f"{_shown(SNAPSHOT)}: only its form changes"

@@ -135,3 +135,6 @@ Fulcio's certificate extensions:
 <https://github.com/sigstore/fulcio/blob/main/docs/oid-info.md>. Revisit when the agent gets a
 GitHub identity of its own (then an approval for releases can mean something), or when a
 release line besides `main` is needed.
+
+Amended on 2026-10-25 by [ADR 0023](0023-public-interfaces-kept-by-a-snapshot.md): the check also
+compares the public interface.

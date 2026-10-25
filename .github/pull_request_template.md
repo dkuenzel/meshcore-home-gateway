@@ -30,6 +30,6 @@ has a waiver. -->
   updated for user-visible changes; an incompatible change starts with `**Breaking:**`
 - [ ] Design document or a decision record updated for changes of behaviour, interfaces or
   dependencies
-- [ ] Public interface: `make interface` if it changed; a removal or narrowing has a
-  `**Breaking:**` entry, an addition or change an Added or Changed entry
+- [ ] Public interface: `make interface` if it changed; a `**Breaking:**` entry for a removal or
+  narrowing of what the last release had, an Added or Changed entry for an addition or change
 - [ ] No personal data, site names, keys or network details (CONTRIBUTING.md)

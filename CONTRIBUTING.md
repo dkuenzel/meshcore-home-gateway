@@ -10,10 +10,11 @@ design can be agreed on before the code is written.
 
 ## Ground rules
 
-- **Design first.** Changes to behaviour, interfaces (MQTT topics and payloads, configuration, CLI) or
-  dependencies start with an update to [`docs/design.md`](docs/design.md) and, for decisions with
-  alternatives, a new record in [`docs/decisions/`](docs/decisions/README.md). Records are never
-  edited after acceptance; a new record supersedes an old one.
+- **Design first.** Changes to behaviour, interfaces (MQTT topics and payloads, configuration, CLI,
+  Home Assistant discovery) or dependencies start with an update to
+  [`docs/design.md`](docs/design.md) and, for decisions with alternatives, a new record in
+  [`docs/decisions/`](docs/decisions/README.md). Records are never edited after acceptance; a new
+  record supersedes an old one.
 - **Test first.** Write the failing test, make it pass, then refactor. Every bug fix comes with a
   test that fails without the fix.
 - **Evidence for every protocol fact.** Statements about the MeshCore firmware cite the source file

@@ -2,16 +2,50 @@
  "cli": {
   "answers": {
    "keys": [
+    "airtime.budget_s_per_hour",
+    "airtime.burst_s",
+    "commands.max_age_s",
     "commands.senders",
     "commands.words",
+    "contacts.manage",
+    "diagnostics.log_level",
     "diagnostics.publish_rx_log",
+    "history.enabled",
+    "history.messages_days",
+    "history.positions_days",
+    "homeassistant.contact_devices",
+    "homeassistant.device_name",
+    "homeassistant.discovery",
     "homeassistant.prefix",
     "homeassistant.status_topic",
+    "messages.ascii_only",
+    "messages.dedup_window_s",
+    "messages.flood_after",
+    "messages.ignore_channels",
+    "messages.max_attempts",
+    "messages.queue_size",
+    "messages.queue_ttl_s",
+    "messages.truncate",
     "mqtt.base_topic",
+    "mqtt.ca_file",
+    "mqtt.cert_file",
+    "mqtt.client_id",
     "mqtt.host",
+    "mqtt.keepalive_s",
+    "mqtt.key_file",
     "mqtt.node_id",
+    "mqtt.password",
+    "mqtt.port",
+    "mqtt.tls",
+    "mqtt.username",
+    "radio.device",
     "radio.host",
+    "radio.port",
     "radio.profile.duty_cycle_percent",
+    "radio.profile.manage",
+    "radio.profile.name",
+    "radio.profile.protect_contacts",
+    "radio.set_clock",
     "radio.transport",
     "target.<alias>"
    ],
@@ -209,8 +243,12 @@
     "groups": [
      {
       "options": [
-       "--serial",
-       "--tcp"
+       [
+        "--serial"
+       ],
+       [
+        "--tcp"
+       ]
       ],
       "required": true
      }
@@ -1515,5 +1553,10 @@
     "start_rx_timeout"
    ]
   }
+ },
+ "platforms": {
+  "tested_firmware": [
+   14
+  ]
  }
 }
