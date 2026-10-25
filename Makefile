@@ -13,14 +13,16 @@ COOLDOWN_DAYS ?= 14
 # Home Assistant contract tests: their own environment, pinned in home-assistant/requirements.txt
 HA_PYTHON ?= python3.14
 HA_VENV ?= .venv-homeassistant
+# the branch a pull request goes into: `make release-plan` checks the version against it
+RELEASE_BASE ?= origin/main
 PYZ := meshcore-home-gateway.pyz
 UNIT := meshcore-home-gateway.service
 
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test dist pyz \
-  release check hooks clean
+  release release-plan check hooks clean
 
 help: ## List the targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-11s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
 
 venv: $(VENV)/.installed ## Development environment from the hash-pinned lock file
 
@@ -124,6 +126,10 @@ release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, 
 	    if [ -n "$(RELEASE_TAG)" ]; then exit 1; fi; \
 	    echo "release: dry run; with RELEASE_TAG=v$$version this stops here (see above)" >&2; fi; \
 	  cd dist/release && sha256sum -- * >SHA256SUMS && cat SHA256SUMS
+
+# The version a branch writes, against the main it branched from and the tags (CI job release plan).
+release-plan: ## Check that a changed __version__ is the next one, with its changelog section
+	python3 -I tools/release_plan.py check --base "$$(git merge-base HEAD $(RELEASE_BASE))"
 
 check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test
 

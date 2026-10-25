@@ -601,7 +601,7 @@ systemd unit does not restart on it).
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Nor does the bridge authenticate the radio: a host that takes the radio's address (ARP or DNS spoofing, or while the radio is off) can present an allowlisted key as a contact and forge accepted commands, and it receives the outgoing messages. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
-| Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` with the release workflow and the tag check them (ADR 0013); tag protection keeps others from tagging. |
+| Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` with the release workflow and the tag check them (ADR 0013); the tag ruleset keeps tags from being moved or deleted, and CI tags only a commit whose checks passed (ADR 0022). |
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
 
 ### 7.3 Command authorisation in detail
@@ -734,7 +734,9 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * **Releases** ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)):
   semantic versioning from 1.0.0 on; every finished increment is a pre-release of the minor
   version it leads to (`vX.Y.0aN`), a release candidate is what the hardware checklist runs with
-  ([development.md](development.md#release)). A tag runs
+  ([development.md](development.md#release)). The pull request writes the version, a check
+  refuses one that is not the next, and CI on `main` tags the merge commit
+  ([ADR 0022](decisions/0022-releases-tagged-by-ci-on-main.md)). A tag runs
   `.github/workflows/release.yml`. A read-only job runs `make check` and
   `make release` (reproducible zipapp, wheel and sdist, `SHA256SUMS`, notes from the changelog);
   a second job, the only one with write permissions, attests every file with Sigstore-signed build

@@ -11,9 +11,11 @@ on:
 permissions:
   contents: read
 
+# A pull request's newer push cancels its older run; every commit on main runs to the end, so the
+# release job of each one runs.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -67,3 +69,66 @@ jobs:
       # One invocation: unit-check takes the zipapp that dist builds.
       - name: Build wheel, sdist and zipapp, verify the systemd unit and its exposure score
         run: make dist unit-check
+
+  release-plan:
+    name: release plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base, the tags and the release candidate a release must equal
+      - name: A changed version is the next one, with its changelog section
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || 'HEAD^' }}
+        run: python3 -I tools/release_plan.py check --base "$BASE"
+
+  # Release (ADR 0022, docs/development.md): a commit on main that changed __version__ and passed
+  # every job above is tagged vX.Y.Z, and release.yml is started on the tag; it builds, attests
+  # and publishes. A re-run finds the tag on this commit and starts the release only if it is
+  # missing. Tags are never moved or deleted (the tag ruleset).
+  release:
+    name: tag and release
+    needs: [test, homeassistant, check, release-plan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # the tag
+      actions: write # start release.yml on it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the parent, the tags and the release candidate a release must equal
+      - id: plan
+        name: The version this commit releases
+        run: python3 -I tools/release_plan.py tag >>"$GITHUB_OUTPUT"
+      - name: Annotated tag on the commit CI tested
+        if: steps.plan.outputs.tag != '' && steps.plan.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          object=$(gh api "repos/$GH_REPO/git/tags" -f tag="$TAG" -f object="$SHA" \
+            -f type=commit -f message="meshcore-home-gateway ${TAG#v}" --jq .sha)
+          gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$object" >/dev/null
+          echo "tagged $SHA as $TAG"
+      - name: Start the release on the tag
+        if: steps.plan.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG is released already"
+          else
+            gh workflow run release.yml --ref "$TAG"
+            echo "release.yml started on $TAG"
+          fi
