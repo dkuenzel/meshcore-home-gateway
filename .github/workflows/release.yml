@@ -1,8 +1,10 @@
-# Release (ADR 0013): a tag vX.Y.Z builds the release files from the tagged commit with the same
-# Makefile targets as a local check, attests their build provenance (Sigstore-signed SLSA
+# Release (ADR 0013, 0022): a tag vX.Y.Z builds the release files from the tagged commit with the
+# same Makefile targets as a local check, attests their build provenance (Sigstore-signed SLSA
 # provenance, verifiable with `gh attestation verify`) and publishes them with SHA256SUMS as a
-# GitHub release. A manual run is a dry run: it builds and keeps the files as a workflow artifact,
-# without attestation or release.
+# GitHub release. CI tags a commit on main that changed the version and starts this workflow on
+# the tag (a tag its token creates starts no workflow); a tag pushed by hand starts it too. A run
+# on a branch is a dry run: it builds and keeps the files as a workflow artifact, without
+# attestation or release.
 # The build job only reads; the publish job alone gets the permissions to sign and to release.
 name: Release
 
@@ -36,7 +38,7 @@ jobs:
         run: make check
       - name: Release files, checked against the tag
         env:
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: make release
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -48,7 +50,7 @@ jobs:
 
   publish:
     name: attest and publish
-    if: github.event_name == 'push'
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10

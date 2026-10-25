@@ -9,6 +9,13 @@ format and the command line are public interfaces.
 
 ### Changed
 
+- Releases are tagged by CI ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)):
+  the pull request that finishes an increment writes the next version and its changelog section,
+  the CI job *release plan* (and `make release-plan`) refuses one that is not the next (the kind
+  of change comes from the changelog: `**Breaking:**` or Removed is major, Added, Changed or
+  Deprecated minor, Fixed or Security patch), and after the merge CI tags the commit once its
+  checks passed and starts the release workflow on the tag. A release ships the program of its
+  release candidate. A run of the release workflow on a tag releases, also when started by hand.
 - `contacts/<key>.heard_via` can be `telemetry`: a companion heard only by its telemetry answers
   moves `heard_at` (and *Last heard*) at most once an hour, and `hops`, `snr_db` and `rssi_dbm`
   stay those of its last advert or message. `position_at` is when the position last changed. A
@@ -37,6 +44,23 @@ format and the command line are public interfaces.
   `telemetry_mesh_airtime_1h_s`. A guide for setting up the companions:
   [docs/companions.md](docs/companions.md). **No contact can be excluded yet** (it follows with
   the next release, which turns telemetry on by default): switched on, it asks every chat contact.
+
+## [1.0.0rc1] - 2026-10-24
+
+The release candidate for 1.0.0: the gateway that has carried messages end to end since its first
+version (the MeshCore app on a companion, the mesh, the gateway's radio, MQTT, Home Assistant and
+back), with slices 1 to 5 of the mesh observer since. The code is that of 0.1.0a1; only the
+version and the rules below changed. 1.0.0 follows once the core steps of the
+[hardware checklist](docs/testing.md#hardware-checklist) pass with this candidate. From 1.0.0 on,
+the MQTT API, the configuration format and the command line follow Semantic Versioning: an
+incompatible change raises the major version, a feature the minor version, a fix the patch
+version.
+
+### Changed
+
+- Versioning ([docs/development.md](docs/development.md#release)): every finished increment of a
+  feature is a pre-release of the minor version it leads to (`1.1.0a1`, `1.1.0a2`, …); a release
+  candidate is what the hardware checklist runs with, and the release follows when it passes.
 
 ## [0.1.0a1] - 2026-10-24
 
