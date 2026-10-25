@@ -27,3 +27,4 @@ New records start from [`template.md`](template.md).
 | [0019](0019-internationalisation-with-gettext.md) | Internationalisation with gettext catalogs; English source, German, Dutch, Polish, French | accepted |
 | [0020](0020-managed-radio-profile-for-the-observer.md) | A managed radio profile for the observer, reconciled at every connect | accepted |
 | [0021](0021-generated-dashboards-for-desktop-and-mobile.md) | Generated dashboards for desktop and mobile | accepted |
+| [0022](0022-releases-tagged-by-ci-on-main.md) | Releases tagged by CI on main, from the version a pull request writes | accepted |

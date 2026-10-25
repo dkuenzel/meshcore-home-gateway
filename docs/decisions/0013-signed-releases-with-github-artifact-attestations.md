@@ -101,6 +101,9 @@ pass.
 
 ## More Information
 
+* Amended on 2026-10-25 by [ADR 0022](0022-releases-tagged-by-ci-on-main.md): CI on `main` tags
+  the commit that changed the version and starts the workflow on the tag (`workflow_dispatch`); a
+  run on a tag releases, pushed or dispatched. The tag ruleset forbids moving and deleting tags.
 * `actions/attest`: <https://github.com/actions/attest>
 * Using artifact attestations:
   <https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds>

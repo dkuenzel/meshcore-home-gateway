@@ -86,24 +86,31 @@ incompatible change raises the major version, a feature (a slice of the roadmap,
 
 Every finished increment is published as a pre-release, so each step is visible, signed and
 installable: the increments of a feature as `X.Y.0aN` of the minor version it leads to (the
-telemetry slices 6a, 6b and 6c as `1.1.0a1`, `1.1.0a2`, `1.1.0a3`), fixes as `X.Y.ZaN`. Its pull
-request sets the version and the changelog section (step 2), and the merge commit is tagged
-(step 3); a pre-release skips step 1, and its changelog section says so. A release candidate
-`X.Y.ZrcN` is what the hardware checklist runs with; the release follows when it passes.
-`releases/latest` and the installer's default never pick a pre-release
-([deployment.md](deployment.md)).
+telemetry slices 6a, 6b and 6c as `1.1.0a1`, `1.1.0a2`, `1.1.0a3`), fixes as `X.Y.ZaN`. A
+release candidate `X.Y.ZrcN` is what the hardware checklist runs with; the release follows when it
+passes. `releases/latest` and the installer's default never pick a pre-release
+([deployment.md](deployment.md)). Nobody tags by hand
+([ADR 0022](decisions/0022-releases-tagged-by-ci-on-main.md)):
 
-1. Run the [hardware checklist](testing.md#hardware-checklist) with the release candidate: the
-   core steps (the bridge end to end) always, and the steps of the features that changed since the
-   last release.
-2. In a pull request: set `__version__` in `src/meshcore_home_gateway/__init__.py` (PEP 440, for
-   example `1.1.0a1`, `1.1.0rc1` or `1.1.0`) and move the *Unreleased* entries of `CHANGELOG.md`
-   under `## [X.Y.Z] - YYYY-MM-DD`. `make release` builds the release files into `dist/release/` as a
-   dry run and only warns about a missing section or an unsupported version form;
-   `RELEASE_TAG=vX.Y.Z make release`, as the workflow runs it, fails then. Run that before you
-   tag.
-3. After the merge, tag the merge commit and push the tag:
-   `git tag -a vX.Y.Z -m "meshcore-home-gateway X.Y.Z" && git push origin vX.Y.Z`.
+1. For a release (not a pre-release): run the [hardware checklist](testing.md#hardware-checklist)
+   with the release candidate, the core steps always and the steps of the features that changed
+   since the last release. The release ships the program of that candidate: only `__version__`
+   may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`.
+2. The pull request that finishes the increment sets `__version__` in
+   `src/meshcore_home_gateway/__init__.py` and moves the *Unreleased* entries of `CHANGELOG.md`
+   under `## [X.Y.Z] - YYYY-MM-DD` (a pre-release's section says that the hardware checklist was
+   not run for it). The version must be the next one, which `make release-plan` and the CI job
+   *release plan* check: the kind of change comes from the changelog entries since the last
+   release (an entry that starts with `**Breaking:**` or a `### Removed` section: major; Added,
+   Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version
+   written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed.
+   `git fetch --tags origin && make release-plan` runs the check locally (it needs the tags);
+   `RELEASE_TAG=vX.Y.Z make release` builds the release files into `dist/release/` as the
+   workflow does. A pull request that keeps `__version__` releases nothing.
+3. After the merge, CI on `main` tags the merge commit once every job passed on it, and starts
+   `release.yml` on the tag (job *tag and release*); a push of several commits is tagged on its
+   last one. A re-run, of the failed job or of all jobs, is safe: it finds the tag on the same
+   commit and starts the release only if there is none and none is running.
 4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
    zipapp, wheel and sdist reproducibly, adds the systemd unit and the Proxmox installer with the
    version written in (`RELEASE="X.Y.Z"`: run from the release's address, it installs this
@@ -118,9 +125,12 @@ request sets the version and the changelog section (step 2), and the merge commi
      --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
    ```
 
-Protect the release tags (a repository ruleset for `v*` that only maintainers may create): the
-attestation proves which workflow built a file from which tag, so a tag that anyone with write
-access can push proves little.
+The release tags are protected by a repository ruleset for `v*`: only its bypass actors (the
+maintainer, for emergencies) can move or delete them, and by policy nobody does, so the
+attestation's tag names one commit. Creating them is open to write access, which only the
+maintainer and the workflows of this repository have (pull requests from forks get read-only
+tokens). A release that failed is followed by the next version, never by a moved tag.
 
-A manual run of the workflow ("Run workflow" in the Actions tab) is a dry run on any branch: it
-builds the same files and keeps them as a workflow artifact, without attestation or release.
+A manual run of the workflow ("Run workflow" in the Actions tab) is a dry run on a branch: it
+builds the same files and keeps them as a workflow artifact, without attestation or release; on a
+tag it releases that tag, as a pushed tag does.

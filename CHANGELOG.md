@@ -7,6 +7,16 @@ format and the command line are public interfaces.
 
 ## [Unreleased]
 
+### Changed
+
+- Releases are tagged by CI ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)):
+  the pull request that finishes an increment writes the next version and its changelog section,
+  the CI job *release plan* (and `make release-plan`) refuses one that is not the next (the kind
+  of change comes from the changelog: `**Breaking:**` or Removed is major, Added, Changed or
+  Deprecated minor, Fixed or Security patch), and after the merge CI tags the commit once its
+  checks passed and starts the release workflow on the tag. A release ships the program of its
+  release candidate. A run of the release workflow on a tag releases, also when started by hand.
+
 ## [1.0.0rc1] - 2026-10-24
 
 The release candidate for 1.0.0: the gateway that has carried messages end to end since its first
