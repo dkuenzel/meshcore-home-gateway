@@ -7,6 +7,13 @@
 <!-- Tests added or changed; results of `make check` and `make matrix`; for radio behaviour,
 the steps of the hardware checklist (docs/testing.md) with radio models and firmware versions. -->
 
+## Compatibility
+
+<!-- Does this change the MQTT API, the configuration format, the command line or Home Assistant
+discovery (docs/development.md#compatibility)? "No"; or what grows (tests/public_interface.json
+written again with `make interface`, an Added entry); or what breaks (a `**Breaking:**` entry that
+says what users must change). -->
+
 ## Release
 
 <!-- "None" (`__version__` unchanged), or the version this pull request releases (for example
@@ -21,4 +28,6 @@ the steps of the hardware checklist (docs/testing.md) with radio models and firm
   updated for user-visible changes; an incompatible change starts with `**Breaking:**`
 - [ ] Design document or a decision record updated for changes of behaviour, interfaces or
   dependencies
+- [ ] Public interface: `make interface` if it changed; a removal or narrowing has a
+  `**Breaking:**` entry
 - [ ] No personal data, site names, keys or network details (CONTRIBUTING.md)

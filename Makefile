@@ -18,8 +18,8 @@ RELEASE_BASE ?= origin/main
 PYZ := meshcore-home-gateway.pyz
 UNIT := meshcore-home-gateway.service
 
-.PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test dist pyz \
-  release release-plan check hooks clean
+.PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
+  dist pyz release release-plan check hooks clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -85,6 +85,11 @@ ha-test: $(HA_VENV)/.installed ## Contract tests against the pinned Home Assista
 	$(HA_VENV)/bin/python -m pytest -c home-assistant/pytest.ini -p no:cacheprovider \
 	  home-assistant/tests
 
+# The snapshot test fails until this runs (docs/development.md#compatibility). Review the
+# snapshot's diff like code: what it removes needs a **Breaking:** entry in CHANGELOG.md.
+interface: venv ## Write tests/public_interface.json from the code, after a deliberate interface change
+	$(BIN)/python -m tests.public_interface --write
+
 unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
 	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
 	  sed 's|^ExecStart=/usr/local/bin/meshcore-home-gateway |ExecStart=$(CURDIR)/dist/$(PYZ) |' \
@@ -127,8 +132,9 @@ release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, 
 	    echo "release: dry run; with RELEASE_TAG=v$$version this stops here (see above)" >&2; fi; \
 	  cd dist/release && sha256sum -- * >SHA256SUMS && cat SHA256SUMS
 
-# The version a branch writes, against the main it branched from and the tags (CI job release plan).
-release-plan: ## Check that a changed __version__ is the next one, with its changelog section
+# The version a branch writes, against the main it branched from and the tags, and the public
+# interface against that of the last release (CI job release plan).
+release-plan: ## Check that a changed __version__ is the next one and the public interface stays compatible
 	python3 -I tools/release_plan.py check --base "$$(git merge-base HEAD $(RELEASE_BASE))"
 
 check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test and release-plan

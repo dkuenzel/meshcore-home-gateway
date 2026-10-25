@@ -32,7 +32,7 @@ src/meshcore_home_gateway/
 deploy/          systemd unit, Proxmox installer, example configuration
 docs/            design, decisions, protocol, API, operations
 tests/           pytest suites, emulated radio, broker fixture; tests/manual: checks run by hand
-tools/           build helpers (zipapp)
+tools/           build and release helpers: zipapp, release plan, public interface comparison
 .github/         CI workflow, Dependabot, issue forms, pull request template
 ```
 
@@ -42,7 +42,8 @@ tools/           build helpers (zipapp)
 2. Implement until it passes; keep core modules free of I/O.
 3. Refactor; `make lint test` stays green.
 4. Update the documentation of the interface you touched (`mqtt-api.md`, `configuration.md`,
-   `protocol.md`) and `CHANGELOG.md`.
+   `home-assistant.md`, `protocol.md`) and `CHANGELOG.md`; after a change of a public interface,
+   `make interface` ([Compatibility](#compatibility)).
 
 ### Adding a protocol message
 
@@ -58,8 +59,8 @@ tools/           build helpers (zipapp)
 `config.py` (dataclass and validation), its answer type in `config._ANSWER_TYPES` (every setting
 needs one: `--reconfigure` writes the configuration back from its answers, and
 `tests/test_config.py` checks that no setting is missing), `docs/configuration.md`,
-`deploy/config.example.toml`, and a test in `tests/test_config.py`. If the installer should ask
-for it, also the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
+`deploy/config.example.toml`, a test in `tests/test_config.py`, and `make interface`. If the
+installer should ask for it, also the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
 
 ## Tool chain updates
 
@@ -73,15 +74,116 @@ version of Debian 13 (ADR 0005), and Dependabot ignores it: raise it with the de
 A changed lock file gives `make venv` a fresh environment, so that no package the lock dropped
 stays installed.
 
+## Compatibility
+
+From 1.0.0 on four interfaces are public: the MQTT API, the configuration format, the command
+line and Home Assistant discovery
+([ADR 0023](decisions/0023-public-interfaces-kept-by-a-snapshot.md)). Within a major version
+each one only grows: what works with X.0.0 works the same with every X.Y.Z. An incompatible
+change waits for the next major version, and its changelog entry starts with `**Breaking:**` and
+says what users must change. Pre-releases promise nothing beyond the last release.
+
+**MQTT API** ([mqtt-api.md](mqtt-api.md))
+
+- Compatible: new topics; new keys in documents and events; new values in any list of values
+  (`event_type`, `reason`, `state`, `status`, `type`, `flags`, …); new requests and new optional
+  keys in a request; larger size limits and list bounds.
+- Breaking:
+  - a topic removed or renamed, or its retained flag or QoS changed;
+  - a key removed or renamed, or its JSON type, unit or meaning changed;
+  - a value removed or given another meaning;
+  - a document no longer published again after a reconnect, or no longer cleared when its
+    contact goes;
+  - a request form that is no longer accepted;
+  - smaller limits or bounds.
+- Consumers ignore topics, keys and values they do not know.
+
+**Configuration** ([configuration.md](configuration.md)). A file that loads with X.0.0 loads
+with every X.Y.Z and means the same.
+
+- Compatible: new optional settings and tables; wider ranges, formats and choices; a number
+  where an integer was required; a changed default (listed under *Changed*).
+- Breaking:
+  - a setting or table removed or renamed (unknown keys are errors, so the service would not
+    start);
+  - a narrower type, range, format or choice;
+  - a setting that becomes required;
+  - a new rule between settings;
+  - another meaning or unit for a value;
+  - a changed default of `mqtt.base_topic`, `mqtt.client_id`, `homeassistant.prefix` or
+    `homeassistant.status_topic`, because brokers, ACLs and Home Assistant refer to these names.
+- A setting to be retired is deprecated first (*Deprecated*). It still loads, with a warning in
+  the log, until the next major version.
+- A file written for a newer version need not load with an older one.
+- The Proxmox installer's options and its answers file
+  ([unattended installation](deployment.md#unattended-installation)) only grow, like the
+  configuration. Review keeps them; the snapshot below does not record them.
+
+**Command line** (`meshcore-home-gateway --help`)
+
+- Compatible: new commands, options and choices; new keys in JSON output; new line kinds in
+  `probe --list profile`.
+- Breaking:
+  - a command, option or choice removed or renamed;
+  - an option that switches between a flag and taking a value;
+  - a new required option or argument, or arguments in another order;
+  - another number of columns in a tab-separated list (`probe --list`, `contacts list`): scripts
+    read them with `read`;
+  - a key removed from JSON output;
+  - another exit status for a documented case;
+  - another `--version` output;
+  - other default paths.
+- Not interface: abbreviated options (write them in full, since a new option can make an
+  abbreviation ambiguous); text meant for people (reports, summaries, messages on standard
+  error), which may change and will be translated.
+
+**Home Assistant discovery** ([home-assistant.md](home-assistant.md)). What automations,
+dashboards and statistics refer to:
+
+- Compatible: new entities, event types, options and attribute keys.
+- Breaking: an entity removed (the gateway deletes it in Home Assistant); its unique ID, default
+  entity ID, platform or unit changed; an event type, option or attribute key removed.
+- Not interface: names (they will be translated), icons, entity categories, and which entities
+  are enabled by default.
+- Not recorded yet, so left to review: device and state classes (an entity without its state
+  class keeps no long-term statistics).
+
+**Platforms.** A major version keeps its floors: Python 3.11 with paho-mqtt 2.x (Debian 13 for
+the installer), Home Assistant 2026.8, and MeshCore companion firmware 1.18.0 (protocol version
+3). Raising a floor is breaking; supporting more is not. A firmware version tested in addition is
+an addition; dropping a tested one is breaking.
+
+**Not public:** the Python modules, the files in the state directory (the gateway migrates
+them), and log messages.
+
+**How it is checked.**
+
+- `tests/public_interface.json` records the structural part of the four interfaces, computed from
+  the code by `tests/public_interface.py`. `tests/test_public_interface.py` fails when the code
+  and the snapshot differ.
+- After a deliberate change, `make interface` writes the snapshot again and lists what changed:
+  breaking, changed (a default, a wider range) or added. Review its diff like code.
+- The CI job *release plan* (`make release-plan`) compares the snapshot with the one of the last
+  release on every pull request and push. An entry that was removed or narrowed needs a
+  `**Breaking:**` entry (or a `### Removed` section) since that release, which makes the next
+  release a major one. A release must contain the snapshot, so the releases after it are compared
+  with it.
+- A false alarm (something recorded that was never interface) is waived with a reason in
+  `tests/public_interface_waivers.json`, for that release only. The file maps the last release
+  to the paths of the findings, as the refusal shows them, and a reason for each:
+  `{"1.0.0": {"mqtt > publish > <base_topic>/<node_id>/rx": "never published"}}`.
+- Behaviour beyond the structure (meanings, units of values, rules between settings, the texts a
+  request accepts) is left to review.
+
 ## Release
 
 Releases are built, signed and published by the workflow `.github/workflows/release.yml`
 ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)); nobody builds
 release files by hand.
 
-Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0 on: the
-MQTT API, the configuration format and the command line are the public interfaces; an
-incompatible change raises the major version, a feature (a slice of the roadmap,
+Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0 on, for
+the four public interfaces of [Compatibility](#compatibility): an incompatible change raises the
+major version, a feature (a slice of the roadmap,
 [design §13](design.md#13-roadmap-the-mesh-observer)) the minor version, fixes the patch version.
 
 Every finished increment is published as a pre-release, so each step is visible, signed and
@@ -103,7 +205,9 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    *release plan* check: the kind of change comes from the changelog entries since the last
    release (an entry that starts with `**Breaking:**` or a `### Removed` section: major; Added,
    Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version
-   written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed.
+   written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed. The
+   same check compares the public interface with that of the last release
+   ([Compatibility](#compatibility)), also when the version does not change.
    `git fetch --tags origin && make release-plan` runs the check locally (it needs the tags);
    `RELEASE_TAG=vX.Y.Z make release` builds the release files into `dist/release/` as the
    workflow does. A pull request that keeps `__version__` releases nothing.

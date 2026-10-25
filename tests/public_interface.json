@@ -1,0 +1,1428 @@
+{
+ "cli": {
+  "columns": {
+   "contacts list": 6,
+   "probe --list channels": 2,
+   "probe --list contacts": 3,
+   "probe --list profile: change": 5,
+   "probe --list profile: contact": 4,
+   "probe --list profile: name": 2,
+   "probe --list profile: tested": 2,
+   "probe --list profile: writes": 2
+  },
+  "commands": {
+   "check-config": {
+    "options": {
+     "--broker": {
+      "takes_value": false
+     },
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
+   },
+   "config": {
+    "commands": [
+     "answers",
+     "render"
+    ],
+    "options": {},
+    "positionals": {}
+   },
+   "config answers": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
+   },
+   "config render": {
+    "options": {
+     "--answers": {
+      "required": true,
+      "takes_value": true,
+      "type": "path"
+     },
+     "--group": {
+      "takes_value": true
+     },
+     "--output": {
+      "required": true,
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
+   },
+   "contacts": {
+    "commands": [
+     "add",
+     "link",
+     "list",
+     "remove"
+    ],
+    "options": {},
+    "positionals": {}
+   },
+   "contacts add": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     },
+     "--wait": {
+      "default": 30.0,
+      "takes_value": true,
+      "type": "seconds"
+     }
+    },
+    "positionals": {
+     "1": {
+      "required": true,
+      "takes_value": true
+     }
+    }
+   },
+   "contacts link": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
+   },
+   "contacts list": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     },
+     "--json": {
+      "takes_value": false
+     }
+    },
+    "positionals": {}
+   },
+   "contacts remove": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     },
+     "--wait": {
+      "default": 30.0,
+      "takes_value": true,
+      "type": "seconds"
+     }
+    },
+    "positionals": {
+     "1": {
+      "required": true,
+      "takes_value": true
+     }
+    }
+   },
+   "listen": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     },
+     "--count": {
+      "default": 0,
+      "takes_value": true,
+      "type": "count"
+     },
+     "--topic": {
+      "choices": [
+       "all",
+       "command",
+       "contact",
+       "delivery",
+       "node",
+       "received",
+       "state"
+      ],
+      "default": "all",
+      "takes_value": true
+     }
+    },
+    "positionals": {}
+   },
+   "meshcore-home-gateway": {
+    "commands": [
+     "check-config",
+     "config",
+     "contacts",
+     "listen",
+     "probe",
+     "run",
+     "send"
+    ],
+    "options": {
+     "--version": {
+      "output": "meshcore-home-gateway {version}"
+     }
+    },
+    "positionals": {}
+   },
+   "probe": {
+    "options": {
+     "--config": {
+      "takes_value": true,
+      "type": "path"
+     },
+     "--json": {
+      "takes_value": false
+     },
+     "--list": {
+      "choices": [
+       "channels",
+       "contacts",
+       "profile"
+      ],
+      "takes_value": true
+     },
+     "--serial": {
+      "takes_value": true
+     },
+     "--state-dir": {
+      "takes_value": true,
+      "type": "path"
+     },
+     "--tcp": {
+      "takes_value": true,
+      "type": "host[:port]"
+     }
+    },
+    "positionals": {}
+   },
+   "run": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     },
+     "--state-dir": {
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
+   },
+   "send": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "takes_value": true,
+      "type": "path"
+     },
+     "--wait": {
+      "default": 0.0,
+      "takes_value": true,
+      "type": "seconds"
+     }
+    },
+    "positionals": {
+     "1": {
+      "required": true,
+      "takes_value": true
+     },
+     "2": {
+      "required": true,
+      "takes_value": true
+     }
+    }
+   }
+  },
+  "exit_codes": {
+   "config_error": 78,
+   "failure": 1,
+   "ok": 0,
+   "usage": 2
+  },
+  "json": {
+   "probe --json": [
+    "advert_location",
+    "airtime_factor",
+    "auto_add",
+    "auto_add.manual",
+    "auto_add.overwrite_oldest",
+    "auto_add.types",
+    "bandwidth_khz",
+    "battery_mv",
+    "build_date",
+    "channels",
+    "channels[].index",
+    "channels[].name",
+    "coding_rate",
+    "contacts",
+    "contacts[].flags",
+    "contacts[].name",
+    "contacts[].public_key",
+    "contacts[].type",
+    "firmware",
+    "firmware_code",
+    "frequency_mhz",
+    "manual_add_contacts",
+    "model",
+    "multi_acks",
+    "name",
+    "position",
+    "position.latitude",
+    "position.longitude",
+    "profile",
+    "profile.changes",
+    "profile.changes.*",
+    "profile.changes.*.action",
+    "profile.changes.*.live",
+    "profile.changes.*.profile",
+    "profile.changes.*.reason",
+    "profile.configured",
+    "profile.contacts",
+    "profile.contacts.*",
+    "profile.contacts.*.action",
+    "profile.contacts.*.name",
+    "profile.firmware_tested",
+    "profile.manage",
+    "profile.writes",
+    "public_key",
+    "spreading_factor",
+    "telemetry",
+    "telemetry.base",
+    "telemetry.environment",
+    "telemetry.location",
+    "tx_power_dbm"
+   ]
+  },
+  "paths": {
+   "config": "/etc/meshcore-home-gateway/config.toml",
+   "state_dir": "/var/lib/meshcore-home-gateway"
+  }
+ },
+ "config": {
+  "airtime": {
+   "type": "table"
+  },
+  "airtime.budget_s_per_hour": {
+   "answer": "float",
+   "default": 36.0,
+   "max": 3600.0,
+   "min": 0.001,
+   "type": "number"
+  },
+  "airtime.burst_s": {
+   "answer": "float",
+   "default": 10.0,
+   "max": 3600.0,
+   "min": 5.0,
+   "type": "number"
+  },
+  "commands": {
+   "type": "table"
+  },
+  "commands.max_age_s": {
+   "answer": "float",
+   "default": 900.0,
+   "max": 86400.0,
+   "min": 0.0,
+   "type": "number"
+  },
+  "commands.senders": {
+   "answer": "list",
+   "type": "list[string]"
+  },
+  "commands.words": {
+   "answer": "list",
+   "type": "list[string]"
+  },
+  "contacts": {
+   "type": "table"
+  },
+  "contacts.manage": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
+  },
+  "diagnostics": {
+   "type": "table"
+  },
+  "diagnostics.log_level": {
+   "answer": "str",
+   "choices": [
+    "debug",
+    "error",
+    "info",
+    "warning"
+   ],
+   "default": "info",
+   "type": "string"
+  },
+  "diagnostics.publish_rx_log": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
+  },
+  "history": {
+   "type": "table"
+  },
+  "history.enabled": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
+  },
+  "history.messages_days": {
+   "answer": "float",
+   "default": 30.0,
+   "max": 3650.0,
+   "min": 1.0,
+   "type": "number"
+  },
+  "history.positions_days": {
+   "answer": "float",
+   "default": 30.0,
+   "max": 3650.0,
+   "min": 1.0,
+   "type": "number"
+  },
+  "homeassistant": {
+   "type": "table"
+  },
+  "homeassistant.contact_devices": {
+   "answer": "int",
+   "default": 50,
+   "max": 1000,
+   "min": 0,
+   "type": "integer"
+  },
+  "homeassistant.device_name": {
+   "answer": "str",
+   "default": "MeshCore radio",
+   "type": "string"
+  },
+  "homeassistant.discovery": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
+  },
+  "homeassistant.prefix": {
+   "answer": "str",
+   "default": "homeassistant",
+   "identity": true,
+   "type": "string"
+  },
+  "homeassistant.status_topic": {
+   "answer": "str",
+   "default": "homeassistant/status",
+   "identity": true,
+   "type": "string"
+  },
+  "messages": {
+   "type": "table"
+  },
+  "messages.ascii_only": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
+  },
+  "messages.dedup_window_s": {
+   "answer": "float",
+   "default": 300.0,
+   "max": 86400.0,
+   "min": 0.0,
+   "type": "number"
+  },
+  "messages.flood_after": {
+   "answer": "int",
+   "default": 2,
+   "max": 3,
+   "min": 1,
+   "type": "integer"
+  },
+  "messages.ignore_channels": {
+   "answer": "list",
+   "max": 255,
+   "min": 0,
+   "type": "list[integer]"
+  },
+  "messages.max_attempts": {
+   "answer": "int",
+   "default": 3,
+   "max": 4,
+   "min": 1,
+   "type": "integer"
+  },
+  "messages.queue_size": {
+   "answer": "int",
+   "default": 20,
+   "max": 1000,
+   "min": 1,
+   "type": "integer"
+  },
+  "messages.queue_ttl_s": {
+   "answer": "float",
+   "default": 600.0,
+   "max": 86400.0,
+   "min": 1.0,
+   "type": "number"
+  },
+  "messages.truncate": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
+  },
+  "mqtt": {
+   "type": "table"
+  },
+  "mqtt.base_topic": {
+   "answer": "str",
+   "default": "meshcore",
+   "identity": true,
+   "type": "string"
+  },
+  "mqtt.ca_file": {
+   "answer": "str",
+   "type": "string"
+  },
+  "mqtt.cert_file": {
+   "answer": "str",
+   "type": "string"
+  },
+  "mqtt.client_id": {
+   "answer": "str",
+   "default": "meshcore-home-gateway-<node_id>",
+   "identity": true,
+   "type": "string"
+  },
+  "mqtt.host": {
+   "answer": "str",
+   "required": true,
+   "type": "string"
+  },
+  "mqtt.keepalive_s": {
+   "answer": "int",
+   "default": 60,
+   "max": 3600,
+   "min": 10,
+   "type": "integer"
+  },
+  "mqtt.key_file": {
+   "answer": "str",
+   "type": "string"
+  },
+  "mqtt.node_id": {
+   "answer": "str",
+   "required": true,
+   "type": "string"
+  },
+  "mqtt.password": {
+   "answer": "str",
+   "type": "string"
+  },
+  "mqtt.port": {
+   "answer": "int",
+   "default": 1883,
+   "max": 65535,
+   "min": 1,
+   "type": "integer"
+  },
+  "mqtt.tls": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
+  },
+  "mqtt.username": {
+   "answer": "str",
+   "type": "string"
+  },
+  "radio": {
+   "type": "table"
+  },
+  "radio.device": {
+   "answer": "str",
+   "type": "string"
+  },
+  "radio.host": {
+   "answer": "str",
+   "type": "string"
+  },
+  "radio.port": {
+   "answer": "int",
+   "default": 5000,
+   "max": 65535,
+   "min": 1,
+   "type": "integer"
+  },
+  "radio.profile": {
+   "type": "table"
+  },
+  "radio.profile.duty_cycle_percent": {
+   "answer": "float",
+   "conditional": true,
+   "max": 100.0,
+   "min": 10.0,
+   "type": "number"
+  },
+  "radio.profile.manage": {
+   "answer": "str",
+   "choices": [
+    "always",
+    "auto",
+    "observe"
+   ],
+   "default": "auto",
+   "type": "string"
+  },
+  "radio.profile.name": {
+   "answer": "str",
+   "type": "string"
+  },
+  "radio.profile.protect_contacts": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
+  },
+  "radio.set_clock": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
+  },
+  "radio.transport": {
+   "answer": "str",
+   "choices": [
+    "serial",
+    "tcp"
+   ],
+   "required": true,
+   "type": "string"
+  },
+  "targets": {
+   "type": "table"
+  },
+  "targets.<alias>": {
+   "conditional": true,
+   "type": "table"
+  },
+  "targets.<alias>.channel": {
+   "conditional": true,
+   "max": 255,
+   "min": 0,
+   "type": "integer"
+  },
+  "targets.<alias>.contact": {
+   "conditional": true,
+   "type": "string"
+  }
+ },
+ "format": 1,
+ "homeassistant": {
+  "components": {
+   "contact": {
+    "hops": {
+     "entity_id": "sensor.mesh_<slug>_hops",
+     "node_types": [
+      "chat",
+      "none",
+      "repeater",
+      "room_server",
+      "sensor"
+     ],
+     "platform": "sensor"
+    },
+    "last_heard": {
+     "entity_id": "sensor.mesh_<slug>_last_heard",
+     "node_types": [
+      "chat",
+      "none",
+      "repeater",
+      "room_server",
+      "sensor"
+     ],
+     "platform": "sensor"
+    },
+    "message": {
+     "attributes": "<document contacts/<key>/received>",
+     "entity_id": "event.mesh_<slug>_message",
+     "event_types": [
+      "contact"
+     ],
+     "node_types": [
+      "chat",
+      "room_server"
+     ],
+     "platform": "event"
+    },
+    "position": {
+     "attributes": [
+      "altitude_m",
+      "latitude",
+      "longitude",
+      "position_at",
+      "position_source"
+     ],
+     "entity_id": "device_tracker.mesh_<slug>",
+     "node_types": [
+      "chat",
+      "none",
+      "repeater",
+      "room_server",
+      "sensor"
+     ],
+     "platform": "device_tracker"
+    },
+    "remove": {
+     "entity_id": "button.mesh_<slug>_remove",
+     "node_types": [
+      "chat",
+      "none",
+      "repeater",
+      "room_server",
+      "sensor"
+     ],
+     "platform": "button"
+    },
+    "send": {
+     "entity_id": "notify.mesh_<slug>",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "notify"
+    },
+    "snr": {
+     "entity_id": "sensor.mesh_<slug>_snr",
+     "node_types": [
+      "chat",
+      "none",
+      "repeater",
+      "room_server",
+      "sensor"
+     ],
+     "platform": "sensor",
+     "unit": "dB"
+    }
+   },
+   "gateway": {
+    "advert_position": {
+     "attributes": [
+      "contacts",
+      "total"
+     ],
+     "entity_id": "binary_sensor.<device>_advert_position",
+     "platform": "binary_sensor"
+    },
+    "airtime": {
+     "entity_id": "sensor.<device>_airtime",
+     "platform": "sensor",
+     "unit": "s"
+    },
+    "airtime_available": {
+     "attributes": [
+      "budget_s_per_hour"
+     ],
+     "entity_id": "sensor.<device>_airtime_available",
+     "platform": "sensor",
+     "unit": "s"
+    },
+    "battery": {
+     "entity_id": "sensor.<device>_battery",
+     "platform": "sensor",
+     "unit": "V"
+    },
+    "command": {
+     "attributes": "<document command>",
+     "entity_id": "event.<device>_command",
+     "event_types": [
+      "<commands.words>"
+     ],
+     "platform": "event"
+    },
+    "contact": {
+     "attributes": "<document contact>",
+     "entity_id": "event.<device>_contact",
+     "event_types": [
+      "added",
+      "failed",
+      "hidden",
+      "refused",
+      "removed",
+      "shown"
+     ],
+     "platform": "event"
+    },
+    "contacts": {
+     "attributes": [
+      "max"
+     ],
+     "entity_id": "sensor.<device>_contacts",
+     "platform": "sensor"
+    },
+    "delivery": {
+     "attributes": "<document delivery>",
+     "entity_id": "event.<device>_delivery",
+     "event_types": [
+      "confirmed",
+      "duplicate",
+      "expired",
+      "failed",
+      "queued",
+      "rejected",
+      "sent"
+     ],
+     "platform": "event"
+    },
+    "look_alike": {
+     "attributes": [
+      "nodes",
+      "total"
+     ],
+     "entity_id": "binary_sensor.<device>_look_alike",
+     "platform": "binary_sensor"
+    },
+    "message": {
+     "attributes": "<document received>",
+     "entity_id": "event.<device>_message",
+     "event_types": [
+      "channel",
+      "contact"
+     ],
+     "platform": "event"
+    },
+    "node": {
+     "attributes": "<document node>",
+     "entity_id": "event.<device>_node",
+     "event_types": [
+      "new"
+     ],
+     "platform": "event"
+    },
+    "nodes": {
+     "entity_id": "sensor.<device>_nodes",
+     "platform": "sensor"
+    },
+    "noise_floor": {
+     "entity_id": "sensor.<device>_noise_floor",
+     "platform": "sensor",
+     "unit": "dBm"
+    },
+    "packets_received": {
+     "entity_id": "sensor.<device>_packets_received",
+     "platform": "sensor"
+    },
+    "packets_sent": {
+     "entity_id": "sensor.<device>_packets_sent",
+     "platform": "sensor"
+    },
+    "profile": {
+     "attributes": "<document settings>",
+     "entity_id": "sensor.<device>_profile",
+     "options": [
+      "differs",
+      "drift",
+      "ok",
+      "problem",
+      "written"
+     ],
+     "platform": "sensor"
+    },
+    "queue": {
+     "entity_id": "sensor.<device>_queue",
+     "platform": "sensor"
+    },
+    "radio": {
+     "attributes": [
+      "bandwidth_khz",
+      "bridge_version",
+      "coding_rate",
+      "contact_link",
+      "firmware",
+      "frequency_mhz",
+      "model",
+      "public_key",
+      "radio_name",
+      "spreading_factor",
+      "tx_power_dbm"
+     ],
+     "entity_id": "binary_sensor.<device>_radio",
+     "platform": "binary_sensor"
+    },
+    "radio_airtime": {
+     "attributes": [
+      "airtime_factor",
+      "duty_cycle_percent",
+      "window_s"
+     ],
+     "entity_id": "sensor.<device>_radio_airtime",
+     "platform": "sensor",
+     "unit": "s"
+    },
+    "receive_errors": {
+     "entity_id": "sensor.<device>_receive_errors",
+     "platform": "sensor"
+    },
+    "remote_cli": {
+     "attributes": [
+      "contacts",
+      "total"
+     ],
+     "entity_id": "binary_sensor.<device>_remote_cli",
+     "platform": "binary_sensor"
+    },
+    "rx_rssi": {
+     "entity_id": "sensor.<device>_rx_rssi",
+     "platform": "sensor",
+     "unit": "dBm"
+    },
+    "rx_snr": {
+     "entity_id": "sensor.<device>_rx_snr",
+     "platform": "sensor",
+     "unit": "dB"
+    },
+    "send_<alias>": {
+     "entity_id": "notify.<device>_send_<alias>",
+     "platform": "notify"
+    },
+    "setting": {
+     "attributes": "<document setting>",
+     "entity_id": "event.<device>_setting",
+     "event_types": [
+      "drift",
+      "failed",
+      "not_converging",
+      "not_taken",
+      "written"
+     ],
+     "platform": "event"
+    },
+    "show_hidden": {
+     "entity_id": "button.<device>_show_hidden",
+     "platform": "button"
+    },
+    "uptime": {
+     "entity_id": "sensor.<device>_uptime",
+     "platform": "sensor",
+     "unit": "s"
+    }
+   },
+   "manage_contacts": {
+    "add_contact": {
+     "entity_id": "text.<device>_add_contact",
+     "platform": "text"
+    },
+    "add_node": {
+     "entity_id": "select.<device>_add_node",
+     "options": [
+      "<heard nodes>"
+     ],
+     "platform": "select"
+    }
+   }
+  },
+  "devices": {
+   "contact": {
+    "id": "<device>_contact_<key>",
+    "topic": "<prefix>/device/<device>/contact_<key>/config"
+   },
+   "gateway": {
+    "id": "meshcore_home_gateway_<node_id>",
+    "topic": "<prefix>/device/<device>/config"
+   },
+   "manage_contacts": {
+    "topic": "<prefix>/device/<device>/manage_contacts/config"
+   }
+  }
+ },
+ "mqtt": {
+  "documents": {
+   "command": [
+    "args",
+    "event_type",
+    "received_at",
+    "sender_key",
+    "sender_name",
+    "sent_at"
+   ],
+   "contact": [
+    "event_type",
+    "id",
+    "key",
+    "name",
+    "prefix",
+    "reason",
+    "request",
+    "type"
+   ],
+   "contacts": [
+    "advert_position",
+    "advert_position_total",
+    "contacts",
+    "contacts[].heard_at",
+    "contacts[].key",
+    "contacts[].name",
+    "contacts[].protected",
+    "contacts[].type",
+    "manage",
+    "max",
+    "remote_cli",
+    "remote_cli_total",
+    "total",
+    "truncated"
+   ],
+   "contacts/<key>": [
+    "advert_position",
+    "altitude_m",
+    "favourite",
+    "first_heard_at",
+    "flags",
+    "heard_at",
+    "heard_via",
+    "hops",
+    "key",
+    "last_advert_at",
+    "latitude",
+    "longitude",
+    "name",
+    "path_hops",
+    "path_known",
+    "position_at",
+    "position_source",
+    "prefix",
+    "protected",
+    "remote_cli",
+    "removable",
+    "rssi_dbm",
+    "snr_db",
+    "type",
+    "verified"
+   ],
+   "contacts/<key>/received": [
+    "channel_index",
+    "command",
+    "command.accepted",
+    "command.reason",
+    "command.word",
+    "event_type",
+    "hops",
+    "received_at",
+    "sender_key",
+    "sender_name",
+    "sender_prefix",
+    "sent_at",
+    "snr_db",
+    "target",
+    "text",
+    "text_type"
+   ],
+   "delivery": [
+    "airtime_ms",
+    "attempt",
+    "event_type",
+    "id",
+    "reason",
+    "rtt_ms",
+    "target",
+    "text"
+   ],
+   "history": [
+    "messages",
+    "messages[].at",
+    "messages[].channel_index",
+    "messages[].contact_key",
+    "messages[].direction",
+    "messages[].hops",
+    "messages[].kind",
+    "messages[].name",
+    "messages[].snr_db",
+    "messages[].state",
+    "messages[].text",
+    "total",
+    "truncated"
+   ],
+   "node": [
+    "event_type",
+    "heard_at",
+    "hops",
+    "key",
+    "look_alike",
+    "name",
+    "prefix",
+    "rssi_dbm",
+    "snr_db",
+    "type"
+   ],
+   "nodes": [
+    "look_alike",
+    "look_alike_total",
+    "nodes",
+    "nodes[].first_heard_at",
+    "nodes[].heard_at",
+    "nodes[].heard_via",
+    "nodes[].hops",
+    "nodes[].key",
+    "nodes[].look_alike",
+    "nodes[].name",
+    "nodes[].prefix",
+    "nodes[].rssi_dbm",
+    "nodes[].snr_db",
+    "nodes[].type",
+    "total",
+    "truncated"
+   ],
+   "received": [
+    "channel_index",
+    "command",
+    "command.accepted",
+    "command.reason",
+    "command.word",
+    "event_type",
+    "hops",
+    "received_at",
+    "sender_key",
+    "sender_name",
+    "sender_prefix",
+    "sent_at",
+    "snr_db",
+    "target",
+    "text",
+    "text_type"
+   ],
+   "rx": [
+    "length",
+    "raw",
+    "received_at",
+    "rssi_dbm",
+    "snr_db"
+   ],
+   "setting": [
+    "desired",
+    "event_type",
+    "live",
+    "reason",
+    "setting"
+   ],
+   "settings": [
+    "checked_at",
+    "firmware_code",
+    "firmware_tested",
+    "mode",
+    "observing",
+    "own_position",
+    "protected_contacts",
+    "protected_contacts.added",
+    "protected_contacts.failed",
+    "protected_contacts.favoured",
+    "protected_contacts.missing",
+    "protected_contacts.not_favourite",
+    "settings",
+    "settings.advert_location",
+    "settings.advert_location.desired",
+    "settings.advert_location.live",
+    "settings.advert_location.state",
+    "settings.autoadd",
+    "settings.autoadd.desired",
+    "settings.autoadd.live",
+    "settings.autoadd.state",
+    "settings.duty_cycle_percent",
+    "settings.duty_cycle_percent.desired",
+    "settings.duty_cycle_percent.live",
+    "settings.duty_cycle_percent.state",
+    "settings.manual_add",
+    "settings.manual_add.desired",
+    "settings.manual_add.live",
+    "settings.manual_add.state",
+    "settings.name",
+    "settings.name.desired",
+    "settings.name.live",
+    "settings.name.state",
+    "settings.telemetry",
+    "settings.telemetry.desired",
+    "settings.telemetry.desired.base",
+    "settings.telemetry.desired.environment",
+    "settings.telemetry.desired.location",
+    "settings.telemetry.live",
+    "settings.telemetry.live.base",
+    "settings.telemetry.live.environment",
+    "settings.telemetry.live.location",
+    "settings.telemetry.state",
+    "status"
+   ],
+   "state": [
+    "airtime_1h_s",
+    "airtime_available_s",
+    "airtime_budget_s_per_hour",
+    "bandwidth_khz",
+    "battery_v",
+    "coding_rate",
+    "contact_link",
+    "firmware",
+    "frequency_mhz",
+    "model",
+    "public_key",
+    "queue",
+    "radio",
+    "radio_name",
+    "spreading_factor",
+    "tx_power_dbm",
+    "version"
+   ],
+   "stats": [
+    "airtime_factor",
+    "duty_cycle_percent",
+    "errors",
+    "last_rssi_dbm",
+    "last_snr_db",
+    "noise_floor_dbm",
+    "packets_received",
+    "packets_received_direct",
+    "packets_received_flood",
+    "packets_sent",
+    "packets_sent_direct",
+    "packets_sent_flood",
+    "queue_length",
+    "read_at",
+    "receive_errors",
+    "rx_airtime_s",
+    "storage_total_kb",
+    "storage_used_kb",
+    "tx_airtime_1h_s",
+    "tx_airtime_s",
+    "tx_airtime_window_s",
+    "uptime_s"
+   ]
+  },
+  "last_will": {
+   "<base_topic>/<node_id>/availability": "offline"
+  },
+  "publish": {
+   "<base_topic>/<node_id>/availability": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/command": {
+    "payload": "json",
+    "qos": 0,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/contact": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/contacts": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/contacts/<key>": {
+    "cleared": true,
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/contacts/<key>/received": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/delivery": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/history": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/node": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/nodes": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/received": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/rx": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/setting": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<base_topic>/<node_id>/settings": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/state": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/stats": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<prefix>/device/<device>/config": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<prefix>/device/<device>/contact_<key>/config": {
+    "cleared": true,
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
+   "<prefix>/device/<device>/manage_contacts/config": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   }
+  },
+  "subscribe": [
+   "<base_topic>/<node_id>/add_contact",
+   "<base_topic>/<node_id>/contacts/+/remove",
+   "<base_topic>/<node_id>/contacts/+/send",
+   "<base_topic>/<node_id>/homeassistant/add_node",
+   "<base_topic>/<node_id>/homeassistant/show_hidden",
+   "<base_topic>/<node_id>/send/+",
+   "<prefix>/device/<device>/+/config",
+   "<prefix>/device/<device>/config",
+   "<status_topic>"
+  ],
+  "values": {
+   "availability": [
+    "offline",
+    "online"
+   ],
+   "contact:event_type": [
+    "added",
+    "failed",
+    "hidden",
+    "refused",
+    "removed",
+    "shown"
+   ],
+   "contacts/<key>:flags": [
+    "favourite",
+    "remote_cli",
+    "telemetry_base",
+    "telemetry_environment",
+    "telemetry_location"
+   ],
+   "contacts/<key>:type": [
+    "chat",
+    "repeater",
+    "room",
+    "sensor"
+   ],
+   "delivery:event_type": [
+    "confirmed",
+    "duplicate",
+    "expired",
+    "failed",
+    "queued",
+    "rejected",
+    "sent"
+   ],
+   "node:event_type": [
+    "new"
+   ],
+   "received:command.reason": [
+    "broker_unavailable",
+    "from_the_future",
+    "replay",
+    "sender_ambiguous",
+    "sender_not_allowed",
+    "sender_unknown",
+    "sender_unverified",
+    "state_unwritable",
+    "too_old"
+   ],
+   "received:event_type": [
+    "channel",
+    "contact"
+   ],
+   "received:text_type": [
+    "cli_command",
+    "cli_data",
+    "plain",
+    "signed_plain"
+   ],
+   "setting:event_type": [
+    "drift",
+    "failed",
+    "not_converging",
+    "not_taken",
+    "written"
+   ],
+   "settings:mode": [
+    "always",
+    "auto",
+    "observe"
+   ],
+   "settings:settings": [
+    "advert_location",
+    "autoadd",
+    "duty_cycle_percent",
+    "manual_add",
+    "name",
+    "telemetry"
+   ],
+   "settings:settings.autoadd.live": [
+    "chat",
+    "overwrite_oldest",
+    "repeater",
+    "room",
+    "sensor"
+   ],
+   "settings:settings.telemetry.live.*": [
+    "all",
+    "contacts",
+    "deny",
+    "unknown"
+   ],
+   "settings:status": [
+    "differs",
+    "drift",
+    "ok",
+    "problem",
+    "written"
+   ],
+   "state:radio": [
+    "connected",
+    "disconnected"
+   ],
+   "stats:errors": [
+    "cad_timeout",
+    "queue_full",
+    "start_rx_timeout"
+   ]
+  }
+ }
+}

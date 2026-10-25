@@ -9,20 +9,26 @@ last release (a `**Breaking:**` entry or a `### Removed` section: major; Added, 
 Deprecated: minor; Fixed or Security only: patch), the stage is the author's (aN, bN or rcN for a
 pre-release, none for a release). Until 1.0.0 is out the next release is 1.0.0. A release needs a
 release candidate of the same version that ships the same program: only `__version__` may
-differ. Standard library only; git runs as a subprocess in the current directory.
+differ. Every check also compares the public interface (tests/public_interface.json, by
+tools/public_interface.py) with that of the last release: what it removes or narrows needs a
+`**Breaking:**` entry or a `### Removed` section since then (docs/development.md#compatibility).
+Standard library only; git runs as a subprocess in the current directory.
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 GIT = shutil.which("git") or "/usr/bin/git"
 VERSION_FILE = "src/meshcore_home_gateway/__init__.py"
@@ -44,6 +50,11 @@ _KIND_OF = {
 _HEADINGS = "Added, Changed, Deprecated, Removed, Fixed, Security"
 _ENTRY = re.compile(r"\s*[-*] ")
 _BREAKING = re.compile(r"\s*[-*] \*\*Breaking:\*\*")
+# the public interface of a revision, written by `make interface` (docs/development.md)
+INTERFACE = "tests/public_interface.json"
+# false alarms, for one release each: {"X.Y.Z": {"<the finding's path>": "why it is no break"}}
+WAIVERS = "tests/public_interface_waivers.json"
+_SHOWN = 20  # breaking findings in a refusal
 
 
 class PlanError(Exception):
@@ -176,24 +187,98 @@ def ships_alike(rev: str, candidate: str) -> bool:
     return _VERSION_LINE.sub("", old) == _VERSION_LINE.sub("", new)
 
 
-def release_notes() -> ModuleType:
-    """tools/release_notes.py, next to this file (python -I leaves its directory off the path)."""
+def tool(name: str) -> ModuleType:
+    """tools/<name>.py, next to this file (python -I leaves its directory off the path)."""
     spec = importlib.util.spec_from_file_location(
-        "release_notes", Path(__file__).resolve().parent / "release_notes.py"
+        name, Path(__file__).resolve().parent / f"{name}.py"
     )
     if spec is None or spec.loader is None:
-        msg = "tools/release_notes.py cannot be loaded"
+        msg = f"tools/{name}.py cannot be loaded"
         raise PlanError(msg)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # before it runs: its dataclasses look their module up
     spec.loader.exec_module(module)
     return module
+
+
+def last_release(changelog: str, known: Collection[Version]) -> Version | None:
+    """The newest release among the tags `known`; refuses a clone without tags whose changelog
+    has releases, which would take every version for the first."""
+    if not known and len(_DATED.findall(changelog)) > 1:
+        msg = "no release tags v* here, though the changelog has releases: git fetch --tags"
+        raise PlanError(msg)
+    return max((v for v in known if v.final), default=None)
+
+
+def has(rev: str, path: str) -> bool:
+    return not git_fails("cat-file", "-e", f"{rev}:{path}")
+
+
+def _json(rev: str, path: str) -> dict[str, Any]:
+    """The JSON object in `path` at `rev`."""
+    try:
+        found = json.loads(git("show", f"{rev}:{path}"))
+    except ValueError as exc:
+        msg = f"{path} at {rev}: not JSON ({exc})"
+        raise PlanError(msg) from None
+    if not isinstance(found, dict):
+        msg = f"{path} at {rev}: not a JSON object"
+        raise PlanError(msg)
+    return found
+
+
+def _waivers(rev: str, last: Version) -> dict[str, str]:
+    """The waivers for the release `last`; the next release makes them void."""
+    if not has(rev, WAIVERS):
+        return {}
+    mine = _json(rev, WAIVERS).get(str(last), {})
+    if not isinstance(mine, dict) or not all(
+        isinstance(reason, str) and reason.strip() for reason in mine.values()
+    ):
+        msg = f'{WAIVERS}: expected {{"{last}": {{"<path of a finding>": "<why it is no break>"}}}}'
+        raise PlanError(msg)
+    return mine
+
+
+def interface(rev: str) -> str:
+    """Refuse `rev` if its public interface breaks that of the last release while the changelog
+    since then does not make the next release a major one. Says what it compared."""
+    changelog = git("show", f"{rev}:{CHANGELOG}")
+    last = last_release(changelog, tags())
+    if last is None:
+        return "public interface: no release yet to compare with"
+    if not has(f"v{last}", INTERFACE):  # a release made before validate() required it
+        return f"public interface: v{last} has no {INTERFACE}, nothing to compare"
+    if not has(rev, INTERFACE):
+        msg = f"{INTERFACE} is missing, but v{last} has one: make interface"
+        raise PlanError(msg)
+    comparator = tool("public_interface")
+    old, new = _json(f"v{last}", INTERFACE), _json(rev, INTERFACE)
+    try:
+        breaks = comparator.breaking(old, new, _waivers(rev, last))
+    except comparator.FormatError as exc:
+        msg = f"{INTERFACE}: {exc}"
+        raise PlanError(msg) from None
+    if not breaks:
+        return f"public interface: compatible with v{last}"
+    if kind(changelog, last) == "major":
+        found = f"{len(breaks)} finding" + ("s" if len(breaks) > 1 else "")
+        return f"public interface: breaks v{last} ({found}), for {last.major + 1}.0.0"
+    shown = "".join(f"\n  {finding}" for finding in breaks[:_SHOWN])
+    more = f"\n  and {len(breaks) - _SHOWN} more" if len(breaks) > _SHOWN else ""
+    msg = (
+        f"the public interface of v{last} breaks, but {CHANGELOG} has no **Breaking:** entry and"
+        f" no ### Removed section since (docs/development.md#compatibility; a false alarm is"
+        f" waived in {WAIVERS}):{shown}{more}"
+    )
+    raise PlanError(msg)
 
 
 def validate(written: Version, rev: str) -> None:
     """Refuse `written` at `rev` unless it is the next version, with its changelog section."""
     changelog = git("show", f"{rev}:{CHANGELOG}")
     try:
-        release_notes().section(changelog, str(written))
+        tool("release_notes").section(changelog, str(written))
     except ValueError as exc:
         raise PlanError(str(exc)) from None
     unreleased = _UNRELEASED.search(changelog)
@@ -203,17 +288,16 @@ def validate(written: Version, rev: str) -> None:
         msg = f"{CHANGELOG}: an empty [Unreleased], then the section of {written}"
         raise PlanError(msg)
     known = tags()
-    if not known and len(_DATED.findall(changelog)) > 1:
-        msg = "no release tags v* here, though the changelog has releases: git fetch --tags"
-        raise PlanError(msg)
-    finals = [v for v in known if v.final]
-    last_final = max(finals) if finals else None
+    last_final = last_release(changelog, known)
     base = next_base(last_final, kind(changelog, last_final) if last_final else None)
     if written.base != base:
         msg = f"{written}: the next release is {base} (or a pre-release of it)"
         raise PlanError(msg)
     if known and written <= max(known):
         msg = f"{written} is not newer than v{max(known)}"
+        raise PlanError(msg)
+    if written.final and not has(rev, INTERFACE):  # else the guard has nothing to compare with
+        msg = f"{written}: a release needs {INTERFACE}, which later releases are compared with"
         raise PlanError(msg)
     if not written.final:
         same = [v.number for v in known if v.base == base and v.rank == written.rank]
@@ -269,6 +353,7 @@ def planned(base: str) -> tuple[Version, bool] | None:
 
 def check(base: str = "") -> str:
     plan = planned(base)
+    interface("HEAD")  # on every change: a break shows in the pull request that makes it
     if plan is None:
         return f"no release: __version__ stays {version_text('HEAD')}"
     written, tagged = plan
