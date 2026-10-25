@@ -86,7 +86,8 @@ ha-test: $(HA_VENV)/.installed ## Contract tests against the pinned Home Assista
 	  home-assistant/tests
 
 # The snapshot test fails until this runs (docs/development.md#compatibility). Review the
-# snapshot's diff like code: what it removes needs a **Breaking:** entry in CHANGELOG.md.
+# snapshot's diff like code: what it removes needs a **Breaking:** entry in CHANGELOG.md, what it
+# adds or changes an Added or Changed entry.
 interface: venv ## Write tests/public_interface.json from the code, after a deliberate interface change
 	$(BIN)/python -m tests.public_interface --write
 

@@ -6,10 +6,11 @@ without a radio or a broker; tests/public_interface.json is its snapshot.
 
 It records the structure only: topics with their retained flag and QoS, the subscriptions and the
 last will, the key paths of the documents, the value lists the code declares in one place or
-emits where Home Assistant is told of them, every setting, command, option and machine-readable
-output, and what Home Assistant refers to. The fixture's names are words that no real name
-contains (the slug "s" once turned "sensor" into "<slug>ensor"); `placeholders` turns them into
-the snapshot's placeholders, which belong to its format and are never renamed.
+emits where Home Assistant is told of them, every setting, command, option (with its bounds) and
+option group, the machine-readable outputs and the answers, and what Home Assistant refers to.
+The fixture's names are words that no real name contains (the slug "s" once turned "sensor" into
+"<slug>ensor"); `placeholders` turns them into the snapshot's placeholders, which belong to its
+format and are never renamed.
 """
 
 from __future__ import annotations
@@ -18,12 +19,14 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
+import functools
 import importlib.util
 import inspect
 import io
 import json
 import logging
 import math
+import os
 import re
 import sys
 import tempfile
@@ -41,12 +44,21 @@ import paho.mqtt.client as paho
 from meshcore_home_gateway import __version__, cli, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
-from meshcore_home_gateway.config import ProfileConfig, parse_config
+from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.contact_manager import Job
 from meshcore_home_gateway.core import profile
 from meshcore_home_gateway.core.commands import Rejection
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
-from meshcore_home_gateway.core.mesh import NODE_TYPES, Fix, Node, Tracked, type_name
+from meshcore_home_gateway.core.mesh import (
+    NODE_TYPES,
+    AirtimeMeter,
+    Fix,
+    Heard,
+    Node,
+    Signal,
+    Tracked,
+    type_name,
+)
 from meshcore_home_gateway.core.model import (
     DeliveryEvent,
     DeliveryState,
@@ -70,9 +82,10 @@ from meshcore_home_gateway.mqtt.discovery import (
     discovery_topic,
 )
 from meshcore_home_gateway.mqtt.manage_entities import manage_payload, manage_topic
+from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import AutoAdd, NodeType
+from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType
 from meshcore_home_gateway.radio.session import (
     AdvertHeard,
     CommandFailedError,
@@ -152,28 +165,39 @@ words = ["{WORD}"]
 [diagnostics]
 publish_rx_log = true
 """
-MAXIMAL = parse_config(MAXIMAL_TEXT)
-DEVICE = device_id(MAXIMAL)
 
-_PLACEHOLDERS = (
-    (DEVICE, "<device>"),  # first: it holds the node ID
-    (BASE, "<base_topic>"),
-    (NODE, "<node_id>"),
-    (PREFIX, "<prefix>"),
-    (STATUS, "<status_topic>"),
-    (ALIAS, "<alias>"),
-    (CHANNEL_ALIAS, "<alias>"),
-    (SLUG, "<slug>"),
-    (WORD, "<commands.words>"),
-    *((key, "<key>") for key in (KEY, KEY_B, KEY_N)),
-)
+
+@functools.cache
+def maximal() -> Config:
+    """MAXIMAL_TEXT as the parser reads it; on first use, so that a refusal fails the tests of
+    the interface rather than their collection."""
+    return parse_config(MAXIMAL_TEXT)
+
+
+@functools.cache
+def gateway_device() -> str:
+    """The gateway's device in Home Assistant, which holds the node ID."""
+    return device_id(maximal())
+
+
 _DOCUMENTS = "<base_topic>/<node_id>/"  # the topics of the documents and events
 _LEFTOVER = re.compile(r"q[a-z]+q")
 
 
 def placeholders(text: str) -> str:
     """`text` with each fixture value replaced by its placeholder."""
-    for value, placeholder in _PLACEHOLDERS:
+    for value, placeholder in (
+        (gateway_device(), "<device>"),  # first: it holds the node ID
+        (BASE, "<base_topic>"),
+        (NODE, "<node_id>"),
+        (PREFIX, "<prefix>"),
+        (STATUS, "<status_topic>"),
+        (ALIAS, "<alias>"),
+        (CHANNEL_ALIAS, "<alias>"),
+        (SLUG, "<slug>"),
+        (WORD, "<commands.words>"),
+        *((key, "<key>") for key in (KEY, KEY_B, KEY_N)),
+    ):
         text = text.replace(value, placeholder)
     return text
 
@@ -377,18 +401,19 @@ async def _published(tmp: Path) -> _Paho:
     and a few of its steps are called directly."""
     client = _Paho()
     topics = Topics(BASE, NODE)
+    config = maximal()
     bus = mqtt_client.MqttBus(
-        MAXIMAL.mqtt, topics, MAXIMAL.homeassistant.status_topic,
-        client_factory=lambda _: client, ha_devices=ha_device_topics(MAXIMAL),
+        config.mqtt, topics, config.homeassistant.status_topic,
+        client_factory=lambda _: client, ha_devices=ha_device_topics(config),
     )  # fmt: skip
     await bus.start()
     bus._paho_connected(client, None, None, SimpleNamespace(is_failure=False), None)
     await asyncio.sleep(0)  # the connection reaches the event loop
     store = JsonStateFile(tmp / "state.json")
     records = ContactDeviceRecords(store)
-    devices = ContactDevices(MAXIMAL, topics, bus, records, wall_clock=lambda: T)
+    devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: T)
     bridge = Bridge(
-        MAXIMAL, bus, _no_radio, CommandLedger(store), notifier=lambda _: True,
+        config, bus, _no_radio, CommandLedger(store), notifier=lambda _: True,
         wall_clock=lambda: T, devices=devices,
     )  # fmt: skip
     observer = bridge.observer
@@ -423,13 +448,14 @@ async def _published(tmp: Path) -> _Paho:
     bridge._radio_ready.set()
     bridge._publish_state()  # the radio connected
     bridge._radio_ready.clear()
-    devices.discovery_message(contact_discovery_topic(MAXIMAL, KEY), b"", False)  # hidden
+    devices.discovery_message(contact_discovery_topic(config, KEY), b"", False)  # hidden
     devices.show_hidden()
     message = InboundMessage(MessageKind.CONTACT, f"{WORD} now", int(T), T, sender_prefix=KEY[:12])
     book = ContactBook([Contact(KEY, "Alice")])
     session = cast(CompanionSession, SimpleNamespace(contacts=book, refresh_contacts=_refreshed))
     await bridge._on_message(MessageReceived(message, session, 0, False))
     bridge._contacts.accept(ContactRequest("add", KEY_N.encode(), retained=True))  # refused
+    bridge._contacts.accept(ContactRequest("remove", b"", retained=True, key=KEY))  # refused
     events = asyncio.create_task(bridge._event_loop())
     added = Job("add", KEY_N, "id", "key", "Relay", NodeType.REPEATER)
     await _until(events, bridge._contacts._write(session, added, _refused_write()))  # failed
@@ -445,7 +471,7 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     and those that the producers build where they publish them, as `published` carries them
     (each equal to the list Home Assistant gets). Values built in several places without a
     declaration (the reasons, a setting's state) wait for an enum of their own."""
-    gateway = discovery_payload(MAXIMAL, Topics(BASE, NODE))["cmps"]
+    gateway = discovery_payload(maximal(), Topics(BASE, NODE))["cmps"]
     radio = gateway["radio"]
     emitted = {
         name: _declared(name, values, declared)
@@ -463,11 +489,15 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     }  # fmt: skip
     every_type = sum(AutoAdd)  # the overwrite flag and every node type
     telemetry = [views.setting_value(profile.TELEMETRY, modes) for modes in range(4)]
+    texts = [InboundMessage(MessageKind.CONTACT, "", 0, T, text_type=kind) for kind in TextType]
+    errors = codec.CoreStats(0, 0, -1, 0)  # every error bit
+    readings = views.RadioReadings(codec.Battery(0, 0, 0), errors, None, None, T)
     return emitted | {
         "delivery:event_type": [state.value for state in DeliveryState],
         "received:event_type": [kind.value for kind in MessageKind],
-        "received:text_type": [kind.name.lower() for kind in TextType],
+        "received:text_type": [received_payload(m, None, None)["text_type"] for m in texts],
         "received:command.reason": [reason.value for reason in Rejection],
+        "contact:request": [r for r in _emitted(published, "contact", "request") if r is not None],
         "settings:mode": [mode.value for mode in profile.Mode],
         "settings:settings": list(views.SETTING_NAMES.values()),
         "settings:settings.autoadd.live": cast(
@@ -476,13 +506,16 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
         "settings:settings.telemetry.live.*": [
             mode for kinds in telemetry for mode in cast(dict[str, str], kinds).values()
         ],
+        "settings:settings.advert_location.live": [
+            cast(str, views.setting_value(profile.ADVERT_LOCATION, shared)) for shared in (0, 1)
+        ],
         "contacts/<key>:type": list(NODE_TYPES.values()),
-        "contacts/<key>:flags": list(views._FLAGS.values()),
-        "stats:errors": list(views._ERRORS.values()),
+        "contacts/<key>:flags": views.flag_names(sum(ContactFlag)),
+        "stats:errors": views.stats_document(readings, AirtimeMeter(), None)["errors"],
     }
 
 
-def _emitted(published: Sequence[tuple[str, bytes, bool, int]], name: str, key: str) -> set[str]:
+def _emitted(published: Sequence[tuple[str, bytes, bool, int]], name: str, key: str) -> set[Any]:
     """The values of `key` in what was published on the document or event topic `name`."""
     topic = _DOCUMENTS + name
     return {
@@ -509,28 +542,44 @@ def _statuses() -> set[str]:
 def _declared(name: str, emitted: set[str], declared: list[str]) -> list[str]:
     """`emitted`, which must be what Home Assistant is told of: it refuses another event type or
     option, and offers one that never comes."""
-    problem = ""
+    problem = advice = ""
     if emitted - set(declared):
         problem = "the producer emits values Home Assistant does not know"
     elif set(declared) - emitted:
         problem = "Home Assistant declares values no path emits"
+        advice = (
+            ": extend the scenario in tests/public_interface.py (_published, _statuses) so that a"
+            " path emits it, check why the code stopped emitting it, or drop it from discovery"
+        )
     if problem:
         raise AssertionError(
-            f"{name}: {problem}: emitted {sorted(emitted)}, declared {sorted(declared)}"
+            f"{name}: {problem}: emitted {sorted(emitted)}, declared {sorted(declared)}{advice}"
         )
     return list(emitted)
 
 
 # --- configuration --------------------------------------------------------------------------------
 
-_KINDS = {
-    "string": "string", "boolean": "boolean", "integer": "integer", "number": "number",
-    "strings": "list[string]", "integers": "list[integer]", "section": "table",
-}  # fmt: skip
+# config._Section's typed methods: the type each reads, and the parameters _setting takes from it
+_KINDS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "string": ("string", ("default", "required")),
+    "boolean": ("boolean", ("default",)),
+    "integer": ("integer", ("default", "lo", "hi")),
+    "number": ("number", ("default", "lo", "hi")),
+    "strings": ("list[string]", ()),
+    "integers": ("list[integer]", ("lo", "hi")),
+    "section": ("table", ()),
+}
 
 
 def _literal(dataclass_type: type, name: str) -> list[str]:
-    return list(typing.get_args(typing.get_type_hints(dataclass_type)[name]))
+    """The values of the Literal that annotates `name`, evaluated alone: the other annotations
+    may name types imported for type checking only."""
+    annotation = dataclass_type.__annotations__[name]
+    if isinstance(annotation, str):  # from __future__ import annotations
+        names = vars(sys.modules[dataclass_type.__module__])
+        annotation = eval(annotation, names)  # noqa: S307 - an annotation of the code's own
+    return list(typing.get_args(annotation))
 
 
 def _transport(value: str) -> dict[str, str | None]:
@@ -541,13 +590,16 @@ def _transport(value: str) -> dict[str, str | None]:
     }
 
 
-# strings that the parser checks against a list after reading them: the candidates (the
-# dataclass's Literal), and what a file sets besides each value
-_CHOICES: dict[str, tuple[Sequence[str], Callable[[str], dict[str, str | None]]]] = {
-    "radio.transport": (_literal(configuration.RadioConfig, "transport"), _transport),
-    "radio.profile.manage": (_literal(ProfileConfig, "manage"), lambda _: {}),
-    "diagnostics.log_level": (configuration.LOG_LEVELS, lambda _: {}),
-}
+def _choice_keys() -> dict[str, tuple[Sequence[str], Callable[[str], dict[str, str | None]]]]:
+    """The strings that the parser checks against a list after reading them: the candidates (the
+    dataclass's Literal), and what a file sets besides each value."""
+    return {
+        "radio.transport": (_literal(configuration.RadioConfig, "transport"), _transport),
+        "radio.profile.manage": (_literal(ProfileConfig, "manage"), lambda _: {}),
+        "diagnostics.log_level": (configuration.LOG_LEVELS, lambda _: {}),
+    }
+
+
 # brokers, ACLs and Home Assistant refer to the names these defaults make up
 _IDENTITY = (
     "mqtt.base_topic",
@@ -569,14 +621,19 @@ def config() -> dict[str, dict[str, Any]]:
             # read as "required when its table is present"
             kept = {name: value for name, value in entry.items() if name != "default"}
             settings[key] = kept | {"conditional": True}
-    for key, (candidates, besides) in _CHOICES.items():
+    for key, (candidates, besides) in _choice_keys().items():
         settings[key]["choices"] = _choices(key, candidates, besides)
     settings["mqtt.client_id"]["default"] = _client_id()
     for key in _IDENTITY:
         settings[key]["identity"] = True
     for key, answer in configuration._ANSWER_TYPES.items():
         if key not in settings:
-            raise AssertionError(f"{key}: an answer type for a setting that is never read")
+            raise AssertionError(
+                f"{key}: has an answer type, but neither MINIMAL nor MAXIMAL_TEXT reads it through"
+                " a typed method of config._Section: set it in MAXIMAL_TEXT if it is read only"
+                " when present, read it with a typed method, or remove the answer type of a"
+                " setting that is gone"
+            )
         settings[key]["answer"] = answer.__name__
     return settings
 
@@ -588,6 +645,12 @@ def _reads(text: str) -> dict[str, dict[str, Any]]:
     def recording(method: str) -> Callable[..., Any]:
         original = getattr(configuration._Section, method)
         signature = inspect.signature(original)
+        for parameter in _KINDS[method][1]:  # else its bound or flag would vanish unnoticed
+            if parameter not in signature.parameters:
+                raise AssertionError(
+                    f"config._Section.{method} no longer takes {parameter}: update _setting in"
+                    " tests/public_interface.py"
+                )
 
         def read(section: Any, name: str, *args: Any, **kwargs: Any) -> Any:
             given = signature.bind(section, name, *args, **kwargs)
@@ -609,7 +672,7 @@ def _reads(text: str) -> dict[str, dict[str, Any]]:
 
 
 def _setting(method: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    entry: dict[str, Any] = {"type": _KINDS[method]}
+    entry: dict[str, Any] = {"type": _KINDS[method][0]}
     if arguments.get("default") is not None:
         entry["default"] = arguments["default"]
     if arguments.get("required"):
@@ -659,9 +722,27 @@ def _client_id() -> str:
 
 # --- command line ---------------------------------------------------------------------------------
 
-_TYPES: dict[Any, str] = {
-    Path: "path", cli.tcp_address: "host[:port]", cli._wait_seconds: "seconds", cli._count: "count"
-}  # fmt: skip
+
+@dataclass(frozen=True)
+class _Type:
+    """What a type function of options takes: its name, and its bounds (of the port, for
+    host[:port]), which _bounds checks against the function."""
+
+    name: str
+    low: float | None = None
+    high: float | None = None
+    argument: Callable[[float], str] = str  # the text that gives this number
+
+
+_TYPES: dict[Any, _Type] = {
+    Path: _Type("path"),
+    cli.tcp_address: _Type("host[:port]", 1, 65535, lambda port: f"192.0.2.10:{port:g}"),
+    cli._wait_seconds: _Type("seconds", 0.0, cli.MAX_WAIT_S),
+    cli._count: _Type("count", 0),
+}
+_FAR = 10**9  # beyond every bound: a number type without a bound takes it
+# how few values a positional takes, by nargs (an integer: that many); it is required unless none
+_FEWEST: dict[Any, int] = {None: 1, "?": 0, "*": 0, "+": 1, argparse.REMAINDER: 0}
 
 
 def command_line(tmp: Path) -> dict[str, Any]:
@@ -675,17 +756,24 @@ def command_line(tmp: Path) -> dict[str, Any]:
             f"probe --list {listing}": _printed([*probe, "--list", listing])
             for listing in commands["probe"]["options"]["--list"]["choices"]
         }
+        paths = {"config": str(cli.DEFAULT_CONFIG), **_state_directory(tmp)}
     keyed_by_data = ("profile.changes", "profile.contacts")
     exit_codes = {
         "ok": cli.EX_OK, "failure": cli.EX_FAILURE, "usage": cli.EX_USAGE,
         "config_error": cli.EX_CONFIG,
     }  # fmt: skip
+    contacts = json.loads(_contacts_list(tmp, "--json", session=_Marked))
     return {
         "commands": commands,
         "exit_codes": exit_codes,
-        "paths": {"config": str(cli.DEFAULT_CONFIG), "state_dir": str(cli.DEFAULT_STATE_DIR)},
+        "paths": paths,
         "columns": _columns(listings | {"contacts list": _contacts_list(tmp)}),
-        "json": {"probe --json": list(_key_paths(printed, maps=keyed_by_data))},
+        "json": {
+            "probe --json": list(_key_paths(printed, maps=keyed_by_data)),
+            "contacts list --json": list(_key_paths(contacts)),
+            "listen": list(_key_paths(_listened(tmp))),
+        },
+        "answers": _answers(tmp),
     }
 
 
@@ -694,43 +782,103 @@ def _commands(parser: argparse.ArgumentParser, path: str, out: dict[str, Any]) -
     positionals: dict[str, Any] = {}  # "1", "2", …: their order is the interface
     commands: argparse._SubParsersAction[argparse.ArgumentParser] | None = None
     for action in parser._actions:
+        place = str(len(positionals) + 1)
         if isinstance(action, argparse._HelpAction):
             continue
-        if isinstance(action, argparse._SubParsersAction):
+        if isinstance(action, argparse._SubParsersAction):  # the command's name, a positional
             commands = action
+            positionals[place] = {"name": _named(action), "takes_value": True}
+            positionals[place] |= {"required": True} if action.required else {}
         elif isinstance(action, argparse._VersionAction):
             output = str(action.version).replace(__version__, "{version}")
             options.update((name, {"output": output}) for name in action.option_strings)
         elif action.option_strings:
-            options.update((name, _argument(action)) for name in action.option_strings)
-        else:  # named as the usage line names it, so that another order shows
-            name = action.metavar or action.dest
-            name = " ".join(name) if isinstance(name, tuple) else name
-            positionals[str(len(positionals) + 1)] = _argument(action) | {"name": name}
+            options.update(
+                (name, _argument(action, action.required)) for name in action.option_strings
+            )
+        else:  # by name, so that another order shows
+            positionals[place] = _argument(action, _fewest(action) > 0) | {"name": _named(action)}
     entry: dict[str, Any] = {"options": options, "positionals": positionals}
+    if groups := [_group(group) for group in parser._mutually_exclusive_groups]:
+        entry["groups"] = sorted(groups, key=lambda group: cast(list[str], group["options"]))
     out[path or parser.prog] = entry
     if commands is not None:
-        entry["commands"] = list(commands.choices)
         for name, command in commands.choices.items():
             _commands(command, f"{path} {name}".strip(), out)
 
 
-def _argument(action: argparse.Action) -> dict[str, Any]:
+def _named(action: argparse.Action) -> str:
+    """A positional as the usage line names it; a command's subcommand without one: "command"."""
+    name = action.metavar or (action.dest if action.dest != argparse.SUPPRESS else "command")
+    return " ".join(name) if isinstance(name, tuple) else name
+
+
+def _fewest(action: argparse.Action) -> int:
+    """How few values a positional takes; argparse before 3.13 calls `*` required."""
+    if isinstance(action.nargs, int):
+        return action.nargs
+    if action.nargs not in _FEWEST:
+        raise AssertionError(f"{action.dest}: name the nargs {action.nargs!r} in _FEWEST")
+    return _FEWEST[action.nargs]
+
+
+def _group(group: argparse._MutuallyExclusiveGroup) -> dict[str, Any]:
+    """A mutually exclusive group: its options by their longest name, or positionals by name."""
+    members = [
+        max(action.option_strings, key=len) if action.option_strings else _named(action)
+        for action in group._group_actions
+    ]
+    return {"options": sorted(members), "required": group.required}
+
+
+def _argument(action: argparse.Action, required: bool) -> dict[str, Any]:
     entry: dict[str, Any] = {"takes_value": action.nargs != 0}
-    if action.required:
+    if required:
         entry["required"] = True
     if action.choices is not None:
         entry["choices"] = list(action.choices)
     if action.nargs not in (None, 0):
         entry["nargs"] = action.nargs
     if action.type is not None:
-        if action.type not in _TYPES:
+        if (kind := _TYPES.get(action.type)) is None:
             raise AssertionError(f"{action.dest}: name the type {action.type!r} in _TYPES")
-        entry["type"] = _TYPES[action.type]
+        entry |= {"type": kind.name, **_bounds(cast(Callable[[str], Any], action.type), kind)}
     default = action.default  # `is`: a default of 0 or 0.0 equals False
     if default is not None and default is not False and default is not argparse.SUPPRESS:
         entry["default"] = str(default) if isinstance(default, Path) else default
     return entry
+
+
+def _bounds(function: Callable[[str], Any], kind: _Type) -> dict[str, float]:
+    """The bounds of a number type as the snapshot records them: the type function takes each
+    and refuses the next number beyond it, and takes a number far out where there is none."""
+    if kind.low is None and kind.high is None:
+        return {}
+
+    def taken(value: float) -> bool:
+        try:
+            function(kind.argument(value))
+        except (argparse.ArgumentTypeError, TypeError, ValueError):
+            return False
+        return True
+
+    bounds: dict[str, float] = {}
+    for name, bound, outward in (("min", kind.low, -1), ("max", kind.high, 1)):
+        if bound is None:
+            if not taken(outward * _FAR):
+                raise AssertionError(
+                    f"{kind.name}: refuses {outward * _FAR}: give _TYPES its {name}"
+                )
+            continue
+        beyond = (
+            math.nextafter(bound, outward * math.inf)
+            if isinstance(bound, float)
+            else bound + outward
+        )
+        if not taken(bound) or taken(beyond):
+            raise AssertionError(f"{kind.name}: its {name} is not {bound}: correct it in _TYPES")
+        bounds[name] = bound
+    return bounds
 
 
 def _probe_report(tmp: Path) -> dict[str, Any]:
@@ -759,14 +907,62 @@ def _probing(report: dict[str, Any]) -> Iterator[None]:
         yield
 
 
-def _printed(argv: list[str]) -> str:
+def _printed(argv: list[str], *, empty: bool = False) -> str:
     """What the command prints on standard output; it must succeed and print something."""
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        status = cli.main(argv)
-    if status != cli.EX_OK or not out.getvalue():
+        try:
+            status = cli.main(argv)
+        except SystemExit as exc:  # argparse refuses the command line
+            status = exc.code if isinstance(exc.code, int) else cli.EX_USAGE
+    if status != cli.EX_OK or not (out.getvalue() or empty):
         raise AssertionError(f"{' '.join(argv)}: exit {status}, {len(out.getvalue())} characters")
     return out.getvalue()
+
+
+_STATE_DIRECTORY = "STATE_DIRECTORY"
+
+
+def _state_directory(tmp: Path) -> dict[str, str]:
+    """The state directory of `run` and `probe` without --state-dir: the default, and the
+    variable of the environment that names another (systemd's StateDirectory= sets it)."""
+    config = _written(tmp / "state.toml", MINIMAL)
+    used: list[Path] = []
+
+    async def serve(_: Config, state_dir: Path) -> int:
+        used.append(state_dir)
+        return cli.EX_OK
+
+    def store(path: Path, **_: Any) -> JsonStateFile:
+        used.append(path.parent)
+        return JsonStateFile(tmp / "probe.json", read_only=True)
+
+    found: list[Path] = []
+    for named in (None, tmp / "named"):
+        with contextlib.ExitStack() as patches:
+            patches.enter_context(mock.patch.dict(os.environ))
+            os.environ.pop(_STATE_DIRECTORY, None)
+            if named:
+                os.environ[_STATE_DIRECTORY] = str(named)
+            patches.enter_context(mock.patch.object(cli, "setup_logging"))
+            patches.enter_context(mock.patch.object(cli, "_serve", serve))
+            patches.enter_context(mock.patch("meshcore_home_gateway.state.JsonStateFile", store))
+            used.clear()
+            _printed(["run", "--config", str(config)], empty=True)
+            _printed(["probe", "--tcp", "192.0.2.10", "--json"])
+        if len(used) != 2 or used[0] != used[1]:  # both document the same default
+            raise AssertionError(f"run and probe use the state directories {used}: record each")
+        found.append(used[0])
+    default, by_environment = found
+    if by_environment not in (default, tmp / "named"):
+        raise AssertionError(f"{_STATE_DIRECTORY}={tmp / 'named'}: state in {by_environment}")
+    named_by = {"state_dir_env": _STATE_DIRECTORY} if by_environment != default else {}
+    return {"state_dir": str(default), **named_by}
+
+
+def _written(path: Path, text: str) -> Path:
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 class _Documents:
@@ -791,11 +987,63 @@ class _Documents:
         return self.documents.get(name)
 
 
-def _contacts_list(tmp: Path) -> str:
-    config = tmp / "contacts.toml"
-    config.write_text(MINIMAL, encoding="utf-8")
-    with mock.patch.object(cli, "_ContactSession", _Documents):
-        return _printed(["contacts", "list", "--config", str(config)])
+class _Marked(_Documents):
+    """Documents that name themselves: `contacts list --json` prints them whole, and their keys
+    are those under `mqtt > documents`."""
+
+    documents: typing.ClassVar[dict[str, Any]] = {
+        name: {f"<document {name}>": True} for name in ("contacts", "nodes")
+    }
+
+
+def _contacts_list(tmp: Path, *more: str, session: type[_Documents] = _Documents) -> str:
+    config = _written(tmp / "contacts.toml", MINIMAL)
+    with mock.patch.object(cli, "_ContactSession", session):
+        return _printed(["contacts", "list", "--config", str(config), *more])
+
+
+class _Broker:
+    """The paho client of `listen`: it connects at once and delivers one message on the first
+    topic subscribed, a marker for the documents and events of `mqtt > documents`."""
+
+    on_connect: Any = None
+    on_message: Any = None
+
+    def connect(self, *_: Any) -> None:
+        pass
+
+    def loop_start(self) -> None:
+        self.on_connect(self, None, None, SimpleNamespace(is_failure=False), None)
+
+    def subscribe(self, topics: list[tuple[str, int]]) -> None:
+        message = SimpleNamespace(topic=topics[0][0], payload=b'{"<message>": true}', retain=False)
+        self.on_message(self, None, message)
+
+    def disconnect(self) -> None:
+        pass
+
+    def loop_stop(self) -> None:
+        pass
+
+
+def _listened(tmp: Path) -> Any:
+    """The line `listen` prints for a message."""
+    config = _written(tmp / "listen.toml", MINIMAL)
+    with mock.patch.object(cli, "_mqtt_client", return_value=_Broker()):
+        return json.loads(_printed(["listen", "--config", str(config), "--count", "1"]))
+
+
+def _answers(tmp: Path) -> dict[str, list[str]]:
+    """The keys that `config answers` prints for MAXIMAL_TEXT (`config render` and the installer
+    read them), and the forms of a target's value."""
+    config = _written(tmp / "answers.toml", MAXIMAL_TEXT)
+    keys, targets = [], []
+    for line in _printed(["config", "answers", "--config", str(config)]).splitlines():
+        key, _, value = placeholders(line).partition("=")
+        keys.append(key)
+        if key == "target.<alias>":
+            targets.append(re.sub(r"\d+", "<index>", value))
+    return {"keys": keys, "target.<alias>": targets}
 
 
 _BY_KIND = ("probe --list profile", "contacts list")  # their first field names the line's kind
@@ -817,12 +1065,12 @@ def _columns(listings: dict[str, str]) -> dict[str, int]:
 
 
 def homeassistant() -> dict[str, Any]:
-    topics = Topics(BASE, NODE)
-    contact = contact_device_id(MAXIMAL, KEY)
+    config, device, topics = maximal(), gateway_device(), Topics(BASE, NODE)
+    contact = contact_device_id(config, KEY)
     contacts: dict[str, dict[str, Any]] = {}
     for node_type in NodeType:  # the components of a contact depend on its type
-        tracked = Tracked(Node(KEY, "Alice", node_type), fix=Fix(Position(1.0, 2.0), T, "advert"))
-        found = _components(contact_payload(MAXIMAL, topics, tracked, SLUG)["cmps"], contact)
+        tracked = _tracked(node_type)
+        found = _components(contact_payload(config, topics, tracked, SLUG)["cmps"], contact)
         for key, entry in found.items():
             known = contacts.setdefault(key, entry | {"node_types": []})
             if {name: value for name, value in known.items() if name != "node_types"} != entry:
@@ -831,21 +1079,51 @@ def homeassistant() -> dict[str, Any]:
     return {
         "devices": {
             "gateway": {
-                "id": DEVICE.replace(NODE, "<node_id>"),
-                "topic": placeholders(discovery_topic(MAXIMAL)),
+                "id": device.replace(NODE, "<node_id>"),
+                "topic": placeholders(discovery_topic(config)),
             },
-            "manage_contacts": {"topic": placeholders(manage_topic(MAXIMAL))},
+            "manage_contacts": {"topic": placeholders(manage_topic(config))},
             "contact": {
                 "id": placeholders(contact),
-                "topic": placeholders(contact_discovery_topic(MAXIMAL, KEY)),
+                "topic": placeholders(contact_discovery_topic(config, KEY)),
             },
         },
         "components": {
-            "gateway": _components(discovery_payload(MAXIMAL, topics)["cmps"], DEVICE),
-            "manage_contacts": _components(manage_payload(MAXIMAL, topics, [])["cmps"], DEVICE),
+            "gateway": _components(discovery_payload(config, topics)["cmps"], device),
+            "manage_contacts": _components(manage_payload(config, topics, [])["cmps"], device),
             "contact": contacts,
         },
     }
+
+
+def _tracked(node_type: int) -> Tracked:
+    """A contact with all that it can have: a component that exists only with data is there."""
+    position = Position(1.0, 2.0)
+    node = Node(
+        KEY, "Alice", node_type, flags=sum(ContactFlag), path_hops=1, last_advert=int(T) - 60,
+        position=position,
+    )  # fmt: skip
+    heard = Heard(T, "message", Signal(hops=1, snr_db=5.0, rssi_dbm=-90))
+    tracked = Tracked(node, T - 60, heard, Fix(position, T, "advert", altitude_m=10.0))
+    _filled(tracked)
+    return tracked
+
+
+def _filled(value: Any) -> None:
+    """Every field of `value` and of the dataclasses in it differs from its default."""
+    for item in dataclasses.fields(value):
+        given = getattr(value, item.name)
+        if item.default_factory is not dataclasses.MISSING:
+            default = item.default_factory()
+        else:
+            default = item.default
+        if given == default:
+            raise AssertionError(
+                f"fill {type(value).__name__}.{item.name} in the fixture of homeassistant() in"
+                " tests/public_interface.py, so that components that need it are recorded"
+            )
+        if dataclasses.is_dataclass(given):
+            _filled(given)
 
 
 def _components(found: dict[str, dict[str, Any]], device: str) -> dict[str, dict[str, Any]]:
@@ -887,13 +1165,16 @@ _ADVICE = {
     tool.BREAKING: (
         "Breaking - removed or narrowed. If intended, add a `**Breaking:**` entry under "
         "[Unreleased] in CHANGELOG.md that says what users must change (the next release is then "
-        "a major one):"
+        "a major one; a false alarm: a waiver, docs/development.md#compatibility):"
     ),
     tool.CHANGED: (
         "Changed - compatible, but users notice it (a default, a wider range); describe it "
-        "under ### Changed:"
+        "under ### Changed (the next release is then a minor one):"
     ),
-    tool.ADDED: "Added - describe it under ### Added and in the interface's documentation:",
+    tool.ADDED: (
+        "Added - describe it under ### Added and in the interface's documentation (the next "
+        "release is then a minor one):"
+    ),
 }
 
 

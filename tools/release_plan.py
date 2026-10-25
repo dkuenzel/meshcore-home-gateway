@@ -10,9 +10,11 @@ Deprecated: minor; Fixed or Security only: patch), the stage is the author's (aN
 pre-release, none for a release). Until 1.0.0 is out the next release is 1.0.0. A release needs a
 release candidate of the same version that ships the same program: only `__version__` may
 differ. Every check also compares the public interface (tests/public_interface.json, by
-tools/public_interface.py) with that of the last release: what it removes or narrows needs a
-`**Breaking:**` entry or a `### Removed` section since then (docs/development.md#compatibility).
-Standard library only; git runs as a subprocess in the current directory.
+tools/public_interface.py) with that of the last release, which the revision must contain: what
+it removes or narrows needs a `**Breaking:**` entry or a `### Removed` section since then, what it
+adds or changes an entry that makes the next release at least a minor one
+(docs/development.md#compatibility). Standard library only; git runs as a subprocess in the
+current directory.
 """
 
 from __future__ import annotations
@@ -54,7 +56,11 @@ _BREAKING = re.compile(r"\s*[-*] \*\*Breaking:\*\*")
 INTERFACE = "tests/public_interface.json"
 # false alarms, for one release each: {"X.Y.Z": {"<a finding as the refusal shows it>": "why"}}
 WAIVERS = "tests/public_interface_waivers.json"
-_SHOWN = 20  # breaking findings in a refusal
+# a release's snapshot that the comparator no longer reads
+_RELEASED = (
+    " (the snapshot of the last release: an attribute dropped or narrowed in"
+    " tools/public_interface.py needs a new FORMAT, with a converter of the older ones)"
+)
 
 
 class PlanError(Exception):
@@ -232,13 +238,18 @@ def _waivers(rev: str, last: Version) -> dict[str, str]:
     the next release makes them void."""
     if not has(rev, WAIVERS):
         return {}
-    mine = _json(rev, WAIVERS).get(str(last), {})
+    waivers = _json(rev, WAIVERS)
+    for key in waivers:  # a tag's name or a pre-release would be ignored without a word
+        if _FORM.fullmatch(key) is None or not Version.parse(key).final:
+            msg = f'{WAIVERS}: the key "{key}" is no release X.Y.Z'
+            raise PlanError(msg)
+    mine = waivers.get(str(last), {})
     if not isinstance(mine, dict) or not all(
         isinstance(reason, str) and reason.strip() for reason in mine.values()
     ):
         msg = (
             f'{WAIVERS}: expected {{"{last}": {{"<a finding as the refusal shows it>": "<why it'
-            ' is no break>"}}'
+            ' is a false alarm>"}}'
         )
         raise PlanError(msg)
     return mine
@@ -246,36 +257,55 @@ def _waivers(rev: str, last: Version) -> dict[str, str]:
 
 def interface(rev: str) -> str:
     """Refuse `rev` if its public interface breaks that of the last release while the changelog
-    since then does not make the next release a major one. Says what it compared."""
+    since then does not make the next release a major one, or grows it while the changelog makes
+    it a patch. Says what it compared, with the breaks a major release takes."""
     changelog = git("show", f"{rev}:{CHANGELOG}")
     last = last_release(changelog, tags())
     if last is None:
         return "public interface: no release yet to compare with"
     if not has(f"v{last}", INTERFACE):  # a release made before validate() required it
         return f"public interface: v{last} has no {INTERFACE}, nothing to compare"
+    if git_fails("merge-base", "--is-ancestor", f"v{last}", rev):  # its additions: no removals
+        msg = f"{rev} does not contain v{last}: merge main and run again"
+        raise PlanError(msg)
     if not has(rev, INTERFACE):
         msg = f"{INTERFACE} is missing, but v{last} has one: make interface"
         raise PlanError(msg)
     comparator = tool("public_interface")
     old, new = _json(f"v{last}", INTERFACE), _json(rev, INTERFACE)
-    try:
-        breaks = comparator.breaking(old, new, _waivers(rev, last))
-    except comparator.FormatError as exc:
-        msg = f"{INTERFACE}: {exc}"
-        raise PlanError(msg) from None
-    if not breaks:
-        return f"public interface: compatible with v{last}"
-    if kind(changelog, last) == "major":
-        found = f"{len(breaks)} finding" + ("s" if len(breaks) > 1 else "")
-        return f"public interface: breaks v{last} ({found}), for {last.major + 1}.0.0"
-    shown = "".join(f"\n  {finding}" for finding in breaks[:_SHOWN])
-    more = f"\n  and {len(breaks) - _SHOWN} more" if len(breaks) > _SHOWN else ""
-    msg = (
-        f"the public interface of v{last} breaks, but {CHANGELOG} has no **Breaking:** entry and"
-        f" no ### Removed section since (docs/development.md#compatibility; a false alarm is"
-        f" waived in {WAIVERS}):{shown}{more}"
-    )
-    raise PlanError(msg)
+    for at, doc, hint in ((f"v{last}", old, _RELEASED), (rev, new, "")):
+        try:
+            comparator.check(doc)
+        except comparator.FormatError as exc:
+            msg = f"{INTERFACE} at {at}: {exc}{hint}"
+            raise PlanError(msg) from None
+    found = comparator.unwaived(old, new, _waivers(rev, last))
+    breaks = [str(f) for f in found if f.kind == comparator.BREAKING]
+    change = kind(changelog, last)
+    waiver = f'a false alarm is waived in {WAIVERS} under "{last}"'
+    if breaks and change != "major":
+        msg = (
+            f"the public interface of v{last} breaks, but {CHANGELOG} has no **Breaking:** entry"
+            f" and no ### Removed section since (docs/development.md#compatibility; {waiver}):"
+        )
+        raise PlanError(_listed(msg, breaks))
+    if breaks:
+        count = f"{len(breaks)} finding" + ("s" if len(breaks) > 1 else "")
+        return _listed(
+            f"public interface: breaks v{last} ({count}), for {last.major + 1}.0.0:", breaks
+        )
+    if found and change in (None, "patch"):
+        msg = (
+            f"the public interface of v{last} grows, but {CHANGELOG} has"
+            f" {'only fixes' if change else 'no entry'} since: describe it under ### Added or"
+            f" ### Changed (the next release is then a minor one; {waiver}):"
+        )
+        raise PlanError(_listed(msg, [str(f) for f in found]))
+    return f"public interface: compatible with v{last}"
+
+
+def _listed(head: str, findings: list[str]) -> str:
+    return "\n  ".join([head, *findings])
 
 
 def validate(written: Version, rev: str) -> None:
@@ -356,14 +386,15 @@ def planned(base: str) -> tuple[Version, bool] | None:
 
 
 def check(base: str = "") -> str:
+    """What HEAD releases, then what the public interface was compared with."""
     plan = planned(base)
-    interface("HEAD")  # on every change: a break shows in the pull request that makes it
+    compared = interface("HEAD")  # on every change: a break shows in the pull request making it
     if plan is None:
-        return f"no release: __version__ stays {version_text('HEAD')}"
+        return f"no release: __version__ stays {version_text('HEAD')}\n{compared}"
     written, tagged = plan
     if tagged:
-        return f"v{written} tags this commit already"
-    return f"releases v{written}" + ("" if written.final else " as a pre-release")
+        return f"v{written} tags this commit already\n{compared}"
+    return f"releases v{written}" + ("" if written.final else " as a pre-release") + f"\n{compared}"
 
 
 def tag(base: str = "") -> tuple[str, bool, bool]:

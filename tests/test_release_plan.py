@@ -36,6 +36,7 @@ plan = _load_tool()
 Version = plan.Version
 
 INTRO = "# Changelog\n\nIntro.\n\n"
+NONE = "public interface: no release yet to compare with"
 
 
 def section(version: str, *entries: str, kind: str = "Added") -> str:
@@ -108,6 +109,12 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Repo:
     return made
 
 
+def release(base: str = "") -> str:
+    """The first line of `check`: what HEAD releases (what the interface was compared with
+    follows)."""
+    return str(plan.check(base)).partition("\n")[0]
+
+
 def released(repo: Repo, *history: tuple[str, str]) -> None:
     """Commits and tags each (version, changelog) in turn."""
     for version, changelog in history:
@@ -157,14 +164,14 @@ def test_a_change_that_keeps_the_version_releases_nothing(repo: Repo) -> None:
     released(repo, ("1.0.0rc1", FIRST))
     base = repo.commit("1.0.0rc1", "## [Unreleased]\n\n### Added\n\n- More.\n\n" + FIRST)
     repo.commit("1.0.0rc1", "## [Unreleased]\n\n### Added\n\n- More and more.\n\n" + FIRST)
-    assert plan.check(base) == "no release: __version__ stays 1.0.0rc1"
+    assert release(base) == "no release: __version__ stays 1.0.0rc1"
 
 
 def test_before_1_0_0_only_its_candidates_and_itself_are_next(repo: Repo) -> None:
     released(repo, ("1.0.0rc1", FIRST))
     base = repo.git("rev-parse", "HEAD").strip()
     repo.commit("1.0.0rc2", "## [Unreleased]\n\n" + section("1.0.0rc2", "Fixes.") + FIRST)
-    assert plan.check(base) == "releases v1.0.0rc2 as a pre-release"
+    assert release(base) == "releases v1.0.0rc2 as a pre-release"
     repo.commit("1.0.0a1", "## [Unreleased]\n\n" + section("1.0.0a1", "Late.") + FIRST)
     with pytest.raises(plan.PlanError, match=re.escape("not newer than v1.0.0rc1")):
         plan.check(base)
@@ -178,7 +185,7 @@ def test_a_release_ships_the_program_of_its_candidate(repo: Repo) -> None:
     base = repo.git("rev-parse", "HEAD").strip()
     final = "## [Unreleased]\n\n" + section("1.0.0", "The gateway, tested.") + FIRST
     repo.commit("1.0.0", final)  # docs may change, the program not
-    assert plan.check(base) == "releases v1.0.0"
+    assert release(base) == "releases v1.0.0"
     repo.commit("1.0.0", final, program="print('changed')\n")
     with pytest.raises(plan.PlanError, match=re.escape("does not ship the program of v1.0.0rc1")):
         plan.check(base)
@@ -212,7 +219,7 @@ def test_the_changelog_decides_the_kind(
     history = section("1.0.0", "Out.") + FIRST
     repo.commit(written, "## [Unreleased]\n\n" + section(written, entry, kind=kind) + history)
     if expected is None:
-        assert plan.check(base) == f"releases v{written} as a pre-release"
+        assert release(base) == f"releases v{written} as a pre-release"
     else:
         with pytest.raises(plan.PlanError, match=expected):
             plan.check(base)
@@ -225,7 +232,7 @@ def test_pre_releases_count_on_and_their_entries_count_too(repo: Repo) -> None:
     base = repo.git("rev-parse", "HEAD").strip()
     fixes = section("1.1.0a2", "A fix.", kind="Fixed") + section("1.1.0a1", "A feature.") + history
     repo.commit("1.1.0a2", "## [Unreleased]\n\n" + fixes)  # still 1.1.0: the feature counts
-    assert plan.check(base) == "releases v1.1.0a2 as a pre-release"
+    assert release(base) == "releases v1.1.0a2 as a pre-release"
 
 
 def test_the_changelog_must_have_the_section_after_an_empty_unreleased(repo: Repo) -> None:
@@ -255,7 +262,7 @@ def test_nothing_new_since_the_last_release_releases_nothing(repo: Repo) -> None
 def test_an_older_base_version_form_is_no_obstacle(repo: Repo) -> None:
     base = repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
     repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
-    assert plan.check(base) == "releases v1.0.0rc1 as a pre-release"
+    assert release(base) == "releases v1.0.0rc1 as a pre-release"
 
 
 # --- tag on main ----------------------------------------------------------------------------------
@@ -299,7 +306,9 @@ def test_the_command_line(repo: Repo, capsys: pytest.CaptureFixture[str]) -> Non
     assert plan.main(["tag"]) == 0
     assert capsys.readouterr().out == "tag=v1.0.0rc1\nexists=false\nfinal=false\n"
     assert plan.main(["check"]) == 0
-    assert capsys.readouterr().out == "releases v1.0.0rc1 as a pre-release\n"
+    assert capsys.readouterr().out == (
+        "releases v1.0.0rc1 as a pre-release\npublic interface: no release yet to compare with\n"
+    )
     repo.tag("v1.0.0rc1")
     repo.commit("1.0.0rc3", "## [Unreleased]\n\n" + section("1.0.0rc3", "Skipped.") + FIRST)
     assert plan.main(["check"]) == 1
@@ -314,7 +323,9 @@ def test_the_tool_runs_isolated_as_ci_runs_it(tmp_path: Path) -> None:
         [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check"],
         cwd=tmp_path, env=repo.env, capture_output=True, text=True, check=False,
     )  # fmt: skip
-    assert (run.returncode, run.stdout) == (0, "releases v1.0.0rc1 as a pre-release\n"), run.stderr
+    assert (run.returncode, run.stdout) == (0, f"releases v1.0.0rc1 as a pre-release\n{NONE}\n"), (
+        run.stderr
+    )
 
 
 def test_the_version_is_the_newest_section_of_the_changelog() -> None:
@@ -336,7 +347,7 @@ def test_a_tagged_release_commit_checks_again_on_a_re_run(repo: Repo) -> None:
     released(repo, ("1.0.0rc1", FIRST))
     repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
     repo.tag("v1.0.0")
-    assert plan.check("HEAD^") == "v1.0.0 tags this commit already"
+    assert release("HEAD^") == "v1.0.0 tags this commit already"
     assert plan.tag("HEAD^") == ("v1.0.0", True, True)
 
 
@@ -345,8 +356,8 @@ def test_the_whole_push_counts_not_only_its_last_commit(repo: Repo) -> None:
     before = repo.commit("1.0.0rc0", "## [Unreleased]\n\n")
     repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
     repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST, program="print('follow-up')\n")
-    assert plan.check("HEAD^") == "no release: __version__ stays 1.0.0rc1"  # the last commit alone
-    assert plan.check(before) == "releases v1.0.0rc1 as a pre-release"
+    assert release("HEAD^") == "no release: __version__ stays 1.0.0rc1"  # the last commit alone
+    assert release(before) == "releases v1.0.0rc1 as a pre-release"
     assert plan.tag(before) == ("v1.0.0rc1", False, False)
 
 
@@ -355,7 +366,7 @@ def test_an_unknown_base_falls_back_to_the_parent(repo: Repo, base: str) -> None
     """A new branch (all zeros), a force push (a commit no longer known), no base at all."""
     repo.commit("1.0.0rc0", "## [Unreleased]\n\n")
     repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
-    assert plan.check(base) == "releases v1.0.0rc1 as a pre-release"
+    assert release(base) == "releases v1.0.0rc1 as a pre-release"
     assert plan.tag(base) == ("v1.0.0rc1", False, False)
 
 
@@ -395,10 +406,13 @@ STATE = {"retained": True, "qos": 1, "payload": "json"}
 EVENT = {"retained": False, "qos": 1, "payload": "json"}
 OLD = {"format": 1, "mqtt": {"publish": {"b/n/state": STATE, "b/n/rx": EVENT}}}
 NEW = {"format": 1, "mqtt": {"publish": {"b/n/state": STATE}}}  # rx removed
-GROWN = {"format": 1, "mqtt": {"publish": {"b/n/state": STATE, "b/n/rx": EVENT, "b/n/tx": EVENT}}}
+ALL = {"b/n/state": STATE, "b/n/rx": EVENT, "b/n/tx": EVENT}
+GROWN = {"format": 1, "mqtt": {"publish": ALL}}
 OUT = section("1.0.0", "Out.") + FIRST
 RX = "mqtt > publish > b/n/rx"  # the path of the finding
 REMOVED = f"{RX}: removed"  # the finding, as the refusal shows it and a waiver names it
+TX = "mqtt > publish > b/n/tx: new"
+COMPATIBLE = "public interface: compatible with v1.0.0"
 
 
 def snapshot(doc: object) -> str:
@@ -409,11 +423,11 @@ def unreleased(kind: str, entry: str) -> str:
     return f"## [Unreleased]\n\n### {kind}\n\n- {entry}\n\n" + OUT
 
 
-def after_1_0_0(repo: Repo) -> str:
-    """1.0.0rc1 and 1.0.0 released, both with OLD; the commit of 1.0.0."""
-    repo.commit("1.0.0rc1", FIRST, interface=snapshot(OLD))
+def after_1_0_0(repo: Repo, interface: object = OLD) -> str:
+    """1.0.0rc1 and 1.0.0 released, both with `interface`; the commit of 1.0.0."""
+    repo.commit("1.0.0rc1", FIRST, interface=snapshot(interface))
     repo.tag("v1.0.0rc1")
-    repo.commit("1.0.0", OUT, interface=snapshot(OLD))
+    repo.commit("1.0.0", OUT, interface=snapshot(interface))
     repo.tag("v1.0.0")
     return repo.git("rev-parse", "HEAD").strip()
 
@@ -424,29 +438,72 @@ def test_a_removal_needs_a_breaking_entry_also_without_a_release(repo: Repo) -> 
     with pytest.raises(plan.PlanError, match=re.escape(REMOVED)):
         plan.check(base)
     repo.commit("1.0.0", unreleased("Changed", "**Breaking:** no rx."), interface=snapshot(NEW))
-    assert plan.check(base) == "no release: __version__ stays 1.0.0"
-    assert plan.interface("HEAD") == "public interface: breaks v1.0.0 (1 finding), for 2.0.0"
+    assert plan.check(base) == (  # each pull request's log lists the breaks the release takes
+        "no release: __version__ stays 1.0.0\n"
+        f"public interface: breaks v1.0.0 (1 finding), for 2.0.0:\n  {REMOVED}"
+    )
 
 
 def test_a_removed_section_counts_as_breaking(repo: Repo) -> None:
     base = after_1_0_0(repo)
     repo.commit("1.0.0", unreleased("Removed", "rx."), interface=snapshot(NEW))
-    assert plan.check(base) == "no release: __version__ stays 1.0.0"
+    assert release(base) == "no release: __version__ stays 1.0.0"
 
 
-def test_growth_needs_nothing_from_the_comparison(repo: Repo) -> None:
+def test_growth_needs_an_entry_that_makes_a_minor_release(repo: Repo) -> None:
     base = after_1_0_0(repo)
-    repo.commit("1.0.0", unreleased("Added", "tx."), interface=snapshot(GROWN))
-    assert plan.check(base) == "no release: __version__ stays 1.0.0"
-    assert plan.interface("HEAD") == "public interface: compatible with v1.0.0"
+    fix = "## [Unreleased]\n\n" + section("1.0.1rc1", "tx.", kind="Fixed") + OUT
+    repo.commit("1.0.1rc1", fix, interface=snapshot(GROWN))
+    with pytest.raises(plan.PlanError) as refused:
+        plan.check(base)
+    assert str(refused.value) == (
+        "the public interface of v1.0.0 grows, but CHANGELOG.md has only fixes since: describe it"
+        " under ### Added or ### Changed (the next release is then a minor one; a false alarm is"
+        f' waived in {plan.WAIVERS} under "1.0.0"):\n  {TX}'
+    )
+    repo.commit("1.0.0", "## [Unreleased]\n\n" + OUT, interface=snapshot(GROWN))
+    with pytest.raises(plan.PlanError, match=re.escape("but CHANGELOG.md has no entry since")):
+        plan.check(base)
+    feature = "## [Unreleased]\n\n" + section("1.1.0rc1", "tx.") + OUT
+    repo.commit("1.1.0rc1", feature, interface=snapshot(GROWN))
+    assert plan.check(base) == f"releases v1.1.0rc1 as a pre-release\n{COMPATIBLE}"
+
+
+def test_a_feature_grows_through_its_pre_releases(repo: Repo) -> None:
+    """As telemetry does: 1.1.0a1 adds a topic, 1.1.0a2 another with only a fix of its own."""
+    base = after_1_0_0(repo)
+    feature = section("1.1.0a1", "Telemetry.") + OUT
+    repo.commit("1.1.0a1", "## [Unreleased]\n\n" + feature, interface=snapshot(GROWN))
+    assert plan.check(base) == f"releases v1.1.0a1 as a pre-release\n{COMPATIBLE}"
+    repo.tag("v1.1.0a1")
+    base = repo.git("rev-parse", "HEAD").strip()
+    more = {"format": 1, "mqtt": {"publish": {**ALL, "b/n/telemetry": STATE}}}
+    fix = section("1.1.0a2", "A fix.", kind="Fixed") + feature
+    repo.commit("1.1.0a2", "## [Unreleased]\n\n" + fix, interface=snapshot(more))
+    assert plan.check(base) == f"releases v1.1.0a2 as a pre-release\n{COMPATIBLE}"
 
 
 def test_a_patch_release_cannot_hide_a_removal(repo: Repo) -> None:
     base = after_1_0_0(repo)
     fix = "## [Unreleased]\n\n" + section("1.0.1rc1", "rx gone.", kind="Fixed") + OUT
     repo.commit("1.0.1rc1", fix, interface=snapshot(NEW))
-    with pytest.raises(plan.PlanError, match=re.escape("no **Breaking:** entry")):
+    with pytest.raises(plan.PlanError) as refused:
         plan.check(base)
+    assert str(refused.value) == (
+        "the public interface of v1.0.0 breaks, but CHANGELOG.md has no **Breaking:** entry and"
+        " no ### Removed section since (docs/development.md#compatibility; a false alarm is"
+        f' waived in {plan.WAIVERS} under "1.0.0"):\n  {REMOVED}'
+    )
+
+
+def test_a_refusal_lists_every_finding(repo: Repo) -> None:
+    many = {"format": 1, "mqtt": {"publish": {f"b/n/t{i:02}": STATE for i in range(25)}}}
+    base = after_1_0_0(repo, many)
+    none = {"format": 1, "mqtt": {"publish": {}}}
+    repo.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(none))
+    with pytest.raises(plan.PlanError) as refused:
+        plan.check(base)
+    assert str(refused.value).count(": removed") == 25
 
 
 def test_a_breaking_entry_of_a_pre_release_covers_later_changes(repo: Repo) -> None:
@@ -458,7 +515,11 @@ def test_a_breaking_entry_of_a_pre_release_covers_later_changes(repo: Repo) -> N
     gone = {"format": 1, "mqtt": {"publish": {}}}  # state goes too, in 2.0.0 still
     fix = "## [Unreleased]\n\n### Fixed\n\n- x.\n\n" + history
     repo.commit("2.0.0a1", fix, interface=snapshot(gone))
-    assert plan.check(base) == "no release: __version__ stays 2.0.0a1"
+    assert plan.check(base) == (  # review gives the second break its own entry: the log shows it
+        "no release: __version__ stays 2.0.0a1\n"
+        "public interface: breaks v1.0.0 (2 findings), for 2.0.0:\n"
+        f"  {REMOVED}\n  mqtt > publish > b/n/state: removed"
+    )
 
 
 def test_a_waiver_lets_a_finding_of_its_release_pass(repo: Repo) -> None:
@@ -471,24 +532,29 @@ def test_a_waiver_lets_a_finding_of_its_release_pass(repo: Repo) -> None:
             plan.check(base)
     waivers.write_text(snapshot({"1.0.0": {REMOVED: "never published"}}), encoding="utf-8")
     repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(NEW))
-    assert plan.check(base) == "no release: __version__ stays 1.0.0"
+    assert plan.check(base) == f"no release: __version__ stays 1.0.0\n{COMPATIBLE}"
+
+
+def test_a_waiver_lets_growth_pass_as_a_patch(repo: Repo) -> None:
+    """A key that was wrongly missing, a bound wrongly narrow: their fix grows the interface."""
+    base = after_1_0_0(repo)
+    (repo.path / plan.WAIVERS).write_text(snapshot({"1.0.0": {TX: "a fix"}}), encoding="utf-8")
+    fix = "## [Unreleased]\n\n" + section("1.0.1rc1", "tx.", kind="Fixed") + OUT
+    repo.commit("1.0.1rc1", fix, interface=snapshot(GROWN))
+    assert plan.check(base) == f"releases v1.0.1rc1 as a pre-release\n{COMPATIBLE}"
 
 
 def test_a_waiver_lets_only_its_one_finding_pass(repo: Repo) -> None:
     """Another value removed from the same list needs a waiver of its own."""
     lists = {"format": 1, "mqtt": {"documents": {"state": ["battery_v", "queue", "radio"]}}}
-    repo.commit("1.0.0rc1", FIRST, interface=snapshot(lists))
-    repo.tag("v1.0.0rc1")
-    repo.commit("1.0.0", OUT, interface=snapshot(lists))
-    repo.tag("v1.0.0")
-    base = repo.git("rev-parse", "HEAD").strip()
+    base = after_1_0_0(repo, lists)
     gone = 'mqtt > documents > state: no longer has "battery_v"'
     waivers = snapshot({"1.0.0": {gone: "never published"}})
     (repo.path / plan.WAIVERS).write_text(waivers, encoding="utf-8")
     state = ["queue", "radio"]
     fewer = {"format": 1, "mqtt": {"documents": {"state": state}}}
     repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(fewer))
-    assert plan.check(base) == "no release: __version__ stays 1.0.0"
+    assert release(base) == "no release: __version__ stays 1.0.0"
     state.remove("radio")
     repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(fewer))
     with pytest.raises(plan.PlanError) as refused:
@@ -508,11 +574,22 @@ def test_a_waiver_needs_its_form_and_a_reason(repo: Repo, waivers: str) -> None:
         plan.check(base)
 
 
+@pytest.mark.parametrize("key", ["v1.0.0", "1.1.0a1", "1.0"])
+def test_a_waiver_under_another_key_than_a_release_is_refused(repo: Repo, key: str) -> None:
+    """GitHub shows a pre-release as the newest release; the tag names it with a v."""
+    base = after_1_0_0(repo)
+    waivers = snapshot({"1.0.0": {}, key: {REMOVED: "never published"}})
+    (repo.path / plan.WAIVERS).write_text(waivers, encoding="utf-8")
+    repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(NEW))
+    with pytest.raises(plan.PlanError, match=re.escape(f'the key "{key}" is no release X.Y.Z')):
+        plan.check(base)
+
+
 def test_before_1_0_0_nothing_is_compared(repo: Repo) -> None:
     released(repo, ("1.0.0rc1", FIRST))
     changed = "## [Unreleased]\n\n### Changed\n\n- x.\n\n" + FIRST
     repo.commit("1.0.0rc1", changed, interface=snapshot(NEW))
-    assert plan.interface("HEAD") == "public interface: no release yet to compare with"
+    assert plan.interface("HEAD") == NONE
 
 
 def test_a_release_needs_the_snapshot(repo: Repo) -> None:
@@ -537,12 +614,27 @@ def test_deleting_the_snapshot_is_refused(repo: Repo) -> None:
         plan.check(base)
 
 
+def test_a_branch_without_the_last_release_is_told_to_merge(repo: Repo) -> None:
+    """Compared with a release it does not contain, its additions would read as removals."""
+    base = after_1_0_0(repo)
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(OLD))
+    repo.git("checkout", "-q", "main")
+    history = section("1.1.0", "tx.") + section("1.1.0rc1", "tx.") + OUT
+    released(repo, ("1.1.0rc1", section("1.1.0rc1", "tx.") + OUT), ("1.1.0", history))
+    repo.git("checkout", "-q", "feature")
+    with pytest.raises(
+        plan.PlanError, match=re.escape("HEAD does not contain v1.1.0: merge main and run again")
+    ):
+        plan.check(base)
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
         ("{", "not JSON"),
         ("[]", "not a JSON object"),
-        (snapshot({**NEW, "format": 2}), "snapshot format 2, this tool reads 1"),
+        (snapshot({**NEW, "format": 2}), "at HEAD: snapshot format 2, this tool reads 1"),
         (snapshot({"format": 1, "config": {"x": {"colour": "red"}}}), "no rule for the attribute"),
         (
             snapshot({"format": 1, "config": {"x": {"min": "1"}}}),
@@ -558,6 +650,19 @@ def test_a_snapshot_that_cannot_be_compared_is_refused(
     repo.commit("1.0.0", unreleased("Fixed", "x."), interface=text)
     with pytest.raises(plan.PlanError, match=re.escape(expected)):
         plan.check(base)
+
+
+def test_a_release_snapshot_the_comparator_no_longer_reads_is_named(repo: Repo) -> None:
+    """An attribute that tools/public_interface.py dropped: the release's snapshot still has it."""
+    base = after_1_0_0(repo, {"format": 1, "config": {"x": {"colour": "red"}}})
+    repo.commit("1.0.0", unreleased("Fixed", "x."), interface=SNAPSHOT)
+    with pytest.raises(plan.PlanError) as refused:
+        plan.check(base)
+    assert str(refused.value) == (
+        f"{plan.INTERFACE} at v1.0.0: config > x: no rule for the attribute 'colour' (the"
+        " snapshot of the last release: an attribute dropped or narrowed in"
+        " tools/public_interface.py needs a new FORMAT, with a converter of the older ones)"
+    )
 
 
 def test_the_isolated_tool_loads_the_comparator(tmp_path: Path) -> None:
@@ -581,7 +686,5 @@ def test_a_malformed_snapshot_is_refused_not_a_traceback(tmp_path: Path) -> None
         [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check"],
         cwd=tmp_path, env=repo.env, capture_output=True, text=True, check=False,
     )  # fmt: skip
-    assert (run.returncode, run.stderr) == (
-        1,
-        f'release_plan: {plan.INTERFACE}: config > mqtt.port > min: expected a number, got "1"\n',
-    )
+    expected = f'{plan.INTERFACE} at HEAD: config > mqtt.port > min: expected a number, got "1"'
+    assert (run.returncode, run.stderr) == (1, f"release_plan: {expected}\n")

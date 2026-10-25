@@ -79,7 +79,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # the base, the tags and the release candidate a release must equal
-      - name: A changed version is the next one, with its changelog section
+      - name: The version is the next one and the public interface stays compatible
         env: # a pull request's base, or the commit before a push (its parent if unknown)
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: python3 -I tools/release_plan.py check --base "$BASE"

@@ -21,8 +21,9 @@ format, the command line and Home Assistant discovery are public interfaces
   computed from the code without a radio or a broker; a test fails when the two differ, and
   `make interface` writes it again and lists what changed. The CI job *release plan* (and
   `make release-plan`) compares it with the last release on every change and refuses a removal or
-  narrowing without a `**Breaking:**` entry or a `### Removed` section since; a release must
-  contain it. A false alarm is waived for one release in `tests/public_interface_waivers.json`.
+  narrowing without a `**Breaking:**` entry or a `### Removed` section since, and an addition or
+  change when the changelog since has only fixes; a release must contain it. A false alarm is
+  waived for one release in `tests/public_interface_waivers.json`.
 
 ### Changed
 

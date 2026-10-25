@@ -11,10 +11,11 @@ value of another shape, is a FormatError, so tracking a new one is a deliberate 
 attribute absent from a record means what its rule says: no unit, any string, exactly one value,
 and, for the attributes that mean nothing when absent, not recorded yet, which is growth.
 Everywhere else a dict is a collection (a key that disappears is breaking), a list is a set of
-values (a value that disappears is breaking), and a scalar stays equal. Sets are compared value
-by value, so that each finding states one fact: a waiver names one finding as `str(finding)`
-shows it. A finding is "breaking", "changed" (compatible, but users notice it: a default, a
-wider range) or "added".
+values (a value that disappears is breaking), and a scalar stays equal; only the option groups
+of a command have a comparison of their own (`_groups`). Sets are compared value by value, so
+that each finding states one fact: a waiver names one finding as `str(finding)` shows it. A
+finding is "breaking", "changed" (compatible, but users notice it: a default, a wider range) or
+"added".
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ RECORDS: tuple[tuple[str, ...], ...] = (
     ("homeassistant", "devices"),
     ("homeassistant", "components", "*"),
 )
+COMMANDS = ("cli", "commands", "*")  # their `groups`: argparse's mutually exclusive groups
 
 BREAKING, CHANGED, ADDED = "breaking", "changed", "added"
 EACH = "each"  # a rule's answer for two sets of values: one finding per value
@@ -54,7 +56,7 @@ class Finding:
     what: str  # "removed", 'no longer has "battery_v"', "10 -> 11"
 
     def __str__(self) -> str:
-        """The finding as the refusal and `make interface` show it; a waiver names it so."""
+        """The finding as the refusal shows it; a waiver names it so."""
         return f"{self.path}: {self.what}"
 
 
@@ -63,35 +65,36 @@ class FormatError(ValueError):
     not cover."""
 
 
-Rule = Callable[[Any, Any, dict[str, Any]], str | None]  # (old, new, old record) -> kind or None
+# (old, new, old record, new record) -> kind or None
+Rule = Callable[[Any, Any, dict[str, Any], dict[str, Any]], str | None]
 
 
-def _equal(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _equal(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     # absent before: not recorded yet, which is growth. Only for the attributes whose absence
     # means nothing else: retained, qos, payload, takes_value, name, output, id, topic,
     # platform, entity_id
     return ADDED if old is None else BREAKING
 
 
-def _kept_flag(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _kept_flag(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     return BREAKING if old and not new else ADDED
 
 
-def _required(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _required(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     return BREAKING if new and not old else CHANGED  # relaxed: what was accepted still is
 
 
-def _minimum(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _minimum(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     before, after = (-math.inf if v is None else v for v in (old, new))
     return BREAKING if after > before else CHANGED
 
 
-def _maximum(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _maximum(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     before, after = (math.inf if v is None else v for v in (old, new))
     return BREAKING if after < before else CHANGED
 
 
-def _type(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _type(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     # a setting always has one; an option without one takes any string
     if new is None:
         return CHANGED
@@ -100,13 +103,13 @@ def _type(old: Any, new: Any, _: dict[str, Any]) -> str | None:
     return CHANGED if (old, new) in _WIDER_TYPES else BREAKING
 
 
-def _answer(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _answer(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     if old is None:
         return ADDED  # the answers file grows
     return CHANGED if (old, new) in _WIDER_ANSWERS else BREAKING
 
 
-def _nargs(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _nargs(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     before, after = _count(old), _count(new)
     if before is None or after is None:  # argparse.REMAINDER and the like
         return BREAKING
@@ -120,12 +123,12 @@ def _count(nargs: Any) -> tuple[float, float] | None:
     return _COUNTS.get(nargs)
 
 
-def _unit(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _unit(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     # also to or from none: Home Assistant's statistics keep the unit they began with
     return BREAKING
 
 
-def _choices(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _choices(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     if new is None:
         return CHANGED  # any value now
     if old is None:
@@ -133,17 +136,23 @@ def _choices(old: Any, new: Any, _: dict[str, Any]) -> str | None:
     return EACH
 
 
-def _default(old: Any, new: Any, record: dict[str, Any]) -> str | None:
+def _default(old: Any, new: Any, record: dict[str, Any], _: dict[str, Any]) -> str | None:
     # brokers, ACLs and Home Assistant refer to the names that these defaults make up; a script
     # relies on the file that a path option means when it is not given
     return BREAKING if record.get("identity") or record.get("type") == "path" else CHANGED
 
 
-def _values(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _conditional(old: Any, new: Any, _: dict[str, Any], record: dict[str, Any]) -> str | None:
+    # read for every file from now on: if it is required, every file needs it; else its default
+    # now applies to every file. Read only when present from now on: what loaded still loads
+    return BREAKING if old and not new and record.get("required") else CHANGED
+
+
+def _values(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     return EACH  # absent: none
 
 
-def _ignored(old: Any, new: Any, _: dict[str, Any]) -> str | None:
+def _ignored(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     return None
 
 
@@ -159,7 +168,7 @@ RULES: dict[str, Rule] = {
     # config and cli
     "type": _type, "default": _default, "required": _required, "min": _minimum, "max": _maximum,
     "choices": _choices, "answer": _answer, "takes_value": _equal, "nargs": _nargs,
-    "name": _equal, "output": _equal, "identity": _ignored, "conditional": _ignored,
+    "name": _equal, "output": _equal, "identity": _ignored, "conditional": _conditional,
     # homeassistant
     "id": _equal, "topic": _equal, "platform": _equal, "entity_id": _equal, "unit": _unit,
     "event_types": _values, "options": _values, "attributes": _values, "node_types": _values,
@@ -193,22 +202,27 @@ SHAPES: dict[str, Shape] = {
 }  # fmt: skip
 
 
+def check(doc: dict[str, Any]) -> None:
+    """Refuse a snapshot that this tool cannot compare (FormatError)."""
+    if doc.get("format") != FORMAT:
+        msg = f"snapshot format {doc.get('format')!r}, this tool reads {FORMAT}"
+        raise FormatError(msg)
+    _check_records(doc, ())
+
+
 def compare(old: dict[str, Any], new: dict[str, Any]) -> list[Finding]:
     """What `new` removes, narrows, changes or adds against `old`, sorted."""
-    for doc in (old, new):
-        if doc.get("format") != FORMAT:
-            msg = f"snapshot format {doc.get('format')!r}, this tool reads {FORMAT}"
-            raise FormatError(msg)
-        _check_records(doc, ())
+    check(old)
+    check(new)
     found: list[Finding] = []
     for key in sorted((old.keys() | new.keys()) - {"format"}):
         _walk(old.get(key), new.get(key), (key,), found)
     return sorted(found)
 
 
-def breaking(old: dict[str, Any], new: dict[str, Any], waived: dict[str, str]) -> list[Finding]:
-    """The breaking findings that no waiver names (by `str(finding)`: one fact each)."""
-    return [f for f in compare(old, new) if f.kind == BREAKING and str(f) not in waived]
+def unwaived(old: dict[str, Any], new: dict[str, Any], waived: dict[str, str]) -> list[Finding]:
+    """The findings that no waiver names (by `str(finding)`: one fact each)."""
+    return [f for f in compare(old, new) if str(f) not in waived]
 
 
 def render(doc: dict[str, Any]) -> str:
@@ -216,11 +230,14 @@ def render(doc: dict[str, Any]) -> str:
     return json.dumps(doc, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-def _is_record_parent(path: tuple[str, ...]) -> bool:
-    return any(
-        len(path) == len(p) and all(a in ("*", b) for a, b in zip(p, path, strict=True))
-        for p in RECORDS
+def _matches(path: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
+    return len(path) == len(pattern) and all(
+        a in ("*", b) for a, b in zip(pattern, path, strict=True)
     )
+
+
+def _is_record_parent(path: tuple[str, ...]) -> bool:
+    return any(_matches(path, p) for p in RECORDS)
 
 
 def _name(path: tuple[str, ...]) -> str:
@@ -234,6 +251,8 @@ def _show(value: Any) -> str:
 def _check_records(node: Any, path: tuple[str, ...]) -> None:
     if not isinstance(node, dict):
         return
+    if _matches(path, COMMANDS):
+        _check_groups(node.get("groups", []), (*path, "groups"))
     parent = _is_record_parent(path)
     for key, value in node.items():
         here = (*path, key)
@@ -251,6 +270,24 @@ def _check_records(node: Any, path: tuple[str, ...]) -> None:
                 if not fits(item):
                     msg = f"{_name((*here, attribute))}: expected {what}, got {_show(item)}"
                     raise FormatError(msg)
+
+
+def _check_groups(groups: Any, path: tuple[str, ...]) -> None:
+    def fits(group: Any) -> bool:
+        return (
+            isinstance(group, dict)
+            and group.keys() == {"options", "required"}
+            and bool(group["options"])
+            and _TEXTS[1](group["options"])
+            and _FLAG[1](group["required"])
+        )
+
+    if not isinstance(groups, list) or not all(fits(group) for group in groups):
+        msg = (
+            f'{_name(path)}: expected a list of {{"options": [strings], "required": true or'
+            f" false}}, got {_show(groups)}"
+        )
+        raise FormatError(msg)
 
 
 def _walk(old: Any, new: Any, path: tuple[str, ...], out: list[Finding]) -> None:
@@ -279,7 +316,9 @@ def _collection(
     records = _is_record_parent(path)
     for key in sorted(old.keys() | new.keys()):
         here = (*path, key)
-        if key not in new:
+        if key == "groups" and _matches(path, COMMANDS):
+            _groups(old, new, here, out)
+        elif key not in new:
             out.append(Finding(BREAKING, _name(here), "removed"))
         elif key not in old:
             if records and new[key].get("required") is True and not _new_table(key, old, new):
@@ -307,8 +346,86 @@ def _record(
         if before == after:
             continue
         here = (*path, attribute)
-        kind = RULES[attribute](before, after, old)  # _check_records: every attribute has one
+        kind = RULES[attribute](before, after, old, new)  # _check_records: each has a rule
         if kind == EACH:
             _each(_as_list(before), _as_list(after), here, out)
         elif kind is not None:
             out.append(Finding(kind, _name(here), f"{_show(before)} -> {_show(after)}"))
+
+
+Group = tuple[frozenset[str], bool]  # the members of a mutually exclusive group; required
+
+
+def _groups(
+    old: dict[str, Any], new: dict[str, Any], path: tuple[str, ...], out: list[Finding]
+) -> None:
+    """The mutually exclusive groups of a command, old and new: a call that worked must still
+    work. A new exclusion between two options that both existed breaks one; so does a required
+    group that holds no member of an old required group (an option required on its own counts
+    as a group of one), or that such a member left while it still exists."""
+    before, after = _read_groups(old), _read_groups(new)
+    existed, exists = _members(old), _members(new)
+    excluded_before, excluded = _exclusions(before), _exclusions(after)
+    for pair in sorted(excluded.keys() - excluded_before.keys(), key=sorted):
+        kind = BREAKING if pair <= existed else ADDED
+        out.append(Finding(kind, _group(path, excluded[pair]), f"{_pair(pair)} exclude each other"))
+    for pair in sorted(excluded_before.keys() - excluded.keys(), key=sorted):
+        if pair <= exists:  # else the option itself is gone, which is a finding of its own
+            what = f"{_pair(pair)} no longer exclude each other"
+            out.append(Finding(CHANGED, _group(path, excluded_before[pair]), what))
+    required = [members for members, needed in before if needed]
+    alone = [frozenset([name]) for name, entry in old.get("options", {}).items() if _needed(entry)]
+    required_now = [members for members, needed in after if needed]
+    for members in sorted(set(required_now) - set(required), key=sorted):
+        here = _group(path, members)
+        bases = [kept for group in (*required, *alone) if (kept := group & exists) & members]
+        if not bases:
+            what = "now required" if (members, False) in before else "new and required"
+            out.append(Finding(BREAKING, here, what))
+            continue
+        base = frozenset().union(*bases)
+        out.extend(  # a call with it alone no longer satisfies the group
+            Finding(BREAKING, here, f"no longer satisfied by {_show(name)}")
+            for name in sorted(base - members)
+        )
+        for name in sorted(members - base):
+            kind = CHANGED if name in existed else ADDED
+            out.append(Finding(kind, here, f"also satisfied by {_show(name)}"))
+    for members in required:
+        kept = members & exists
+        if kept and not any(kept & now for now in required_now):
+            out.append(Finding(CHANGED, _group(path, members), "no longer required"))
+
+
+def _read_groups(command: dict[str, Any]) -> list[Group]:
+    return [(frozenset(group["options"]), group["required"]) for group in command.get("groups", [])]
+
+
+def _members(command: dict[str, Any]) -> frozenset[str]:
+    """What a group of the command can hold: its options and its positionals, by name."""
+    positionals = command.get("positionals", {}).values()
+    return frozenset(command.get("options", {})) | {p["name"] for p in positionals if "name" in p}
+
+
+def _needed(entry: Any) -> bool:
+    return isinstance(entry, dict) and entry.get("required") is True
+
+
+def _exclusions(groups: list[Group]) -> dict[frozenset[str], frozenset[str]]:
+    """Each pair of members that exclude each other, with the group that makes it so."""
+    return {
+        frozenset([a, b]): members
+        for members, _ in groups
+        for a in members
+        for b in members
+        if a < b
+    }
+
+
+def _group(path: tuple[str, ...], members: frozenset[str]) -> str:
+    return _name((*path, " | ".join(sorted(members))))
+
+
+def _pair(pair: frozenset[str]) -> str:
+    first, second = sorted(pair)
+    return f"{_show(first)} and {_show(second)}"

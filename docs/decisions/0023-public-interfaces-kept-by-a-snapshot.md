@@ -23,8 +23,9 @@ without a radio, a broker or someone who remembers every interface?
 * Within a major version, what users built keeps working: automations, broker ACLs,
   configuration files, scripts and dashboards.
 * A break shows in the pull request that makes it, not only at the release.
-* Growth needs nothing beyond its documentation; false alarms are rare, so that nobody learns to
-  wave the check through.
+* Growth needs its changelog entry, which makes the release a minor one (Semantic Versioning:
+  new functionality is minor); false alarms are rare, so that nobody learns to wave the check
+  through.
 * 1.0.0 ships the program of 1.0.0rc1: the check must not change `src/`, `deploy/`,
   `pyproject.toml` or `tools/build_pyz.py`.
 * The release tooling stays standard library only, run under `python3 -I`.
@@ -63,21 +64,29 @@ could drift from the code.
   commands' own output with the radio emulator for `probe`, and Home Assistant's discovery
   builders. It records structure only: topics with retained flag and QoS, subscriptions and the
   last will, key paths, value lists declared in one place or emitted where Home Assistant is told
-  of them, settings with type, default, bounds and the choices the parser takes, commands,
-  options and named positionals, columns and JSON keys of the machine-readable outputs, and the
-  discovery facts above. `tests/test_public_interface.py` fails when snapshot and code differ;
-  `make interface` writes it again and lists what changed.
+  of them, settings with type, default, bounds and the choices the parser takes, commands with
+  their subcommands, options with type and the bounds their type function takes, mutually
+  exclusive option groups and whether one is required, named positionals, the columns of the
+  tab-separated lists, the JSON keys of `probe --json`, `contacts list --json` and `listen`, the
+  keys `config answers` prints, the default paths, and the discovery facts above.
+  `tests/test_public_interface.py` fails when snapshot and code differ; `make interface` writes it
+  again and lists what changed.
 * **The comparison** `tools/public_interface.py` classifies each difference as breaking, changed
   (compatible, but users notice it: a default, a wider range) or added. Attributes of a record are
   compared by a rule each, and an attribute without a rule, or a value of another shape, is an
   error, so recording a new fact is a deliberate change of the tool. A rename is a removal plus
   an addition. Each finding states one fact: a value removed from a list is a finding of its own.
-* **The release plan** compares the snapshot at HEAD with that of the last release, on every pull
-  request and push. A breaking finding needs a `**Breaking:**` entry or a `### Removed` section
-  since that release, which makes the next release a major one. A release must contain the
-  snapshot, so 1.0.0 becomes the first baseline. A false alarm is waived with a reason in
-  `tests/public_interface_waivers.json`, for one release, by the finding as the refusal shows
-  it; the waiver covers no other finding.
+  A command's option groups are compared as the rules they are: a call that worked must still
+  work, so a new exclusion between existing options or a new required group breaks.
+* **The release plan** compares the snapshot at HEAD with that of the last release, which HEAD
+  must contain, on every pull request and push, and prints the result. A breaking finding needs a
+  `**Breaking:**` entry or a `### Removed` section since that release, which makes the next
+  release a major one; the log then lists every break the release takes. An added or changed
+  finding needs an entry since that release that makes the next release at least a minor one
+  (`### Added`, `### Changed`), so the kind of release follows from the interface too. A release
+  must contain the snapshot, so 1.0.0 becomes the first baseline. A false alarm of either kind is
+  waived with a reason in `tests/public_interface_waivers.json`, for one release (`X.Y.Z`), by the
+  finding as the refusal shows it; the waiver covers no other finding.
 
 ### Consequences
 
@@ -85,18 +94,22 @@ could drift from the code.
   longer reach a minor or patch release unnoticed.
 * Good, because the snapshot's diff shows every change of a public interface in review, also the
   additions that need documentation.
-* Good, because growth needs only `make interface`, and the check needs no tool besides git.
+* Good, because growth needs only `make interface` and its changelog entry, and the check needs
+  no tool besides git.
 * Bad, because the extractor uses private parts of the code (argparse internals, steps of the
   bridge, private constants); a change there fails the test loudly and needs an edit of the
   extractor.
 * Bad, because the snapshot does not see all that the policy promises; JSON types and
   nullability, the size limits and list bounds of MQTT, the value lists outside `mqtt > values`
-  (the reasons among them), string formats, publishing after a reconnect, exit statuses,
-  platform floors, meanings, units of values, rules between settings and the texts a request
-  accepts stay with review and the written policy
-  ([docs/development.md](../development.md#compatibility) lists them).
+  (the reasons among them), string formats, the forms an option's value takes, the values inside
+  machine-readable lines, publishing after a reconnect, exit statuses, platform floors, meanings,
+  units of values, rules between settings and the texts a request accepts stay with review and
+  the written policy ([docs/development.md](../development.md#compatibility) lists them).
+* Bad, because a fix that adds what was missing, or widens a bound that was too narrow, needs an
+  Added or Changed entry and so a minor release, or a waiver.
 * Bad, because surface behind a setting that the fixture does not switch on is missing until the
-  fixture gets it; a test that every topic of the layout is recorded closes that gap for MQTT.
+  fixture gets it; a test that every topic of the layout is recorded closes that gap for MQTT,
+  and the fixture's contact must fill every field, so that components that need data are there.
 * Neutral, because most feature pull requests touch the one snapshot file; a conflict is resolved
   by `make interface` after merging `main`.
 
@@ -112,8 +125,8 @@ contain the snapshot; the first change after it is compared with it.
 ### A written policy and a snapshot computed from the code (chosen)
 
 * Good, because the code is the only reference, so the check cannot drift from it.
-* Good, because the structure covers most of what users depend on: names, flags, and the types
-  and bounds of settings and options.
+* Good, because the structure covers most of what users depend on: names, flags, the types and
+  bounds of settings and options, and the rules between options that argparse knows.
 * Bad, because behaviour beyond the structure is not seen.
 
 ### A written policy alone

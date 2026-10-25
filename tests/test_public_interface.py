@@ -4,23 +4,30 @@ synthetic snapshots, so that a legitimate removal from the real one never breaks
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import copy
+import dataclasses
 import json
 import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
-from meshcore_home_gateway import bridge, views
-from meshcore_home_gateway.core.mesh import type_name
+from meshcore_home_gateway import bridge, cli, views
+from meshcore_home_gateway import config as configuration
+from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
 from meshcore_home_gateway.core.profile import ProfileReport
+from meshcore_home_gateway.mqtt.contact_devices import contact_device_id
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import NodeType
 from tests import public_interface as interface
+
+if TYPE_CHECKING:
+    from meshcore_home_gateway.radio.transport import Transport
 
 tool = interface.tool
 
@@ -138,7 +145,11 @@ def test_a_value_list_is_what_home_assistant_is_told_of() -> None:
     ):
         interface._declared("x", {"a", "b"}, ["a"])
     with pytest.raises(
-        AssertionError, match=re.escape("x: Home Assistant declares values no path emits")
+        AssertionError,
+        match=re.escape(
+            "x: Home Assistant declares values no path emits: emitted ['a'], declared ['a', 'b']:"
+            " extend the scenario in tests/public_interface.py (_published, _statuses)"
+        ),
     ):
         interface._declared("x", {"a"}, ["a", "b"])
     assert sorted(interface._declared("x", {"a", "b"}, ["b", "a"])) == ["a", "b"]
@@ -245,6 +256,14 @@ def test_a_difference_in_form_only_is_explained() -> None:
     assert "only in its form" in interface.explain([])
 
 
+def test_the_advice_names_the_release_each_kind_makes() -> None:
+    found = [tool.Finding(kind, "x", "y") for kind in (tool.BREAKING, tool.CHANGED, tool.ADDED)]
+    breaking, _, changed, _, added, _ = interface._findings(found)
+    assert "a major one; a false alarm: a waiver, docs/development.md#compatibility" in breaking
+    assert changed.endswith("(the next release is then a minor one):")
+    assert added.endswith("(the next release is then a minor one):")
+
+
 # --- the comparator, on a small synthetic snapshot ------------------------------------------------
 
 B = "<base_topic>/<node_id>/"
@@ -292,23 +311,40 @@ SMALL: dict[str, Any] = {
         "commands": {
             "meshcore-home-gateway": {
                 "options": {"--version": {"output": "meshcore-home-gateway {version}"}},
-                "positionals": {},
-                "commands": ["listen", "probe", "send"],
+                "positionals": {"1": {"takes_value": True, "required": True, "name": "command"}},
             },
-            "listen": {"options": {}, "positionals": {}},
+            "listen": {
+                "options": {
+                    "--count": {"takes_value": True, "type": "count", "min": 0, "default": 0},
+                    "--topic": {"takes_value": True, "choices": ["all", "state"], "default": "all"},
+                },
+                "positionals": {},
+            },
             "probe": {
                 "options": {
                     "--json": {"takes_value": False},
                     "--list": {"takes_value": True, "choices": ["channels", "contacts"]},
                     "--serial": {"takes_value": True},
+                    "--tcp": {"takes_value": True, "type": "host[:port]", "min": 1, "max": 65535},
                 },
+                "positionals": {},
+                "groups": [{"options": ["--serial", "--tcp"], "required": True}],
+            },
+            "run": {
+                "options": {"--state-dir": {"takes_value": True, "type": "path"}},
                 "positionals": {},
             },
             "send": {
                 "options": {
                     "--config": {"takes_value": True, "type": "path", "default": "/etc/m.toml"},
                     "--label": {"takes_value": True, "nargs": "*"},
-                    "--wait": {"takes_value": True, "type": "seconds", "default": 0.0},
+                    "--wait": {
+                        "takes_value": True,
+                        "type": "seconds",
+                        "min": 0.0,
+                        "max": 86400.0,
+                        "default": 0.0,
+                    },
                 },
                 "positionals": {
                     "1": {"takes_value": True, "required": True, "name": "alias"},
@@ -366,6 +402,7 @@ def at(doc: dict[str, Any], *path: str) -> Any:
 
 PUBLISH, CONFIG = ("mqtt", "publish"), ("config",)
 SEND, PROBE = ("cli", "commands", "send"), ("cli", "commands", "probe")
+LISTEN, RUN = ("cli", "commands", "listen"), ("cli", "commands", "run")
 GATEWAY = ("homeassistant", "components", "gateway")
 
 POSITIONAL = (*SEND, "positionals", "1")
@@ -425,6 +462,12 @@ BREAKING: dict[str, Mutation] = {
     "at least one": lambda d: at(d, *SEND, "options", "--label").update(nargs="+"),
     "the rest": lambda d: at(d, *POSITIONAL).update(nargs="..."),
     "path default": lambda d: at(d, *SEND, "options", "--config").update(default="/etc/x.toml"),
+    "option maximum lowered": lambda d: at(d, *SEND, "options", "--wait").update(max=5.0),
+    "option bound added": lambda d: at(d, *LISTEN, "options", "--count").update(max=100),
+    "port range narrowed": lambda d: at(d, *PROBE, "options", "--tcp").update(min=1024),
+    "subcommands required": lambda d: at(d, *LISTEN, "positionals").update(
+        {"1": {"takes_value": True, "required": True, "name": "source"}}
+    ),
     "column appended": lambda d: d["cli"]["columns"].update({"probe --list contacts": 4}),
     "exit code": lambda d: d["cli"]["exit_codes"].update(config_error=1),
     "version format": lambda d: at(
@@ -484,6 +527,13 @@ COMPATIBLE: dict[str, Mutation] = {
     "optional positional": lambda d: at(d, *SEND, "positionals").update(
         {"3": {"takes_value": True, "nargs": "?", "name": "channel"}}
     ),
+    "optional variadic positional": lambda d: at(d, *SEND, "positionals").update(
+        {"3": {"takes_value": True, "nargs": "*", "name": "names"}}
+    ),
+    "option maximum raised": lambda d: at(d, *SEND, "options", "--wait").update(max=604800.0),
+    "subcommands optional": lambda d: at(d, *LISTEN, "positionals").update(
+        {"1": {"takes_value": True, "name": "source"}}
+    ),
     "cli choice added": lambda d: at(d, *PROBE, "options", "--list", "choices").append("profile"),
     "cli default": lambda d: at(d, *SEND, "options", "--wait").update(default=5.0),
     "cli type dropped": lambda d: at(d, *SEND, "options", "--wait").pop("type"),
@@ -506,7 +556,7 @@ COMPATIBLE: dict[str, Mutation] = {
 CHANGED = {
     "maximum raised", "minimum lowered", "bound dropped", "integer to number", "choices dropped",
     "no longer required", "default changed", "cli default", "cli type dropped", "now optional",
-    "one or more", "exactly one, as a list",
+    "one or more", "exactly one, as a list", "option maximum raised",
 }  # fmt: skip
 
 
@@ -545,6 +595,222 @@ def test_positionals_in_another_order_break_at_both_places() -> None:
     ]
 
 
+# --- option groups and subcommands: a call that worked must still work ---------------------------
+
+C = "cli > commands > "
+FLAG = {"takes_value": False}
+
+
+def grouped(*path: str, options: list[str], required: bool) -> Mutation:
+    """A mutation that gives the command at `path` this group (new options take no value)."""
+
+    def change(d: dict[str, Any]) -> None:
+        command = at(d, *path)
+        for name in options:
+            command["options"].setdefault(name, FLAG)
+        command.setdefault("groups", []).append({"options": options, "required": required})
+
+    return change
+
+
+def regrouped(options: list[str], required: bool = True) -> Mutation:
+    """A mutation that makes probe's one group this one (new options take no value)."""
+
+    def change(d: dict[str, Any]) -> None:
+        at(d, *PROBE).pop("groups")
+        grouped(*PROBE, options=options, required=required)(d)
+
+    return change
+
+
+def excluding(path: str, first: str, second: str) -> tuple[str, str]:
+    return path, f'"{first}" and "{second}" exclude each other'
+
+
+PROBE_GROUP = f"{C}probe > groups > --serial | --tcp"
+SEND_GROUP = f"{C}send > groups > --direct | --flood"
+WIDER = f"{C}probe > groups > --json | --serial | --tcp"
+JOINED = f"{C}probe > groups > --ble | --serial | --tcp"
+LISTEN_GROUP = f"{C}listen > groups > --count | --topic"
+OUTPUT_GROUP = f"{C}probe > groups > --json | --list"
+GROUPS: dict[str, tuple[Mutation, set[tuple[str, str]]]] = {
+    # breaking
+    "a required group of new options": (
+        grouped(*SEND, options=["--direct", "--flood"], required=True),
+        {
+            ("added", f"{C}send > options > --direct: new"),
+            ("added", f"{C}send > options > --flood: new"),
+            ("added", ": ".join(excluding(SEND_GROUP, "--direct", "--flood"))),
+            ("breaking", f"{SEND_GROUP}: new and required"),
+        },
+    ),
+    "existing options made exclusive": (
+        grouped(*PROBE, options=["--json", "--list"], required=False),
+        {("breaking", ": ".join(excluding(OUTPUT_GROUP, "--json", "--list")))},
+    ),
+    "listen --topic and --count exclusive": (
+        grouped(*LISTEN, options=["--count", "--topic"], required=False),
+        {("breaking", ": ".join(excluding(LISTEN_GROUP, "--count", "--topic")))},
+    ),
+    "an option in a required group of its own": (
+        grouped(*RUN, options=["--state-dir"], required=True),
+        {("breaking", f"{C}run > groups > --state-dir: new and required")},
+    ),
+    "an option moved out of a required group": (
+        regrouped(["--serial"]),
+        {
+            ("breaking", f'{C}probe > groups > --serial: no longer satisfied by "--tcp"'),
+            ("changed", f'{PROBE_GROUP}: "--serial" and "--tcp" no longer exclude each other'),
+        },
+    ),
+    "a required group widened by an existing option": (  # which it now excludes, too
+        regrouped(["--json", "--serial", "--tcp"]),
+        {
+            ("breaking", ": ".join(excluding(WIDER, "--json", "--serial"))),
+            ("breaking", ": ".join(excluding(WIDER, "--json", "--tcp"))),
+            ("changed", f'{WIDER}: also satisfied by "--json"'),
+        },
+    ),
+    # compatible
+    "a new option joins a required group": (
+        regrouped(["--ble", "--serial", "--tcp"]),
+        {
+            ("added", f"{C}probe > options > --ble: new"),
+            ("added", ": ".join(excluding(JOINED, "--ble", "--serial"))),
+            ("added", ": ".join(excluding(JOINED, "--ble", "--tcp"))),
+            ("added", f'{JOINED}: also satisfied by "--ble"'),
+        },
+    ),
+    "a group of new options, not required": (
+        grouped(*SEND, options=["--direct", "--flood"], required=False),
+        {
+            ("added", f"{C}send > options > --direct: new"),
+            ("added", f"{C}send > options > --flood: new"),
+            ("added", ": ".join(excluding(SEND_GROUP, "--direct", "--flood"))),
+        },
+    ),
+    "a group no longer required": (
+        regrouped(["--serial", "--tcp"], required=False),
+        {("changed", f"{PROBE_GROUP}: no longer required")},
+    ),
+    "a group dropped": (
+        lambda d: at(d, *PROBE).pop("groups"),
+        {
+            ("changed", f'{PROBE_GROUP}: "--serial" and "--tcp" no longer exclude each other'),
+            ("changed", f"{PROBE_GROUP}: no longer required"),
+        },
+    ),
+    "an option of a required group removed": (  # its removal is the one finding
+        lambda d: (at(d, *PROBE, "options").pop("--tcp"), regrouped(["--serial"])(d)),
+        {("breaking", f"{C}probe > options > --tcp: removed")},
+    ),
+    "a new command with a required group": (
+        lambda d: (
+            d["cli"]["commands"].update({"trace": {"options": {}, "positionals": {}}}),
+            grouped("cli", "commands", "trace", options=["--to"], required=True)(d),
+        ),
+        {("added", f"{C}trace: new")},
+    ),
+}  # fmt: skip
+
+
+@pytest.mark.parametrize(("change", "expected"), GROUPS.values(), ids=GROUPS.keys())
+def test_option_groups(change: Mutation, expected: set[tuple[str, str]]) -> None:
+    found = tool.compare(SMALL, mutated(change))
+    assert {(f.kind, str(f)) for f in found} == expected
+    assert len(found) == len(expected)
+
+
+def test_a_group_that_becomes_required_breaks() -> None:
+    loose = mutated(regrouped(["--serial", "--tcp"], required=False))
+    assert [(f.kind, str(f)) for f in tool.compare(loose, SMALL)] == [
+        ("breaking", f"{PROBE_GROUP}: now required")
+    ]
+
+
+def test_an_option_required_alone_may_join_a_group() -> None:
+    """Every call gave the option: it satisfies the group."""
+    alone = mutated(
+        lambda d: at(d, *SEND, "options").update({"--to": {"takes_value": True, "required": True}})
+    )
+    either = copy.deepcopy(alone)
+    at(either, *SEND, "options", "--to").pop("required")
+    grouped(*SEND, options=["--all", "--to"], required=True)(either)
+    assert {(f.kind, str(f)) for f in tool.compare(alone, either)} == {
+        ("added", f"{C}send > options > --all: new"),
+        ("added", f'{C}send > groups > --all | --to: "--all" and "--to" exclude each other'),
+        ("added", f'{C}send > groups > --all | --to: also satisfied by "--all"'),
+        ("changed", f"{C}send > options > --to > required: true -> null"),
+    }
+
+
+def test_a_command_that_needs_a_subcommand_from_then_on_breaks() -> None:
+    def subcommands(d: dict[str, Any]) -> None:
+        BREAKING["subcommands required"](d)
+        d["cli"]["commands"]["listen broker"] = {"options": {}, "positionals": {}}
+
+    assert [(f.kind, str(f)) for f in tool.compare(SMALL, mutated(subcommands))] == [
+        ("added", f"{C}listen broker: new"),
+        ("breaking", f"{C}listen > positionals > 1: new and required"),
+    ]
+
+
+def test_the_extractor_records_groups_and_subcommands() -> None:
+    parser = argparse.ArgumentParser(prog="x")
+    where = parser.add_mutually_exclusive_group(required=True)
+    where.add_argument("-s", "--serial")
+    where.add_argument("--tcp")
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument("--json", action="store_true")
+    output.add_argument("--list")
+    parser.add_argument("name")
+    commands = parser.add_subparsers(required=True, metavar="action")
+    commands.add_parser("run").add_subparsers(dest="what")
+    out: dict[str, Any] = {}
+    interface._commands(parser, "", out)
+    assert out["x"]["groups"] == [  # an option by its longest name
+        {"options": ["--json", "--list"], "required": False},
+        {"options": ["--serial", "--tcp"], "required": True},
+    ]
+    assert out["x"]["positionals"] == {
+        "1": {"name": "name", "required": True, "takes_value": True},
+        "2": {"name": "action", "required": True, "takes_value": True},  # at its place
+    }
+    assert out["run"] == {
+        "options": {},
+        "positionals": {"1": {"name": "what", "takes_value": True}},
+    }
+
+
+def test_a_positional_without_values_is_not_required_on_any_python() -> None:
+    """Before 3.13 argparse calls a `*` positional without a default required."""
+    parser = argparse.ArgumentParser(prog="x")
+    parser.add_argument("names", nargs="*").required = True  # as 3.11 and 3.12 set it
+    parser.add_argument("more", nargs="?")
+    parser.add_argument("pair", nargs=2)
+    out: dict[str, Any] = {}
+    interface._commands(parser, "", out)
+    assert out["x"]["positionals"] == {
+        "1": {"name": "names", "nargs": "*", "takes_value": True},
+        "2": {"name": "more", "nargs": "?", "takes_value": True},
+        "3": {"name": "pair", "nargs": 2, "required": True, "takes_value": True},
+    }
+
+
+def test_an_option_records_the_bounds_its_type_takes() -> None:
+    parser = argparse.ArgumentParser(prog="x")
+    parser.add_argument("--wait", type=cli._wait_seconds)
+    parser.add_argument("--tcp", type=cli.tcp_address)
+    parser.add_argument("--count", type=cli._count)
+    out: dict[str, Any] = {}
+    interface._commands(parser, "", out)
+    options = out["x"]["options"]
+    assert (options["--wait"]["min"], options["--wait"]["max"]) == (0.0, cli.MAX_WAIT_S)
+    assert (options["--tcp"]["min"], options["--tcp"]["max"]) == (1, 65535)  # of the port
+    assert options["--count"]["min"] == 0
+    assert "max" not in options["--count"]
+
+
 def test_a_required_setting_in_a_new_table_that_every_file_reads_is_breaking() -> None:
     """Read for every file, also one without the table: every file must set it."""
 
@@ -576,12 +842,48 @@ def test_each_value_of_a_set_is_a_finding_of_its_own() -> None:
     ]
 
 
-def test_identity_and_condition_are_not_compared() -> None:
-    def change(d: dict[str, Any]) -> None:
-        d["config"]["targets.<alias>.channel"].pop("conditional")
-        d["config"]["mqtt.username"]["identity"] = True
+def test_identity_is_not_compared() -> None:
+    assert (
+        tool.compare(
+            SMALL, mutated(lambda d: at(d, *CONFIG, "mqtt.username").update(identity=True))
+        )
+        == []
+    )
 
-    assert tool.compare(SMALL, mutated(change)) == []
+
+def test_a_required_setting_read_for_every_file_from_then_on_is_breaking() -> None:
+    """Released with a table read only when present, then read for every file: each file needs
+    the setting now, also one without the table."""
+    optional = mutated(COMPATIBLE["required in a new table"])
+    everywhere = copy.deepcopy(optional)
+    for key in ("telemetry", "telemetry.endpoint"):
+        everywhere["config"][key].pop("conditional")
+    found = tool.compare(optional, everywhere)
+    assert [(f.kind, str(f)) for f in found] == [
+        ("breaking", "config > telemetry.endpoint > conditional: true -> null"),
+        ("changed", "config > telemetry > conditional: true -> null"),
+    ]
+    at(everywhere, *CONFIG, "telemetry.endpoint").pop("required")  # optional, read everywhere
+    assert {f.kind for f in tool.compare(optional, everywhere)} == {"changed"}
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        (  # its default now applies to every file
+            lambda d: at(d, *CONFIG, "targets.<alias>.channel").pop("conditional"),
+            "config > targets.<alias>.channel > conditional: true -> null",
+        ),
+        (  # read only when present from now on: what loaded still loads
+            lambda d: at(d, *CONFIG, "mqtt.username").update(conditional=True),
+            "config > mqtt.username > conditional: null -> true",
+        ),
+    ],
+)
+def test_a_setting_read_otherwise_is_a_change(change: Mutation, expected: str) -> None:
+    assert [(f.kind, str(f)) for f in tool.compare(SMALL, mutated(change))] == [
+        ("changed", expected)
+    ]
 
 
 def test_a_list_in_another_order_is_no_change() -> None:
@@ -638,6 +940,9 @@ def test_a_record_that_is_no_object_is_refused() -> None:
         ((*POSITIONAL, "nargs"), 1.5, "nargs: expected a string or an integer, got 1.5"),
         ((*GATEWAY, "contact", "event_types"), {"added": 1}, "expected a list of strings, got {"),
         ((*GATEWAY, "airtime", "attributes"), [1], "attributes: expected a string or a list of"),
+        ((*PROBE, "groups"), [{"options": "--tcp", "required": True}], "probe > groups: expected"),
+        ((*PROBE, "groups"), [{"options": ["--tcp"]}], 'groups: expected a list of {"options"'),
+        ((*PROBE, "groups"), {"options": ["--tcp"], "required": True}, "groups: expected a list"),
     ],
 )
 def test_a_value_of_another_shape_is_refused(
@@ -659,33 +964,35 @@ def test_another_format_is_refused() -> None:
 
 def test_a_waiver_names_a_finding_as_the_refusal_shows_it() -> None:
     new = mutated(BREAKING["topic removed"])
-    [finding] = tool.breaking(SMALL, new, {})
+    [finding] = tool.unwaived(SMALL, new, {})
     assert str(finding) == f"mqtt > publish > {B}rx: removed"
-    assert tool.breaking(SMALL, new, {str(finding): "never published"}) == []
-    assert tool.breaking(SMALL, new, {finding.path: "never published"}) == [finding]
+    assert tool.unwaived(SMALL, new, {str(finding): "never published"}) == []
+    assert tool.unwaived(SMALL, new, {finding.path: "never published"}) == [finding]
+    grown = mutated(COMPATIBLE["topic added"])  # growth too: a fix may add what was missing
+    assert tool.unwaived(SMALL, grown, {f"mqtt > publish > {B}telemetry: new": "a fix"}) == []
 
 
 def test_a_waiver_covers_its_one_fact_only() -> None:
     """A waived removal from a list lets no second removal pass, a waived narrowing no other."""
     one = mutated(BREAKING["document key removed"])
-    waived = {str(f): "never published" for f in tool.breaking(SMALL, one, {})}
+    waived = {str(f): "never published" for f in tool.unwaived(SMALL, one, {})}
     assert list(waived) == ['mqtt > documents > state: no longer has "battery_v"']
-    assert tool.breaking(SMALL, one, waived) == []
+    assert tool.unwaived(SMALL, one, waived) == []
     both = mutated(lambda d: d["mqtt"]["documents"]["state"].clear())
-    assert [str(f) for f in tool.breaking(SMALL, both, waived)] == [
+    assert [str(f) for f in tool.unwaived(SMALL, both, waived)] == [
         'mqtt > documents > state: no longer has "queue"'
     ]
     lowered = mutated(BREAKING["maximum lowered"])
-    waived = {str(f): "a typo, never released" for f in tool.breaking(SMALL, lowered, {})}
+    waived = {str(f): "a typo, never released" for f in tool.unwaived(SMALL, lowered, {})}
     assert list(waived) == ["config > messages.queue_size > max: 1000 -> 500"]
     further = mutated(lambda d: at(d, *CONFIG, "messages.queue_size").update(max=50))
-    assert [str(f) for f in tool.breaking(SMALL, further, waived)] == [
+    assert [str(f) for f in tool.unwaived(SMALL, further, waived)] == [
         "config > messages.queue_size > max: 1000 -> 50"
     ]
     refused = mutated(BREAKING["event type removed"])
-    waived = {str(f): "never published" for f in tool.breaking(SMALL, refused, {})}
+    waived = {str(f): "never published" for f in tool.unwaived(SMALL, refused, {})}
     none = mutated(lambda d: at(d, *GATEWAY, "contact", "event_types").clear())
-    assert [str(f) for f in tool.breaking(SMALL, none, waived)] == [
+    assert [str(f) for f in tool.unwaived(SMALL, none, waived)] == [
         'homeassistant > components > gateway > contact > event_types: no longer has "added"'
     ]
 
@@ -695,3 +1002,185 @@ def test_the_snapshot_renders_canonically() -> None:
     assert text.startswith('{\n "cli": {\n  "columns": {')  # sorted keys, indent 1
     assert text.endswith("}\n")
     assert tool.render(json.loads(text)) == text
+
+
+# --- the extractor's guards: each fails loudly instead of recording less --------------------------
+
+
+def _option(*names: str, **kwargs: Any) -> argparse.Action:
+    return argparse.ArgumentParser().add_argument(*names, **kwargs)
+
+
+def _sensor(unique_id: str, platform: str = "sensor") -> dict[str, Any]:
+    return {"p": platform, "unique_id": unique_id, "default_entity_id": f"{platform}.x"}
+
+
+GUARDS: dict[str, tuple[Callable[[], object], str]] = {
+    "a topic published in two ways": (
+        lambda: interface._Topic({True, False}, {1}, {"json"}).record("t"),
+        "t: published in more than one way",
+    ),
+    "a list with lines of two lengths": (
+        lambda: interface._columns({"x": "a\tb\nc\n"}),
+        "x: lines of 2, 1 fields",
+    ),
+    "an option type without a name": (
+        lambda: interface._argument(_option("--n", type=int), required=False),
+        "n: name the type",
+    ),
+    "a number of values without a count": (
+        lambda: interface._fewest(_option("x", nargs=argparse.PARSER)),
+        "x: name the nargs 'A...' in _FEWEST",
+    ),
+    "a bound the type function exceeds": (
+        lambda: interface._bounds(cli._wait_seconds, interface._Type("seconds", 0.0, 60.0)),
+        "seconds: its max is not 60.0",
+    ),
+    "a bound the type function refuses": (
+        lambda: interface._bounds(cli._count, interface._Type("count", 1)),
+        "count: its min is not 1",
+    ),
+    "a bound the table lacks": (
+        lambda: interface._bounds(cli._wait_seconds, interface._Type("seconds", 0.0)),
+        "seconds: refuses 1000000000: give _TYPES its max",
+    ),
+    "a unique ID not by key": (
+        lambda: interface._components({"k": _sensor("other_k")}, "dev"),
+        "k: the unique ID other_k is not by key",
+    ),
+    "two target aliases with other facts": (
+        lambda: interface._components(
+            {
+                interface.ALIAS: _sensor(f"dev_{interface.ALIAS}"),
+                interface.CHANNEL_ALIAS: _sensor(f"dev_{interface.CHANNEL_ALIAS}", "button"),
+            },
+            "dev",
+        ),
+        f"{interface.CHANNEL_ALIAS}: other facts than <alias>",
+    ),
+    "an attribute template without keys": (
+        lambda: interface._component(
+            _sensor("u") | {"json_attributes_template": "{{ value_json | tojson }}"}
+        ),
+        "u: no attribute keys in",
+    ),
+    "a field of the contact at its default": (
+        lambda: interface._filled(Node(interface.KEY, "Alice", NodeType.CHAT)),
+        "fill Node.flags in the fixture of homeassistant() in tests/public_interface.py",
+    ),
+    "a field inside the contact at its default": (
+        lambda: interface._filled(
+            dataclasses.replace(
+                interface._tracked(NodeType.CHAT), heard=Heard(1.0, "message", Signal(hops=1))
+            )
+        ),
+        "fill Signal.snr_db in the fixture",
+    ),
+}
+
+
+@pytest.mark.parametrize(("check", "expected"), GUARDS.values(), ids=GUARDS.keys())
+def test_a_guard_of_the_extractor(check: Callable[[], object], expected: str) -> None:
+    with pytest.raises(AssertionError, match=re.escape(expected)):
+        check()
+
+
+def test_the_snapshot_refuses_a_fixture_value_that_leaks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(interface, "_client_id", lambda: "qleakq")
+    with pytest.raises(AssertionError, match=re.escape("fixture values left in the snapshot")):
+        interface.surface()
+
+
+def test_the_snapshot_refuses_an_error_logged_on_the_way(monkeypatch: pytest.MonkeyPatch) -> None:
+    def logging_client_id() -> str:
+        logging.getLogger("meshcore_home_gateway.bridge").error("observer failed")
+        return "<client_id>"
+
+    monkeypatch.setattr(interface, "_client_id", logging_client_id)
+    with pytest.raises(AssertionError, match="logged while computing the public interface"):
+        interface.surface()
+
+
+def test_contact_components_must_not_depend_on_the_node_type_otherwise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def payload(config: Any, topics: Any, tracked: Any, slug: str) -> dict[str, Any]:
+        uid = contact_device_id(config, tracked.node.public_key)
+        platform = "sensor" if tracked.node.node_type == NodeType.CHAT else "button"
+        return {"cmps": {"snr": _sensor(f"{uid}_snr", platform)}}
+
+    monkeypatch.setattr(interface, "contact_payload", payload)
+    with pytest.raises(AssertionError, match="contact component snr: other facts for"):
+        interface.homeassistant()
+
+
+def test_an_answer_type_needs_a_typed_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(configuration._ANSWER_TYPES, "history.vacuum_days", int)
+    with pytest.raises(
+        AssertionError,
+        match=re.escape(
+            "history.vacuum_days: has an answer type, but neither MINIMAL nor MAXIMAL_TEXT reads"
+            " it through a typed method of config._Section: set it in MAXIMAL_TEXT"
+        ),
+    ):
+        interface.config()
+
+
+def test_a_setting_read_in_two_ways_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    def twice(_: str) -> None:
+        section = configuration._Section({}, "t")
+        section.integer("n", 1, 0, 9)
+        section.integer("n", 2, 0, 9)
+
+    monkeypatch.setattr(interface, "parse_config", twice)
+    with pytest.raises(AssertionError, match=re.escape("t.n: read as")):
+        interface._reads("")
+
+
+def test_a_parameter_the_recorder_reads_must_stay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Renamed, a bound or the required flag would vanish from every setting as "compatible"."""
+
+    def integer(self: Any, name: str, default: int, low: int, high: int) -> int:
+        return default
+
+    monkeypatch.setattr(configuration._Section, "integer", integer)
+    with pytest.raises(
+        AssertionError,
+        match=re.escape(
+            "config._Section.integer no longer takes lo: update _setting in"
+            " tests/public_interface.py"
+        ),
+    ):
+        interface._reads(interface.MINIMAL)
+
+
+def _refused(_: list[str]) -> int:
+    raise SystemExit(cli.EX_USAGE)  # as argparse does
+
+
+@pytest.mark.parametrize(
+    ("main", "status"),
+    [(lambda _: cli.EX_FAILURE, cli.EX_FAILURE), (lambda _: cli.EX_OK, cli.EX_OK), (_refused, 2)],
+)
+def test_a_command_must_succeed_and_print(
+    monkeypatch: pytest.MonkeyPatch, main: Callable[[list[str]], int], status: int
+) -> None:
+    monkeypatch.setattr(cli, "main", main)
+    with pytest.raises(AssertionError, match=re.escape(f"x: exit {status}, 0 characters")):
+        interface._printed(["x"])
+
+
+def test_the_bus_must_set_a_last_will(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(interface._Paho, "will_set", lambda *_, **__: None)
+    with pytest.raises(AssertionError, match="MqttBus set no last will"):
+        interface.mqtt(tmp_path)
+
+
+@dataclasses.dataclass
+class _Annotated:
+    factory: Transport | None  # a name for type checking only, as config.py may import some
+    mode: Literal["auto", "always"] = "auto"
+
+
+def test_a_choice_is_read_from_its_own_annotation_only() -> None:
+    assert interface._literal(_Annotated, "mode") == ["auto", "always"]
