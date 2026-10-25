@@ -397,8 +397,8 @@ OLD = {"format": 1, "mqtt": {"publish": {"b/n/state": STATE, "b/n/rx": EVENT}}}
 NEW = {"format": 1, "mqtt": {"publish": {"b/n/state": STATE}}}  # rx removed
 GROWN = {"format": 1, "mqtt": {"publish": {"b/n/state": STATE, "b/n/rx": EVENT, "b/n/tx": EVENT}}}
 OUT = section("1.0.0", "Out.") + FIRST
-RX = "mqtt > publish > b/n/rx"  # the path of the finding, as waivers name it
-REMOVED = f"{RX}: removed"
+RX = "mqtt > publish > b/n/rx"  # the path of the finding
+REMOVED = f"{RX}: removed"  # the finding, as the refusal shows it and a waiver names it
 
 
 def snapshot(doc: object) -> str:
@@ -464,17 +464,41 @@ def test_a_breaking_entry_of_a_pre_release_covers_later_changes(repo: Repo) -> N
 def test_a_waiver_lets_a_finding_of_its_release_pass(repo: Repo) -> None:
     base = after_1_0_0(repo)
     waivers = repo.path / plan.WAIVERS
-    waivers.write_text(snapshot({"0.9.0": {RX: "another release"}}), encoding="utf-8")
-    repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(NEW))
-    with pytest.raises(plan.PlanError, match=re.escape(REMOVED)):
-        plan.check(base)
-    waivers.write_text(snapshot({"1.0.0": {RX: "never published"}}), encoding="utf-8")
+    for other in ({"0.9.0": {REMOVED: "another release"}}, {"1.0.0": {RX: "its path only"}}):
+        waivers.write_text(snapshot(other), encoding="utf-8")
+        repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(NEW))
+        with pytest.raises(plan.PlanError, match=re.escape(REMOVED)):
+            plan.check(base)
+    waivers.write_text(snapshot({"1.0.0": {REMOVED: "never published"}}), encoding="utf-8")
     repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(NEW))
     assert plan.check(base) == "no release: __version__ stays 1.0.0"
 
 
+def test_a_waiver_lets_only_its_one_finding_pass(repo: Repo) -> None:
+    """Another value removed from the same list needs a waiver of its own."""
+    lists = {"format": 1, "mqtt": {"documents": {"state": ["battery_v", "queue", "radio"]}}}
+    repo.commit("1.0.0rc1", FIRST, interface=snapshot(lists))
+    repo.tag("v1.0.0rc1")
+    repo.commit("1.0.0", OUT, interface=snapshot(lists))
+    repo.tag("v1.0.0")
+    base = repo.git("rev-parse", "HEAD").strip()
+    gone = 'mqtt > documents > state: no longer has "battery_v"'
+    waivers = snapshot({"1.0.0": {gone: "never published"}})
+    (repo.path / plan.WAIVERS).write_text(waivers, encoding="utf-8")
+    state = ["queue", "radio"]
+    fewer = {"format": 1, "mqtt": {"documents": {"state": state}}}
+    repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(fewer))
+    assert plan.check(base) == "no release: __version__ stays 1.0.0"
+    state.remove("radio")
+    repo.commit("1.0.0", unreleased("Fixed", "Snapshot."), interface=snapshot(fewer))
+    with pytest.raises(plan.PlanError) as refused:
+        plan.check(base)
+    assert 'no longer has "radio"' in str(refused.value)
+    assert "battery_v" not in str(refused.value)
+
+
 @pytest.mark.parametrize(
-    "waivers", [snapshot({"1.0.0": {RX: " "}}), snapshot({"1.0.0": [RX]}), "[]", "{"]
+    "waivers", [snapshot({"1.0.0": {REMOVED: " "}}), snapshot({"1.0.0": [REMOVED]}), "[]", "{"]
 )
 def test_a_waiver_needs_its_form_and_a_reason(repo: Repo, waivers: str) -> None:
     base = after_1_0_0(repo)
@@ -520,6 +544,11 @@ def test_deleting_the_snapshot_is_refused(repo: Repo) -> None:
         ("[]", "not a JSON object"),
         (snapshot({**NEW, "format": 2}), "snapshot format 2, this tool reads 1"),
         (snapshot({"format": 1, "config": {"x": {"colour": "red"}}}), "no rule for the attribute"),
+        (
+            snapshot({"format": 1, "config": {"x": {"min": "1"}}}),
+            'x > min: expected a number, got "1"',
+        ),
+        (snapshot({"format": 1, "config": {"x": {"choices": [{}]}}}), "x > choices: expected a"),
     ],
 )
 def test_a_snapshot_that_cannot_be_compared_is_refused(
@@ -541,3 +570,18 @@ def test_the_isolated_tool_loads_the_comparator(tmp_path: Path) -> None:
     )  # fmt: skip
     assert run.returncode == 1
     assert REMOVED in run.stderr
+
+
+def test_a_malformed_snapshot_is_refused_not_a_traceback(tmp_path: Path) -> None:
+    repo = Repo(tmp_path)
+    after_1_0_0(repo)
+    bad = {"format": 1, "config": {"mqtt.port": {"type": "integer", "min": "1"}}}
+    repo.commit("1.0.0", unreleased("Changed", "x."), interface=snapshot(bad))
+    run = subprocess.run(  # noqa: S603 - the tool with fixed arguments
+        [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check"],
+        cwd=tmp_path, env=repo.env, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert (run.returncode, run.stderr) == (
+        1,
+        f'release_plan: {plan.INTERFACE}: config > mqtt.port > min: expected a number, got "1"\n',
+    )

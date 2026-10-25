@@ -4,11 +4,12 @@ without a radio or a broker; tests/public_interface.json is its snapshot.
     python -m tests.public_interface           # compare; exit 1 on a difference
     python -m tests.public_interface --write   # write the snapshot again (make interface)
 
-It records the structure only: topics with their retained flag and QoS, the key paths of the
-documents, the value lists the code declares in one place, every setting, command, option and
-machine-readable output, and what Home Assistant refers to. The fixture's names are words that no
-real name contains (the slug "s" once turned "sensor" into "<slug>ensor"); `placeholders` turns
-them into the snapshot's placeholders, which belong to its format and are never renamed.
+It records the structure only: topics with their retained flag and QoS, the subscriptions and the
+last will, the key paths of the documents, the value lists the code declares in one place or
+emits where Home Assistant is told of them, every setting, command, option and machine-readable
+output, and what Home Assistant refers to. The fixture's names are words that no real name
+contains (the slug "s" once turned "sensor" into "<slug>ensor"); `placeholders` turns them into
+the snapshot's placeholders, which belong to its format and are never renamed.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import dataclasses
 import importlib.util
 import inspect
 import io
@@ -25,8 +27,9 @@ import math
 import re
 import sys
 import tempfile
+import tomllib
 import typing
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -39,10 +42,11 @@ from meshcore_home_gateway import __version__, cli, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import ProfileConfig, parse_config
+from meshcore_home_gateway.contact_manager import Job
 from meshcore_home_gateway.core import profile
 from meshcore_home_gateway.core.commands import Rejection
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
-from meshcore_home_gateway.core.mesh import NODE_TYPES, Fix, Node, Tracked
+from meshcore_home_gateway.core.mesh import NODE_TYPES, Fix, Node, Tracked, type_name
 from meshcore_home_gateway.core.model import (
     DeliveryEvent,
     DeliveryState,
@@ -53,6 +57,7 @@ from meshcore_home_gateway.core.model import (
 )
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt import client as mqtt_client
+from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
     contact_device_id,
@@ -60,7 +65,6 @@ from meshcore_home_gateway.mqtt.contact_devices import (
     contact_payload,
 )
 from meshcore_home_gateway.mqtt.discovery import (
-    PROFILE_STATES,
     device_id,
     discovery_payload,
     discovery_topic,
@@ -71,6 +75,7 @@ from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import AutoAdd, NodeType
 from meshcore_home_gateway.radio.session import (
     AdvertHeard,
+    CommandFailedError,
     CompanionSession,
     ContactsRead,
     MessageReceived,
@@ -258,18 +263,18 @@ class _Paho:
     on_message: Any = None
 
     def __init__(self) -> None:
-        self.will: tuple[str, bytes] | None = None
-        self.subscribed: list[str] = []
+        self.will: tuple[str, bytes, bool, int] | None = None
+        self.subscribed: list[tuple[str, int]] = []
         self.published: list[tuple[str, bytes, bool, int]] = []
 
     def __getattr__(self, name: str) -> Callable[..., None]:
         return lambda *_, **__: None  # connecting and the network loop: there is no broker
 
     def will_set(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> None:
-        self.will = (topic, payload)
+        self.will = (topic, payload, retain, qos)
 
     def subscribe(self, topic: list[tuple[str, int]]) -> None:
-        self.subscribed += [name for name, _ in topic]
+        self.subscribed += topic
 
     def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any:
         self.published.append((topic, payload, retain, qos))
@@ -313,17 +318,17 @@ def mqtt(tmp: Path) -> dict[str, Any]:
             entry.texts.add(payload.decode())
     if client.will is None:
         raise AssertionError("MqttBus set no last will")
-    will = {placeholders(client.will[0]): client.will[1].decode()}
-    for topic, text in will.items():
-        seen[topic].texts.add(text)
+    topic, payload, retained, qos = client.will
+    seen[placeholders(topic)].texts.add(payload.decode())
+    will = {"payload": payload.decode(), "retained": retained, "qos": qos}
     ours = {t.removeprefix(_DOCUMENTS): e for t, e in seen.items() if t.startswith(_DOCUMENTS)}
     texts = {name: list(e.texts) for name, e in ours.items() if "text" in e.payloads}
     return {
         "publish": {topic: entry.record(topic) for topic, entry in seen.items()},
-        "subscribe": [placeholders(topic) for topic in client.subscribed],
-        "last_will": will,
+        "subscribe": {placeholders(topic): {"qos": qos} for topic, qos in client.subscribed},
+        "last_will": {placeholders(topic): will},
         "documents": {name: list(e.keys) for name, e in ours.items() if "json" in e.payloads},
-        "values": texts | _vocabularies(),
+        "values": texts | _vocabularies(client.published),
     }
 
 
@@ -342,9 +347,34 @@ def _record(key: str, name: str, node_type: int) -> codec.ContactRecord:
     )  # fmt: skip
 
 
+async def _refused_write() -> None:
+    raise CommandFailedError("add_contact", "table_full")
+
+
+EVENTS_S = 10.0  # the bridge's event loop handles the scenario's events within this
+
+
+async def _until(events: asyncio.Task[None], step: Awaitable[None]) -> None:
+    """`step`, which waits for the bridge's event loop: the exception that ended the loop is
+    raised, and a loop that never gets there fails after EVENTS_S instead of hanging."""
+    waiting = asyncio.ensure_future(step)
+    done, _ = await asyncio.wait(
+        {events, waiting}, timeout=EVENTS_S, return_when=asyncio.FIRST_COMPLETED
+    )
+    if waiting in done:
+        waiting.result()
+        return
+    waiting.cancel()
+    if events in done:
+        events.result()  # raises what ended it
+        raise AssertionError("the bridge's event loop ended")
+    raise AssertionError(f"the bridge's event loop did not get there in {EVENTS_S} s")
+
+
 async def _published(tmp: Path) -> _Paho:
-    """Every publish path of the gateway once, through the MQTT adapter: the bridge never runs,
-    its observer and a few of its steps are called directly."""
+    """Every publish path of the gateway once, through the MQTT adapter, and every value of the
+    lists that the producers build where they publish them: the bridge never runs, its observer
+    and a few of its steps are called directly."""
     client = _Paho()
     topics = Topics(BASE, NODE)
     bus = mqtt_client.MqttBus(
@@ -379,43 +409,65 @@ async def _published(tmp: Path) -> _Paho:
         profile.MANUAL_ADD: False, profile.AUTOADD: 0, profile.TELEMETRY: 0,
         profile.ADVERT_LOCATION: 0, profile.AIRTIME_FACTOR: 9000, profile.NAME: "Old",
     }  # fmt: skip
-    wanted = cast(dict[str, profile.Value], {**live, profile.MANUAL_ADD: True})
-    observer.profile_applied(
+    wanted = cast(dict[str, profile.Value], {**live, profile.MANUAL_ADD: True, profile.NAME: "New"})
+    observer.profile_applied(  # the first connect: an event of each kind
         ProfileReport(
             "auto", 14, True, False, live, wanted,
             written={profile.MANUAL_ADD: True}, reasons={profile.MANUAL_ADD: "initial"},
+            failed=(profile.NAME,), not_taken=(profile.AUTOADD,),
+            not_converging=(profile.TELEMETRY,), drift={profile.ADVERT_LOCATION: 1},
         )
     )  # fmt: skip
     bridge._deliver_event(DeliveryEvent("id", ALIAS, DeliveryState.CONFIRMED, text="Hello"))
     bridge._publish_announcements()  # discovery, the controls, the contacts' devices; state
+    bridge._radio_ready.set()
+    bridge._publish_state()  # the radio connected
+    bridge._radio_ready.clear()
+    devices.discovery_message(contact_discovery_topic(MAXIMAL, KEY), b"", False)  # hidden
+    devices.show_hidden()
     message = InboundMessage(MessageKind.CONTACT, f"{WORD} now", int(T), T, sender_prefix=KEY[:12])
     book = ContactBook([Contact(KEY, "Alice")])
-    session = SimpleNamespace(contacts=book, refresh_contacts=_refreshed)
-    await bridge._on_message(MessageReceived(message, cast(CompanionSession, session), 0, False))
-    bridge._events.put_nowait(PacketLogged(codec.RxLog(1.0, -90, b"\x00"), T))
+    session = cast(CompanionSession, SimpleNamespace(contacts=book, refresh_contacts=_refreshed))
+    await bridge._on_message(MessageReceived(message, session, 0, False))
+    bridge._contacts.accept(ContactRequest("add", KEY_N.encode(), retained=True))  # refused
     events = asyncio.create_task(bridge._event_loop())
-    await bridge._events.join()
+    added = Job("add", KEY_N, "id", "key", "Relay", NodeType.REPEATER)
+    await _until(events, bridge._contacts._write(session, added, _refused_write()))  # failed
+    bridge._events.put_nowait(PacketLogged(codec.RxLog(1.0, -90, b"\x00"), T))
+    await _until(events, bridge._events.join())
     events.cancel()
     await bus.stop()
     return client
 
 
-def _vocabularies() -> dict[str, list[str]]:
-    """The value lists that the code declares in one place, as "<document>:<key path>". Values
-    built in several places (the reasons, a setting's state) wait for an enum of their own."""
+def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str, list[str]]:
+    """The value lists, as "<document>:<key path>": those that the code declares in one place,
+    and those that the producers build where they publish them, as `published` carries them
+    (each equal to the list Home Assistant gets). Values built in several places without a
+    declaration (the reasons, a setting's state) wait for an enum of their own."""
     gateway = discovery_payload(MAXIMAL, Topics(BASE, NODE))["cmps"]
+    radio = gateway["radio"]
+    emitted = {
+        name: _declared(name, values, declared)
+        for name, values, declared in (
+            ("state:radio", _emitted(published, "state", "radio"),
+             [radio["payload_on"], radio["payload_off"]]),
+            ("contact:event_type", _emitted(published, "contact", "event_type"),
+             gateway["contact"]["event_types"]),
+            ("node:event_type", _emitted(published, "node", "event_type"),
+             gateway["node"]["event_types"]),
+            ("setting:event_type", _emitted(published, "setting", "event_type"),
+             gateway["setting"]["event_types"]),
+            ("settings:status", _statuses(), gateway["profile"]["options"]),
+        )
+    }  # fmt: skip
     every_type = sum(AutoAdd)  # the overwrite flag and every node type
     telemetry = [views.setting_value(profile.TELEMETRY, modes) for modes in range(4)]
-    return {
-        "state:radio": [gateway["radio"]["payload_on"], gateway["radio"]["payload_off"]],
+    return emitted | {
         "delivery:event_type": [state.value for state in DeliveryState],
         "received:event_type": [kind.value for kind in MessageKind],
         "received:text_type": [kind.name.lower() for kind in TextType],
         "received:command.reason": [reason.value for reason in Rejection],
-        "contact:event_type": gateway["contact"]["event_types"],
-        "node:event_type": gateway["node"]["event_types"],
-        "setting:event_type": gateway["setting"]["event_types"],
-        "settings:status": PROFILE_STATES,
         "settings:mode": [mode.value for mode in profile.Mode],
         "settings:settings": list(views.SETTING_NAMES.values()),
         "settings:settings.autoadd.live": cast(
@@ -430,13 +482,72 @@ def _vocabularies() -> dict[str, list[str]]:
     }
 
 
+def _emitted(published: Sequence[tuple[str, bytes, bool, int]], name: str, key: str) -> set[str]:
+    """The values of `key` in what was published on the document or event topic `name`."""
+    topic = _DOCUMENTS + name
+    return {
+        json.loads(payload)[key]
+        for published_on, payload, _, _ in published
+        if placeholders(published_on) == topic and payload
+    }
+
+
+def _statuses() -> set[str]:
+    """`settings.status` for a report of each kind: views.settings_document decides it."""
+    live: dict[str, profile.Value | None] = {profile.NAME: "Old"}
+    ok = ProfileReport("auto", 14, True, False, live, {profile.NAME: "Old"})
+    reports = (
+        ok,
+        dataclasses.replace(ok, failed=(profile.NAME,)),  # problem
+        dataclasses.replace(ok, observing=True, desired={profile.NAME: "New"}),  # differs
+        dataclasses.replace(ok, drift={profile.NAME: "Old"}),
+        dataclasses.replace(ok, written={profile.NAME: "New"}),
+    )
+    return {views.settings_document(report, T)["status"] for report in reports}
+
+
+def _declared(name: str, emitted: set[str], declared: list[str]) -> list[str]:
+    """`emitted`, which must be what Home Assistant is told of: it refuses another event type or
+    option, and offers one that never comes."""
+    problem = ""
+    if emitted - set(declared):
+        problem = "the producer emits values Home Assistant does not know"
+    elif set(declared) - emitted:
+        problem = "Home Assistant declares values no path emits"
+    if problem:
+        raise AssertionError(
+            f"{name}: {problem}: emitted {sorted(emitted)}, declared {sorted(declared)}"
+        )
+    return list(emitted)
+
+
 # --- configuration --------------------------------------------------------------------------------
 
 _KINDS = {
     "string": "string", "boolean": "boolean", "integer": "integer", "number": "number",
     "strings": "list[string]", "integers": "list[integer]", "section": "table",
 }  # fmt: skip
-_UNCONDITIONAL = ("default", "required")  # facts of a setting that every file has
+
+
+def _literal(dataclass_type: type, name: str) -> list[str]:
+    return list(typing.get_args(typing.get_type_hints(dataclass_type)[name]))
+
+
+def _transport(value: str) -> dict[str, str | None]:
+    """What a file with this transport sets besides: its device or its host, not the other."""
+    return {
+        "radio.device": "/dev/ttyACM0" if value == "serial" else None,
+        "radio.host": "192.0.2.10" if value == "tcp" else None,
+    }
+
+
+# strings that the parser checks against a list after reading them: the candidates (the
+# dataclass's Literal), and what a file sets besides each value
+_CHOICES: dict[str, tuple[Sequence[str], Callable[[str], dict[str, str | None]]]] = {
+    "radio.transport": (_literal(configuration.RadioConfig, "transport"), _transport),
+    "radio.profile.manage": (_literal(ProfileConfig, "manage"), lambda _: {}),
+    "diagnostics.log_level": (configuration.LOG_LEVELS, lambda _: {}),
+}
 # brokers, ACLs and Home Assistant refer to the names these defaults make up
 _IDENTITY = (
     "mqtt.base_topic",
@@ -448,23 +559,18 @@ _IDENTITY = (
 
 def config() -> dict[str, dict[str, Any]]:
     """Every setting as the parser reads it (every read goes through a typed method of
-    config._Section), with its choices and its answer type for the installer."""
+    config._Section), with the choices it takes and its answer type for the installer."""
     always = _reads(MINIMAL)
     settings = {}
     for key, entry in (_reads(MAXIMAL_TEXT) | always).items():
         if key in always:
             settings[key] = entry
-        else:  # read only when present: the default passed is no default
-            kept = {name: value for name, value in entry.items() if name not in _UNCONDITIONAL}
+        else:  # read only when present: the default passed is no default; `required` stays,
+            # read as "required when its table is present"
+            kept = {name: value for name, value in entry.items() if name != "default"}
             settings[key] = kept | {"conditional": True}
-    # choices that the parser checks after reading the string
-    hints = (
-        ("radio.transport", typing.get_type_hints(configuration.RadioConfig)["transport"]),
-        ("radio.profile.manage", typing.get_type_hints(configuration.ProfileConfig)["manage"]),
-    )
-    for key, hint in hints:
-        settings[key]["choices"] = list(typing.get_args(hint))
-    settings["diagnostics.log_level"]["choices"] = list(configuration.LOG_LEVELS)
+    for key, (candidates, besides) in _CHOICES.items():
+        settings[key]["choices"] = _choices(key, candidates, besides)
     settings["mqtt.client_id"]["default"] = _client_id()
     for key in _IDENTITY:
         settings[key]["identity"] = True
@@ -515,6 +621,35 @@ def _setting(method: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
+def _choices(
+    key: str, candidates: Sequence[str], besides: Callable[[str], dict[str, str | None]]
+) -> list[str]:
+    """The candidates that the parser takes for `key`; it must refuse any other value."""
+
+    def taken(value: str) -> bool:
+        try:
+            parse_config(_file({key: value, **besides(value)}))
+        except configuration.ConfigError:
+            return False
+        return True
+
+    if taken("other"):
+        raise AssertionError(f"{key}: the parser checks no choices")
+    return [value for value in candidates if taken(value)]
+
+
+def _file(settings: dict[str, str | None]) -> str:
+    """MINIMAL with these settings, or without those set to None."""
+    tables: dict[str, dict[str, Any]] = tomllib.loads(MINIMAL)
+    for key, value in settings.items():
+        table, _, name = key.rpartition(".")
+        if value is None:
+            tables.get(table, {}).pop(name, None)
+        else:
+            tables.setdefault(table, {})[name] = value
+    return "".join(configuration._toml_table(name, values) for name, values in tables.items())
+
+
 def _client_id() -> str:
     """The client ID the broker sees when the file sets none (mqtt/client.py)."""
     with mock.patch.object(paho, "Client") as client:
@@ -533,6 +668,13 @@ def command_line(tmp: Path) -> dict[str, Any]:
     commands: dict[str, Any] = {}
     _commands(cli._parser(), "", commands)
     report = _probe_report(tmp)
+    probe = ["probe", "--tcp", "192.0.2.10", "--state-dir", str(tmp)]
+    with _probing(report):
+        printed = json.loads(_printed([*probe, "--json"]))
+        listings = {
+            f"probe --list {listing}": _printed([*probe, "--list", listing])
+            for listing in commands["probe"]["options"]["--list"]["choices"]
+        }
     keyed_by_data = ("profile.changes", "profile.contacts")
     exit_codes = {
         "ok": cli.EX_OK, "failure": cli.EX_FAILURE, "usage": cli.EX_USAGE,
@@ -542,8 +684,8 @@ def command_line(tmp: Path) -> dict[str, Any]:
         "commands": commands,
         "exit_codes": exit_codes,
         "paths": {"config": str(cli.DEFAULT_CONFIG), "state_dir": str(cli.DEFAULT_STATE_DIR)},
-        "columns": _columns(report, tmp),
-        "json": {"probe --json": list(_key_paths(report, maps=keyed_by_data))},
+        "columns": _columns(listings | {"contacts list": _contacts_list(tmp)}),
+        "json": {"probe --json": list(_key_paths(printed, maps=keyed_by_data))},
     }
 
 
@@ -561,8 +703,10 @@ def _commands(parser: argparse.ArgumentParser, path: str, out: dict[str, Any]) -
             options.update((name, {"output": output}) for name in action.option_strings)
         elif action.option_strings:
             options.update((name, _argument(action)) for name in action.option_strings)
-        else:
-            positionals[str(len(positionals) + 1)] = _argument(action)
+        else:  # named as the usage line names it, so that another order shows
+            name = action.metavar or action.dest
+            name = " ".join(name) if isinstance(name, tuple) else name
+            positionals[str(len(positionals) + 1)] = _argument(action) | {"name": name}
     entry: dict[str, Any] = {"options": options, "positionals": positionals}
     out[path or parser.prog] = entry
     if commands is not None:
@@ -604,29 +748,68 @@ def _probe_report(tmp: Path) -> dict[str, Any]:
     )
 
 
-def _columns(report: dict[str, Any], tmp: Path) -> dict[str, int]:
-    """Fields per line of the tab-separated lists, which shell scripts read with `read` (the
-    installer does); `probe --list profile` by line kind."""
+@contextlib.contextmanager
+def _probing(report: dict[str, Any]) -> Iterator[None]:
+    """`probe` reports `report` without a radio."""
 
     async def probed(*_: Any, **__: Any) -> dict[str, Any]:
         return report
 
-    columns: dict[str, int] = {}
     with mock.patch.object(cli, "_probe_radio", probed):
-        for listing in ("channels", "contacts", "profile"):
-            out = io.StringIO()
-            argv = ["probe", "--tcp", "192.0.2.10", "--state-dir", str(tmp), "--list", listing]
-            with contextlib.redirect_stdout(out):
-                status = cli.main(argv)
-            lines = [line.split("\t") for line in out.getvalue().splitlines()]
-            if status != cli.EX_OK or not lines:
-                raise AssertionError(f"probe --list {listing}: exit {status}, {len(lines)} lines")
-            for fields in lines:
-                kind = f": {fields[0]}" if listing == "profile" else ""
-                name = f"probe --list {listing}{kind}"
-                if columns.setdefault(name, len(fields)) != len(fields):
-                    raise AssertionError(f"{name}: lines of {columns[name]}, {len(fields)} fields")
-    columns["contacts list"] = len(cli._list_line("contact", {"key": KEY}, "-").split("\t"))
+        yield
+
+
+def _printed(argv: list[str]) -> str:
+    """What the command prints on standard output; it must succeed and print something."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        status = cli.main(argv)
+    if status != cli.EX_OK or not out.getvalue():
+        raise AssertionError(f"{' '.join(argv)}: exit {status}, {len(out.getvalue())} characters")
+    return out.getvalue()
+
+
+class _Documents:
+    """The broker connection of the `contacts` commands, with a contact and a heard node."""
+
+    online = True
+    documents: typing.ClassVar[dict[str, Any]] = {
+        "contacts": {"contacts": [{"key": KEY, "type": "chat", "name": "Alice"}], "manage": True},
+        "nodes": {"nodes": [{"key": KEY_N, "type": "repeater", "name": "Relay"}]},
+    }
+
+    def __init__(self, *_: Any) -> None:
+        pass
+
+    def open(self) -> str | None:
+        return None
+
+    def close(self) -> None:
+        pass
+
+    def document(self, name: str) -> Any:
+        return self.documents.get(name)
+
+
+def _contacts_list(tmp: Path) -> str:
+    config = tmp / "contacts.toml"
+    config.write_text(MINIMAL, encoding="utf-8")
+    with mock.patch.object(cli, "_ContactSession", _Documents):
+        return _printed(["contacts", "list", "--config", str(config)])
+
+
+_BY_KIND = ("probe --list profile", "contacts list")  # their first field names the line's kind
+
+
+def _columns(listings: dict[str, str]) -> dict[str, int]:
+    """Fields per line of the tab-separated lists, which shell scripts read with `read` (the
+    installer does); by line kind where the first field names it."""
+    columns: dict[str, int] = {}
+    for listing, text in listings.items():
+        for fields in (line.split("\t") for line in text.splitlines()):
+            name = f"{listing}: {fields[0]}" if listing in _BY_KIND else listing
+            if columns.setdefault(name, len(fields)) != len(fields):
+                raise AssertionError(f"{name}: lines of {columns[name]}, {len(fields)} fields")
     return columns
 
 
@@ -643,8 +826,8 @@ def homeassistant() -> dict[str, Any]:
         for key, entry in found.items():
             known = contacts.setdefault(key, entry | {"node_types": []})
             if {name: value for name, value in known.items() if name != "node_types"} != entry:
-                raise AssertionError(f"contact component {key}: other facts for {node_type.name}")
-            known["node_types"].append(node_type.name.lower())
+                raise AssertionError(f"contact component {key}: other facts for {node_type!r}")
+            known["node_types"].append(type_name(node_type))  # as `type` names it on the wire
     return {
         "devices": {
             "gateway": {

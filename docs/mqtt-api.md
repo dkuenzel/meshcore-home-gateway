@@ -45,7 +45,11 @@ markup. Lists are bounded in size and carry `total` and `truncated`.
 Within a major version topics, keys and values are only added. Ignore topics and keys you do not
 know, and expect new values in every list of values below (`event_type`, `reason`, `state`,
 `status`, `type`, `flags`, `errors` and the like): treat one you do not know as "other". Retained
-flags, QoS and the topic layout stay as listed here; size limits and list bounds only grow.
+flags, QoS and the topic layout stay as listed here. The size limits of requests only grow;
+documents and list bounds grow only within the ceilings of
+[ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md): a document that Home
+Assistant reads into attributes stays below 16 KiB, every document below 64 KiB. Raising a ceiling
+is breaking.
 
 ## Sending: `send/<alias>`
 

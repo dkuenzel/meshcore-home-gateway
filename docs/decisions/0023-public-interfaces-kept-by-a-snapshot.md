@@ -55,24 +55,29 @@ could drift from the code.
   ambiguous), texts for people, log messages, the Python modules and the state directory.
   Raising a platform floor is breaking: Python 3.11 with paho-mqtt 2.x (Debian 13 for the
   installer), Home Assistant 2026.8, MeshCore companion firmware 1.18.0. The Proxmox
-  installer's options and its answers file only grow, like the configuration; review keeps them.
+  installer's options and its answers file only grow, like the configuration; the snapshot
+  records the answer type of each setting, review keeps the rest.
 * **The snapshot** `tests/public_interface.json` is computed by `tests/public_interface.py`
   without a radio or a broker: the MQTT adapter with a recording paho client below the bridge's
-  publish paths, a recorder on the configuration parser, a walk of the argument parser with the
-  radio emulator for `probe`, and Home Assistant's discovery builders. It records structure only:
-  topics with retained flag and QoS, key paths, value lists declared in one place, settings with
-  type, default, bounds and choices, commands and options, columns and JSON keys of the
-  machine-readable outputs, and the discovery facts above. `tests/test_public_interface.py` fails
-  when snapshot and code differ; `make interface` writes it again and lists what changed.
+  publish paths, a recorder on the configuration parser, a walk of the argument parser, the
+  commands' own output with the radio emulator for `probe`, and Home Assistant's discovery
+  builders. It records structure only: topics with retained flag and QoS, subscriptions and the
+  last will, key paths, value lists declared in one place or emitted where Home Assistant is told
+  of them, settings with type, default, bounds and the choices the parser takes, commands,
+  options and named positionals, columns and JSON keys of the machine-readable outputs, and the
+  discovery facts above. `tests/test_public_interface.py` fails when snapshot and code differ;
+  `make interface` writes it again and lists what changed.
 * **The comparison** `tools/public_interface.py` classifies each difference as breaking, changed
   (compatible, but users notice it: a default, a wider range) or added. Attributes of a record are
-  compared by a rule each, and an attribute without a rule is an error, so recording a new fact
-  is a deliberate change of the tool. A rename is a removal plus an addition.
+  compared by a rule each, and an attribute without a rule, or a value of another shape, is an
+  error, so recording a new fact is a deliberate change of the tool. A rename is a removal plus
+  an addition. Each finding states one fact: a value removed from a list is a finding of its own.
 * **The release plan** compares the snapshot at HEAD with that of the last release, on every pull
   request and push. A breaking finding needs a `**Breaking:**` entry or a `### Removed` section
   since that release, which makes the next release a major one. A release must contain the
   snapshot, so 1.0.0 becomes the first baseline. A false alarm is waived with a reason in
-  `tests/public_interface_waivers.json`, for one release.
+  `tests/public_interface_waivers.json`, for one release, by the finding as the refusal shows
+  it; the waiver covers no other finding.
 
 ### Consequences
 
@@ -84,8 +89,12 @@ could drift from the code.
 * Bad, because the extractor uses private parts of the code (argparse internals, steps of the
   bridge, private constants); a change there fails the test loudly and needs an edit of the
   extractor.
-* Bad, because meanings, units of values, string formats, rules between settings and the reason
-  vocabularies are no structure; they stay with review and the written policy.
+* Bad, because the snapshot does not see all that the policy promises; JSON types and
+  nullability, the size limits and list bounds of MQTT, the value lists outside `mqtt > values`
+  (the reasons among them), string formats, publishing after a reconnect, exit statuses,
+  platform floors, meanings, units of values, rules between settings and the texts a request
+  accepts stay with review and the written policy
+  ([docs/development.md](../development.md#compatibility) lists them).
 * Bad, because surface behind a setting that the fixture does not switch on is missing until the
   fixture gets it; a test that every topic of the layout is recorded closes that gap for MQTT.
 * Neutral, because most feature pull requests touch the one snapshot file; a conflict is resolved
@@ -103,7 +112,8 @@ contain the snapshot; the first change after it is compared with it.
 ### A written policy and a snapshot computed from the code (chosen)
 
 * Good, because the code is the only reference, so the check cannot drift from it.
-* Good, because the structure covers most of what users depend on: names, flags, types, bounds.
+* Good, because the structure covers most of what users depend on: names, flags, and the types
+  and bounds of settings and options.
 * Bad, because behaviour beyond the structure is not seen.
 
 ### A written policy alone

@@ -52,7 +52,7 @@ _ENTRY = re.compile(r"\s*[-*] ")
 _BREAKING = re.compile(r"\s*[-*] \*\*Breaking:\*\*")
 # the public interface of a revision, written by `make interface` (docs/development.md)
 INTERFACE = "tests/public_interface.json"
-# false alarms, for one release each: {"X.Y.Z": {"<the finding's path>": "why it is no break"}}
+# false alarms, for one release each: {"X.Y.Z": {"<a finding as the refusal shows it>": "why"}}
 WAIVERS = "tests/public_interface_waivers.json"
 _SHOWN = 20  # breaking findings in a refusal
 
@@ -228,14 +228,18 @@ def _json(rev: str, path: str) -> dict[str, Any]:
 
 
 def _waivers(rev: str, last: Version) -> dict[str, str]:
-    """The waivers for the release `last`; the next release makes them void."""
+    """The waivers for the release `last`, each naming one finding as the refusal shows it;
+    the next release makes them void."""
     if not has(rev, WAIVERS):
         return {}
     mine = _json(rev, WAIVERS).get(str(last), {})
     if not isinstance(mine, dict) or not all(
         isinstance(reason, str) and reason.strip() for reason in mine.values()
     ):
-        msg = f'{WAIVERS}: expected {{"{last}": {{"<path of a finding>": "<why it is no break>"}}}}'
+        msg = (
+            f'{WAIVERS}: expected {{"{last}": {{"<a finding as the refusal shows it>": "<why it'
+            ' is no break>"}}'
+        )
         raise PlanError(msg)
     return mine
 

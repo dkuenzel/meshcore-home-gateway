@@ -1,7 +1,8 @@
 {
  "cli": {
   "columns": {
-   "contacts list": 6,
+   "contacts list: contact": 6,
+   "contacts list: node": 6,
    "probe --list channels": 2,
    "probe --list contacts": 3,
    "probe --list profile: change": 5,
@@ -85,6 +86,7 @@
     },
     "positionals": {
      "1": {
+      "name": "contact",
       "required": true,
       "takes_value": true
      }
@@ -128,6 +130,7 @@
     },
     "positionals": {
      "1": {
+      "name": "contact",
       "required": true,
       "takes_value": true
      }
@@ -238,10 +241,12 @@
     },
     "positionals": {
      "1": {
+      "name": "alias",
       "required": true,
       "takes_value": true
      },
      "2": {
+      "name": "text",
       "required": true,
       "takes_value": true
      }
@@ -624,6 +629,7 @@
   },
   "targets.<alias>.contact": {
    "conditional": true,
+   "required": true,
    "type": "string"
   }
  },
@@ -635,10 +641,10 @@
      "entity_id": "sensor.mesh_<slug>_hops",
      "node_types": [
       "chat",
-      "none",
       "repeater",
-      "room_server",
-      "sensor"
+      "room",
+      "sensor",
+      "type_0"
      ],
      "platform": "sensor"
     },
@@ -646,10 +652,10 @@
      "entity_id": "sensor.mesh_<slug>_last_heard",
      "node_types": [
       "chat",
-      "none",
       "repeater",
-      "room_server",
-      "sensor"
+      "room",
+      "sensor",
+      "type_0"
      ],
      "platform": "sensor"
     },
@@ -661,7 +667,7 @@
      ],
      "node_types": [
       "chat",
-      "room_server"
+      "room"
      ],
      "platform": "event"
     },
@@ -676,10 +682,10 @@
      "entity_id": "device_tracker.mesh_<slug>",
      "node_types": [
       "chat",
-      "none",
       "repeater",
-      "room_server",
-      "sensor"
+      "room",
+      "sensor",
+      "type_0"
      ],
      "platform": "device_tracker"
     },
@@ -687,10 +693,10 @@
      "entity_id": "button.mesh_<slug>_remove",
      "node_types": [
       "chat",
-      "none",
       "repeater",
-      "room_server",
-      "sensor"
+      "room",
+      "sensor",
+      "type_0"
      ],
      "platform": "button"
     },
@@ -705,10 +711,10 @@
      "entity_id": "sensor.mesh_<slug>_snr",
      "node_types": [
       "chat",
-      "none",
       "repeater",
-      "room_server",
-      "sensor"
+      "room",
+      "sensor",
+      "type_0"
      ],
      "platform": "sensor",
      "unit": "dB"
@@ -1107,8 +1113,14 @@
    ],
    "setting": [
     "desired",
+    "desired.base",
+    "desired.environment",
+    "desired.location",
     "event_type",
     "live",
+    "live.base",
+    "live.environment",
+    "live.location",
     "reason",
     "setting"
    ],
@@ -1203,7 +1215,11 @@
    ]
   },
   "last_will": {
-   "<base_topic>/<node_id>/availability": "offline"
+   "<base_topic>/<node_id>/availability": {
+    "payload": "offline",
+    "qos": 1,
+    "retained": true
+   }
   },
   "publish": {
    "<base_topic>/<node_id>/availability": {
@@ -1304,17 +1320,35 @@
     "retained": false
    }
   },
-  "subscribe": [
-   "<base_topic>/<node_id>/add_contact",
-   "<base_topic>/<node_id>/contacts/+/remove",
-   "<base_topic>/<node_id>/contacts/+/send",
-   "<base_topic>/<node_id>/homeassistant/add_node",
-   "<base_topic>/<node_id>/homeassistant/show_hidden",
-   "<base_topic>/<node_id>/send/+",
-   "<prefix>/device/<device>/+/config",
-   "<prefix>/device/<device>/config",
-   "<status_topic>"
-  ],
+  "subscribe": {
+   "<base_topic>/<node_id>/add_contact": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/contacts/+/remove": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/contacts/+/send": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/homeassistant/add_node": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/homeassistant/show_hidden": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/send/+": {
+    "qos": 1
+   },
+   "<prefix>/device/<device>/+/config": {
+    "qos": 1
+   },
+   "<prefix>/device/<device>/config": {
+    "qos": 1
+   },
+   "<status_topic>": {
+    "qos": 1
+   }
+  },
   "values": {
    "availability": [
     "offline",

@@ -87,7 +87,9 @@ says what users must change. Pre-releases promise nothing beyond the last releas
 
 - Compatible: new topics; new keys in documents and events; new values in any list of values
   (`event_type`, `reason`, `state`, `status`, `type`, `flags`, …); new requests and new optional
-  keys in a request; larger size limits and list bounds.
+  keys in a request; larger size limits of requests; larger documents and list bounds within the
+  ceilings of [ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md): a document
+  that Home Assistant reads into attributes stays below 16 KiB, every document below 64 KiB.
 - Breaking:
   - a topic removed or renamed, or its retained flag or QoS changed;
   - a key removed or renamed, or its JSON type, unit or meaning changed;
@@ -95,14 +97,15 @@ says what users must change. Pre-releases promise nothing beyond the last releas
   - a document no longer published again after a reconnect, or no longer cleared when its
     contact goes;
   - a request form that is no longer accepted;
-  - smaller limits or bounds.
+  - smaller limits or bounds, or a ceiling of ADR 0015 raised.
 - Consumers ignore topics, keys and values they do not know.
 
 **Configuration** ([configuration.md](configuration.md)). A file that loads with X.0.0 loads
 with every X.Y.Z and means the same.
 
-- Compatible: new optional settings and tables; wider ranges, formats and choices; a number
-  where an integer was required; a changed default (listed under *Changed*).
+- Compatible: new optional settings and tables (a new optional table may require settings of
+  its own); wider ranges, formats and choices; a number where an integer was required; a
+  changed default (listed under *Changed*).
 - Breaking:
   - a setting or table removed or renamed (unknown keys are errors, so the service would not
     start);
@@ -117,12 +120,14 @@ with every X.Y.Z and means the same.
 - A file written for a newer version need not load with an older one.
 - The Proxmox installer's options and its answers file
   ([unattended installation](deployment.md#unattended-installation)) only grow, like the
-  configuration. Review keeps them; the snapshot below does not record them.
+  configuration. The snapshot below records the answer type of every setting in the answers
+  file; review keeps the installer's options and its own answers (`setup`, `ct.*`,
+  `radio.choice`, `targets.channels`, `targets.contacts`).
 
 **Command line** (`meshcore-home-gateway --help`)
 
 - Compatible: new commands, options and choices; new keys in JSON output; new line kinds in
-  `probe --list profile`.
+  `probe --list profile` and `contacts list` (the first field names the kind).
 - Breaking:
   - a command, option or choice removed or renamed;
   - an option that switches between a flag and taking a value;
@@ -162,7 +167,8 @@ them), and log messages.
   the code by `tests/public_interface.py`. `tests/test_public_interface.py` fails when the code
   and the snapshot differ.
 - After a deliberate change, `make interface` writes the snapshot again and lists what changed:
-  breaking, changed (a default, a wider range) or added. Review its diff like code.
+  breaking, changed (a default, a wider range) or added, one finding per fact (each value
+  removed from a list is one). Review its diff like code.
 - The CI job *release plan* (`make release-plan`) compares the snapshot with the one of the last
   release on every pull request and push. An entry that was removed or narrowed needs a
   `**Breaking:**` entry (or a `### Removed` section) since that release, which makes the next
@@ -170,10 +176,18 @@ them), and log messages.
   with it.
 - A false alarm (something recorded that was never interface) is waived with a reason in
   `tests/public_interface_waivers.json`, for that release only. The file maps the last release
-  to the paths of the findings, as the refusal shows them, and a reason for each:
-  `{"1.0.0": {"mqtt > publish > <base_topic>/<node_id>/rx": "never published"}}`.
-- Behaviour beyond the structure (meanings, units of values, rules between settings, the texts a
-  request accepts) is left to review.
+  to the findings, each as the refusal shows it, and a reason for each:
+  `{"1.0.0": {"mqtt > publish > <base_topic>/<node_id>/rx: removed": "never published"}}`. A
+  waiver covers that one finding: another value removed from the same list, or another bound,
+  needs its own.
+- A positional argument is recorded with its name, so that arguments in another order show. A
+  rename alone reads as breaking too; since no script can tell, it is waived.
+- The snapshot does not see, so review keeps: the JSON types and nullability of keys; the size
+  limits and list bounds of MQTT; the value lists that are not under `mqtt > values` (the
+  `reason` of deliveries, contact and setting events, each setting's `state`, `heard_via`,
+  `position_source`, and `direction`, `kind` and `state` in the history); the string formats of
+  settings; publishing again after a reconnect; the exit status of each case; the platform
+  floors; meanings and units of values; rules between settings; the texts a request accepts.
 
 ## Release
 
