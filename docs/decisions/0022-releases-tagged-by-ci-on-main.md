@@ -53,17 +53,19 @@ exactly as before.
   program: in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py` only `__version__` may
   differ.
 * **CI on `main`** (job *tag and release*, after every other job passed on the commit): when the
-  commit changed `__version__`, `tools/release_plan.py tag` checks it again, the job creates the
-  annotated tag through the REST API with the workflow's token (`contents: write`) and starts
-  `release.yml` on the tag with `workflow_dispatch` (`actions: write`): events of that token start
-  no workflow, except `workflow_dispatch`. A re-run finds the tag on the same commit and starts the
-  release only if there is none. A tag on another commit fails the job.
+  push changed `__version__`, `tools/release_plan.py tag` checks it again, the job creates the
+  annotated tag on the push's last commit through the REST API with the workflow's token
+  (`contents: write`) and starts `release.yml` on the tag with `workflow_dispatch`
+  (`actions: write`): events of that token start no workflow, except `workflow_dispatch`. A
+  re-run, of the job or of all jobs, finds the tag on the same commit and starts the release only
+  if there is none and none is running. A tag on another commit fails the job.
 * **`release.yml`** releases on any run on a tag ref, pushed or dispatched; on a branch it stays a
   dry run. The certificate records `release.yml@refs/tags/vX.Y.Z` and the source ref
   `refs/tags/vX.Y.Z`, as for a pushed tag; only the trigger reads `workflow_dispatch`.
-* **The tag ruleset** for `v*` forbids moving and deleting tags. It no longer restricts creating
-  them, which the workflow's token needs; creating needs write access, which only the maintainer
-  and this repository's workflows have.
+* **The tag ruleset** for `v*` forbids moving and deleting tags to everyone but its bypass
+  actors (the maintainer, for emergencies). It no longer restricts creating them, which the
+  workflow's token needs; creating needs write access, which only the maintainer and this
+  repository's workflows have.
 * **A release** follows the hardware checklist with its candidate; the maintainer reports the
   result, and the agent opens the pull request that writes the release version.
 
@@ -73,7 +75,8 @@ exactly as before.
 * Good, because the build, the attestation and the user's verification command do not change.
 * Good, because the version and its kind are in the diff and checked before the merge, where a
   wrong bump can still be corrected.
-* Good, because a release can only ship code that a release candidate shipped.
+* Good, because a release that CI tags can only ship the program a release candidate shipped
+  (a tag pushed by hand is not checked).
 * Neutral, because every commit on `main` now runs CI to the end (a newer merge no longer cancels
   the run of an older one), so the tag job of each one runs.
 * Bad, because a merged version is public within minutes; a wrong one is followed by the next

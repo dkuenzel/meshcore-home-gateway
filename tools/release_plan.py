@@ -1,7 +1,7 @@
 """The release plan of a change: does it release, and is the version it writes the next one?
 
-    python3 -I tools/release_plan.py check [--base REV]   # CI on a pull request (base: HEAD^)
-    python3 -I tools/release_plan.py tag                  # CI on main: prints tag=, exists=, final=
+    python3 -I tools/release_plan.py check [--base REV]   # CI: a pull request, or a push
+    python3 -I tools/release_plan.py tag [--base REV]     # CI on main: prints tag=, exists=, final=
 
 A change releases when it changes `__version__` (docs/development.md, ADR 0022). It must then
 write exactly the next version: the kind of change comes from the changelog entries since the
@@ -41,6 +41,9 @@ _KIND_OF = {
     "added": "minor", "changed": "minor", "deprecated": "minor",
     "fixed": "patch", "security": "patch", "removed": "major",
 }  # fmt: skip
+_HEADINGS = "Added, Changed, Deprecated, Removed, Fixed, Security"
+_ENTRY = re.compile(r"\s*[-*] ")
+_BREAKING = re.compile(r"\s*[-*] \*\*Breaking:\*\*")
 
 
 class PlanError(Exception):
@@ -104,7 +107,9 @@ def version_text(rev: str) -> str:
 def tags() -> dict[Version, str]:
     """The release tags vX.Y.Z… and the commits they point at; other tags are ignored."""
     found = {}
-    listing = git("tag", "--list", "v*", "--format=%(refname:short) %(objectname) %(*objectname)")
+    listing = git(
+        "tag", "--list", "v*", "--format=%(refname:lstrip=2) %(objectname) %(*objectname)"
+    )  # fmt: skip
     for line in listing.splitlines():
         name, obj, *peeled = line.split()
         try:
@@ -127,14 +132,21 @@ def kind(changelog: str, last: Version | None) -> str | None:
     )
     found: str | None = None
     for i, (_, body, name) in enumerate(heads):
-        if name is None:
-            continue
         stop = heads[i + 1][0] if i + 1 < len(heads) else end
-        entries = [e for e in changelog[body:stop].splitlines() if e.startswith("- ")]
+        lines = changelog[body:stop].splitlines()
+        entries = [e for e in lines if _ENTRY.match(e)]
+        if name is None:
+            if any(not e[:1].isspace() for e in entries):  # a section's text may say anything
+                msg = f"{CHANGELOG}: an entry outside a subsection: {entries[0].strip()!r}"
+                raise PlanError(msg)
+            continue
+        this = _KIND_OF.get(name.strip().lower())
+        if this is None:
+            msg = f"{CHANGELOG}: unknown heading '### {name}' (Keep a Changelog: {_HEADINGS})"
+            raise PlanError(msg)
         if not entries:
             continue
-        this = _KIND_OF.get(name.strip().lower(), "minor")
-        if any(e.startswith("- **Breaking:**") for e in entries):
+        if any(_BREAKING.match(e) for e in lines):
             this = "major"
         if found is None or KINDS.index(this) > KINDS.index(found):
             found = this
@@ -191,9 +203,12 @@ def validate(written: Version, rev: str) -> None:
         msg = f"{CHANGELOG}: an empty [Unreleased], then the section of {written}"
         raise PlanError(msg)
     known = tags()
+    if not known and len(_DATED.findall(changelog)) > 1:
+        msg = "no release tags v* here, though the changelog has releases: git fetch --tags"
+        raise PlanError(msg)
     finals = [v for v in known if v.final]
     last_final = max(finals) if finals else None
-    base = next_base(last_final, kind(changelog, last_final))
+    base = next_base(last_final, kind(changelog, last_final) if last_final else None)
     if written.base != base:
         msg = f"{written}: the next release is {base} (or a pre-release of it)"
         raise PlanError(msg)
@@ -219,21 +234,28 @@ def validate(written: Version, rev: str) -> None:
         raise PlanError(msg)
 
 
-def check(base: str) -> str:
-    text = version_text("HEAD")
-    if text == version_text(base):
-        return f"no release: __version__ stays {text}"
-    written = Version.parse(text)
-    validate(written, "HEAD")
-    return f"releases v{written}" + ("" if written.final else " as a pre-release")
+def start(base: str) -> str:
+    """The revision a change starts from: `base` (a pull request's base, or the commit before a
+    push), or HEAD^ for none, a new branch (all zeros) or a commit no longer known (force push)."""
+    if base.strip("0") and not git_fails("cat-file", "-e", f"{base}^{{commit}}"):
+        return base
+    return "HEAD^"
 
 
-def tag() -> tuple[str, bool, bool]:
-    """For HEAD on main: its tag if it changed the version ('' if not), whether that tag already
-    points at HEAD (a re-run) and whether it is a release. A tag on another commit is an error."""
+def git_fails(*args: str) -> bool:
+    try:
+        git(*args)
+    except PlanError:
+        return True
+    return False
+
+
+def planned(base: str) -> tuple[Version, bool] | None:
+    """The version HEAD releases and whether its tag is on HEAD already (a re-run); None if
+    HEAD keeps the version of `base`. A tag on another commit is an error."""
     text = version_text("HEAD")
-    if text == version_text("HEAD^"):
-        return "", False, False
+    if text == version_text(start(base)):
+        return None
     written = Version.parse(text)
     existing = tags().get(written)
     head = git("rev-parse", "HEAD").strip()
@@ -242,21 +264,44 @@ def tag() -> tuple[str, bool, bool]:
         raise PlanError(msg)
     if existing is None:
         validate(written, "HEAD")
-    return f"v{written}", existing is not None, written.final
+    return written, existing is not None
+
+
+def check(base: str = "") -> str:
+    plan = planned(base)
+    if plan is None:
+        return f"no release: __version__ stays {version_text('HEAD')}"
+    written, tagged = plan
+    if tagged:
+        return f"v{written} tags this commit already"
+    return f"releases v{written}" + ("" if written.final else " as a pre-release")
+
+
+def tag(base: str = "") -> tuple[str, bool, bool]:
+    """For HEAD on main: its tag if it changed the version since `base` ('' if not), whether that
+    tag points at HEAD already (a re-run) and whether it is a release."""
+    plan = planned(base)
+    if plan is None:
+        return "", False, False
+    written, tagged = plan
+    return f"v{written}", tagged, written.final
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     commands = parser.add_subparsers(dest="command", required=True)
     checking = commands.add_parser("check", help="refuse a version that is not the next one")
-    checking.add_argument("--base", default="HEAD^", help="the revision the change starts from")
-    commands.add_parser("tag", help="print tag=vX.Y.Z or tag=, exists= and final=")
+    tagging = commands.add_parser("tag", help="print tag=vX.Y.Z or tag=, exists= and final=")
+    for command in (checking, tagging):
+        command.add_argument(
+            "--base", default="", help="the revision the change starts from (default: HEAD^)"
+        )
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
             print(check(args.base))
         else:
-            name, exists, final = tag()
+            name, exists, final = tag(args.base)
             print(f"tag={name}\nexists={str(exists).lower()}\nfinal={str(final).lower()}")
     except PlanError as exc:
         print(f"release_plan: {exc}", file=sys.stderr)

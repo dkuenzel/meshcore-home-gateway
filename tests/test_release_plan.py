@@ -83,7 +83,14 @@ class Repo:
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Repo:
     made = Repo(tmp_path)
-    monkeypatch.setattr(plan, "git", made.git)
+
+    def git(*args: str) -> str:  # as the tool's own: a failure is a PlanError
+        try:
+            return made.git(*args)
+        except subprocess.CalledProcessError as exc:
+            raise plan.PlanError(exc.stderr) from None
+
+    monkeypatch.setattr(plan, "git", git)
     return made
 
 
@@ -279,9 +286,10 @@ def test_the_command_line(repo: Repo, capsys: pytest.CaptureFixture[str]) -> Non
     assert capsys.readouterr().out == "tag=v1.0.0rc1\nexists=false\nfinal=false\n"
     assert plan.main(["check"]) == 0
     assert capsys.readouterr().out == "releases v1.0.0rc1 as a pre-release\n"
+    repo.tag("v1.0.0rc1")
     repo.commit("1.0.0rc3", "## [Unreleased]\n\n" + section("1.0.0rc3", "Skipped.") + FIRST)
     assert plan.main(["check"]) == 1
-    assert "the next rc of 1.0.0 is 1.0.0rc1" in capsys.readouterr().err
+    assert "the next rc of 1.0.0 is 1.0.0rc2" in capsys.readouterr().err
 
 
 def test_the_tool_runs_isolated_as_ci_runs_it(tmp_path: Path) -> None:
@@ -304,3 +312,64 @@ def test_the_version_is_the_newest_section_of_the_changelog() -> None:
     assert match is not None
     assert dated[0] == Version.parse(match.group(1))
     assert dated == sorted(set(dated), reverse=True)
+
+
+# --- review findings ----------------------------------------------------------------------------
+
+
+def test_a_tagged_release_commit_checks_again_on_a_re_run(repo: Repo) -> None:
+    """'Re-run all jobs' runs the check on the release commit after its tag was made."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    repo.tag("v1.0.0")
+    assert plan.check("HEAD^") == "v1.0.0 tags this commit already"
+    assert plan.tag("HEAD^") == ("v1.0.0", True, True)
+
+
+def test_the_whole_push_counts_not_only_its_last_commit(repo: Repo) -> None:
+    """A push of several commits: the version may change in any of them; the tip is tagged."""
+    before = repo.commit("1.0.0rc0", "## [Unreleased]\n\n")
+    repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST, program="print('follow-up')\n")
+    assert plan.check("HEAD^") == "no release: __version__ stays 1.0.0rc1"  # the last commit alone
+    assert plan.check(before) == "releases v1.0.0rc1 as a pre-release"
+    assert plan.tag(before) == ("v1.0.0rc1", False, False)
+
+
+@pytest.mark.parametrize("base", ["", "0" * 40, "1" * 40])
+def test_an_unknown_base_falls_back_to_the_parent(repo: Repo, base: str) -> None:
+    """A new branch (all zeros), a force push (a commit no longer known), no base at all."""
+    repo.commit("1.0.0rc0", "## [Unreleased]\n\n")
+    repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    assert plan.check(base) == "releases v1.0.0rc1 as a pre-release"
+    assert plan.tag(base) == ("v1.0.0rc1", False, False)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("### Internal\n\n- A tool.\n\n", "unknown heading '### Internal'"),
+        ("- A loose entry.\n\n", "an entry outside a subsection"),
+        ("### Added\n\n- A thing.\n  - **Breaking:** its old name goes.\n\n", None),
+    ],
+)
+def test_the_changelog_speaks_keep_a_changelog_only(text: str, expected: str | None) -> None:
+    changelog = "## [Unreleased]\n\n" + text + section("1.0.0", "Out.")
+    if expected is None:
+        assert plan.kind(changelog, Version.parse("1.0.0")) == "major"  # nested: still breaking
+    else:
+        with pytest.raises(plan.PlanError, match=re.escape(expected)):
+            plan.kind(changelog, Version.parse("1.0.0"))
+
+
+def test_a_branch_named_like_a_tag_does_not_hide_it(repo: Repo) -> None:
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.git("branch", "v1.0.0rc1")
+    assert Version.parse("1.0.0rc1") in plan.tags()
+
+
+def test_a_clone_without_tags_is_told_to_fetch_them(repo: Repo) -> None:
+    repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    repo.commit("1.0.0rc2", "## [Unreleased]\n\n" + section("1.0.0rc2", "More.") + FIRST)
+    with pytest.raises(plan.PlanError, match=re.escape("git fetch --tags")):
+        plan.check("HEAD^")

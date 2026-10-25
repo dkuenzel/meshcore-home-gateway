@@ -131,7 +131,7 @@ release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, 
 release-plan: ## Check that a changed __version__ is the next one, with its changelog section
 	python3 -I tools/release_plan.py check --base "$$(git merge-base HEAD $(RELEASE_BASE))"
 
-check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test
+check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test and release-plan
 
 hooks: ## Run `make check` before every push
 	git config core.hooksPath .githooks

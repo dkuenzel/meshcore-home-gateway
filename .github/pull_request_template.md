@@ -16,7 +16,7 @@ the steps of the hardware checklist (docs/testing.md) with radio models and firm
 ## Checklist
 
 - [ ] Tests first: a new test fails without the change
-- [ ] `make check` and `make matrix` pass
+- [ ] `make check` and `make matrix` pass (for a release also `make release-plan`)
 - [ ] Documentation and `CHANGELOG.md` (*Unreleased*, or the section of the version released)
   updated for user-visible changes; an incompatible change starts with `**Breaking:**`
 - [ ] Design document or a decision record updated for changes of behaviour, interfaces or

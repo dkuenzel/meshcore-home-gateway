@@ -103,12 +103,14 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    *release plan* check: the kind of change comes from the changelog entries since the last
    release (an entry that starts with `**Breaking:**` or a `### Removed` section: major; Added,
    Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version
-   written; pre-releases count up from 1. `RELEASE_TAG=vX.Y.Z make release` builds the release
-   files into `dist/release/` as the workflow does. A pull request that keeps `__version__`
-   releases nothing.
+   written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed.
+   `git fetch --tags origin && make release-plan` runs the check locally (it needs the tags);
+   `RELEASE_TAG=vX.Y.Z make release` builds the release files into `dist/release/` as the
+   workflow does. A pull request that keeps `__version__` releases nothing.
 3. After the merge, CI on `main` tags the merge commit once every job passed on it, and starts
-   `release.yml` on the tag (job *tag and release*). A re-run of a failed job is safe: it finds
-   the tag on the same commit and starts the release only if there is none.
+   `release.yml` on the tag (job *tag and release*); a push of several commits is tagged on its
+   last one. A re-run, of the failed job or of all jobs, is safe: it finds the tag on the same
+   commit and starts the release only if there is none and none is running.
 4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
    zipapp, wheel and sdist reproducibly, adds the systemd unit and the Proxmox installer with the
    version written in (`RELEASE="X.Y.Z"`: run from the release's address, it installs this
@@ -123,11 +125,11 @@ passes. `releases/latest` and the installer's default never pick a pre-release
      --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
    ```
 
-The release tags are protected by a repository ruleset for `v*`: they cannot be moved or
-deleted, so the attestation's tag names one commit for good. Creating them is open to write
-access, which only the maintainer and the workflows of this repository have (pull requests from
-forks get read-only tokens). A release that failed is followed by the next version, never by a
-moved tag.
+The release tags are protected by a repository ruleset for `v*`: only its bypass actors (the
+maintainer, for emergencies) can move or delete them, and by policy nobody does, so the
+attestation's tag names one commit. Creating them is open to write access, which only the
+maintainer and the workflows of this repository have (pull requests from forks get read-only
+tokens). A release that failed is followed by the next version, never by a moved tag.
 
 A manual run of the workflow ("Run workflow" in the Actions tab) is a dry run on a branch: it
 builds the same files and keeps them as a workflow artifact, without attestation or release; on a

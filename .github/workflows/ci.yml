@@ -80,14 +80,15 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # the base, the tags and the release candidate a release must equal
       - name: A changed version is the next one, with its changelog section
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || 'HEAD^' }}
+        env: # a pull request's base, or the commit before a push (its parent if unknown)
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: python3 -I tools/release_plan.py check --base "$BASE"
 
-  # Release (ADR 0022, docs/development.md): a commit on main that changed __version__ and passed
-  # every job above is tagged vX.Y.Z, and release.yml is started on the tag; it builds, attests
-  # and publishes. A re-run finds the tag on this commit and starts the release only if it is
-  # missing. Tags are never moved or deleted (the tag ruleset).
+  # Release (ADR 0022, docs/development.md): a push to main that changed __version__ and passed
+  # every job above is tagged vX.Y.Z on its last commit, and release.yml is started on the tag;
+  # it builds, attests and publishes. A re-run (of this job or of all) finds the tag on this
+  # commit and starts the release only if there is none and none is running. Tags are not moved
+  # or deleted (the tag ruleset).
   release:
     name: tag and release
     needs: [test, homeassistant, check, release-plan]
@@ -103,8 +104,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # the parent, the tags and the release candidate a release must equal
       - id: plan
-        name: The version this commit releases
-        run: python3 -I tools/release_plan.py tag >>"$GITHUB_OUTPUT"
+        name: The version this push releases
+        env:
+          BASE: ${{ github.event.before }}
+        run: python3 -I tools/release_plan.py tag --base "$BASE" >>"$GITHUB_OUTPUT"
       - name: Annotated tag on the commit CI tested
         if: steps.plan.outputs.tag != '' && steps.plan.outputs.exists != 'true'
         env:
@@ -126,8 +129,12 @@ jobs:
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
           set -euo pipefail
+          running=$(gh run list --workflow release.yml --branch "$TAG" --json status \
+            --jq '[.[] | select(.status != "completed")] | length')
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "$TAG is released already"
+          elif [[ $running != 0 ]]; then
+            echo "release.yml is running on $TAG already"
           else
             gh workflow run release.yml --ref "$TAG"
             echo "release.yml started on $TAG"
