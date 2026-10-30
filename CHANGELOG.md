@@ -3,9 +3,27 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The MQTT API, the configuration
-format and the command line are public interfaces.
+format, the command line and Home Assistant discovery are public interfaces
+([compatibility](docs/development.md#compatibility)).
 
 ## [Unreleased]
+
+### Added
+
+- The compatibility policy ([docs/development.md](docs/development.md#compatibility),
+  [ADR 0023](docs/decisions/0023-public-interfaces-kept-by-a-snapshot.md)): what each public
+  interface keeps within a major version, what is compatible and what is breaking. Home Assistant
+  discovery is the fourth public interface: unique IDs, default entity IDs, platforms, units,
+  event types, options and attribute keys (names, icons and categories are not). Abbreviated
+  options, texts for people and log messages are not interface; raising a platform floor is
+  breaking.
+- A guard for it: `tests/public_interface.json` records the structure of the four interfaces,
+  computed from the code without a radio or a broker; a test fails when the two differ, and
+  `make interface` writes it again and lists what changed. The CI job *release plan* (and
+  `make release-plan`) compares it with the last release on every change and refuses a removal or
+  narrowing without a `**Breaking:**` entry or a `### Removed` section since, and an addition or
+  change when the changelog since has no entry or only fixes; a release must contain it. A false
+  alarm is waived for one release in `tests/public_interface_waivers.json`.
 
 ### Changed
 

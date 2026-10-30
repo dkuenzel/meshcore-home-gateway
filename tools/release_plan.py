@@ -9,20 +9,29 @@ last release (a `**Breaking:**` entry or a `### Removed` section: major; Added, 
 Deprecated: minor; Fixed or Security only: patch), the stage is the author's (aN, bN or rcN for a
 pre-release, none for a release). Until 1.0.0 is out the next release is 1.0.0. A release needs a
 release candidate of the same version that ships the same program: only `__version__` may
-differ. Standard library only; git runs as a subprocess in the current directory.
+differ. Every check also compares the public interface (tests/public_interface.json, by
+tools/public_interface.py) with that of the last release, which the revision must contain: what
+it removes or narrows needs a `**Breaking:**` entry or a `### Removed` section since then, what it
+adds or changes an entry that makes the next release at least a minor one
+(docs/development.md#compatibility); the changelog sections since the last release stay as
+tagged. It reads the commit, not the working tree. Standard library only; git runs as a
+subprocess in the current directory.
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 GIT = shutil.which("git") or "/usr/bin/git"
 VERSION_FILE = "src/meshcore_home_gateway/__init__.py"
@@ -44,6 +53,17 @@ _KIND_OF = {
 _HEADINGS = "Added, Changed, Deprecated, Removed, Fixed, Security"
 _ENTRY = re.compile(r"\s*[-*] ")
 _BREAKING = re.compile(r"\s*[-*] \*\*Breaking:\*\*")
+# the public interface of a revision, written by `make interface` (docs/development.md)
+INTERFACE = "tests/public_interface.json"
+# false alarms, for one release each: {"X.Y.Z": {"<a finding as the refusal shows it>": "why"}}
+WAIVERS = "tests/public_interface_waivers.json"
+# what the check reads at the revision, which uncommitted changes do not reach
+_READ = (CHANGELOG, "tests/public_interface*.json", VERSION_FILE)
+# a release's snapshot that the comparator no longer reads
+_RELEASED = (
+    " (the snapshot of the last release: an attribute dropped or narrowed in"
+    " tools/public_interface.py needs a new FORMAT, with a converter of the older ones)"
+)
 
 
 class PlanError(Exception):
@@ -176,24 +196,177 @@ def ships_alike(rev: str, candidate: str) -> bool:
     return _VERSION_LINE.sub("", old) == _VERSION_LINE.sub("", new)
 
 
-def release_notes() -> ModuleType:
-    """tools/release_notes.py, next to this file (python -I leaves its directory off the path)."""
+def tool(name: str) -> ModuleType:
+    """tools/<name>.py, next to this file (python -I leaves its directory off the path)."""
     spec = importlib.util.spec_from_file_location(
-        "release_notes", Path(__file__).resolve().parent / "release_notes.py"
+        name, Path(__file__).resolve().parent / f"{name}.py"
     )
     if spec is None or spec.loader is None:
-        msg = "tools/release_notes.py cannot be loaded"
+        msg = f"tools/{name}.py cannot be loaded"
         raise PlanError(msg)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # before it runs: its dataclasses look their module up
     spec.loader.exec_module(module)
     return module
+
+
+def last_release(
+    changelog: str, known: Collection[Version], releasing: Version | None = None
+) -> Version | None:
+    """The newest release among the tags `known`. Refuses a clone without tags whose changelog
+    has releases, which would take every version for the first, and one without the tag of the
+    newest release that the changelog dates, but for the one the revision `releasing` writes:
+    CI on main has not tagged it yet, or a fork lacks the tags (syncing copies none)."""
+    if not known and len(_DATED.findall(changelog)) > 1:
+        msg = "no release tags v* here, though the changelog has releases: git fetch --tags"
+        raise PlanError(msg)
+    dated = [Version.parse(name) for name in _DATED.findall(changelog) if _FORM.fullmatch(name)]
+    newest = max((v for v in dated if v.final and v != releasing), default=None)
+    if known and newest is not None and newest not in known:
+        msg = (
+            f"{CHANGELOG} has {newest}, but there is no tag v{newest} here: if {newest} was merged"
+            " just now, CI on main tags it once its jobs pass (a re-run of failed jobs tags it),"
+            " then run again; otherwise fetch the tags of the main repository"
+        )
+        raise PlanError(msg)
+    return max((v for v in known if v.final), default=None)
+
+
+def has(rev: str, path: str) -> bool:
+    return not git_fails("cat-file", "-e", f"{rev}:{path}")
+
+
+def _json(rev: str, path: str) -> dict[str, Any]:
+    """The JSON object in `path` at `rev`."""
+    try:
+        found = json.loads(git("show", f"{rev}:{path}"))
+    except ValueError as exc:
+        msg = f"{path} at {rev}: not JSON ({exc})"
+        raise PlanError(msg) from None
+    if not isinstance(found, dict):
+        msg = f"{path} at {rev}: not a JSON object"
+        raise PlanError(msg)
+    return found
+
+
+def _waivers(rev: str, last: Version) -> dict[str, str]:
+    """The waivers for the release `last`, each naming one finding as the refusal shows it;
+    the next release makes them void."""
+    if not has(rev, WAIVERS):
+        return {}
+    waivers = _json(rev, WAIVERS)
+    for key in waivers:  # a tag's name or a pre-release would be ignored without a word
+        if _FORM.fullmatch(key) is None or not Version.parse(key).final:
+            msg = (
+                f'{WAIVERS}: the key "{key}" is not a final release written X.Y.Z; findings'
+                f' against v{last} go under "{last}"'
+            )
+            raise PlanError(msg)
+    mine = waivers.get(str(last), {})
+    if not isinstance(mine, dict) or not all(
+        isinstance(reason, str) and reason.strip() for reason in mine.values()
+    ):
+        msg = (
+            f'{WAIVERS}: expected {{"{last}": {{"<a finding as the refusal shows it>": "<why it'
+            ' is a false alarm>"}}'
+        )
+        raise PlanError(msg)
+    return mine
+
+
+def interface(rev: str, releasing: Version | None = None) -> str:
+    """Refuse `rev` if its public interface breaks that of the last release while the changelog
+    since then does not make the next release a major one, or grows or changes it while the
+    changelog makes it a patch; also if it changed a changelog section since the last release
+    (that one's included) that it contains. Says what it compared, with the breaks a major release
+    takes. `releasing`: the version `rev` writes, whose tag does not exist yet."""
+    changelog = git("show", f"{rev}:{CHANGELOG}")
+    known = tags()
+    last = last_release(changelog, known, releasing)
+    if last is None:
+        return "public interface: no release yet to compare with"
+    if git_fails("merge-base", "--is-ancestor", f"v{last}", rev):  # its additions: no removals
+        if git("rev-parse", "--is-shallow-repository").strip() == "true":
+            msg = (
+                "a shallow clone: git fetch --unshallow and run again (it does not show whether"
+                f" {rev} contains v{last})"
+            )
+        else:
+            msg = f"{rev} does not contain v{last}: merge origin/main and run again"
+        raise PlanError(msg)
+    _released_sections(rev, changelog, [v for v in known if v >= last])
+    if not has(f"v{last}", INTERFACE):  # a release made before validate() required it
+        return f"public interface: v{last} has no {INTERFACE}, nothing to compare"
+    if not has(rev, INTERFACE):
+        msg = f"{INTERFACE} is missing, but v{last} has one: make interface"
+        raise PlanError(msg)
+    comparator = tool("public_interface")
+    old, new = _json(f"v{last}", INTERFACE), _json(rev, INTERFACE)
+    for at, doc, hint in ((f"v{last}", old, _RELEASED), (rev, new, "")):
+        try:
+            comparator.check(doc)
+        except comparator.FormatError as exc:
+            msg = f"{INTERFACE} at {at}: {exc}{hint}"
+            raise PlanError(msg) from None
+    found = comparator.unwaived(old, new, _waivers(rev, last))
+    breaks = [str(f) for f in found if f.kind == comparator.BREAKING]
+    change = kind(changelog, last)
+    waiver = f'a false alarm is waived in {WAIVERS} under "{last}"'
+    if breaks and change != "major":
+        msg = (
+            f"the public interface of v{last} breaks, but {CHANGELOG} has no **Breaking:** entry"
+            f" and no ### Removed section since (docs/development.md#compatibility; {waiver}):"
+        )
+        raise PlanError(_listed(msg, breaks))
+    if breaks:
+        count = f"{len(breaks)} finding" + ("s" if len(breaks) > 1 else "")
+        return _listed(
+            f"public interface: breaks v{last} ({count}), for {last.major + 1}.0.0:", breaks
+        )
+    if found and change in (None, "patch"):
+        msg = (
+            f"the public interface of v{last} grows or changes, but {CHANGELOG} has"
+            f" {'only fixes' if change else 'no entry'} since: describe it under ### Added or"
+            f" ### Changed (the next release is then a minor one; {waiver}):"
+        )
+        raise PlanError(_listed(msg, [str(f) for f in found]))
+    return f"public interface: compatible with v{last}"
+
+
+def _listed(head: str, findings: list[str]) -> str:
+    return "\n  ".join([head, *findings])
+
+
+def _released_sections(rev: str, changelog: str, released: list[Version]) -> None:
+    """Refuse a changelog section of these releases that `rev` contains but changed since the
+    tag: merging a release into a branch can move the branch's entries of [Unreleased] into the
+    release's section without a conflict, where they count for no later release."""
+    notes = tool("release_notes")
+    for version in sorted(released):
+        tag = f"v{version}"
+        if git_fails("merge-base", "--is-ancestor", tag, rev):  # a newer one: not merged yet
+            continue
+        try:
+            tagged = notes.section(git("show", f"{tag}:{CHANGELOG}"), str(version))
+        except ValueError:  # tagged before validate() required the section
+            continue
+        try:
+            now = notes.section(changelog, str(version))
+        except ValueError:
+            now = None
+        if now != tagged:
+            msg = (
+                f"{CHANGELOG}: the section of {version} differs from the one at {tag} (a merge"
+                " can move entries of [Unreleased] into it): entries since go above it"
+            )
+            raise PlanError(msg)
 
 
 def validate(written: Version, rev: str) -> None:
     """Refuse `written` at `rev` unless it is the next version, with its changelog section."""
     changelog = git("show", f"{rev}:{CHANGELOG}")
     try:
-        release_notes().section(changelog, str(written))
+        tool("release_notes").section(changelog, str(written))
     except ValueError as exc:
         raise PlanError(str(exc)) from None
     unreleased = _UNRELEASED.search(changelog)
@@ -203,17 +376,16 @@ def validate(written: Version, rev: str) -> None:
         msg = f"{CHANGELOG}: an empty [Unreleased], then the section of {written}"
         raise PlanError(msg)
     known = tags()
-    if not known and len(_DATED.findall(changelog)) > 1:
-        msg = "no release tags v* here, though the changelog has releases: git fetch --tags"
-        raise PlanError(msg)
-    finals = [v for v in known if v.final]
-    last_final = max(finals) if finals else None
+    last_final = last_release(changelog, known, written)
     base = next_base(last_final, kind(changelog, last_final) if last_final else None)
     if written.base != base:
         msg = f"{written}: the next release is {base} (or a pre-release of it)"
         raise PlanError(msg)
     if known and written <= max(known):
         msg = f"{written} is not newer than v{max(known)}"
+        raise PlanError(msg)
+    if written.final and not has(rev, INTERFACE):  # else the guard has nothing to compare with
+        msg = f"{written}: a release needs {INTERFACE}, which later releases are compared with"
         raise PlanError(msg)
     if not written.final:
         same = [v.number for v in known if v.base == base and v.rank == written.rank]
@@ -268,13 +440,21 @@ def planned(base: str) -> tuple[Version, bool] | None:
 
 
 def check(base: str = "") -> str:
+    """What HEAD releases, then what the public interface was compared with."""
     plan = planned(base)
+    compared = interface("HEAD", plan[0] if plan else None)  # a break shows in its pull request
     if plan is None:
-        return f"no release: __version__ stays {version_text('HEAD')}"
+        return f"no release: __version__ stays {version_text('HEAD')}\n{compared}"
     written, tagged = plan
     if tagged:
-        return f"v{written} tags this commit already"
-    return f"releases v{written}" + ("" if written.final else " as a pre-release")
+        return f"v{written} tags this commit already\n{compared}"
+    return f"releases v{written}" + ("" if written.final else " as a pre-release") + f"\n{compared}"
+
+
+def uncommitted() -> list[str]:
+    """The files the check reads that have changes not committed (a note: it reads HEAD)."""
+    status = git("status", "--porcelain", "--", *_READ)
+    return sorted({line[3:] for line in status.splitlines()})
 
 
 def tag(base: str = "") -> tuple[str, bool, bool]:
@@ -299,6 +479,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
+            if changed := uncommitted():
+                note = f"the check reads HEAD; commit first ({', '.join(changed)} changed)"
+                print(f"release_plan: {note}", file=sys.stderr)
             print(check(args.base))
         else:
             name, exists, final = tag(args.base)

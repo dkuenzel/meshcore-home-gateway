@@ -6,6 +6,8 @@ needs nothing besides its MQTT integration: no custom integration, no HACS repos
 no YAML. Automations are built in the automation editor with the trigger *Event received* and the
 action *Send a notification message*.
 
+Public interface: see [compatibility](development.md#compatibility).
+
 ## Requirements
 
 * Home Assistant 2026.8 or newer, tested with 2026.10.

@@ -1,0 +1,165 @@
+---
+status: accepted
+date: 2026-10-25
+decision-makers: maintainers
+---
+
+# Four public interfaces, kept within a major version by a policy and a snapshot of the code
+
+## Context and Problem Statement
+
+From 1.0.0 on the project follows Semantic Versioning. The README, `CONTRIBUTING.md`, the
+changelog and `docs/development.md` named three public interfaces (the MQTT API, the
+configuration format and the command line), but nothing said what "compatible" means for each of
+them. Home Assistant discovery was not named, although automations, dashboards and statistics
+refer to its entity IDs. Nothing checked a change either: the release plan
+([ADR 0022](0022-releases-tagged-by-ci-on-main.md)) takes the kind of change from the changelog,
+which the author of the change writes. A removed topic, a narrowed range or a renamed option
+would reach a minor release unnoticed. What does a major version promise, and how is that kept
+without a radio, a broker or someone who remembers every interface?
+
+## Decision Drivers
+
+* Within a major version, what users built keeps working: automations, broker ACLs,
+  configuration files, scripts and dashboards.
+* A break shows in the pull request that makes it, not only at the release.
+* Growth needs its changelog entry, which makes the release a minor one (Semantic Versioning:
+  new functionality is minor); false alarms are rare, so that nobody learns to wave the check
+  through.
+* 1.0.0 ships the program of 1.0.0rc1: the check must not change `src/`, `deploy/`,
+  `pyproject.toml` or `tools/build_pyz.py`.
+* The release tooling stays standard library only, run under `python3 -I`.
+
+## Considered Options
+
+* A written policy, and a snapshot of the interfaces computed from the code and compared with the
+  snapshot of the last release on every change
+* A written policy alone, kept by review
+* Hand-written schemas of the interfaces (JSON Schema for the documents, lists of settings and
+  options) as the reference, tested against the code
+* The documentation's tables and examples as the reference, tested against the code
+
+## Decision Outcome
+
+Chosen option: "a written policy and a snapshot computed from the code", because it is the only
+one that notices a break nobody declared without a second description of the interfaces that
+could drift from the code.
+
+* **Four public interfaces** ([docs/development.md](../development.md#compatibility)): the MQTT
+  API, the configuration format, the command line and, newly, Home Assistant discovery with a
+  narrow promise: unique IDs, default entity IDs, platforms, units, event types, options and
+  attribute keys. Names (translated, [ADR 0019](0019-internationalisation-with-gettext.md)),
+  icons, entity categories and which entities are enabled by default are not covered; device and
+  state classes are left to review for now.
+* **Within a major version each interface only grows.** The policy lists, for each one, what is
+  compatible and what is breaking. Not interface: abbreviated options (a new option can make one
+  ambiguous), texts for people, log messages, the Python modules and the files in the state
+  directory.
+  Raising a platform floor is breaking: Python 3.11 with paho-mqtt 2.x (Debian 13 for the
+  installer), Home Assistant 2026.8, MeshCore companion firmware 1.18.0. The Proxmox
+  installer's options and its answers file only grow, like the configuration; the snapshot
+  records the answer type of each setting, review keeps the rest.
+* **The snapshot** `tests/public_interface.json` is computed by `tests/public_interface.py`
+  without a radio or a broker: the MQTT adapter with a recording paho client below the bridge's
+  publish paths, a recorder on the configuration parser, a walk of the argument parser, the
+  commands' own output with the radio emulator for `probe`, and Home Assistant's discovery
+  builders. It records structure only. For MQTT: topics with retained flag and QoS,
+  subscriptions and the last will, key paths, and the value lists declared in one place or
+  emitted where Home Assistant is told of them. For the configuration: settings with type,
+  default, and the bounds and choices the parser takes. For the command line: commands with their
+  subcommands, options with all their names, type and the bounds their type function takes,
+  mutually exclusive option groups (each option by all its names) and whether one is required,
+  and named positionals; also the columns of the tab-separated lists, the JSON keys of
+  `probe --json`, `contacts list --json` and `listen`, the value lists `probe` prints, the keys
+  `config answers` prints, the exit codes and the default paths. For Home Assistant: the
+  discovery facts above, and the slugs of contact entity IDs for example names. Besides, the
+  firmware versions tested. The fixture's names have every kind of character their settings
+  allow, so a topic or an ID that the code builds otherwise from one shows.
+  `tests/test_public_interface.py` fails when snapshot and code differ; `make interface` writes
+  it again and lists what changed.
+* **The comparison** `tools/public_interface.py` classifies each difference as breaking, changed
+  (compatible, but users notice it: a default, a wider range) or added. Attributes of a record are
+  compared by a rule each, and an attribute without a rule, or a value of another shape, is an
+  error, so recording a new fact is a deliberate change of the tool. A rename is a removal plus
+  an addition. Each finding states one fact: a value removed from a list is a finding of its own.
+  A command's option groups are compared as the rules they are: a call that worked must still
+  work, so a new exclusion between existing options or a new required group breaks.
+* **The release plan** compares the snapshot at HEAD with that of the last release, which HEAD
+  must contain, on every pull request and push, and prints the result. A breaking finding needs a
+  `**Breaking:**` entry or a `### Removed` section since that release, which makes the next
+  release a major one; the log then lists every break the release takes. An added or changed
+  finding needs an entry since that release that makes the next release at least a minor one
+  (`### Added`, `### Changed`), so the kind of release follows from the interface too. A release
+  must contain the snapshot, so 1.0.0 becomes the first baseline. A false alarm of either kind is
+  waived with a reason in `tests/public_interface_waivers.json`, for one release (`X.Y.Z`), by the
+  finding as the refusal shows it; the waiver covers no other finding.
+
+### Consequences
+
+* Good, because a removal, a narrowed range, a renamed option or a changed entity ID can no
+  longer reach a minor or patch release unnoticed.
+* Good, because the snapshot's diff shows every change of a public interface in review, also the
+  additions that need documentation.
+* Good, because growth needs only `make interface` and its changelog entry, and the check needs
+  no tool besides git.
+* Bad, because the extractor uses private parts of the code (argparse internals, steps of the
+  bridge, private constants); a change there fails the test loudly and needs an edit of the
+  extractor.
+* Bad, because the snapshot does not see all that the policy promises; JSON types and
+  nullability, the size limits and list bounds of MQTT, the value lists outside `mqtt > values`
+  and `cli > values` (the reasons among them), string formats, the forms an option's value
+  takes, the values inside machine-readable lines, publishing after a reconnect, the exit status
+  of each case, platform floors, meanings, units of values, rules between settings and the texts
+  a request accepts stay with review and the written policy
+  ([docs/development.md](../development.md#compatibility) lists them).
+* Bad, because a fix that adds what was missing, or widens a bound that was too narrow, needs an
+  Added or Changed entry and so a minor release, or a waiver.
+* Bad, because surface behind a setting that the fixture does not switch on is missing until the
+  fixture gets it. A test that every topic of the layout is recorded closes that gap for MQTT
+  topics; keys and values behind a switch need the switch on in `MAXIMAL_TEXT`. The fixture's
+  contact must fill every field, so that components that need data are there.
+* Neutral, because most feature pull requests touch the one snapshot file; a conflict is resolved
+  by `make interface` after merging `main`.
+
+### Confirmation
+
+`tests/test_public_interface.py` checks the snapshot against the code, the topic coverage and the
+comparator on small synthetic snapshots; `tests/test_release_plan.py` checks the comparison with
+the last release in temporary repositories, also under `python3 -I`. The release of 1.0.0 must
+contain the snapshot; the first change after it is compared with it.
+
+## Pros and Cons of the Options
+
+### A written policy and a snapshot computed from the code (chosen)
+
+* Good, because the code is the only reference, so the check cannot drift from it.
+* Good, because the structure covers most of what users depend on: names, flags, the types and
+  bounds of settings and options, and the rules between options that argparse knows.
+* Bad, because behaviour beyond the structure is not seen.
+
+### A written policy alone
+
+* Good, because no code to maintain.
+* Bad, because the changelog entry that decides the version is written by the author of the
+  change; a break that nobody notices is released as a minor version.
+
+### Hand-written schemas as the reference
+
+* Good, because schemas would document types and nullability precisely.
+* Bad, because they are a second description beside the code, kept in step by hand; the check
+  would compare schemas with each other, not what the code does.
+
+### The documentation as the reference
+
+* Good, because it is what users read.
+* Bad, because tables and examples are prose: a check depends on their layout, and some facts
+  (QoS, the last will, the columns of the lists) are not there in a form a test can read. The
+  documentation's examples match the code today; checking them stays a separate test.
+
+## More Information
+
+Follows [ADR 0022](0022-releases-tagged-by-ci-on-main.md), whose consequences announced a check
+of the public interfaces. Related: [ADR 0015](0015-provider-neutral-documents-on-the-bus.md)
+(documents only grow). Revisit when the reason vocabularies become enums (they then join the
+snapshot as additions), when device and state classes are decided, or when a release line besides
+`main` is maintained.

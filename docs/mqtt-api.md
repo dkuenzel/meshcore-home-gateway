@@ -2,8 +2,8 @@
 
 All topics hang below `<base_topic>/<node_id>`; with the defaults of the example configuration that
 is `meshcore/radio1`. Everything uses QoS 1, except the `command` events (QoS 0, see there). The
-API is a public interface under semantic
-versioning ([ADR 0003](decisions/0003-mqtt-as-the-message-bus.md)).
+API is a public interface under semantic versioning
+([compatibility](development.md#compatibility)).
 
 | Topic | Direction | Retained | Payload |
 | --- | --- | --- | --- |
@@ -40,8 +40,16 @@ every front end (Home Assistant through discovery, other home automation systems
 MQTT bindings, later dashboards) reads the same ones. A document is published when it changes
 and again after every reconnect to the broker. Units are in the key names, machine values are in
 lower case, and texts from the mesh (names, messages) are plain data: never interpret them as
-markup. Within a major version keys are only added; ignore keys you do not know. Lists are
-bounded in size and carry `total` and `truncated`.
+markup. Lists are bounded in size and carry `total` and `truncated`.
+
+Within a major version topics, keys and values are only added. Ignore topics and keys you do not
+know, and expect new values in every list of values below (`event_type`, `reason`, `state`,
+`status`, `type`, `flags`, `errors` and the like): treat one you do not know as "other". Retained
+flags, QoS and the topic layout stay as listed here. The size limits of requests only grow;
+documents and list bounds grow only within the ceilings of
+[ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md): a document that Home
+Assistant reads into attributes stays below 16 KiB, every document below 64 KiB. Raising a ceiling
+is breaking.
 
 ## Sending: `send/<alias>`
 
