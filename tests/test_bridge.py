@@ -1445,6 +1445,23 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
     assert off.observer.on_contact_added == []
 
 
+def test_with_telemetry_off_an_exclusion_or_inclusion_forgets_the_saved_answers(
+    tmp_path: Path,
+) -> None:
+    """D13 also when telemetry is switched on again later: the saved schedule no longer knows
+    the answers of a contact excluded or included while telemetry was off."""
+    store = JsonStateFile(tmp_path / "state.json")
+    records = TelemetryRecords(store)
+    key = "d4" * 32
+    records.save(telemetry.Saved({key: telemetry.SavedContact(812.5, 0, 95.0)}), NOW)
+    off = Bridge(make_config(), FakeBus(), EmulatedRadio, CommandLedger(store),
+                 telemetry_records=records)  # fmt: skip
+    off.observer.telemetry_excluded(key, False)  # included again, as the contact manager does
+    saved, _ = records.load(NOW)
+    assert saved is not None
+    assert saved.contacts[key].answered_age_s is None
+
+
 def test_the_saved_schedule_is_restored_before_anything_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -67,6 +67,7 @@ REFUSED_RETRY_S = 300.0  # after any other refusal
 SAVE_INTERVAL_S = 300.0
 MEASURED_TX_LIMIT_S = 180  # the radio's own time on air per hour (5 %) from which polls pause
 HOLD_MAX_S = 15.0  # an answer waits this long for a table that shows every reported change
+TAKEN_MAX_S = 600.0  # an answer counts as at most this old when taken (the wall clock may step)
 OUTDATED_WAIT_S = 1.0  # while the radio reported a change that the table as read may not show
 HELD_ANSWERS = 4
 LOST_SENT_WINDOW_S = 120.0  # a request written whose SENT never came: its answer counts this long
@@ -622,7 +623,7 @@ class TelemetryPoller:
         back = self._scheduler.answered(
             key, now, found.cells if found else None, payload.lpp_bytes,
             route=(record.path_hops, record.path_bytes), late=late,
-            at=now - (self._wall() - event.received_at),  # when it came: a late one is taken later
+            at=now - min(self._wall() - event.received_at, TAKEN_MAX_S),  # when it came
         )  # fmt: skip
         self._newest[key] = (event.session_serial, event.seq)
         if self._own_flood is not None and self._own_flood[0] == key:

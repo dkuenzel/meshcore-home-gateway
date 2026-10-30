@@ -566,6 +566,26 @@ class TelemetryRecords:
         except OSError as exc:
             log.warning("telemetry: cannot store the schedule: %s", exc)
 
+    def forget(self, key: str) -> None:
+        """The contact was excluded or included while telemetry was off (D13): as
+        Scheduler.forget, its saved answers are gone and it is due at once; when it was asked
+        and flooded stays. Never raises: a failed write is logged."""
+        try:
+            data = self._store.load()
+            raw = data.get(self._KEY)
+            entries = raw.get("contacts") if isinstance(raw, dict) else None
+            entry = entries.get(key) if isinstance(entries, dict) else None
+            if not isinstance(entry, dict):
+                return
+            entry.update({
+                "due_in_s": 0.0, "failures": 0, "answered_age_s": None, "located": False,
+                "still": telemetry.STILL_POLLS, "current_s": telemetry.CURRENT_MIN_S,
+                "located_age_s": None,
+            })  # fmt: skip
+            self._store.save(data)
+        except OSError as exc:
+            log.warning("telemetry: cannot forget the answers of %s: %s", key[:12], exc)
+
 
 def _saved_contact(entry: object) -> SavedContact | None:
     if not isinstance(entry, dict):

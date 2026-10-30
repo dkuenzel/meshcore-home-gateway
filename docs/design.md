@@ -496,8 +496,10 @@ flowchart LR
   keeps its messages and positions. Readings are kept for `readings_days`; beyond 200 000 rows the
   oldest go, but never the rows of a contact's newest answer, which is restored at start, unless
   telemetry is on and its saved schedule knows a later answer the history missed (it was off or
-  broken, or an older version ran): old values must not read as current. A contact's document and
-  the history show the same answer.
+  broken, or an older version ran): old values must not read as current. After the clock went
+  back while the gateway was stopped the schedule cannot tell (every answer counts as more than a
+  day old), and the history's newest comes back, not as current. A contact's document and the
+  history show the same answer.
 * **Exclusion** (§6.11): an excluded companion's readings, its time of the newest position and a
   position from telemetry are forgotten, and the position its record carries takes the place, as
   at a first table read; its rows in the history stay until their age removes them and are not
@@ -799,7 +801,8 @@ sequenceDiagram
   too (at once when one turns current or no longer, else with its minute tick and at the stop).
   Before the first table read it has no contacts. It keeps these documents in their latest state,
   also once they expired, stores each change at once, and publishes them again when their state
-  changes; one that is not current also at each connect of the broker. So after a restart without
+  changes; one whose state is not `answering` also at each connect of the broker (the broker may
+  have missed the change). So after a restart without
   the radio they still expire at their bound, also when a run stopped before the broker
   connected. The first table read replaces them. The exclusions are kept in their own file
   (above).

@@ -2209,6 +2209,22 @@ def test_readings_of_a_late_answer_taken_a_while_after_it_came_stay_after_a_rest
     history.close()
 
 
+def test_an_answer_taken_after_the_clock_stepped_forward_is_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wall clock stepped two hours forward between the push and its taking (a clock set
+    at boot): the answer just taken counts as current, and so does its event."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, wall=NOW + 7200.0)  # the radio stamps pushes at NOW
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        assert r.state() == "answering"
+        assert r.events() == [("answered", KEY, "answering")]
+
+    asyncio.run(main())
+
+
 @pytest.mark.first_start_hold
 def test_the_first_start_holds_the_requests_for_an_hour_after_the_table_is_read(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture

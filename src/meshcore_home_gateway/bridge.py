@@ -259,6 +259,9 @@ class Bridge:
         self._queue: asyncio.Queue[Outgoing] = asyncio.Queue(maxsize=config.messages.queue_size)
         self._activity = OutboxActivity(monotonic, self._queue.qsize)  # telemetry yields to it
         self._telemetry = self._telemetry_poller(telemetry_records, telemetry_lanes)
+        if self._telemetry is None and (records := telemetry_records) is not None:
+            # D13 holds when telemetry is on again: the saved schedule forgets the answers
+            self.observer.on_telemetry_exclusion.append(lambda key, _: records.forget(key))
         self._budget = AirtimeBudget(
             config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
         )

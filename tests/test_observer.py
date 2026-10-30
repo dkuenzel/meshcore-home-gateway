@@ -987,7 +987,7 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
 
 def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: Path) -> None:
     """A run that stopped before the broker connected published it to nobody: the state file
-    keeps it expired, and the next run publishes it at each connect. One still current is not
+    keeps it expired, and the next run publishes it at each connect. One still answering is not
     published again (the broker has it)."""
     store, before = last_run(tmp_path, ALICE, BOB)
     alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
@@ -1002,6 +1002,23 @@ def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: 
     assert retained(bus, f"{ROOT}/contacts/{bob}") == []
     observer.publish_all()
     assert len(retained(bus, f"{ROOT}/contacts/{alice}")) == 2
+
+
+def test_a_position_expiry_the_broker_missed_is_published_at_the_next_connect(
+    tmp_path: Path,
+) -> None:
+    """Her answers are still current, her position no longer: the broker's copy says it is."""
+    store, before = last_run(tmp_path, ALICE)
+    alice = ALICE.public_key.hex()
+    states: dict[str, TelemetryState] = {alice: "no_position"}
+    observer, _nobody = restarted(store, states)
+    observer.tick()
+    observer.flush()  # the stop, before the broker connected
+    observer, bus = restarted(store, states)
+    observer.publish_all()
+    expired = {"telemetry_state": "no_position", "telemetry_current": True,
+               "position_current": False}  # fmt: skip
+    assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **expired}
 
 
 def test_with_telemetry_off_a_document_of_the_last_run_is_off_at_the_connect(

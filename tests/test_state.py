@@ -262,6 +262,21 @@ def test_the_telemetry_schedule_round_trips_relative_to_its_save(tmp_path: Path)
     assert records.load(1_800_000_000.0) == (with_6b, 0.0)
 
 
+def test_a_saved_schedule_forgets_the_answers_of_a_contact_excluded_meanwhile(
+    tmp_path: Path,
+) -> None:
+    """Excluded or included while telemetry is off (D13): as Scheduler.forget, its answers are
+    gone and it is due at once; when it was asked and flooded stays."""
+    store = JsonStateFile(tmp_path / "state.json")
+    records = TelemetryRecords(store)
+    asked = SavedContact(812.5, 1, 95.0, 96.0, 4000.0, 1, True, 2, 19, None, 8373.0, 95.0)
+    records.save(Saved({A: asked, B: SavedContact(10.0)}), 1_800_000_000.0)
+    records.forget(A)
+    records.forget("c" * 64)  # not in the schedule: nothing
+    forgotten = SavedContact(0.0, 0, None, 96.0, 4000.0, 1, False, lpp_bytes=19)
+    assert records.load(1_800_000_000.0) == (Saved({A: forgotten, B: SavedContact(10.0)}), 0.0)
+
+
 @pytest.mark.parametrize(
     "entry",
     [
