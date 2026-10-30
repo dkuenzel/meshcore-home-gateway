@@ -601,11 +601,16 @@ class Scheduler:
     def located_ages(self, now: float) -> dict[str, float]:
         """How long ago each contact's newest answer with a position came (candidates, restored
         and parked)."""
-        parked = {key: s for key, (_, s) in self._parked.items()}
-        everyone = {**parked, **self._restored, **self._contacts}
         return {
             key: max(0.0, now - s.located_at)
-            for key, s in everyone.items() if s.located_at is not None
+            for key, s in self._everyone().items() if s.located_at is not None
+        }  # fmt: skip
+
+    def answered_ages(self, now: float) -> dict[str, float]:
+        """How long ago each contact's newest answer came (candidates, restored and parked)."""
+        return {
+            key: max(0.0, now - s.answered_at)
+            for key, s in self._everyone().items() if s.answered_at is not None
         }  # fmt: skip
 
     # --- persistence ----------------------------------------------------------------------------
@@ -673,6 +678,11 @@ class Scheduler:
         return max(0.0, own - OWN_S_PER_HOUR * paid), max(0.0, mesh - MESH_S_PER_HOUR * paid)
 
     # --- helpers ----------------------------------------------------------------------------------
+
+    def _everyone(self) -> dict[str, _Contact]:
+        """Every schedule: candidates, restored and parked."""
+        parked = {key: s for key, (_, s) in self._parked.items()}
+        return {**parked, **self._restored, **self._contacts}
 
     def _schedule(self, key: str) -> _Contact | None:
         """The contact's schedule: a candidate, restored and not yet compared, or parked."""

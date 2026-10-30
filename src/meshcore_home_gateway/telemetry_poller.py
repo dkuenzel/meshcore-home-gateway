@@ -298,7 +298,7 @@ class TelemetryPoller:
         run. The schedule of every excluded contact forgets its answers (excluded while
         telemetry was off). The first-start hold: all of it when the state file has no
         telemetry record, else what the record has left of it. The observer learns when each
-        contact last answered with a position. Never raises."""
+        contact last answered, and last answered with a position. Never raises."""
         if self._restored:
             return
         self._restored = True
@@ -318,6 +318,8 @@ class TelemetryPoller:
                 self._scheduler.forget(key, now)
             for key, age in self._scheduler.located_ages(now).items():
                 self._observer.restore_position_received(key, wall - age)
+            for key, age in self._scheduler.answered_ages(now).items():
+                self._observer.restore_answered(key, wall - age)
         except Exception:
             log.exception("telemetry: the saved schedule could not be restored")
 

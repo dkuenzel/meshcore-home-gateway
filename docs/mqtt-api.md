@@ -301,7 +301,7 @@ adverts carried a position, which everyone in range can read. `telemetry_exclude
 | `telemetry_excluded` | the household excluded it from telemetry ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)); `false` for other types |
 | `telemetry_current` | its answers are current: `telemetry_state` is `answering` or `no_position`; `null` for other types |
 | `position_current` | a position from telemetry that is current (`telemetry_state` `answering`); `false`: from telemetry, no longer confirmed; `null`: no position, or one from adverts, which does not expire |
-| `readings_at` | the gateway's time of the answer that the next three keys come from (never the companion's); after a restart the newest answer the history kept |
+| `readings_at` | the gateway's time of the answer that the next three keys come from (never the companion's); after a restart the newest answer the history kept, unless the saved schedule knows a later one the history missed (then `null`, and no values) |
 | `battery_v` | its battery: the answer's first value if it is the channel 1 voltage; the companion truncates it to 0.01 V (4.20 V reads 4.19) |
 | `mcu_temperature_c` | its processor's temperature: the answer's last value if it is a channel 1 temperature (on a board without a processor sensor, a channel 1 sensor that comes last is named so) |
 | `readings` | the answer's other values by [key](#reading-keys), in the answer's order; `{}` without; a key the newest answer lacks is absent. Bounded by the answer, so without `total` |
@@ -549,7 +549,7 @@ has them (`null` for a key not on the radio):
 | --- | --- | --- |
 | `excluded` | `null` | stored (and the history deleted, if asked) |
 | `excluded` | `not_saved` | in effect, but not stored yet: the gateway writes it again every minute until it is (the log says when), so it is lost only if the gateway stops first |
-| `excluded` | `not_forgotten` | stored, but `forget` found no working history (off, broken, or of a newer version) |
+| `excluded` | `not_forgotten` | in effect, but `forget` found no working history (off, broken, or of a newer version). It comes before `not_saved`: if the exclusion is not stored yet either, the gateway writes it again as for `not_saved` (the log says when) |
 | `included` | `null` | stored |
 | `failed` | `state_unwritable` | `on` could not be stored, or the file cannot be read: nothing changed, the contact stays excluded |
 
@@ -568,8 +568,8 @@ airtime lanes allow.
 ([deployment.md](deployment.md#4-operations)): also when the contact leaves the table and
 comes back, while telemetry is off, and across restarts. A file that cannot be parsed is left as
 it is and pauses telemetry (`telemetry_reason` `exclusions_unreadable`) until it is fixed or
-deleted and the gateway restarted; meanwhile `off` is in effect only until the gateway stops, and
-`on` fails.
+deleted and the gateway restarted; meanwhile `off` is in effect only until the gateway stops,
+`on` fails, and no contact gets back its readings or a position from telemetry from the history.
 
 ## Telemetry events: `telemetry`
 

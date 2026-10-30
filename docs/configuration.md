@@ -270,7 +270,8 @@ that; otherwise requests pause, because a node the radio adds could take a compa
 its answers). Over TCP an answer can be lost while the radio's push queue is full; USB stays the
 recommendation. The schedule (no positions) is kept in `state.json`, the exclusions in
 `telemetry-excluded.json`; one that cannot be parsed pauses telemetry until it is fixed or deleted
-and the service restarted ([deployment.md](deployment.md#4-operations)).
+and the service restarted ([deployment.md](deployment.md#4-operations)), and meanwhile no contact
+gets back its readings or a position from telemetry from the history.
 
 ## `[diagnostics]`
 

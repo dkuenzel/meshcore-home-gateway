@@ -41,8 +41,8 @@ not run for it.
   `reason` (the new `state.telemetry_reason`: `first_start`, `no_radio`, `exclusions_unreadable`,
   `auto_add`, `radio_airtime`); the two telemetry airtime sensors, disabled until enabled.
 - The history keeps the readings of every answer (a new table; `[history] readings_days`,
-  30 days) and restores the newest at start; `position_received_at` also comes back after a
-  restart.
+  30 days) and restores the newest at start, unless the saved schedule knows a later answer the
+  history missed; `position_received_at` also comes back after a restart.
 - `listen --topic telemetry`.
 - The interface snapshot records the device and state classes of the Home Assistant entities.
 

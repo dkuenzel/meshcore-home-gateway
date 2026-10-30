@@ -981,6 +981,17 @@ def test_located_ages() -> None:
     assert s.located_ages(1100.0) == {A: 1098.0}
 
 
+def test_answered_ages() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    assert s.answered_ages(0.0) == {}
+    ask(s, [direct(A), direct(B)], 0.0)  # A
+    ask(s, [direct(A), direct(B)], 12.0, cells=None)  # B, also without a position
+    assert s.answered_ages(100.0) == {A: 98.0, B: 86.0}
+    s.decide(EU, [direct(B)], 1000.0)  # A left: parked, still counted
+    s.forget(B, 1000.0)  # excluded
+    assert s.answered_ages(1100.0) == {A: 1098.0}
+
+
 def test_a_file_without_the_new_fields_reads_as_an_hour_and_no_located_time(
     tmp_path: Path,
 ) -> None:

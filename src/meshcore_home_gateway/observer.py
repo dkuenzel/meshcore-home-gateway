@@ -152,7 +152,8 @@ class Observer:
     def _restore(self) -> None:
         """What the history knows from earlier runs: recent messages, positions, last heard, the
         readings of each contact's newest answer. An excluded contact gets back neither its
-        readings nor a position from telemetry."""
+        readings nor a position from telemetry, and while the exclusions cannot be read no
+        contact does (they may exclude anyone)."""
         if self._history is None:
             return
         self._recent.extend(reversed(self._history.recent_messages(RECENT_MESSAGES)))
@@ -171,7 +172,7 @@ class Observer:
     def _restore_contact(
         self, key: str, heard: Heard | None, fix: Fix | None, readings: Readings | None
     ) -> None:
-        if key in self.exclusions:
+        if key in self.exclusions or self.exclusions.unreadable:
             readings = None
             fix = None if fix is not None and fix.source == "telemetry" else fix
         self.mesh.restore(key, heard, fix, readings)
@@ -312,11 +313,18 @@ class Observer:
 
     def restore_position_received(self, key: str, at: float) -> None:
         """When the contact's newest answer with a position came, from the saved schedule (for
-        `position_received_at` after a restart); not for an excluded contact."""
-        if key in self.exclusions:
+        `position_received_at` after a restart); not for an excluded contact, nor for any while
+        the exclusions cannot be read."""
+        if key in self.exclusions or self.exclusions.unreadable:
             return
         self.mesh.restore_received(key, at)
         self._publish_contact(key)
+
+    def restore_answered(self, key: str, at: float) -> None:
+        """When the contact's newest answer came, from the saved schedule (before the first table
+        read): readings the history kept of an older answer are not restored. It missed the later
+        ones (off or broken for a while, or an older version ran)."""
+        self.mesh.restore_answered(key, at)
 
     def radio_tx_1h_s(self) -> int | None:
         """The radio's own time on air in the last hour, as it counts it; None before two

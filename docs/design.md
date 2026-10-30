@@ -494,8 +494,10 @@ flowchart LR
   history's version 2 with `CREATE … IF NOT EXISTS` instead of a version 3: an older gateway opens
   a file of a newer version without any history, and it ignores an added table, so a downgrade
   keeps its messages and positions. Readings are kept for `readings_days`; beyond 200 000 rows the
-  oldest go, but never the rows of a contact's newest answer, which is restored at start. A
-  contact's document and the history show the same answer.
+  oldest go, but never the rows of a contact's newest answer, which is restored at start, unless
+  the saved schedule knows a later answer the history missed (it was off or broken, or an older
+  version ran): old values must not read as current. A contact's document and the history show
+  the same answer.
 * **Exclusion** (§6.11): an excluded companion's readings, its time of the newest position and a
   position from telemetry are forgotten, and the position its record carries takes the place, as
   at a first table read; its rows in the history stay until their age removes them and are not

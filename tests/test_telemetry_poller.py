@@ -1303,6 +1303,7 @@ BOB_KEY = BOB.public_key.hex()
 ERIN = EmulatedContact(bytes.fromhex("e7" * 32), "Erin", out_path_len=0x00)
 ERIN_KEY = ERIN.public_key.hex()
 GINA = EmulatedContact(bytes.fromhex("9a" * 32), "Gina", out_path_len=0x00)
+GINA_KEY = GINA.public_key.hex()
 GINA_TWIN = EmulatedContact(GINA.public_key[:6] + bytes(26), "Trent", out_path_len=0x00)
 HILL = EmulatedContact(bytes.fromhex("c7" * 32), "Hill", node_type=2)  # a repeater
 MIRROR = EmulatedContact(SELF_KEY[:6] + bytes(26), "Mirror", out_path_len=0x00)  # the radio's
@@ -1407,7 +1408,7 @@ def rig(
     monkeypatch: pytest.MonkeyPatch, *contacts: EmulatedContact,
     records: TelemetryRecords | None = None, exclusions: TelemetryExclusions | None = None,
     tcp: bool = False, wall: float = NOW, read: bool = True,
-    current: CurrentDocuments | None = None,
+    current: CurrentDocuments | None = None, history: History | None = None,
 ) -> Rig:  # fmt: skip
     """`wall`: the wall clock at the start; `read`: the radio's table was read."""
     monkeypatch.setattr(telemetry, "STEP_S", 60.0)  # the sleeps only move the clock
@@ -1421,7 +1422,8 @@ def rig(
         return wall + clock[0] - START
 
     bus = FakeBus()
-    observer = Observer(bus, TOPICS, wall_clock=wall_clock, exclusions=exclusions, current=current)
+    observer = Observer(bus, TOPICS, history=history, wall_clock=wall_clock, exclusions=exclusions,
+                        current=current)  # fmt: skip
     radio = StandInRadio(clock, *contacts)
     connected: list[StandInRadio | None] = [radio]
     poller = TelemetryPoller(
@@ -2086,6 +2088,44 @@ def test_restore_forgets_excluded_contacts_and_hands_on_when_positions_came(
         assert r.events() == []
 
     asyncio.run(main())
+
+
+def test_restored_readings_of_an_answer_older_than_the_saved_one_are_dropped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The history missed Dana's later answers (off or broken for a while, or 1.1.0a1 ran): what
+    it kept would read as current. Gina's are those of her saved answer, a little earlier after
+    the round trip between the clocks, and stay (a restart flips nothing); excluded Erin's
+    document is as before."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    records = TelemetryRecords(JsonStateFile(tmp_path / "state.json"))
+    answered = telemetry.SavedContact(600.0, answered_age_s=300.0, polled_age_s=300.0)
+    records.save(telemetry.Saved(dict.fromkeys((KEY, GINA_KEY, ERIN_KEY), answered)), NOW)
+    history.add_readings(KEY, NOW - 7 * 86_400.0, {"battery_v": 3.95})  # a week old
+    history.add_readings(GINA_KEY, NOW - 330.0, {"battery_v": 4.1})
+    history.add_readings(ERIN_KEY, NOW - 300.0, {"battery_v": 4.0})
+    exclusions = TelemetryExclusions(None)
+    exclusions.exclude(ERIN_KEY)
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, GINA, ERIN, records=records, exclusions=exclusions,
+                history=history)  # fmt: skip
+        dana = r.bus.payloads(f"/contacts/{KEY}")[-1]
+        assert (dana["telemetry_current"], dana["battery_v"], dana["readings_at"]) == (
+            True, None, None,
+        )  # fmt: skip
+        gina = r.bus.payloads(f"/contacts/{GINA_KEY}")[-1]
+        assert (gina["telemetry_current"], gina["battery_v"], gina["readings_at"]) == (
+            True, 4.1, iso(NOW - 330.0),
+        )  # fmt: skip
+        erin = r.bus.payloads(f"/contacts/{ERIN_KEY}")[-1]
+        assert (erin["telemetry_state"], erin["battery_v"], erin["readings_at"]) == (
+            "excluded", None, None,
+        )  # fmt: skip
+
+    asyncio.run(main())
+    history.close()
 
 
 @pytest.mark.first_start_hold

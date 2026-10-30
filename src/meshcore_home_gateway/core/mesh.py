@@ -20,6 +20,7 @@ MAX_NODES = 50  # heard nodes kept; the least recently heard goes first
 NODE_TTL_S = 7 * 86_400.0  # a heard node is forgotten this long after it was last heard
 FIX_MOVED_M = 20.0  # a telemetry position replaces the fix from this distance on
 HEARD_REFRESH_S = 3600.0  # telemetry answers alone move "last heard" at most this often
+ANSWERED_SLACK_S = 60.0  # a saved answer's time, after the round trip between the clocks
 
 
 def type_name(node_type: int) -> str:
@@ -135,6 +136,15 @@ class Mesh:
             self._restored[key] = replace(kept, position_received_at=at)
         elif tracked.position_received_at is None:
             tracked.position_received_at = at
+
+    def restore_answered(self, key: str, at: float) -> None:
+        """When the contact's newest telemetry answer came, from the saved schedule, before its
+        first table read: readings the history kept of an older answer are not restored (it
+        missed the later ones), so they cannot read as current."""
+        kept = self._restored.get(key)
+        if kept is None or kept.readings is None or kept.readings.at >= at - ANSWERED_SLACK_S:
+            return
+        self._restored[key] = replace(kept, readings=None)
 
     def contacts_read(self, nodes: Iterable[Node], at: float) -> TableChange:
         """A complete read of the radio's contact table."""

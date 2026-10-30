@@ -14,7 +14,7 @@ import pytest
 
 from meshcore_home_gateway.bridge import protected_keys
 from meshcore_home_gateway.core import lpp
-from meshcore_home_gateway.core.mesh import Fix
+from meshcore_home_gateway.core.mesh import Fix, Heard
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.telemetry import Answer, TelemetryState
 from meshcore_home_gateway.history import History
@@ -737,6 +737,43 @@ def test_an_excluded_contact_gets_back_neither_its_readings_nor_its_telemetry_po
     assert len(reading_rows(history)) == rows
     observer.restore_position_received(greenhouse, NOW + 10)  # not for an excluded contact
     assert observer.mesh.contacts[greenhouse].position_received_at is None
+    history.close()
+
+
+def test_with_an_unreadable_exclusions_file_no_contact_gets_back_its_readings_or_telemetry_position(
+    tmp_path: Path,
+) -> None:
+    """The file may exclude anyone: as telemetry asks nobody then (D12), the history gives back
+    when contacts were heard and their advert positions only."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    greenhouse, alice = GREENHOUSE.public_key.hex(), ALICE.public_key.hex()
+    for key in (greenhouse, alice):
+        history.add_readings(key, NOW - 20, {"battery_v": 4.1, "ch2_temperature_c": 21.5})
+    history.add_position(greenhouse, Fix(Position(50.1, 8.5), NOW - 20, "telemetry"))
+    history.add_position(alice, Fix(Position(53.55, 9.99), NOW - 50, "advert"))
+    history.node_heard(alice, "Alice", 1, Heard(NOW - 5, "message"))
+    path = tmp_path / EXCLUSIONS_FILE
+    path.write_text(f'{{"excluded": ["{greenhouse}",]}}')  # a hand edit's trailing comma
+    exclusions = TelemetryExclusions(path)
+    assert exclusions.unreadable
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, exclusions=exclusions,
+                        wall_clock=lambda: NOW)  # fmt: skip
+    for key in (greenhouse, alice):
+        observer.restore_position_received(key, NOW - 20)  # from the saved schedule
+    observer.radio_event(ContactsRead(table(GREENHOUSE, ALICE), NOW))
+    for key in (greenhouse, alice):
+        document = last(bus, f"{ROOT}/contacts/{key}")
+        assert (document["battery_v"], document["readings"], document["readings_at"]) == (
+            None, {}, None,
+        )  # fmt: skip
+        assert document["position_received_at"] is None
+    document = last(bus, f"{ROOT}/contacts/{greenhouse}")
+    assert (document["position_source"], document["latitude"]) == ("advert", 53.56)  # its record
+    document = last(bus, f"{ROOT}/contacts/{alice}")
+    assert (document["position_source"], document["latitude"]) == ("advert", 53.55)
+    assert (document["heard_via"], document["heard_at"]) == ("message", iso(NOW - 5))
     history.close()
 
 

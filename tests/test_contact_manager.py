@@ -978,7 +978,7 @@ def test_an_exclusion_that_cannot_be_stored_takes_effect_and_an_inclusion_does_n
     manager, observer, bus, _ = telemetry_manager(exclusions=TelemetryExclusions(path))
     ask(manager, BOB.public_key.hex(), "off")  # stored
     monkeypatch.setattr(os, "replace", failing_rename)
-    ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})
+    ask(manager, ALICE_KEY, "off")
     assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == ("excluded", "not_saved")
     assert ALICE_KEY in observer.exclusions
     assert bus.payloads(f"{ROOT}/contacts/{ALICE_KEY}")[-1]["telemetry_state"] == "excluded"
@@ -990,6 +990,31 @@ def test_an_exclusion_that_cannot_be_stored_takes_effect_and_an_inclusion_does_n
         )  # fmt: skip
         assert key in observer.exclusions  # still excluded
     assert bus.payloads(f"{ROOT}/contacts/{ALICE_KEY}")[-1]["telemetry_excluded"] is True
+
+
+def test_a_failed_forget_is_reported_also_when_the_exclusion_is_not_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full disk: neither the file nor the history can be written. `not_saved` heals itself (the
+    set is written again at every status tick, and the log says so); the rows that stayed would
+    be reported nowhere."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    path = tmp_path / EXCLUSIONS_FILE
+    manager, observer, bus, _ = telemetry_manager(exclusions=TelemetryExclusions(path),
+                                                  history=history)  # fmt: skip
+    monkeypatch.setattr(os, "replace", failing_rename)
+    history._db.execute("DROP TABLE reading")  # its delete fails
+    ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "excluded", "not_forgotten",
+    )  # fmt: skip
+    assert history.broken
+    assert ALICE_KEY in observer.exclusions
+    monkeypatch.undo()
+    observer.exclusions.flush()  # the next status tick
+    assert TelemetryExclusions(path).keys == {ALICE_KEY}
+    history.close()
 
 
 def test_an_unreadable_exclusions_file_takes_off_in_memory_only_and_refuses_on(

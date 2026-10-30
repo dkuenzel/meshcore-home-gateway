@@ -271,12 +271,13 @@ class ContactManager:
         return excluding, forget
 
     def _exclude(self, key: str, forget: bool) -> tuple[str, str | None]:
-        """In effect also when it cannot be stored: written again at every status tick."""
+        """In effect also when it cannot be stored: written again at every status tick. A failed
+        forget is reported before that: an unsaved set heals itself, and the log says when."""
         stored = self._observer.exclusions.exclude(key)
         forgotten = self._excluded(key, True, forget)
-        if not stored:
-            return "excluded", "not_saved"
-        return "excluded", "not_forgotten" if forgotten is False else None
+        if forgotten is False:
+            return "excluded", "not_forgotten"
+        return "excluded", None if stored else "not_saved"
 
     def _include(self, key: str) -> tuple[str, str | None]:
         """Only once stored; the poller is told only of a change (it asks an included contact
