@@ -1457,6 +1457,13 @@
     "tx_airtime_s",
     "tx_airtime_window_s",
     "uptime_s"
+   ],
+   "telemetry": [
+    "event_type",
+    "key",
+    "name",
+    "prefix",
+    "state"
    ]
   },
   "last_will": {
@@ -1548,6 +1555,11 @@
     "qos": 1,
     "retained": true
    },
+   "<base_topic>/<node_id>/telemetry": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
    "<prefix>/device/<device>/config": {
     "payload": "json",
     "qos": 1,
@@ -1573,6 +1585,9 @@
     "qos": 1
    },
    "<base_topic>/<node_id>/contacts/+/send": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/contacts/+/telemetry": {
     "qos": 1
    },
    "<base_topic>/<node_id>/homeassistant/add_node": {

@@ -2,9 +2,11 @@
 providers' documents.
 
 The bridge hands it what the radio reports (contact tables, adverts, statistics, packet logs),
-every received message and every final delivery. Documents are published retained, and only when
-they changed; the topic of a contact that left the table is cleared, also when that happened while
-the gateway was stopped (the published keys are remembered in the state file).
+every received message and every final delivery, and the telemetry poller its answers and the
+companions' states. Documents are published retained, and only when they changed; the topic of a
+contact that left the table is cleared, also when that happened while the gateway was stopped (the
+published keys are remembered in the state file). It holds the contacts the household excluded
+from telemetry, for the contact manager and the poller (ADR 0018).
 """
 
 from __future__ import annotations
@@ -24,8 +26,10 @@ from meshcore_home_gateway.core.mesh import (
     Heard,
     Mesh,
     Node,
+    Readings,
     Signal,
     TableChange,
+    Tracked,
     type_name,
 )
 from meshcore_home_gateway.core.model import (
@@ -37,10 +41,11 @@ from meshcore_home_gateway.core.model import (
     split_sender_name,
 )
 from meshcore_home_gateway.core.profile import ProfileReport
-from meshcore_home_gateway.core.telemetry import Answer
+from meshcore_home_gateway.core.telemetry import Answer, TelemetryEvent, TelemetryState
 from meshcore_home_gateway.history import History, NodeRow
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
 from meshcore_home_gateway.radio.session import (
     AdvertHeard,
@@ -50,7 +55,7 @@ from meshcore_home_gateway.radio.session import (
     RadioEvent,
     StatsRead,
 )
-from meshcore_home_gateway.state import RetainedKeys
+from meshcore_home_gateway.state import RetainedKeys, TelemetryExclusions
 from meshcore_home_gateway.views import (
     SETTING_NAMES,
     HistoryEntry,
@@ -66,6 +71,7 @@ from meshcore_home_gateway.views import (
     setting_value,
     settings_document,
     stats_document,
+    telemetry_event,
 )
 
 log = logging.getLogger(__name__)
@@ -92,9 +98,17 @@ class Observer:
         protected: frozenset[str] = frozenset(),
         manage: bool = False,
         wall_clock: Callable[[], float] = time.time,
+        exclusions: TelemetryExclusions | None = None,
     ) -> None:
-        """`manage`: contact add and remove requests are taken (ADR 0017)."""
+        """`manage`: contact add and remove requests are taken (ADR 0017). `exclusions`: the
+        contacts excluded from telemetry; the contact manager and the poller read these."""
         self.mesh = Mesh()
+        # the one holder: an empty set is falsy, so `or` would replace one that was given
+        self.exclusions = exclusions if exclusions is not None else TelemetryExclusions(None)
+        # the telemetry state of a companion as the poller sees it; None: telemetry is off
+        self.telemetry_state: Callable[[str], TelemetryState | None] | None = None
+        # called after an exclusion (True) or an inclusion (False) of a key: the poller
+        self.on_telemetry_exclusion: list[Callable[[str, bool], None]] = []
         self.manage = manage
         self._bus = bus
         self._topics = topics
@@ -125,17 +139,31 @@ class Observer:
         self._restore()
 
     def _restore(self) -> None:
-        """What the history knows from earlier runs: recent messages, positions, last heard."""
+        """What the history knows from earlier runs: recent messages, positions, last heard, the
+        readings of each contact's newest answer. An excluded contact gets back neither its
+        readings nor a position from telemetry."""
         if self._history is None:
             return
         self._recent.extend(reversed(self._history.recent_messages(RECENT_MESSAGES)))
         self._stored_fixes = self._history.last_fixes()
         fixes = dict(self._stored_fixes)
+        readings = self._history.last_readings()
         self._heard_rows = self._history.nodes()
         for row in self._heard_rows:
-            self.mesh.restore(row.key, row.heard, fixes.pop(row.key, None))
+            self._restore_contact(row.key, row.heard, fixes.pop(row.key, None),
+                                  readings.pop(row.key, None))  # fmt: skip
         for key, fix in fixes.items():
-            self.mesh.restore(key, None, fix)
+            self._restore_contact(key, None, fix, readings.pop(key, None))
+        for key, kept in readings.items():
+            self._restore_contact(key, None, None, kept)
+
+    def _restore_contact(
+        self, key: str, heard: Heard | None, fix: Fix | None, readings: Readings | None
+    ) -> None:
+        if key in self.exclusions:
+            readings = None
+            fix = None if fix is not None and fix.source == "telemetry" else fix
+        self.mesh.restore(key, heard, fix, readings)
 
     # --- inputs ---------------------------------------------------------------------------------
 
@@ -197,21 +225,87 @@ class Observer:
                 self._publish_contact(key)
 
     def telemetry(self, key: str, answer: Answer) -> None:
-        """An answer the poller matched to the contact it asked (ADR 0018): its position and
-        that the contact was heard. Its readings are not published yet."""
+        """An answer the poller matched to the contact it asked (ADR 0018): its position, its
+        readings and that the contact was heard. The answer of a contact excluded meanwhile is
+        dropped."""
+        if key in self.exclusions:
+            log.debug("telemetry %s: excluded, its answer dropped", key[:12])
+            return
         tracked = self.mesh.contacts.get(key)
         if tracked is None:  # it left the table meanwhile
             return
-        found = lpp.position(answer.payload)
-        had_fix = tracked.fix is not None
+        at, payload = answer.received_at, answer.payload
+        found = lpp.position(payload)
+        named = lpp.named(payload)
+        had_fix, had = tracked.fix is not None, _values(tracked.readings)
         position, altitude = (found.position, found.altitude_m) if found else (None, None)
-        moved = self.mesh.contact_answered(key, answer.received_at, position, altitude)
+        moved = self.mesh.contact_answered(key, at, position, altitude, Readings(at, named))
+        values = _values(tracked.readings)
+        if values and self._history is not None:
+            self._history.add_readings(key, at, values)
         if moved and tracked.heard is not None:  # at most hourly from answers alone
             self._store_heard(key, tracked.node, tracked.heard)
         self._store_fix(key, tracked.fix)
         self._publish_contact(key)
-        if not had_fix and tracked.fix is not None:
-            self._contacts_changed()  # its device gets a tracker now, not at the next table read
+        skipped = sum(not _published(reading) for reading in payload.readings)
+        if skipped:
+            log.debug("telemetry %s: %d readings not published", key[:12], skipped)
+        if (not had_fix and tracked.fix is not None) or not values.keys() <= had.keys():
+            # its device gets a tracker or a sensor now, not at the next table read
+            self._contacts_changed()
+
+    def telemetry_state_changed(self, key: str) -> None:
+        """The poller found the contact's state changed: its document again (the state is
+        pulled, `telemetry_state`)."""
+        self._publish_contact(key)
+
+    def telemetry_event(self, kind: TelemetryEvent, key: str, state: TelemetryState) -> None:
+        """A companion stopped answering or answers again (after its document); nothing for an
+        excluded one."""
+        if key in self.exclusions:
+            return
+        tracked = self.mesh.contacts.get(key)
+        node = tracked.node if tracked is not None else None
+        self._event(self._topics.telemetry_event, telemetry_event(kind, key, node, state))
+
+    def telemetry_excluded(self, key: str, excluded: bool, *, forget: bool = False) -> bool | None:
+        """An exclusion or inclusion was stored (or is in effect unsaved): values forgotten (on
+        exclusion), the poller told, the document and the index published. With `forget`, the
+        history rows deleted: True; False without a working history; None when not asked."""
+        forgotten = None
+        if excluded:
+            self.mesh.forget_telemetry(key, self._wall())
+            if forget:
+                forgotten = self._forget_history(key)
+            tracked = self.mesh.contacts.get(key)
+            if tracked is not None:  # the position its record carries takes the place
+                self._store_fix(key, tracked.fix)
+        for listener in self.on_telemetry_exclusion:
+            try:
+                listener(key, excluded)
+            except Exception:  # the documents and the result still go out
+                log.exception("telemetry exclusion listener failed")
+        self._publish_contact(key)
+        self._publish_index()
+        return forgotten
+
+    def _forget_history(self, key: str) -> bool:
+        """Delete the contact's readings and telemetry positions; False without a history. The
+        stored fix it remembers may name a deleted row: harmless, a fix from an answer never
+        comes back equal (it carries the answer's time)."""
+        rows = self._history.forget_telemetry(key) if self._history is not None else None
+        if rows is None:
+            return False
+        log.info("telemetry %s: %d rows deleted from the history", key[:12], rows)
+        return True
+
+    def restore_position_received(self, key: str, at: float) -> None:
+        """When the contact's newest answer with a position came, from the saved schedule (for
+        `position_received_at` after a restart); not for an excluded contact."""
+        if key in self.exclusions:
+            return
+        self.mesh.restore_received(key, at)
+        self._publish_contact(key)
 
     def radio_tx_1h_s(self) -> int | None:
         """The radio's own time on air in the last hour, as it counts it; None before two
@@ -412,12 +506,26 @@ class Observer:
     def _publish_contact(self, key: str) -> None:
         tracked = self.mesh.contacts.get(key)
         if tracked is not None:
-            protected = key in self._protected
-            document = contact_document(tracked, protected=protected, manage=self.manage)
+            document = contact_document(
+                tracked, protected=key in self._protected, manage=self.manage,
+                telemetry_state=self._state_of(tracked), excluded=key in self.exclusions,
+            )  # fmt: skip
             self._publish(self._topics.contact(key), document)
 
+    def _state_of(self, tracked: Tracked) -> TelemetryState | None:
+        """A companion's telemetry state; None for a contact that is never asked."""
+        key = tracked.node.public_key
+        if tracked.node.node_type != NodeType.CHAT:
+            return None
+        if key in self.exclusions:
+            return "excluded"
+        if self.telemetry_state is None:
+            return "off"
+        return self.telemetry_state(key) or "waiting"
+
     def _publish_index(self) -> None:
-        index = contacts_document(self.mesh, protected=self._protected, manage=self.manage)
+        index = contacts_document(self.mesh, protected=self._protected, manage=self.manage,
+                                  excluded=self.exclusions.keys)  # fmt: skip
         self._publish(self._topics.contacts, index)
 
     def _publish_nodes(self, *, read: bool = False) -> None:
@@ -459,6 +567,25 @@ class Observer:
 
     def _event(self, topic: str, payload: dict[str, Any]) -> None:
         self._bus.publish(topic, encode(payload))
+
+
+def _published(reading: lpp.Reading) -> bool:
+    """A reading of a published type, or the position (GPS on the companion's own channel)."""
+    own_gps = reading.lpp_type == lpp.GPS and reading.channel == lpp.SELF_CHANNEL
+    return reading.lpp_type in lpp.UNITS or own_gps
+
+
+def _values(readings: Readings | None) -> dict[str, float]:
+    """An answer's values as the history stores them: battery, MCU temperature, the readings."""
+    if readings is None:
+        return {}
+    named = readings.named
+    return {
+        **({lpp.BATTERY_V: named.battery_v} if named.battery_v is not None else {}),
+        **({lpp.MCU_TEMPERATURE_C: named.mcu_temperature_c}
+           if named.mcu_temperature_c is not None else {}),
+        **named.readings,
+    }  # fmt: skip
 
 
 def _node(record: codec.ContactRecord) -> Node:

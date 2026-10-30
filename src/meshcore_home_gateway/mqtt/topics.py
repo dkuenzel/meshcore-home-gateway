@@ -22,6 +22,7 @@ class Topics:
         self.contact_event = f"{self.root}/contact"  # added, removed; hidden or shown in HA
         self.node_event = f"{self.root}/node"  # a node heard for the first time
         self.setting_event = f"{self.root}/setting"  # a radio setting written or found changed
+        self.telemetry_event = f"{self.root}/telemetry"  # a companion answers again or stops
         # requests
         self.show_hidden = f"{self.root}/homeassistant/show_hidden"  # contacts deleted in HA
         self.add_node = f"{self.root}/homeassistant/add_node"  # a heard node by its label (HA)
@@ -30,6 +31,7 @@ class Topics:
         self.send_subscription = self._send + "+"
         self.contact_send_subscription = f"{self.contacts}/+/send"
         self.contact_remove_subscription = f"{self.contacts}/+/remove"
+        self.contact_telemetry_subscription = f"{self.contacts}/+/telemetry"
 
     def contact(self, key: str) -> str:
         """The document of one contact (full key, lower-case hex)."""
@@ -46,6 +48,10 @@ class Topics:
     def contact_remove(self, key: str) -> str:
         """Requests to remove one contact from the radio."""
         return f"{self.contacts}/{key}/remove"
+
+    def contact_telemetry(self, key: str) -> str:
+        """Requests to ask one companion for its telemetry, or not (ADR 0018)."""
+        return f"{self.contacts}/{key}/telemetry"
 
     def key_from_contact_topic(self, topic: str, action: str) -> str | None:
         """The `<key>` level of `contacts/<key>/<action>`, whatever it holds (the bridge rejects

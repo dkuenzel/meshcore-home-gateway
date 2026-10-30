@@ -510,6 +510,8 @@ async def _published(tmp: Path) -> _Paho:
     observer.radio_event(ContactsRead({KEY: alice}, T))
     observer.radio_event(ContactsRead({KEY: alice, KEY_B: bob}, T))  # added
     observer.radio_event(ContactsRead({KEY: alice}, T))  # removed: its document and device cleared
+    observer.telemetry_event("answered", KEY, "answering")
+    observer.telemetry_event("unanswered", KEY, "away")
     relay = _record(KEY_N, "Relay", NodeType.REPEATER)
     observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY_N), True, relay), T + 1))
     observer.radio_event(
