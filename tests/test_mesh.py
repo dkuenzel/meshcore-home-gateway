@@ -1,22 +1,26 @@
 """The observer's view of the mesh (core/mesh.py) and the radio's own airtime meter."""
 
+from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import (
     AirtimeMeter,
     Fix,
     Heard,
     Mesh,
     Node,
+    Readings,
     Signal,
     TableChange,
     type_name,
 )
 from meshcore_home_gateway.core.model import Position
+from tests.radio_emulator import LPP_BME280, LPP_FULL
 
 T = 1_800_000_000.0
 ALICE = Node("a1" * 32, "Alice", 1, last_advert=int(T) - 600)
 BOB = Node("b2" * 32, "Bob", 2, path_hops=1)
 HOME = Position(53.55, 9.99)
 FIELD = Position(53.56, 10.01)
+BME280 = Readings(T, lpp.named(lpp.decode(LPP_BME280)))
 
 
 def test_table_reads_report_what_was_added_removed_and_changed() -> None:
@@ -278,3 +282,119 @@ def test_last_heard_follows_answers_after_the_clock_was_set_back() -> None:
     assert not mesh.contact_answered(key, T - 6100, None, None)  # older than the advert: kept
     assert mesh.contacts[key].heard == Heard(T - 6000, "advert", Signal(1, 5.0, -80))
     assert mesh.contact_answered(key, T - 5900, None, None)  # newer: it moves
+
+
+# --- readings of telemetry answers ----------------------------------------------------------------
+
+
+def test_an_answer_with_readings_keeps_the_rules_of_last_heard_and_the_fix() -> None:
+    mesh = Mesh()
+    mesh.contacts_read([ALICE], T)
+    key = ALICE.public_key
+    assert mesh.contact_answered(key, T, HOME, 40.0, BME280)
+    tracked = mesh.contacts[key]
+    assert tracked.readings == BME280
+    assert (tracked.heard, tracked.fix) == (
+        Heard(T, "telemetry"), Fix(HOME, T, "telemetry", 40.0),
+    )  # fmt: skip
+    later = Readings(T + 900, lpp.named(lpp.decode(LPP_FULL)))
+    assert not mesh.contact_answered(key, T + 900, HOME, 40.0, later)  # within the hour
+    assert tracked.readings == later  # the newest answer's, also when it has fewer
+    assert tracked.readings.named.readings == {}
+    assert tracked.heard == Heard(T, "telemetry")
+    mesh.contact_answered(key, T + 1000, None, None)  # none given: the last ones stay
+    assert tracked.readings == later
+    assert not mesh.contact_answered(BOB.public_key, T, None, None, BME280)  # no contact
+
+
+def test_readings_from_the_history_apply_at_the_first_table_read() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    gps = Fix(FIELD, T - 60, "telemetry")
+    mesh.restore(key, Heard(T - 60, "telemetry"), gps, BME280)
+    assert key not in mesh.contacts
+    mesh.contacts_read([ALICE], T)
+    tracked = mesh.contacts[key]
+    assert (tracked.readings, tracked.fix, tracked.heard) == (
+        BME280, gps, Heard(T - 60, "telemetry"),
+    )  # fmt: skip
+    mesh.restore(BOB.public_key, None, None)
+    mesh.contacts_read([ALICE, BOB], T + 1)
+    assert mesh.contacts[BOB.public_key].readings is None
+
+
+def test_when_the_newest_position_came_is_restored_before_and_after_the_first_read() -> None:
+    """From the saved schedule; before the first table read it is kept with the history's."""
+    mesh = Mesh()
+    alice, bob = ALICE.public_key, BOB.public_key
+    mesh.restore_received(alice, T - 120)
+    mesh.restore(alice, Heard(T - 60, "telemetry"), Fix(FIELD, T - 600, "telemetry"), BME280)
+    mesh.contacts_read([ALICE, BOB], T)
+    tracked = mesh.contacts[alice]
+    assert (tracked.position_received_at, tracked.readings) == (T - 120, BME280)
+    mesh.restore_received(bob, T - 30)  # a contact without one: at once
+    assert mesh.contacts[bob].position_received_at == T - 30
+    mesh.contact_answered(alice, T + 10, FIELD, None)
+    mesh.restore_received(alice, T - 120)  # one it has stays
+    assert tracked.position_received_at == T + 10
+    mesh.contacts_read([ALICE], T + 20)
+    mesh.contacts_read([ALICE, BOB], T + 30)  # back: what the last run knew is used up
+    assert mesh.contacts[bob].position_received_at is None
+
+
+def test_forgetting_telemetry_puts_the_records_position_back() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    record = Node(key, "Alice", 1, last_advert=int(T) - 600, position=HOME)
+    mesh.contacts_read([record], T)
+    mesh.contact_answered(key, T + 10, FIELD, 12.0, BME280)
+    assert mesh.forget_telemetry(key, T + 20)
+    tracked = mesh.contacts[key]
+    assert (tracked.readings, tracked.position_received_at) == (None, None)
+    assert tracked.fix == Fix(HOME, T - 600, "advert")  # as at a first table read
+    assert tracked.heard == Heard(T + 10, "telemetry")  # when it last answered stays
+    assert not mesh.forget_telemetry(key, T + 30)  # nothing left to forget
+    assert tracked.fix == Fix(HOME, T - 600, "advert")
+    mesh.contact_answered(key, T + 40, None, None, BME280)
+    assert mesh.forget_telemetry(key, T + 50)  # its readings alone
+    assert tracked.fix == Fix(HOME, T - 600, "advert")  # an advert fix stays
+    assert not mesh.forget_telemetry(BOB.public_key, T)  # no contact
+
+
+def test_forgetting_telemetry_without_a_record_position_leaves_no_fix() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([ALICE], T)
+    mesh.contact_answered(key, T + 10, FIELD, None)
+    assert mesh.forget_telemetry(key, T + 20)
+    assert mesh.contacts[key].fix is None
+
+
+def test_forgetting_telemetry_before_the_first_table_read() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    heard = Heard(T - 60, "telemetry")
+    mesh.restore(key, heard, Fix(FIELD, T - 60, "telemetry"), BME280)
+    mesh.restore_received(key, T - 60)
+    assert mesh.forget_telemetry(key, T)
+    assert not mesh.forget_telemetry(key, T)
+    mesh.contacts_read([Node(key, "Alice", 1, last_advert=int(T) - 600, position=HOME)], T)
+    tracked = mesh.contacts[key]
+    assert (tracked.readings, tracked.position_received_at, tracked.heard) == (None, None, heard)
+    assert tracked.fix == Fix(HOME, T - 600, "advert")
+    mesh.restore(BOB.public_key, None, Fix(HOME, T - 60, "advert"))
+    assert not mesh.forget_telemetry(BOB.public_key, T)  # an advert fix is kept
+    mesh.contacts_read([ALICE, BOB], T)
+    assert mesh.contacts[BOB.public_key].fix == Fix(HOME, T - 60, "advert")
+
+
+def test_a_contact_that_leaves_the_table_loses_its_readings() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([ALICE], T)
+    mesh.contact_answered(key, T, HOME, None, BME280)
+    mesh.contacts_read([], T + 1)
+    assert mesh.nodes[key].readings is None
+    mesh.contacts_read([ALICE], T + 2)
+    tracked = mesh.contacts[key]
+    assert (tracked.readings, tracked.position_received_at, tracked.fix) == (None, None, None)

@@ -13,6 +13,7 @@
     "history.enabled",
     "history.messages_days",
     "history.positions_days",
+    "history.readings_days",
     "homeassistant.contact_devices",
     "homeassistant.device_name",
     "homeassistant.discovery",
@@ -236,6 +237,50 @@
      }
     }
    },
+   "contacts telemetry": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--forget": {
+      "names": [
+       "--forget"
+      ],
+      "takes_value": false
+     },
+     "--wait": {
+      "default": 30.0,
+      "max": 86400.0,
+      "min": 0.0,
+      "names": [
+       "--wait"
+      ],
+      "takes_value": true,
+      "type": "seconds"
+     }
+    },
+    "positionals": {
+     "1": {
+      "name": "contact",
+      "required": true,
+      "takes_value": true
+     },
+     "2": {
+      "choices": [
+       "off",
+       "on"
+      ],
+      "name": "state",
+      "required": true,
+      "takes_value": true
+     }
+    }
+   },
    "listen": {
     "options": {
      "--config": {
@@ -263,7 +308,8 @@
        "delivery",
        "node",
        "received",
-       "state"
+       "state",
+       "telemetry"
       ],
       "default": "all",
       "names": [
@@ -608,6 +654,13 @@
    "min": 1.0,
    "type": "number"
   },
+  "history.readings_days": {
+   "answer": "float",
+   "default": 30.0,
+   "max": 3650.0,
+   "min": 1.0,
+   "type": "number"
+  },
   "homeassistant": {
    "type": "table"
   },
@@ -842,7 +895,7 @@
   },
   "telemetry.enabled": {
    "answer": "bool",
-   "default": false,
+   "default": true,
    "type": "boolean"
   }
  },
@@ -850,6 +903,167 @@
  "homeassistant": {
   "components": {
    "contact": {
+    "battery": {
+     "device_class": "voltage",
+     "entity_id": "sensor.mesh_<slug>_battery",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "V"
+    },
+    "ch1_luminosity": {
+     "entity_id": "sensor.mesh_<slug>_ch1_luminosity",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement"
+    },
+    "ch1_temperature": {
+     "device_class": "temperature",
+     "entity_id": "sensor.mesh_<slug>_ch1_temperature",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "°C"
+    },
+    "ch2_altitude": {
+     "device_class": "distance",
+     "entity_id": "sensor.mesh_<slug>_ch2_altitude",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "m"
+    },
+    "ch2_analog_input": {
+     "entity_id": "sensor.mesh_<slug>_ch2_analog_input",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement"
+    },
+    "ch2_barometric_pressure": {
+     "device_class": "atmospheric_pressure",
+     "entity_id": "sensor.mesh_<slug>_ch2_barometric_pressure",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "hPa"
+    },
+    "ch2_current": {
+     "device_class": "current",
+     "entity_id": "sensor.mesh_<slug>_ch2_current",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "A"
+    },
+    "ch2_distance": {
+     "device_class": "distance",
+     "entity_id": "sensor.mesh_<slug>_ch2_distance",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "m"
+    },
+    "ch2_frequency": {
+     "device_class": "frequency",
+     "entity_id": "sensor.mesh_<slug>_ch2_frequency",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "Hz"
+    },
+    "ch2_generic": {
+     "entity_id": "sensor.mesh_<slug>_ch2_generic",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement"
+    },
+    "ch2_humidity": {
+     "device_class": "humidity",
+     "entity_id": "sensor.mesh_<slug>_ch2_humidity",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "%"
+    },
+    "ch2_luminosity": {
+     "entity_id": "sensor.mesh_<slug>_ch2_luminosity",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement"
+    },
+    "ch2_percentage": {
+     "entity_id": "sensor.mesh_<slug>_ch2_percentage",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "%"
+    },
+    "ch2_power": {
+     "device_class": "power",
+     "entity_id": "sensor.mesh_<slug>_ch2_power",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "W"
+    },
+    "ch2_temperature": {
+     "device_class": "temperature",
+     "entity_id": "sensor.mesh_<slug>_ch2_temperature",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "°C"
+    },
+    "ch2_temperature_2": {
+     "device_class": "temperature",
+     "entity_id": "sensor.mesh_<slug>_ch2_temperature_2",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "°C"
+    },
+    "ch2_voltage": {
+     "device_class": "voltage",
+     "entity_id": "sensor.mesh_<slug>_ch2_voltage",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "V"
+    },
     "hops": {
      "entity_id": "sensor.mesh_<slug>_hops",
      "node_types": [
@@ -862,6 +1076,7 @@
      "platform": "sensor"
     },
     "last_heard": {
+     "device_class": "timestamp",
      "entity_id": "sensor.mesh_<slug>_last_heard",
      "node_types": [
       "chat",
@@ -871,6 +1086,16 @@
       "type_0"
      ],
      "platform": "sensor"
+    },
+    "mcu_temperature": {
+     "device_class": "temperature",
+     "entity_id": "sensor.mesh_<slug>_mcu_temperature",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "°C"
     },
     "message": {
      "attributes": "<document contacts/<key>/received>",
@@ -922,6 +1147,7 @@
      "platform": "notify"
     },
     "snr": {
+     "device_class": "signal_strength",
      "entity_id": "sensor.mesh_<slug>_snr",
      "node_types": [
       "chat",
@@ -931,7 +1157,34 @@
       "type_0"
      ],
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "dB"
+    },
+    "telemetry": {
+     "entity_id": "switch.mesh_<slug>_telemetry",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "switch"
+    },
+    "telemetry_state": {
+     "device_class": "enum",
+     "entity_id": "sensor.mesh_<slug>_telemetry_state",
+     "node_types": [
+      "chat"
+     ],
+     "options": [
+      "answering",
+      "away",
+      "excluded",
+      "look_alike",
+      "no_answer",
+      "no_path",
+      "no_position",
+      "off",
+      "waiting"
+     ],
+     "platform": "sensor"
     }
    },
    "gateway": {
@@ -940,25 +1193,32 @@
       "contacts",
       "total"
      ],
+     "device_class": "problem",
      "entity_id": "binary_sensor.<device>_advert_position",
      "platform": "binary_sensor"
     },
     "airtime": {
+     "device_class": "duration",
      "entity_id": "sensor.<device>_airtime",
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "s"
     },
     "airtime_available": {
      "attributes": [
       "budget_s_per_hour"
      ],
+     "device_class": "duration",
      "entity_id": "sensor.<device>_airtime_available",
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "s"
     },
     "battery": {
+     "device_class": "voltage",
      "entity_id": "sensor.<device>_battery",
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "V"
     },
     "command": {
@@ -974,8 +1234,10 @@
      "entity_id": "event.<device>_contact",
      "event_types": [
       "added",
+      "excluded",
       "failed",
       "hidden",
+      "included",
       "refused",
       "removed",
       "shown"
@@ -987,7 +1249,8 @@
       "max"
      ],
      "entity_id": "sensor.<device>_contacts",
-     "platform": "sensor"
+     "platform": "sensor",
+     "state_class": "measurement"
     },
     "delivery": {
      "attributes": "<document delivery>",
@@ -1008,6 +1271,7 @@
       "nodes",
       "total"
      ],
+     "device_class": "problem",
      "entity_id": "binary_sensor.<device>_look_alike",
      "platform": "binary_sensor"
     },
@@ -1030,23 +1294,29 @@
     },
     "nodes": {
      "entity_id": "sensor.<device>_nodes",
-     "platform": "sensor"
+     "platform": "sensor",
+     "state_class": "measurement"
     },
     "noise_floor": {
+     "device_class": "signal_strength",
      "entity_id": "sensor.<device>_noise_floor",
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "dBm"
     },
     "packets_received": {
      "entity_id": "sensor.<device>_packets_received",
-     "platform": "sensor"
+     "platform": "sensor",
+     "state_class": "total_increasing"
     },
     "packets_sent": {
      "entity_id": "sensor.<device>_packets_sent",
-     "platform": "sensor"
+     "platform": "sensor",
+     "state_class": "total_increasing"
     },
     "profile": {
      "attributes": "<document settings>",
+     "device_class": "enum",
      "entity_id": "sensor.<device>_profile",
      "options": [
       "differs",
@@ -1059,7 +1329,8 @@
     },
     "queue": {
      "entity_id": "sensor.<device>_queue",
-     "platform": "sensor"
+     "platform": "sensor",
+     "state_class": "measurement"
     },
     "radio": {
      "attributes": [
@@ -1075,6 +1346,7 @@
       "spreading_factor",
       "tx_power_dbm"
      ],
+     "device_class": "connectivity",
      "entity_id": "binary_sensor.<device>_radio",
      "platform": "binary_sensor"
     },
@@ -1084,30 +1356,38 @@
       "duty_cycle_percent",
       "window_s"
      ],
+     "device_class": "duration",
      "entity_id": "sensor.<device>_radio_airtime",
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "s"
     },
     "receive_errors": {
      "entity_id": "sensor.<device>_receive_errors",
-     "platform": "sensor"
+     "platform": "sensor",
+     "state_class": "total_increasing"
     },
     "remote_cli": {
      "attributes": [
       "contacts",
       "total"
      ],
+     "device_class": "problem",
      "entity_id": "binary_sensor.<device>_remote_cli",
      "platform": "binary_sensor"
     },
     "rx_rssi": {
+     "device_class": "signal_strength",
      "entity_id": "sensor.<device>_rx_rssi",
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "dBm"
     },
     "rx_snr": {
+     "device_class": "signal_strength",
      "entity_id": "sensor.<device>_rx_snr",
      "platform": "sensor",
+     "state_class": "measurement",
      "unit": "dB"
     },
     "send_<alias>": {
@@ -1130,7 +1410,45 @@
      "entity_id": "button.<device>_show_hidden",
      "platform": "button"
     },
+    "telemetry": {
+     "attributes": "<document telemetry>",
+     "entity_id": "event.<device>_telemetry",
+     "event_types": [
+      "answered",
+      "unanswered"
+     ],
+     "platform": "event"
+    },
+    "telemetry_airtime": {
+     "device_class": "duration",
+     "entity_id": "sensor.<device>_telemetry_airtime",
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "s"
+    },
+    "telemetry_mesh_airtime": {
+     "device_class": "duration",
+     "entity_id": "sensor.<device>_telemetry_mesh_airtime",
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "s"
+    },
+    "telemetry_status": {
+     "attributes": [
+      "reason"
+     ],
+     "device_class": "enum",
+     "entity_id": "sensor.<device>_telemetry_status",
+     "options": [
+      "off",
+      "on",
+      "paused",
+      "unsupported"
+     ],
+     "platform": "sensor"
+    },
     "uptime": {
+     "device_class": "duration",
      "entity_id": "sensor.<device>_uptime",
      "platform": "sensor",
      "unit": "s"
@@ -1205,12 +1523,15 @@
     "max",
     "remote_cli",
     "remote_cli_total",
+    "telemetry_excluded",
+    "telemetry_excluded_total",
     "total",
     "truncated"
    ],
    "contacts/<key>": [
     "advert_position",
     "altitude_m",
+    "battery_v",
     "favourite",
     "first_heard_at",
     "flags",
@@ -1221,19 +1542,42 @@
     "last_advert_at",
     "latitude",
     "longitude",
+    "mcu_temperature_c",
     "name",
     "path_hops",
     "path_known",
     "position_accuracy_m",
     "position_at",
+    "position_current",
     "position_received_at",
     "position_source",
     "prefix",
     "protected",
+    "readings",
+    "readings.ch1_luminosity",
+    "readings.ch1_temperature_c",
+    "readings.ch2_altitude_m",
+    "readings.ch2_analog_input",
+    "readings.ch2_barometric_pressure_hpa",
+    "readings.ch2_current_a",
+    "readings.ch2_distance_m",
+    "readings.ch2_frequency_hz",
+    "readings.ch2_generic",
+    "readings.ch2_humidity_percent",
+    "readings.ch2_luminosity",
+    "readings.ch2_percentage_percent",
+    "readings.ch2_power_w",
+    "readings.ch2_temperature_2_c",
+    "readings.ch2_temperature_c",
+    "readings.ch2_voltage_v",
+    "readings_at",
     "remote_cli",
     "removable",
     "rssi_dbm",
     "snr_db",
+    "telemetry_current",
+    "telemetry_excluded",
+    "telemetry_state",
     "type",
     "verified"
    ],
@@ -1413,6 +1757,7 @@
     "telemetry",
     "telemetry_airtime_1h_s",
     "telemetry_mesh_airtime_1h_s",
+    "telemetry_reason",
     "tx_power_dbm",
     "version"
    ],
@@ -1439,6 +1784,13 @@
     "tx_airtime_s",
     "tx_airtime_window_s",
     "uptime_s"
+   ],
+   "telemetry": [
+    "event_type",
+    "key",
+    "name",
+    "prefix",
+    "state"
    ]
   },
   "last_will": {
@@ -1530,6 +1882,11 @@
     "qos": 1,
     "retained": true
    },
+   "<base_topic>/<node_id>/telemetry": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
    "<prefix>/device/<device>/config": {
     "payload": "json",
     "qos": 1,
@@ -1555,6 +1912,9 @@
     "qos": 1
    },
    "<base_topic>/<node_id>/contacts/+/send": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/contacts/+/telemetry": {
     "qos": 1
    },
    "<base_topic>/<node_id>/homeassistant/add_node": {
@@ -1583,15 +1943,18 @@
    ],
    "contact:event_type": [
     "added",
+    "excluded",
     "failed",
     "hidden",
+    "included",
     "refused",
     "removed",
     "shown"
    ],
    "contact:request": [
     "add",
-    "remove"
+    "remove",
+    "telemetry"
    ],
    "contacts/<key>:flags": [
     "favourite",
@@ -1599,6 +1962,17 @@
     "telemetry_base",
     "telemetry_environment",
     "telemetry_location"
+   ],
+   "contacts/<key>:telemetry_state": [
+    "answering",
+    "away",
+    "excluded",
+    "look_alike",
+    "no_answer",
+    "no_path",
+    "no_position",
+    "off",
+    "waiting"
    ],
    "contacts/<key>:type": [
     "chat",
@@ -1687,10 +2061,32 @@
     "connected",
     "disconnected"
    ],
+   "state:telemetry": [
+    "off",
+    "on",
+    "paused",
+    "unsupported"
+   ],
+   "state:telemetry_reason": [
+    "auto_add",
+    "exclusions_unreadable",
+    "first_start",
+    "no_radio",
+    "radio_airtime"
+   ],
    "stats:errors": [
     "cad_timeout",
     "queue_full",
     "start_rx_timeout"
+   ],
+   "telemetry:event_type": [
+    "answered",
+    "unanswered"
+   ],
+   "telemetry:state": [
+    "answering",
+    "away",
+    "no_position"
    ]
   }
  },

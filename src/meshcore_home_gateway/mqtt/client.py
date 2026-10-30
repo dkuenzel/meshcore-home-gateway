@@ -41,12 +41,15 @@ class SendRequest:
 
 @dataclass(frozen=True, slots=True)
 class ContactRequest:
-    """A request to change the radio's contact table (ADR 0017)."""
+    """A request to change the radio's contact table (ADR 0017), or whether a companion is asked
+    for its telemetry (ADR 0018)."""
 
-    kind: str  # "add" (add_contact, homeassistant/add_node) or "remove" (contacts/<key>/remove)
+    # "add" (add_contact, homeassistant/add_node), "remove" (contacts/<key>/remove) or
+    # "telemetry" (contacts/<key>/telemetry)
+    kind: str
     payload: bytes
     retained: bool
-    key: str | None = None  # remove: the topic's <key> level, as it came
+    key: str | None = None  # remove, telemetry: the topic's <key> level, as it came
     node_label: bool = False  # add: the text is the label of a heard node (add_node)
 
 
@@ -199,6 +202,7 @@ class MqttBus:
         subscriptions = [
             (self._topics.send_subscription, 1), (self._topics.contact_send_subscription, 1),
             (self._topics.add_contact, 1), (self._topics.contact_remove_subscription, 1),
+            (self._topics.contact_telemetry_subscription, 1),
         ]  # fmt: skip
         if self._ha_status:
             subscriptions.append((self._ha_status, 1))
@@ -269,9 +273,11 @@ class MqttBus:
         if topic == self._topics.add_contact:
             self.contact_requests.put_nowait(ContactRequest("add", payload, retained))
             return
-        key = self._topics.key_from_contact_topic(topic, "remove")
-        if key is not None:
-            self.contact_requests.put_nowait(ContactRequest("remove", payload, retained, key))
+        for kind in ("remove", "telemetry"):
+            key = self._topics.key_from_contact_topic(topic, kind)
+            if key is not None:
+                self.contact_requests.put_nowait(ContactRequest(kind, payload, retained, key))
+                return
 
     def _ha_message(self, topic: str, payload: bytes, retained: bool) -> bool:
         """The gateway's discovery topics and the requests of Home Assistant's controls; False

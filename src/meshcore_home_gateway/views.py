@@ -8,7 +8,7 @@ Lists are bounded by their serialised size and carry `total` and `truncated`.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -16,8 +16,9 @@ from typing import Any
 from meshcore_home_gateway.core import profile
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS
 from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh, Node, Tracked, type_name
+from meshcore_home_gateway.core.telemetry import CURRENT, TelemetryEvent, TelemetryState
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, TelemetryMode
+from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType, TelemetryMode
 
 INDEX_LIMIT_BYTES = 32 * 1024  # the contact index; Home Assistant reads only its count
 ATTRIBUTE_LIMIT_BYTES = 15 * 1024  # documents read into attributes: below the recorder's 16 KiB
@@ -83,10 +84,15 @@ def _heard(tracked: Tracked) -> dict[str, Any]:
 
 
 def contact_document(
-    tracked: Tracked, *, protected: bool = False, manage: bool = False
-) -> dict[str, Any]:
-    """`contacts/<key>`: one contact of the radio and what the gateway learned about it."""
-    node, fix = tracked.node, tracked.fix
+    tracked: Tracked, *, protected: bool = False, manage: bool = False,
+    telemetry_state: TelemetryState | None = None, excluded: bool = False,
+) -> dict[str, Any]:  # fmt: skip
+    """`contacts/<key>`: one contact of the radio and what the gateway learned about it.
+    `telemetry_state`: None for a contact that is never asked (no companion)."""
+    node, fix, readings = tracked.node, tracked.fix, tracked.readings
+    from_telemetry = fix is not None and fix.source == "telemetry"
+    telemetry_current, position_current = _current(telemetry_state, from_telemetry)
+    named = readings.named if readings else None
     return {
         "key": node.public_key,
         "prefix": node.public_key[:PREFIX_HEX_DIGITS],
@@ -109,18 +115,58 @@ def contact_document(
         "altitude_m": fix.altitude_m if fix else None,
         "position_at": iso(fix.at) if fix else None,  # when it last changed, never a fix time
         "position_source": fix.source if fix else None,
-        "position_accuracy_m": (
-            TELEMETRY_ACCURACY_M if fix is not None and fix.source == "telemetry" else None
-        ),
+        "position_accuracy_m": TELEMETRY_ACCURACY_M if from_telemetry else None,
         "position_received_at": iso(tracked.position_received_at),  # the newest answer with one
         "advert_position": node.position is not None,  # its adverts carried a position
+        "telemetry_state": telemetry_state,
+        "telemetry_excluded": excluded and node.node_type == NodeType.CHAT,
+        "telemetry_current": telemetry_current,
+        "position_current": position_current,
+        "readings_at": iso(readings.at) if readings else None,  # the gateway's time of the answer
+        "battery_v": named.battery_v if named else None,
+        "mcu_temperature_c": named.mcu_temperature_c if named else None,
+        "readings": dict(named.readings) if named else {},
     }
 
 
-def contacts_document(
-    mesh: Mesh, *, protected: Iterable[str] = (), manage: bool = False
+def _current(state: TelemetryState | None, from_telemetry: bool) -> tuple[bool | None, bool | None]:
+    """`telemetry_current` and `position_current` of a contact in this state. Only a position from
+    telemetry expires: None for one from an advert."""
+    telemetry_current = None if state is None else state in CURRENT
+    return telemetry_current, state == "answering" if from_telemetry else None
+
+
+_FORGOTTEN = ("readings_at", "battery_v", "mcu_temperature_c", "position_received_at")
+_POSITION = ("latitude", "longitude", "altitude_m", "position_at", "position_source",
+             "position_accuracy_m")  # fmt: skip
+
+
+def restated(
+    document: Mapping[str, Any], state: TelemetryState | None, *, excluded: bool = False
 ) -> dict[str, Any]:
-    """`contacts`: the index of the radio's contact table, most recently heard first."""
+    """`contacts/<key>` as last published, in another telemetry state: before the first table
+    read of a run the stored document is all there is (ADR 0024). `excluded`: without what an
+    exclusion forgets, as far as the document shows it (the position the contact's record carries
+    comes back with the table read); not excluded, what an exclusion forgot stays forgotten."""
+    again = dict(document)
+    from_telemetry = document.get("position_source") == "telemetry"
+    if excluded:
+        again |= {**dict.fromkeys(_FORGOTTEN), "readings": {}}
+        if from_telemetry:
+            again |= dict.fromkeys(_POSITION)
+            from_telemetry = False
+    telemetry_current, position_current = _current(state, from_telemetry)
+    again |= {"telemetry_state": state, "telemetry_current": telemetry_current,
+              "position_current": position_current, "telemetry_excluded": excluded}  # fmt: skip
+    return again
+
+
+def contacts_document(
+    mesh: Mesh, *, protected: Iterable[str] = (), manage: bool = False,
+    excluded: Collection[str] = (),
+) -> dict[str, Any]:  # fmt: skip
+    """`contacts`: the index of the radio's contact table, most recently heard first.
+    `excluded`: every key excluded from telemetry, also those not on the radio."""
     keep = set(protected)
 
     def heard_at(tracked: Tracked) -> float:
@@ -143,6 +189,7 @@ def contacts_document(
     remote_cli = sorted(k for k, t in contacts if t.node.flags & ContactFlag.REMOTE_CLI)
     # companions whose adverts carried a position: everyone in range can see it
     shared = sorted(k for k, t in contacts if t.node.position is not None and t.node.node_type == 1)
+    stored = sorted(set(excluded))
     return {
         "total": total,
         "max": mesh.max_contacts,
@@ -151,6 +198,8 @@ def contacts_document(
         "remote_cli_total": len(remote_cli),
         "advert_position": shared[:WARNING_KEYS],
         "advert_position_total": len(shared),
+        "telemetry_excluded": stored[:WARNING_KEYS],
+        "telemetry_excluded_total": len(stored),
         "truncated": len(kept) < total,
         "contacts": kept,
     }
@@ -207,6 +256,20 @@ def contact_event(
         "request": request,
         "id": request_id,
         "reason": reason,
+    }
+
+
+def telemetry_event(
+    kind: TelemetryEvent, key: str, node: Node | None, state: TelemetryState
+) -> dict[str, Any]:
+    """A `telemetry` event: a companion stopped answering or answers again. Name from the
+    radio's record, if it has one; never a position or reading."""
+    return {
+        "event_type": kind,
+        "key": key,
+        "prefix": key[:PREFIX_HEX_DIGITS],
+        "name": node.name if node else None,
+        "state": state,
     }
 
 

@@ -2,8 +2,22 @@
 
 import json
 
-from meshcore_home_gateway.core.mesh import AirtimeMeter, Fix, Heard, Mesh, Node, Signal
+import pytest
+
+from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core.lpp import Named
+from meshcore_home_gateway.core.mesh import (
+    AirtimeMeter,
+    Fix,
+    Heard,
+    Mesh,
+    Node,
+    Readings,
+    Signal,
+    Tracked,
+)
 from meshcore_home_gateway.core.model import Position
+from meshcore_home_gateway.core.telemetry import CURRENT, STATES, TelemetryState
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.views import (
     ATTRIBUTE_LIMIT_BYTES,
@@ -19,8 +33,11 @@ from meshcore_home_gateway.views import (
     history_document,
     iso,
     nodes_document,
+    restated,
     stats_document,
+    telemetry_event,
 )
+from tests.radio_emulator import LPP_BME280
 
 T = 1_800_000_000.0
 KEY = "a1" * 32
@@ -44,7 +61,9 @@ def test_a_contact_document_has_every_key_and_iso_times() -> None:
         "snr_db": 6.25, "rssi_dbm": -97, "latitude": 53.55, "longitude": 9.99,
         "altitude_m": None, "position_at": "2027-01-15T07:59:00+00:00",
         "position_source": "advert", "position_accuracy_m": None, "position_received_at": None,
-        "advert_position": True,
+        "advert_position": True, "telemetry_state": None, "telemetry_excluded": False,
+        "telemetry_current": None, "position_current": None, "readings_at": None,
+        "battery_v": None, "mcu_temperature_c": None, "readings": {},
     }  # fmt: skip
 
 
@@ -73,9 +92,11 @@ def test_a_contact_never_heard_has_nulls() -> None:
     assert nulls == {
         "path_hops", "last_advert_at", "first_heard_at", "heard_at", "heard_via", "hops",
         "snr_db", "rssi_dbm", "latitude", "longitude", "altitude_m", "position_at",
-        "position_source", "position_accuracy_m", "position_received_at",
+        "position_source", "position_accuracy_m", "position_received_at", "telemetry_state",
+        "telemetry_current", "position_current", "readings_at", "battery_v", "mcu_temperature_c",
     }  # fmt: skip
     assert (document["path_known"], document["flags"], document["type"]) == (False, [], "repeater")
+    assert (document["telemetry_excluded"], document["readings"]) == (False, {})
 
 
 def test_the_index_is_sorted_by_last_heard_and_bounded() -> None:
@@ -212,3 +233,123 @@ def test_every_contact_event_has_every_key() -> None:
     }  # fmt: skip
     claimed = contact_event("added", KEY, name="Hill", node_type=3)
     assert (claimed["prefix"], claimed["type"]) == (KEY[:12], "room")
+
+
+# --- telemetry ----------------------------------------------------------------------------------
+
+
+def test_a_contact_document_carries_the_readings_of_the_newest_answer() -> None:
+    mesh = Mesh()
+    mesh.contacts_read([Node(KEY, "Alice", 1)], T)
+    named = lpp.named(lpp.decode(LPP_BME280))
+    mesh.contact_answered(KEY, T + 5, Position(50.12345, 8.56775), 120.5, Readings(T + 5, named))
+    document = contact_document(mesh.contacts[KEY], telemetry_state="answering")
+    assert {k: document[k] for k in (
+        "telemetry_state", "telemetry_excluded", "telemetry_current", "position_current",
+        "readings_at", "battery_v", "mcu_temperature_c",
+    )} == {
+        "telemetry_state": "answering", "telemetry_excluded": False, "telemetry_current": True,
+        "position_current": True, "readings_at": "2027-01-15T08:00:05+00:00", "battery_v": 4.12,
+        "mcu_temperature_c": 23.4,
+    }  # fmt: skip
+    assert json.loads(encode(document))["readings"] == {
+        "ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5,
+        "ch2_barometric_pressure_hpa": 1013.2, "ch2_altitude_m": 120.0,
+    }  # fmt: skip
+    assert list(document["readings"]) == list(named.readings)  # in the answer's order
+    document["readings"]["ch2_altitude_m"] = 0.0
+    assert named.readings["ch2_altitude_m"] == 120.0  # a copy: the answer stays as it came
+
+
+@pytest.mark.parametrize("state", [*STATES, None])
+@pytest.mark.parametrize("source", ["telemetry", "advert", None])
+def test_whether_answers_and_position_are_current(
+    state: TelemetryState | None, source: str | None
+) -> None:
+    """`position_current` speaks of a position from telemetry only; `null` for an advert's."""
+    fix = Fix(Position(1, 2), T, source) if source else None
+    tracked = Tracked(Node(KEY, "Alice", 1), fix=fix)
+    document = contact_document(tracked, telemetry_state=state)
+    assert document["telemetry_state"] == state
+    assert document["telemetry_current"] == (None if state is None else state in CURRENT)
+    expected = state == "answering" if source == "telemetry" else None
+    assert document["position_current"] == expected
+
+
+@pytest.mark.parametrize("before", [*STATES, None])
+@pytest.mark.parametrize("source", ["telemetry", "advert", None])
+def test_a_document_restated_in_another_state_is_the_one_built_in_it(
+    before: TelemetryState | None, source: str | None
+) -> None:
+    """Before the first table read of a run only the stored document is there (ADR 0024)."""
+    fix = Fix(Position(1, 2), T, source) if source else None
+    readings = Readings(T, lpp.named(lpp.decode(LPP_BME280)))
+    heard = Heard(T, "telemetry", Signal(1, 6.25, -97))
+    tracked = Tracked(Node(KEY, "Alice", 1, path_hops=1), T, heard, fix, T, readings=readings)
+    stored = contact_document(tracked, protected=True, manage=True, telemetry_state=before)
+    for state in (*STATES, None):
+        built = contact_document(tracked, protected=True, manage=True, telemetry_state=state)
+        assert restated(stored, state) == built
+
+
+@pytest.mark.parametrize("advert", [False, True])
+def test_a_document_restated_as_excluded_forgets_what_an_exclusion_forgets(advert: bool) -> None:
+    """As far as the stored document shows it: the position the contact's record carries comes
+    back with the first table read, so here the answer carried one only without it."""
+    mesh = Mesh()
+    advertised = Position(53.55, 9.99) if advert else None
+    mesh.contacts_read([Node(KEY, "Alice", 1, position=advertised)], T)
+    named = lpp.named(lpp.decode(LPP_BME280))
+    position = None if advert else Position(50.12345, 8.56775)
+    mesh.contact_answered(KEY, T + 5, position, 120.5, Readings(T + 5, named))
+    mesh.restore_received(KEY, T + 5)  # an earlier answer carried one
+    stored = contact_document(mesh.contacts[KEY], telemetry_state="answering")
+    mesh.forget_telemetry(KEY, T + 10)
+    excluded = contact_document(mesh.contacts[KEY], telemetry_state="excluded", excluded=True)
+    assert restated(stored, "excluded", excluded=True) == excluded
+    assert excluded["position_source"] == ("advert" if advert else None)
+    included = contact_document(mesh.contacts[KEY], telemetry_state="waiting")
+    assert restated(excluded, "waiting") == included  # what it forgot stays forgotten
+
+
+def test_only_a_companion_is_excluded() -> None:
+    assert contact_document(Tracked(Node(KEY, "Alice", 1)), excluded=True)["telemetry_excluded"]
+    repeater = contact_document(Tracked(Node(KEY, "Hill", 2)), excluded=True)
+    assert repeater["telemetry_excluded"] is False
+
+
+def test_the_index_lists_the_excluded_keys_also_those_not_on_the_radio() -> None:
+    mesh = Mesh()
+    stored = [f"{i:064x}" for i in range(20)]
+    mesh.contacts_read([Node(stored[19], "Alice", 1), Node("b2" * 32, "Bob", 1)], T)
+    document = contacts_document(mesh, excluded=frozenset(stored))
+    assert document["telemetry_excluded"] == sorted(stored)[:16]
+    assert document["telemetry_excluded_total"] == 20
+    empty = contacts_document(mesh)
+    assert (empty["telemetry_excluded"], empty["telemetry_excluded_total"]) == ([], 0)
+    most = [f"{i:064x}" for i in range(1024)]  # the most the gateway stores
+    grown = len(encode(contacts_document(mesh, excluded=most))) - len(encode(empty))
+    assert grown <= 1.1 * 1024  # outside the bound of the entries, and small
+
+
+def test_a_telemetry_event_has_every_key() -> None:
+    assert telemetry_event("unanswered", KEY, Node(KEY, "Alice", 1), "away") == {
+        "event_type": "unanswered", "key": KEY, "prefix": "a1a1a1a1a1a1", "name": "Alice",
+        "state": "away",
+    }  # fmt: skip
+    assert telemetry_event("answered", KEY, None, "no_position")["name"] is None
+
+
+def test_the_largest_contact_document_stays_within_the_attribute_bound() -> None:
+    """52 readings of the longest keys (156 bytes of LPP at 3 bytes each), the widest values and
+    a name of 32 bytes in 4-byte characters."""
+    readings = {f"ch255_barometric_pressure_{n}_hpa": -4294967.295 for n in range(2, 54)}
+    node = Node(KEY, "\U0001f600" * 8, 1, flags=0xFF, path_hops=64, last_advert=int(T),
+                position=Position(-89.99999, -179.99999))  # fmt: skip
+    tracked = Tracked(
+        node, T, Heard(T, "telemetry", Signal(64, -32.25, -128)),
+        Fix(Position(-89.99999, -179.99999), T, "telemetry", -8388.608), T,
+        readings=Readings(T, Named(-327.68, -3276.8, readings)),
+    )  # fmt: skip
+    document = contact_document(tracked, protected=True, manage=True, telemetry_state="no_answer")
+    assert 2048 < len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES

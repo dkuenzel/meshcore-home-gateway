@@ -117,6 +117,7 @@ class HistoryConfig:
     enabled: bool = True
     messages_days: float = 30.0
     positions_days: float = 30.0
+    readings_days: float = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +131,7 @@ class ContactsConfig:
 class TelemetryConfig:
     """Asking the radio's companions for their telemetry (ADR 0018)."""
 
-    enabled: bool = False  # until contacts can be excluded
+    enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,6 +505,7 @@ def _history(s: _Section) -> HistoryConfig:
         enabled=s.boolean("enabled", True),
         messages_days=s.number("messages_days", 30.0, 1.0, 3650.0),
         positions_days=s.number("positions_days", 30.0, 1.0, 3650.0),
+        readings_days=s.number("readings_days", 30.0, 1.0, 3650.0),
     )
 
 
@@ -512,7 +514,7 @@ def _contacts(s: _Section) -> ContactsConfig:
 
 
 def _telemetry(s: _Section) -> TelemetryConfig:
-    return TelemetryConfig(enabled=s.boolean("enabled", False))
+    return TelemetryConfig(enabled=s.boolean("enabled", True))
 
 
 def _diagnostics(s: _Section) -> DiagnosticsConfig:
@@ -540,7 +542,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
-    "contacts.manage": bool, "telemetry.enabled": bool,
+    "history.readings_days": float, "contacts.manage": bool, "telemetry.enabled": bool,
     "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
 }  # fmt: skip
 

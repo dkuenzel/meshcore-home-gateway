@@ -8,6 +8,89 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [1.1.0a2] - 2026-10-30
+
+A pre-release of 1.1.0, the second of the three telemetry slices: the household's handhelds
+report their battery and sensors to Home Assistant, their telemetry expires when they stop
+answering, a contact can be excluded, and telemetry is on by default. The hardware checklist was
+not run for it.
+
+### Added
+
+- Readings of each companion in `contacts/<key>`: `battery_v`, `mcu_temperature_c`, `readings`
+  (keys `ch<channel>_<type>[_<n>][_<unit>]`, such as `ch2_temperature_c`; luminosity has no
+  unit, `ch1_luminosity`, because the T1000-E sends 0–100 % in it) and `readings_at`;
+  `telemetry_state` (`waiting`, `answering`, `no_position`, `away`, `no_answer`, `no_path`,
+  `look_alike`, `excluded`, `off`), `telemetry_current`, `position_current` and
+  `telemetry_excluded`. In Home Assistant, on the contact's device: *Battery* (V),
+  *MCU temperature*, a sensor per reading (`sensor.mesh_<name>_ch2_temperature`, …),
+  *Telemetry state* and the switch *Telemetry*.
+- Excluding a contact from telemetry: the switch, `contacts/<key>/telemetry` (`on`/`off`, or JSON
+  with `id` and `"forget": true`) and `meshcore-home-gateway contacts telemetry KEY on|off
+  [--forget]`. `off` is taken at once, also for a contact that is not on the radio yet: the
+  gateway stops asking, forgets the contact's current battery, readings and telemetry position,
+  and keeps the choice in `telemetry-excluded.json` in its state directory (while that file
+  cannot be read, telemetry pauses and no contact gets back its readings or a telemetry position
+  from the history); `forget` also deletes the contact's readings and telemetry positions from
+  the history. Results on `contact`: `excluded` and `included` with `request: "telemetry"`, the
+  reasons `not_saved` and `not_forgotten` (`not_forgotten` first, when both apply), the refusals
+  `not_a_companion` and `too_many` (and `rate_limited` for too many telemetry requests); the
+  *Contact* event entity has the two new types. The `contacts` index gains `telemetry_excluded`
+  (the first 16 keys) and `telemetry_excluded_total`.
+- Events on `telemetry`: `unanswered` when a companion that answered within the day leaves two
+  requests in a row unanswered, `answered` when it answers again or for the first time; the event
+  entity *Telemetry* on the gateway's device. The sensor *Telemetry status* with the attribute
+  `reason` (the new `state.telemetry_reason`: `first_start`, `no_radio`, `exclusions_unreadable`,
+  `auto_add`, `radio_airtime`); the two telemetry airtime sensors, disabled until enabled.
+- The history keeps the readings of every answer (a new table; `[history] readings_days`,
+  30 days) and restores the newest at start, unless telemetry is on and its saved schedule knows a
+  later answer the history missed; `position_received_at` also comes back after a restart.
+- `listen --topic telemetry`.
+- The interface snapshot records the device and state classes of the Home Assistant entities.
+
+### Changed
+
+- **`[telemetry] enabled` is `true` by default:** the gateway asks every companion of its radio
+  that is not excluded. The first time telemetry runs on an installation, it waits an hour after
+  the radio connects (*Telemetry status* `paused`, reason `first_start`, and a warning in the log
+  with the number of companions it will ask): exclude every companion that is not the
+  household's in that hour. A companion's firmware refuses telemetry to everyone until its owner
+  allows it; one set to *Allow All* that has the gateway as a contact answers. A configuration
+  copied from the 1.1.0a1 example says `enabled = false`: remove that line to follow the new
+  default. To update from 1.0.0 without any request, see *Update* in docs/deployment.md. With a
+  broker ACL, give Home Assistant's user `topic write <base_topic>/<node_id>/contacts/+/telemetry`
+  ([docs/mqtt-api.md](docs/mqtt-api.md#securing-the-broker)), or the switch *Telemetry* does
+  nothing.
+- `state.telemetry` is `paused`, with the reason `no_radio`, while the radio is away (it stayed
+  `on`); the state document follows each change of `state.telemetry` at once. It reads `on` again
+  as soon as the radio is back, before the companions answer: the example in
+  docs/home-assistant.md of a person leaving home waits for 10 minutes of `on`.
+- A contact's tracker turns `unavailable` while its telemetry position is not current: after two
+  unanswered requests in a row, after an hour (three of its intervals, if longer) without an
+  answer, or an hour after the last answer with a position
+  ([ADR 0024](docs/decisions/0024-telemetry-values-in-home-assistant-expire.md)). A `person`
+  then follows its other trackers or turns `unknown` (docs/home-assistant.md lists which
+  presence triggers fire). Positions from adverts are unchanged. This holds after a restart
+  without the radio too: `state.json` keeps the last document of each companion whose answers
+  are current, with its position and readings, also with the history off.
+- A companion the radio's table adds again, within a day of its removal, is asked within a
+  minute like a new one, and its first answer raises `answered`; it no longer gets back the
+  schedule it had.
+- A downgrade to 1.1.0a1 asks excluded contacts while it runs (it leaves their file alone),
+  removes the four new gateway entities (Home Assistant then removes and restores the gateway's
+  device once) and leaves a removed contact's *Telemetry* switch behind (delete it under
+  *Settings → Entities*). Its history keeps working; the readings wait there, unpurged, until a
+  later version runs again.
+
+### Fixed
+
+- A contact target or command sender that the radio holds with a position but without an advert
+  time (written by another client of the radio, such as a phone app) gets its device at once; it
+  waited for its first advert.
+- Home Assistant no longer logs template errors when a contact leaves the radio: *Last heard*,
+  *Hops*, *SNR* and the tracker's attributes read the empty message that clears the contact's
+  document as unknown.
+
 ## [1.1.0a1] - 2026-10-30
 
 A pre-release of 1.1.0, the first of the three telemetry slices: the gateway asks the household's

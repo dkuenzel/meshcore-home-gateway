@@ -166,21 +166,30 @@ host that takes the radio's network address can pose as the radio and forge comm
 ## `[history]`
 
 The gateway keeps a history in `/var/lib/meshcore-home-gateway/history.sqlite3`: messages in and
-out, positions of contacts (from their adverts and their telemetry, one row per change), and when
-each node was last heard
+out, positions of contacts (from their adverts and their telemetry, one row per change), the
+readings of the companions' telemetry answers (one row per value: the contact, the gateway's time
+of the answer, the reading's key such as `battery_v` or `ch2_temperature_c`, and the value), and
+when each node was last heard
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)). It fills the `history`
-document after a restart, and later the position traces. Positions are kept only for contacts,
-never for nodes the gateway merely heard.
+document after a restart, gives each companion its newest readings back, and later the position
+traces. Positions and readings are kept only for contacts, never for nodes the gateway merely
+heard.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | keep the history; with `false` nothing is written (delete the file by hand to remove what is there) |
 | `messages_days` | `30` | days messages are kept, 1–3650; at most 10 000 messages |
 | `positions_days` | `30` | days positions are kept, 1–3650; beyond 100 000 positions the oldest go first, except each contact's newest, which only its age removes |
+| `readings_days` | `30` | days readings are kept, 1–3650; beyond 200 000 readings the oldest go first, except each contact's newest answer, which only its age removes |
 
-The file holds message texts and positions of the household's people: it is readable only by the
-service user. If it cannot be opened or written, the gateway logs it and runs without a history;
-a file that is not a database is moved aside to `history.sqlite3.corrupt`.
+The file holds message texts, positions and readings of the household's people: it is readable
+only by the service user. To delete one companion's readings and its positions from telemetry,
+exclude it with `--forget` ([`[telemetry]`](#telemetry)); its advert positions and when it was last
+heard stay. If the file cannot be opened or written, the gateway logs it and runs without a
+history; a file that is not a database is moved aside to `history.sqlite3.corrupt`. The readings
+are a table that versions before 1.1.0a2 do not know: after a downgrade their history keeps
+working, and the readings wait there, neither written nor purged, until a later version runs
+again.
 
 ## `[contacts]`
 
@@ -200,17 +209,39 @@ requests to add either. If both are on the radio, remove one.
 
 The gateway asks the radio's companions for their telemetry: battery, readings and, with a GPS,
 their position ([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)).
-A companion answers only contacts it allows: set the household's companions up first
-([companions.md](companions.md)).
+A companion answers only contacts it allows: set the household's companions up
+([companions.md](companions.md)), and exclude every other one.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `false` | ask every companion (chat contact) of the radio's table, one at a time, after the messages; positions go to `contacts/<key>` and the contact's tracker in Home Assistant |
+| `enabled` | `true` | ask every companion (chat contact) of the radio's table that is not excluded, one at a time, after the messages; battery, readings and positions go to `contacts/<key>` and the contact's device in Home Assistant |
 
-**No contact can be excluded yet** (ADR 0018 provides it; it follows in the next release, and the
-default becomes `true` with it). Switching telemetry on asks every chat contact of the radio:
-keep only household companions as chat contacts before you do. A contact that answers everyone
-would be tracked like a household member.
+**Exclusion.** A companion's firmware refuses telemetry to everyone until its owner allows it; one
+set to *Allow All* that has the gateway as a contact answers, and would be tracked like a
+household member. Exclude every companion that is not the household's: with the switch
+*Telemetry* on its device in Home Assistant, `meshcore-home-gateway contacts telemetry KEY off`, or
+`off` on `contacts/<key>/telemetry`
+([mqtt-api.md](mqtt-api.md#excluding-a-contact-from-telemetry-contactskeytelemetry)). A full key
+works also before the contact is on the radio. `--forget` (`"forget": true`) also deletes the
+contact's readings and positions from telemetry from the history. The gateway keeps the
+exclusions in `telemetry-excluded.json` in its state directory: also when the contact leaves the
+radio, while telemetry is off, and across restarts. With `enabled = false` it asks nobody, and
+the switches and the exclusions still work, so a household can exclude before it switches
+telemetry on.
+
+**The first-start hour.** The first time telemetry runs on a state directory (an update from
+1.0.0, from 1.1.0a1 with telemetry off, or a new installation), the gateway asks nobody for an
+hour after the radio first connects: `state.telemetry` is `paused` with the reason `first_start`,
+and one warning in the log names the number of companions it will ask. Exclude the strangers in
+that hour; then the log says "telemetry resumed". What is left of the hour is saved, so a restart
+neither skips nor extends it. An installation that already ran telemetry has no hold.
+
+**Expiry** ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)). A
+companion's answers are current while at most one request in a row went unanswered and its last
+answer is at most an hour old (three of its intervals, if that is longer); its position while an
+answer within the last hour carried one. Otherwise its tracker and telemetry sensors in Home
+Assistant are `unavailable`, and its state says why
+([mqtt-api.md](mqtt-api.md#telemetry-states)).
 
 Fixed by ADR 0018, not settings:
 
@@ -237,7 +268,12 @@ Fixed by ADR 0018, not settings:
 Needs: the radio adds contacts by hand only, no type automatically (the managed profile sets
 that; otherwise requests pause, because a node the radio adds could take a companion's place in
 its answers). Over TCP an answer can be lost while the radio's push queue is full; USB stays the
-recommendation. The schedule (no positions) is kept in `state.json`.
+recommendation. The schedule (no positions) is kept in `state.json`, and with it the last document
+of each companion whose answers are current, its position and readings included, also with the
+history off. The exclusions are kept in `telemetry-excluded.json`; one that cannot be parsed
+pauses telemetry until it is fixed or deleted and the service restarted
+([deployment.md](deployment.md#4-operations)), and meanwhile no contact gets back its readings or
+a position from telemetry from the history.
 
 ## `[diagnostics]`
 

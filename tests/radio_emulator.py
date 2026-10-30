@@ -21,7 +21,47 @@ SELF_KEY = bytes(range(0x10, 0x30))
 START_TIME = 1_800_000_000
 # voltage 4.12 V, position 50.12345/8.56775 at 120.5 m, MCU temperature 23.4 °C (19 bytes)
 LPP_FULL = bytes.fromhex("0174019c018807a5f2014ead002f12016700ea")
+# the same with a BME280 on channel 2: 21.3 °C, 55.5 %, 1013.2 hPa, 120 m, before the MCU
+LPP_BME280 = bytes.fromhex("0174019c018807a5f2014ead002f12026700d502686f0273279402790078016700ea")
+# a T1000-E: battery, its board's temperature 23.4 °C and light level 50 (0-100) on channel 1,
+# then the MCU temperature 20.0 °C
+LPP_T1000E = bytes.fromhex("0174019c016700ea01650032016700c8")
+# battery and a board sensor on channel 1 (21.3 °C, 55.5 %, 1013.2 hPa); no MCU temperature
+LPP_WIO_E5 = bytes.fromhex("0174019c016700d501686f01732794")
 TELEMETRY_T_MS = 410  # time on air of the request at EU/UK Narrow, as the radio estimates it
+
+# bytes of each single-value type the documents publish (CayenneLPP.h:27-111 of 1.6.1)
+_LPP_SIZES = {
+    2: 2, 100: 4, 101: 2, 103: 2, 104: 1, 115: 2, 116: 2, 117: 2, 118: 4, 120: 1, 121: 2,
+    128: 2, 130: 4,
+}  # fmt: skip
+
+
+def lpp_entry(channel: int, lpp_type: int, raw: int) -> bytes:
+    """One single-value CayenneLPP entry: the integer the encoder writes, big endian."""
+    return bytes([channel, lpp_type]) + raw.to_bytes(_LPP_SIZES[lpp_type], "big", signed=raw < 0)
+
+
+# every reading key the documents publish (16 readings, the cap of Home Assistant components):
+# the battery first, a channel 1 temperature and light level, one entry of each published type
+# on channel 2 and a second channel 2 temperature, the MCU temperature last
+LPP_ALL = b"".join(
+    lpp_entry(channel, lpp_type, raw)
+    for channel, lpp_type, raw in (
+        (1, 116, 412), (1, 103, 215), (1, 101, 50), (2, 116, 330), (2, 117, -125), (2, 128, 12),
+        (2, 103, 213), (2, 104, 111), (2, 115, 10132), (2, 121, 120), (2, 101, 300), (2, 100, 7),
+        (2, 2, 123), (2, 120, 80), (2, 118, 868), (2, 130, 1500), (2, 103, 198), (1, 103, 234),
+    )
+)  # fmt: skip
+# LPP_ALL's readings besides the battery (4.12 V) and the MCU temperature (23.4 °C)
+LPP_ALL_READINGS = {
+    "ch1_temperature_c": 21.5, "ch1_luminosity": 50.0, "ch2_voltage_v": 3.3,
+    "ch2_current_a": -0.125, "ch2_power_w": 12.0, "ch2_temperature_c": 21.3,
+    "ch2_humidity_percent": 55.5, "ch2_barometric_pressure_hpa": 1013.2, "ch2_altitude_m": 120.0,
+    "ch2_luminosity": 300.0, "ch2_generic": 7.0, "ch2_analog_input": 1.23,
+    "ch2_percentage_percent": 80.0, "ch2_frequency_hz": 868.0, "ch2_distance_m": 1.5,
+    "ch2_temperature_2_c": 19.8,
+}  # fmt: skip
 
 
 def frame(payload: bytes) -> bytes:

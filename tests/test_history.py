@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from meshcore_home_gateway import history as history_module
-from meshcore_home_gateway.core.mesh import Fix, Heard, Signal
+from meshcore_home_gateway.core.lpp import Named
+from meshcore_home_gateway.core.mesh import Fix, Heard, Readings, Signal
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.views import HistoryEntry
@@ -19,6 +20,7 @@ from meshcore_home_gateway.views import HistoryEntry
 T = 1_800_000_000.0
 DAY = 86_400.0
 KEY = "a1" * 32
+BOB = "b2" * 32
 
 
 OPENED: list[History] = []
@@ -196,3 +198,156 @@ def test_a_version_1_history_gets_the_advert_time_of_its_nodes(tmp_path: Path) -
     db = sqlite3.connect(path)
     assert db.execute("PRAGMA user_version").fetchone()[0] == 2
     db.close()
+
+
+# --- readings -------------------------------------------------------------------------------------
+
+
+def schema(path: Path) -> tuple[int, list[tuple[str, str, str]]]:
+    """The file's version and what it holds, read without the program."""
+    db = sqlite3.connect(path)
+    try:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        objects = list(db.execute("SELECT type, name, sql FROM sqlite_master ORDER BY name"))
+    finally:
+        db.close()
+    return version, objects
+
+
+def test_a_version_2_file_gets_the_reading_table_and_keeps_its_version(tmp_path: Path) -> None:
+    """Earlier versions of schema 2 lack the table; they ignore it, so it needs no new version
+    and a downgrade keeps the whole history."""
+    path = tmp_path / "history.sqlite3"
+    db = sqlite3.connect(path)
+    db.executescript(history_module._SCHEMA + "PRAGMA user_version = 2;")
+    db.execute(
+        "INSERT INTO message (at, direction, kind, text) VALUES (?, 'in', 'channel', 'kept')", (T,)
+    )
+    db.commit()
+    db.close()
+    assert "reading" not in {name for _, name, _ in schema(path)[1]}
+    history = opened(path)
+    assert [m.text for m in history.recent_messages(5)] == ["kept"]
+    history.add_readings(KEY, T, {"battery_v": 4.12})
+    history.close()
+    version, objects = schema(path)
+    assert version == 2
+    assert {("table", "reading"), ("index", "reading_contact_at")} <= {
+        (kind, name) for kind, name, _ in objects
+    }
+    opened(path).close()  # a second start changes nothing
+    assert schema(path) == (version, objects)
+
+
+def test_a_new_file_is_version_2_with_the_reading_table(tmp_path: Path) -> None:
+    path = tmp_path / "history.sqlite3"
+    opened(path).close()
+    version, objects = schema(path)
+    assert version == 2
+    assert {"message", "position", "node", "reading", "reading_contact_at"} <= {
+        name for _, name, _ in objects
+    }
+
+
+def test_a_newer_schema_gets_no_reading_table(tmp_path: Path) -> None:
+    path = tmp_path / "history.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute("PRAGMA user_version = 3")
+    db.close()
+    assert History.open(path) is None
+    assert schema(path) == (3, [])
+
+
+def test_the_newest_answer_of_each_contact_comes_back_in_the_order_written(tmp_path: Path) -> None:
+    path = tmp_path / "history.sqlite3"
+    history = opened(path)
+    history.add_readings(KEY, T, {"battery_v": 4.1, "ch2_temperature_c": 20.0})
+    history.add_readings(
+        KEY, T + 900,
+        {"battery_v": 4.12, "ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5,
+         "ch1_temperature_c": 19.5, "mcu_temperature_c": 23.4},
+    )  # fmt: skip
+    history.add_readings(BOB, T + 60, {"ch1_luminosity": 50.0, "ch3_weather": 1.0})
+    history.close()
+    assert opened(path).last_readings() == {
+        KEY: Readings(T + 900, Named(4.12, 23.4, {
+            "ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5, "ch1_temperature_c": 19.5,
+        })),
+        BOB: Readings(T + 60, Named(None, None, {"ch1_luminosity": 50.0})),  # a later version's
+    }  # fmt: skip
+    readings = opened(path).last_readings()[KEY].named.readings
+    assert list(readings) == ["ch2_temperature_c", "ch2_humidity_percent", "ch1_temperature_c"]
+
+
+def test_the_values_of_an_answer_are_written_in_one_transaction(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    history = opened(tmp_path / "h.sqlite3")
+    caplog.set_level(logging.WARNING)
+    history.add_readings(KEY, T, {"battery_v": 4.12, "ch2_temperature_c": float("nan")})
+    assert history.broken
+    assert "history cannot be written" in caplog.text
+    assert history._db.execute("SELECT COUNT(*) FROM reading").fetchone()[0] == 0
+    history.add_readings(KEY, T, {"battery_v": 4.12})  # ignored, no exception
+    assert history._db.execute("SELECT COUNT(*) FROM reading").fetchone()[0] == 0
+    assert history.last_readings() == {}
+
+
+def test_readings_go_after_their_days(tmp_path: Path) -> None:
+    history = opened(tmp_path / "h.sqlite3", Retention(readings_days=2))
+    history.add_readings(KEY, T, {"battery_v": 4.0})
+    history.add_readings(BOB, T + DAY, {"battery_v": 3.9})
+    history.purge(T + 2 * DAY + 1)
+    assert history.last_readings() == {BOB: Readings(T + DAY, Named(3.9, None, {}))}
+    assert Retention().readings_days == 30.0
+
+
+def test_the_reading_cap_keeps_the_newest_answer_of_every_contact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cap bounds the file: a contact at rest keeps its one answer however many another one
+    sends; the cap may leave part of an older answer."""
+    monkeypatch.setattr(history_module, "MAX_READINGS", 3)
+    history = opened(tmp_path / "h.sqlite3")
+    history.add_readings(BOB, T, {"battery_v": 3.9, "mcu_temperature_c": 20.0})
+    for i in range(1, 6):
+        history.add_readings(KEY, T + 60 * i, {"battery_v": 4.0 + i / 100, "ch2_power_w": i})
+    history.purge(T + 600)
+    assert history.last_readings() == {
+        BOB: Readings(T, Named(3.9, 20.0, {})),
+        KEY: Readings(T + 300, Named(4.05, None, {"ch2_power_w": 5.0})),
+    }
+    rows = history._db.execute("SELECT contact_key, at, quantity FROM reading ORDER BY id")
+    assert list(rows) == [
+        (BOB, T, "battery_v"), (BOB, T, "mcu_temperature_c"), (KEY, T + 240, "ch2_power_w"),
+        (KEY, T + 300, "battery_v"), (KEY, T + 300, "ch2_power_w"),
+    ]  # fmt: skip
+
+
+def test_forgetting_a_contact_deletes_its_readings_and_telemetry_positions(tmp_path: Path) -> None:
+    history = opened(tmp_path / "h.sqlite3")
+    advert = Fix(Position(1, 1), T, "advert")
+    for key in (KEY, BOB):
+        history.add_readings(key, T, {"battery_v": 4.1, "ch2_temperature_c": 20.0})
+        history.add_readings(key, T + 900, {"battery_v": 4.0})
+        history.add_position(key, advert)
+        history.add_position(key, Fix(Position(2, 2), T + 60, "telemetry"))
+    assert history.forget_telemetry(KEY) == 4  # three readings, one position
+    assert set(history.last_readings()) == {BOB}
+    assert history.trace(KEY, 0) == [advert]
+    assert len(history.trace(BOB, 0)) == 2
+    assert history.forget_telemetry(KEY) == 0
+
+
+def test_forgetting_is_one_transaction_and_none_without_a_working_history(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    history = opened(tmp_path / "h.sqlite3")
+    history.add_readings(KEY, T, {"battery_v": 4.1})
+    history._db.execute("DROP TABLE position")
+    caplog.set_level(logging.WARNING)
+    assert history.forget_telemetry(KEY) is None
+    assert history.broken
+    assert history._db.execute("SELECT COUNT(*) FROM reading").fetchone()[0] == 1  # rolled back
+    assert history.forget_telemetry(KEY) is None
+    assert caplog.text.count("history cannot be written") == 1

@@ -356,7 +356,20 @@ companion flooded, never to grant anything.
   cell of 11 m), altitude × 100 in metres. Voltage (116) and current (117) are signed, although
   the header's comments say otherwise. The AES padding is 0 to 15 zero bytes, and channel 0 is
   never used, so a reading on channel 0 ends the data. An unknown type has no known size: the
-  rest cannot be read.
+  rest cannot be read. An answer starts with the battery, the channel 1 voltage, then the board's
+  sensors, and ends with the processor's temperature as a channel 1 temperature, only on a board
+  that reports one (not NaN, `MyMesh.cpp:666-675`); the T1000-E, the only 1.18 sender of
+  luminosity (101), sends its light level as 0–100 % in it (`variants/t1000-e/target.cpp:115-116`).
+  The gateway publishes the 13 single-value types 1.18 companions send (voltage 116, current 117,
+  power 128, temperature 103, humidity 104, barometric pressure 115, altitude 121, luminosity 101,
+  generic 100, analog input 2, percentage 120, frequency 118, distance 130), each value the
+  integer sent divided as its type says, under the key `ch<channel>_<type>[_<n>][_<unit>]`:
+  `<type>` the library's name, `<n>` from 2 for a further reading of one channel and type in an
+  answer, the unit as in [mqtt-api.md](mqtt-api.md#reading-keys) (none for luminosity, generic
+  and analog input). The answer's first entry, if it is the channel 1 voltage, and its last, if
+  it is a channel 1 temperature and nothing after it was left undecoded, are published as
+  `battery_v` and `mcu_temperature_c` instead; GPS is the position; other types are decoded and
+  not published.
 * **Contact list:** `GET_CONTACTS` sends one contact per main-loop pass (`MyMesh.cpp:2388-2410`),
   so the list is not a snapshot; a contact overwritten during the read can be missing, while its
   push arrives (over USB). The eight slots for temporary contacts (type 0, which a client creates

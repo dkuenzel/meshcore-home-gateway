@@ -19,6 +19,10 @@ candidates, what the radio answered and what was heard, and does what it decides
 * Intervals from a share of channel time per contact: 1 % while it moves, 0.1 % at rest, once an
   hour without a position; a contact that stops answering is asked less often (back-off), on its
   stored path at least every max(30 minutes, its interval) while it answered within the day.
+* Each contact's state (ADR 0024): its answers are current while at most one request in a row
+  went unanswered and the last answer is at most max(1 hour, 3 of its intervals) old; its
+  position while the answers are current and the newest answer, or one within the hour, carried
+  one.
 
 Constants are read when used, so tests can change them. Positions never leave this module:
 the movement reference is kept in memory only.
@@ -29,6 +33,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Literal, get_args
 
 from meshcore_home_gateway.core import airtime
 from meshcore_home_gateway.core.airtime import Costs, LoRaParams
@@ -65,6 +70,28 @@ MAX_DUE_S = 7 * 86_400.0  # due times restored from the state file
 STEP_S = 60.0  # longest sleep between two decisions
 MAX_FAILURES = 16
 HOUR_S = 3600.0
+# ADR 0024
+CURRENT_MIN_S = 3600.0  # an answer counts as current at least this long
+CURRENT_INTERVALS = 3  # or this many of the contact's intervals, if longer
+LOCATED_S = 3600.0  # a position counts while an answer this recent carried one
+
+# The value lists of the interface: the constants, the Home Assistant options and the snapshot
+# are built from these types, so a producer cannot write another value (mypy).
+TelemetryState = Literal[
+    "waiting", "answering", "no_position", "away", "no_answer", "no_path", "look_alike",
+    "excluded", "off",
+]  # fmt: skip
+STATES: tuple[TelemetryState, ...] = get_args(TelemetryState)  # Home Assistant's options, in order
+CURRENT: frozenset[TelemetryState] = frozenset({"answering", "no_position"})
+TelemetryStatus = Literal["off", "on", "paused", "unsupported"]  # state.telemetry
+STATUSES: tuple[TelemetryStatus, ...] = get_args(TelemetryStatus)
+PauseReason = Literal[
+    "first_start", "no_radio", "exclusions_unreadable", "auto_add", "radio_airtime"
+]  # state.telemetry_reason while paused
+PAUSE_REASONS: tuple[PauseReason, ...] = get_args(PauseReason)
+TelemetryEvent = Literal["answered", "unanswered"]
+EVENTS: tuple[TelemetryEvent, ...] = get_args(TelemetryEvent)
+EVENT_STATES: tuple[TelemetryState, ...] = ("answering", "no_position", "away")  # telemetry:state
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +121,6 @@ class Answer:
     flood: bool  # the request went by flood
     hops: int | None  # the stored path in the table the answer was accepted on
     late: bool  # after its wait, before the next request
-    state: str  # Scheduler.view() after the answer
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +137,8 @@ class SavedContact:
     still: int = STILL_POLLS  # answers in a row under 50 m: below STILL_POLLS it moves
     lpp_bytes: int = DEFAULT_LPP_BYTES
     parked_age_s: float | None = None  # how long it has not been a candidate; None: it was one
+    current_s: float = CURRENT_MIN_S  # how long its last answer counts as current
+    located_age_s: float | None = None  # since its newest answer that carried a position
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +147,8 @@ class Saved:
     floods_age_s: tuple[float, ...] = ()  # the gateway's floods within the last hour
     own_debt_s: float = 0.0  # airtime the lanes owed when saved
     mesh_debt_s: float = 0.0
+    hold_left_s: float | None = None  # the poller's first-start hold; the scheduler ignores it
+    hold_pending: bool = False  # the hold has not started: the time stopped does not count
 
 
 LaneFactory = Callable[[Costs, float], tuple[AirtimeBudget, AirtimeBudget]]
@@ -156,6 +186,8 @@ class _Contact:
     flood_waiting_since: float | None = None  # when its flood was planned (while heard)
     tried_at: float | None = None  # the newest request not sent (refused, withdrawn)
     reply_charged: float | None = None  # the request whose flooded answer was charged
+    current_s: float = CURRENT_MIN_S  # how long its last answer counts as current
+    located_at: float | None = None  # the newest answer that carried a position
 
 
 def _recent(s: _Contact, now: float) -> bool:
@@ -164,6 +196,15 @@ def _recent(s: _Contact, now: float) -> bool:
 
 def _fresh(t: float | None, now: float) -> bool:
     return t is not None and 0 <= now - t <= HEARD_RECENTLY_S
+
+
+def _forgotten(s: _Contact, now: float) -> _Contact:
+    """The schedule without its answers, due at once; when it was asked and flooded stays."""
+    return _Contact(
+        due_at=now, polled_at=s.polled_at, flood_at=s.flood_at, floods=s.floods,
+        lpp_bytes=s.lpp_bytes, hops=s.hops, path_bytes=s.path_bytes, heard_at=s.heard_at,
+        tried_at=s.tried_at, last_flood=s.last_flood,
+    )  # fmt: skip
 
 
 class Scheduler:
@@ -401,15 +442,21 @@ class Scheduler:
     def answered(
         self, key: str, now: float, cells: tuple[int, int] | None, lpp_bytes: int, *,
         route: tuple[int | None, int | None] | None = None, late: bool = False,
-    ) -> None:  # fmt: skip
+        at: float | None = None,
+    ) -> bool:  # fmt: skip
         """An answer of the contact asked; `late`: after its wait, before the next request.
-        `route`: hops and path bytes in the table the answer was accepted on."""
+        `route`: hops and path bytes in the table the answer was accepted on. `at`: when it
+        came (None: now); its answer and position count from then. True when it is back: its
+        first answer (since it was added or included again), or one after two or more
+        unanswered requests in a row."""
         if not late:
             self._in_flight, self._gap_until = None, now + POLL_GAP_S
         s = self._contacts.get(key)
         if s is None:
-            return
-        s.failures, s.uncertain, s.answered_at = 0, False, now
+            return False
+        back = s.answered_at is None or s.failures >= 2
+        came = now if at is None else min(now, at)
+        s.failures, s.uncertain, s.answered_at = 0, False, came
         s.flood_waiting_since = None
         if not s.last_flood:
             s.floods = 0  # a direct answer: the route works
@@ -417,8 +464,13 @@ class Scheduler:
         if route is not None:
             s.hops, s.path_bytes = route
         _movement(s, cells)
-        s.due_at = (s.polled_at if s.polled_at is not None else now) + self._interval(s, now)
+        interval = self._interval(s, now)
+        s.due_at = (s.polled_at if s.polled_at is not None else now) + interval
+        s.current_s = max(CURRENT_MIN_S, CURRENT_INTERVALS * interval)
+        if cells is not None:
+            s.located_at = came
         self.version += 1
+        return back
 
     def unanswered(self, key: str, now: float, *, uncertain: bool = False) -> int:
         """The wait ended without an answer; returns the failures in a row. `uncertain`: the
@@ -442,6 +494,22 @@ class Scheduler:
             s.due_at = now + self._backoff(s, base, now)
         self.version += 1
         return s.failures
+
+    def forget(self, key: str, now: float) -> None:
+        """The contact was excluded: its answers are forgotten, wherever its schedule is
+        (candidates, restored, parked). It is `waiting` and due at once when it is a candidate
+        again; when it was last asked and flooded stays, so the flood limits hold. An outcome of
+        a request in flight still clears `in_flight`."""
+        if (s := self._contacts.get(key)) is not None:
+            self._contacts[key] = _forgotten(s, now)
+        elif (s := self._restored.get(key)) is not None:
+            self._restored[key] = _forgotten(s, now)
+        elif (parked := self._parked.get(key)) is not None:
+            since, s = parked
+            self._parked[key] = (since, _forgotten(s, now))
+        else:
+            return
+        self.version += 1
 
     def retry(self, key: str, now: float, after_s: float | None = None) -> None:
         """Nothing was learned (refused, withdrawn, cut by a disconnect): no failure. After a
@@ -499,6 +567,55 @@ class Scheduler:
             return None
         return self._interval(s, now)
 
+    def state(self, key: str, now: float) -> TelemetryState | None:
+        """The contact's state from its schedule (answering, no_position, away, no_path,
+        no_answer, waiting); the callers add excluded, look_alike and off. None if the schedule
+        does not know it. Reads the candidates, those restored and not yet compared with a
+        table, and those parked; `no_path` only for a candidate, whose path is that of the last
+        decision."""
+        s = self._schedule(key)
+        if s is None:
+            return None
+        answered = s.answered_at
+        if answered is not None and s.failures < 2 and 0 <= now - answered <= s.current_s:
+            located = s.located or (
+                s.located_at is not None and 0 <= now - s.located_at <= LOCATED_S
+            )
+            return "answering" if located else "no_position"
+        if _recent(s, now):
+            return "away"
+        if (
+            key in self._contacts and s.path_bytes is None and s.flood_waiting_since is None
+            and not _fresh(s.heard_at, now)
+        ):  # fmt: skip
+            return "no_path"
+        return "no_answer" if s.failures else "waiting"
+
+    def failures(self, key: str) -> int:
+        """Unanswered requests in a row; 0 for a contact it does not know."""
+        s = self._schedule(key)
+        return 0 if s is None else s.failures
+
+    def answered_within_day(self, key: str, now: float) -> bool:
+        """It answered within the last day; False if the schedule does not know it."""
+        s = self._schedule(key)
+        return s is not None and _recent(s, now)
+
+    def located_ages(self, now: float) -> dict[str, float]:
+        """How long ago each contact's newest answer with a position came (candidates, restored
+        and parked)."""
+        return {
+            key: max(0.0, now - s.located_at)
+            for key, s in self._everyone().items() if s.located_at is not None
+        }  # fmt: skip
+
+    def answered_ages(self, now: float) -> dict[str, float]:
+        """How long ago each contact's newest answer came (candidates, restored and parked)."""
+        return {
+            key: max(0.0, now - s.answered_at)
+            for key, s in self._everyone().items() if s.answered_at is not None
+        }  # fmt: skip
+
     # --- persistence ----------------------------------------------------------------------------
 
     def export(self, now: float) -> Saved:
@@ -517,6 +634,7 @@ class Scheduler:
                 answered_age_s=age(s.answered_at), polled_age_s=age(s.polled_at),
                 flood_age_s=age(s.flood_at), floods=s.floods, located=s.located,
                 still=s.still, lpp_bytes=s.lpp_bytes, parked_age_s=age(since),
+                current_s=s.current_s, located_age_s=age(s.located_at),
             )
             for key, (since, s) in everyone.items()
         }  # fmt: skip
@@ -538,12 +656,16 @@ class Scheduler:
                 return at(age)
             return now - max(age, ANSWERED_RECENTLY_S + 1.0)  # how long ago is unknown
 
+        def located(age: float | None) -> float | None:  # unknown: fewer positions, never more
+            return None if elapsed_s is None else at(age)
+
         for key, c in saved.contacts.items():
             s = _Contact(
                 due_at=now + max(0.0, min(MAX_DUE_S, c.due_in_s) - elapsed),
                 failures=c.failures, answered_at=answered(c.answered_age_s),
                 polled_at=at(c.polled_age_s), flood_at=at(c.flood_age_s), floods=c.floods,
-                located=c.located, still=c.still, lpp_bytes=c.lpp_bytes,
+                located=c.located, still=c.still, lpp_bytes=c.lpp_bytes, current_s=c.current_s,
+                located_at=located(c.located_age_s),
             )  # fmt: skip
             since = at(c.parked_age_s)
             if since is None:  # a candidate when saved: until compared with the next table
@@ -559,6 +681,19 @@ class Scheduler:
         return max(0.0, own - OWN_S_PER_HOUR * paid), max(0.0, mesh - MESH_S_PER_HOUR * paid)
 
     # --- helpers ----------------------------------------------------------------------------------
+
+    def _everyone(self) -> dict[str, _Contact]:
+        """Every schedule: candidates, restored and parked."""
+        parked = {key: s for key, (_, s) in self._parked.items()}
+        return {**parked, **self._restored, **self._contacts}
+
+    def _schedule(self, key: str) -> _Contact | None:
+        """The contact's schedule: a candidate, restored and not yet compared, or parked."""
+        return self._contacts.get(key) or self._restored.get(key) or self._parked_schedule(key)
+
+    def _parked_schedule(self, key: str) -> _Contact | None:
+        parked = self._parked.get(key)
+        return None if parked is None else parked[1]
 
     @property
     def _params(self) -> LoRaParams:

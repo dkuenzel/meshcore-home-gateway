@@ -151,13 +151,14 @@ with every X.Y.Z and means the same.
 **Home Assistant discovery** ([home-assistant.md](home-assistant.md)). What automations,
 dashboards and statistics refer to:
 
-- Compatible: new entities, event types, options and attribute keys.
+- Compatible: new entities, event types, options and attribute keys; a device class or state
+  class where an entity had none.
 - Breaking: an entity removed (the gateway deletes it in Home Assistant); its unique ID, default
-  entity ID, platform or unit changed; an event type, option or attribute key removed.
+  entity ID, platform or unit changed; its device class or state class removed or changed (an
+  entity without its state class keeps no long-term statistics, and a device class decides the
+  units Home Assistant converts to); an event type, option or attribute key removed.
 - Not interface: names (they will be translated), icons, entity categories, and which entities
   are enabled by default.
-- Not recorded yet, so left to review: device and state classes (an entity without its state
-  class keeps no long-term statistics).
 
 **Platforms.** A major version keeps its floors: Python 3.11 with paho-mqtt 2.x (Debian 13 for
 the installer), Home Assistant 2026.8, and MeshCore companion firmware 1.18.0 (protocol version
@@ -174,6 +175,10 @@ them), and log messages.
   the code by `tests/public_interface.py`. `tests/test_public_interface.py` fails when the code
   and the snapshot differ. The bounds and choices of a setting are those the parser takes. The
   slugs of contact entity IDs are recorded for example names; a slug made otherwise is breaking.
+  The device and state classes are recorded since 1.1.0a2: against an older release each reads
+  as added. The telemetry value lists are `Literal` types in `core/telemetry.py`, which mypy
+  checks every producer against; Home Assistant's options are built from them, and the snapshot
+  checks that they are.
 - After a deliberate change, `make interface` writes the snapshot again and lists what changed
   against the committed snapshot: breaking, changed (a default, a wider range) or added, one
   finding per fact (each value removed from a list is one). Review its diff like code. A merge
@@ -205,9 +210,10 @@ them), and log messages.
   - the JSON types and nullability of keys;
   - the size limits and list bounds of MQTT;
   - the value lists that are not under `mqtt > values` or `cli > values`: the `reason` of
-    deliveries, contact and setting events, each setting's `state`, `heard_via`,
-    `position_source`, `telemetry` in the state document, and `direction`, `kind` and `state` in
-    the history;
+    deliveries, contact and setting events (1.1.0a2 added `not_a_companion`, `too_many`,
+    `not_saved` and `not_forgotten` to those of contact events, and uses `rate_limited` and
+    `state_unwritable` for telemetry requests too), each setting's `state`, `heard_via`,
+    `position_source`, and `direction`, `kind` and `state` in the history;
   - the string formats of settings;
   - the forms an option's value takes: `--tcp`'s HOST[:PORT], the keys, labels, links and cards
     `contacts add` accepts;
@@ -217,7 +223,8 @@ them), and log messages.
   - publishing again after a reconnect;
   - the exit status of each case;
   - the platform floors: Python, paho-mqtt, Home Assistant, the firmware and protocol versions;
-  - meanings and units of values, rules between settings, and the texts a request accepts.
+  - meanings and units of values, rules between settings, and the texts a request accepts (such
+    as `on`, `off` and `forget` of `contacts/<key>/telemetry`).
 
 ## Release
 

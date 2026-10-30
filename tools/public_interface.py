@@ -8,8 +8,8 @@ and loads this file by its path, as the tests do.
 A snapshot is JSON. Below the paths in RECORDS each child is a *record*, whose keys are attribute
 names that ATTRIBUTES gives a rule and a shape of values; an attribute not there, or a value of
 another shape, is a FormatError, so tracking a new one is a deliberate change here. An attribute
-absent from a record means what its rule says: no unit, any string, exactly one value, and, for
-the attributes that mean nothing when absent, not recorded yet, which is growth.
+absent from a record means what its rule says: no unit, no class, any string, exactly one value,
+and, for the attributes that mean nothing when absent, not recorded yet, which is growth.
 Everywhere else a dict is a collection (a key that disappears is breaking), a list is a set of
 values (a value that disappears is breaking), and a scalar stays equal; only the option groups
 of a command have a comparison of their own (`_groups`), and a new option that has the name of
@@ -129,6 +129,12 @@ def _unit(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     return BREAKING
 
 
+def _class(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
+    # a device or state class added where there was none, also one recorded for the first time,
+    # is growth; removed or changed, Home Assistant's statistics and unit conversions end
+    return ADDED if old is None else BREAKING
+
+
 def _choices(old: Any, new: Any, *_: dict[str, Any]) -> str | None:
     if new is None:
         return CHANGED  # any value now
@@ -204,7 +210,8 @@ ATTRIBUTES: dict[str, Attribute] = {
     # homeassistant
     "id": Attribute(_equal, _TEXT), "topic": Attribute(_equal, _TEXT),
     "platform": Attribute(_equal, _TEXT), "entity_id": Attribute(_equal, _TEXT),
-    "unit": Attribute(_unit, _TEXT), "event_types": Attribute(_values, _TEXTS),
+    "unit": Attribute(_unit, _TEXT), "device_class": Attribute(_class, _TEXT),
+    "state_class": Attribute(_class, _TEXT), "event_types": Attribute(_values, _TEXTS),
     "options": Attribute(_values, _TEXTS), "attributes": Attribute(_values, _ATTRIBUTES),
     "node_types": Attribute(_values, _TEXTS),
 }  # fmt: skip

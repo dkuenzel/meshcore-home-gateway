@@ -1,5 +1,5 @@
-"""The local history in SQLite (ADR 0016): messages in and out, positions of contacts, and when
-each node was last heard.
+"""The local history in SQLite (ADR 0016): messages in and out, positions of contacts, when
+each node was last heard, and the readings of the contacts' telemetry answers.
 
 One file in the state directory, written only by the service. A history that cannot be opened or
 written is logged and switched off for the rest of the run: it never stops messaging. A file that
@@ -11,12 +11,13 @@ from __future__ import annotations
 import contextlib
 import logging
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from meshcore_home_gateway.core.mesh import Fix, Heard, Signal
+from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core.mesh import Fix, Heard, Readings, Signal
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.views import HistoryEntry
 
@@ -26,6 +27,7 @@ SCHEMA_VERSION = 2  # 2: node.last_advert
 DAY_S = 86_400.0
 MAX_MESSAGES = 10_000
 MAX_POSITIONS = 100_000  # beyond it the oldest go, except each contact's newest
+MAX_READINGS = 200_000  # beyond it the oldest go, never a contact's newest answer
 _SCHEMA = """
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,
@@ -67,6 +69,15 @@ CREATE TABLE node (
 _MIGRATIONS = {  # from version n to n + 1
     1: ["ALTER TABLE node ADD COLUMN last_advert INTEGER NOT NULL DEFAULT 0"],
 }
+# added to every file of the current version without a new one: older versions of the program
+# ignore these tables, so a downgrade keeps the rest of the history
+_ADDED = (
+    (
+        "CREATE TABLE IF NOT EXISTS reading (id INTEGER PRIMARY KEY, contact_key TEXT NOT NULL, "
+        "at REAL NOT NULL, quantity TEXT NOT NULL, value REAL NOT NULL)"
+    ),
+    "CREATE INDEX IF NOT EXISTS reading_contact_at ON reading (contact_key, at)",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +85,7 @@ class Retention:
     messages_days: float = 30.0
     positions_days: float = 30.0
     nodes_days: float = 30.0
+    readings_days: float = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +151,22 @@ class History:
             (key, fix.at, position.latitude, position.longitude, fix.altitude_m, fix.source),
         )
 
+    def add_readings(self, key: str, at: float, values: Mapping[str, float]) -> None:
+        """The values of one telemetry answer (`battery_v`, `mcu_temperature_c`, the reading
+        keys), one row each, all or none."""
+        rows = [(key, at, quantity, value) for quantity, value in values.items()]
+        self._write_all(
+            [("INSERT INTO reading (contact_key, at, quantity, value) VALUES (?, ?, ?, ?)", rows)]
+        )
+
+    def forget_telemetry(self, key: str) -> int | None:
+        """Delete the contact's readings and its positions from telemetry, all or none; its
+        positions from adverts stay. The rows deleted, or None without a working history."""
+        return self._write_all([
+            ("DELETE FROM reading WHERE contact_key = ?", [(key,)]),
+            ("DELETE FROM position WHERE contact_key = ? AND source = 'telemetry'", [(key,)]),
+        ])  # fmt: skip
+
     def node_heard(
         self, key: str, name: str, node_type: int, heard: Heard, last_advert: int = 0
     ) -> None:
@@ -156,8 +184,9 @@ class History:
         )  # fmt: skip
 
     def purge(self, now: float) -> None:
-        """Drop what is older than the retention, and messages and positions beyond their caps
-        (the oldest first; never a contact's newest position, which only its age removes)."""
+        """Drop what is older than the retention, and messages, positions and readings beyond
+        their caps (the oldest first; never a contact's newest position or answer, which only
+        its age removes)."""
         r = self._retention
         self._write("DELETE FROM message WHERE at < ?", (now - r.messages_days * DAY_S,))
         self._write(
@@ -174,6 +203,13 @@ class History:
             (MAX_POSITIONS,),
         )
         self._write("DELETE FROM node WHERE heard_at < ?", (now - r.nodes_days * DAY_S,))
+        self._write("DELETE FROM reading WHERE at < ?", (now - r.readings_days * DAY_S,))
+        self._write(  # never the rows of a contact's newest answer: those last_readings() reads
+            "DELETE FROM reading WHERE id <= (SELECT id FROM reading ORDER BY id DESC LIMIT 1 "
+            "OFFSET ?) AND at < (SELECT MAX(at) FROM reading n WHERE n.contact_key = "
+            "reading.contact_key)",
+            (MAX_READINGS,),
+        )
 
     def _write(self, sql: str, args: tuple[Any, ...]) -> None:
         if self.broken:
@@ -181,8 +217,26 @@ class History:
         try:
             self._db.execute(sql, args)
         except sqlite3.Error as exc:
-            self.broken = True
-            log.warning("history cannot be written (%s): running without it until restart", exc)
+            self._broke(exc)
+
+    def _write_all(self, steps: Iterable[tuple[str, Iterable[tuple[Any, ...]]]]) -> int | None:
+        """Statements with their rows of arguments in one transaction; the rows they changed,
+        or None when the history is broken (a failure breaks it, as in _write)."""
+        if self.broken:
+            return None
+        changed = 0
+        try:
+            with _transaction(self._db):
+                for sql, rows in steps:
+                    changed += self._db.executemany(sql, rows).rowcount
+        except sqlite3.Error as exc:
+            self._broke(exc)
+            return None
+        return changed
+
+    def _broke(self, exc: sqlite3.Error) -> None:
+        self.broken = True
+        log.warning("history cannot be written (%s): running without it until restart", exc)
 
     # --- reading --------------------------------------------------------------------------------
 
@@ -226,6 +280,20 @@ class History:
         )
         return [Fix(Position(lat, lon), at, source, alt) for at, lat, lon, alt, source in rows]
 
+    def last_readings(self) -> dict[str, Readings]:
+        """The newest answer of every contact that has one, its values in the order written. A
+        quantity this version does not name (a later version's) is left out."""
+        rows = self._read(
+            "SELECT r.contact_key, r.at, r.quantity, r.value FROM reading r JOIN "
+            "(SELECT contact_key, MAX(at) AS at FROM reading GROUP BY contact_key) n "
+            "ON r.contact_key = n.contact_key AND r.at = n.at ORDER BY r.contact_key, r.id",
+            (),
+        )
+        answers: dict[str, tuple[float, dict[str, float]]] = {}
+        for key, at, quantity, value in rows:
+            answers.setdefault(key, (at, {}))[1][quantity] = value
+        return {key: Readings(at, _named(values)) for key, (at, values) in answers.items()}
+
     def _read(self, sql: str, args: tuple[Any, ...]) -> list[tuple[Any, ...]]:
         if self.broken:
             return []
@@ -235,6 +303,12 @@ class History:
             self.broken = True
             log.warning("history cannot be read (%s): running without it until restart", exc)
             return []
+
+
+def _named(values: Mapping[str, float]) -> lpp.Named:
+    """An answer's values as the documents name them, from its rows."""
+    readings = {q: value for q, value in values.items() if lpp.component_of(q) is not None}
+    return lpp.Named(values.get(lpp.BATTERY_V), values.get(lpp.MCU_TEMPERATURE_C), readings)
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -263,13 +337,16 @@ def _prepare(db: sqlite3.Connection) -> None:
                 if statement.strip():
                     db.execute(statement)
             db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        return
+        version = SCHEMA_VERSION
     while version < SCHEMA_VERSION:
         with _transaction(db):
             for statement in _MIGRATIONS[version]:
                 db.execute(statement)
             version += 1
             db.execute(f"PRAGMA user_version = {version}")
+    with _transaction(db):
+        for statement in _ADDED:
+            db.execute(statement)
 
 
 @contextlib.contextmanager

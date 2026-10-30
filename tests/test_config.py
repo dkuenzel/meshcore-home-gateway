@@ -88,6 +88,7 @@ contact = "{KEY}"
 enabled = false
 messages_days = 7
 positions_days = 90
+readings_days = 14.5
 
 [telemetry]
 enabled = true
@@ -131,14 +132,21 @@ def test_full_configuration_is_read_completely() -> None:
     assert (alice.kind, alice.public_key) == (MessageKind.CONTACT, KEY)
     assert config.diagnostics.log_level == "debug"
     assert (config.history.enabled, config.history.messages_days) == (False, 7.0)
-    assert config.history.positions_days == 90.0
+    assert (config.history.positions_days, config.history.readings_days) == (90.0, 14.5)
 
 
 def test_the_history_is_on_by_default_and_bounded() -> None:
     history = parse_config(MINIMAL).history
     assert (history.enabled, history.messages_days, history.positions_days) == (True, 30.0, 30.0)
+    assert history.readings_days == 30.0
     with pytest.raises(ConfigError, match=r"history\.messages_days: must be between 1\.0 and"):
         parse_config(MINIMAL + "\n[history]\nmessages_days = 0\n")
+    for days in (1, 3650):
+        text = MINIMAL + f"\n[history]\nreadings_days = {days}\n"
+        assert parse_config(text).history.readings_days == days
+    for invalid in ("0", "3651", '"30"'):
+        with pytest.raises(ConfigError, match=r"history\.readings_days"):
+            parse_config(MINIMAL + f"\n[history]\nreadings_days = {invalid}\n")
 
 
 @pytest.mark.parametrize(
@@ -295,9 +303,18 @@ def test_rendering_escapes_control_characters() -> None:
 
 
 def test_the_shipped_example_is_valid() -> None:
+    """It follows the defaults of telemetry and the history of readings: a copy of it changes
+    with them."""
     example = Path(__file__).resolve().parent.parent / "deploy" / "config.example.toml"
     config = load_config(example)
     assert {t.alias for t in config.targets} == {"alerts", "operator"}
+    defaults = parse_config(MINIMAL)
+    assert config.telemetry == defaults.telemetry
+    assert config.history.readings_days == defaults.history.readings_days
+    text = example.read_text(encoding="utf-8")
+    assert "\n# enabled = true " in text.split("[telemetry]")[1]
+    assert "\n# readings_days = 30 " in text.split("[history]")[1]
+    assert "contacts telemetry KEY off" in text
 
 
 def test_every_setting_can_be_answered() -> None:
@@ -310,7 +327,7 @@ def test_every_setting_can_be_answered() -> None:
             "messages.dedup_window_s=60", "messages.queue_size=5", "messages.queue_ttl_s=120",
             "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
             "airtime.burst_s=6.5", "commands.max_age_s=0", "diagnostics.publish_rx_log=true",
-            "contacts.manage=false",
+            "contacts.manage=false", "history.readings_days=7.5",
         ]
     )  # fmt: skip
     config = parse_config(render_config(answers))
@@ -325,6 +342,7 @@ def test_every_setting_can_be_answered() -> None:
     assert config.commands.max_age_s == 0
     assert config.diagnostics.publish_rx_log is True
     assert config.contacts.manage is False
+    assert config.history.readings_days == 7.5
 
 
 # --- answers from a configuration (the installer's reconfigure mode) ---------------------------
@@ -498,10 +516,12 @@ def test_a_user_name_with_surrounding_blanks_is_refused(name: str) -> None:
         parse_config(text.replace("\t", "\\t"))
 
 
-def test_telemetry_is_off_by_default_until_contacts_can_be_excluded() -> None:
-    """ADR 0018 lets a contact be excluded; until that exists, asking every companion of the
-    radio is the user's choice, not a default."""
-    assert parse_config(MINIMAL).telemetry.enabled is False
+def test_telemetry_is_on_by_default() -> None:
+    """ADR 0018: every companion of the radio that is not excluded is asked; a companion's
+    firmware answers only a requester it allows, and the first start holds the requests for an
+    hour, so the household can exclude strangers first."""
+    assert parse_config(MINIMAL).telemetry.enabled is True
+    assert parse_config(MINIMAL + "\n[telemetry]\nenabled = false\n").telemetry.enabled is False
     assert parse_config(FULL).telemetry.enabled is True
     with pytest.raises(ConfigError, match=r"telemetry\.enabled"):
         parse_config(MINIMAL + '\n[telemetry]\nenabled = "yes"\n')

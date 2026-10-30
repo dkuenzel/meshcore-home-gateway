@@ -92,7 +92,7 @@ def test_connection_subscribes_and_announces_availability() -> None:
         assert dict(fake.calls)["subscribe"] == (
             [("meshcore/radio1/send/+", 1), ("meshcore/radio1/contacts/+/send", 1),
              ("meshcore/radio1/add_contact", 1), ("meshcore/radio1/contacts/+/remove", 1),
-             ("homeassistant/status", 1)],
+             ("meshcore/radio1/contacts/+/telemetry", 1), ("homeassistant/status", 1)],
         )  # fmt: skip
         assert fake.published[-1] == ("meshcore/radio1/availability", b"online", 1, True)
         assert bus.connected
@@ -253,14 +253,22 @@ def test_contact_requests_reach_their_own_queue() -> None:
         await asyncio.to_thread(deliver, "meshcore/radio1/add_contact", b"old", True)
         await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key}/remove", b"remove")
         await asyncio.to_thread(deliver, "meshcore/radio1/contacts/x/y/remove", b"")
-        requests = [await asyncio.wait_for(bus.contact_requests.get(), 1) for _ in range(3)]
+        await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key}/telemetry", b"off")
+        await asyncio.to_thread(deliver, "meshcore/radio1/contacts/x/telemetry", b"on", True)
+        await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key}/x/telemetry", b"off")
+        await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key}/telemetry/x", b"off")
+        requests = [await asyncio.wait_for(bus.contact_requests.get(), 1) for _ in range(5)]
         assert requests == [
             ContactRequest("add", key.encode(), False), ContactRequest("add", b"old", True),
             ContactRequest("remove", b"remove", False, key),
+            ContactRequest("telemetry", b"off", False, key),
+            ContactRequest("telemetry", b"on", True, "x"),  # the manager refuses the level
         ]  # fmt: skip
         await asyncio.sleep(0.05)
         assert bus.contact_requests.empty()  # a level with a "/" names no contact
         assert bus.requests.empty()
+        assert TOPICS.contact_telemetry(key) == f"meshcore/radio1/contacts/{key}/telemetry"
+        assert TOPICS.telemetry_event == "meshcore/radio1/telemetry"
 
     asyncio.run(scenario())
 

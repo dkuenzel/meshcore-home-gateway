@@ -2,8 +2,8 @@
 about them, and the nodes it heard but did not add.
 
 Fed with what the radio reports and the wall-clock time; documents are built from it in
-`views`. Positions are kept for contacts only: a node the radio merely heard keeps none (privacy,
-ADR 0016).
+`views`. Positions and telemetry readings are kept for contacts only: a node the radio merely
+heard keeps none (privacy, ADR 0016).
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 
+from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.model import Position, distance_m
 
 NODE_TYPES = {1: "chat", 2: "repeater", 3: "room", 4: "sensor"}  # advert types
@@ -19,6 +20,7 @@ MAX_NODES = 50  # heard nodes kept; the least recently heard goes first
 NODE_TTL_S = 7 * 86_400.0  # a heard node is forgotten this long after it was last heard
 FIX_MOVED_M = 20.0  # a telemetry position replaces the fix from this distance on
 HEARD_REFRESH_S = 3600.0  # telemetry answers alone move "last heard" at most this often
+ANSWERED_SLACK_S = 60.0  # a saved answer's time, after the round trip between the clocks
 
 
 def type_name(node_type: int) -> str:
@@ -65,6 +67,14 @@ class Fix:
     altitude_m: float | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Readings:
+    """The readings of a contact's newest telemetry answer (ADR 0018)."""
+
+    at: float  # the gateway's wall clock of the answer
+    named: Named
+
+
 @dataclass(slots=True)
 class Tracked:
     node: Node
@@ -73,6 +83,17 @@ class Tracked:
     fix: Fix | None = None
     position_received_at: float | None = None  # the newest telemetry answer with a position
     restored_heard: Heard | None = None  # last heard as the history knew it at the start
+    readings: Readings | None = None  # of the newest telemetry answer
+
+
+@dataclass(frozen=True, slots=True)
+class _Kept:
+    """What an earlier run knew about a contact, for its first table read in this one."""
+
+    heard: Heard | None = None
+    fix: Fix | None = None
+    readings: Readings | None = None
+    position_received_at: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,14 +115,36 @@ class Mesh:
         self.max_contacts: int | None = None
         self._max_nodes = max_nodes
         self._node_ttl_s = node_ttl_s
-        self._restored: dict[str, tuple[Heard | None, Fix | None]] = {}
+        self._restored: dict[str, _Kept] = {}
 
     # --- contacts ------------------------------------------------------------------------------
 
-    def restore(self, key: str, heard: Heard | None, fix: Fix | None) -> None:
+    def restore(
+        self, key: str, heard: Heard | None, fix: Fix | None, readings: Readings | None = None
+    ) -> None:
         """What the history knows about a contact from before this run; it applies when the
         contact shows up in a table read."""
-        self._restored[key] = (heard, fix)
+        kept = self._restored.get(key, _Kept())
+        self._restored[key] = replace(kept, heard=heard, fix=fix, readings=readings)
+
+    def restore_received(self, key: str, at: float) -> None:
+        """When the contact's newest telemetry answer with a position came, from the saved
+        schedule: kept for its first table read, or set at once if it is a contact without one."""
+        tracked = self.contacts.get(key)
+        if tracked is None:
+            kept = self._restored.get(key, _Kept())
+            self._restored[key] = replace(kept, position_received_at=at)
+        elif tracked.position_received_at is None:
+            tracked.position_received_at = at
+
+    def restore_answered(self, key: str, at: float) -> None:
+        """When the contact's newest telemetry answer came, from the saved schedule, before its
+        first table read: readings the history kept of an older answer are not restored (it
+        missed the later ones), so they cannot read as current."""
+        kept = self._restored.get(key)
+        if kept is None or kept.readings is None or kept.readings.at >= at - ANSWERED_SLACK_S:
+            return
+        self._restored[key] = replace(kept, readings=None)
 
     def contacts_read(self, nodes: Iterable[Node], at: float) -> TableChange:
         """A complete read of the radio's contact table."""
@@ -114,10 +157,13 @@ class Mesh:
             if tracked is None:
                 added.append(key)
                 tracked = self.nodes.pop(key, None) or Tracked(node)  # a heard node now added
-                heard, fix = self._restored.pop(key, (None, None))
+                kept = self._restored.pop(key, _Kept())
+                heard = kept.heard
                 tracked.heard = _newer(tracked.heard, heard)
                 tracked.restored_heard = heard
-                tracked.fix = fix
+                tracked.fix = kept.fix
+                tracked.readings = kept.readings
+                tracked.position_received_at = kept.position_received_at
                 tracked.first_heard = tracked.first_heard or (heard.at if heard else None)
                 previous = None
             else:
@@ -171,9 +217,11 @@ class Mesh:
         return True
 
     def contact_answered(
-        self, key: str, at: float, position: Position | None, altitude_m: float | None
-    ) -> bool:
-        """A telemetry answer of the contact (ADR 0018); True when `heard` moved.
+        self, key: str, at: float, position: Position | None, altitude_m: float | None,
+        readings: Readings | None = None,
+    ) -> bool:  # fmt: skip
+        """A telemetry answer of the contact (ADR 0018); True when `heard` moved. Its readings,
+        when given, replace those of the answer before.
 
         While only its answers are heard, `heard` moves at most every HEARD_REFRESH_S and keeps
         the signal of the last advert or message (an answer reports none). The fix changes when
@@ -183,6 +231,8 @@ class Mesh:
         tracked = self.contacts.get(key)
         if tracked is None:
             return False
+        if readings is not None:
+            tracked.readings = readings
         heard = tracked.heard
         moved = (
             heard is None or heard.how != "telemetry" or not 0 <= at - heard.at < HEARD_REFRESH_S
@@ -203,6 +253,28 @@ class Mesh:
             ):  # fmt: skip
                 tracked.fix = Fix(position, at, "telemetry", altitude_m)
         return moved
+
+    def forget_telemetry(self, key: str, at: float) -> bool:
+        """The contact was excluded from telemetry: its readings, `position_received_at` and a
+        position from telemetry are forgotten, on the contact or in what is kept for its first
+        table read. The position its record carries takes the place, as at a first table read.
+        `heard` stays. True if anything changed."""
+        changed = False
+        if (kept := self._restored.get(key)) is not None:
+            fix = None if _from_telemetry(kept.fix) else kept.fix
+            forgotten = replace(kept, fix=fix, readings=None, position_received_at=None)
+            changed = forgotten != kept
+            self._restored[key] = forgotten
+        tracked = self.contacts.get(key)
+        if tracked is None:
+            return changed
+        changed |= tracked.readings is not None or tracked.position_received_at is not None
+        tracked.readings = tracked.position_received_at = None
+        if _from_telemetry(tracked.fix):
+            tracked.fix = None
+            self._advert_fix(tracked, None, at)
+            changed = True
+        return changed
 
     def path_reset(self, key: str) -> bool:
         """The radio forgot its path to the contact; True if the record had one."""
@@ -244,6 +316,10 @@ class Mesh:
 
 def _heard_at(tracked: Tracked) -> float:
     return tracked.heard.at if tracked.heard else 0.0
+
+
+def _from_telemetry(fix: Fix | None) -> bool:
+    return fix is not None and fix.source == "telemetry"
 
 
 def _newer(current: Heard | None, other: Heard | None) -> Heard | None:

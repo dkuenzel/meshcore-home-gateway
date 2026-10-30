@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import struct
 from pathlib import Path
 from typing import Any
@@ -14,21 +15,29 @@ import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import contact_manager as manager_module
+from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.contact_manager import ContactManager
+from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import Heard, Node
+from meshcore_home_gateway.core.telemetry import Answer
+from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import manage_entities
 from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.radio import session as session_module
-from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio
+from meshcore_home_gateway.radio.session import ContactsRead
+from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryExclusions
+from tests.radio_emulator import LPP_BME280, SELF_KEY, EmulatedContact, EmulatedRadio
 from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
 from tests.test_session import SlowTable
+from tests.test_state import failing_rename
 
 ROOT = "meshcore/radio1"
-FINAL = {"added", "removed", "refused", "failed"}
+FINAL = {"added", "removed", "refused", "failed", "excluded", "included"}
 DAVE = EmulatedContact(bytes.fromhex("d4" * 32), "Dave", last_advert=int(NOW) - 30)
 ROOM = EmulatedContact(bytes.fromhex("e5" * 32), "Hilltop", node_type=3, last_advert=int(NOW) - 9)
 # Alice's first 6 bytes, another key: the radio could not tell them apart
@@ -739,3 +748,366 @@ def test_a_retained_label_is_refused_and_management_off_names_the_node(tmp_path:
             )  # fmt: skip
 
     scenario(main)
+
+
+# --- telemetry: exclusion and inclusion (ADR 0018) -----------------------------------------------
+
+ALICE_KEY, DAVE_KEY, ROOM_KEY = ALICE.public_key.hex(), DAVE.public_key.hex(), ROOM.public_key.hex()
+RELAY = EmulatedContact(bytes.fromhex("c3" * 32), "Ridge relay", node_type=2)
+RELAY_KEY = RELAY.public_key.hex()
+
+
+class Ticks:
+    """A monotonic clock the test moves."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def records(*contacts: EmulatedContact) -> dict[str, codec.ContactRecord]:
+    found = {}
+    for contact in contacts:
+        record = codec.decode(contact.record())
+        assert isinstance(record, codec.ContactRecord)
+        found[contact.public_key.hex()] = record
+    return found
+
+
+def telemetry_manager(
+    *, exclusions: TelemetryExclusions | None = None, config: Config | None = None,
+    history: History | None = None, read: bool = True,
+) -> tuple[ContactManager, Observer, FakeBus, Ticks]:  # fmt: skip
+    """No radio: the session is None. `read`: the observer has the table of Alice, Bob, the
+    room server and a repeater."""
+    bus, clock = FakeBus(), Ticks()
+    observer = Observer(bus, Topics("meshcore", "radio1"), history=history, exclusions=exclusions,
+                        wall_clock=lambda: NOW)  # fmt: skip
+    if read:
+        observer.radio_event(ContactsRead(records(ALICE, BOB, ROOM, RELAY), NOW))
+    manager = ContactManager(config or make_config(), observer, asyncio.Queue(), lambda: None,
+                             protected=frozenset(), monotonic=clock)  # fmt: skip
+    return manager, observer, bus, clock
+
+
+def ask(
+    manager: ContactManager, key: str | None, body: str | bytes | dict[str, Any],
+    retained: bool = False,
+) -> None:  # fmt: skip
+    if isinstance(body, dict):
+        body = json.dumps(body)
+    payload = body.encode() if isinstance(body, str) else body
+    manager.accept(ContactRequest("telemetry", payload, retained, key))
+
+
+def last_result(bus: FakeBus) -> dict[str, Any]:
+    return bus.payloads(f"{ROOT}/contact")[-1]
+
+
+def test_off_excludes_at_once_and_the_documents_come_before_the_event(tmp_path: Path) -> None:
+    """Through the bridge: stored in its own file, the contact's document and the index first,
+    then the event; `on` includes it again."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    path = tmp_path / EXCLUSIONS_FILE
+
+    def observer(bus: FakeBus) -> Observer:
+        return Observer(bus, Topics("meshcore", "radio1"), exclusions=TelemetryExclusions(path),
+                        wall_clock=lambda: NOW)  # fmt: skip
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            request(bus, "telemetry", {"telemetry": "off", "id": "x1"}, key=ALICE_KEY)
+            event = await result(bus, "x1")
+            assert event == {
+                "event_type": "excluded", "key": ALICE_KEY, "prefix": ALICE_KEY[:12],
+                "name": "Alice", "type": "chat", "request": "telemetry", "id": "x1",
+                "reason": None,
+            }  # fmt: skip
+            assert TelemetryExclusions(path).keys == {ALICE_KEY}
+            shown = index_of(bus, f"{ROOT}/contacts/{ALICE_KEY}",
+                             lambda p: json.loads(p)["telemetry_excluded"])  # fmt: skip
+            head = index_of(bus, f"{ROOT}/contacts",
+                            lambda p: ALICE_KEY in json.loads(p)["telemetry_excluded"])  # fmt: skip
+            excluded = index_of(bus, f"{ROOT}/contact", lambda p: b'"excluded"' in p)
+            assert shown < excluded
+            assert head < excluded
+            assert bus.payloads(f"{ROOT}/contacts/{ALICE_KEY}")[-1]["telemetry_state"] == (
+                "excluded"
+            )
+            request(bus, "telemetry", "on", key=ALICE_KEY)
+            event = await bus.wait_for(f"{ROOT}/contact", lambda e: e["event_type"] == "included")
+            assert (event["request"], event["reason"], len(event["id"])) == ("telemetry", None, 8)
+            assert TelemetryExclusions(path).keys == set()
+            document = bus.payloads(f"{ROOT}/contacts/{ALICE_KEY}")[-1]
+            assert (document["telemetry_excluded"], document["telemetry_state"]) == (False, "off")
+            assert contact_writes(radio) == []
+
+    scenario(main)
+
+
+def test_a_telemetry_request_needs_neither_management_nor_the_radio(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    manager, observer, bus, _ = telemetry_manager(config=make_config("[contacts]\nmanage = false"))
+    told: list[tuple[str, bool]] = []
+    observer.on_telemetry_exclusion.append(lambda key, excluded: told.append((key, excluded)))
+    with caplog.at_level(logging.INFO):
+        ask(manager, ALICE_KEY, "  off\n")
+    event = last_result(bus)
+    assert (event["event_type"], event["reason"], event["name"]) == ("excluded", None, "Alice")
+    assert ALICE_KEY in observer.exclusions
+    assert f"contact request {event['id']} telemetry off {ALICE_KEY[:12]}: excluded" in caplog.text
+    ask(manager, ALICE_KEY, {"telemetry": "on", "id": "in1"})
+    assert (last_result(bus)["event_type"], last_result(bus)["id"]) == ("included", "in1")
+    assert ALICE_KEY not in observer.exclusions
+    assert told == [(ALICE_KEY, True), (ALICE_KEY, False)]
+    ask(manager, ALICE_KEY, "on")  # not excluded: the same result, the poller is not told again
+    assert last_result(bus)["event_type"] == "included"
+    assert told == [(ALICE_KEY, True), (ALICE_KEY, False)]
+    ask(manager, ALICE_KEY, "off")
+    ask(manager, ALICE_KEY, {"telemetry": "off", "forget": False})  # again: the same result
+    assert [e["event_type"] for e in bus.payloads(f"{ROOT}/contact")[-2:]] == ["excluded"] * 2
+    assert told[-2:] == [(ALICE_KEY, True), (ALICE_KEY, True)]
+
+
+@pytest.mark.parametrize(
+    ("body", "retained", "key", "reason", "named"),
+    [
+        (b"o" * 1025, True, "+", "too_large", False),
+        (b"\xff", True, "+", "invalid_utf8", False),
+        ("{", True, "+", "invalid_request", False),
+        ('{"id": "t1"}', True, "+", "invalid_request", False),  # without its telemetry
+        ('{"telemetry": 1}', True, "+", "invalid_request", False),
+        ('{"telemetry": "off", "id": "bad id"}', True, "+", "invalid_request", False),
+        ('{"telemetry": "off", "id": ""}', True, "+", "invalid_request", False),
+        ('{"telemetry": "on", "forget": true}', True, "+", "invalid_request", False),
+        ('{"telemetry": "off", "forget": "yes"}', True, "+", "invalid_request", False),
+        ('{"telemetry": "off", "forget": null}', True, "+", "invalid_request", False),
+        ('{"telemetry": "maybe"}', True, "+", "invalid_request", False),
+        ("Off", True, "+", "invalid_request", False),
+        ('"off"', True, "+", "invalid_request", False),
+        ("[]", True, "+", "invalid_request", False),
+        ("", True, "+", "invalid_request", False),
+        ("off", True, "+", "retained", False),
+        ("off", True, ROOM_KEY, "retained", True),
+        ("off", False, "+", "unknown_contact", False),
+        ("off", False, None, "unknown_contact", False),
+        ("off", False, ALICE_KEY.upper(), "unknown_contact", False),  # not as the gateway writes
+        ("off", False, ALICE_KEY[:62], "unknown_contact", False),
+        ("on", False, DAVE_KEY, "unknown_contact", True),  # neither on the radio nor stored
+        ("off", False, ROOM_KEY, "not_a_companion", True),
+        ("on", False, ROOM_KEY, "not_a_companion", True),
+        ("off", False, RELAY_KEY, "not_a_companion", True),
+    ],
+)  # fmt: skip
+def test_a_telemetry_request_is_refused_with_the_first_reason(  # noqa: PLR0917 - the cases
+    caplog: pytest.LogCaptureFixture, body: str | bytes, retained: bool, key: str | None,
+    reason: str, named: bool,
+) -> None:  # fmt: skip
+    """The checks in their documented order: each case would fail the later ones too."""
+    manager, observer, bus, _ = telemetry_manager()
+    with caplog.at_level(logging.INFO):
+        ask(manager, key, body, retained)
+    if key == "+":  # a topic level that is no key is logged as it came
+        assert f"telemetry '+' refused: {reason}" in caplog.text
+    event = last_result(bus)
+    assert (event["event_type"], event["reason"], event["request"]) == (
+        "refused", reason, "telemetry",
+    )  # fmt: skip
+    assert event["key"] == (key if named else None)
+    if key == ROOM_KEY:
+        assert (event["name"], event["type"]) == ("Hilltop", "room")
+    if "t1" in str(body):
+        assert event["id"] == "t1"  # a good id comes back with the refusal
+    assert len(observer.exclusions) == 0
+
+
+def test_a_key_not_on_the_radio_can_be_excluded_in_advance() -> None:
+    """Also before the first table read: exclusion only narrows what the gateway does."""
+    manager, observer, bus, _ = telemetry_manager(read=False)
+    ask(manager, DAVE_KEY, {"telemetry": "off", "id": "early"})
+    event = last_result(bus)
+    assert (event["event_type"], event["key"], event["name"], event["type"]) == (
+        "excluded", DAVE_KEY, None, None,
+    )  # fmt: skip
+    assert bus.payloads(f"{ROOT}/contacts")[-1]["telemetry_excluded"] == [DAVE_KEY]
+    observer.radio_event(ContactsRead(records(ALICE, BOB, ROOM), NOW))  # Dave is not there
+    ask(manager, ALICE_KEY, "off")
+    ask(manager, DAVE_KEY, "on")  # a stored key
+    assert (last_result(bus)["event_type"], last_result(bus)["name"]) == ("included", None)
+    assert observer.exclusions.keys == {ALICE_KEY}
+    ask(manager, DAVE_KEY, "on")  # again: no longer stored, and not on the radio
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "refused", "unknown_contact",
+    )  # fmt: skip
+
+
+def test_telemetry_requests_are_limited_to_one_a_second_with_bursts_of_30() -> None:
+    manager, observer, bus, clock = telemetry_manager()
+    for _ in range(40):
+        ask(manager, ALICE_KEY, "off", retained=True)  # refused before the rate: not counted
+    for n in range(29):
+        ask(manager, "+" if n % 2 else ALICE_KEY, "off")  # counted, also when refused later
+    ask(manager, ALICE_KEY, {"telemetry": "on", "id": "30th"})
+    assert (last_result(bus)["event_type"], last_result(bus)["id"]) == ("included", "30th")
+    ask(manager, ALICE_KEY, {"telemetry": "off", "id": "31st"})
+    event = last_result(bus)
+    assert (event["event_type"], event["reason"], event["key"], event["id"]) == (
+        "refused", "rate_limited", ALICE_KEY, "31st",
+    )  # fmt: skip
+    assert ALICE_KEY not in observer.exclusions
+    clock.now += 1.0
+    ask(manager, ALICE_KEY, "off")
+    assert last_result(bus)["event_type"] == "excluded"
+    ask(manager, ALICE_KEY, "on")
+    assert last_result(bus)["reason"] == "rate_limited"
+
+
+def test_an_unchanged_exclusion_writes_nothing(tmp_path: Path) -> None:
+    path = tmp_path / EXCLUSIONS_FILE
+    manager, _, bus, _ = telemetry_manager(exclusions=TelemetryExclusions(path))
+    ask(manager, ALICE_KEY, "off")
+    os.utime(path, ns=(0, 0))
+    ask(manager, ALICE_KEY, "off")
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == ("excluded", None)
+    assert path.stat().st_mtime_ns == 0
+
+
+def test_an_exclusion_that_cannot_be_stored_takes_effect_and_an_inclusion_does_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / EXCLUSIONS_FILE
+    manager, observer, bus, _ = telemetry_manager(exclusions=TelemetryExclusions(path))
+    ask(manager, BOB.public_key.hex(), "off")  # stored
+    monkeypatch.setattr(os, "replace", failing_rename)
+    ask(manager, ALICE_KEY, "off")
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == ("excluded", "not_saved")
+    assert ALICE_KEY in observer.exclusions
+    assert bus.payloads(f"{ROOT}/contacts/{ALICE_KEY}")[-1]["telemetry_state"] == "excluded"
+    for key in (ALICE_KEY, BOB.public_key.hex()):
+        ask(manager, key, "on")
+        event = last_result(bus)
+        assert (event["event_type"], event["reason"], event["request"]) == (
+            "failed", "state_unwritable", "telemetry",
+        )  # fmt: skip
+        assert key in observer.exclusions  # still excluded
+    assert bus.payloads(f"{ROOT}/contacts/{ALICE_KEY}")[-1]["telemetry_excluded"] is True
+
+
+def test_a_failed_forget_is_reported_also_when_the_exclusion_is_not_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full disk: neither the file nor the history can be written. `not_saved` heals itself (the
+    set is written again at every status tick, and the log says so); the rows that stayed would
+    be reported nowhere."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    path = tmp_path / EXCLUSIONS_FILE
+    manager, observer, bus, _ = telemetry_manager(exclusions=TelemetryExclusions(path),
+                                                  history=history)  # fmt: skip
+    monkeypatch.setattr(os, "replace", failing_rename)
+    history._db.execute("DROP TABLE reading")  # its delete fails
+    ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "excluded", "not_forgotten",
+    )  # fmt: skip
+    assert history.broken
+    assert ALICE_KEY in observer.exclusions
+    monkeypatch.undo()
+    observer.exclusions.flush()  # the next status tick
+    assert TelemetryExclusions(path).keys == {ALICE_KEY}
+    history.close()
+
+
+def test_an_unreadable_exclusions_file_takes_off_in_memory_only_and_refuses_on(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / EXCLUSIONS_FILE
+    path.write_bytes(b"{not json")
+    manager, observer, bus, _ = telemetry_manager(exclusions=TelemetryExclusions(path))
+    ask(manager, ALICE_KEY, "off")
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == ("excluded", "not_saved")
+    assert ALICE_KEY in observer.exclusions
+    ask(manager, ALICE_KEY, "on")
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "failed", "state_unwritable",
+    )  # fmt: skip
+    assert ALICE_KEY in observer.exclusions
+    assert path.read_bytes() == b"{not json"
+
+
+def test_forget_deletes_the_contacts_history_or_says_it_could_not(tmp_path: Path) -> None:
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    manager, observer, bus, _ = telemetry_manager(history=history)
+    observer.telemetry(ALICE_KEY, Answer(lpp.decode(LPP_BME280), NOW + 10, False, 0, False))
+    ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True, "id": "f1"})
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == ("excluded", None)
+    assert history.last_readings() == {}
+    assert history.trace(ALICE_KEY, 0) == []
+    history.close()
+    manager, observer, bus, _ = telemetry_manager()  # no history
+    ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "excluded", "not_forgotten",
+    )  # fmt: skip
+    assert ALICE_KEY in observer.exclusions
+
+
+def test_too_many_stored_keys_refuse_only_a_new_exclusion() -> None:
+    exclusions = TelemetryExclusions(None)
+    for n in range(TelemetryExclusions.LIMIT - 1):
+        exclusions.exclude(f"{n:064x}")
+    manager, observer, bus, _ = telemetry_manager(exclusions=exclusions)
+    ask(manager, ALICE_KEY, "off")  # the 1024th
+    assert last_result(bus)["event_type"] == "excluded"
+    ask(manager, DAVE_KEY, {"telemetry": "off", "id": "many"})
+    event = last_result(bus)
+    assert (event["event_type"], event["reason"], event["key"]) == (
+        "refused", "too_many", DAVE_KEY,
+    )  # fmt: skip
+    ask(manager, ALICE_KEY, "off")  # stored already
+    assert last_result(bus)["event_type"] == "excluded"
+    ask(manager, BOB.public_key.hex(), "on")  # not excluded: nothing to store
+    assert last_result(bus)["event_type"] == "included"
+    ask(manager, f"{0:064x}", "on")  # makes room
+    assert last_result(bus)["event_type"] == "included"
+    ask(manager, DAVE_KEY, "off")
+    assert last_result(bus)["event_type"] == "excluded"
+    assert len(observer.exclusions) == TelemetryExclusions.LIMIT
+
+
+def test_refused_telemetry_requests_share_the_bound_of_refusal_events(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    manager, _, bus, _ = telemetry_manager()
+    for _ in range(int(manager_module.REFUSED_EVENTS_BURST)):
+        manager.accept(ContactRequest("add", b"nonsense", False))
+    with caplog.at_level(logging.WARNING):
+        ask(manager, ALICE_KEY, "off", retained=True)
+    refused = [e for e in bus.payloads(f"{ROOT}/contact") if e["event_type"] == "refused"]
+    assert len(refused) == manager_module.REFUSED_EVENTS_BURST
+    assert all(e["request"] == "add" for e in refused)
+    assert "contact events of refused requests not published" in caplog.text
+
+
+def test_a_bug_behind_the_exclusion_still_ends_the_request(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    manager, observer, bus, _ = telemetry_manager()
+
+    def broken(*_: object, **__: object) -> None:
+        raise RuntimeError("bug in a view")
+
+    monkeypatch.setattr(observer, "telemetry_excluded", broken)
+    ask(manager, ALICE_KEY, {"telemetry": "off", "id": "bug"})
+    assert (last_result(bus)["event_type"], last_result(bus)["id"]) == ("excluded", "bug")
+    assert last_result(bus)["reason"] is None
+    assert ALICE_KEY in observer.exclusions
+    assert "observer failed" in caplog.text
+    ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})  # nothing could be deleted
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "excluded", "not_forgotten",
+    )  # fmt: skip

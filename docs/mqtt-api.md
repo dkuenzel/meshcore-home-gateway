@@ -20,11 +20,13 @@ API is a public interface under semantic versioning
 | `contacts/<key>/send` | → bridge | must not be | UTF-8 text for a companion in the contact table |
 | `contacts/<key>/remove` | → bridge | must not be | any payload, or JSON `{"id": "…"}`: remove that contact from the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
 | `add_contact` | → bridge | must not be | a public key, contact link or contact card, or JSON `{"contact": "…", "id": "…"}`: add a contact to the radio |
+| `contacts/<key>/telemetry` | → bridge | must not be | `on` or `off`, or JSON `{"telemetry": "off", "id": "…", "forget": true}`: ask a companion for its telemetry, or exclude it ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)) |
 | `contacts/<key>/received` | bridge → | no | the `received` events of messages from that contact |
 | `nodes` | bridge → | yes | JSON: nodes heard but not added |
 | `history` | bridge → | yes | JSON: the latest messages in and out |
 | `settings` | bridge → | yes | JSON: the managed radio profile at the last connect |
-| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `refused` or `failed` |
+| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused` or `failed` |
+| `telemetry` | bridge → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
 | `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
 | `setting` | bridge → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
 | `homeassistant/show_hidden` | → bridge | must not be | any payload: show the contacts deleted in Home Assistant again |
@@ -186,7 +188,8 @@ that arrives after a restart of the gateway is judged afresh and accepted if it 
 
 ## State: `state`
 
-Retained; published at start, on every change of the radio link and every 60 s.
+Retained; published at start, on every change of the radio link or of `telemetry` and its
+reason, and every 60 s.
 
 ```json
 {"radio": "connected", "battery_v": 4.012, "airtime_1h_s": 3.2, "airtime_available_s": 9.4,
@@ -194,7 +197,7 @@ Retained; published at start, on every change of the radio link and every 60 s.
  "public_key": "…", "model": "…", "firmware": "v1.18.0", "frequency_mhz": 869.618,
  "bandwidth_khz": 62.5, "spreading_factor": 8, "coding_rate": 8, "tx_power_dbm": 22,
  "contact_link": "meshcore://contact/add?name=Gateway&public_key=…&type=1",
- "version": "0.1.0", "telemetry": "on", "telemetry_airtime_1h_s": 4.5,
+ "version": "0.1.0", "telemetry": "on", "telemetry_reason": null, "telemetry_airtime_1h_s": 4.5,
  "telemetry_mesh_airtime_1h_s": 10.6}
 ```
 
@@ -202,12 +205,21 @@ Retained; published at start, on every change of the radio link and every 60 s.
 radio is known). It carries no position.
 
 `telemetry` says whether the gateway asks the companions for their telemetry
-([configuration.md](configuration.md#telemetry)): `off`, `on`, `paused` (the radio adds contacts
-on its own, or transmitted 180 s in the last hour) or `unsupported` (its firmware does not take the
-request, until it reconnects); `null` if it cannot be told. `telemetry_airtime_1h_s` is the
-gateway's own transmit time for telemetry in the last hour, `telemetry_mesh_airtime_1h_s` the
-estimated airtime its requests caused in the mesh (every hop both ways); both `null` with
-telemetry off.
+([configuration.md](configuration.md#telemetry)): `off`, `on`, `paused` or `unsupported` (its
+firmware does not take the request, until it reconnects); `null` if it cannot be told. While it
+is `paused`, `telemetry_reason` says why, else it is `null`:
+
+| `telemetry_reason` | Meaning |
+| --- | --- |
+| `first_start` | telemetry runs for the first time on this state directory: nobody is asked for an hour after the radio first connected, so the household can exclude strangers first |
+| `no_radio` | the radio is not connected |
+| `exclusions_unreadable` | `telemetry-excluded.json` cannot be parsed: fix or delete it, then restart the gateway ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)) |
+| `auto_add` | the radio adds contacts of some type on its own |
+| `radio_airtime` | the radio transmitted 180 s in the last hour |
+
+`telemetry_airtime_1h_s` is the gateway's own transmit time for telemetry in the last hour,
+`telemetry_mesh_airtime_1h_s` the estimated airtime its requests caused in the mesh (every hop
+both ways); both `null` with telemetry off.
 
 ## Radio statistics: `stats`
 
@@ -241,7 +253,8 @@ empty retained message, also if that happened while the gateway was stopped.
 
 ```json
 {"total": 2, "max": 350, "manage": true, "remote_cli": [], "remote_cli_total": 0,
- "advert_position": [], "advert_position_total": 0, "truncated": false,
+ "advert_position": [], "advert_position_total": 0, "telemetry_excluded": ["c3d4…"],
+ "telemetry_excluded_total": 1, "truncated": false,
  "contacts": [{"key": "a1b2…", "name": "Alice", "type": "chat",
                "heard_at": "2026-10-18T09:00:02+00:00", "protected": true}]}
 ```
@@ -250,7 +263,9 @@ The index lists the contacts most recently heard first, up to 32 KiB. `max` is t
 size; `manage` whether the gateway takes add and remove requests: `[contacts] manage`, and,
 once the radio is known, firmware the gateway is tested with or `radio.profile.manage = "always"`. `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
 (flag 0x10; the gateway never sets it, remove such contacts), `advert_position` companions whose
-adverts carried a position, which everyone in range can read.
+adverts carried a position, which everyone in range can read. `telemetry_excluded` lists (up to
+16, sorted) the keys excluded from telemetry, also those not on the radio,
+`telemetry_excluded_total` counts them all ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 
 ```json
 {"key": "a1b2…", "prefix": "a1b2c3d4e5f6", "name": "Alice", "type": "chat",
@@ -258,9 +273,14 @@ adverts carried a position, which everyone in range can read.
  "removable": false, "verified": true, "path_known": true, "path_hops": 2, "last_advert_at": "2026-10-18T08:55:00+00:00",
  "first_heard_at": "2026-10-11T18:00:00+00:00", "heard_at": "2026-10-18T09:00:02+00:00",
  "heard_via": "message", "hops": 2, "snr_db": 7.25, "rssi_dbm": null,
- "latitude": 53.55, "longitude": 9.99, "altitude_m": null,
- "position_at": "2026-10-18T08:55:00+00:00", "position_source": "advert",
- "position_accuracy_m": null, "position_received_at": null, "advert_position": true}
+ "latitude": 53.55, "longitude": 9.99, "altitude_m": 12.0,
+ "position_at": "2026-10-18T08:40:05+00:00", "position_source": "telemetry",
+ "position_accuracy_m": 15, "position_received_at": "2026-10-18T09:00:05+00:00",
+ "advert_position": false, "telemetry_state": "answering", "telemetry_excluded": false,
+ "telemetry_current": true, "position_current": true, "readings_at": "2026-10-18T09:00:05+00:00",
+ "battery_v": 4.12, "mcu_temperature_c": 23.4,
+ "readings": {"ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5,
+              "ch2_barometric_pressure_hpa": 1013.2, "ch2_altitude_m": 120.0}}
 ```
 
 | Key | Meaning |
@@ -273,11 +293,76 @@ adverts carried a position, which everyone in range can read.
 | `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods. After a path reset (a message's flood fallback) `false` at once |
 | `last_advert_at` | the contact's clock at its newest advert |
 | `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`, `telemetry`): its telemetry answers move `heard_at` at most once an hour; `hops`, `snr_db` and `rssi_dbm` are those of its last advert or message (an answer reports none), `hops` `null` for a direct route, `rssi_dbm` only from adverts |
-| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; for an advert read at start, the time of the newest advert), never when the companion took it. Positions do not expire yet |
+| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; for an advert read at start, the time of the newest advert), never when the companion took it. A position from telemetry expires (`position_current`); the document keeps it |
 | `position_accuracy_m` | 15 for a position from telemetry (the 0.0001° cell it is sent in, and the receiver's own error), else `null` |
-| `position_received_at` | the newest telemetry answer that carried a position (also when it did not move); `null` after a restart until the next one |
+| `position_received_at` | the newest telemetry answer that carried a position (also when it did not move); after a restart from the saved schedule (`null` if the clock went back meanwhile) |
 | `advert_position` | its adverts carried a position: everyone in range can read it |
+| `telemetry_state` | its telemetry state ([below](#telemetry-states)); `null` for a repeater, room server or sensor, which are never asked |
+| `telemetry_excluded` | the household excluded it from telemetry ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)); `false` for other types |
+| `telemetry_current` | its answers are current: `telemetry_state` is `answering` or `no_position`; `null` for other types |
+| `position_current` | a position from telemetry that is current (`telemetry_state` `answering`); `false`: from telemetry, no longer confirmed; `null`: no position, or one from adverts, which does not expire |
+| `readings_at` | the gateway's time of the answer that the next three keys come from (never the companion's); after a restart the newest answer the history kept, unless telemetry is on and its saved schedule knows a later one the history missed (then `null`, and no values; after the clock went back while the gateway was stopped, it cannot tell, and the history's newest comes back, not as current) |
+| `battery_v` | its battery: the answer's first value if it is the channel 1 voltage; the companion truncates it to 0.01 V (4.20 V reads 4.19) |
+| `mcu_temperature_c` | its processor's temperature: the answer's last value if it is a channel 1 temperature (on a board without a processor sensor, a channel 1 sensor that comes last is named so) |
+| `readings` | the answer's other values by [key](#reading-keys), in the answer's order; `{}` without; a key the newest answer lacks is absent. Bounded by the answer, so without `total` |
 
+The values stay when the answers are no longer current (the two `_current` keys say so), and are
+cleared when the contact is excluded.
+
+### Telemetry states
+
+`telemetry_state`, the first that applies from the top (Home Assistant lists them as `waiting`,
+`answering`, `no_position`, `away`, `no_answer`, `no_path`, `look_alike`, `excluded`, `off`):
+
+| State | Meaning |
+| --- | --- |
+| `excluded` | the household excluded it |
+| `off` | telemetry is off in the configuration |
+| `look_alike` | another contact or the radio itself has its first 6 key bytes, so an answer could not be told apart: it is not asked |
+| `answering` | its answers are current and carry a position (or one did within the last hour) |
+| `no_position` | its answers are current, without a position: no GPS, GPS off, no fix, or location not allowed |
+| `away` | it answered within the day, not lately: out of range, switched off, or not asked meanwhile (telemetry paused, the radio away, no path) |
+| `no_path` | not asked: the radio has no path to it, and the gateway floods only a companion heard within 30 minutes; a message from it or its advert brings it back |
+| `no_answer` | asked, no answer within a day: it does not allow the gateway, does not have it as a contact, or is out of range (the gateway cannot tell which) |
+| `waiting` | not asked yet, or not since its last answer more than a day ago |
+
+Answers are current while at most one request in a row went unanswered and the last answer is at
+most an hour old, or three of the contact's intervals if that is longer
+([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)). The position counts
+while the answers are current and the newest answer, or one within the last hour, carried one. A
+restart of the gateway changes no state: the schedule is saved with how long ago each answer came.
+When the radio does not come back after a restart, a companion's answers and its position still
+expire at their bound: the gateway keeps the last document of each companion whose answers are
+current and publishes it again with its new state, within a minute of the bound. It keeps that
+document in its latest state until the radio's table is read again, also across further
+restarts; an exclusion or inclusion meanwhile changes it too.
+
+### Reading keys
+
+`ch<channel>_<type>[_<n>][_<unit>]`, such as `ch2_temperature_c`: the channel (1 to 255), the
+type's name in the CayenneLPP library, `_<n>` from 2 for a further reading of that channel and type
+in one answer (counted without battery and MCU temperature: `ch1_temperature_2_c`), and the unit.
+Channel 1 holds the companion's own readings; channels 2 and up the sensors it found at boot, in
+that order, so a sensor missing at one boot moves the later ones and the old key goes absent. The
+values are the integers sent divided as the type says, never rounded again.
+
+| LPP type | `<type>` | Unit suffix |
+| --- | --- | --- |
+| 116 | `voltage` | `_v` |
+| 117 | `current` | `_a` |
+| 128 | `power` | `_w` |
+| 103 | `temperature` | `_c` |
+| 104 | `humidity` | `_percent` |
+| 115 | `barometric_pressure` | `_hpa` |
+| 121 | `altitude` | `_m` |
+| 101 | `luminosity` | none: lux on most boards, 0–100 % on the T1000-E, which the gateway cannot tell apart |
+| 100 | `generic` | none |
+| 2 | `analog_input` | none |
+| 120 | `percentage` | `_percent` |
+| 118 | `frequency` | `_hz` |
+| 130 | `distance` | `_m` |
+
+GPS is the position, never a reading; other types are not published.
 ## Nodes heard: `nodes`
 
 Nodes the radio heard advertising but did not add (it adds contacts only on request), most
@@ -338,7 +423,9 @@ outgoing messages the recipient. `state` is the final delivery state of an outgo
 
 `contact` reports a contact that appeared in or left the radio's table (`added`, `removed`), and
 the results of contact requests (`refused`, `failed`, and `added` or `removed` with `request` and
-`id`; see [managing contacts](#managing-contacts-add_contact-and-contactskeyremove)). After a
+`id`; see [managing contacts](#managing-contacts-add_contact-and-contactskeyremove)), also of
+telemetry requests (`excluded`, `included`, with `request: "telemetry"`; see
+[excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)). After a
 start of the gateway, it reports what changed while it was stopped: contacts that are new, and
 contacts that are gone (`name` and `type` are then `null`). `hidden` and `shown` report a
 contact device deleted in Home Assistant and shown again; the contact stays on the radio. `node` reports a node heard for the first time
@@ -430,6 +517,82 @@ with `unknown_contact`; a removed look-alike of a command sender keeps that send
 `sender_ambiguous` for 24 hours (ADR 0009). A removed contact is offered again among the heard
 nodes while it counts as heard.
 
+## Excluding a contact from telemetry: `contacts/<key>/telemetry`
+
+The gateway asks every companion of its radio for its telemetry unless the household excluded it
+([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)).
+`contacts/<key>/telemetry`, `<key>` the full key in lower-case hex, takes `on` or `off` (spaces
+around them are ignored), or a JSON object such as `{"telemetry": "off", "id": "x1", "forget":
+true}`: `id` as for the other contact requests, and `forget` (only with `off`) also deletes the
+contact's readings and its positions from telemetry from the gateway's history. Requests must not
+be retained.
+
+The request needs neither the radio nor `[contacts] manage`, and is taken at once, also while
+telemetry is off. `off` is taken for any key, also one that is not on the radio yet, so a contact
+can be excluded before it is added; a protected contact can be excluded too. It is checked in this
+order; the first check that fails is the `reason` of a `refused` event:
+
+| Reason | Check |
+| --- | --- |
+| `too_large`, `invalid_utf8` | as for send requests |
+| `invalid_request` | a JSON object without a string `telemetry`; a bad `id`; `forget` not `true` or `false`, or `true` with `on`; a value other than `on` or `off` |
+| `retained` | the request was retained |
+| `rate_limited` | more than one telemetry request a second, beyond a burst of 30 (every request that got this far counts) |
+| `unknown_contact` | the topic level is not a key as the gateway writes it; for `on`: neither a contact of the table as last read nor an excluded key |
+| `not_a_companion` | the table as last read has the key as a repeater, room server or sensor |
+| `too_many` | `off` for a key not yet excluded while 1024 keys are |
+
+Then, at once: the exclusion is stored, the contact's document (if it is on the radio) and the
+index are published, the history's rows are deleted if `forget` asks so, and the event follows. It
+carries `request: "telemetry"`, `id`, `key`, `prefix`, and `name` and `type` as the radio's table
+has them (`null` for a key not on the radio):
+
+| `event_type` | `reason` | Meaning |
+| --- | --- | --- |
+| `excluded` | `null` | stored (and the history deleted, if asked) |
+| `excluded` | `not_saved` | in effect, but not stored yet: the gateway writes it again every minute until it is (the log says when), so it is lost only if the gateway stops first |
+| `excluded` | `not_forgotten` | in effect, but `forget` found no working history (off, broken, or of a newer version). It comes before `not_saved`: if the exclusion is not stored yet either, the gateway writes it again as for `not_saved` (the log says when) |
+| `included` | `null` | stored |
+| `failed` | `state_unwritable` | `on` could not be stored, or the file cannot be read: nothing changed, the contact stays excluded |
+
+A repeated request gives the same event again, except `on` for a key that is not on the radio:
+once it is no longer excluded, a repeat is refused `unknown_contact`. The file is written only
+when the set changes. Refused requests share the limit of the `refused` events above.
+
+**What an exclusion does.** The gateway asks the contact no more: a request waiting for the radio
+is withdrawn, an answer in flight is dropped. It forgets the contact's battery, readings,
+`readings_at`, `position_received_at` and a position from telemetry; the position its adverts
+carried takes the place, which can be old. `heard_at` and `heard_via` of its last answer stay. Its
+rows in the history stay until `readings_days` and `positions_days` (unless `forget`), and are not
+restored while it is excluded. An inclusion makes it `waiting`, and it is asked at once, as the
+airtime lanes allow.
+
+**Where it is kept.** In `telemetry-excluded.json` in the state directory
+([deployment.md](deployment.md#4-operations)): also when the contact leaves the table and
+comes back, while telemetry is off, and across restarts. A file that cannot be parsed is left as
+it is and pauses telemetry (`telemetry_reason` `exclusions_unreadable`) until it is fixed or
+deleted and the gateway restarted; meanwhile `off` is in effect only until the gateway stops,
+`on` fails, and no contact gets back its readings or a position from telemetry from the history.
+
+## Telemetry events: `telemetry`
+
+Not retained. A companion stopped answering, or answers again:
+
+```json
+{"event_type": "unanswered", "key": "a1b2…", "prefix": "a1b2c3d4e5f6", "name": "Alice",
+ "state": "away"}
+```
+
+| `event_type` | When | `state` |
+| --- | --- | --- |
+| `unanswered` | a companion that answered within the day left its second request in a row unanswered | `away` |
+| `answered` | an answer after two or more unanswered requests in a row, or the contact's first answer since it was added or included again | `answering`, `no_position` |
+
+At most one `unanswered` per absence: the count starts again only with an answer. None while the
+contact is excluded, none for a request that was not sent (the radio away, telemetry paused, no
+path, the gateway stopped), and none for a companion that never answered. An event never carries a
+position or a reading; it comes after the contact's document. `name` is that of the radio's table.
+
 ## Radio profile: `settings` and `setting`
 
 What the managed profile found and did at the last connect
@@ -500,6 +663,7 @@ topic write meshcore/radio1/send/#
 topic write meshcore/radio1/contacts/+/send
 topic write meshcore/radio1/add_contact
 topic write meshcore/radio1/contacts/+/remove
+topic write meshcore/radio1/contacts/+/telemetry
 topic write meshcore/radio1/homeassistant/show_hidden
 topic write meshcore/radio1/homeassistant/add_node
 
@@ -512,7 +676,8 @@ Write the node ID as configured, also in the discovery topics: for node `radio-1
 have `_` for `-`.
 
 Home Assistant needs `homeassistant/#` for discovery and its own birth and status messages. Only
-the gateway may write the event topics (`received`, `command`, `delivery`, `contact`, `node`) and
+the gateway may write the event topics (`received`, `command`, `delivery`, `contact`, `node`,
+`telemetry`) and
 the documents, because automations and dashboards trust them. When commands are configured, the ACL is not optional: any client that can write
 `command` can trigger the automations.
 

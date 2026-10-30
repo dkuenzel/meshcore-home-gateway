@@ -11,7 +11,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,11 @@ from test_contract import CONFIG, GUIDE, PREFIX, RADIO, TOPICS, announce, fire, 
 
 from meshcore_home_gateway.core.mesh import Heard, Mesh, Node, Signal
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Position
-from meshcore_home_gateway.mqtt.contact_devices import ContactDevices, contact_discovery_topic
+from meshcore_home_gateway.mqtt.contact_devices import (
+    ContactDevices,
+    contact_discovery_topic,
+    slugify,
+)
 from meshcore_home_gateway.mqtt.discovery import discovery_payload
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
@@ -121,6 +125,12 @@ def friendly(hass: HomeAssistant, entity_id: str) -> str:
 ALICE_IDS = {
     "notify.mesh_alice", "event.mesh_alice_message", "sensor.mesh_alice_last_heard",
     "sensor.mesh_alice_hops", "sensor.mesh_alice_snr", "button.mesh_alice_remove",
+    "switch.mesh_alice_telemetry", "sensor.mesh_alice_telemetry_state",
+}  # fmt: skip
+ALICE_ANSWER_IDS = {  # with her answers (tests/test_telemetry.py): GPS and a BME280 on channel 2
+    "device_tracker.mesh_alice", "sensor.mesh_alice_battery", "sensor.mesh_alice_mcu_temperature",
+    "sensor.mesh_alice_ch2_temperature", "sensor.mesh_alice_ch2_humidity",
+    "sensor.mesh_alice_ch2_barometric_pressure", "sensor.mesh_alice_ch2_altitude",
 }  # fmt: skip
 HILL_IDS = {
     "device_tracker.mesh_hilltop", "sensor.mesh_hilltop_last_heard", "sensor.mesh_hilltop_hops",
@@ -148,7 +158,7 @@ async def test_every_contact_gets_a_device_below_the_gateway(
     assert friendly(hass, "sensor.mesh_alice_last_heard") == "Alice Last heard"
     assert friendly(hass, "device_tracker.mesh_hilltop") == "Hilltop Position"
     documented = set(re.findall(r"\b[a-z_]+\.mesh_alice\w*", GUIDE.read_text(encoding="utf-8")))
-    assert documented - {"device_tracker.mesh_alice"} <= ALICE_IDS  # Hilltop has the tracker
+    assert documented <= ALICE_IDS | ALICE_ANSWER_IDS
     assert problems(caplog) == []
 
 
@@ -195,7 +205,7 @@ async def test_a_position_from_telemetry_carries_its_accuracy(
     gateway_devices(broker, store).update(mesh)
     await broker.deliver(hass)
     await online(hass)
-    first = contact_document(mesh.contacts[ALICE])
+    first = contact_document(mesh.contacts[ALICE], telemetry_state="answering")  # current
     await fire(hass, TOPICS.contact(ALICE), first, retain=True)
     await fire(hass, TOPICS.contact(HILL), contact_document(mesh.contacts[HILL]), retain=True)
     alice = hass.states.get("device_tracker.mesh_alice")
@@ -207,13 +217,14 @@ async def test_a_position_from_telemetry_carries_its_accuracy(
     hill = hass.states.get("device_tracker.mesh_hilltop")
     assert hill.attributes["gps_accuracy"] == 0
     mesh.contact_answered(ALICE, NOW + 900, near_home, 12.0)  # the next answer, at rest
-    document = contact_document(mesh.contacts[ALICE])
+    document = contact_document(mesh.contacts[ALICE], telemetry_state="answering")
     assert document != first  # its time received moved
     await fire(hass, TOPICS.contact(ALICE), document)
     assert hass.states.get("device_tracker.mesh_alice").last_updated == alice.last_updated
     moved = Position(near_home.latitude + 30 / 111_195, near_home.longitude)  # 30 m on
     mesh.contact_answered(ALICE, NOW + 1800, moved, 12.0)
-    await fire(hass, TOPICS.contact(ALICE), contact_document(mesh.contacts[ALICE]))
+    moved_document = contact_document(mesh.contacts[ALICE], telemetry_state="answering")
+    await fire(hass, TOPICS.contact(ALICE), moved_document)
     assert hass.states.get("device_tracker.mesh_alice").attributes["latitude"] == pytest.approx(
         moved.latitude
     )
@@ -490,22 +501,56 @@ async def test_the_observer_documents_fill_the_gateway_entities(
 # --- the recorder exclusions of the guide ---------------------------------------------------------
 
 
-def guide_recorder() -> dict[str, Any]:
+def guide_recorders() -> list[dict[str, Any]]:
+    """The recorder exclusions of the guide, one per block: the texts, and telemetry."""
     blocks = re.findall(r"```yaml\n(.*?)```", GUIDE.read_text(encoding="utf-8"), re.DOTALL)
-    (recorder,) = [yaml.safe_load(b) for b in blocks if b.startswith("recorder:")]
-    return dict(recorder["recorder"]["exclude"])
+    loaded = [yaml.safe_load(b) for b in blocks if b.startswith("recorder:")]
+    return [dict(recorder["recorder"]["exclude"]) for recorder in loaded]
+
+
+def guide_recorder(names: str) -> list[str]:
+    """The globs of the block that names `names`."""
+    (globs,) = [r["entity_globs"] for r in guide_recorders() if names in r["entity_globs"]]
+    return list(globs)
 
 
 def contact_entity_ids() -> Iterator[str]:
-    for entity_id in ALICE_IDS | HILL_IDS:
+    for entity_id in ALICE_IDS | ALICE_ANSWER_IDS | HILL_IDS:
         yield entity_id
         yield f"{entity_id}_2"  # numbered by Home Assistant (another gateway, the same name)
 
 
+def excluded_by(globs: list[str], entity_ids: Iterable[str]) -> set[str]:
+    return {e for e in entity_ids if any(fnmatch.fnmatch(e, g) for g in globs)}
+
+
+GATEWAY_IDS = {
+    f"event.{PREFIX}_message", f"sensor.{PREFIX}_contacts", f"event.{PREFIX}_contact",
+    f"event.{PREFIX}_telemetry", f"sensor.{PREFIX}_telemetry_status", f"sensor.{PREFIX}_battery",
+}  # fmt: skip
+
+
 def test_the_recorder_exclusions_keep_only_the_texts_out() -> None:
-    globs = guide_recorder()["entity_globs"]
-    excluded = {e for e in contact_entity_ids() if any(fnmatch.fnmatch(e, g) for g in globs)}
-    assert excluded == {"event.mesh_alice_message", "event.mesh_alice_message_2"}
-    gateway = {f"event.{PREFIX}_message", f"sensor.{PREFIX}_contacts", f"event.{PREFIX}_contact"}
-    assert not {e for e in gateway if any(fnmatch.fnmatch(e, g) for g in globs)}
+    globs = guide_recorder("event.mesh_*_message*")
+    assert excluded_by(globs, contact_entity_ids()) == {
+        "event.mesh_alice_message", "event.mesh_alice_message_2",
+    }  # fmt: skip
+    assert not excluded_by(globs, GATEWAY_IDS)
     assert encode({"text": "ä"}) == '{"text":"ä"}'.encode()
+
+
+def test_the_telemetry_exclusions_keep_the_telemetry_out() -> None:
+    """The trackers, Alice's telemetry entities and the gateway's telemetry event, also numbered
+    `_2`. A contact whose name gives such a part of an entity ID (`_ch` and a digit, `_battery`)
+    loses the history of its other sensors too, which the guide says."""
+    globs = guide_recorder("device_tracker.mesh_*")
+    telemetry = {
+        "device_tracker.mesh_hilltop", "switch.mesh_alice_telemetry",
+        "sensor.mesh_alice_telemetry_state", *ALICE_ANSWER_IDS,
+    }  # fmt: skip
+    assert excluded_by(globs, contact_entity_ids()) == telemetry | {f"{e}_2" for e in telemetry}
+    assert excluded_by(globs, GATEWAY_IDS) == {f"event.{PREFIX}_telemetry"}
+    for name in ("Team ch2", "Old battery"):
+        slug = slugify(name)
+        others = {f"sensor.mesh_{slug}_{s}" for s in ("last_heard", "hops", "snr")}
+        assert excluded_by(globs, others | {f"event.mesh_{slug}_message"}) == others

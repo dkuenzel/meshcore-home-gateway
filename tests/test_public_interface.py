@@ -22,13 +22,16 @@ import pytest
 
 from meshcore_home_gateway import bridge, cli, views
 from meshcore_home_gateway import config as configuration
+from meshcore_home_gateway.core import lpp, telemetry
 from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
 from meshcore_home_gateway.core.profile import ProfileReport
+from meshcore_home_gateway.mqtt import contact_devices
 from meshcore_home_gateway.mqtt.contact_devices import contact_device_id
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import NodeType, TelemetryMode
 from meshcore_home_gateway.radio.session import AUTO_ADD_TYPES
 from tests import public_interface as interface
+from tests.radio_emulator import LPP_ALL_READINGS
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.radio.transport import Transport
@@ -290,6 +293,135 @@ def test_contacts_have_the_node_types_of_the_wire(current: dict[str, Any]) -> No
     }
 
 
+def test_the_classes_of_home_assistant_components_are_recorded(current: dict[str, Any]) -> None:
+    """A class removed or changed ends statistics and unit conversions (D30 of slice 6b): every
+    numeric telemetry sensor measures, an enum has no state class."""
+    gateway, contact = (current["homeassistant"]["components"][n] for n in ("gateway", "contact"))
+    readings = {name: c for name, c in contact.items() if lpp.parse_component(name)}
+    assert readings.keys() == {lpp.component_of(key) for key in LPP_ALL_READINGS}
+    for name in ("battery", "mcu_temperature", *readings):
+        assert contact[name]["state_class"] == "measurement", name
+    classes = {
+        name: tuple(component.get(c) for c in CLASSES)
+        for name, component in (
+            ("gateway battery", gateway["battery"]),
+            ("telemetry_status", gateway["telemetry_status"]),
+            ("telemetry_airtime", gateway["telemetry_airtime"]),
+            ("battery", contact["battery"]),
+            ("ch2_temperature_2", contact["ch2_temperature_2"]),
+            ("ch1_luminosity", contact["ch1_luminosity"]),  # no unit: no class
+            ("telemetry_state", contact["telemetry_state"]),
+            ("telemetry", contact["telemetry"]),
+        )
+    }
+    assert classes == {
+        "gateway battery": ("voltage", "measurement"),
+        "telemetry_status": ("enum", None),
+        "telemetry_airtime": ("duration", "measurement"),
+        "battery": ("voltage", "measurement"),
+        "ch2_temperature_2": ("temperature", "measurement"),
+        "ch1_luminosity": (None, "measurement"),
+        "telemetry_state": ("enum", None),
+        "telemetry": (None, None),
+    }
+
+
+def test_a_component_records_a_class_only_where_it_has_one() -> None:
+    sensor = _sensor("u") | {"device_class": "voltage", "state_class": "measurement"}
+    assert {c: interface._component(sensor)[c] for c in CLASSES} == {
+        "device_class": "voltage",
+        "state_class": "measurement",
+    }
+    assert not set(CLASSES) & interface._component(_sensor("u")).keys()
+
+
+def test_the_contact_document_records_every_reading_key(current: dict[str, Any]) -> None:
+    """The scenario's answer carries one reading of each published type."""
+    keys = current["mqtt"]["documents"]["contacts/<key>"]
+    assert {key for key in keys if key.startswith("readings.")} == {
+        f"readings.{key}" for key in LPP_ALL_READINGS
+    }
+
+
+def test_the_telemetry_lists_are_the_literal_types(current: dict[str, Any]) -> None:
+    values = current["mqtt"]["values"]
+    assert {name: values[name] for name in TELEMETRY_LISTS} == {
+        name: sorted(listed) for name, listed in TELEMETRY_LISTS.items()
+    }
+
+
+TELEMETRY_LISTS = {
+    "contacts/<key>:telemetry_state": telemetry.STATES,
+    "state:telemetry": telemetry.STATUSES,
+    "state:telemetry_reason": telemetry.PAUSE_REASONS,
+    "telemetry:event_type": telemetry.EVENTS,
+    "telemetry:state": telemetry.EVENT_STATES,
+}
+
+
+def test_home_assistant_options_must_be_the_list() -> None:
+    with pytest.raises(
+        AssertionError,
+        match=re.escape("x: Home Assistant's options ['b', 'a'] are not the list ['a', 'b']"),
+    ):
+        interface._options("x", ["b", "a"], ("a", "b"))  # in its order: Home Assistant's
+    assert interface._options("x", ["a", "b"], ("a", "b")) == ["a", "b"]
+
+
+def test_a_value_outside_its_list_is_refused() -> None:
+    with pytest.raises(
+        AssertionError,
+        match=re.escape("x: values outside the list ['a', 'b']: ['c']"),
+    ):
+        interface._within("x", {"a", "c", None}, ("a", "b"))
+    interface._within("x", {"a", None}, ("a", "b"))  # null: none
+
+
+def _telemetry_state(_: bridge.Bridge) -> dict[str, Any]:
+    return {"telemetry": "stopped", "telemetry_reason": None}
+
+
+LIST_GUARDS: dict[str, tuple[Callable[[pytest.MonkeyPatch], None], str]] = {
+    "a contact option the states lack": (
+        lambda m: m.setattr(contact_devices, "STATES", (*telemetry.STATES, "gone")),
+        "contacts/<key>:telemetry_state: Home Assistant's options",
+    ),
+    "a contact state outside the states": (
+        lambda m: m.setattr(interface, "STATES", telemetry.STATES[1:]),  # no "waiting"
+        "contacts/<key>:telemetry_state: values outside the list",
+    ),
+    "a gateway option the statuses lack": (
+        lambda m: m.setattr(telemetry, "STATUSES", telemetry.STATUSES[:-1]),
+        "state:telemetry: Home Assistant's options",
+    ),
+    "a status outside the statuses": (
+        lambda m: m.setattr(bridge.Bridge, "_telemetry_state", _telemetry_state),
+        "state:telemetry: values outside the list",
+    ),
+    "a reason outside the reasons": (
+        lambda m: m.setattr(interface, "PAUSE_REASONS", ()),
+        "state:telemetry_reason: values outside the list",
+    ),
+    "an event's state outside its list": (
+        lambda m: m.setattr(interface, "EVENT_STATES", ("answering",)),
+        "telemetry:state: values outside the list",
+    ),
+    "an event's state that is no state": (
+        lambda m: m.setattr(interface, "EVENT_STATES", (*telemetry.EVENT_STATES, "gone")),
+        "telemetry:state: values outside the list",
+    ),
+}
+
+
+@pytest.mark.parametrize(("change", "expected"), LIST_GUARDS.values(), ids=LIST_GUARDS.keys())
+def test_a_telemetry_list_is_checked_where_it_is_used(
+    monkeypatch: pytest.MonkeyPatch, change: Callable[[pytest.MonkeyPatch], None], expected: str
+) -> None:
+    change(monkeypatch)
+    with pytest.raises(AssertionError, match=re.escape(expected)):
+        interface.surface()
+
+
 # --- the command line (python -m tests.public_interface) ------------------------------------------
 
 
@@ -480,7 +612,13 @@ SMALL: dict[str, Any] = {
         },
         "components": {
             "gateway": {
-                "battery": {"platform": "sensor", "entity_id": "sensor.<device>_b", "unit": "V"},
+                "battery": {
+                    "platform": "sensor",
+                    "entity_id": "sensor.<device>_b",
+                    "unit": "V",
+                    "device_class": "voltage",
+                    "state_class": "measurement",
+                },
                 "contact": {
                     "platform": "event",
                     "entity_id": "event.<device>_contact",
@@ -525,6 +663,7 @@ POSITIONAL = (*SEND, "positionals", "1")
 LAST_WILL = ("mqtt", "last_will", B + "availability")
 TELEMETRY = {"type": "table"}  # 1.1.0a1 adds the table and its switch
 ENABLED = {"type": "boolean", "default": False, "answer": "bool"}
+CLASSES = ("device_class", "state_class")
 
 BREAKING: dict[str, Mutation] = {
     "topic removed": lambda d: at(d, *PUBLISH).pop(B + "rx"),
@@ -600,6 +739,10 @@ BREAKING: dict[str, Mutation] = {
     "unit changed": lambda d: at(d, *GATEWAY, "battery").update(unit="mV"),
     "unit added": lambda d: at(d, *GATEWAY, "profile").update(unit="x"),
     "unit dropped": lambda d: at(d, *GATEWAY, "battery").pop("unit"),
+    "device class changed": lambda d: at(d, *GATEWAY, "battery").update(device_class="current"),
+    "device class dropped": lambda d: at(d, *GATEWAY, "battery").pop("device_class"),
+    "state class changed": lambda d: at(d, *GATEWAY, "battery").update(state_class="total"),
+    "state class dropped": lambda d: at(d, *GATEWAY, "battery").pop("state_class"),
     "event type removed": lambda d: at(d, *GATEWAY, "contact", "event_types").remove("refused"),
     "attribute key removed": lambda d: at(d, *GATEWAY, "airtime").update(attributes=[]),
     "attributes of a document no longer": lambda d: at(d, *GATEWAY, "contact").pop("attributes"),
@@ -671,6 +814,8 @@ COMPATIBLE: dict[str, Mutation] = {
         {"uptime": {"platform": "sensor", "entity_id": "sensor.<device>_uptime"}}
     ),
     "event type added": lambda d: at(d, *GATEWAY, "contact", "event_types").append("linked"),
+    "device class added": lambda d: at(d, *GATEWAY, "airtime").update(device_class="duration"),
+    "state class added": lambda d: at(d, *GATEWAY, "airtime").update(state_class="measurement"),
     "attribute key added": lambda d: at(d, *GATEWAY, "airtime", "attributes").append("burst_s"),
     "node type added": lambda d: at(
         d, "homeassistant", "components", "contact", "send", "node_types"
@@ -1117,8 +1262,19 @@ def test_a_finding_names_its_path_and_both_values() -> None:
     assert str(finding) == 'homeassistant > components > gateway > battery > unit: "V" -> "mV"'
 
 
+def test_classes_recorded_for_the_first_time_are_additions() -> None:
+    """As against a release made before the snapshot recorded them: the release plan needs no
+    waiver for the classes the components always had."""
+    older = mutated(lambda d: [at(d, *GATEWAY, "battery").pop(c) for c in CLASSES])
+    battery = "homeassistant > components > gateway > battery"
+    assert [(f.kind, str(f)) for f in tool.compare(older, SMALL)] == [
+        ("added", f'{battery} > device_class: null -> "voltage"'),
+        ("added", f'{battery} > state_class: null -> "measurement"'),
+    ]
+
+
 def test_an_attribute_without_a_rule_is_refused() -> None:
-    doc = mutated(lambda d: at(d, *GATEWAY, "battery").update(state_class="measurement"))
+    doc = mutated(lambda d: at(d, *GATEWAY, "battery").update(icon="mdi:battery"))
     with pytest.raises(tool.FormatError, match=re.escape("battery: no rule for the attribute")):
         tool.compare(SMALL, doc)
 
@@ -1146,6 +1302,8 @@ def test_a_record_that_is_no_object_is_refused() -> None:
         ((*POSITIONAL, "nargs"), 1.5, "nargs: expected a string or an integer, got 1.5"),
         ((*GATEWAY, "contact", "event_types"), {"added": 1}, "expected a list of strings, got {"),
         ((*GATEWAY, "airtime", "attributes"), [1], "attributes: expected a string or a list of"),
+        ((*GATEWAY, "battery", "device_class"), 1, "device_class: expected a string, got 1"),
+        ((*GATEWAY, "battery", "state_class"), ["total"], "state_class: expected a string, got ["),
         ((*PROBE, "groups"), [{"options": "--tcp", "required": True}], "probe > groups: expected"),
         ((*PROBE, "groups"), [{"options": ["--tcp"]}], 'groups: expected a list of {"options"'),
         ((*PROBE, "groups"), {"options": ["--tcp"], "required": True}, "groups: expected a list"),

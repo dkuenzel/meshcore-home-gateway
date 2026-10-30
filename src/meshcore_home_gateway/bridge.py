@@ -7,9 +7,11 @@ Tasks on one event loop:
   retry, flood, report every step on the delivery topic;
 * radio events: acknowledgements and packet log at once, received messages in order
   (deduplicated; command policy with a fresh contact table and a memory of look-alikes);
-* status: retained state document, systemd watchdog and status;
+* status: retained state document, systemd watchdog and status; an exclusion from telemetry
+  that could not be stored is written again;
 * telemetry, if enabled: asks the radio's companions one at a time, after the messages
-  (telemetry_poller.py, ADR 0018);
+  (telemetry_poller.py, ADR 0018); it gives the observer each companion's state and hears of
+  every exclusion;
 * the observer gets every report of the radio, every received message and every delivery, for
   the documents of the providers and the history (observer.py).
 """
@@ -49,7 +51,7 @@ from meshcore_home_gateway.core.model import (
     MessageKind,
     Target,
 )
-from meshcore_home_gateway.core.telemetry import LaneFactory
+from meshcore_home_gateway.core.telemetry import LaneFactory, TelemetryStatus
 from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
@@ -256,13 +258,11 @@ class Bridge:
         self._seen: dict[str, float] = {}
         self._queue: asyncio.Queue[Outgoing] = asyncio.Queue(maxsize=config.messages.queue_size)
         self._activity = OutboxActivity(monotonic, self._queue.qsize)  # telemetry yields to it
-        self._telemetry: TelemetryPoller | None = None
-        if config.telemetry.enabled:
-            self._telemetry = TelemetryPoller(
-                self.observer, self.live_session, self._activity, records=telemetry_records,
-                tcp=config.radio.transport == "tcp", monotonic=monotonic, wall_clock=wall_clock,
-                lanes=telemetry_lanes,
-            )  # fmt: skip
+        self._telemetry = self._telemetry_poller(telemetry_records, telemetry_lanes)
+        if self._telemetry is None and (records := telemetry_records) is not None:
+            # D13 holds when telemetry is on again: the saved schedule forgets the answers
+            self.observer.on_telemetry_exclusion.append(lambda key, _: records.forget(key))
+            self.observer.on_contact_added.append(records.forget)
         self._budget = AirtimeBudget(
             config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
         )
@@ -285,9 +285,29 @@ class Bridge:
         self._tasks: list[asyncio.Task[None]] = []
         self._telemetry_task: asyncio.Task[None] | None = None
 
+    def _telemetry_poller(
+        self, records: TelemetryRecords | None, lanes: LaneFactory | None
+    ) -> TelemetryPoller | None:
+        """The task that asks the companions, if telemetry is enabled: it gives the observer each
+        companion's state and hears of every exclusion and every contact added."""
+        if not self.config.telemetry.enabled:
+            return None
+        poller = TelemetryPoller(
+            self.observer, self.live_session, self._activity, records=records,
+            tcp=self.config.radio.transport == "tcp", monotonic=self._mono, wall_clock=self._wall,
+            lanes=lanes,
+        )  # fmt: skip
+        self.observer.telemetry_state = poller.state_of
+        self.observer.on_telemetry_exclusion.append(poller.exclusion_changed)
+        self.observer.on_contact_added.append(poller.contact_added)
+        poller.on_status = self._publish_state
+        return poller
+
     # --- life cycle -----------------------------------------------------------------------------
 
     async def run(self, stop: asyncio.Event) -> None:
+        if self._telemetry is not None:  # the states of the first documents come from it
+            self._telemetry.restore()
         for warning in protected_look_alikes(self.config):
             log.warning("%s", warning)
         if self.config.contacts.manage and self.config.radio.transport == "tcp":
@@ -331,6 +351,7 @@ class Bridge:
             if self._session is not None:
                 await self._session.close()
             self._radio_ready.clear()
+            self._observe(self.observer.flush)  # what changed since its last tick
             self._publish_state()
             await self._bus.stop()
 
@@ -364,6 +385,8 @@ class Bridge:
             else:
                 self._session = session
                 self._radio_ready.set()
+                if self._telemetry is not None:
+                    self._observe(self._telemetry.radio_connected)
                 delay = RECONNECT_MIN_S
                 max_contacts = self._radio_info.device.max_contacts
                 self._observe(self.observer.radio_connected, max_contacts, session.tuning)
@@ -932,6 +955,7 @@ class Bridge:
                 self._notify("WATCHDOG=1")
             self._report_unpublished()  # the end of a flood of refused requests
             self._contacts.report_unpublished()
+            self._observe(self.observer.exclusions.flush)  # an exclusion not stored yet
             self._observe(self.observer.tick)
             if self._mono() >= next_state:
                 self._publish_state()
@@ -966,8 +990,10 @@ class Bridge:
         }
 
     def _telemetry_state(self) -> dict[str, Any]:
+        off: TelemetryStatus = "off"
         state: dict[str, Any] = {
-            "telemetry": "off", "telemetry_airtime_1h_s": None, "telemetry_mesh_airtime_1h_s": None,
+            "telemetry": off, "telemetry_reason": None, "telemetry_airtime_1h_s": None,
+            "telemetry_mesh_airtime_1h_s": None,
         }  # fmt: skip
         if self._telemetry is None:
             return state
@@ -975,6 +1001,7 @@ class Bridge:
             own, mesh = self._telemetry.used_s()
             return {
                 "telemetry": self._telemetry.status,
+                "telemetry_reason": self._telemetry.reason,  # why it is paused
                 "telemetry_airtime_1h_s": round(own, 3),
                 "telemetry_mesh_airtime_1h_s": round(mesh, 3),
             }

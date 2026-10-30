@@ -9,7 +9,8 @@ last will, the key paths of the documents, the value lists the code declares in 
 emits where Home Assistant is told of them, every setting (with the bounds and choices the parser
 takes), command, option (with its names and bounds) and option group, the machine-readable
 outputs with the values `probe` prints, and the answers, what Home Assistant refers to (with the
-slugs of contact entity IDs), and the firmware versions tested.
+slugs of contact entity IDs) and the device and state classes its statistics depend on, and the
+firmware versions tested.
 The fixture's names are words that no real name contains (the slug "s" once turned "sensor" into
 "<slug>ensor"); `placeholders` turns them into the snapshot's placeholders, which belong to its
 format and are never renamed. Each has every kind of character its setting allows, so that a
@@ -51,9 +52,10 @@ from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.contact_manager import Job
-from meshcore_home_gateway.core import profile
+from meshcore_home_gateway.core import lpp, profile
 from meshcore_home_gateway.core.commands import Rejection
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
+from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
     NODE_TYPES,
     AirtimeMeter,
@@ -61,6 +63,7 @@ from meshcore_home_gateway.core.mesh import (
     Heard,
     Mesh,
     Node,
+    Readings,
     Signal,
     Tracked,
     type_name,
@@ -74,6 +77,13 @@ from meshcore_home_gateway.core.model import (
     TextType,
 )
 from meshcore_home_gateway.core.profile import ProfileReport
+from meshcore_home_gateway.core.telemetry import (
+    EVENT_STATES,
+    PAUSE_REASONS,
+    STATES,
+    STATUSES,
+    Answer,
+)
 from meshcore_home_gateway.mqtt import client as mqtt_client
 from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
@@ -107,7 +117,7 @@ from meshcore_home_gateway.state import (
     JsonStateFile,
     ProfileRecords,
 )
-from tests.radio_emulator import EmulatedContact, EmulatedRadio
+from tests.radio_emulator import LPP_ALL, LPP_ALL_READINGS, EmulatedContact, EmulatedRadio
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.observer import Publisher
@@ -234,6 +244,7 @@ channel = 1
 enabled = false
 messages_days = 7
 positions_days = 90
+readings_days = 14
 [contacts]
 manage = false
 [diagnostics]
@@ -483,7 +494,8 @@ async def _until(events: asyncio.Task[None], step: Awaitable[None]) -> None:
 async def _published(tmp: Path) -> _Paho:
     """Every publish path of the gateway once, through the MQTT adapter, and every value of the
     lists that the producers build where they publish them: the bridge never runs, its observer
-    and a few of its steps are called directly."""
+    and a few of its steps are called directly. Its poller never runs either: the observer gets
+    an answer and the events as the poller hands them over."""
     client = _Paho()
     topics = Topics(BASE, NODE)
     config = maximal()
@@ -507,6 +519,9 @@ async def _published(tmp: Path) -> _Paho:
     observer.radio_event(ContactsRead({KEY: alice}, T))
     observer.radio_event(ContactsRead({KEY: alice, KEY_B: bob}, T))  # added
     observer.radio_event(ContactsRead({KEY: alice}, T))  # removed: its document and device cleared
+    observer.telemetry(KEY, Answer(lpp.decode(LPP_ALL), T, False, 1, False))  # every reading key
+    observer.telemetry_event("answered", KEY, "answering")
+    observer.telemetry_event("unanswered", KEY, "away")
     relay = _record(KEY_N, "Relay", NodeType.REPEATER)
     observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY_N), True, relay), T + 1))
     observer.radio_event(
@@ -541,6 +556,9 @@ async def _published(tmp: Path) -> _Paho:
     await bridge._on_message(MessageReceived(message, session, 0, False))
     bridge._contacts.accept(ContactRequest("add", KEY_N.encode(), retained=True))  # refused
     bridge._contacts.accept(ContactRequest("remove", b"", retained=True, key=KEY))  # refused
+    for state in (b"off", b"on"):  # excluded, included
+        bridge._contacts.accept(ContactRequest("telemetry", state, retained=False, key=KEY))
+    bridge._contacts.accept(ContactRequest("telemetry", b"off", retained=True, key=KEY))  # refused
     events = asyncio.create_task(bridge._event_loop())
     added = Job("add", KEY_N, "id", "key", "Relay", NodeType.REPEATER)
     await _until(events, bridge._contacts._write(session, added, _refused_write()))  # failed
@@ -554,9 +572,12 @@ async def _published(tmp: Path) -> _Paho:
 def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str, list[str]]:
     """The value lists, as "<document>:<key path>": those that the code declares in one place,
     and those that the producers build where they publish them, as `published` carries them
-    (each equal to the list Home Assistant gets). Values built in several places without a
-    declaration (the reasons, a setting's state) wait for an enum of their own."""
+    (each equal to the list Home Assistant gets). The telemetry lists are Literal types in
+    core/telemetry.py, against which mypy checks every producer: Home Assistant's options must be
+    built from them, and what was published must be in them. Values built in several places
+    without a declaration (the reasons, a setting's state) wait for an enum of their own."""
     gateway = discovery_payload(maximal(), Topics(BASE, NODE))["cmps"]
+    contact = contact_payload(maximal(), Topics(BASE, NODE), _tracked(NodeType.CHAT), SLUG)["cmps"]
     radio = gateway["radio"]
     emitted = {
         name: _declared(name, values, declared)
@@ -569,6 +590,8 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
              gateway["node"]["event_types"]),
             ("setting:event_type", _emitted(published, "setting", "event_type"),
              gateway["setting"]["event_types"]),
+            ("telemetry:event_type", _emitted(published, "telemetry", "event_type"),
+             gateway["telemetry"]["event_types"]),
             ("settings:status", _statuses(), gateway["profile"]["options"]),
         )
     }  # fmt: skip
@@ -577,6 +600,13 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     texts = [InboundMessage(MessageKind.CONTACT, "", 0, T, text_type=kind) for kind in TextType]
     errors = codec.CoreStats(0, 0, -1, 0)  # every error bit
     readings = views.RadioReadings(codec.Battery(0, 0, 0), errors, None, None, T)
+    states, statuses = "contacts/<key>:telemetry_state", "state:telemetry"
+    reasons, event_states = "state:telemetry_reason", "telemetry:state"
+    _within(states, _emitted(published, "contacts/<key>", "telemetry_state"), STATES)
+    _within(statuses, _emitted(published, "state", "telemetry"), STATUSES)
+    _within(reasons, _emitted(published, "state", "telemetry_reason"), PAUSE_REASONS)
+    _within(event_states, {*EVENT_STATES}, STATES)  # an event carries a contact's state
+    _within(event_states, _emitted(published, "telemetry", "state"), EVENT_STATES)
     return emitted | {
         "delivery:event_type": [state.value for state in DeliveryState],
         "received:event_type": [kind.value for kind in MessageKind],
@@ -597,6 +627,10 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
         "contacts/<key>:type": list(NODE_TYPES.values()),
         "contacts/<key>:flags": views.flag_names(sum(ContactFlag)),
         "stats:errors": views.stats_document(readings, AirtimeMeter(), None)["errors"],
+        states: _options(states, contact["telemetry_state"]["options"], STATES),
+        statuses: _options(statuses, gateway["telemetry_status"]["options"], STATUSES),
+        reasons: list(PAUSE_REASONS),
+        event_states: list(EVENT_STATES),
     }
 
 
@@ -622,6 +656,22 @@ def _statuses() -> set[str]:
         dataclasses.replace(ok, written={profile.NAME: "New"}),
     )
     return {views.settings_document(report, T)["status"] for report in reports}
+
+
+def _options(name: str, declared: list[str], values: Sequence[str]) -> list[str]:
+    """`values`, which must be the options Home Assistant gets, in their order."""
+    if declared != list(values):
+        raise AssertionError(
+            f"{name}: Home Assistant's options {declared} are not the list {list(values)}: build"
+            " them from it"
+        )
+    return list(values)
+
+
+def _within(name: str, emitted: set[Any], values: Sequence[str]) -> None:
+    """Each value of `emitted` is one of `values` (`null` stands for none)."""
+    if outside := sorted(emitted - {None, *values}):
+        raise AssertionError(f"{name}: values outside the list {list(values)}: {outside}")
 
 
 def _declared(name: str, emitted: set[str], declared: list[str]) -> list[str]:
@@ -1379,7 +1429,10 @@ def _tracked(node_type: int) -> Tracked:
     )  # fmt: skip
     heard = Heard(T, "message", Signal(hops=1, snr_db=5.0, rssi_dbm=-90))
     fix = Fix(position, T, "advert", altitude_m=10.0)
-    tracked = Tracked(node, T - 60, heard, fix, position_received_at=T, restored_heard=heard)
+    tracked = Tracked(
+        node, T - 60, heard, fix, position_received_at=T, restored_heard=heard,
+        readings=Readings(T, Named(4.12, 23.4, LPP_ALL_READINGS)),
+    )  # fmt: skip
     _filled(tracked)
     return tracked
 
@@ -1432,6 +1485,9 @@ def _component(component: dict[str, Any]) -> dict[str, Any]:
         entry["options"] = component["options"] or ["<heard nodes>"]
     if "unit_of_measurement" in component:
         entry["unit"] = component["unit_of_measurement"]
+    for name in ("device_class", "state_class"):  # statistics and unit conversions keep them
+        if name in component:
+            entry[name] = component[name]
     event = component["p"] == "event"
     if template := component.get("json_attributes_template"):
         if not (keys := re.findall(r"'(\w+)':", template)):
