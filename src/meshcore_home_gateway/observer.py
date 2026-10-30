@@ -575,7 +575,7 @@ class Observer:
             self._publish(self._topics.contact(key), document)
             self._current[key] = document
             self.flush()
-        elif connect and document["telemetry_state"] != "answering":  # the broker may not have it
+        elif connect:  # the broker may have missed it: a run that stopped before it was back
             self._publish(self._topics.contact(key), document)
 
     def _keep(self, key: str, document: dict[str, Any]) -> None:

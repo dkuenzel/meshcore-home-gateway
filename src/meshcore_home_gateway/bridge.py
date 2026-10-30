@@ -262,6 +262,7 @@ class Bridge:
         if self._telemetry is None and (records := telemetry_records) is not None:
             # D13 holds when telemetry is on again: the saved schedule forgets the answers
             self.observer.on_telemetry_exclusion.append(lambda key, _: records.forget(key))
+            self.observer.on_contact_added.append(records.forget)
         self._budget = AirtimeBudget(
             config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
         )

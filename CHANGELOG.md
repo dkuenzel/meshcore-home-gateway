@@ -85,7 +85,8 @@ not run for it.
 ### Fixed
 
 - A contact target or command sender that the radio holds with a position but without an advert
-  time (shared from a phone app) gets its device at once; it waited for its first advert.
+  time (written by another client of the radio, such as a phone app) gets its device at once; it
+  waited for its first advert.
 - Home Assistant no longer logs template errors when a contact leaves the radio: *Last heard*,
   *Hops*, *SNR* and the tracker's attributes read the empty message that clears the contact's
   document as unknown.

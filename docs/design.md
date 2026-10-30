@@ -801,11 +801,10 @@ sequenceDiagram
   too (at once when one turns current or no longer, else with its minute tick and at the stop).
   Before the first table read it has no contacts. It keeps these documents in their latest state,
   also once they expired, stores each change at once, and publishes them again when their state
-  changes; one whose state is not `answering` also at each connect of the broker (the broker may
-  have missed the change). So after a restart without
-  the radio they still expire at their bound, also when a run stopped before the broker
-  connected. The first table read replaces them. The exclusions are kept in their own file
-  (above).
+  changes, and each again at every connect of the broker (it may have missed one: a run that
+  stopped before it was back). So after a restart without the radio they still expire at their
+  bound, also when a run stopped before the broker connected. The first table read replaces
+  them. The exclusions are kept in their own file (above).
 
 ## 7 Security
 

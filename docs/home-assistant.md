@@ -84,8 +84,8 @@ gateway's page ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-ow
 contact added to the radio has its device within seconds; a contact removed loses it. Nothing has to
 be configured. One exception: a contact target or command sender that the radio profile puts on
 the radio before it was ever heard gets its device with its first advert, so its entity IDs come
-from its own name, not from a placeholder; one the radio already holds with a position (shared
-from a phone app) gets it at once. The entities, for a companion named *Alice*:
+from its own name, not from a placeholder; one the radio already holds with a position (written
+by another client of the radio, such as a phone app) gets it at once. The entities, for a companion named *Alice*:
 
 | Entity | Platform | Content |
 | --- | --- | --- |

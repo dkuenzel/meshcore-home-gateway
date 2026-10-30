@@ -968,14 +968,14 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
     observer, bus = restarted(store, states)
     observer.publish_all()  # the broker connected
     observer.tick()
-    assert retained(bus, f"{ROOT}/contacts/{key}") == []  # current: the broker keeps hers
+    assert last(bus, f"{ROOT}/contacts/{key}") == before[key]  # unchanged: the broker may lack it
     states[key] = "away"  # her bound passed
     observer.tick()
     expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **expired}
     assert CurrentDocuments(store).documents == {key: {**before[key], **expired}}  # at once
     observer.tick()
-    assert len(retained(bus, f"{ROOT}/contacts/{key}")) == 1
+    assert len(retained(bus, f"{ROOT}/contacts/{key}")) == 2
     observer.publish_all()  # the broker connected again
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **expired}
     states[key] = "waiting"  # a day later
@@ -987,8 +987,8 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
 
 def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: Path) -> None:
     """A run that stopped before the broker connected published it to nobody: the state file
-    keeps it expired, and the next run publishes it at each connect. One still answering is not
-    published again (the broker has it)."""
+    keeps it expired, and the next run publishes it at each connect; one still answering too,
+    unchanged (the broker may have missed it as well)."""
     store, before = last_run(tmp_path, ALICE, BOB)
     alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
     states: dict[str, TelemetryState] = {alice: "away", bob: "answering"}
@@ -999,7 +999,8 @@ def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: 
     observer.publish_all()
     expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
     assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **expired}
-    assert retained(bus, f"{ROOT}/contacts/{bob}") == []
+    assert len(retained(bus, f"{ROOT}/contacts/{bob}")) == 1
+    assert last(bus, f"{ROOT}/contacts/{bob}") == before[bob]
     observer.publish_all()
     assert len(retained(bus, f"{ROOT}/contacts/{alice}")) == 2
 

@@ -2437,7 +2437,8 @@ def test_a_restart_without_the_radio_still_expires_her_answers_and_position(
 ) -> None:
     """ADR 0024: an outage of the radio expires every companion at its bound, also when the
     gateway restarted meanwhile and has read no table since: nothing changes while her answers
-    are current, then only her state."""
+    are current (her document goes out once at the connect, unchanged: the broker may have
+    missed it), then only her state."""
     store = JsonStateFile(tmp_path / "state.json")
     retained: list[dict[str, Any]] = []
 
@@ -2458,9 +2459,9 @@ def test_a_restart_without_the_radio_still_expires_her_answers_and_position(
             await r.steps()
             r.observer.tick()
             published = r.bus.payloads(f"/contacts/{KEY}")
-            assert len(published) == (r.poller.state_of(KEY) not in telemetry.CURRENT)
+            assert len(published) == 1 + (r.poller.state_of(KEY) not in telemetry.CURRENT)
         expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
-        assert published == [{**retained[0], **expired}]
+        assert published == [retained[0], {**retained[0], **expired}]
         assert r.held() == ("paused", "no_radio")
 
     asyncio.run(first())

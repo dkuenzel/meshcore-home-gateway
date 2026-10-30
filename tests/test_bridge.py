@@ -1449,7 +1449,7 @@ def test_with_telemetry_off_an_exclusion_or_inclusion_forgets_the_saved_answers(
     tmp_path: Path,
 ) -> None:
     """D13 also when telemetry is switched on again later: the saved schedule no longer knows
-    the answers of a contact excluded or included while telemetry was off."""
+    the answers of a contact excluded, included or added again while telemetry was off."""
     store = JsonStateFile(tmp_path / "state.json")
     records = TelemetryRecords(store)
     key = "d4" * 32
@@ -1457,6 +1457,12 @@ def test_with_telemetry_off_an_exclusion_or_inclusion_forgets_the_saved_answers(
     off = Bridge(make_config(), FakeBus(), EmulatedRadio, CommandLedger(store),
                  telemetry_records=records)  # fmt: skip
     off.observer.telemetry_excluded(key, False)  # included again, as the contact manager does
+    saved, _ = records.load(NOW)
+    assert saved is not None
+    assert saved.contacts[key].answered_age_s is None
+    records.save(telemetry.Saved({key: telemetry.SavedContact(812.5, 0, 95.0)}), NOW)
+    for added in off.observer.on_contact_added:  # the radio's table added it again
+        added(key)
     saved, _ = records.load(NOW)
     assert saved is not None
     assert saved.contacts[key].answered_age_s is None

@@ -567,7 +567,7 @@ class TelemetryRecords:
             log.warning("telemetry: cannot store the schedule: %s", exc)
 
     def forget(self, key: str) -> None:
-        """The contact was excluded or included while telemetry was off (D13): as
+        """The contact was excluded, included or added again while telemetry was off (D13): as
         Scheduler.forget, its saved answers are gone and it is due at once; when it was asked
         and flooded stays. Never raises: a failed write is logged."""
         try:

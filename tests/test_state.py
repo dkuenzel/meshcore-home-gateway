@@ -269,7 +269,7 @@ def test_a_saved_schedule_forgets_the_answers_of_a_contact_excluded_meanwhile(
     gone and it is due at once; when it was asked and flooded stays."""
     store = JsonStateFile(tmp_path / "state.json")
     records = TelemetryRecords(store)
-    asked = SavedContact(812.5, 1, 95.0, 96.0, 4000.0, 1, True, 2, 19, None, 8373.0, 95.0)
+    asked = SavedContact(812.5, 1, 95.0, 96.0, 4000.0, 1, True, 0, 19, None, 8373.0, 95.0)
     records.save(Saved({A: asked, B: SavedContact(10.0)}), 1_800_000_000.0)
     records.forget(A)
     records.forget("c" * 64)  # not in the schedule: nothing

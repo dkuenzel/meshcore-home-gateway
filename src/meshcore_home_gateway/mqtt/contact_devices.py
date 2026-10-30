@@ -516,7 +516,7 @@ class ContactDevices:
         """A protected contact the radio profile put on the radio that never had a device and has
         not advertised yet: only a key and a placeholder name, which would fix its entity IDs.
         Its device comes with its first advert; one that had a device gets it back at once. A
-        record with a position came from elsewhere (a phone app): the profile writes none."""
+        record with a position came from another client of the radio: the profile writes none."""
         key, node = tracked.node.public_key, tracked.node
         return (
             key in self._protected
