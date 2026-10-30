@@ -236,7 +236,7 @@ companion that never answers keeps the switch and the state.
 holds the companion's own readings, channels 2 and up the sensors it found when it booted, in
 that order. A second reading of one type on one channel is named like *Temperature 1 (2)*. The
 entity ID ends in the reading's key without its unit, such as `sensor.mesh_<name>_ch2_temperature`
-([mqtt-api.md](mqtt-api.md#contacts-contacts-and-contactskey) has the keys):
+([mqtt-api.md](mqtt-api.md#reading-keys) has the keys):
 
 | Name | Entity ID ends in | Class, unit |
 | --- | --- | --- |
@@ -307,7 +307,7 @@ position or a reading.
 
 **Excluding a companion.** Switch *Telemetry* off on its device page, run
 `meshcore-home-gateway contacts telemetry KEY off`, or publish `off` to `contacts/<key>/telemetry`
-([mqtt-api.md](mqtt-api.md)). A full key also works before the contact is on the radio, so a
+([mqtt-api.md](mqtt-api.md#excluding-a-contact-from-telemetry-contactskeytelemetry)). A full key also works before the contact is on the radio, so a
 neighbour can be excluded before it is added; a protected contact (a target, a command sender)
 can be excluded too. At once the gateway asks it no more (a request waiting for the radio is
 withdrawn, an answer in flight is dropped) and forgets its battery, readings and telemetry

@@ -29,3 +29,4 @@ New records start from [`template.md`](template.md).
 | [0021](0021-generated-dashboards-for-desktop-and-mobile.md) | Generated dashboards for desktop and mobile | accepted |
 | [0022](0022-releases-tagged-by-ci-on-main.md) | Releases tagged by CI on main, from the version a pull request writes | accepted |
 | [0023](0023-public-interfaces-kept-by-a-snapshot.md) | Four public interfaces, kept within a major version by a policy and a snapshot of the code | accepted |
+| [0024](0024-telemetry-values-in-home-assistant-expire.md) | Telemetry values in Home Assistant expire when the companion stops answering | accepted |

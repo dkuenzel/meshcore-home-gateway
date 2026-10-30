@@ -18,6 +18,9 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   required when commands are configured. A standalone Mosquitto reads a user added with
   `mosquitto_passwd` only after `systemctl reload mosquitto`.
 * **Home Assistant:** MQTT integration with discovery enabled (the default).
+* **Telemetry:** the gateway asks the companions of its radio for their battery, sensors and
+  position, unless excluded ([companions.md](companions.md)). The first time it runs, it waits an
+  hour after the radio connects, so the household can exclude every companion that is not its own.
 
 ## 2 Proxmox VE
 
@@ -231,6 +234,21 @@ pct stop 105 && pct destroy 105
   over it. Install or update to a pre-release with its own installer
   (`releases/download/vX.Y.Zrc1/meshcore-home-gateway-lxc.sh`) or with `--release X.Y.Zrc1`; the
   final message of a pre-release names its own installer.
+* **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off: telemetry is on
+  from 1.1.0a2 on, and the first time it runs on the state directory it asks nobody for an hour
+  after the radio connects (*Telemetry status* `paused`, reason `first_start`; the log names the
+  number of companions it will ask). Exclude every companion that is not the household's in that
+  hour ([companions.md](companions.md)). To update from 1.0.0 without any request, switch telemetry
+  off right before the update; 1.0.0 refuses the `[telemetry]` table when it starts, so update at
+  once:
+
+  ```sh
+  pct exec 105 -- sh -c 'grep -q "^\[telemetry\]" /etc/meshcore-home-gateway/config.toml || printf "\n[telemetry]\nenabled = false\n" >> /etc/meshcore-home-gateway/config.toml'
+  bash -c "$(wget -qO- $installer)" -- --update 105
+  ```
+
+  A configuration copied from the 1.1.0a1 example says `enabled = false`: remove that line to follow
+  the new default.
 * **Reconfigure** reads the current configuration (`meshcore-home-gateway config answers`) and
   offers its values as defaults: an empty password keeps the current one while the user name stays
   the same (with a new user name it means no password, so an answers file that changes
@@ -310,14 +328,19 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 * **Service:** `Type=notify` with a 60 s watchdog; restart after 5 s on failure, not on
   configuration errors (exit code 78). `systemd-analyze security meshcore-home-gateway` rates the
   unit's exposure at 1.6 (lower is better).
-* **State and backup:** back up `/etc/meshcore-home-gateway/config.toml` and
+* **State and backup:** back up `/etc/meshcore-home-gateway/config.toml`,
   `/var/lib/meshcore-home-gateway/state.json` (the newest accepted command time per sender; without
   it a restored system accepts older recorded commands again until a sender sends a new one, within
   `max_age_s`; the Home Assistant components last announced; the contacts whose documents are
   published; the radio profile's memory; the telemetry schedule: per companion when it is next
-  due, its unanswered requests, when it last answered, was asked and flooded, and whether it was
-  last moving, no positions). `history.sqlite3` next to it holds the history ([configuration](configuration.md));
-  copy it only with the service stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
+  due, its unanswered requests, when it last answered, was asked and flooded, how long its answers
+  count and when one last carried a position, and whether it was last moving, no positions; and
+  what is left of the first-start hour) and `telemetry-excluded.json` next to it (the companions
+  the household excluded from telemetry: without it a restored system asks them again). An
+  exclusions file that cannot be parsed is left as it is and pauses telemetry: fix it (`{"excluded":
+  [keys]}`) or delete it, then restart the service. `history.sqlite3` holds the history: messages,
+  positions and the companions' readings ([configuration](configuration.md#history)); copy it only
+  with the service stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
 * **Retained documents** stay on the broker after the gateway is removed. Clear them with, for
   example, `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
   2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
@@ -346,4 +369,6 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 | `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
 | Commands rejected with `broker_unavailable` | The gateway could not reach the broker when the command arrived; check the broker connection (`availability`, the log), then send the command again |
 | Commands rejected with `state_unwritable` | `/var/lib/meshcore-home-gateway/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
+| *Telemetry status* `paused`, reason `exclusions_unreadable` | `/var/lib/meshcore-home-gateway/telemetry-excluded.json` cannot be parsed (the log names it): fix it or delete it, then restart the service; without the file every companion not excluded again is asked |
+| *Telemetry status* `paused`, reason `first_start` | Telemetry runs for the first time on this state directory: it asks nobody for an hour after the radio connects. Exclude the companions that are not the household's meanwhile |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |

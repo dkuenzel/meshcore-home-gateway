@@ -21,8 +21,10 @@ make ha-test     # the gateway's documents in a real Home Assistant (needs Pytho
 ```
 
 `home-assistant/tests/test_contract.py` feeds the discovery document, the state document and the
-event payloads, `test_contact_devices.py` the contacts' devices and `test_manage_contacts.py` the
-controls that add and remove contacts into the MQTT integration of the Home Assistant release that
+event payloads, `test_contact_devices.py` the contacts' devices, `test_manage_contacts.py` the
+controls that add and remove contacts and `test_telemetry.py` the companions' telemetry (their
+readings, states, switch and expiry, a `person` and its presence triggers, the telemetry examples)
+into the MQTT integration of the Home Assistant release that
 `pytest-homeassistant-custom-component` pins (`home-assistant/requirements.in`; the environment is
 installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-homeassistant`, about
 900 MB). It checks what [home-assistant.md](home-assistant.md) promises, including the example
@@ -33,7 +35,7 @@ home-assistant.md.
 
 | Suite | Files | Needs |
 | --- | --- | --- |
-| Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py`, `test_lpp.py` (CayenneLPP frames), `test_telemetry.py` (the telemetry schedule on a set clock) | nothing |
+| Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py`, `test_lpp.py` (CayenneLPP frames and the names of their readings), `test_telemetry.py` (the telemetry schedule and each companion's state on a set clock) | nothing |
 | Architecture | `tests/test_architecture.py` (the core and the codec import no I/O modules, ADR 0007) | nothing |
 | Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source), `test_packet.py`, `test_links.py` | nothing |
 | Radio session and bridge | `tests/test_session.py`, `test_bridge.py`, `test_observer.py`, `test_contact_manager.py`, `test_profile.py`, `test_telemetry_poller.py` (emulated radio, with remote companions that answer telemetry) | nothing |
@@ -44,7 +46,8 @@ home-assistant.md.
 | CLI | `tests/test_cli.py`, `test_cli_contacts.py` | `mosquitto` for the tests marked `broker` |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
-| Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py` | nothing |
+| Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py` | nothing |
+| Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py` (above) | `make ha-test`: Python 3.14.2 or newer |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
@@ -118,20 +121,21 @@ adds it back).
 
 Steps 29–40 need B to be a companion **with GPS**, set up as [companions.md](companions.md)
 describes and in A's table, A adding contacts by hand only; a repeater for the steps with hops;
-optionally C, a tracker board that keeps a stored position. `[telemetry] enabled = true`;
-`log_level = "debug"` where the log is read.
+for step 30 B2, a companion with an environment sensor (a BME280 or similar); optionally C, a
+tracker board that keeps a stored position, best a T1000-E (its light and temperature sensors).
+Telemetry on (the default); `log_level = "debug"` where the log is read.
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 29 | Start the service with B beside A; then carry B behind one repeater and send the gateway a message from B (the radio learns the path through the repeater, as in step 33) | the first request about 76 s after `connected` (EU/UK Narrow), direct; `contacts/<B>`: the position, `position_source` `telemetry`, `position_accuracy_m` 15; then about every 15 min at rest; behind the repeater about every 31 min at rest (47 min over two repeaters; started behind one, the first request after about 82 s); `state.telemetry_airtime_1h_s` plausible against `stats.tx_airtime_1h_s` |
-| 30 | On B: telemetry requests "No"; "From Specific Contacts" with the gateway allowed nothing, base only, base and location, everything; remove the gateway from B's contacts | silence; silence; battery only; with position; with environment; silence. Requests on B's path only, never a flood or a path reset |
-| 31 | B: GPS off; on without a fix; C with GPS off; B at rest indoors for an hour | without position: the tracker keeps the last one, `position_received_at` stops; C keeps sending its stored position; at rest no history rows and no tracker states |
+| 29 | Start the service with B beside A, once on a state directory where telemetry never ran and once again; then carry B behind one repeater and send the gateway a message from B (the radio learns the path through the repeater, as in step 33) | where telemetry never ran: `state.telemetry` `paused` with `telemetry_reason` `first_start` from `connected` for an hour, one warning with the number of companions, then the first request; on the later start the first request about 76 s after `connected` (EU/UK Narrow), direct; `contacts/<B>`: the position, `position_source` `telemetry`, `position_accuracy_m` 15, `telemetry_state` `answering`, `battery_v` close to B's battery in the app; *Telemetry* `answered` once; *Battery*, *MCU temperature* (nRF52, ESP32) and *Telemetry state* on B's device, no warning in Home Assistant's log; then about every 15 min at rest; behind the repeater about every 31 min at rest (47 min over two repeaters; started behind one, the first request after about 82 s); `state.telemetry_airtime_1h_s` plausible against `stats.tx_airtime_1h_s` |
+| 30 | On B: telemetry requests "No"; "From Specific Contacts" with the gateway allowed nothing, base only, base and location, everything; remove the gateway from B's contacts. Then B2 with everything allowed, C, and B2 with the environment permission taken away | silence; silence; battery only; with position; with environment; silence. Requests on B's path only, never a flood or a path reset. "No" and nothing allowed: `no_answer` and **no** `unanswered` (B never answered); base only: `no_position`, battery and MCU temperature only; base and location: `answering`. B2: its channel 2 readings with their units; C: `ch1_temperature`, `ch1_luminosity` (0–100, no unit), *MCU temperature*; B2 without environment: its readings `unknown` from the next answer |
+| 31 | B: GPS off; on without a fix; C with GPS off; B at rest indoors for an hour | without position: the tracker keeps the last one for an hour, `position_received_at` stops, then `no_position` and the tracker `unavailable` (the sensors stay); indoors without a fix for less than an hour the tracker stays; C keeps sending its stored position; at rest no history rows and no tracker states |
 | 32 | Walk B 200 m away and back, within range | moving: requests about every 90 s; resting again after two answers under 50 m; a history row and a trace point per move of 20 m or more |
 | 33 | Carry B out of direct range but within the mesh (a repeater hears both); after two unanswered requests, send the gateway a message from B | no path reset by the gateway; B's app floods the message after its direct attempts fail, A stores the path B sends (0x81); the next request goes direct over the repeater and is answered |
 | 34 | Debug log of answers, direct and after a flood; force a timeout (B two hops away) | "answer of N bytes, 19 of them readings": N = 28 direct (9 zero bytes), 26 after a flood to a neighbour (7), one less per repeater; no "bytes not decoded"; a late answer after the next request appears as an ignored 0x8C (`push 0x8c ignored`) |
 | 35 | Send messages to B while telemetry runs, also during a large table read and right after a flooded request | no request between a message's send and its confirmation, nor within 10 s after; how long a message sent right after a flooded request waits (log times of the send and of the radio's transmission) |
-| 36 | Stop and start the service five times within 10 minutes | no request within 75 s of any start; B's next request at its saved due time; `state.json` `telemetry` holds no position |
-| 37 | Radio over TCP (if available): repeat 29 during a large table read; switch automatic adding on, then only repeater adding | a silence during the read is retried without back-off; with automatic adding of any type `state.telemetry` is `paused` |
-| 38 | Carry B out of all range silently (no message, no advert) for an hour, bring it back | no path reset, no flood; direct requests at most 30 min apart while it is away; B's position updates within 30 min of its return |
+| 36 | Stop and start the service five times within 10 minutes; then exclude B with its switch *Telemetry* and restart twice; then `meshcore-home-gateway contacts telemetry <B> on` | no request within 75 s of any start; B's next request at its saved due time; `state.json` `telemetry` holds no position; across the restarts no tracker or sensor of B turns `unavailable` beyond the restart's seconds. Excluded: `contact` `excluded` at once, B's values gone, no request to B over the restarts, `telemetry-excluded.json` holds B's key; `on`: `included`, B asked again within a minute, `answered` |
+| 37 | Radio over TCP (if available): repeat 29 during a large table read; switch automatic adding on, then only repeater adding. Unplug A's USB cable for more than an hour, plug it back | a silence during the read is retried without back-off; with automatic adding of any type `state.telemetry` is `paused`, `telemetry_reason` `auto_add`. Unplugged: `paused`, `no_radio` at the next state publication; an hour after its last answer B `away`, its tracker `unavailable`, no `unanswered`; plugged back: `on`, B `answering` within its interval |
+| 38 | Give a `person` in Home Assistant B's tracker only. Carry B out of all range silently (no message, no advert) for an hour, bring it back | no path reset, no flood; direct requests at most 30 min apart while it is away; about 16 min after it left (at rest; about 2 min while moving) `away`, *Telemetry* `unanswered`, tracker and telemetry sensors `unavailable`, the person `unknown`; B's position updates within 30 min of its return: `answering`, `answered`, all available |
 | 39 | B two hops away, with its path to the gateway reset on B (it floods its answer), `publish_rx_log` on | a flooded RESPONSE in the packet log after a direct request; `telemetry_mesh_airtime_1h_s` rises by the direct request plus about 12.6 s; A sends its path back 3 s later; the next answer comes direct |
-| 40 | As 38, and send B a message 10 min after it left | the message: two direct attempts, a path reset, a flood, `failed`; `contacts/<B>.path_known` `false` at once; no request to B until it advertises after its return; then one flood, the path, direct requests again |
+| 40 | As 38, and send B a message 10 min after it left | the message: two direct attempts, a path reset, a flood, `failed`; `contacts/<B>.path_known` `false` at once; no request to B until it advertises after its return; `away` within `max(1 h, 3 × its interval)` after its last answer, without `unanswered`; a day after its last answer `no_path` until it advertises; then one flood, the path, direct requests again |

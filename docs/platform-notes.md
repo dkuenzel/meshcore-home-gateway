@@ -996,7 +996,8 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `offline` made it `unavailable`; source `components/mqtt/client.py` lines 1350-1356. *Here:*
   `fire()` in [`home-assistant/tests/test_contract.py`](../home-assistant/tests/test_contract.py)
   delivers a message as the broker would, and the tests set `retain` only for the first message
-  after the subscription. *Check:* `src 2026.10.0 components/mqtt/client.py | sed -n 1350,1356p`.
+  after the subscription; after a device is announced again, its document is sent live first, as
+  the observer does. *Check:* `src 2026.10.0 components/mqtt/client.py | sed -n 1350,1356p`.
 * **Home Assistant accepts a discovery prefix of several topic levels; the gateway accepts one.**
   *Verified:* 2026.10.0, source `components/mqtt/config_flow.py` lines 4500-4505 (the prefix is
   checked as a publish topic). *Here:* a known limitation: `_homeassistant()` in
@@ -1064,16 +1065,21 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   The frontend uses the same pattern as an HTML `pattern`, which compiles it with the `v` flag;
   it is valid there. *Check:* `make ha-test`.
 * **A template that prints, tests or iterates a key that `value_json` lacks logs a warning; `is
-  defined`, `is true` and `.get()` log nothing.** *Verified:* 2026.10.0, source
-  `helpers/template/__init__.py` lines 732-762 (`LoggingUndefined`: `__str__`, `__iter__`,
-  `__bool__`); the contract tests feed documents without the keys added with contact management
-  and assert no warning (`test_the_controls_need_the_radio_and_management`,
+  defined`, `is true`, `is false`, `is not false`, `is number`, `is string` and `.get()` log
+  nothing.** *Verified:* 2026.10.0, source `helpers/template/__init__.py` lines 732-762
+  (`LoggingUndefined`: `__str__`, `__iter__`, `__bool__`), which these tests never call (probe
+  with Jinja 3.1.6: none of them on a missing key logged); the contract tests feed documents
+  without the keys added with contact management and with telemetry and assert no warning
+  (`test_the_controls_need_the_radio_and_management`,
   `test_the_remove_button_is_available_while_a_request_would_be_taken`,
-  `test_a_look_alike_node_is_a_problem`, `test_the_qr_card_shows_the_gateways_contact_link`).
+  `test_a_look_alike_node_is_a_problem`, `test_the_qr_card_shows_the_gateways_contact_link`,
+  `test_older_documents_and_the_clearing_message_log_nothing`). The empty message that clears a
+  contact's document reaches its entities while they still exist.
   *Here:* templates that read a key newer than the first documents guard it (`is defined`, `is
-  true`, `.get()`), so a document that an earlier version left retained reads as `offline` or
-  `off`; `value_json is defined` also covers a payload that is no JSON, such as the empty message
-  that clears a contact's document. *Check:* drop `is defined` from the `look_alike` value
+  true`, `is false`, `is number`, `is string`, `.get()`), so a document that an earlier version
+  left retained reads as `offline` or `off`; every contact template asks `value_json is defined`,
+  which also covers a payload that is no JSON, such as the empty message that clears a contact's
+  document. *Check:* drop `is defined` from the `look_alike` value
   template in `src/meshcore_home_gateway/mqtt/discovery.py` and run `make ha-test`
   (`test_a_look_alike_node_is_a_problem` fails).
 * **Deleting a device in Home Assistant clears every discovery topic of it: the gateway's main
@@ -1082,6 +1088,64 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   0, on both topics). *Here:* the gateway watches both topics and announces again; with
   `contact_devices = 0` it subscribes the controls' topic by itself (`_serve()` in
   `src/meshcore_home_gateway/cli.py`). *Check:* `make ha-test`.
+
+* **An MQTT switch with a state topic is not optimistic: it follows only the value its template
+  renders from that topic, `on` for `state_on` (else `payload_on`), `off` for `state_off` (else
+  `payload_off`), unknown for `None`, and ignores every other value.** *Verified:* 2026.10.0,
+  source `components/mqtt/switch.py` lines 108-128;
+  `test_the_switch_sends_the_request_and_follows_the_document` (`switch.turn_off` publishes `off`,
+  QoS 1, not retained; the state changes only with the document; a refusal leaves it `on`).
+  *Here:* the switch *Telemetry* sends `on` or `off` to `contacts/<key>/telemetry` and renders its
+  state from `telemetry_excluded` in the contact's document, so it shows what the gateway took, not
+  the click. *Check:* `make ha-test`.
+* **An enum sensor ignores a value outside its options, with a warning, and keeps its state.**
+  *Verified:* 2026.10.0, source `components/mqtt/sensor.py` lines 328-334;
+  `test_every_state_is_an_option`. *Here:* the options of *Telemetry state* and *Telemetry status*
+  are built from the `Literal` types in `core/telemetry.py`, which mypy checks every producer
+  against, and the snapshot checks that they are; a document of a later version, retained during a
+  downgrade, can log this warning until the next document. *Check:* `make ha-test`.
+* **MQTT entities carry no `translation_key`, so an enum sensor shows its raw values.**
+  *Verified:* 2026.10.0, the discovery schemas in `components/mqtt/` take none (the key appears
+  there only for repair issues and errors). *Here:* the values of *Telemetry state* and *Telemetry
+  status* are chosen to read plainly (`answering`, `no_position`); translations wait for
+  [ADR 0019](decisions/0019-internationalisation-with-gettext.md). *Check:* `grep -n
+  translation_key .venv-homeassistant/lib/python3.14/site-packages/homeassistant/components/mqtt/*.py`.
+* **A `person` skips a device tracker that is `unknown` or `unavailable` and follows its other
+  trackers; with none it turns `unknown`, and a zone, whose state counts the persons in it, no
+  longer counts it.** *Verified:* 2026.10.0, source `components/person/__init__.py` lines 84
+  (`IGNORE_STATES`) and 640-691, `components/zone/__init__.py` lines 472-475;
+  `test_a_person_ignores_an_expired_mesh_tracker` (the person `unknown`, `zone.home` 0; with a
+  second GPS tracker the person follows it). *Here:* a tracker of a position from telemetry turns
+  `unavailable` while the position is not current
+  ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)). *Check:*
+  `make ha-test`.
+* **The legacy `zone` trigger fires `leave` when a person turns `unknown`, because its state keeps
+  the `in_zones` attribute (empty); the entity triggers `zone.left` and `zone.entered` drop
+  `unknown` and `unavailable` on either side, so they never fire for a person whose only GPS
+  tracker expired, also not for a real departure.** *Verified:* 2026.10.0, source
+  `components/zone/trigger.py` lines 57-69 and 150-171, `helpers/trigger/entity_trigger.py` lines
+  133-141; `test_a_person_ignores_an_expired_mesh_tracker` (a `leave` automation fires, a
+  `zone.left` one does not). *Here:* the guide lists which presence triggers fire and recommends a
+  state trigger with `for:` ([home-assistant.md](home-assistant.md#positions-and-presence)).
+  *Check:* `make ha-test`.
+* **Device triggers skip a sensor that has neither a unit nor a state class.** *Verified:*
+  2026.10.0, source `components/sensor/device_trigger.py` line 285. *Here:* *Telemetry state* (an
+  enum) has no device trigger; the guide's automations use the event *Telemetry* and state
+  triggers. *Check:* `src 2026.10.0 components/sensor/device_trigger.py | sed -n 280,286p`.
+* **`recorder.purge_entities` removes an entity's states and events, not its long-term
+  statistics; those go only with `recorder/clear_statistics` (*Developer tools → Statistics*).**
+  *Verified:* 2026.10.0, source `components/recorder/purge.py` lines 719-725
+  (`purge_entity_data`), `components/recorder/websocket_api.py` line 395. *Here:* the guide's
+  privacy section says how to delete the statistics of a companion's `measurement` sensors
+  ([home-assistant.md](home-assistant.md#privacy)). *Check:* `src 2026.10.0
+  components/recorder/purge.py | sed -n 719,725p`.
+* **The device classes and units of the reading sensors are accepted: voltage V, current A, power
+  W, temperature °C, humidity %, atmospheric pressure hPa, distance m, frequency Hz.** *Verified:*
+  2026.10.0, source `components/sensor/const.py` lines 646-760 (`DEVICE_CLASS_UNITS`);
+  `test_an_answer_adds_its_entities_to_the_contact_device` (every reading key, no warning).
+  *Here:* `READING_ENTITIES` in `src/meshcore_home_gateway/mqtt/contact_devices.py`; luminosity,
+  generic and analog input have neither class nor unit, percentage a unit without a class.
+  *Check:* `make ha-test`.
 
 ## Home Assistant dashboards
 
@@ -1197,6 +1261,28 @@ The entries below are what that page does not cover.
   of heard nodes keeps the newest advert's record (`core/mesh.py`). *Check:* in the firmware
   tree, `sed -n '194,217p;1328,1358p' examples/companion_radio/MyMesh.cpp` and
   `sed -n '129,139p' src/helpers/BaseChatMesh.cpp`.
+
+* **A companion denies telemetry to everyone until its owner allows it.** The three telemetry
+  modes (base, location, environment) start at 0, *deny*; only the app's command changes them.
+  *Verified:* `companion-v1.18.0`; `examples/companion_radio/NodePrefs.h:7-9, 26-28`,
+  `MyMesh.cpp:1491`. *Here:* telemetry is on by default
+  ([configuration.md](configuration.md#telemetry)): a companion answers only once it allows the
+  gateway, or allows everyone, which the household excludes. *Check:* in the firmware tree,
+  `sed -n '7,9p;26,28p' examples/companion_radio/NodePrefs.h`.
+* **A telemetry answer starts with the battery as the channel 1 voltage and ends with the
+  processor's temperature as a channel 1 temperature, only on a board that reports one.** Between
+  them come the board's sensors. *Verified:* `companion-v1.18.0`; `MyMesh.cpp:666-675` (the MCU
+  temperature only when it is not NaN; an ESP32-C3 may return NaN). *Here:* `lpp.named()` takes
+  the first entry as `battery_v` if it is the channel 1 voltage, and the last as
+  `mcu_temperature_c` if it is a channel 1 temperature and nothing after it was left undecoded; on
+  a board without one, a channel 1 temperature sensor that comes last is named so
+  ([mqtt-api.md](mqtt-api.md#reading-keys)). *Check:* `sed -n '666,675p'
+  examples/companion_radio/MyMesh.cpp`.
+* **The T1000-E sends its light level as 0–100 % in the luminosity type**, the only 1.18
+  companion that sends that type. *Verified:* `companion-v1.18.0`;
+  `variants/t1000-e/target.cpp:115-116`. *Here:* luminosity has no unit (`ch1_luminosity`), since
+  other boards would send lux and the gateway cannot tell them apart. *Check:* `sed -n '110,118p'
+  variants/t1000-e/target.cpp`.
 
 Already in protocol.md, with the firmware lines:
 

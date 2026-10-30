@@ -149,8 +149,8 @@ flowchart TB
 | `core.text` | Clean, transliterate and limit outgoing text. |
 | `core.airtime` | LoRa time on air; on-air size of MeshCore text and telemetry packets, the airtime a telemetry request causes. |
 | `core.budget` | Airtime token bucket (with a debt for airtime already spent); event rate limit; duplicate suppression. |
-| `core.lpp` | CayenneLPP decoder for telemetry answers; the position in them. |
-| `core.telemetry` | The telemetry schedule: whom to ask next, by which route and when, within two airtime lanes (§6.11). |
+| `core.lpp` | CayenneLPP decoder for telemetry answers; the position in them and the names of their readings. |
+| `core.telemetry` | The telemetry schedule: whom to ask next, by which route and when, within two airtime lanes; each companion's state (§6.11). |
 | `core.contacts` | Resolve 6-byte key prefixes to full keys; detect ambiguity. |
 | `core.commands` | Decide whether a message is an authorised command. |
 | `core.mesh` | The observer's view of the mesh: contacts with when they were heard and where they are, nodes heard but not added; the radio's measured airtime over an hour. |
@@ -188,10 +188,10 @@ Long-running tasks on the loop, supervised by a task group:
 * **message handler**, which processes them in order (a command that could be accepted may wait
   for a fresh read of the radio's contact table, §7.3, without delaying acknowledgements);
 * **request reader**: turns MQTT send requests into queue entries or rejections;
-* **status reporter**: publishes the state document on change and every 60 s and pings the systemd
-  watchdog;
-* **telemetry poller** (only with `[telemetry] enabled`): one request to a companion at a time
-  (§6.11).
+* **status reporter**: publishes the state document on change and every 60 s, pings the systemd
+  watchdog and writes an exclusion from telemetry that could not be stored yet (§6.11);
+* **telemetry poller** (only with `[telemetry] enabled`, the default): one request to a companion
+  at a time (§6.11). Its saved schedule is restored before any task starts.
 
 On stop the telemetry poller is cancelled first, so no request goes out after it, and saves its
 schedule; an answer that arrives later is dropped. Then the radio supervisor ends and closes the
@@ -431,7 +431,9 @@ The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
 | `command` | out | no | JSON with `event_type` = command word |
 | `rx` | out | no | JSON per received packet: SNR, RSSI, raw bytes (optional) |
 | `stats`, `contacts`, `contacts/<key>`, `nodes`, `history` | out | yes | JSON documents of the observer (§6.6) |
-| `contact`, `node` | out | no | JSON: a contact added or removed; a node heard for the first time |
+| `contact`, `node` | out | no | JSON: a contact added or removed, the result of a contact request (also excluded from telemetry or included again); a node heard for the first time |
+| `contacts/<key>/telemetry` | in | must not be | `on`, `off` or JSON: include a companion in telemetry, or exclude it (§6.11) |
+| `telemetry` | out | no | JSON: a companion answers again, or stopped answering (§6.11) |
 
 * QoS 1 throughout, except command events. MQTT 3.1.1 with a clean session: requests published
   while the bridge is
@@ -456,7 +458,8 @@ statistics, the packet log), every received message and every final delivery
 core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
-`contacts` and `contacts/<key>`, `nodes`, `history`, and the events `contact` and `node`.
+`contacts` and `contacts/<key>`, `nodes`, `history`, and the events `contact`, `node` and
+`telemetry`.
 
 ```mermaid
 flowchart LR
@@ -483,8 +486,21 @@ flowchart LR
   it changed, so a companion at rest writes nothing per answer, neither in the history nor in Home
   Assistant's recorder. It carries an accuracy of 15 m (the cell of 0.0001° the encoder truncates
   to, and the receiver's own error). A changed advert position replaces a telemetry fix, an
-  unchanged one does not. Positions do not expire yet: the last one stays until a newer one comes.
-  Nodes that are not contacts keep none.
+  unchanged one does not. A position from telemetry expires (§6.11): `position_current` says
+  whether it is current, and the document keeps it. Nodes that are not contacts keep none.
+* **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
+  `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
+  history's table `reading`, one row per value, in one transaction. The table was added to the
+  history's version 2 with `CREATE … IF NOT EXISTS` instead of a version 3: an older gateway opens
+  a file of a newer version without any history, and it ignores an added table, so a downgrade
+  keeps its messages and positions. Readings are kept for `readings_days`; beyond 200 000 rows the
+  oldest go, but never the rows of a contact's newest answer, which is restored at start. A
+  contact's document and the history show the same answer.
+* **Exclusion** (§6.11): an excluded companion's readings, its time of the newest position and a
+  position from telemetry are forgotten, and the position its record carries takes the place, as
+  at a first table read; its rows in the history stay until their age removes them and are not
+  restored while it is excluded. `forget` deletes its readings and positions from telemetry in one
+  transaction; its advert positions and when it was last heard stay.
 * **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
   answers moves it at most once an hour, keeping the signal of its last advert or message (an
   answer reports none).
@@ -519,6 +535,12 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Add heard node | `select`, its own document | the heard nodes' labels → `homeassistant/add_node` |
 | Add contact (key or link) | `text`, its own document | → `add_contact` |
 | Remove from radio | `button` on each contact's device | → `contacts/<key>/remove` |
+| Telemetry status | `sensor` (enum), diagnostic, attribute `reason` | `state` → `telemetry`, `telemetry_reason` |
+| Telemetry airtime last hour, Telemetry mesh airtime last hour | `sensor` (duration), diagnostic, disabled by default | `state` → `telemetry_airtime_1h_s`, `telemetry_mesh_airtime_1h_s` |
+| Telemetry | `event` (`answered`, `unanswered`) | `telemetry` |
+| Telemetry | `switch`, configuration, on each companion's device | `contacts/<key>` → `telemetry_excluded`; → `contacts/<key>/telemetry` |
+| Telemetry state | `sensor` (enum) on each companion's device | `contacts/<key>` → `telemetry_state` |
+| Battery, MCU temperature, a sensor per reading | `sensor` (their class and unit, state class `measurement`) on a companion's device, with its first answer that carries them | `contacts/<key>` → `battery_v`, `mcu_temperature_c`, `readings`; available while `telemetry_current` |
 
 All entities share the availability topic, so they become unavailable when the bridge is offline.
 The document names the radio's model, firmware and key once the radio is known and is sent again
@@ -537,8 +559,12 @@ gateway's device ID and follows the radio's table: it is announced after a table
 when its document changes, and removed with placeholders first and then an empty document, once
 more after Home Assistant's next birth message if it may not have been running. Its components
 exist only with data (sending for companions, messages for companions and room servers, the
-tracker once a position is known) and are never removed one by one; only the tracker has
-coordinates. Entity IDs use a slug of the contact's name kept from its first appearance, also when
+tracker once a position is known, the telemetry switch and state for companions, battery, MCU
+temperature and up to 16 readings with an answer that carries them) and are never removed one by
+one; only the tracker has coordinates. The tracker of a position from telemetry and the telemetry
+sensors are available only while the answers are current
+([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the device and state
+classes are interface and recorded in the snapshot. Entity IDs use a slug of the contact's name kept from its first appearance, also when
 it comes back. The gateway subscribes to these topics: an empty document it did not send is the user
 deleting the device in Home Assistant, and the contact stays hidden there until it leaves the table
 or is shown again. At most `homeassistant.contact_devices` contacts get a device; one keeps its
@@ -582,11 +608,12 @@ the file.
 | `meshcore-home-gateway check-config` | Validate the configuration (and load the TLS files) and print a summary. |
 | `meshcore-home-gateway probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
 | `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
-| `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines (`received`, `command`, `delivery`, `state`, `contact`, `node`). |
+| `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines (`received`, `command`, `delivery`, `state`, `contact`, `node`, `telemetry`). |
 | `meshcore-home-gateway contacts list [--json]` | The radio's contacts and the heard nodes, from the retained documents (tab-separated: kind, key, type, `protected`/`removable`/`look_alike`, heard, name). |
 | `meshcore-home-gateway contacts add [--wait S] CONTACT` | Add a contact: a full key, a heard node as `KEY12…KEY8` (a name may follow, as Home Assistant's select lists it), a contact link or card; prints the full key to compare. Exit 0 on `added` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline, 2 when the text is no key, link or card, or a label names no single node. |
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
 | `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
+| `meshcore-home-gateway contacts telemetry [--wait S] [--forget] CONTACT {on,off}` | Ask a companion for telemetry again (`on`) or exclude it (`off`; a full key also before it is on the radio, `KEY12…KEY8` from the index); `--forget` with `off` also deletes its readings and positions from telemetry from the history. Exit 0 on `excluded` or `included` without a reason, 1 on `refused`, `failed`, any reason, no result in time or the gateway offline, 2 on a usage error. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
 
@@ -607,8 +634,9 @@ systemd unit does not restart on it).
 
 [ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md): the gateway asks the
 household's companions for battery, readings and position with `SEND_TELEMETRY_REQ`; a companion
-answers only contacts it allows (denial is silence). Off by default (`[telemetry] enabled`) until a
-contact can be excluded from it, which the ADR provides and the next release adds.
+answers only contacts it allows (denial is silence). On by default (`[telemetry] enabled`); the
+household excludes every companion that is not its own. Values expire when a companion stops
+answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
 
 ```mermaid
 sequenceDiagram
@@ -627,10 +655,32 @@ sequenceDiagram
     P->>P: unique prefix on a current table: taken
 ```
 
-* **Who.** Every chat contact of the radio's table whose first 6 key bytes no other contact and not
-  the radio's own key share: the 0x8B names the answering contact by those bytes only. Nothing is
+* **Who.** Every chat contact of the radio's table that the household did not exclude and whose
+  first 6 key bytes no other contact and not the radio's own key share: the 0x8B names the
+  answering contact by those bytes only (an excluded look-alike still blocks its twin). Nothing is
   asked while the radio adds contacts of any type on its own (a look-alike could enter the table
   and answer in its place); the managed profile switches that off.
+* **Exclusion.** `contacts/<key>/telemetry` (`off`, `on`), the switch *Telemetry* and `contacts
+  telemetry` reach the contact manager, which takes the request at once, without the radio, its
+  worker or `[contacts] manage`, and without an await, so storage, documents and event cannot
+  interleave with the poller. `off` is taken for any well-formed key, also one not on the radio
+  yet: exclusion only narrows what the gateway does. The keys (at most 1024) are kept in
+  `telemetry-excluded.json` in the state directory, written atomically and only when the set
+  changed; `off` takes effect also when the file cannot be written (`not_saved`, written again at
+  every status tick), `on` only once stored. A file that cannot be parsed is left as it is and
+  pauses telemetry (`exclusions_unreadable`) until it is fixed or deleted and the service
+  restarted: the gateway asks nobody rather than everybody. An exclusion withdraws a request that
+  waits for the radio's lock, drops an answer that arrives anyway (checked after the table wait,
+  and by the observer), counts a silence as nothing learned, and forgets the contact's answers in
+  the schedule; when it was asked and flooded stays, so the flood limits hold. An inclusion makes
+  it `waiting` and due at once. One owner holds the set: the observer; the contact manager and the
+  poller read it.
+* **The first-start hour.** When telemetry starts on a state directory whose state file has no
+  telemetry record (it never ran there), the poller sends nothing for an hour from its first step
+  with a read table: `paused` with `first_start`, one warning with the number of companions it
+  will ask. What is left of the hour is saved with the schedule, so a restart neither skips nor
+  extends it (an unknown elapsed time keeps all of it). An update to a default-on version has no
+  moment of opt-in; the hour gives the household one.
 * **One at a time.** The firmware keeps one pending request; the poller is its only user (the
   gateway sends no other remote request). It waits `max(5 s, 1.25 × est_timeout)` from `SENT`. An
   answer is taken for the contact asked, or as the late answer of the last request until the next
@@ -700,18 +750,49 @@ sequenceDiagram
   command, or a later one that dropped it); `ERR 2` skips the contact until the next table read;
   `ERR 3` (no free packet buffer) pauses requests for 60 s. A disconnect during the wait counts
   nothing.
-* **Positions** go to the contact's document and its tracker (§6.6); readings, the answer's time
-  and a per-contact state follow with the next release.
+* **Readings** ([mqtt-api.md](mqtt-api.md#reading-keys)). The 13 single-value CayenneLPP types
+  that 1.18 companions send are published under `ch<channel>_<type>[_<n>][_<unit>]`, `<type>` the
+  library's name, `<n>` from 2 for a further reading of one channel and type; GPS is the position,
+  other types are decoded and not published. `battery_v` is the answer's first entry if it is the
+  channel 1 voltage, `mcu_temperature_c` its last if it is a channel 1 temperature and nothing after
+  it was left undecoded (the firmware's order); both leave `readings`. Luminosity has no unit: the
+  T1000-E, its only 1.18 sender, sends 0–100 % in it, other boards lux. Values are the integers sent
+  divided, never rounded again.
+* **Positions** go to the contact's document and its tracker (§6.6).
+* **States and expiry.** The scheduler computes each companion's state from its schedule:
+  `answering` or `no_position` while its answers are current (at most one request in a row
+  unanswered, the last answer at most `max(1 h, 3 × its interval)` old; located while the newest
+  answer, or one within the last hour, carried a position), else `away` within a day of an answer,
+  `no_path` for a candidate without a path that was not heard within 30 minutes and has no flood
+  planned, `no_answer` after a failure, `waiting` otherwise; the poller adds `excluded` and
+  `look_alike` (from the table as last read and the radio's own key, in every step, also while
+  paused), the observer `off`. The documents pull the state from the poller; the poller
+  re-evaluates every chat contact at every step and the asked one after each outcome, and
+  republishes a contact whose state changed. The tracker of a telemetry position and the telemetry
+  sensors in Home Assistant follow `position_current` and `telemetry_current`
+  ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
+* **Events** on `telemetry`, only for requests that were sent: `unanswered` when a companion that
+  answered within the day leaves its second request in a row unanswered (once per absence: the
+  count resets only with an answer), `answered` for an answer after two or more failures in a row,
+  or the first since the contact was added or included again. An expiry by the time bound alone
+  (paused, the radio away, no path, the gateway stopped) raises none.
+* **Status.** `state.telemetry` is `on`, `off`, `unsupported` or `paused`; while paused
+  `state.telemetry_reason` says why: `first_start`, `no_radio` (no radio session),
+  `exclusions_unreadable`, `auto_add` or `radio_airtime`.
 * **Persistence.** The schedule (per contact the due time, failures, the times of its last answer,
-  request and flood, whether it was last moving, the size of its answers, since when it left the
-  candidates; the gateway's floods of the last hour and the lanes' debt) is kept under
+  request and flood, how long its answers count and when one last carried a position, whether it
+  was last moving, the size of its answers, since when it left the candidates; the gateway's
+  floods of the last hour, the lanes' debt and what is left of the first-start hour) is kept under
   `telemetry` in the state file, relative to the time it was saved (a contact of the last run
   keeps its schedule until a table read lacks it, however long the radio was away),
   without positions. It is saved every 5 minutes after a change, at once after a flood (before its
   wait, so a crash cannot repeat it) and at the stop. A contact that left the candidates keeps its
   schedule for a day. When the clock went back while the gateway was stopped, the time stopped is
   unknown: it counts as nothing, except that every last answer counts as more than a day old
-  (fewer requests until the next answer, never more).
+  (fewer requests until the next answer, never more) and no located time is kept. Restored before
+  any task runs, the schedule gives each contact its state back at once, and the observer the time
+  of its newest answer with a position, so a restart flips no state and raises no event. The
+  exclusions are kept in their own file (above).
 
 ## 7 Security
 
@@ -738,6 +819,8 @@ sequenceDiagram
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
 | Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` with the release workflow and the tag check them (ADR 0013); the tag ruleset keeps tags from being moved or deleted, and CI tags only a commit whose checks passed (ADR 0022). |
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
+| Telemetry of someone outside the household: a companion that allows everyone and has the gateway as a contact answers | A companion's firmware denies telemetry by default and answers only a requester in its own table; the household excludes every other companion (the switch, the command line, MQTT; a full key also before it is added); the first time telemetry runs on an installation it waits an hour after the radio connects, so the household can do so first; exclusions survive restarts and the contact leaving the table, and an unreadable exclusions file pauses telemetry instead of asking everyone. |
+| Presence decided on a position nobody confirmed | A position from telemetry and the readings expire when the companion stops answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the state says why; `paused` with `no_radio` while the radio is away, and no events then. |
 
 ### 7.3 Command authorisation in detail
 
@@ -807,16 +890,22 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
-* Telemetry (§6.11) asks every chat contact of the radio while it is on, and the gateway cannot
-  read a companion's permissions: a contact that answers everyone ("Allow All") is tracked like a
-  household member. Until a contact can be excluded, keep only household companions as chat
-  contacts before switching it on. An answer is bound to a contact by its 6-byte prefix: a
-  look-alike in the table could answer in its place, so no contact with a shared prefix is asked
-  and nothing is asked while the radio adds contacts on its own. A position comes from the
-  companion's receiver and may be old (some trackers send their last one with GPS off); the
+* Telemetry (§6.11) asks every chat contact of the radio that is not excluded, and the gateway
+  cannot read a companion's permissions: a contact that answers everyone ("Allow All") is tracked
+  like a household member until it is excluded. An update nobody looks at within the first-start
+  hour asks such a contact, and a heard node added from Home Assistant's select is asked within a
+  minute (exclude it first on the command line). An answer is bound to a contact by its 6-byte
+  prefix: a look-alike in the table could answer in its place, so no contact with a shared prefix
+  is asked and nothing is asked while the radio adds contacts on its own. A position comes from
+  the companion's receiver and may be old (some trackers send their last one with GPS off); the
   gateway shows when it received a position and when it last changed, never when it was fixed.
-  Positions do not expire yet: an automation must not take a mesh tracker as its only presence
-  source.
+  Values count for up to an hour (three of the companion's intervals) after its last answer, and
+  coming back takes up to 30 minutes. Any Home Assistant user who may switch entities can include
+  an excluded companion again; the broker's ACL decides who may write `contacts/+/telemetry`.
+* Excluding a contact does not purge Home Assistant's own history: its recorder keeps the states
+  until it purges them, and the long-term statistics of `measurement` sensors until they are
+  deleted by hand (home-assistant.md, *Privacy*). The gateway's history of the contact goes with
+  `forget`.
 * The radio firmware and its key storage are trusted.
 * Messages on the radio are only as confidential as MeshCore's encryption; channel secrets of
   public or hashtag channels are known to everyone.
@@ -839,9 +928,24 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
 | Companion silent (away, switched off, no permission) | no telemetry answer within the wait | one retry after 30 s, then a back-off: at least every `max(30 min, its interval)` for a day on its stored path, then up to 6 h; never a flood unless heard | log info per state change |
 | Telemetry answer from another contact or a look-alike | prefix, table | dropped; with a look-alike in the table nobody with that prefix is asked | log debug or warning |
-| Radio adds contacts on its own, or transmitted 180 s in the last hour | settings, statistics | telemetry paused | `state.telemetry = paused`; log warning |
+| Radio adds contacts on its own, or transmitted 180 s in the last hour | settings, statistics | telemetry paused | `state.telemetry = paused`, `telemetry_reason` `auto_add` or `radio_airtime`; log warning |
 | Radio without `SEND_TELEMETRY_REQ` | `ERR 1` | telemetry off until it reconnects | `state.telemetry = unsupported` |
 | Bug in the telemetry poller | exception | logged; the next step goes on after 60 s; messages are not affected | log error |
+| `telemetry-excluded.json` not writable on `off` | error on save | in effect in memory, a warning once; written again at every status tick until stored, then an info line | `contact`: `excluded`, `reason: not_saved`; the command line exits 1 |
+| … not writable on `on` | error on save | nothing changes, the contact stays excluded | `contact`: `failed`, `state_unwritable` |
+| … cannot be parsed at start | JSON error | left in place, an error once, never written; telemetry paused; `off` in memory only, `on` refused | `state.telemetry_reason = exclusions_unreadable`; `not_saved`, `failed` |
+| … cannot be read at start | `OSError` | the service stops, as for the state file | systemd log |
+| Invalid entries in it | validation | skipped | log warning |
+| A flood of exclusion requests | rate limit | beyond 1 a second (bursts of 30) `rate_limited`; refusal events limited as for other requests | `contact`: `refused`; log |
+| 1024 keys excluded | count | `off` for a further key refused; `on` removes keys | `contact`: `refused`, `too_many` |
+| An exclusion while the request waits for the radio's lock | the request's last check | withdrawn before the write | log debug |
+| An answer of a contact excluded meanwhile | after the table wait, and in the observer | dropped; a silence counts as nothing learned | log debug |
+| History broken, off, or of a newer version | open or write error | readings neither stored nor restored; `forget` cannot delete; documents and Home Assistant go on | log warning; `excluded` with `not_forgotten` |
+| More than 16 reading keys of one contact | count | the rest only in the document | log info, once per key and run |
+| An unpublished CayenneLPP type | decoder | not published | log debug |
+| A bug while the states are evaluated | exception | logged at most once a minute; the step goes on | log error |
+| Radio away | no session | telemetry paused at once; states turn `away` after `current_s`; no event | `state.telemetry = paused`, `telemetry_reason = no_radio` |
+| The clock set back while stopped | negative age | ages unknown: last answers count as more than a day old, no located time, the first-start hour kept whole | – |
 
 ## 9 Deployment and operations
 
@@ -880,7 +984,8 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   runs the dialogs again with the current settings as defaults (`meshcore-home-gateway config
   answers`) and keeps the settings it does not ask for, and targets or command senders the radio no
   longer offers; `--answers <file>` installs without dialogs.
-* **Backup:** the configuration file and `/var/lib/meshcore-home-gateway/state.json`.
+* **Backup:** the configuration file, `/var/lib/meshcore-home-gateway/state.json` and
+  `telemetry-excluded.json` next to it, and the history (`history.sqlite3`).
 * **Releases** ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)):
   semantic versioning from 1.0.0 on; every finished increment is a pre-release of the minor
   version it leads to (`vX.Y.0aN`), a release candidate is what the hardware checklist runs with
@@ -929,6 +1034,7 @@ the tests with every supported Python version, like the CI matrix, and fails if 
 | History in a local SQLite database | [0016](decisions/0016-history-in-a-local-sqlite-database.md) |
 | Contacts on the radio, each with its own device | [0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md) |
 | Telemetry pulled from the household's companions | [0018](decisions/0018-telemetry-pulled-from-the-households-companions.md) |
+| Telemetry values in Home Assistant expire | [0024](decisions/0024-telemetry-values-in-home-assistant-expire.md) |
 | Internationalisation with gettext | [0019](decisions/0019-internationalisation-with-gettext.md) |
 | Managed radio profile for the observer | [0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | Generated dashboards for desktop and mobile | [0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) |
@@ -951,7 +1057,7 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; every companion a recipient; statistics and contact sensors on the gateway's device | 0017 |
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
 | 5 | Contact management: the gateway, the MQTT requests, the command line and the Home Assistant controls (add a heard node, add by key or link, remove; the gateway's QR code) | 0017 |
-| 6 | Telemetry and positions of the household's companions, with traces on the map. **6a** (this release): the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b**: readings, the answer's time and state, exclusion of a contact, on by default; **6c**: the check for positions in adverts, traces | 0018 |
+| 6 | Telemetry and positions of the household's companions, with traces on the map. **6a**: the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b** (this release): readings, the answer's time and state, expiry, events, exclusion of a contact, on by default with a first-start hour; **6c**: the check for positions in adverts, traces | 0018, 0024 |
 | 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
 | 8 | Generated dashboards for desktop and mobile | 0021 |
 
