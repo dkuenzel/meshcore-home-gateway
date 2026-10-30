@@ -5,10 +5,14 @@ one level below the gateway's device ID, so one subscription sees all of them an
 one contact only. Rules checked against Home Assistant 2026.10 (home-assistant/tests):
 
 * Components only with data: a position tracker once the contact has a position, sending and
-  messages only for node types that send texts. The button that removes the contact from the
-  radio is on every one and available while a request would be taken (not for a protected
-  contact, not with management off, not while the radio is away). Only the tracker carries
-  coordinates, because the map shows every entity with `latitude` and `longitude` attributes.
+  messages only for node types that send texts, a sensor for the battery, the MCU temperature
+  and each reading once a companion's telemetry answer has the value (at most 16 readings). The
+  button that removes the contact from the radio is on every one and available while a request
+  would be taken (not for a protected contact, not with management off, not while the radio is
+  away). Every companion has the switch that excludes it from telemetry and its telemetry state
+  at once (ADR 0018). Only the tracker carries coordinates, because the map shows every entity
+  with `latitude` and `longitude` attributes. A tracker of a telemetry position and the
+  telemetry sensors are unavailable while the answers are not current (ADR 0024).
   None is disabled by default:
   Home Assistant clears the discovery topic itself when it removes a device with a disabled
   entity, and warns about the echo.
@@ -29,10 +33,14 @@ import re
 import time
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import Mesh, Tracked, type_name
+from meshcore_home_gateway.core.telemetry import STATES
 from meshcore_home_gateway.mqtt.discovery import device_id, origin, placeholder
 from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -72,6 +80,62 @@ ACCURACY_KNOWN = (
     "value_json.position_accuracy_m is defined and value_json.position_accuracy_m is number"
 )
 _POSITION_KEYS = ("latitude", "longitude", "altitude_m", "position_at", "position_source")
+# the keys newer than 1.1.0a1 (telemetry): `is false`, `is number` and `is string` log nothing
+TELEMETRY_CURRENT = (
+    "{{ 'offline' if value_json is defined and value_json.telemetry_current is false "
+    "else 'online' }}"
+)
+POSITION_AVAILABLE = (  # also gone while a position from telemetry is not current
+    "{{ 'online' if value_json is defined and " + POSITION_KNOWN
+    + " and value_json.position_current is not false else 'offline' }}"
+)  # fmt: skip
+TELEMETRY_STATE = (
+    "{{ value_json.telemetry_state if value_json is defined "
+    "and value_json.telemetry_state is string else None }}"
+)
+TELEMETRY_SWITCH = (  # on unless excluded: a document of 1.1.0a1 excluded nobody
+    "{{ 'off' if value_json is defined and value_json.telemetry_excluded is true else 'on' }}"
+)
+MAX_READING_COMPONENTS = 16  # besides battery and MCU temperature: channels shift at a boot
+EXCLUDE_HINT = "unless excluded (meshcore-home-gateway contacts telemetry KEY off)"
+
+
+@dataclass(frozen=True, slots=True)
+class ReadingEntity:
+    """How Home Assistant shows a reading of one CayenneLPP type."""
+
+    name: str  # "Temperature": "Temperature 2" for channel 2, "Temperature 2 (2)" for the second
+    device_class: str | None
+    unit: str | None
+    precision: int
+
+
+# by LPP type: the types the documents publish (lpp.UNITS). Luminosity has no class and no unit:
+# lux on most boards, 0-100 on the T1000-E
+READING_ENTITIES: Mapping[int, ReadingEntity] = MappingProxyType({
+    116: ReadingEntity("Voltage", "voltage", "V", 2),
+    117: ReadingEntity("Current", "current", "A", 3),
+    128: ReadingEntity("Power", "power", "W", 0),
+    103: ReadingEntity("Temperature", "temperature", "°C", 1),
+    104: ReadingEntity("Humidity", "humidity", "%", 1),
+    115: ReadingEntity("Pressure", "atmospheric_pressure", "hPa", 1),
+    121: ReadingEntity("Altitude", "distance", "m", 0),  # barometric
+    101: ReadingEntity("Luminosity", None, None, 0),
+    100: ReadingEntity("Generic", None, None, 0),
+    2: ReadingEntity("Analog input", None, None, 2),
+    120: ReadingEntity("Percentage", None, "%", 0),
+    118: ReadingEntity("Frequency", "frequency", "Hz", 0),
+    130: ReadingEntity("Distance", "distance", "m", 3),
+})  # fmt: skip
+
+
+def number_at(*path: str) -> str:
+    """A template for a number in the document at `path` (`battery_v`, or `readings` and a
+    reading key), None where it is missing, also in a document of an earlier version."""
+    value = "value_json." + ".".join(path)
+    guards = ["value_json is defined"]
+    guards += [f"value_json.{'.'.join(path[:end])} is defined" for end in range(1, len(path))]
+    return f"{{{{ {value} if {' and '.join(guards)} and {value} is number else None }}}}"
 
 
 def _position_attributes(extra: str = "") -> str:
@@ -126,6 +190,7 @@ def contact_payload(
     """The discovery document of one contact. Components it was announced with earlier (`keep`)
     stay, also without data: Home Assistant clears the whole device's topic when it removes a
     disabled entity, and the gateway would take that for a deletion by the user."""
+    keep = tuple(keep)  # in order: the reading components announced first come first
     kept = frozenset(keep)
     node = tracked.node
     key = node.public_key
@@ -174,6 +239,19 @@ def contact_payload(
         ],
         availability_mode="all",
     )  # fmt: skip
+    companion = node.node_type == NodeType.CHAT
+    if companion or "telemetry" in kept:  # also with telemetry off: exclude before it asks
+        components["telemetry"] = component(
+            "telemetry", "switch", "_telemetry", name="Telemetry", entity_category="config",
+            command_topic=topics.contact_telemetry(key), payload_on="on", payload_off="off",
+            value_template=TELEMETRY_SWITCH, **state,
+        )  # fmt: skip
+    if companion or "telemetry_state" in kept:
+        components["telemetry_state"] = component(
+            "telemetry_state", "sensor", "_telemetry_state", name="Telemetry state",
+            device_class="enum", options=list(STATES), value_template=TELEMETRY_STATE, **state,
+        )  # fmt: skip
+    components.update(_telemetry_sensors(tracked, keep, component, topics, document))
     if tracked.fix is not None or "position" in kept:
         components["position"] = component(
             "position", "device_tracker", "", name="Position", source_type="gps",
@@ -181,8 +259,7 @@ def contact_payload(
             # replaces the shared availability: also gone while no position is known
             availability=[
                 {"topic": topics.availability},
-                {"topic": document,
-                 "value_template": f"{{{{ 'online' if {POSITION_KNOWN} else 'offline' }}}}"},
+                {"topic": document, "value_template": POSITION_AVAILABLE},
             ],
             availability_mode="all",
         )  # fmt: skip
@@ -200,6 +277,70 @@ def contact_payload(
         "qos": 1,
         "cmps": components,
     }
+
+
+def _telemetry_sensors(
+    tracked: Tracked, keep: Iterable[str], component: Callable[..., dict[str, Any]],
+    topics: Topics, document: str,
+) -> dict[str, dict[str, Any]]:  # fmt: skip
+    """Battery, MCU temperature and the readings of a companion's newest answer, and those it
+    was announced with; unavailable while its answers are not current."""
+    kept = frozenset(keep)
+    readings = tracked.readings if tracked.node.node_type == NodeType.CHAT else None  # asked
+    named = readings.named if readings is not None else None
+    options = {
+        "state_class": "measurement", "state_topic": document,
+        "availability": [
+            {"topic": topics.availability},
+            {"topic": document, "value_template": TELEMETRY_CURRENT},
+        ],
+        "availability_mode": "all",
+    }  # fmt: skip
+    sensors: dict[str, dict[str, Any]] = {}
+    if (named is not None and named.battery_v is not None) or "battery" in kept:
+        sensors["battery"] = component(
+            "battery", "sensor", "_battery", name="Battery", device_class="voltage",
+            unit_of_measurement="V", suggested_display_precision=2,
+            value_template=number_at(lpp.BATTERY_V), **options,
+        )  # fmt: skip
+    if (named is not None and named.mcu_temperature_c is not None) or "mcu_temperature" in kept:
+        sensors["mcu_temperature"] = component(
+            "mcu_temperature", "sensor", "_mcu_temperature", name="MCU temperature",
+            device_class="temperature", unit_of_measurement="°C", suggested_display_precision=1,
+            entity_category="diagnostic", value_template=number_at(lpp.MCU_TEMPERATURE_C),
+            **options,
+        )  # fmt: skip
+    keys = named.readings if named is not None else {}
+    for name, (key, channel, lpp_type, n) in _readings(keep, keys).items():
+        entity = READING_ENTITIES[lpp_type]
+        known = (("device_class", entity.device_class), ("unit_of_measurement", entity.unit))
+        sensors[name] = component(
+            name, "sensor", f"_{name}",
+            name=f"{entity.name} {channel}" + (f" ({n})" if n > 1 else ""),
+            **{option: value for option, value in known if value is not None},
+            suggested_display_precision=entity.precision,
+            value_template=number_at("readings", key), **options,
+        )  # fmt: skip
+    return sensors
+
+
+def _readings(keep: Iterable[str], keys: Iterable[str]) -> dict[str, tuple[str, int, int, int]]:
+    """The reading components: those announced earlier that this version can read, then those
+    of the newest answer (`keys`) in its order, at most MAX_READING_COMPONENTS in all."""
+    chosen = {name: found for name in keep if (found := _reading(name)) is not None}
+    for key in keys:  # one announced earlier is found the same again
+        name = lpp.component_of(key) or ""
+        if len(chosen) < MAX_READING_COMPONENTS and (found := _reading(name)) is not None:
+            chosen[name] = found
+    return chosen
+
+
+def _reading(name: str) -> tuple[str, int, int, int] | None:
+    """A reading component's key in `readings`, its channel, LPP type and occurrence; None for
+    a name this version does not make."""
+    parsed = lpp.parse_component(name)
+    key = lpp.reading_key(*parsed) if parsed is not None else None
+    return (key, *parsed) if parsed is not None and key is not None else None
 
 
 def removal_payload(
@@ -262,6 +403,7 @@ class ContactDevices:
         self._emptied: dict[str, float] = {}  # key -> when the gateway last sent it empty
         self._ha_running = False  # Home Assistant announced itself and has not gone offline
         self._without = 0  # contacts without a device because of the limit, as last logged
+        self._beyond: set[tuple[str, str]] = set()  # (contact, reading key) logged beyond the cap
 
     @property
     def watching(self) -> bool:
@@ -323,7 +465,9 @@ class ContactDevices:
         self._published.pop(key, None)
         self._records.hidden.add(key)
         self._records.save()
-        log.info("Home Assistant: contact %s deleted by the user, hidden there", key[:12])
+        asked = self._config.telemetry.enabled and "telemetry" in record.components
+        log.info("Home Assistant: contact %s deleted by the user, hidden there%s", key[:12],
+                 f"; it is still asked for telemetry {EXCLUDE_HINT}" if asked else "")  # fmt: skip
         self._event("hidden", key)
 
     def show_hidden(self) -> None:
@@ -357,8 +501,11 @@ class ContactDevices:
         if without != self._without:
             self._without = without
             if without:
+                asked = self._config.telemetry.enabled
                 log.info("Home Assistant: %d contacts without a device "
-                         "(homeassistant.contact_devices = %d)", without, self._limit)  # fmt: skip
+                         "(homeassistant.contact_devices = %d)%s", without, self._limit,
+                         f"; the companions among them are still asked for telemetry "
+                         f"{EXCLUDE_HINT}" if asked else "")  # fmt: skip
         return chosen
 
     def _unheard(self, tracked: Tracked) -> bool:
@@ -390,10 +537,22 @@ class ContactDevices:
         record.components = {
             **record.components, **{n: c["p"] for n, c in document["cmps"].items()},
         }  # fmt: skip
+        self._log_beyond(tracked, document["cmps"])
         payload = encode(document)
         if self._published.get(key) != payload:
             self._published[key] = payload
             self._bus.publish(contact_discovery_topic(self._config, key), payload)
+
+    def _log_beyond(self, tracked: Tracked, components: Mapping[str, Any]) -> None:
+        """A reading beyond the limit is in the document only: logged once per key and run."""
+        readings, key = tracked.readings, tracked.node.public_key
+        if readings is None or tracked.node.node_type != NodeType.CHAT:
+            return
+        for reading in readings.named.readings:
+            if lpp.component_of(reading) not in components and (key, reading) not in self._beyond:
+                self._beyond.add((key, reading))
+                log.info("Home Assistant: contact %s sends more than %d readings: %s only in "
+                         "its document", key[:12], MAX_READING_COMPONENTS, reading)  # fmt: skip
 
     def _remove(self, key: str) -> None:
         record = self._records.announced.pop(key)

@@ -144,8 +144,8 @@ def _parser() -> argparse.ArgumentParser:
 
     listen = command("listen", "print events from the broker as JSON lines", _listen)
     listen.add_argument(
-        "--topic", choices=["received", "command", "delivery", "state", "contact", "node", "all"],
-        default="all",
+        "--topic", default="all",
+        choices=["received", "command", "delivery", "state", "contact", "node", "telemetry", "all"],
     )  # fmt: skip
     listen.add_argument(
         "--count", type=_count, default=0, help="stop after this many events (0: never)"
@@ -173,7 +173,9 @@ def _parser() -> argparse.ArgumentParser:
 
 def _contacts_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     contacts = commands.add_parser(
-        "contacts", help="list, add and remove the radio's contacts through the broker"
+        "contacts",
+        help="list, add and remove the radio's contacts, and exclude companions from telemetry, "
+        "through the broker",
     )
     contacts_commands = contacts.add_subparsers(required=True, metavar="action")
 
@@ -202,6 +204,22 @@ def _contacts_parser(commands: argparse._SubParsersAction[argparse.ArgumentParse
         "--wait", type=_wait_seconds, default=30.0, metavar="SECONDS", help=wait_help
     )
     contacts_command("link", "print the gateway's contact link (for a QR code)", _contacts_link)
+    telemetry = contacts_command(
+        "telemetry", "ask a companion for its telemetry, or not (exclude it)", _contacts_telemetry
+    )
+    telemetry.add_argument(
+        "contact", help="its public key, also of a contact not on the radio yet, or KEY12…KEY8 "
+        "(a name may follow)",
+    )  # fmt: skip
+    telemetry.add_argument("state", choices=["on", "off"], help="off: excluded; on: asked again")
+    telemetry.add_argument(
+        "--forget", action="store_true", help="with off: also delete its readings and its "
+        "positions from telemetry from the gateway's history",
+    )  # fmt: skip
+    telemetry.add_argument(
+        "--wait", type=_wait_seconds, default=30.0, metavar="SECONDS",
+        help="wait this long for the result; 0: only send the request (default 30)",
+    )  # fmt: skip
 
 
 # --- run ------------------------------------------------------------------------------------
@@ -230,12 +248,14 @@ async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
     from meshcore_home_gateway.radio.profile import RadioProfile  # noqa: PLC0415
     from meshcore_home_gateway.state import (  # noqa: PLC0415
+        EXCLUSIONS_FILE,
         AnnouncedComponents,
         CommandLedger,
         ContactDeviceRecords,
         JsonStateFile,
         ProfileRecords,
         RetainedKeys,
+        TelemetryExclusions,
         TelemetryRecords,
     )
 
@@ -250,12 +270,16 @@ async def _serve(config: Config, state_dir: Path) -> int:
     store = JsonStateFile(state_dir / "state.json")
     history = None
     if config.history.enabled:
-        retention = Retention(config.history.messages_days, config.history.positions_days)
+        days = config.history
+        retention = Retention(
+            days.messages_days, days.positions_days, readings_days=days.readings_days
+        )
         history = History.open(state_dir / "history.sqlite3", retention)
     protected = protected_keys(config)
+    exclusions = TelemetryExclusions(state_dir / EXCLUSIONS_FILE)  # also while telemetry is off
     observer = Observer(
         bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
-        protected=protected,
+        protected=protected, exclusions=exclusions,
     )  # fmt: skip
     profile = RadioProfile(
         config.radio.profile, ProfileRecords(store), protected=protected_names(config)
@@ -332,7 +356,7 @@ def _check_config(args: argparse.Namespace) -> int:
     airtime = config.airtime
     print(f"  airtime    {airtime.budget_s_per_hour:g} s per hour, burst {airtime.burst_s:g} s")
     print(f"  contacts   {'managed on request' if config.contacts.manage else 'not managed'}")
-    telemetry = "asked of every companion" if config.telemetry.enabled else "off"
+    telemetry = "asked of every companion not excluded" if config.telemetry.enabled else "off"
     print(f"  telemetry  {telemetry}")
     from meshcore_home_gateway.bridge import protected_look_alikes  # noqa: PLC0415
 
@@ -856,8 +880,9 @@ def _listen(args: argparse.Namespace) -> int:
         "received": [topics.received], "command": [topics.command],
         "delivery": [topics.delivery], "state": [topics.state],
         "contact": [topics.contact_event], "node": [topics.node_event],
+        "telemetry": [topics.telemetry_event],
         "all": [topics.received, topics.command, topics.delivery, topics.state,
-                topics.contact_event, topics.node_event],
+                topics.contact_event, topics.node_event, topics.telemetry_event],
     }[args.topic]  # fmt: skip
     client = _mqtt_client(config.mqtt, "listen")
     seen = 0
@@ -990,8 +1015,12 @@ class _ContactSession:
     def online(self) -> bool:
         return bool(self.document("availability") == "online")
 
-    def request(self, topic: str, payload: dict[str, Any], wait_s: float, final: set[str]) -> int:
-        """Publish the request and print its result."""
+    def request(
+        self, topic: str, payload: dict[str, Any], wait_s: float, final: set[str],
+        ok: frozenset[str] = frozenset({"added", "removed"}),
+    ) -> int:  # fmt: skip
+        """Publish the request and print its result: success is an event of `ok` without a
+        reason."""
         request_id = f"cli-{os.urandom(4).hex()}"
         self.watch = _ContactWatch(request_id, final)
         error = _subscribe(self.client, self.topics.contact_event) if wait_s > 0 else None
@@ -1007,8 +1036,9 @@ class _ContactSession:
                   "still be handled: meshcore-home-gateway listen --topic contact)",
                   file=sys.stderr)  # fmt: skip
             return EX_FAILURE
-        print(_json_text(self.watch.result))
-        return EX_OK if self.watch.result["event_type"] in {"added", "removed"} else EX_FAILURE
+        result = self.watch.result
+        print(_json_text(result))
+        return EX_OK if result["event_type"] in ok and result.get("reason") is None else EX_FAILURE
 
     def close(self) -> None:
         self.client.disconnect()  # first: loop_stop() alone may wait 120 s for unacknowledged
@@ -1112,32 +1142,80 @@ def _contacts_add(args: argparse.Namespace) -> int:
         session.close()
 
 
-def _contacts_remove(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    text = args.contact.strip()
+def _contact_given(text: str) -> tuple[str, re.Match[str] | None] | None:
+    """A contact given as a full key or KEY12…KEY8: the text and its label; None after saying
+    what is wanted."""
+    text = text.strip()
     label = _LABEL.fullmatch(text)
     if label is None and not _FULL_KEY.fullmatch(text):
         print("meshcore-home-gateway: give the contact's full key (64 hex digits) or "
               "KEY12…KEY8", file=sys.stderr)  # fmt: skip
+        return None
+    return text, label
+
+
+def _indexed(text: str, label: re.Match[str] | None, index: Any) -> dict[str, Any] | None:
+    """The index's entry of the contact (by label or key); a key it lacks as `{"key": key}`;
+    None after saying why a label names none."""
+    if label is not None:
+        return _resolve_label(label, index, "contacts")
+    key = text.lower()
+    return next((e for e in _entries(index, "contacts") if e["key"] == key), {"key": key})
+
+
+def _contacts_remove(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    if (given := _contact_given(args.contact)) is None:
         return EX_USAGE
     session = _ContactSession(config, ["contacts"])
     try:
         if (status := _opened(session)) is not None:
             return status
-        index = session.document("contacts")
-        if label is not None:
-            entry = _resolve_label(label, index, "contacts")
-            if entry is None:
-                return EX_USAGE
-        else:
-            key = text.lower()
-            entry = next((e for e in _entries(index, "contacts") if e["key"] == key), {"key": key})
+        entry = _indexed(*given, session.document("contacts"))
+        if entry is None:
+            return EX_USAGE
         name = entry.get("name")
         _print_key(entry["key"], name if isinstance(name, str) else None)
         print("the radio drops its direct messages from then on; messages queued to it fail",
               file=sys.stderr)  # fmt: skip
         return session.request(session.topics.contact_remove(entry["key"]), {}, args.wait,
                                {"removed", "refused", "failed"})  # fmt: skip
+    finally:
+        session.close()
+
+
+def _contacts_telemetry(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    if args.forget and args.state == "on":
+        print("meshcore-home-gateway: --forget goes with off only", file=sys.stderr)
+        return EX_USAGE
+    if (given := _contact_given(args.contact)) is None:
+        return EX_USAGE
+    session = _ContactSession(config, ["contacts"])
+    try:
+        if (status := _opened(session)) is not None:
+            return status
+        index = session.document("contacts")
+        entry = _indexed(*given, index)
+        if entry is None:
+            return EX_USAGE
+        key, name = entry["key"], entry.get("name")
+        _print_key(key, name if isinstance(name, str) else None)
+        if args.state == "off":
+            history = "; its history keeps them for readings_days and positions_days"
+            if args.forget:
+                history = " and deletes them from its history"
+            print("the gateway stops asking it and forgets its battery, readings and position"
+                  + history, file=sys.stderr)  # fmt: skip
+            listed = any(e["key"] == key for e in _entries(index, "contacts"))
+            cut = isinstance(index, dict) and index.get("truncated") is True
+            if not listed and not cut:  # also before it is added: asked within a minute then
+                print("not on the radio now: excluded in advance", file=sys.stderr)
+        request = {"telemetry": args.state, **({"forget": True} if args.forget else {})}
+        return session.request(
+            session.topics.contact_telemetry(key), request, args.wait,
+            {"excluded", "included", "refused", "failed"}, frozenset({"excluded", "included"}),
+        )  # fmt: skip
     finally:
         session.close()
 

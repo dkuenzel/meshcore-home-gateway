@@ -121,6 +121,7 @@ def friendly(hass: HomeAssistant, entity_id: str) -> str:
 ALICE_IDS = {
     "notify.mesh_alice", "event.mesh_alice_message", "sensor.mesh_alice_last_heard",
     "sensor.mesh_alice_hops", "sensor.mesh_alice_snr", "button.mesh_alice_remove",
+    "switch.mesh_alice_telemetry", "sensor.mesh_alice_telemetry_state",
 }  # fmt: skip
 HILL_IDS = {
     "device_tracker.mesh_hilltop", "sensor.mesh_hilltop_last_heard", "sensor.mesh_hilltop_hops",
@@ -195,7 +196,7 @@ async def test_a_position_from_telemetry_carries_its_accuracy(
     gateway_devices(broker, store).update(mesh)
     await broker.deliver(hass)
     await online(hass)
-    first = contact_document(mesh.contacts[ALICE])
+    first = contact_document(mesh.contacts[ALICE], telemetry_state="answering")  # current
     await fire(hass, TOPICS.contact(ALICE), first, retain=True)
     await fire(hass, TOPICS.contact(HILL), contact_document(mesh.contacts[HILL]), retain=True)
     alice = hass.states.get("device_tracker.mesh_alice")
@@ -207,13 +208,14 @@ async def test_a_position_from_telemetry_carries_its_accuracy(
     hill = hass.states.get("device_tracker.mesh_hilltop")
     assert hill.attributes["gps_accuracy"] == 0
     mesh.contact_answered(ALICE, NOW + 900, near_home, 12.0)  # the next answer, at rest
-    document = contact_document(mesh.contacts[ALICE])
+    document = contact_document(mesh.contacts[ALICE], telemetry_state="answering")
     assert document != first  # its time received moved
     await fire(hass, TOPICS.contact(ALICE), document)
     assert hass.states.get("device_tracker.mesh_alice").last_updated == alice.last_updated
     moved = Position(near_home.latitude + 30 / 111_195, near_home.longitude)  # 30 m on
     mesh.contact_answered(ALICE, NOW + 1800, moved, 12.0)
-    await fire(hass, TOPICS.contact(ALICE), contact_document(mesh.contacts[ALICE]))
+    moved_document = contact_document(mesh.contacts[ALICE], telemetry_state="answering")
+    await fire(hass, TOPICS.contact(ALICE), moved_document)
     assert hass.states.get("device_tracker.mesh_alice").attributes["latitude"] == pytest.approx(
         moved.latitude
     )

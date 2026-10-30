@@ -820,7 +820,7 @@ def test_the_observer_holds_the_one_set_of_exclusions(tmp_path: Path) -> None:
         observers.append(Observer(bus, TOPICS, exclusions=exclusions, wall_clock=lambda: NOW))
         return observers[0]
 
-    settings = make_config(extra="[telemetry]\nenabled = true\n")
+    settings = make_config(telemetry=True)
 
     async def main() -> None:
         async with running(settings, radio, tmp_path, observer=observer) as (bridge, bus, _n):

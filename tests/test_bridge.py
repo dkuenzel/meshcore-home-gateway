@@ -17,6 +17,7 @@ import pytest
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
+from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.mqtt import manage_entities
@@ -31,12 +32,15 @@ from meshcore_home_gateway.radio.profile import RadioProfile
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
 from meshcore_home_gateway.radio.transport import Transport
 from meshcore_home_gateway.state import (
+    EXCLUSIONS_FILE,
     AnnouncedComponents,
     CommandLedger,
     ContactDeviceRecords,
     JsonStateFile,
+    TelemetryExclusions,
     TelemetryRecords,
 )
+from meshcore_home_gateway.telemetry_poller import TelemetryPoller
 from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
 
 NOW = START_TIME + 100
@@ -51,7 +55,12 @@ def make_config(
     messages: str = "",
     airtime: str = "",
     radio: str = 'transport = "tcp"\nhost = "192.0.2.10"',
+    *,
+    telemetry: bool | None = False,
 ) -> Config:
+    """Telemetry is off unless asked for, so the radio traffic stays exact; None: no
+    `[telemetry]` table, the default (on)."""
+    table = "" if telemetry is None else f"[telemetry]\nenabled = {str(telemetry).lower()}"
     return parse_config(
         f"""
 [radio]
@@ -68,6 +77,7 @@ contact = "{BOB.public_key.hex()}"
 [commands]
 senders = ["{ALICE.public_key.hex()}"]
 words = ["status", "arm"]
+{table}
 [messages]
 dedup_window_s = 300
 {messages}
@@ -1412,6 +1422,134 @@ def test_watchdog_is_pinged_at_half_its_interval_and_the_state_repeated(
             assert len(bus.payloads("/state")) - states >= 3  # every 0.15 s
 
     scenario(main)
+
+
+def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
+    """The shipped default (ADR 0018): a configuration without [telemetry] asks the companions.
+    The poller gives each companion's document its state and hears of every exclusion."""
+    plain = parse_config(
+        '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+    )
+    assert plain.telemetry.enabled is True
+    store = JsonStateFile(tmp_path / "state.json")
+    bridge = Bridge(plain, FakeBus(), EmulatedRadio, CommandLedger(store))
+    poller = bridge._telemetry
+    assert poller is not None
+    assert bridge.observer.telemetry_state == poller.state_of
+    assert bridge.observer.on_telemetry_exclusion == [poller.exclusion_changed]
+    off = Bridge(make_config(), FakeBus(), EmulatedRadio, CommandLedger(store))
+    assert off._telemetry is None
+    assert (off.observer.telemetry_state, off.observer.on_telemetry_exclusion) == (None, [])
+
+
+def test_the_saved_schedule_is_restored_before_anything_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before the bus starts: the first documents already carry the restored states."""
+    order: list[str] = []
+    restore = TelemetryPoller.restore
+
+    def restoring(poller: TelemetryPoller) -> None:
+        order.append("restore")
+        restore(poller)
+
+    class Bus(FakeBus):
+        async def start(self) -> None:
+            order.append("bus")
+            await super().start()
+
+    monkeypatch.setattr(TelemetryPoller, "restore", restoring)
+
+    async def main() -> None:
+        async with running(make_config(telemetry=True), EmulatedRadio(), tmp_path, bus=Bus()):
+            assert order[:2] == ["restore", "bus"]
+
+    scenario(main)
+
+
+def test_the_state_says_why_telemetry_waits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`paused` with `no_radio` while the radio is away; no reason while it runs or is off."""
+    monkeypatch.setattr(telemetry, "STEP_S", 0.1)  # the step that finds the radio comes soon
+
+    async def main() -> None:
+        async with running(make_config(telemetry=True), EmulatedRadio(), tmp_path,
+                           transport=Unreachable) as (_, bus, _notes):  # fmt: skip
+            state = await bus.wait_for("/state", lambda s: True)
+            assert (state["telemetry"], state["telemetry_reason"]) == ("paused", "no_radio")
+        async with running(make_config(telemetry=True), EmulatedRadio(), tmp_path) as (
+            bridge, _bus, _notes,
+        ):  # fmt: skip
+            await until(lambda: bridge.state_payload()["telemetry"] == "on")
+            assert bridge.state_payload()["telemetry_reason"] is None
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, _bus, _notes):
+            state = bridge.state_payload()
+            assert (state["telemetry"], state["telemetry_reason"]) == ("off", None)
+
+    scenario(main)
+
+
+def test_a_bug_in_the_telemetry_state_leaves_the_rest_of_the_state(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    bridge = Bridge(make_config(telemetry=True), FakeBus(), EmulatedRadio, CommandLedger(store))
+    poller = bridge._telemetry
+    assert poller is not None
+
+    def broken() -> tuple[float, float]:
+        raise RuntimeError("bug")
+
+    poller.used_s = broken  # type: ignore[method-assign]
+    state = bridge.state_payload()
+    assert (state["telemetry"], state["telemetry_reason"]) == (None, None)
+    assert state["telemetry_airtime_1h_s"] is None
+    assert state["radio"] == "disconnected"
+    assert "telemetry: state unavailable" in caplog.text
+
+
+def test_an_exclusion_not_stored_is_written_at_the_next_status_tick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bridge_module, "STATUS_INTERVAL_S", 0.05)
+    path = tmp_path / EXCLUSIONS_FILE
+    save = JsonStateFile.save
+    full = [True]
+
+    def failing(store: JsonStateFile, data: dict[str, Any]) -> None:
+        if store.path == path and full[0]:
+            raise OSError(28, "No space left on device")
+        save(store, data)
+
+    monkeypatch.setattr(JsonStateFile, "save", failing)
+
+    def observer(bus: FakeBus) -> Observer:
+        topics = Topics("meshcore", "radio1")
+        return Observer(bus, topics, exclusions=TelemetryExclusions(path), wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path, observer=observer) as (
+            bridge, _bus, _notes,
+        ):  # fmt: skip
+            exclusions = bridge.observer.exclusions
+            assert not exclusions.exclude(ALICE.public_key.hex())
+            await asyncio.sleep(0.15)
+            assert exclusions.pending
+            full[0] = False
+            await until(path.exists)
+            assert json.loads(path.read_text())["excluded"] == [ALICE.public_key.hex()]
+            assert not exclusions.pending
+
+    scenario(main)
+
+
+async def until(check: Callable[[], bool], within_s: float = 3.0) -> None:
+    deadline = time.monotonic() + within_s
+    while not check():
+        if time.monotonic() > deadline:
+            raise AssertionError("condition not met in time")
+        await asyncio.sleep(0.01)
 
 
 def test_radio_reconnects_after_unplugging(tmp_path: Path) -> None:

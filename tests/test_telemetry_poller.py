@@ -26,6 +26,7 @@ from meshcore_home_gateway.core.budget import AirtimeBudget
 from meshcore_home_gateway.core.mesh import Heard, Signal
 from meshcore_home_gateway.core.telemetry import Candidate, Poll
 from meshcore_home_gateway.history import History
+from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol import codec
@@ -47,6 +48,7 @@ from meshcore_home_gateway.state import (
 from meshcore_home_gateway.telemetry_poller import AnswerWaiter, OutboxActivity, TelemetryPoller
 from meshcore_home_gateway.views import iso
 from tests.radio_emulator import (
+    LPP_BME280,
     LPP_FULL,
     SELF_KEY,
     START_TIME,
@@ -55,7 +57,16 @@ from tests.radio_emulator import (
     RemoteCompanion,
     telemetry_push,
 )
-from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
+from tests.test_bridge import (
+    ALICE,
+    BOB,
+    NOW,
+    FakeBus,
+    Unreachable,
+    make_config,
+    running,
+    scenario,
+)
 
 ROOT = "meshcore/radio1"
 DANA = EmulatedContact(bytes.fromhex("d4" * 32), "Dana", out_path_len=0x00)  # a neighbour
@@ -65,7 +76,7 @@ LOGGER = "meshcore_home_gateway.telemetry_poller"
 
 
 def config(extra: str = "") -> Config:
-    return make_config(extra="[telemetry]\nenabled = true\n" + extra)
+    return make_config(extra=extra, telemetry=True)
 
 
 def wide(capacity: Costs, now: float) -> tuple[AirtimeBudget, AirtimeBudget]:
@@ -360,7 +371,7 @@ def test_messages_go_first(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 def test_messages_on_an_ignored_channel_do_not_hold_requests_back(tmp_path: Path) -> None:
     """Nothing answers them: a busy channel the configuration ignores does not stop telemetry."""
     radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: RemoteCompanion()})
-    ignoring = make_config(extra="[telemetry]\nenabled = true\n", messages="ignore_channels = [0]")
+    ignoring = make_config(messages="ignore_channels = [0]", telemetry=True)
 
     async def main() -> None:
         async with running(ignoring, radio, tmp_path, telemetry_lanes=wide):
@@ -563,6 +574,298 @@ def test_the_schedule_is_saved_at_the_stop_and_a_restart_asks_nobody_early(
     scenario(run_second)
 
 
+# --- end to end: readings, exclusion, states and events (ADR 0024) -----------------------------
+
+BME280_READINGS = {
+    "ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5,
+    "ch2_barometric_pressure_hpa": 1013.2, "ch2_altitude_m": 120.0,
+}  # fmt: skip
+
+
+def bme280_radio(*contacts: EmulatedContact, auto: bool = True) -> EmulatedRadio:
+    """Dana's handheld with an environment sensor on channel 2."""
+    remote = RemoteCompanion(lpp=LPP_BME280, auto=auto)
+    return EmulatedRadio(contacts=[DANA, *contacts], remotes={DANA.public_key: remote})
+
+
+def events(bus: FakeBus) -> list[dict[str, Any]]:
+    """The `telemetry` events."""
+    return bus.payloads(f"{ROOT}/telemetry")
+
+
+def ask(bus: FakeBus, state: bytes, key: str = KEY) -> None:
+    bus.contact_requests.put_nowait(ContactRequest("telemetry", state, False, key))
+
+
+def keeping(tmp_path: Path, closing: list[History] | None = None) -> Callable[[FakeBus], Observer]:
+    """An observer as the service builds it: the exclusions in their own file, and a history
+    when `closing` takes it."""
+
+    def observer(bus: FakeBus) -> Observer:
+        history = None
+        if closing is not None:
+            history = History.open(tmp_path / "history.sqlite3")
+            closing.append(cast(History, history))
+        exclusions = TelemetryExclusions(tmp_path / EXCLUSIONS_FILE)
+        return Observer(bus, Topics("meshcore", "radio1"), history=history,
+                        exclusions=exclusions, wall_clock=lambda: NOW)  # fmt: skip
+
+    return observer
+
+
+def test_an_answer_brings_its_readings_to_the_document_and_the_device(tmp_path: Path) -> None:
+    """Her first answer: the readings, her device's sensors at once, and `answered`."""
+    radio = bme280_radio()
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, devices=True, telemetry_lanes=wide) as (
+            _bridge, bus, _notes,
+        ):  # fmt: skip
+            document = await bus.wait_for(f"/contacts/{KEY}", lambda d: d["readings"] != {})
+            assert (document["battery_v"], document["mcu_temperature_c"]) == (4.12, 23.4)
+            assert document["readings"] == BME280_READINGS
+            assert document["readings_at"] == iso(NOW)
+            assert (document["telemetry_state"], document["telemetry_current"]) == (
+                "answering", True,
+            )  # fmt: skip
+            assert document["position_current"] is True
+            device = await bus.wait_for(f"/contact_{KEY}/config", lambda d: "battery" in d["cmps"])
+            assert {"battery", "mcu_temperature", "ch2_temperature", "ch2_humidity",
+                    "ch2_barometric_pressure", "ch2_altitude"} <= set(device["cmps"])  # fmt: skip
+            await bus.wait_for("/telemetry", lambda e: True)
+            assert events(bus) == [{
+                "event_type": "answered", "key": KEY, "prefix": KEY[:12], "name": "Dana",
+                "state": "answering",
+            }]  # fmt: skip
+
+    scenario(main)
+
+
+def test_an_excluded_companion_is_not_asked_also_after_a_restart(
+    tmp_path: Path, quick_intervals: None
+) -> None:
+    path = tmp_path / EXCLUSIONS_FILE
+    first = bme280_radio()
+
+    async def run_first() -> None:
+        async with running(config(), first, tmp_path, observer=keeping(tmp_path),
+                           telemetry_lanes=wide) as (_bridge, bus, _notes):  # fmt: skip
+            await bus.wait_for(f"/contacts/{KEY}", lambda d: d["battery_v"] is not None)
+            ask(bus, b"off")
+            event = await bus.wait_for("/contact", lambda e: e["request"] == "telemetry")
+            assert (event["event_type"], event["key"], event["reason"]) == ("excluded", KEY, None)
+            asked = requests(first)
+            document = bus.payloads(f"/contacts/{KEY}")[-1]
+            assert (document["battery_v"], document["mcu_temperature_c"]) == (None, None)
+            assert (document["readings"], document["readings_at"]) == ({}, None)
+            assert (document["telemetry_state"], document["telemetry_excluded"]) == (
+                "excluded", True,
+            )  # fmt: skip
+            await asyncio.sleep(1.0)  # she would be asked every 0.5 s
+            assert requests(first) == asked
+
+    scenario(run_first)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": [KEY]}
+    second = bme280_radio()
+
+    async def run_second() -> None:
+        async with running(config(), second, tmp_path, observer=keeping(tmp_path),
+                           telemetry_lanes=wide) as (_bridge, bus, _notes):  # fmt: skip
+            await asyncio.sleep(0.5)
+            assert requests(second) == 0
+            assert bus.payloads(f"/contacts/{KEY}")[-1]["telemetry_state"] == "excluded"
+            ask(bus, b"on")
+            event = await bus.wait_for("/contact", lambda e: e["request"] == "telemetry")
+            assert (event["event_type"], event["reason"]) == ("included", None)
+            back = await bus.wait_for("/telemetry", lambda e: True)
+            assert (back["event_type"], back["state"]) == ("answered", "answering")
+            assert requests(second) >= 1
+
+    scenario(run_second)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": []}
+
+
+def test_an_answer_in_flight_when_she_is_excluded_is_not_published(tmp_path: Path) -> None:
+    radio = bme280_radio(auto=False)
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            await until(lambda: requests(radio) == 1)
+            ask(bus, b"off")
+            await bus.wait_for("/contact", lambda e: e["event_type"] == "excluded")
+            radio.answer_telemetry()
+            await asyncio.sleep(0.5)
+            documents = bus.payloads(f"/contacts/{KEY}")
+            assert all(d["battery_v"] is None and not positioned(d) for d in documents)
+            assert events(bus) == []
+
+    scenario(main)
+
+
+def test_a_companion_that_stops_answering_raises_one_event_and_one_when_back(
+    tmp_path: Path, quick_intervals: None
+) -> None:
+    radio = bme280_radio()
+    remote = radio.remotes[DANA.public_key]
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            await bus.wait_for("/telemetry", lambda e: e["event_type"] == "answered")
+            remote.lpp = None  # out of range
+            gone = await bus.wait_for("/telemetry", lambda e: e["event_type"] == "unanswered")
+            assert gone["state"] == "away"
+            document = bus.payloads(f"/contacts/{KEY}")[-1]
+            assert (document["telemetry_state"], document["telemetry_current"]) == ("away", False)
+            assert document["position_current"] is False
+            assert document["battery_v"] == 4.12  # the values stay
+            asked = requests(radio)
+            await until(lambda: requests(radio) >= asked + 2)  # still asked, no second event
+            assert [e["event_type"] for e in events(bus)] == ["answered", "unanswered"]
+            remote.lpp = LPP_BME280
+            back = await bus.wait_for("/telemetry", lambda e: True, since=2)
+            assert (back["event_type"], back["state"]) == ("answered", "answering")
+
+    scenario(main)
+
+
+def test_answers_expire_while_telemetry_is_paused_without_an_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, quick_intervals: None
+) -> None:
+    """Nobody was asked, so nobody left two requests unanswered: the state says `away`, no
+    event comes, and the status says why."""
+    monkeypatch.setattr(telemetry, "CURRENT_MIN_S", 1.0)  # her answers count 1.5 s
+    radio = bme280_radio()
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _):
+            await bus.wait_for("/telemetry", lambda e: e["event_type"] == "answered")
+            radio.manual_add = False  # the radio adds contacts by itself, from its next start
+            radio.disconnect()
+            await until(lambda: bridge.state_payload()["telemetry_reason"] == "auto_add")
+            asked = requests(radio)
+            await bus.wait_for(f"/contacts/{KEY}", lambda d: d["telemetry_state"] == "away")
+            assert requests(radio) == asked
+            assert [e["event_type"] for e in events(bus)] == ["answered"]
+            assert bridge.state_payload()["telemetry"] == "paused"
+
+    scenario(main)
+
+
+def test_the_state_says_paused_while_the_radio_is_away(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bridge_module, "STATUS_INTERVAL_S", 0.1)
+    radio = bme280_radio()
+    plugged = [True]
+
+    def transport() -> EmulatedRadio | Unreachable:
+        return radio if plugged[0] else Unreachable()
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, transport, telemetry_lanes=wide) as (
+            _bridge, bus, _notes,
+        ):  # fmt: skip
+            await bus.wait_for("/state", lambda s: s["telemetry"] == "on")
+            plugged[0] = False
+            radio.disconnect()
+            since = len(bus.payloads("/state"))
+            away = await bus.wait_for("/state", lambda s: s["radio"] == "disconnected"
+                                      and s["telemetry"] == "paused", since=since)  # fmt: skip
+            assert away["telemetry_reason"] == "no_radio"
+            plugged[0] = True
+            since = len(bus.payloads("/state"))
+            back = await bus.wait_for("/state", lambda s: s["telemetry"] == "on", within_s=5,
+                                      since=since)  # fmt: skip
+            assert back["telemetry_reason"] is None
+
+    scenario(main)
+
+
+def test_with_telemetry_off_exclusions_are_kept_and_reported(tmp_path: Path) -> None:
+    """A household can exclude its strangers before it switches telemetry on."""
+    path = tmp_path / EXCLUSIONS_FILE
+    radio = bme280_radio(ALICE)
+    alice = ALICE.public_key.hex()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, observer=keeping(tmp_path)) as (
+            bridge, bus, _notes,
+        ):  # fmt: skip
+            await bus.wait_for(f"/contacts/{KEY}", lambda d: d["telemetry_state"] == "off")
+            ask(bus, b"off")
+            excluded = await bus.wait_for("/contact", lambda e: e["event_type"] == "excluded")
+            assert excluded["reason"] is None
+            assert bus.payloads(f"/contacts/{KEY}")[-1]["telemetry_state"] == "excluded"
+            assert bus.payloads(f"/contacts/{alice}")[-1]["telemetry_state"] == "off"
+            assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": [KEY]}
+            ask(bus, b"on")
+            await bus.wait_for("/contact", lambda e: e["event_type"] == "included")
+            assert bus.payloads(f"/contacts/{KEY}")[-1]["telemetry_state"] == "off"
+            assert (requests(radio), bridge.state_payload()["telemetry"]) == (0, "off")
+
+    scenario(main)
+
+
+@pytest.mark.first_start_hold
+def test_by_default_telemetry_asks_after_the_first_start_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `[telemetry]` table: the poller runs. On a state directory where it never ran, it
+    asks nobody for FIRST_START_S after the radio's table is read."""
+    monkeypatch.setattr(poller_module, "FIRST_START_S", 2.0)
+    radio = bme280_radio()
+
+    async def main() -> None:
+        async with running(make_config(telemetry=None), radio, tmp_path, telemetry_lanes=wide) as (
+            bridge, _bus, _notes,
+        ):  # fmt: skip
+            await until(lambda: bridge.state_payload()["telemetry_reason"] == "first_start")
+            held = time.monotonic()
+            assert requests(radio) == 0
+            await until(lambda: requests(radio) == 1, within_s=5)
+            assert time.monotonic() - held > 1.5
+            state = bridge.state_payload()
+            assert (state["telemetry"], state["telemetry_reason"]) == ("on", None)
+
+    scenario(main)
+
+
+def test_a_restart_flips_no_state_and_raises_no_event(tmp_path: Path) -> None:
+    """The states come from the saved schedule and the readings from the history: nothing
+    expires and nothing is reported again."""
+    histories: list[History] = []
+    first = bme280_radio()
+
+    async def run_first() -> None:
+        async with running(config(), first, tmp_path, observer=keeping(tmp_path, histories),
+                           telemetry_lanes=wide) as (_bridge, bus, _notes):  # fmt: skip
+            await bus.wait_for("/telemetry", lambda e: e["event_type"] == "answered")
+
+    second = bme280_radio()
+
+    async def run_second() -> None:
+        async with running(config(), second, tmp_path, observer=keeping(tmp_path, histories),
+                           telemetry_lanes=wide) as (_bridge, bus, _notes):  # fmt: skip
+            await bus.wait_for(f"/contacts/{KEY}", lambda d: True)
+            await asyncio.sleep(0.4)
+            documents = bus.payloads(f"/contacts/{KEY}")
+            assert {d["telemetry_state"] for d in documents} == {"answering"}
+            for document in documents:
+                assert (document["battery_v"], document["readings"]) == (4.12, BME280_READINGS)
+                assert document["position_current"] is True
+                received = document["position_received_at"]  # the age the schedule kept
+                assert received in {iso(NOW - age) for age in range(3)}  # the test's clock stood
+            assert events(bus) == []
+            assert requests(second) == 0
+
+    try:
+        scenario(run_first)
+        scenario(run_second)
+    finally:
+        for history in histories:
+            history.close()
+
+
 # --- parts ----------------------------------------------------------------------------------
 
 
@@ -744,9 +1047,7 @@ def test_a_silence_during_a_table_read_counts_only_again_over_tcp(
     remote = RemoteCompanion()
     radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: remote})
     where = 'host = "192.0.2.10"' if transport == "tcp" else 'device = "/dev/ttyACM9"'
-    settings = make_config(
-        extra="[telemetry]\nenabled = true\n", radio=f'transport = "{transport}"\n{where}'
-    )
+    settings = make_config(radio=f'transport = "{transport}"\n{where}', telemetry=True)
 
     async def main() -> None:
         async with running(settings, radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _):

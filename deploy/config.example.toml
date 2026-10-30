@@ -54,10 +54,16 @@ words = []                                             # e.g. ["status", "arm", 
 max_age_s = 900                                        # 0 disables the clock check
 
 # Telemetry: battery, readings and position of the radio's companions, asked of each in turn
-# (docs/companions.md sets them up). Every companion contact of the radio is asked: none can be
-# excluded yet.
+# (docs/companions.md sets them up). Every companion of the radio that is not excluded is asked,
+# the first time an hour after the radio connects. Exclude every one that is not the household's:
+# the Telemetry switch on its device in Home Assistant, or
+# meshcore-home-gateway contacts telemetry KEY off
 [telemetry]
-enabled = false
+# enabled = true                                       # the default
+
+# History of messages, positions and readings in the state directory (docs/configuration.md).
+[history]
+# readings_days = 30                                   # the companions' readings
 
 [diagnostics]
 publish_rx_log = false                                 # SNR/RSSI of every received packet

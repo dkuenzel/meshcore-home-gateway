@@ -131,7 +131,7 @@ class ContactsConfig:
 class TelemetryConfig:
     """Asking the radio's companions for their telemetry (ADR 0018)."""
 
-    enabled: bool = False  # until contacts can be excluded
+    enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,7 +514,7 @@ def _contacts(s: _Section) -> ContactsConfig:
 
 
 def _telemetry(s: _Section) -> TelemetryConfig:
-    return TelemetryConfig(enabled=s.boolean("enabled", False))
+    return TelemetryConfig(enabled=s.boolean("enabled", True))
 
 
 def _diagnostics(s: _Section) -> DiagnosticsConfig:

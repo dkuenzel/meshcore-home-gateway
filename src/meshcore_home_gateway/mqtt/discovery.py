@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.model import DeliveryState
 from meshcore_home_gateway.mqtt.topics import Topics
 
@@ -37,6 +38,11 @@ RADIO_ATTRIBUTES = (
     "'contact_link': value_json.get('contact_link')} | tojson }}"
 )
 PROFILE_STATES = ["ok", "written", "drift", "differs", "problem"]  # views.settings_document
+TELEMETRY_STATUS = (  # state.telemetry and state.telemetry_reason are newer than 1.0.0
+    "{{ value_json.telemetry if value_json is defined "
+    "and value_json.telemetry is string else None }}"
+)
+TELEMETRY_REASON = "{{ {'reason': value_json.get('telemetry_reason')} | tojson }}"
 STATS_ATTRIBUTES = (
     "{{ {'window_s': value_json.tx_airtime_window_s, 'airtime_factor': value_json.airtime_factor, "
     "'duty_cycle_percent': value_json.duty_cycle_percent} | tojson }}"
@@ -80,6 +86,10 @@ def discovery_payload(
         }
 
     diagnostic = {"entity_category": "diagnostic", "state_topic": topics.state}
+    lane = {  # the telemetry lanes: each would write a row a minute, so off until wanted
+        "device_class": "duration", "unit_of_measurement": "s", "state_class": "measurement",
+        "suggested_display_precision": 1, "enabled_by_default": False, **diagnostic,
+    }  # fmt: skip
     components: dict[str, dict[str, Any]] = {
         "radio": component(
             "radio", "binary_sensor", "Radio link", device_class="connectivity",
@@ -118,6 +128,25 @@ def discovery_payload(
         "delivery": component(
             "delivery", "event", "Delivery", state_topic=topics.delivery,
             event_types=[state.value for state in DeliveryState],
+        ),
+        # also with telemetry off: a disabled component that goes takes the whole device away
+        "telemetry_status": component(
+            "telemetry_status", "sensor", "Telemetry status", device_class="enum",
+            options=list(telemetry.STATUSES), icon="mdi:satellite-uplink",
+            value_template=TELEMETRY_STATUS, json_attributes_topic=topics.state,
+            json_attributes_template=TELEMETRY_REASON, **diagnostic,
+        ),
+        "telemetry_airtime": component(
+            "telemetry_airtime", "sensor", "Telemetry airtime last hour",
+            value_template="{{ value_json.get('telemetry_airtime_1h_s') }}", **lane,
+        ),
+        "telemetry_mesh_airtime": component(
+            "telemetry_mesh_airtime", "sensor", "Telemetry mesh airtime last hour",
+            value_template="{{ value_json.get('telemetry_mesh_airtime_1h_s') }}", **lane,
+        ),
+        "telemetry": component(
+            "telemetry", "event", "Telemetry", state_topic=topics.telemetry_event,
+            event_types=list(telemetry.EVENTS),
         ),
     }  # fmt: skip
     if config.commands.words:
@@ -275,7 +304,9 @@ def _mesh_components(
         ),
         "contact": component(
             "contact", "event", "Contact", state_topic=topics.contact_event,
-            event_types=["added", "removed", "hidden", "shown", "refused", "failed"],
+            event_types=[
+                "added", "removed", "hidden", "shown", "refused", "failed", "excluded", "included",
+            ],
         ),
         "node": component(
             "node", "event", "New node", state_topic=topics.node_event, event_types=["new"],
@@ -303,6 +334,7 @@ _REQUIRED: dict[str, dict[str, Any]] = {
     "device_tracker": {"state_topic": "{root}/removed"},
     "select": {"command_topic": "{root}/removed", "options": ["removed"]},
     "text": {"command_topic": "{root}/removed"},
+    "switch": {"command_topic": "{root}/removed"},
 }
 
 

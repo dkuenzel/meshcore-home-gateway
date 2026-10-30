@@ -303,9 +303,18 @@ def test_rendering_escapes_control_characters() -> None:
 
 
 def test_the_shipped_example_is_valid() -> None:
+    """It follows the defaults of telemetry and the history of readings: a copy of it changes
+    with them."""
     example = Path(__file__).resolve().parent.parent / "deploy" / "config.example.toml"
     config = load_config(example)
     assert {t.alias for t in config.targets} == {"alerts", "operator"}
+    defaults = parse_config(MINIMAL)
+    assert config.telemetry == defaults.telemetry
+    assert config.history.readings_days == defaults.history.readings_days
+    text = example.read_text(encoding="utf-8")
+    assert "\n# enabled = true " in text.split("[telemetry]")[1]
+    assert "\n# readings_days = 30 " in text.split("[history]")[1]
+    assert "contacts telemetry KEY off" in text
 
 
 def test_every_setting_can_be_answered() -> None:
@@ -507,10 +516,12 @@ def test_a_user_name_with_surrounding_blanks_is_refused(name: str) -> None:
         parse_config(text.replace("\t", "\\t"))
 
 
-def test_telemetry_is_off_by_default_until_contacts_can_be_excluded() -> None:
-    """ADR 0018 lets a contact be excluded; until that exists, asking every companion of the
-    radio is the user's choice, not a default."""
-    assert parse_config(MINIMAL).telemetry.enabled is False
+def test_telemetry_is_on_by_default() -> None:
+    """ADR 0018: every companion of the radio that is not excluded is asked; a companion's
+    firmware answers only a requester it allows, and the first start holds the requests for an
+    hour, so the household can exclude strangers first."""
+    assert parse_config(MINIMAL).telemetry.enabled is True
+    assert parse_config(MINIMAL + "\n[telemetry]\nenabled = false\n").telemetry.enabled is False
     assert parse_config(FULL).telemetry.enabled is True
     with pytest.raises(ConfigError, match=r"telemetry\.enabled"):
         parse_config(MINIMAL + '\n[telemetry]\nenabled = "yes"\n')

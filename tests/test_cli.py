@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import grp
 import json
@@ -20,12 +21,15 @@ import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway import __version__
+from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import cli as cli_module
 from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
 from meshcore_home_gateway.config import MqttConfig, load_config, parse_config
+from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.protocol.codes import Command
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
+from meshcore_home_gateway.state import EXCLUSIONS_FILE
 from tests.conftest import Broker
 from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio, TcpRadioServer
 from tests.test_mqtt_client import FakePaho
@@ -53,7 +57,17 @@ def test_check_config_summarises_a_valid_file(capsys: pytest.CaptureFixture[str]
     assert "valid" in out
     assert "target     alerts: channel 1" in out
     assert "broker     broker.example.org:1883" in out
-    assert "  telemetry  off\n" in out
+    assert "  telemetry  asked of every companion not excluded\n" in out
+
+
+def test_check_config_says_when_telemetry_is_off(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    off = tmp_path / "config.toml"
+    text = EXAMPLE.read_text(encoding="utf-8").replace("# enabled = true", "enabled = false")
+    off.write_text(text, encoding="utf-8")
+    assert main(["check-config", "--config", str(off)]) == EX_OK
+    assert "  telemetry  off\n" in capsys.readouterr().out
 
 
 def test_check_config_reports_errors_with_ex_config(
@@ -551,6 +565,67 @@ def test_send_refuses_an_impossible_wait(wait: str, capsys: pytest.CaptureFixtur
         main(["send", "--wait", wait, "alerts", "x"])
     assert exit_info.value.code == 2
     assert "argument --wait" in capsys.readouterr().err
+
+
+@pytest.mark.broker
+@pytest.mark.parametrize("topic", ["telemetry", "all"])
+def test_listen_follows_telemetry_events(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str], topic: str
+) -> None:
+    publisher = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    publisher.connect(broker.host, broker.port)
+    publisher.loop_start()
+    event = {"event_type": "unanswered", "key": "a1" * 32, "prefix": "a1" * 6, "name": "Alice",
+             "state": "away"}  # fmt: skip
+    done = threading.Event()
+
+    def publish() -> None:  # once the listener has subscribed: events are not retained
+        while not done.wait(0.1):
+            publisher.publish("meshcore/radio1/telemetry", json.dumps(event), qos=1)
+
+    thread = threading.Thread(target=publish)
+    thread.start()
+    try:
+        config = str(broker_config(tmp_path, broker))
+        assert main(["listen", "--config", config, "--topic", topic, "--count", "1"]) == EX_OK
+    finally:
+        done.set()
+        thread.join()
+        publisher.loop_stop()
+        publisher.disconnect()
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {"topic": "meshcore/radio1/telemetry", "payload": event}
+
+
+def test_the_service_keeps_exclusions_in_their_file_and_readings_their_days(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exclusions outlive a restart (their own file in the state directory), and readings
+    go after `[history] readings_days`."""
+    bridges: list[bridge_module.Bridge] = []
+    retentions: list[Retention] = []
+
+    async def stopped(bridge: bridge_module.Bridge, _stop: asyncio.Event) -> None:
+        bridges.append(bridge)
+
+    opened = History.open
+
+    def open_history(path: Path, retention: Retention) -> History | None:
+        retentions.append(retention)
+        return opened(path, retention)
+
+    monkeypatch.setattr(bridge_module.Bridge, "run", stopped)
+    monkeypatch.setattr(History, "open", staticmethod(open_history))
+    config = parse_config(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        "[history]\nmessages_days = 7\npositions_days = 9\nreadings_days = 3.5\n"
+    )
+    assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
+    assert retentions == [Retention(7.0, 9.0, readings_days=3.5)]
+    (bridge,) = bridges
+    assert bridge.observer.exclusions.exclude("a1" * 32)
+    stored = json.loads((tmp_path / EXCLUSIONS_FILE).read_text(encoding="utf-8"))
+    assert stored == {"excluded": ["a1" * 32]}
 
 
 @pytest.mark.broker

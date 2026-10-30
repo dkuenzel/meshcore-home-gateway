@@ -6,12 +6,18 @@ from typing import Any
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import parse_config
-from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh
+from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core.lpp import Named
+from meshcore_home_gateway.core.mesh import AirtimeMeter, Fix, Mesh, Node, Readings, Tracked
+from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.profile import ProfileReport
+from meshcore_home_gateway.mqtt.contact_devices import contact_payload
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic, placeholder
+from meshcore_home_gateway.mqtt.manage_entities import manage_payload
 from meshcore_home_gateway.mqtt.payloads import rx_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
+from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.radio.session import RadioInfo
 from meshcore_home_gateway.views import (
     contacts_document,
@@ -49,7 +55,8 @@ RADIO = RadioInfo(
 STATE_KEYS = {
     "radio", "battery_v", "airtime_1h_s", "airtime_available_s", "airtime_budget_s_per_hour",
     "queue", "radio_name", "public_key", "model", "firmware", "frequency_mhz", "bandwidth_khz",
-    "spreading_factor", "coding_rate", "tx_power_dbm", "contact_link", "version",
+    "spreading_factor", "coding_rate", "tx_power_dbm", "contact_link", "version", "telemetry",
+    "telemetry_reason", "telemetry_airtime_1h_s", "telemetry_mesh_airtime_1h_s",
 }  # fmt: skip
 
 
@@ -114,6 +121,7 @@ def test_entities_and_their_sources() -> None:
         "command", "send_alerts", "send_alice", "noise_floor", "radio_airtime", "uptime",
         "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
         "advert_position", "look_alike", "contact", "node", "show_hidden", "profile", "setting",
+        "telemetry_status", "telemetry_airtime", "telemetry_mesh_airtime", "telemetry",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -200,6 +208,74 @@ def test_a_look_alike_node_is_a_problem() -> None:
     assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.nodes
     assert "look_alike_total is defined" in sensor["value_template"]  # earlier documents
     assert "value_json.get('look_alike', [])" in sensor["json_attributes_template"]
+
+
+def test_the_telemetry_entities_are_always_there() -> None:
+    """Also with telemetry off: a disabled component that goes takes the whole device away."""
+    off = parse_config(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "radio-1"\n'
+        "[telemetry]\nenabled = false\n"
+    )
+    for config in (CONFIG, off):
+        cmps = discovery_payload(config, TOPICS)["cmps"]
+        status = cmps["telemetry_status"]
+        assert (status["p"], status["name"], status["device_class"]) == (
+            "sensor", "Telemetry status", "enum",
+        )  # fmt: skip
+        assert status["options"] == list(telemetry.STATUSES)
+        assert status["entity_category"] == "diagnostic"
+        assert status["state_topic"] == status["json_attributes_topic"] == TOPICS.state
+        assert status["value_template"] == (
+            "{{ value_json.telemetry if value_json is defined "
+            "and value_json.telemetry is string else None }}"
+        )
+        assert status["json_attributes_template"] == (
+            "{{ {'reason': value_json.get('telemetry_reason')} | tojson }}"
+        )
+        lanes = (("telemetry_airtime", "Telemetry airtime last hour"),
+                 ("telemetry_mesh_airtime", "Telemetry mesh airtime last hour"))  # fmt: skip
+        for key, name in lanes:
+            lane = cmps[key]
+            assert (lane["p"], lane["name"], lane["state_topic"]) == ("sensor", name, TOPICS.state)
+            assert (lane["device_class"], lane["unit_of_measurement"]) == ("duration", "s")
+            assert (lane["state_class"], lane["suggested_display_precision"]) == ("measurement", 1)
+            assert lane["entity_category"] == "diagnostic"
+            assert lane["enabled_by_default"] is False  # a row a minute: off until wanted
+        assert cmps["telemetry_airtime"]["value_template"] == (
+            "{{ value_json.get('telemetry_airtime_1h_s') }}"
+        )
+        assert cmps["telemetry_mesh_airtime"]["value_template"] == (
+            "{{ value_json.get('telemetry_mesh_airtime_1h_s') }}"
+        )
+        event = cmps["telemetry"]
+        assert (event["p"], event["name"], event["state_topic"]) == (
+            "event", "Telemetry", "meshcore/radio-1/telemetry",
+        )  # fmt: skip
+        assert event["event_types"] == list(telemetry.EVENTS) == ["answered", "unanswered"]
+        assert cmps["contact"]["event_types"] == [
+            "added", "removed", "hidden", "shown", "refused", "failed", "excluded", "included",
+        ]  # fmt: skip
+
+
+def test_every_platform_announced_can_be_removed() -> None:
+    """The gateway's, its controls' and every contact's components: each platform has a
+    placeholder that binds what Home Assistant kept from an earlier run."""
+    position = Position(52.1, 9.2)
+    readings = Readings(0.0, Named(4.12, 23.4, {"ch2_temperature_c": 21.3}))
+    found = [
+        *discovery_payload(CONFIG, TOPICS)["cmps"].values(),
+        *manage_payload(CONFIG, TOPICS, [])["cmps"].values(),
+    ]
+    for node_type in NodeType:
+        tracked = Tracked(Node(KEY, "Alice", node_type), fix=Fix(position, 0.0, "telemetry"),
+                          readings=readings)  # fmt: skip
+        found += contact_payload(CONFIG, TOPICS, tracked, "alice")["cmps"].values()
+    platforms = {component["p"] for component in found}
+    assert {"switch", "device_tracker", "select", "text", "notify", "button"} <= platforms
+    for platform in platforms:
+        stand_in = placeholder(f"uid_{platform}", platform, TOPICS)
+        assert stand_in is not None, platform
+        assert stand_in["p"] == platform
 
 
 def test_select_and_text_components_can_be_removed() -> None:

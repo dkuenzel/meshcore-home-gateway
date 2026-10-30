@@ -546,6 +546,9 @@ async def _published(tmp: Path) -> _Paho:
     await bridge._on_message(MessageReceived(message, session, 0, False))
     bridge._contacts.accept(ContactRequest("add", KEY_N.encode(), retained=True))  # refused
     bridge._contacts.accept(ContactRequest("remove", b"", retained=True, key=KEY))  # refused
+    for state in (b"off", b"on"):  # excluded, included
+        bridge._contacts.accept(ContactRequest("telemetry", state, retained=False, key=KEY))
+    bridge._contacts.accept(ContactRequest("telemetry", b"off", retained=True, key=KEY))  # refused
     events = asyncio.create_task(bridge._event_loop())
     added = Job("add", KEY_N, "id", "key", "Relay", NodeType.REPEATER)
     await _until(events, bridge._contacts._write(session, added, _refused_write()))  # failed

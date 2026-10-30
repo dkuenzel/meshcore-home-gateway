@@ -50,10 +50,12 @@ class FakeGateway:
 
     def __init__(
         self, broker: Broker, *, online: bool = True, answer: str | None = "ok",
-        documents: dict[str, Any] | None = None,
+        documents: dict[str, Any] | None = None, reason: str | None = None,
     ) -> None:  # fmt: skip
+        """`reason`: of a telemetry request's result (`not_saved`, `not_forgotten`)."""
         self.requests: list[tuple[str, bytes]] = []
         self.answer = answer
+        self.reason = reason
         self.client = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
         ready = threading.Event()
         self.client.on_subscribe = lambda *_: ready.set()
@@ -67,7 +69,10 @@ class FakeGateway:
         for name, document in retained.items():
             body = document if isinstance(document, str) else json.dumps(document)
             self.client.publish(f"{ROOT}/{name}", body, qos=1, retain=True).wait_for_publish(5)
-        self.client.subscribe([(f"{ROOT}/add_contact", 1), (f"{ROOT}/contacts/+/remove", 1)])
+        self.client.subscribe([
+            (f"{ROOT}/add_contact", 1), (f"{ROOT}/contacts/+/remove", 1),
+            (f"{ROOT}/contacts/+/telemetry", 1),
+        ])  # fmt: skip
         assert ready.wait(5)
 
     def _on_message(self, _c: Any, _u: Any, message: Any) -> None:
@@ -75,14 +80,20 @@ class FakeGateway:
         if self.answer is None:
             return
         request = json.loads(message.payload)
-        kind = "add" if message.topic.endswith("add_contact") else "remove"
+        kind = message.topic.split("/")[-1].removesuffix("_contact")
         key = request.get("contact", DAVE) if kind == "add" else message.topic.split("/")[-2]
         key = key if len(key) == 64 else DAVE
-        done = {"add": "added", "remove": "removed"}[kind] if self.answer == "ok" else "refused"
+        results = {
+            "add": "added",
+            "remove": "removed",
+            "telemetry": "excluded" if request.get("telemetry") == "off" else "included",
+        }
+        done = results[kind] if self.answer == "ok" else "refused"
+        reason = "look_alike" if done == "refused" else self.reason  # fmt: skip
         for event_id, event_type in (("other", "added"), (request["id"], done)):
             body = {"event_type": event_type, "key": key, "prefix": key[:12], "name": "Dave",
                     "type": "chat", "request": kind, "id": event_id,
-                    "reason": None if done != "refused" else "look_alike"}  # fmt: skip
+                    "reason": reason if event_id != "other" else None}  # fmt: skip
             self.client.publish(f"{ROOT}/contact", json.dumps(body), qos=1)
 
     def stop(self) -> None:
@@ -220,6 +231,7 @@ def test_remove_by_key_or_label(
         assert run(tmp_path, broker, "remove", f"{ERIN[:12]}…{ERIN[-8:]} Erin") == EX_OK
         assert run(tmp_path, broker, "remove", ERIN[:12]) == EX_USAGE
         assert run(tmp_path, broker, "remove", f"{ERIN[:12]}…{ERIN[-8:]}Erin") == EX_USAGE
+        assert run(tmp_path, broker, "remove", DAVE_LABEL) == EX_USAGE  # not in the index
     finally:
         gateway.stop()
     assert [t for t, _ in gateway.requests] == [f"{ROOT}/contacts/{ERIN}/remove"] * 3
@@ -370,3 +382,131 @@ def test_list_says_when_a_document_is_cut(
     finally:
         gateway.stop()
     assert "the gateway lists 2 of 300 contacts" in capsys.readouterr().err
+
+
+# --- telemetry (ADR 0018) ------------------------------------------------------------------------
+
+
+@pytest.mark.broker
+def test_telemetry_off_excludes_a_contact_and_says_what_goes(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gateway = FakeGateway(broker, documents={"contacts": contacts_index()})
+    try:
+        assert run(tmp_path, broker, "telemetry", "a1" * 32, "off") == EX_OK
+        off = capsys.readouterr()
+        assert run(tmp_path, broker, "telemetry", "--forget", "a1" * 32, "off") == EX_OK
+        forget = capsys.readouterr()
+        assert run(tmp_path, broker, "telemetry", "A1" * 32, "on") == EX_OK
+        on = capsys.readouterr()
+    finally:
+        gateway.stop()
+    assert [t for t, _ in gateway.requests] == [f"{ROOT}/contacts/{'a1' * 32}/telemetry"] * 3
+    requests = [json.loads(p) for _, p in gateway.requests]
+    assert [{k: v for k, v in r.items() if k != "id"} for r in requests] == [
+        {"telemetry": "off"}, {"telemetry": "off", "forget": True}, {"telemetry": "on"},
+    ]  # fmt: skip
+    assert all(r["id"].startswith("cli-") for r in requests)
+    assert json.loads(off.out)["event_type"] == "excluded"
+    assert json.loads(off.out)["id"] == requests[0]["id"]  # its own result, not the other's
+    assert "key a1a1 a1a1" in off.err
+    assert "'Alice'" in off.err
+    assert ("the gateway stops asking it and forgets its battery, readings and position; its "
+            "history keeps them for readings_days and positions_days") in off.err  # fmt: skip
+    assert "and deletes them from its history" in forget.err
+    assert "history keeps them" not in forget.err
+    assert json.loads(on.out)["event_type"] == "included"
+    assert "forgets" not in on.err
+    assert "excluded in advance" not in off.err + on.err
+
+
+@pytest.mark.broker
+def test_a_contact_not_on_the_radio_is_excluded_in_advance(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Best before it is added: the gateway asks a new companion within a minute."""
+    gateway = FakeGateway(broker, documents={"contacts": contacts_index()})
+    try:
+        assert run(tmp_path, broker, "telemetry", DAVE, "off") == EX_OK
+        assert "not on the radio now: excluded in advance" in capsys.readouterr().err
+    finally:
+        gateway.stop()
+    cut = FakeGateway(broker, documents={"contacts": contacts_index(truncated=True)})
+    try:  # perhaps on the radio, beyond the published list
+        assert run(tmp_path, broker, "telemetry", DAVE, "off") == EX_OK
+        assert "in advance" not in capsys.readouterr().err
+    finally:
+        cut.stop()
+
+
+@pytest.mark.broker
+def test_telemetry_by_label(tmp_path: Path, broker: Broker) -> None:
+    gateway = FakeGateway(broker, documents={"contacts": contacts_index()})
+    try:
+        assert run(tmp_path, broker, "telemetry", f"{ERIN[:12]}…{ERIN[-8:]} Erin", "off") == EX_OK
+        assert run(tmp_path, broker, "telemetry", f"{DAVE[:12]}…{DAVE[-8:]}", "off") == EX_USAGE
+    finally:
+        gateway.stop()
+    assert [t for t, _ in gateway.requests] == [f"{ROOT}/contacts/{ERIN}/telemetry"]
+
+
+@pytest.mark.broker
+@pytest.mark.parametrize(
+    ("answer", "reason"), [("ok", "not_saved"), ("ok", "not_forgotten"), ("refused", None)]
+)
+def test_telemetry_fails_unless_it_took_effect_without_a_reason(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str],
+    answer: str, reason: str | None,
+) -> None:  # fmt: skip
+    """`not_saved`: in effect, written again every minute; `not_forgotten`: excluded, but the
+    history could not delete its rows."""
+    gateway = FakeGateway(broker, answer=answer, reason=reason)
+    try:
+        assert run(tmp_path, broker, "telemetry", "--forget", DAVE, "off") == EX_FAILURE
+    finally:
+        gateway.stop()
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason"] == (reason or "look_alike")
+
+
+@pytest.mark.broker
+def test_telemetry_needs_the_gateway_online_and_can_skip_the_wait(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    offline = FakeGateway(broker, online=False)
+    try:
+        assert run(tmp_path, broker, "telemetry", DAVE, "off") == EX_FAILURE
+    finally:
+        offline.stop()
+    assert offline.requests == []
+    assert "the gateway is offline" in capsys.readouterr().err
+    silent = FakeGateway(broker, answer=None)
+    try:
+        assert run(tmp_path, broker, "telemetry", "--wait", "0", DAVE, "off") == EX_OK
+        assert run(tmp_path, broker, "telemetry", "--wait", "0.5", DAVE, "on") == EX_FAILURE
+    finally:
+        silent.stop()
+    assert len(silent.requests) == 2
+    assert "no result in time" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["--forget", "d4" * 32, "on"], ["d4" * 6, "off"], ["hello", "on"]],
+    ids=["forget-with-on", "prefix", "text"],
+)
+def test_telemetry_usage_errors_publish_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], args: list[str]
+) -> None:
+    """Before connecting: no broker is configured that would answer."""
+    config = tmp_path / "config.toml"
+    config.write_text('[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n')
+    assert main(["contacts", "telemetry", "--config", str(config), *args]) == EX_USAGE
+    assert "meshcore-home-gateway: " in capsys.readouterr().err
+
+
+def test_telemetry_takes_only_on_or_off(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["contacts", "telemetry", DAVE, "maybe"])
+    assert exit_info.value.code == EX_USAGE
+    assert "invalid choice: 'maybe'" in capsys.readouterr().err
