@@ -153,7 +153,7 @@ host = "broker.example.org"
 node_id = "{NODE}"
 """
 # everything that adds to the interface: tcp, discovery with contact devices, a target of each
-# kind, a command word, the packet log; and the settings read only when present
+# kind, a command word, the packet log, telemetry; and the settings read only when present
 MAXIMAL_TEXT = f"""
 [radio]
 transport = "tcp"
@@ -176,6 +176,8 @@ senders = ["{KEY}"]
 words = ["{WORD}"]
 [diagnostics]
 publish_rx_log = true
+[telemetry]
+enabled = true
 """
 # every setting with an answer type, for `config answers` (MINIMAL adds radio.device)
 ANSWERED = f"""
@@ -237,6 +239,8 @@ manage = false
 [diagnostics]
 publish_rx_log = true
 log_level = "debug"
+[telemetry]
+enabled = true
 """
 
 
@@ -1374,7 +1378,8 @@ def _tracked(node_type: int) -> Tracked:
         position=position,
     )  # fmt: skip
     heard = Heard(T, "message", Signal(hops=1, snr_db=5.0, rssi_dbm=-90))
-    tracked = Tracked(node, T - 60, heard, Fix(position, T, "advert", altitude_m=10.0))
+    fix = Fix(position, T, "advert", altitude_m=10.0)
+    tracked = Tracked(node, T - 60, heard, fix, position_received_at=T, restored_heard=heard)
     _filled(tracked)
     return tracked
 

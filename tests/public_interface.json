@@ -47,7 +47,8 @@
     "radio.profile.protect_contacts",
     "radio.set_clock",
     "radio.transport",
-    "target.<alias>"
+    "target.<alias>",
+    "telemetry.enabled"
    ],
    "target.<alias>": [
     "channel:<index>",
@@ -835,6 +836,14 @@
    "conditional": true,
    "required": true,
    "type": "string"
+  },
+  "telemetry": {
+   "type": "table"
+  },
+  "telemetry.enabled": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
   }
  },
  "format": 1,
@@ -878,6 +887,7 @@
     "position": {
      "attributes": [
       "altitude_m",
+      "gps_accuracy",
       "latitude",
       "longitude",
       "position_at",
@@ -1214,7 +1224,9 @@
     "name",
     "path_hops",
     "path_known",
+    "position_accuracy_m",
     "position_at",
+    "position_received_at",
     "position_source",
     "prefix",
     "protected",
@@ -1398,6 +1410,9 @@
     "radio",
     "radio_name",
     "spreading_factor",
+    "telemetry",
+    "telemetry_airtime_1h_s",
+    "telemetry_mesh_airtime_1h_s",
     "tx_power_dbm",
     "version"
    ],
