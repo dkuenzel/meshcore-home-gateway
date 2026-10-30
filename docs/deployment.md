@@ -332,15 +332,17 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
   `/var/lib/meshcore-home-gateway/state.json` (the newest accepted command time per sender; without
   it a restored system accepts older recorded commands again until a sender sends a new one, within
   `max_age_s`; the Home Assistant components last announced; the contacts whose documents are
-  published; the radio profile's memory; the telemetry schedule: per companion when it is next
-  due, its unanswered requests, when it last answered, was asked and flooded, how long its answers
-  count and when one last carried a position, and whether it was last moving, no positions; and
-  what is left of the first-start hour) and `telemetry-excluded.json` next to it (the companions
-  the household excluded from telemetry: without it a restored system asks them again). An
-  exclusions file that cannot be parsed is left as it is and pauses telemetry: fix it (`{"excluded":
-  [keys]}`) or delete it, then restart the service. `history.sqlite3` holds the history: messages,
-  positions and the companions' readings ([configuration](configuration.md#history)); copy it only
-  with the service stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
+  published; the last document of each companion whose answers are current, with its position and
+  readings, so that they still expire after a restart without the radio; the radio profile's
+  memory; the telemetry schedule: per companion when it is next due, its unanswered requests, when
+  it last answered, was asked and flooded, how long its answers count and when one last carried a
+  position, and whether it was last moving, no positions; and what is left of the first-start
+  hour) and `telemetry-excluded.json` next to it (the companions the household excluded from
+  telemetry: without it a restored system asks them again). An exclusions file that cannot be
+  parsed is left as it is and pauses telemetry: fix it (`{"excluded": [keys]}`) or delete it, then
+  restart the service. `history.sqlite3` holds the history: messages, positions and the
+  companions' readings ([configuration](configuration.md#history)); copy it only with the service
+  stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
 * **Retained documents** stay on the broker after the gateway is removed. Clear them with, for
   example, `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
   2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.

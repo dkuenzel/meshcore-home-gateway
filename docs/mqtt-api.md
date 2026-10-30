@@ -331,6 +331,9 @@ most an hour old, or three of the contact's intervals if that is longer
 ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)). The position counts
 while the answers are current and the newest answer, or one within the last hour, carried one. A
 restart of the gateway changes no state: the schedule is saved with how long ago each answer came.
+When the radio does not come back after a restart, a companion's answers and its position still
+expire at their bound: the gateway keeps the last document of each companion whose answers are
+current and publishes it again with its new state, within a minute of the bound.
 
 ### Reading keys
 

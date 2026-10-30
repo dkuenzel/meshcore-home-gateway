@@ -252,6 +252,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
         AnnouncedComponents,
         CommandLedger,
         ContactDeviceRecords,
+        CurrentDocuments,
         JsonStateFile,
         ProfileRecords,
         RetainedKeys,
@@ -279,7 +280,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     exclusions = TelemetryExclusions(state_dir / EXCLUSIONS_FILE)  # also while telemetry is off
     observer = Observer(
         bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
-        protected=protected, exclusions=exclusions,
+        protected=protected, exclusions=exclusions, current=CurrentDocuments(store),
     )  # fmt: skip
     profile = RadioProfile(
         config.radio.profile, ProfileRecords(store), protected=protected_names(config)

@@ -41,6 +41,7 @@ from meshcore_home_gateway.radio.session import (
 )
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
+    CurrentDocuments,
     JsonStateFile,
     TelemetryExclusions,
     TelemetryRecords,
@@ -598,8 +599,8 @@ def ask(bus: FakeBus, state: bytes, key: str = KEY) -> None:
 
 
 def keeping(tmp_path: Path, closing: list[History] | None = None) -> Callable[[FakeBus], Observer]:
-    """An observer as the service builds it: the exclusions in their own file, and a history
-    when `closing` takes it."""
+    """An observer as the service builds it: the exclusions in their own file, the current
+    documents in the state file, and a history when `closing` takes it."""
 
     def observer(bus: FakeBus) -> Observer:
         history = None
@@ -607,8 +608,9 @@ def keeping(tmp_path: Path, closing: list[History] | None = None) -> Callable[[F
             history = History.open(tmp_path / "history.sqlite3")
             closing.append(cast(History, history))
         exclusions = TelemetryExclusions(tmp_path / EXCLUSIONS_FILE)
+        current = CurrentDocuments(JsonStateFile(tmp_path / "state.json"))
         return Observer(bus, Topics("meshcore", "radio1"), history=history,
-                        exclusions=exclusions, wall_clock=lambda: NOW)  # fmt: skip
+                        exclusions=exclusions, wall_clock=lambda: NOW, current=current)  # fmt: skip
 
     return observer
 
@@ -864,6 +866,30 @@ def test_a_restart_flips_no_state_and_raises_no_event(tmp_path: Path) -> None:
     finally:
         for history in histories:
             history.close()
+
+
+def test_the_documents_of_current_companions_are_stored_at_the_stop(tmp_path: Path) -> None:
+    """A change of a current document's content waits for the observer's next tick, or the
+    stop."""
+    store = JsonStateFile(tmp_path / "state.json")
+    radio = bme280_radio()
+    buses: list[FakeBus] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        buses.append(bus)
+        return Observer(bus, TOPICS, current=CurrentDocuments(store), wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, observer=observer, telemetry_lanes=wide) as (
+            _bridge, bus, _notes,
+        ):  # fmt: skip
+            await bus.wait_for("/telemetry", lambda e: e["event_type"] == "answered")
+            radio.advertise(DANA)
+            await bus.wait_for(f"/contacts/{KEY}", lambda d: d["heard_via"] == "advert")
+            assert CurrentDocuments(store).documents[KEY]["heard_via"] == "telemetry"
+
+    scenario(main)
+    assert CurrentDocuments(store).documents == {KEY: buses[0].payloads(f"/contacts/{KEY}")[-1]}
 
 
 # --- parts ----------------------------------------------------------------------------------
@@ -1381,6 +1407,7 @@ def rig(
     monkeypatch: pytest.MonkeyPatch, *contacts: EmulatedContact,
     records: TelemetryRecords | None = None, exclusions: TelemetryExclusions | None = None,
     tcp: bool = False, wall: float = NOW, read: bool = True,
+    current: CurrentDocuments | None = None,
 ) -> Rig:  # fmt: skip
     """`wall`: the wall clock at the start; `read`: the radio's table was read."""
     monkeypatch.setattr(telemetry, "STEP_S", 60.0)  # the sleeps only move the clock
@@ -1394,7 +1421,7 @@ def rig(
         return wall + clock[0] - START
 
     bus = FakeBus()
-    observer = Observer(bus, TOPICS, wall_clock=wall_clock, exclusions=exclusions)
+    observer = Observer(bus, TOPICS, wall_clock=wall_clock, exclusions=exclusions, current=current)
     radio = StandInRadio(clock, *contacts)
     connected: list[StandInRadio | None] = [radio]
     poller = TelemetryPoller(
@@ -2107,3 +2134,39 @@ def test_a_contact_excluded_during_the_hold_is_never_asked(
         assert {key for key, _ in r.radio.asked} == {BOB_KEY}
 
     asyncio.run(main())
+
+
+def test_a_restart_without_the_radio_still_expires_her_answers_and_position(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ADR 0024: an outage of the radio expires every companion at its bound, also when the
+    gateway restarted meanwhile and has read no table since: nothing changes while her answers
+    are current, then only her state."""
+    store = JsonStateFile(tmp_path / "state.json")
+    retained: list[dict[str, Any]] = []
+
+    async def first() -> None:
+        r = rig(monkeypatch, DANA, records=TelemetryRecords(store), current=CurrentDocuments(store))
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        retained.append(r.bus.payloads(f"/contacts/{KEY}")[-1])
+        r.observer.flush()  # the stop
+        r.poller._save(at_once=True)
+
+    async def second() -> None:  # a minute later; the radio does not come up
+        r = rig(monkeypatch, DANA, records=TelemetryRecords(store), wall=NOW + 60, read=False,
+                current=CurrentDocuments(store))  # fmt: skip
+        r.connected[0] = None
+        r.observer.publish_all()  # the broker connects
+        for _ in range(int(2 * telemetry.CURRENT_MIN_S / telemetry.STEP_S)):  # two hours
+            await r.steps()
+            r.observer.tick()
+            published = r.bus.payloads(f"/contacts/{KEY}")
+            assert len(published) == (r.poller.state_of(KEY) not in telemetry.CURRENT)
+        expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
+        assert published == [{**retained[0], **expired}]
+        assert r.held() == ("paused", "no_radio")
+
+    asyncio.run(first())
+    assert retained[0]["position_current"] is True
+    asyncio.run(second())

@@ -91,6 +91,7 @@ def contact_document(
     `telemetry_state`: None for a contact that is never asked (no companion)."""
     node, fix, readings = tracked.node, tracked.fix, tracked.readings
     from_telemetry = fix is not None and fix.source == "telemetry"
+    telemetry_current, position_current = _current(telemetry_state, from_telemetry)
     named = readings.named if readings else None
     return {
         "key": node.public_key,
@@ -119,14 +120,45 @@ def contact_document(
         "advert_position": node.position is not None,  # its adverts carried a position
         "telemetry_state": telemetry_state,
         "telemetry_excluded": excluded and node.node_type == NodeType.CHAT,
-        "telemetry_current": None if telemetry_state is None else telemetry_state in CURRENT,
-        # only a position from telemetry expires: null for one from an advert
-        "position_current": telemetry_state == "answering" if from_telemetry else None,
+        "telemetry_current": telemetry_current,
+        "position_current": position_current,
         "readings_at": iso(readings.at) if readings else None,  # the gateway's time of the answer
         "battery_v": named.battery_v if named else None,
         "mcu_temperature_c": named.mcu_temperature_c if named else None,
         "readings": dict(named.readings) if named else {},
     }
+
+
+def _current(state: TelemetryState | None, from_telemetry: bool) -> tuple[bool | None, bool | None]:
+    """`telemetry_current` and `position_current` of a contact in this state. Only a position from
+    telemetry expires: None for one from an advert."""
+    telemetry_current = None if state is None else state in CURRENT
+    return telemetry_current, state == "answering" if from_telemetry else None
+
+
+_FORGOTTEN = ("readings_at", "battery_v", "mcu_temperature_c", "position_received_at")
+_POSITION = ("latitude", "longitude", "altitude_m", "position_at", "position_source",
+             "position_accuracy_m")  # fmt: skip
+
+
+def restated(
+    document: Mapping[str, Any], state: TelemetryState | None, *, excluded: bool = False
+) -> dict[str, Any]:
+    """`contacts/<key>` as last published, in another telemetry state: before the first table
+    read of a run the stored document is all there is (ADR 0024). `excluded`: without what an
+    exclusion forgets, as far as the document shows it (the position the contact's record carries
+    comes back with the table read)."""
+    again = dict(document)
+    from_telemetry = document.get("position_source") == "telemetry"
+    if excluded:
+        again |= {**dict.fromkeys(_FORGOTTEN), "readings": {}, "telemetry_excluded": True}
+        if from_telemetry:
+            again |= dict.fromkeys(_POSITION)
+            from_telemetry = False
+    telemetry_current, position_current = _current(state, from_telemetry)
+    again |= {"telemetry_state": state, "telemetry_current": telemetry_current,
+              "position_current": position_current}  # fmt: skip
+    return again
 
 
 def contacts_document(

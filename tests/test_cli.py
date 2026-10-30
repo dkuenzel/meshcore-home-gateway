@@ -29,7 +29,7 @@ from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.protocol.codes import Command
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
-from meshcore_home_gateway.state import EXCLUSIONS_FILE
+from meshcore_home_gateway.state import EXCLUSIONS_FILE, JsonStateFile
 from tests.conftest import Broker
 from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio, TcpRadioServer
 from tests.test_mqtt_client import FakePaho
@@ -626,6 +626,29 @@ def test_the_service_keeps_exclusions_in_their_file_and_readings_their_days(
     assert bridge.observer.exclusions.exclude("a1" * 32)
     stored = json.loads((tmp_path / EXCLUSIONS_FILE).read_text(encoding="utf-8"))
     assert stored == {"excluded": ["a1" * 32]}
+
+
+def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """So that they expire after a restart without the radio (ADR 0024)."""
+    bridges: list[bridge_module.Bridge] = []
+
+    async def stopped(bridge: bridge_module.Bridge, _stop: asyncio.Event) -> None:
+        bridges.append(bridge)
+
+    monkeypatch.setattr(bridge_module.Bridge, "run", stopped)
+    store = JsonStateFile(tmp_path / "state.json")
+    document = {"key": "a1" * 32, "telemetry_state": "answering", "telemetry_current": True}
+    store.save({"current_contacts": {"a1" * 32: document}})
+    config = parse_config(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        "[history]\nenabled = false\n[telemetry]\nenabled = false\n"
+    )
+    assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
+    (bridge,) = bridges
+    bridge.observer.publish_all()  # the broker connected: telemetry is off now
+    assert store.load()["current_contacts"] == {}
 
 
 @pytest.mark.broker

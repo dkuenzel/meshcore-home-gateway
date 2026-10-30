@@ -294,7 +294,7 @@ documents keep the last values. A position from adverts does not expire.
 | a day without an answer | `no_answer` (asked less and less, up to every 6 hours), or `no_path` when the radio lost its path |
 | comes back | asked at least every 30 minutes (or its interval, if longer): `answering`, all available, event `answered` |
 | the radio unplugged | *Telemetry status* `paused` with `no_radio` at once; an hour after its last answer `away`, its tracker and sensors `unavailable`; no event |
-| the gateway restarts | every gateway entity `unavailable` for the seconds the restart takes; then the states come back from its state file and the readings from its history: nothing expires |
+| the gateway restarts | every gateway entity `unavailable` for the seconds the restart takes; then the states come back from its state file and the readings from its history: nothing expires; if the radio does not come back, as for the radio unplugged |
 | *Telemetry* switched off | at once `excluded`, its telemetry sensors `unavailable`; event *Contact* `excluded` |
 | *Telemetry* switched on | `waiting`, asked at once (as the airtime lanes allow); values with its next answer; event *Contact* `included`, then `answered` |
 

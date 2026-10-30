@@ -26,6 +26,7 @@ from meshcore_home_gateway.protocol.codes import Push
 from meshcore_home_gateway.radio.session import AdvertHeard, ContactsRead, PathReset
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
+    CurrentDocuments,
     JsonStateFile,
     RetainedKeys,
     TelemetryExclusions,
@@ -833,3 +834,126 @@ def test_the_observer_holds_the_one_set_of_exclusions(tmp_path: Path) -> None:
 
     scenario(main)
     assert TelemetryExclusions(tmp_path / EXCLUSIONS_FILE).keys == {ALICE.public_key.hex()}
+
+
+# --- the documents of the last run, before the first table read (ADR 0024) ---------------------
+
+
+def last_run(tmp_path: Path, *contacts: EmulatedContact) -> tuple[JsonStateFile, dict[str, Any]]:
+    """A run in which the contacts answered with a position: the state file it left, and their
+    documents as the broker keeps them."""
+    store = JsonStateFile(tmp_path / "state.json")
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, current=CurrentDocuments(store), wall_clock=lambda: NOW)
+    observer.telemetry_state = lambda _key: "answering"
+    observer.radio_event(ContactsRead(table(*contacts), NOW))
+    for contact in contacts:
+        observer.telemetry(contact.public_key.hex(), answer(NOW + 10, LPP_BME280))
+    observer.flush()  # the stop
+    keys = [contact.public_key.hex() for contact in contacts]
+    return store, {key: last(bus, f"{ROOT}/contacts/{key}") for key in keys}
+
+
+def restarted(
+    store: JsonStateFile, states: dict[str, TelemetryState] | None
+) -> tuple[Observer, FakeBus]:
+    """The next run, a minute later, with no table read yet; `states`: the poller's (None:
+    telemetry is off)."""
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, current=CurrentDocuments(store), wall_clock=lambda: NOW + 60)
+    if states is not None:
+        observer.telemetry_state = states.get
+    return observer, bus
+
+
+def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_path: Path) -> None:
+    """The observer has no contact before the first table read: it publishes the stored document
+    again once the companion's answers expire, with only its state changed."""
+    store, before = last_run(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    assert (before[key]["position_current"], before[key]["readings"]) == (True, BME280_READINGS)
+    states: dict[str, TelemetryState] = {key: "answering"}
+    observer, bus = restarted(store, states)
+    observer.publish_all()  # the broker connected
+    observer.tick()
+    assert retained(bus, f"{ROOT}/contacts/{key}") == []  # current: the broker keeps hers
+    states[key] = "away"  # her bound passed
+    observer.tick()
+    expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
+    assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **expired}
+    assert CurrentDocuments(store).documents == {}  # in the state file at once
+    observer.tick()
+    assert len(retained(bus, f"{ROOT}/contacts/{key}")) == 1
+    observer.publish_all()  # the broker connected again
+    assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **expired}
+
+
+def test_with_telemetry_off_a_document_of_the_last_run_is_off_at_the_connect(
+    tmp_path: Path,
+) -> None:
+    store, before = last_run(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    observer, bus = restarted(store, None)
+    observer.publish_all()
+    off = {"telemetry_state": "off", "telemetry_current": False, "position_current": False}
+    assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **off}
+    assert CurrentDocuments(store).documents == {}
+
+
+def test_an_exclusion_before_the_first_table_read_forgets_the_stored_values_at_once(
+    tmp_path: Path,
+) -> None:
+    store, before = last_run(tmp_path, ALICE, BOB)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    observer, bus = restarted(store, {alice: "answering", bob: "answering"})
+    observer.exclusions.exclude(alice)
+    observer.telemetry_excluded(alice, True)
+    forgotten = {
+        "telemetry_state": "excluded", "telemetry_excluded": True, "telemetry_current": False,
+        "position_current": None, "readings_at": None, "battery_v": None,
+        "mcu_temperature_c": None, "readings": {}, "latitude": None, "longitude": None,
+        "altitude_m": None, "position_at": None, "position_source": None,
+        "position_accuracy_m": None, "position_received_at": None,
+    }  # fmt: skip
+    assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **forgotten}
+    assert CurrentDocuments(store).documents == {bob: before[bob]}  # gone from the disk at once
+    assert retained(bus, f"{ROOT}/contacts/{bob}") == []
+
+
+def test_the_first_table_read_replaces_the_documents_of_the_last_run(tmp_path: Path) -> None:
+    store, _before = last_run(tmp_path, ALICE, BOB)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    observer, bus = restarted(store, {alice: "answering", bob: "answering"})
+    observer.radio_event(ContactsRead(table(ALICE), NOW + 60))  # Bob left the radio meanwhile
+    assert CurrentDocuments(store).documents.keys() == {alice}  # at once
+    observer.tick()
+    assert CurrentDocuments(store).documents == {alice: last(bus, f"{ROOT}/contacts/{alice}")}
+    published = len(bus.published)
+    observer.telemetry_state = lambda _key: "away"
+    observer.tick()  # the poller reports the states of the table's contacts now
+    assert len(bus.published) == published
+    observer.radio_event(ContactsRead({}, NOW + 120))  # and Alice now
+    assert CurrentDocuments(store).documents == {}
+
+
+def test_a_document_is_stored_at_once_when_it_turns_current_or_not_else_at_the_tick(
+    tmp_path: Path,
+) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, current=CurrentDocuments(store), wall_clock=lambda: NOW)
+    key = ALICE.public_key.hex()
+    states: dict[str, TelemetryState] = {key: "waiting"}
+    observer.telemetry_state = states.get
+    observer.radio_event(ContactsRead(table(ALICE, CAROL), NOW))
+    assert CurrentDocuments(store).documents == {}  # not current; Carol is no companion
+    states[key] = "answering"
+    observer.telemetry_state_changed(key)
+    assert CurrentDocuments(store).documents == {key: last(bus, f"{ROOT}/contacts/{key}")}
+    observer.telemetry(key, answer(NOW + 10, LPP_BME280))
+    assert CurrentDocuments(store).documents[key]["readings"] == {}  # until the tick
+    observer.tick()
+    assert CurrentDocuments(store).documents == {key: last(bus, f"{ROOT}/contacts/{key}")}
+    states[key] = "away"
+    observer.telemetry_state_changed(key)
+    assert CurrentDocuments(store).documents == {}

@@ -2,9 +2,10 @@
 
 It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
 Home Assistant components of the last discovery document and the contact devices announced
-(docs/home-assistant.md), the contacts whose retained documents were published, the radio
-profile's memory (ADR 0020) and the telemetry schedule (ADR 0018). The contacts the household
-excluded from telemetry have a file of their own (TelemetryExclusions).
+(docs/home-assistant.md), the contacts whose retained documents were published, the documents of
+the companions whose answers are current (ADR 0024), the radio profile's memory (ADR 0020) and the
+telemetry schedule (ADR 0018). The contacts the household excluded from telemetry have a file of
+their own (TelemetryExclusions).
 """
 
 from __future__ import annotations
@@ -264,6 +265,40 @@ class RetainedKeys:
             log.warning("cannot store the published %s: %s", self._name, exc)
             return
         self._keys = set(keys)
+
+
+class CurrentDocuments:
+    """The last published document (`contacts/<key>`) of each companion whose answers count as
+    current (ADR 0024): after a restart without the radio, the observer publishes them again
+    once they expire."""
+
+    _KEY = "current_contacts"
+
+    def __init__(self, store: JsonStateFile) -> None:
+        self._store = store
+        raw = store.load().get(self._KEY)
+        self._documents = {
+            key: document for key, document in (raw.items() if isinstance(raw, dict) else ())
+            if isinstance(key, str) and is_key(key) and isinstance(document, dict)
+        }  # fmt: skip
+
+    @property
+    def documents(self) -> dict[str, dict[str, Any]]:
+        return dict(self._documents)
+
+    def replace(self, documents: Mapping[str, dict[str, Any]]) -> None:
+        """Store the documents if they changed; a failed write is logged (the next call tries
+        again)."""
+        if documents == self._documents:
+            return
+        try:
+            data = self._store.load()
+            data[self._KEY] = dict(documents)
+            self._store.save(data)
+        except OSError as exc:
+            log.warning("cannot store the current contact documents: %s", exc)
+            return
+        self._documents = dict(documents)
 
 
 class TelemetryExclusions:

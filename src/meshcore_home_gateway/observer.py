@@ -55,7 +55,7 @@ from meshcore_home_gateway.radio.session import (
     RadioEvent,
     StatsRead,
 )
-from meshcore_home_gateway.state import RetainedKeys, TelemetryExclusions
+from meshcore_home_gateway.state import CurrentDocuments, RetainedKeys, TelemetryExclusions
 from meshcore_home_gateway.views import (
     SETTING_NAMES,
     HistoryEntry,
@@ -68,6 +68,7 @@ from meshcore_home_gateway.views import (
     iso,
     look_alike_nodes,
     nodes_document,
+    restated,
     setting_value,
     settings_document,
     stats_document,
@@ -99,9 +100,12 @@ class Observer:
         manage: bool = False,
         wall_clock: Callable[[], float] = time.time,
         exclusions: TelemetryExclusions | None = None,
+        current: CurrentDocuments | None = None,
     ) -> None:
         """`manage`: contact add and remove requests are taken (ADR 0017). `exclusions`: the
-        contacts excluded from telemetry; the contact manager and the poller read these."""
+        contacts excluded from telemetry; the contact manager and the poller read these.
+        `current`: the documents of the companions whose answers are current, kept across a
+        restart."""
         self.mesh = Mesh()
         # the one holder: an empty set is falsy, so `or` would replace one that was given
         self.exclusions = exclusions if exclusions is not None else TelemetryExclusions(None)
@@ -114,6 +118,10 @@ class Observer:
         self._topics = topics
         self._history = history
         self._retained = retained
+        self._current_store = current
+        # key -> its last document while its answers count as current: before the first table
+        # read the documents of the last run, which still expire at their bound (ADR 0024)
+        self._current = current.documents if current is not None else {}
         self._protected = protected
         self._wall = wall_clock
         self._meter = AirtimeMeter()
@@ -351,19 +359,30 @@ class Observer:
 
     def publish_all(self) -> None:
         """Publish every document again, and clear the topics of contacts removed: the broker
-        connected, and it may have lost them, or the adapter dropped them while it was away."""
+        connected, and it may have lost them, or the adapter dropped them while it was away. A
+        document of the last run follows its contact's state."""
         for topic, payload in list(self._published.items()):
             self._bus.publish(topic, payload, retain=True)
+        self._restate_all()
         self._publish(self._topics.history, history_document(self._recent), force=True)
 
     def tick(self) -> None:
-        """Called about once a minute: forget stale heard nodes, purge the history hourly."""
+        """Called about once a minute: forget stale heard nodes, purge the history hourly, expire
+        the documents of the last run and store the current ones."""
         now = self._wall()
         if self.mesh.forget_nodes(now):
             self._publish_nodes()
         if self._history is not None and now >= self._next_purge:
             self._history.purge(now)
             self._next_purge = now + PURGE_INTERVAL_S
+        self._restate_all()
+        self.flush()
+
+    def flush(self) -> None:
+        """Store the current documents (also at the stop): a change of their content waits for
+        this, to keep the writes of the state file low."""
+        if self._current_store is not None:
+            self._current_store.replace(self._current)
 
     # --- contacts and nodes ---------------------------------------------------------------------
 
@@ -371,6 +390,11 @@ class Observer:
         before = {key: tracked.node for key, tracked in self.mesh.contacts.items()}
         change = self.mesh.contacts_read((_node(r) for r in records.values()), at)
         joined_or_left = bool(change.added or change.removed)  # the heard nodes change with it
+        left = [key for key in self._current if key not in self.mesh.contacts]
+        for key in left:  # also one of the last run, at the first table read
+            del self._current[key]
+        if left:
+            self.flush()
         if self._first_read:
             # compared with the contacts published in the last run, not with nothing: a start
             # announces only what changed while the gateway was stopped
@@ -504,6 +528,7 @@ class Observer:
         return tracked.node.node_type if tracked else 0
 
     def _publish_contact(self, key: str) -> None:
+        """Its document; before the first table read, the one of the last run, if it is kept."""
         tracked = self.mesh.contacts.get(key)
         if tracked is not None:
             document = contact_document(
@@ -511,12 +536,44 @@ class Observer:
                 telemetry_state=self._state_of(tracked), excluded=key in self.exclusions,
             )  # fmt: skip
             self._publish(self._topics.contact(key), document)
+            self._keep(key, document)
+        elif key in self._current:  # before the first table read: later each kept is a contact
+            self._restate(key)
+
+    def _restate_all(self) -> None:
+        """Before the first table read: each document of the last run follows its state."""
+        if self._first_read:
+            for key in list(self._current):
+                self._restate(key)
+
+    def _restate(self, key: str) -> None:
+        """A document of the last run, published again when its contact's state changed (its
+        answers expired, it was excluded, telemetry is off), also while the radio stays away."""
+        stored = self._current[key]
+        excluded = key in self.exclusions
+        document = restated(stored, self._companion_state(key), excluded=excluded)
+        if document != stored:
+            self._publish(self._topics.contact(key), document)
+        self._keep(key, document)
+
+    def _keep(self, key: str, document: dict[str, Any]) -> None:
+        """The document of a contact whose answers count as current, for a restart. Stored at once
+        when one turns current or no longer (an expiry, an exclusion), else at the next tick."""
+        had = key in self._current
+        if document["telemetry_current"]:
+            self._current[key] = document
+        else:
+            self._current.pop(key, None)
+        if had != (key in self._current):
+            self.flush()
 
     def _state_of(self, tracked: Tracked) -> TelemetryState | None:
         """A companion's telemetry state; None for a contact that is never asked."""
-        key = tracked.node.public_key
         if tracked.node.node_type != NodeType.CHAT:
             return None
+        return self._companion_state(tracked.node.public_key)
+
+    def _companion_state(self, key: str) -> TelemetryState:
         if key in self.exclusions:
             return "excluded"
         if self.telemetry_state is None:

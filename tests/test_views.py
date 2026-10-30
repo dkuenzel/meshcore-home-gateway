@@ -33,6 +33,7 @@ from meshcore_home_gateway.views import (
     history_document,
     iso,
     nodes_document,
+    restated,
     stats_document,
     telemetry_event,
 )
@@ -273,6 +274,40 @@ def test_whether_answers_and_position_are_current(
     assert document["telemetry_current"] == (None if state is None else state in CURRENT)
     expected = state == "answering" if source == "telemetry" else None
     assert document["position_current"] == expected
+
+
+@pytest.mark.parametrize("before", [*STATES, None])
+@pytest.mark.parametrize("source", ["telemetry", "advert", None])
+def test_a_document_restated_in_another_state_is_the_one_built_in_it(
+    before: TelemetryState | None, source: str | None
+) -> None:
+    """Before the first table read of a run only the stored document is there (ADR 0024)."""
+    fix = Fix(Position(1, 2), T, source) if source else None
+    readings = Readings(T, lpp.named(lpp.decode(LPP_BME280)))
+    heard = Heard(T, "telemetry", Signal(1, 6.25, -97))
+    tracked = Tracked(Node(KEY, "Alice", 1, path_hops=1), T, heard, fix, T, readings=readings)
+    stored = contact_document(tracked, protected=True, manage=True, telemetry_state=before)
+    for state in (*STATES, None):
+        built = contact_document(tracked, protected=True, manage=True, telemetry_state=state)
+        assert restated(stored, state) == built
+
+
+@pytest.mark.parametrize("advert", [False, True])
+def test_a_document_restated_as_excluded_forgets_what_an_exclusion_forgets(advert: bool) -> None:
+    """As far as the stored document shows it: the position the contact's record carries comes
+    back with the first table read, so here the answer carried one only without it."""
+    mesh = Mesh()
+    advertised = Position(53.55, 9.99) if advert else None
+    mesh.contacts_read([Node(KEY, "Alice", 1, position=advertised)], T)
+    named = lpp.named(lpp.decode(LPP_BME280))
+    position = None if advert else Position(50.12345, 8.56775)
+    mesh.contact_answered(KEY, T + 5, position, 120.5, Readings(T + 5, named))
+    mesh.restore_received(KEY, T + 5)  # an earlier answer carried one
+    stored = contact_document(mesh.contacts[KEY], telemetry_state="answering")
+    mesh.forget_telemetry(KEY, T + 10)
+    excluded = contact_document(mesh.contacts[KEY], telemetry_state="excluded", excluded=True)
+    assert restated(stored, "excluded", excluded=True) == excluded
+    assert excluded["position_source"] == ("advert" if advert else None)
 
 
 def test_only_a_companion_is_excluded() -> None:

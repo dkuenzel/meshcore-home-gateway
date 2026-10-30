@@ -13,6 +13,7 @@ from meshcore_home_gateway.state import (
     AnnouncedComponents,
     CommandLedger,
     ContactDeviceRecords,
+    CurrentDocuments,
     DeviceRecord,
     JsonStateFile,
     RemovedDevice,
@@ -154,6 +155,48 @@ def test_retained_keys_are_remembered_and_survive_an_unwritable_state(
     keys.replace({"cc" * 32})
     assert keys.keys == {"bb" * 32}  # unchanged: the next change tries again
     assert "cannot store the published retained_contacts: read-only file system" in caplog.text
+
+
+def test_current_documents_are_written_on_change_and_survive_an_unwritable_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    current = CurrentDocuments(store)
+    assert current.documents == {}
+    alice = {"key": "aa" * 32, "telemetry_current": True, "readings": {"ch2_humidity_percent": 40}}
+    documents = {"aa" * 32: alice}
+    current.replace(documents)
+    documents["bb" * 32] = {**alice, "key": "bb" * 32}  # a change after the call is one
+    current.replace(documents)
+    assert CurrentDocuments(store).documents == documents
+    saves: list[object] = []
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "save", saves.append)
+        current.replace(dict(documents))
+    assert saves == []  # unchanged: nothing written
+
+    def fail(_data: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(store, "save", fail)
+    current.replace({})
+    assert current.documents == documents  # unchanged: the next call tries again
+    assert "cannot store the current contact documents: read-only file system" in caplog.text
+
+
+def test_current_documents_of_another_shape_read_as_empty(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    sections: list[object] = [[], "x", 7, None]
+    for section in sections:
+        store.save({"current_contacts": section})
+        assert CurrentDocuments(store).documents == {}
+    good = {"key": "bb" * 32}
+    store.save({"current_contacts": {
+        "bb" * 32: good, "BB" * 32: good, "bb": good, "cc" * 32: [], "dd" * 32: None,
+    }})  # fmt: skip
+    assert CurrentDocuments(store).documents == {"bb" * 32: good}
+    store.path.write_bytes(b'{"current_contacts": {')  # unreadable: moved aside
+    assert CurrentDocuments(store).documents == {}
 
 
 def test_contact_device_records_survive_and_skip_foreign_entries(

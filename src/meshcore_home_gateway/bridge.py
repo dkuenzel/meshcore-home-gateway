@@ -346,6 +346,7 @@ class Bridge:
             if self._session is not None:
                 await self._session.close()
             self._radio_ready.clear()
+            self._observe(self.observer.flush)  # what changed since its last tick
             self._publish_state()
             await self._bus.stop()
 
