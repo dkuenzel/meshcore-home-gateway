@@ -820,12 +820,16 @@ def test_the_observer_holds_the_one_set_of_exclusions(tmp_path: Path) -> None:
         observers.append(Observer(bus, TOPICS, exclusions=exclusions, wall_clock=lambda: NOW))
         return observers[0]
 
+    settings = make_config(extra="[telemetry]\nenabled = true\n")
+
     async def main() -> None:
-        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+        async with running(settings, radio, tmp_path, observer=observer) as (bridge, bus, _n):
             key = ALICE.public_key.hex()
             bus.contact_requests.put_nowait(ContactRequest("telemetry", b"off", False, key))
             await bus.wait_for(f"{ROOT}/contact", lambda e: e["event_type"] == "excluded")
             assert observers[0].exclusions is exclusions
+            assert bridge._telemetry is not None
+            assert bridge._telemetry._exclusions is exclusions
 
     scenario(main)
     assert TelemetryExclusions(tmp_path / EXCLUSIONS_FILE).keys == {ALICE.public_key.hex()}

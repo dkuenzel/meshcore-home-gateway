@@ -1,4 +1,5 @@
-"""Shared fixtures. The broker fixture starts a private mosquitto on a free local port."""
+"""Shared fixtures. The broker fixture starts a private mosquitto on a free local port; telemetry's
+first-start hold is skipped unless a test is marked `first_start_hold`."""
 
 from __future__ import annotations
 
@@ -13,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from meshcore_home_gateway import telemetry_poller
+
 SKIP_BROKER = os.environ.get("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS") == "1"
 
 
@@ -20,6 +23,14 @@ SKIP_BROKER = os.environ.get("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS") == "1"
 class Broker:
     host: str
     port: int
+
+
+@pytest.fixture(autouse=True)
+def no_first_start_hold(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Telemetry asks nobody for an hour the first time it runs on a state directory: only the
+    tests marked `first_start_hold` wait for it."""
+    if request.node.get_closest_marker("first_start_hold") is None:
+        monkeypatch.setattr(telemetry_poller, "FIRST_START_S", 0.0)
 
 
 def _free_port() -> int:

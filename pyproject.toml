@@ -88,7 +88,10 @@ pythonpath = ["src"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = ["error"]
-markers = ["broker: starts a local mosquitto broker (integration test)"]
+markers = [
+  "broker: starts a local mosquitto broker (integration test)",
+  "first_start_hold: keeps telemetry's first-start hold (tests/conftest.py skips it elsewhere)",
+]
 
 [tool.coverage.run]
 branch = true

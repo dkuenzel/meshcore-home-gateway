@@ -11,6 +11,14 @@ taken for the contact asked, or as the late answer of the last request until the
 only while that prefix is unique among the radio's contacts and differs from the radio's own, on
 a table that shows every change the radio reported. Answers to other requests (0x8C) are not
 read. Nothing here raises out of `run` but a cancellation.
+
+The contacts the household excluded (the observer holds them) are never asked: a request that
+waits for the radio is withdrawn, an answer that comes anyway is dropped. Each companion's state
+(ADR 0024) is evaluated at every step and after every outcome, and the observer is told of a
+change. An event when a companion that answered within the day leaves two requests in a row
+unanswered, and when it answers again or for the first time. The first time telemetry runs on a
+state directory it asks nobody for FIRST_START_S after the radio's table is read, so the
+household can exclude strangers first.
 """
 
 from __future__ import annotations
@@ -21,12 +29,21 @@ import logging
 import math
 import time
 from collections import Counter, deque
-from collections.abc import Callable
+from collections.abc import Callable, Collection
+from dataclasses import replace
 
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core import telemetry as core
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS
-from meshcore_home_gateway.core.telemetry import Candidate, LaneFactory, Poll
+from meshcore_home_gateway.core.telemetry import (
+    Candidate,
+    LaneFactory,
+    PauseReason,
+    Poll,
+    TelemetryEvent,
+    TelemetryState,
+    TelemetryStatus,
+)
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import NodeType
@@ -40,7 +57,7 @@ from meshcore_home_gateway.radio.session import (
     added_types,
     type_names,
 )
-from meshcore_home_gateway.state import TelemetryRecords
+from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryRecords
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +73,10 @@ LOST_SENT_WINDOW_S = 120.0  # a request written whose SENT never came: its answe
 SEED_HEARD = frozenset({"advert"})  # what the history's "last heard" may seed (not a message:
 #   one fetched at connect may have waited in the radio for hours)
 HEARD_KEPT = 512  # heard times kept before old ones are dropped
+# the first time telemetry runs on a state directory, nobody is asked this long after the radio's
+# table is read (read when used, so tests can change it)
+FIRST_START_S = 3600.0
+STATE_ERROR_LOG_S = 60.0  # an error while the states are evaluated is logged at most this often
 
 
 class OutboxActivity:
@@ -213,8 +234,9 @@ class TelemetryPoller:
     ) -> None:  # fmt: skip
         """`session`: the session while the radio is connected. `tcp`: answers can be lost
         while the radio's push queue is full (a table read). No I/O here: the saved schedule is
-        read when the task runs."""
+        read by restore()."""
         self._observer = observer
+        self._exclusions = observer.exclusions  # the one holder: the observer's
         self._session = session
         self._outbox = outbox
         self._records = records
@@ -237,17 +259,24 @@ class TelemetryPoller:
         self._routes: dict[str, bool] = {}  # key -> its last request went by flood
         self._absent: dict[str, int] = {}  # key -> the table read on which the radio lacked it
         self._states: dict[str, str] = {}
+        self._reported: dict[str, TelemetryState] = {}  # key -> the state the observer was told
+        self._own_key: str | None = None  # the radio's, from the last session with its info
         self._session_seen: CompanionSession | None = None
         self._unsupported: CompanionSession | None = None
         self._warned: tuple[CompanionSession, str] | None = None  # the pause last warned of
-        self._status = "on"
+        self._status: TelemetryStatus = "paused"
+        self._reason: PauseReason | None = "no_radio"
+        self._restored = False
+        self._hold_left: float | None = None  # the first-start hold still to come; None: none
+        self._hold_until: float | None = None  # when it ends, once it runs
+        self._state_error_at = -math.inf
         self._busy_until = -math.inf
         self._saved_version, self._saved_mono = -1, -math.inf
 
     # --- the task -------------------------------------------------------------------------------
 
     async def run(self) -> None:
-        self._restore()
+        self.restore()
         try:
             while True:
                 try:
@@ -263,7 +292,17 @@ class TelemetryPoller:
             self._waiter.close()  # an answer during the stop changes nothing saved
             self._save(at_once=True)
 
-    def _restore(self) -> None:
+    def restore(self) -> None:
+        """The saved schedule, before any task runs (the bridge); run() calls it if it has not
+        run. The schedule of every excluded contact forgets its answers (excluded while
+        telemetry was off). The first-start hold: all of it when the state file has no
+        telemetry record, else what the record has left of it. The observer learns when each
+        contact last answered with a position. Never raises."""
+        if self._restored:
+            return
+        self._restored = True
+        saved: core.Saved | None = None
+        elapsed: float | None = 0.0
         try:
             saved, elapsed = self._records.load(self._wall()) if self._records else (None, 0.0)
             self._scheduler = core.Scheduler(
@@ -271,6 +310,30 @@ class TelemetryPoller:
             )
         except Exception:
             log.exception("telemetry: saved schedule unusable; starting empty")
+        try:
+            self._hold_left = self._first_hold(saved, elapsed)
+            now, wall = self._mono(), self._wall()
+            for key in self._exclusions.keys:
+                self._scheduler.forget(key, now)
+            for key, age in self._scheduler.located_ages(now).items():
+                self._observer.restore_position_received(key, wall - age)
+        except Exception:
+            log.exception("telemetry: the saved schedule could not be restored")
+
+    def _first_hold(self, saved: core.Saved | None, elapsed: float | None) -> float | None:
+        """What is left of the first-start hold: all of it where telemetry never ran (no
+        record; no state file either), the record's rest less the time since it was saved
+        (all of the rest when that time is unknown), none for a record this version cannot
+        read."""
+        if saved is not None:
+            if saved.hold_left_s is None:
+                return None
+            left = saved.hold_left_s - (elapsed or 0.0)
+        elif self._records is not None and self._records.ran_before():
+            return None
+        else:
+            left = FIRST_START_S
+        return left if left > 0 else None
 
     def _recover(self) -> None:
         try:
@@ -293,10 +356,19 @@ class TelemetryPoller:
                 or (not scheduler.urgent and mono - self._saved_mono < SAVE_INTERVAL_S)
             ):
                 return
-            self._records.save(scheduler.export(mono), self._wall())
+            saved = replace(scheduler.export(mono), hold_left_s=self._hold_rest(mono))
+            self._records.save(saved, self._wall())
             self._saved_version, self._saved_mono = scheduler.version, mono
         except Exception:
             log.exception("telemetry: the schedule could not be saved")
+
+    def _hold_rest(self, now: float) -> float | None:
+        """For the state file: all of a hold that has not started, the rest of one that runs,
+        None once it is over."""
+        if self._hold_left is None or self._hold_until is None:
+            return self._hold_left
+        left = self._hold_until - now
+        return left if left > 0 else None
 
     async def _sleep(self, seconds: float) -> None:
         """Sleep, woken early by a late answer, a contact heard or a path it sent."""
@@ -308,6 +380,7 @@ class TelemetryPoller:
                 await self._wake.wait()
 
     async def _step(self) -> None:
+        self._report_states()
         session = self._session()
         if session is not self._session_seen:  # marks of the last session do not apply
             self._session_seen, self._absent = session, {}
@@ -315,7 +388,8 @@ class TelemetryPoller:
             key, event = self._held.popleft()
             await self._accept(key, event, late=True)
             return
-        if session is None or session.info is None:
+        if session is None or session.info is None:  # also why nothing is sent
+            self._status, self._reason = "paused", "no_radio"
             await self._sleep(core.STEP_S)
             return
         if (hold := self._hold(session)) is not None:
@@ -342,23 +416,72 @@ class TelemetryPoller:
 
     def _hold(self, session: CompanionSession) -> float | None:
         """How long to wait before deciding while telemetry is off for this session, paused,
-        or the radio was busy; None: go on."""
+        or the radio was busy; None: go on. The first reason that holds counts: the firmware
+        lacks the command, the exclusions cannot be read, the first-start hold, the radio adds
+        contacts by itself or transmitted too much."""
         if session is self._unsupported:
-            self._status = "unsupported"
+            self._status, self._reason = "unsupported", None
             return core.STEP_S
+        if self._exclusions.unreadable:  # asking nobody rather than everybody
+            why = f"the exclusions in {EXCLUSIONS_FILE} cannot be read: fix or delete the file"
+            self._pause(session, "exclusions_unreadable", f"{why} and restart the service",
+                        logging.ERROR)  # fmt: skip
+            return core.STEP_S
+        if (left := self._first_start(session)) is not None:
+            self._status, self._reason = "paused", "first_start"
+            return left
         if (paused := self._paused(session)) is not None:
-            self._status = "paused"
-            kind, why = paused
-            if self._warned != (session, kind):  # once per session and reason
-                self._warned = (session, kind)
-                log.warning("telemetry paused: %s", why)
+            self._pause(session, *paused)
             return core.STEP_S
         if self._warned is not None and self._warned[0] is session:
             log.info("telemetry resumed")
         self._warned = None
-        self._status = "on"
+        self._status, self._reason = "on", None
         busy = self._busy_until - self._mono()
         return busy if busy > 0 else None
+
+    def _pause(
+        self, session: CompanionSession, reason: PauseReason, why: str,
+        level: int = logging.WARNING,
+    ) -> None:  # fmt: skip
+        self._status, self._reason = "paused", reason
+        if self._warned != (session, reason):  # once per session and reason
+            self._warned = (session, reason)
+            log.log(level, "telemetry paused: %s", why)
+
+    def _first_start(self, session: CompanionSession) -> float | None:
+        """How long the first-start hold still holds the requests; None: none, or it is over.
+        It starts at the first step with a read table: one warning names how many companions
+        it will ask, and the schedule is saved at once, so a restart holds only the rest."""
+        if self._hold_left is None:
+            return None
+        now = self._mono()
+        if self._hold_until is None:
+            if session.contacts_read_at < 0:  # whom it will ask is known with the table
+                return OUTDATED_WAIT_S
+            self._hold_until = now + self._hold_left
+            log.warning(
+                "telemetry paused: the first requests go out in %d minutes, to %d companions of "
+                "the radio; exclude every one that is not the household's (the Telemetry switch "
+                "on its device, or meshcore-home-gateway contacts telemetry KEY off)",
+                math.ceil(self._hold_left / 60), self._askable(session),
+            )  # fmt: skip
+            self._save(at_once=True)
+        left = self._hold_until - now
+        if left <= 0:
+            self._hold_left = self._hold_until = None
+            return None
+        self._warned = (session, "first_start")  # "resumed" once it is over
+        return min(left, core.STEP_S)
+
+    def _askable(self, session: CompanionSession) -> int:
+        """The companions of the table as read that would be asked: unique, not excluded."""
+        prefixes = _prefixes(session)
+        return sum(
+            record.node_type == NodeType.CHAT and prefixes[key[:PREFIX_HEX_DIGITS]] == 1
+            and key not in self._exclusions
+            for key, record in session.contact_records.items()
+        )  # fmt: skip
 
     async def _poll(self, session: CompanionSession, poll: Poll) -> None:
         sent = await self._send(session, poll)
@@ -402,7 +525,7 @@ class TelemetryPoller:
 
         def busy() -> bool:  # runs with the lock, right before the write
             before.append(session.commands_sent)
-            return self._outbox.busy
+            return self._outbox.busy or poll.key in self._exclusions  # excluded meanwhile
 
         def written() -> bool:
             return bool(before) and session.commands_sent > before[0]
@@ -429,7 +552,7 @@ class TelemetryPoller:
             self._scheduler.retry(poll.key, self._mono())
             self._save(at_once=self._scheduler.urgent)
             return None
-        if sent is None:  # a message came while it waited for the radio: nothing written
+        if sent is None:  # a message came, or an exclusion, while it waited: nothing written
             self._not_sent()
             self._scheduler.retry(poll.key, self._mono(), 0.0)
             return None
@@ -438,14 +561,24 @@ class TelemetryPoller:
 
     def _silence(self, session: CompanionSession, key: str, commands: int) -> None:
         """No answer within the wait. Over TCP a table read during it (also one still running)
-        may have filled the radio's push queue: counted only the second time in a row."""
+        may have filled the radio's push queue: counted only the second time in a row. The
+        second request in a row left unanswered by a companion that answered within the day is
+        an event, once per absence (the count goes back only with an answer)."""
+        now = self._mono()
+        if key in self._exclusions:  # excluded meanwhile: nothing learned
+            self._scheduler.retry(key, now)
+            return
         reads = max(session.contacts_read_at, session.contacts_read_started_at)
         uncertain = self._tcp and reads > commands
         if uncertain:
             log.debug("telemetry %s: no answer during a table read: counted only if again",
                       key[:12])  # fmt: skip
-        self._scheduler.unanswered(key, self._mono(), uncertain=uncertain)
+        before = self._scheduler.failures(key)
+        after = self._scheduler.unanswered(key, now, uncertain=uncertain)
         self._state_changed(key)
+        self._report_states([key])
+        if before < 2 <= after and self._scheduler.answered_within_day(key, now):
+            self._event("unanswered", key)
 
     async def _accept(self, key: str, event: TelemetryReceived, *, late: bool) -> None:
         newest = self._newest.get(key)
@@ -454,6 +587,11 @@ class TelemetryPoller:
             log.debug("telemetry %s: late answer older than one taken, dropped", key[:12])
             return
         session = await self._fresh_table()
+        if key in self._exclusions:  # excluded meanwhile, also during the wait for the table
+            log.debug("telemetry %s: excluded, its answer dropped", key[:12])
+            if not late:
+                self._scheduler.retry(key, self._mono())  # nothing learned
+            return
         record = session.contact_records.get(key) if session is not None else None
         if session is None or record is None or not self._unique(session, key):
             why = "no current table" if session is None else "not a unique contact"
@@ -464,7 +602,7 @@ class TelemetryPoller:
         payload = lpp.decode(event.data)
         found = lpp.position(payload)
         now = self._mono()
-        self._scheduler.answered(
+        back = self._scheduler.answered(
             key, now, found.cells if found else None, payload.lpp_bytes,
             route=(record.path_hops, record.path_bytes), late=late,
         )  # fmt: skip
@@ -483,6 +621,9 @@ class TelemetryPoller:
             self._observer.telemetry(key, answer)
         except Exception:
             log.exception("observer failed")
+        self._report_states([key])
+        if back:  # its first answer, or the first after two unanswered requests in a row
+            self._event("answered", key)
 
     async def _fresh_table(self) -> CompanionSession | None:
         """The session once its table shows every change the radio reported; None after
@@ -503,11 +644,9 @@ class TelemetryPoller:
         return same == 1 and info is not None and info.public_key[:PREFIX_HEX_DIGITS] != prefix
 
     def _candidates(self, session: CompanionSession, now: float) -> list[Candidate]:
-        """Every companion of the radio's table whose prefix is its own (ADR 0018)."""
-        records, info = session.contact_records, session.info
-        prefixes = Counter(key[:PREFIX_HEX_DIGITS] for key in records)
-        if info is not None:
-            prefixes[info.public_key[:PREFIX_HEX_DIGITS]] += 1
+        """Every companion of the radio's table whose prefix is its own (ADR 0018), unless it
+        was excluded. The prefixes count every contact: an excluded one still blocks its twin."""
+        records, prefixes = session.contact_records, _prefixes(session)
         self._prune_heard(now)
         for kept in (self._newest, self._routes, self._states):  # contacts that left
             for key in [k for k in kept if k not in records]:
@@ -516,6 +655,8 @@ class TelemetryPoller:
         for key, record in records.items():
             if record.node_type != NodeType.CHAT or prefixes[key[:PREFIX_HEX_DIGITS]] > 1:
                 continue  # companions only, never a look-alike
+            if key in self._exclusions:
+                continue
             if self._absent.get(key) == session.contacts_read_at:
                 continue  # the radio lacked it on the table as read
             if key not in self._seeded:
@@ -556,16 +697,16 @@ class TelemetryPoller:
             log.info("telemetry %s: refused (%s)", poll.key[:12], reason)
             self._scheduler.retry(poll.key, now, REFUSED_RETRY_S)
 
-    def _paused(self, session: CompanionSession) -> tuple[str, str] | None:
-        """Why telemetry waits, as a kind and a text; None: it does not."""
+    def _paused(self, session: CompanionSession) -> tuple[PauseReason, str] | None:
+        """Why the radio lets telemetry wait, as a reason and a text; None: it does not."""
         info = session.info
         if info is not None and (types := added_types(info.self_info, session.autoadd)):
             # a node it adds could take a companion's prefix, and its answer with it
             names = ", ".join(type_names(types))
-            return "adding", f"the radio adds {names} contacts automatically"
+            return "auto_add", f"the radio adds {names} contacts automatically"
         measured = self._observer.radio_tx_1h_s()
         if measured is not None and measured >= MEASURED_TX_LIMIT_S:
-            return "airtime", f"the radio transmitted {measured} s in the last hour"
+            return "radio_airtime", f"the radio transmitted {measured} s in the last hour"
         return None
 
     def _state_changed(self, key: str) -> str:
@@ -575,7 +716,77 @@ class TelemetryPoller:
             log.info("telemetry %s: %s", key[:12], state.replace("_", " "))
         return state
 
+    # --- the companions' states (ADR 0024) ------------------------------------------------------
+
+    def _report_states(self, keys: Collection[str] | None = None) -> None:
+        """_refresh_states(); an error is logged at most every STATE_ERROR_LOG_S, the step goes
+        on."""
+        try:
+            self._refresh_states(keys)
+        except Exception:
+            now = self._mono()
+            if now - self._state_error_at >= STATE_ERROR_LOG_S:
+                self._state_error_at = now
+                log.exception("telemetry: the states could not be evaluated")
+
+    def _refresh_states(self, keys: Collection[str] | None = None) -> None:
+        """The state of each companion of the table as last read (or of `keys`) now; the
+        observer republishes the document of one whose state changed. A contact's first state
+        is no change: its document was built with it."""
+        contacts = self._observer.mesh.contacts
+        for key in [k for k in self._reported if k not in contacts]:  # contacts that left
+            del self._reported[key]
+        prefixes, now = self._mesh_prefixes(), self._mono()
+        for key in contacts if keys is None else keys:
+            tracked = contacts.get(key)
+            if tracked is None or tracked.node.node_type != NodeType.CHAT:
+                continue
+            state = self._state(key, prefixes, now) or "waiting"
+            before = self._reported.get(key)
+            self._reported[key] = state
+            if before is not None and before != state:
+                self._observer.telemetry_state_changed(key)
+
+    def _state(self, key: str, prefixes: Counter[str], now: float) -> TelemetryState | None:
+        if key in self._exclusions:
+            return "excluded"
+        if prefixes[key[:PREFIX_HEX_DIGITS]] > 1:  # an answer could not be told apart
+            return "look_alike"
+        return self._scheduler.state(key, now)
+
+    def _mesh_prefixes(self) -> Counter[str]:
+        """How many contacts of the table as last read, and the radio itself, have each key
+        prefix: counted at each call, so a document built before any decision is right too."""
+        session = self._session()
+        if session is not None and session.info is not None:
+            self._own_key = session.info.public_key  # remembered while the radio is away
+        prefixes = Counter(key[:PREFIX_HEX_DIGITS] for key in self._observer.mesh.contacts)
+        if self._own_key is not None:
+            prefixes[self._own_key[:PREFIX_HEX_DIGITS]] += 1
+        return prefixes
+
+    def _event(self, kind: TelemetryEvent, key: str) -> None:
+        """An event with the state just reported; none while the contact reads as a look-alike
+        (a table newer than the one the outcome was taken on has its twin): no event carries
+        that state."""
+        state = self._reported.get(key)
+        if state is None or state == "look_alike":
+            return
+        try:
+            self._observer.telemetry_event(kind, key, state)
+        except Exception:
+            log.exception("observer failed")
+
     # --- from the event loop, inline ------------------------------------------------------------
+
+    def exclusion_changed(self, key: str, excluded: bool) -> None:
+        """Observer listener: the contact was excluded or included again. Either way its
+        schedule forgets its answers, so an included contact is `waiting` and due at once, also
+        after a retry while it was excluded. Its state is taken as reported (the observer
+        publishes its document next); the task wakes."""
+        self._scheduler.forget(key, self._mono())
+        self._reported[key] = self.state_of(key) or "waiting"
+        self._wake.set()
 
     def _late(self, key: str, event: TelemetryReceived) -> None:
         self._held.append((key, event))
@@ -618,13 +829,31 @@ class TelemetryPoller:
         if watch is not None and self._mono() <= watch[1] and hashes[1] == int(watch[0][:2], 16):
             self._scheduler.flooded_reply(watch[0], self._mono())
 
-    # --- for the state document -----------------------------------------------------------------
+    # --- for the documents ----------------------------------------------------------------------
+
+    def state_of(self, key: str) -> TelemetryState | None:
+        """excluded, look_alike, or the schedule's state now; None if the schedule does not
+        know the contact."""
+        return self._state(key, self._mesh_prefixes(), self._mono())
 
     @property
-    def status(self) -> str:
+    def status(self) -> TelemetryStatus:
         """ "on", "paused" or "unsupported"."""
         return self._status
+
+    @property
+    def reason(self) -> PauseReason | None:
+        """Why telemetry is paused; None while it is not."""
+        return self._reason
 
     def used_s(self) -> tuple[float, float]:
         """Own and estimated mesh airtime of the last hour."""
         return self._scheduler.used_s(self._mono())
+
+
+def _prefixes(session: CompanionSession) -> Counter[str]:
+    """How many contacts of the session's table, and the radio itself, have each key prefix."""
+    prefixes = Counter(key[:PREFIX_HEX_DIGITS] for key in session.contact_records)
+    if session.info is not None:
+        prefixes[session.info.public_key[:PREFIX_HEX_DIGITS]] += 1
+    return prefixes

@@ -1,5 +1,7 @@
 """Telemetry from the radio's companions end to end (telemetry_poller.py, ADR 0018): the bridge
-with the emulated radio and its remote companions, and the poller's parts on their own."""
+with the emulated radio and its remote companions, and the poller's parts on their own; its
+steps also on a stand-in radio with a clock the test moves (exclusion, states, events and the
+first-start hold)."""
 
 from __future__ import annotations
 
@@ -8,10 +10,10 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -34,9 +36,16 @@ from meshcore_home_gateway.radio.session import (
     NotSentError,
     RadioError,
     TelemetryReceived,
+    TelemetrySent,
 )
-from meshcore_home_gateway.state import JsonStateFile
+from meshcore_home_gateway.state import (
+    EXCLUSIONS_FILE,
+    JsonStateFile,
+    TelemetryExclusions,
+    TelemetryRecords,
+)
 from meshcore_home_gateway.telemetry_poller import AnswerWaiter, OutboxActivity, TelemetryPoller
+from meshcore_home_gateway.views import iso
 from tests.radio_emulator import (
     LPP_FULL,
     SELF_KEY,
@@ -46,7 +55,7 @@ from tests.radio_emulator import (
     RemoteCompanion,
     telemetry_push,
 )
-from tests.test_bridge import ALICE, NOW, FakeBus, make_config, running, scenario
+from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
 
 ROOT = "meshcore/radio1"
 DANA = EmulatedContact(bytes.fromhex("d4" * 32), "Dana", out_path_len=0x00)  # a neighbour
@@ -959,3 +968,785 @@ def test_heard_times_and_the_marks_of_contacts_that_left_are_dropped() -> None:
     assert (gone in poller._newest, gone in poller._routes, gone in poller._states) == (
         False, False, False,
     )  # fmt: skip
+
+
+# --- exclusion, states, events and the first-start hold, on a stand-in radio ------------------
+
+BOB_KEY = BOB.public_key.hex()
+ERIN = EmulatedContact(bytes.fromhex("e7" * 32), "Erin", out_path_len=0x00)
+ERIN_KEY = ERIN.public_key.hex()
+GINA = EmulatedContact(bytes.fromhex("9a" * 32), "Gina", out_path_len=0x00)
+GINA_TWIN = EmulatedContact(GINA.public_key[:6] + bytes(26), "Trent", out_path_len=0x00)
+HILL = EmulatedContact(bytes.fromhex("c7" * 32), "Hill", node_type=2)  # a repeater
+MIRROR = EmulatedContact(SELF_KEY[:6] + bytes(26), "Mirror", out_path_len=0x00)  # the radio's
+TWIN_KEY = DANA_TWIN.public_key.hex()
+START = 10_000.0  # the stand-in clock when a test starts
+HOLD_WARNING = "telemetry paused: the first requests go out in"
+
+
+class StandInRadio:
+    """A session with a table, as the poller reads it, whose companions answer as the test says:
+    `answers` holds what each one sends, a key without an entry is silent."""
+
+    def __init__(self, clock: list[float], *contacts: EmulatedContact) -> None:
+        self.clock = clock
+        self.info: Any = SimpleNamespace(  # None: a session that has not started
+            public_key=SELF_KEY.hex(), lora=EU, self_info=SimpleNamespace(manual_add_contacts=True)
+        )
+        self.autoadd = None
+        self.commands_sent = 0
+        self.contacts_read_at = self.contacts_read_started_at = -1  # no table read yet
+        self.contacts_outdated = False
+        self.closed = False
+        self.contact_records = {c.public_key.hex(): chat_record(c) for c in contacts}
+        self.answers: dict[str, bytes] = {}
+        self.asked: list[tuple[str, float]] = []  # whom, when
+        self.lock: asyncio.Event | None = None  # another command holds the radio until it is set
+        self.on_request: Callable[[str], None] | None = None  # after the write
+        self.answer: Callable[[TelemetryReceived], None] | None = None
+        self.seq = 0
+
+    async def request_telemetry(
+        self, key: bytes, *, unless: Callable[[], bool]
+    ) -> TelemetrySent | None:
+        if self.lock is not None:
+            await self.lock.wait()
+        if unless():
+            return None
+        self.commands_sent += 1
+        self.seq += 2
+        self.asked.append((key.hex(), self.clock[0]))
+        if self.on_request is not None:
+            self.on_request(key.hex())
+        lpp_bytes = self.answers.get(key.hex())
+        if lpp_bytes is not None and self.answer is not None:  # read before SENT is seen
+            at = NOW + self.clock[0] - START
+            self.answer(TelemetryReceived(key[:6], lpp_bytes, at, self.seq + 1, 1))
+        return TelemetrySent(False, 0, self.seq)
+
+
+@dataclass
+class Rig:
+    """The poller on a stand-in radio, wired to its observer as the bridge wires them. Its
+    sleeps move the clock instead of waiting."""
+
+    poller: TelemetryPoller
+    observer: Observer
+    bus: FakeBus
+    radio: StandInRadio
+    clock: list[float]
+    connected: list[StandInRadio | None]  # what the poller's `session()` returns
+    wall: Callable[[], float]
+
+    async def steps(self, count: int = 1) -> None:
+        for _ in range(count):
+            await self.poller._step()
+
+    async def until_asked(self, count: int, steps: int = 200) -> None:
+        for _ in range(steps):
+            if len(self.radio.asked) >= count:
+                return
+            await self.poller._step()
+        raise AssertionError(f"not {count} requests in {steps} steps: {self.radio.asked}")
+
+    def read(self) -> None:
+        """A table read: the observer gets the table the radio holds."""
+        self.radio.contacts_read_at = self.radio.contacts_read_started_at = self.radio.seq
+        records = dict(self.radio.contact_records)
+        self.observer.radio_event(session_module.ContactsRead(records, self.wall()))
+
+    def exclude(self, key: str) -> None:
+        """As the contact manager takes `off`."""
+        self.observer.exclusions.exclude(key)
+        self.observer.telemetry_excluded(key, True)
+
+    def include(self, key: str) -> None:
+        self.observer.exclusions.include(key)
+        self.observer.telemetry_excluded(key, False)
+
+    def state(self, key: str = KEY) -> object:
+        return self.bus.payloads(f"/contacts/{key}")[-1]["telemetry_state"]
+
+    def events(self) -> list[tuple[str, str, str]]:
+        return [
+            (e["event_type"], e["key"], e["state"]) for e in self.bus.payloads(f"{ROOT}/telemetry")
+        ]
+
+    def held(self) -> tuple[str, str | None]:
+        return self.poller.status, self.poller.reason
+
+
+def rig(
+    monkeypatch: pytest.MonkeyPatch, *contacts: EmulatedContact,
+    records: TelemetryRecords | None = None, exclusions: TelemetryExclusions | None = None,
+    tcp: bool = False, wall: float = NOW, read: bool = True,
+) -> Rig:  # fmt: skip
+    """`wall`: the wall clock at the start; `read`: the radio's table was read."""
+    monkeypatch.setattr(telemetry, "STEP_S", 60.0)  # the sleeps only move the clock
+    monkeypatch.setattr(telemetry, "RETRY_S", 30.0)
+    monkeypatch.setattr(telemetry, "POLL_GAP_S", 10.0)
+    monkeypatch.setattr(telemetry, "WAIT_MIN_S", 0.01)  # a silence takes this long for real
+    monkeypatch.setattr(poller_module, "QUIET_S", 10.0)
+    clock = [START]
+
+    def wall_clock() -> float:
+        return wall + clock[0] - START
+
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=wall_clock, exclusions=exclusions)
+    radio = StandInRadio(clock, *contacts)
+    connected: list[StandInRadio | None] = [radio]
+    poller = TelemetryPoller(
+        observer, lambda: cast(CompanionSession | None, connected[0]),
+        OutboxActivity(lambda: clock[0], lambda: 0), records=records, tcp=tcp,
+        monotonic=lambda: clock[0], wall_clock=wall_clock, lanes=wide,
+    )  # fmt: skip
+    radio.answer = poller.answer
+    observer.telemetry_state = poller.state_of
+    observer.on_telemetry_exclusion.append(poller.exclusion_changed)
+
+    async def sleep(seconds: float) -> None:
+        clock[0] += max(0.0, seconds)
+
+    monkeypatch.setattr(poller, "_sleep", sleep)
+    poller.restore()  # before the first table read, as the bridge does it
+    stand_in = Rig(poller, observer, bus, radio, clock, connected, wall_clock)
+    if read:
+        stand_in.read()
+    return stand_in
+
+
+def saved_hold(store: JsonStateFile) -> object:
+    return store.load()["telemetry"]["hold_left_s"]
+
+
+def changes(monkeypatch: pytest.MonkeyPatch, r: Rig) -> list[str]:
+    """The keys the poller reports a changed state of, in order."""
+    reported: list[str] = []
+    published = r.observer.telemetry_state_changed
+
+    def changed(key: str) -> None:
+        reported.append(key)
+        published(key)
+
+    monkeypatch.setattr(r.observer, "telemetry_state_changed", changed)
+    return reported
+
+
+def test_tests_skip_the_first_start_hold_unless_marked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.WARNING, LOGGER)
+    assert poller_module.FIRST_START_S == 0.0
+    records = TelemetryRecords(JsonStateFile(tmp_path / "state.json"))
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, records=records)
+        await r.steps(1)
+        assert r.radio.asked == [(KEY, START)]
+
+    asyncio.run(main())
+    assert HOLD_WARNING not in caplog.text
+
+
+@pytest.mark.first_start_hold
+def test_marked_tests_keep_the_first_start_hold() -> None:
+    assert poller_module.FIRST_START_S == 3600.0
+
+
+def test_an_excluded_contact_is_never_asked_but_still_blocks_its_twin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, DANA_TWIN, ERIN, BOB, HILL)
+        r.exclude(TWIN_KEY)
+        r.exclude(ERIN_KEY)
+        candidates = r.poller._candidates(cast(CompanionSession, r.radio), r.clock[0])
+        assert [c.key for c in candidates] == [BOB_KEY]
+        await r.until_asked(1)
+        await r.steps(30)
+        assert {key for key, _ in r.radio.asked} == {BOB_KEY}
+        states = [r.poller.state_of(key) for key in (KEY, TWIN_KEY, ERIN_KEY)]
+        assert states == ["look_alike", "excluded", "excluded"]  # excluded before look-alike
+        assert (r.state(KEY), r.state(TWIN_KEY), r.state(ERIN_KEY)) == (
+            "look_alike", "excluded", "excluded",
+        )  # fmt: skip
+        assert HILL.public_key.hex() not in r.poller._reported  # a repeater has no state
+
+    asyncio.run(main())
+
+
+def test_an_exclusion_while_the_request_waits_for_the_radio_withdraws_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        r.radio.lock = asyncio.Event()  # another command holds the radio
+        step = asyncio.create_task(r.steps())
+        await until(lambda: r.poller._sending == KEY)
+        r.exclude(KEY)
+        r.radio.lock.set()
+        await step
+        assert (r.radio.commands_sent, r.radio.asked) == (0, [])  # nothing written
+        assert r.poller._scheduler.in_flight is None
+        await r.steps(30)
+        assert r.radio.asked == []
+        assert r.state() == "excluded"
+
+    asyncio.run(main())
+
+
+def test_an_answer_of_a_contact_excluded_during_the_table_wait_is_not_taken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        fresh_table = r.poller._fresh_table
+
+        async def excluded_meanwhile() -> CompanionSession | None:
+            r.exclude(KEY)  # while the answer waits for a table that shows every change
+            return await fresh_table()
+
+        monkeypatch.setattr(r.poller, "_fresh_table", excluded_meanwhile)
+        await r.until_asked(1)
+        assert r.poller._scheduler.state(KEY, r.clock[0]) == "waiting"  # nothing learned
+        assert r.poller._scheduler.in_flight is None
+        document = r.bus.payloads(f"/contacts/{KEY}")[-1]
+        assert (document["battery_v"], document["telemetry_state"]) == (None, "excluded")
+        assert r.events() == []
+
+    asyncio.run(main())
+
+
+def test_the_silence_of_a_contact_excluded_meanwhile_counts_no_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)  # silent
+        r.radio.on_request = r.exclude  # excluded once its request went out
+        await r.until_asked(1)
+        assert r.poller._scheduler.failures(KEY) == 0
+        assert r.poller._scheduler.in_flight is None
+
+    asyncio.run(main())
+
+
+def test_an_included_contact_is_waiting_and_asked_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An exclusion forgets the answers: an inclusion soon after gets no old schedule back,
+    also after its silence was a retry; the same once its schedule was dropped (PARK_S)."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        assert r.state() == "answering"
+        del r.radio.answers[KEY]
+        r.radio.on_request = r.exclude  # excluded while its next request is in flight
+        await r.until_asked(2)
+        assert r.poller._scheduler.state(KEY, r.clock[0]) == "waiting"  # answers forgotten
+        r.radio.on_request = None
+        r.radio.answers[KEY] = LPP_FULL
+        r.clock[0] += 5.0
+        included = r.clock[0]
+        r.include(KEY)
+        assert r.state() == "waiting"
+        await r.until_asked(3)
+        quick = telemetry.POLL_GAP_S + poller_module.QUIET_S
+        assert r.radio.asked[2][1] - included <= quick
+        assert r.events() == [("answered", KEY, "answering")] * 2
+        r.exclude(KEY)
+        await r.steps(1)  # no longer a candidate: parked
+        r.clock[0] += telemetry.PARK_S + 1.0
+        await r.steps(1)  # its schedule is dropped
+        included = r.clock[0]
+        r.include(KEY)
+        assert r.state() == "waiting"
+        await r.until_asked(4)
+        assert r.radio.asked[3][1] - included <= quick
+        assert r.events() == [("answered", KEY, "answering")] * 3
+
+    asyncio.run(main())
+
+
+def test_the_state_of_a_contact(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Excluded; a look-alike from the table as last read and the radio's own key, also before
+    any decision and while paused; else the schedule's state (None: it does not know it)."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, DANA_TWIN, MIRROR, ERIN)
+        mirror = MIRROR.public_key.hex()
+        assert (r.poller.state_of(KEY), r.poller.state_of(mirror)) == ("look_alike",) * 2
+        assert r.state() == "look_alike"  # the document of the first table read
+        r.exclude(ERIN_KEY)
+        assert r.poller.state_of(ERIN_KEY) == "excluded"
+        r.radio.info.self_info.manual_add_contacts = False  # paused: nothing is decided
+        await r.steps(2)
+        assert r.held() == ("paused", "auto_add")
+        r.connected[0] = None
+        assert r.poller.state_of(mirror) == "look_alike"  # the radio's key is remembered
+        r.connected[0] = r.radio
+        del r.radio.contact_records[TWIN_KEY]
+        r.read()  # the twin left
+        assert r.poller.state_of(KEY) is None
+        assert r.state() == "waiting"
+        r.radio.info.self_info.manual_add_contacts = True
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        assert r.poller.state_of(KEY) == "answering"
+        assert TWIN_KEY not in r.poller._reported  # what is kept of a contact that left
+
+    asyncio.run(main())
+
+
+def test_a_changed_state_is_reported_once_and_a_silence_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        reported = changes(monkeypatch, r)
+        r.connected[0] = None  # the radio away: the steps only evaluate
+        await r.steps(3)
+        assert reported == []  # the first evaluation is no change
+        r.connected[0] = r.radio
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        assert (reported, r.state()) == ([KEY], "answering")  # at once, with the answer
+        await r.steps(5)
+        assert reported == [KEY]
+        del r.radio.answers[KEY]
+        await r.until_asked(3)  # the second silence
+        assert (reported, r.state()) == ([KEY, KEY], "away")  # at once, with the silence
+
+    asyncio.run(main())
+
+
+def test_an_exclusion_is_no_change_to_report_later(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The observer publishes the document of an exclusion or inclusion itself: the poller
+    takes the state as reported, and wakes to plan."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.connected[0] = None
+        await r.steps(1)
+        reported = changes(monkeypatch, r)
+        r.poller._wake.clear()
+        r.exclude(KEY)
+        assert r.poller._wake.is_set()
+        await r.steps(2)
+        r.poller._wake.clear()
+        r.include(KEY)
+        assert r.poller._wake.is_set()
+        await r.steps(2)
+        assert (reported, r.state()) == ([], "waiting")
+
+    asyncio.run(main())
+
+
+def test_an_event_when_a_companion_stops_answering_and_when_it_answers_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`unanswered` at the second request in a row it leaves unanswered, none at the third;
+    `answered` at its first answer and at its next one, none after a single failure."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        answered, unanswered = ("answered", KEY, "answering"), ("unanswered", KEY, "away")
+        assert r.events() == [answered]
+        del r.radio.answers[KEY]
+        await r.until_asked(2)  # one silence, then the retry answers
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(3)
+        assert r.events() == [answered]
+        del r.radio.answers[KEY]
+        await r.until_asked(5)
+        assert r.events() == [answered, unanswered]
+        assert r.state() == "away"
+        await r.until_asked(6)  # the third
+        assert r.events() == [answered, unanswered]
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(7)
+        assert r.events() == [answered, unanswered, answered]
+
+    asyncio.run(main())
+
+
+def test_no_event_for_a_companion_that_never_answered(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)  # silent: it does not allow the gateway
+        await r.until_asked(3)
+        assert r.poller._scheduler.failures(KEY) == 3
+        assert (r.state(), r.events()) == ("no_answer", [])
+
+    asyncio.run(main())
+
+
+def test_no_event_when_answers_expire_while_the_radio_is_away(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        r.connected[0] = None
+        await r.steps(int(telemetry.CURRENT_MIN_S / telemetry.STEP_S) + 2)
+        assert r.state() == "away"  # by the time bound: nothing was asked
+        assert r.events() == [("answered", KEY, "answering")]
+
+    asyncio.run(main())
+
+
+def test_an_uncertain_silence_does_not_repeat_the_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Over TCP a silence during a table read counts only the second time: the count stays at
+    two, and the event does not come again."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, tcp=True)
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        del r.radio.answers[KEY]
+        await r.until_asked(3)
+        assert [kind for kind, _, _ in r.events()] == ["answered", "unanswered"]
+
+        def table_read(_key: str) -> None:  # started during the wait
+            r.radio.contacts_read_started_at = r.radio.commands_sent + 1
+
+        r.radio.on_request = table_read
+        await r.until_asked(4)
+        assert r.poller._scheduler.failures(KEY) == 2
+        assert [kind for kind, _, _ in r.events()] == ["answered", "unanswered"]
+
+    asyncio.run(main())
+
+
+def test_no_event_while_the_contact_reads_as_a_look_alike(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The observer's table already has its twin, the radio's as read does not: the answer is
+    taken, but no event carries `look_alike`."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        twin = {**r.radio.contact_records, TWIN_KEY: chat_record(DANA_TWIN)}
+        r.observer.radio_event(session_module.ContactsRead(twin, NOW))
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        assert r.poller._scheduler.state(KEY, r.clock[0]) == "answering"
+        del r.radio.answers[KEY]
+        await r.until_asked(3)
+        assert r.poller._scheduler.state(KEY, r.clock[0]) == "away"
+        assert (r.state(), r.events()) == ("look_alike", [])
+
+    asyncio.run(main())
+
+
+def test_without_a_radio_telemetry_is_paused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Before the first session and while the radio is away: `paused`, reason `no_radio`."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        assert r.held() == ("paused", "no_radio")
+        r.connected[0] = None
+        await r.steps(2)
+        assert r.held() == ("paused", "no_radio")
+        r.connected[0] = r.radio
+        await r.steps(1)
+        assert r.held() == ("on", None)
+        r.radio.info = None  # a session that has not started
+        await r.steps(1)
+        assert r.held() == ("paused", "no_radio")
+
+    asyncio.run(main())
+
+
+# what holds the requests -> the status and reason: the first that holds, in this order
+HOLDS: dict[str, tuple[tuple[str, ...], str, str | None]] = {
+    "on": ((), "on", None),
+    "no_radio": (("no_radio", "unsupported", "hold"), "paused", "no_radio"),
+    "unsupported": (("unsupported", "unreadable", "hold"), "unsupported", None),
+    "unreadable": (("unreadable", "hold", "auto_add"), "paused", "exclusions_unreadable"),
+    "first_start": (("hold", "auto_add", "airtime"), "paused", "first_start"),
+    "auto_add": (("auto_add", "airtime"), "paused", "auto_add"),
+    "radio_airtime": (("airtime",), "paused", "radio_airtime"),
+}
+
+
+def test_every_status_and_reason_is_reached() -> None:
+    assert {status for _, status, _ in HOLDS.values()} == set(telemetry.STATUSES) - {"off"}
+    assert {reason for *_, reason in HOLDS.values()} == {*telemetry.PAUSE_REASONS, None}
+
+
+@pytest.mark.first_start_hold
+@pytest.mark.parametrize("case", HOLDS)
+def test_the_status_says_what_holds_the_requests(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    conditions, status, reason = HOLDS[case]
+    store = JsonStateFile(tmp_path / "state.json")
+    if "hold" not in conditions:
+        TelemetryRecords(store).save(telemetry.Saved(), NOW)  # telemetry ran here before
+    exclusions = None
+    if "unreadable" in conditions:
+        (tmp_path / EXCLUSIONS_FILE).write_text("{", encoding="utf-8")
+        exclusions = TelemetryExclusions(tmp_path / EXCLUSIONS_FILE)
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, records=TelemetryRecords(store), exclusions=exclusions)
+        r.radio.answers[KEY] = LPP_FULL
+        if "unsupported" in conditions:
+            r.poller._unsupported = cast(CompanionSession, r.radio)
+        if "auto_add" in conditions:
+            r.radio.info.self_info.manual_add_contacts = False
+        if "airtime" in conditions:
+            limit = poller_module.MEASURED_TX_LIMIT_S
+            monkeypatch.setattr(r.observer, "radio_tx_1h_s", lambda: limit)
+        if "no_radio" in conditions:
+            r.connected[0] = None
+        await r.steps(3)
+        assert r.held() == (status, reason)
+        assert bool(r.radio.asked) is (status == "on")
+
+    asyncio.run(main())
+
+
+def test_unreadable_exclusions_log_one_error_per_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / EXCLUSIONS_FILE).write_text("[]", encoding="utf-8")
+    exclusions = TelemetryExclusions(tmp_path / EXCLUSIONS_FILE)
+    caplog.set_level(logging.ERROR, LOGGER)
+
+    def errors() -> list[str]:
+        return [r.getMessage() for r in caplog.records if r.name == LOGGER]
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, exclusions=exclusions)
+        await r.steps(3)
+        assert len(errors()) == 1
+        assert EXCLUSIONS_FILE in errors()[0]
+        r.connected[0] = StandInRadio(r.clock, DANA)  # the radio reconnected
+        await r.steps(3)
+        assert len(errors()) == 2
+        assert r.radio.asked == []
+
+    asyncio.run(main())
+
+
+def test_a_bug_in_the_states_is_logged_once_a_minute_and_the_step_goes_on(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.ERROR, LOGGER)
+
+    def broken(keys: object = None) -> None:
+        raise RuntimeError("a bug")
+
+    def logged() -> int:
+        return caplog.text.count("telemetry: the states could not be evaluated")
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        monkeypatch.setattr(r.poller, "_refresh_states", broken)
+        first = r.clock[0]
+        await r.steps(1)  # also the answer's evaluation fails
+        assert r.radio.asked == [(KEY, first)]  # the step went on
+        assert logged() == 1
+        r.clock[0] = first + poller_module.STATE_ERROR_LOG_S - 1.0
+        r.poller._report_states()
+        assert logged() == 1
+        r.clock[0] = first + poller_module.STATE_ERROR_LOG_S
+        r.poller._report_states()
+        assert logged() == 2
+
+    asyncio.run(main())
+
+
+def test_restore_forgets_excluded_contacts_and_hands_on_when_positions_came(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Excluded while telemetry was off: its answers are forgotten. The documents of the first
+    table read carry the restored states and `position_received_at`; no event comes."""
+    records = TelemetryRecords(JsonStateFile(tmp_path / "state.json"))
+    answered = telemetry.SavedContact(
+        600.0, answered_age_s=100.0, polled_age_s=100.0, located=True, located_age_s=100.0
+    )
+    records.save(telemetry.Saved({KEY: answered, ERIN_KEY: answered}), NOW - 50.0)
+    exclusions = TelemetryExclusions(None)
+    exclusions.exclude(ERIN_KEY)
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, ERIN, records=records, exclusions=exclusions)
+        dana = r.bus.payloads(f"/contacts/{KEY}")[-1]
+        assert (dana["telemetry_state"], dana["position_received_at"]) == (
+            "answering", iso(NOW - 150.0),
+        )  # fmt: skip
+        erin = r.bus.payloads(f"/contacts/{ERIN_KEY}")[-1]
+        assert (erin["telemetry_state"], erin["position_received_at"]) == ("excluded", None)
+        assert r.poller._scheduler.state(ERIN_KEY, r.clock[0]) == "waiting"
+        scheduler = r.poller._scheduler
+        r.poller.restore()  # once only
+        assert r.poller._scheduler is scheduler
+        published = len(r.bus.published)
+        await r.steps(2)
+        assert r.bus.payloads(f"/contacts/{KEY}")[-1] == dana
+        assert len(r.bus.published) == published
+        assert r.events() == []
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+def test_the_first_start_holds_the_requests_for_an_hour_after_the_table_is_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Telemetry never ran on this state directory: nothing is asked for FIRST_START_S from the
+    first step with a read table; one warning names how many companions it will ask (neither
+    excluded, nor look-alikes, nor repeaters); the hold is saved at once."""
+    caplog.set_level(logging.INFO, LOGGER)
+    store = JsonStateFile(tmp_path / "state.json")
+    exclusions = TelemetryExclusions(None)
+    exclusions.exclude(ERIN_KEY)
+
+    async def main() -> None:
+        r = rig(
+            monkeypatch, DANA, BOB, ERIN, HILL, GINA, GINA_TWIN, records=TelemetryRecords(store),
+            exclusions=exclusions, read=False,
+        )  # fmt: skip
+        await r.steps(3)
+        assert r.held() == ("paused", "first_start")
+        assert HOLD_WARNING not in caplog.text  # not before the table is read
+        r.clock[0] += 600.0
+        r.read()
+        start = r.clock[0]
+        await r.steps(1)
+        warned = [m.getMessage() for m in caplog.records if HOLD_WARNING in m.getMessage()]
+        assert warned == [
+            (
+                "telemetry paused: the first requests go out in 60 minutes, to 2 companions of "
+                "the radio; exclude every one that is not the household's (the Telemetry switch "
+                "on its device, or meshcore-home-gateway contacts telemetry KEY off)"
+            )
+        ]
+        assert saved_hold(store) == 3600.0  # saved at once
+        await r.until_asked(1, steps=100)
+        assert r.radio.asked[0][1] - start == pytest.approx(poller_module.FIRST_START_S)
+        assert r.held() == ("on", None)
+        await r.until_asked(2)
+        assert {key for key, _ in r.radio.asked} == {KEY, BOB_KEY}
+        assert caplog.text.count(HOLD_WARNING) == 1
+        assert caplog.text.count("telemetry resumed") == 1
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+@pytest.mark.parametrize(
+    "times",
+    [
+        (None, NOW + 1800.0, 1800.0),  # it stopped abruptly: the save at the hold's start counts
+        (NOW + 1800.0, NOW + 2400.0, 1200.0),  # stopped halfway, started 10 minutes later
+        (None, NOW - 100.0, 3600.0),  # the clock set back: all that was saved is held
+        (None, NOW + 7200.0, 0.0),  # started after the hour: nothing is left
+    ],
+    ids=["abrupt", "stopped", "clock-set-back", "after-the-hour"],
+)
+def test_a_restart_holds_what_is_left_of_the_first_start_hold(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    times: tuple[float | None, float, float],
+) -> None:  # fmt: skip
+    """`times`: when the first run saved at its stop (None: it did not), when the second one
+    starts, and how long it holds."""
+    stop, restart, left = times
+    caplog.set_level(logging.WARNING, LOGGER)
+    records = TelemetryRecords(JsonStateFile(tmp_path / "state.json"))
+
+    async def main() -> None:
+        first = rig(monkeypatch, DANA, records=records)
+        await first.steps(30)  # the hold starts: half an hour
+        assert first.radio.asked == []
+        if stop is not None:
+            assert first.wall() == stop
+            first.poller._save(at_once=True)
+        second = rig(monkeypatch, DANA, records=records, wall=restart)
+        await second.until_asked(1)
+        assert second.radio.asked[0][1] - START == pytest.approx(left)
+
+    asyncio.run(main())
+    assert caplog.text.count(HOLD_WARNING) == (2 if left else 1)
+
+
+@pytest.mark.first_start_hold
+@pytest.mark.parametrize("version", [1, 2])
+def test_telemetry_that_ran_before_holds_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, version: int
+) -> None:
+    """A record as 1.1.0a1 wrote it, or one of another version: telemetry ran here."""
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"telemetry": {
+        "version": version, "saved_at": NOW - 60.0, "contacts": {}, "floods_age_s": [],
+        "own_debt_s": 0.0, "mesh_debt_s": 0.0,
+    }})  # fmt: skip
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, records=TelemetryRecords(store))
+        await r.steps(1)
+        assert r.radio.asked == [(KEY, START)]
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+def test_without_a_state_file_the_first_start_hold_applies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        await r.steps(10)
+        assert (r.held(), r.radio.asked) == (("paused", "first_start"), [])
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+def test_the_state_file_keeps_what_is_left_of_the_hold(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """All of it while it waits for the radio's table, the rest while it runs, nothing once it
+    is over."""
+    store = JsonStateFile(tmp_path / "state.json")
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, records=TelemetryRecords(store), read=False)
+        r.connected[0] = None
+        await r.steps(5)
+        r.poller._save(at_once=True)
+        assert saved_hold(store) == 3600.0
+        r.connected[0] = r.radio
+        r.read()
+        await r.steps(10)  # the hold starts: 10 minutes
+        r.poller._save(at_once=True)
+        assert saved_hold(store) == pytest.approx(3000.0)
+        r.clock[0] += 3000.0  # its end, before a step sees it
+        r.poller._save(at_once=True)
+        assert saved_hold(store) is None
+        await r.until_asked(1)
+        r.poller._save(at_once=True)
+        assert saved_hold(store) is None
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+def test_a_contact_excluded_during_the_hold_is_never_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, BOB)
+        await r.steps(10)
+        r.exclude(KEY)
+        await r.until_asked(1)
+        await r.steps(60)
+        assert {key for key, _ in r.radio.asked} == {BOB_KEY}
+
+    asyncio.run(main())
