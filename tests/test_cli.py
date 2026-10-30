@@ -648,7 +648,7 @@ def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file
     assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
     (bridge,) = bridges
     bridge.observer.publish_all()  # the broker connected: telemetry is off now
-    assert store.load()["current_contacts"] == {}
+    assert store.load()["current_contacts"]["a1" * 32]["telemetry_state"] == "off"
 
 
 @pytest.mark.broker

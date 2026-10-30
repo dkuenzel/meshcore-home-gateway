@@ -337,7 +337,8 @@ systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
   it a restored system accepts older recorded commands again until a sender sends a new one, within
   `max_age_s`; the Home Assistant components last announced; the contacts whose documents are
   published; the last document of each companion whose answers are current, with its position and
-  readings, so that they still expire after a restart without the radio; the radio profile's
+  readings, so that they still expire after a restart without the radio (kept in its latest state,
+  also once expired, until the radio's table is read again); the radio profile's
   memory; the telemetry schedule: per companion when it is next due, its unanswered requests, when
   it last answered, was asked and flooded, how long its answers count and when one last carried a
   position, and whether it was last moving, no positions; and what is left of the first-start

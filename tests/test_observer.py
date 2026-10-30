@@ -950,6 +950,14 @@ def restarted(
     return observer, bus
 
 
+FORGOTTEN = {
+    "telemetry_state": "excluded", "telemetry_excluded": True, "telemetry_current": False,
+    "position_current": None, "readings_at": None, "battery_v": None, "mcu_temperature_c": None,
+    "readings": {}, "latitude": None, "longitude": None, "altitude_m": None, "position_at": None,
+    "position_source": None, "position_accuracy_m": None, "position_received_at": None,
+}  # fmt: skip
+
+
 def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_path: Path) -> None:
     """The observer has no contact before the first table read: it publishes the stored document
     again once the companion's answers expire, with only its state changed."""
@@ -965,11 +973,35 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
     observer.tick()
     expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **expired}
-    assert CurrentDocuments(store).documents == {}  # in the state file at once
+    assert CurrentDocuments(store).documents == {key: {**before[key], **expired}}  # at once
     observer.tick()
     assert len(retained(bus, f"{ROOT}/contacts/{key}")) == 1
     observer.publish_all()  # the broker connected again
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **expired}
+    states[key] = "waiting"  # a day later
+    observer.telemetry_state_changed(key)
+    waiting = {**before[key], **expired, "telemetry_state": "waiting"}
+    assert last(bus, f"{ROOT}/contacts/{key}") == waiting
+    assert CurrentDocuments(store).documents == {key: waiting}
+
+
+def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: Path) -> None:
+    """A run that stopped before the broker connected published it to nobody: the state file
+    keeps it expired, and the next run publishes it at each connect. One still current is not
+    published again (the broker has it)."""
+    store, before = last_run(tmp_path, ALICE, BOB)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    states: dict[str, TelemetryState] = {alice: "away", bob: "answering"}
+    observer, _nobody = restarted(store, states)
+    observer.tick()  # her bound passed while the gateway was stopped
+    observer.flush()  # the stop, before the broker connected
+    observer, bus = restarted(store, states)
+    observer.publish_all()
+    expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
+    assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **expired}
+    assert retained(bus, f"{ROOT}/contacts/{bob}") == []
+    observer.publish_all()
+    assert len(retained(bus, f"{ROOT}/contacts/{alice}")) == 2
 
 
 def test_with_telemetry_off_a_document_of_the_last_run_is_off_at_the_connect(
@@ -981,7 +1013,7 @@ def test_with_telemetry_off_a_document_of_the_last_run_is_off_at_the_connect(
     observer.publish_all()
     off = {"telemetry_state": "off", "telemetry_current": False, "position_current": False}
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **off}
-    assert CurrentDocuments(store).documents == {}
+    assert CurrentDocuments(store).documents == {key: {**before[key], **off}}
 
 
 def test_an_exclusion_before_the_first_table_read_forgets_the_stored_values_at_once(
@@ -992,16 +1024,34 @@ def test_an_exclusion_before_the_first_table_read_forgets_the_stored_values_at_o
     observer, bus = restarted(store, {alice: "answering", bob: "answering"})
     observer.exclusions.exclude(alice)
     observer.telemetry_excluded(alice, True)
-    forgotten = {
-        "telemetry_state": "excluded", "telemetry_excluded": True, "telemetry_current": False,
-        "position_current": None, "readings_at": None, "battery_v": None,
-        "mcu_temperature_c": None, "readings": {}, "latitude": None, "longitude": None,
-        "altitude_m": None, "position_at": None, "position_source": None,
-        "position_accuracy_m": None, "position_received_at": None,
-    }  # fmt: skip
-    assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **forgotten}
-    assert CurrentDocuments(store).documents == {bob: before[bob]}  # gone from the disk at once
+    assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **FORGOTTEN}
+    stored = {alice: {**before[alice], **FORGOTTEN}, bob: before[bob]}
+    assert CurrentDocuments(store).documents == stored  # gone from the disk at once
     assert retained(bus, f"{ROOT}/contacts/{bob}") == []
+
+
+def test_an_exclusion_and_an_inclusion_once_it_expired_are_published_and_stored_at_once(
+    tmp_path: Path,
+) -> None:
+    """Before the first table read too: the exclusion forgets its values, the inclusion turns
+    its switch on again."""
+    store, before = last_run(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    states: dict[str, TelemetryState] = {key: "away"}  # her bound passed while it was stopped
+    observer, bus = restarted(store, states)
+    observer.publish_all()
+    assert last(bus, f"{ROOT}/contacts/{key}")["telemetry_state"] == "away"
+    observer.exclusions.exclude(key)
+    observer.telemetry_excluded(key, True)
+    assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **FORGOTTEN}
+    assert CurrentDocuments(store).documents == {key: {**before[key], **FORGOTTEN}}
+    observer.exclusions.include(key)
+    states[key] = "waiting"  # the poller forgot her answers
+    observer.telemetry_excluded(key, False)
+    included = {**before[key], **FORGOTTEN, "telemetry_state": "waiting",
+                "telemetry_excluded": False}  # fmt: skip
+    assert last(bus, f"{ROOT}/contacts/{key}") == included
+    assert CurrentDocuments(store).documents == {key: included}
 
 
 def test_the_first_table_read_replaces_the_documents_of_the_last_run(tmp_path: Path) -> None:
@@ -1018,6 +1068,19 @@ def test_the_first_table_read_replaces_the_documents_of_the_last_run(tmp_path: P
     assert len(bus.published) == published
     observer.radio_event(ContactsRead({}, NOW + 120))  # and Alice now
     assert CurrentDocuments(store).documents == {}
+
+
+def test_at_the_first_table_read_an_expired_document_of_the_last_run_is_dropped(
+    tmp_path: Path,
+) -> None:
+    """Kept until then also once it expired; from then on only while the answers are current."""
+    store, _before = last_run(tmp_path, ALICE, BOB)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    observer, _bus = restarted(store, {alice: "away", bob: "answering"})
+    observer.publish_all()
+    assert CurrentDocuments(store).documents.keys() == {alice, bob}
+    observer.radio_event(ContactsRead(table(ALICE, BOB), NOW + 60))
+    assert CurrentDocuments(store).documents.keys() == {bob}  # at once
 
 
 def test_a_document_is_stored_at_once_when_it_turns_current_or_not_else_at_the_tick(

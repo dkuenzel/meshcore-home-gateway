@@ -123,7 +123,7 @@ class Observer:
         self._retained = retained
         self._current_store = current
         # key -> its last document while its answers count as current: before the first table
-        # read the documents of the last run, which still expire at their bound (ADR 0024)
+        # read the documents of the last run, in their latest state also once expired (ADR 0024)
         self._current = current.documents if current is not None else {}
         self._protected = protected
         self._wall = wall_clock
@@ -371,10 +371,11 @@ class Observer:
     def publish_all(self) -> None:
         """Publish every document again, and clear the topics of contacts removed: the broker
         connected, and it may have lost them, or the adapter dropped them while it was away. A
-        document of the last run follows its contact's state."""
+        document of the last run follows its contact's state; one that is not current goes out
+        also unchanged, as a run that stopped before the broker connected reached nobody."""
         for topic, payload in list(self._published.items()):
             self._bus.publish(topic, payload, retain=True)
-        self._restate_all()
+        self._restate_all(connect=True)
         self._publish(self._topics.history, history_document(self._recent), force=True)
 
     def tick(self) -> None:
@@ -557,21 +558,25 @@ class Observer:
         elif key in self._current:  # before the first table read: later each kept is a contact
             self._restate(key)
 
-    def _restate_all(self) -> None:
+    def _restate_all(self, *, connect: bool = False) -> None:
         """Before the first table read: each document of the last run follows its state."""
         if self._first_read:
             for key in list(self._current):
-                self._restate(key)
+                self._restate(key, connect=connect)
 
-    def _restate(self, key: str) -> None:
+    def _restate(self, key: str, *, connect: bool = False) -> None:
         """A document of the last run, published again when its contact's state changed (its
-        answers expired, it was excluded, telemetry is off), also while the radio stays away."""
+        answers expired, it was excluded or included, telemetry is off), also while the radio
+        stays away. Kept in every state until the first table read; each change stored at once."""
         stored = self._current[key]
         excluded = key in self.exclusions
         document = restated(stored, self._companion_state(key), excluded=excluded)
         if document != stored:
             self._publish(self._topics.contact(key), document)
-        self._keep(key, document)
+            self._current[key] = document
+            self.flush()
+        elif connect and not document["telemetry_current"]:  # the broker may never have had it
+            self._publish(self._topics.contact(key), document)
 
     def _keep(self, key: str, document: dict[str, Any]) -> None:
         """The document of a contact whose answers count as current, for a restart. Stored at once

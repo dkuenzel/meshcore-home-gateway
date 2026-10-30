@@ -796,10 +796,13 @@ sequenceDiagram
   any task runs, the schedule gives each contact its state back at once, and the observer the time
   of its newest answer with a position, so a restart flips no state and raises no event. The
   observer keeps the last document of each companion whose answers are current in the state file
-  too (at once when one turns current or no longer, else with its minute tick and at the stop):
-  before the first table read it has no contacts, and publishes these again when their state
-  changes, so after a restart without the radio they still expire at their bound. The
-  exclusions are kept in their own file (above).
+  too (at once when one turns current or no longer, else with its minute tick and at the stop).
+  Before the first table read it has no contacts. It keeps these documents in their latest state,
+  also once they expired, stores each change at once, and publishes them again when their state
+  changes; one that is not current also at each connect of the broker. So after a restart without
+  the radio they still expire at their bound, also when a run stopped before the broker
+  connected. The first table read replaces them. The exclusions are kept in their own file
+  (above).
 
 ## 7 Security
 

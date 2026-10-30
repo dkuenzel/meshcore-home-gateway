@@ -308,6 +308,8 @@ def test_a_document_restated_as_excluded_forgets_what_an_exclusion_forgets(adver
     excluded = contact_document(mesh.contacts[KEY], telemetry_state="excluded", excluded=True)
     assert restated(stored, "excluded", excluded=True) == excluded
     assert excluded["position_source"] == ("advert" if advert else None)
+    included = contact_document(mesh.contacts[KEY], telemetry_state="waiting")
+    assert restated(excluded, "waiting") == included  # what it forgot stays forgotten
 
 
 def test_only_a_companion_is_excluded() -> None:

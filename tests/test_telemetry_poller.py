@@ -63,6 +63,7 @@ from tests.test_bridge import (
     BOB,
     NOW,
     FakeBus,
+    OfflineBus,
     Unreachable,
     make_config,
     running,
@@ -890,6 +891,42 @@ def test_the_documents_of_current_companions_are_stored_at_the_stop(tmp_path: Pa
 
     scenario(main)
     assert CurrentDocuments(store).documents == {KEY: buses[0].payloads(f"/contacts/{KEY}")[-1]}
+
+
+def test_an_expiry_reaches_the_broker_after_a_run_that_never_reached_it(tmp_path: Path) -> None:
+    """Her bound passed while the gateway was stopped. The next run publishes her expired
+    document before the broker connects, which MqttBus drops, and stops before it connects: the
+    run after it publishes the expiry at its connect, the radio still away."""
+    store = JsonStateFile(tmp_path / "state.json")
+
+    async def answered() -> None:
+        async with running(config(), bme280_radio(), tmp_path, observer=keeping(tmp_path),
+                           telemetry_lanes=wide) as (_bridge, bus, _notes):  # fmt: skip
+            await bus.wait_for("/telemetry", lambda e: e["event_type"] == "answered")
+
+    async def unreached() -> None:
+        async with running(config(), bme280_radio(), tmp_path, Unreachable, bus=OfflineBus(),
+                           observer=keeping(tmp_path), telemetry_lanes=wide):  # fmt: skip
+            await asyncio.sleep(0.2)
+
+    published: list[dict[str, Any]] = []
+
+    async def reached() -> None:
+        async with running(config(), bme280_radio(), tmp_path, Unreachable, telemetry_lanes=wide,
+                           observer=keeping(tmp_path)) as (_bridge, bus, _notes):  # fmt: skip
+            await asyncio.sleep(0.2)
+            published.extend(bus.payloads(f"/contacts/{KEY}"))
+
+    scenario(answered)
+    stored = CurrentDocuments(store).documents[KEY]
+    assert stored["position_current"] is True
+    saved = store.load()
+    saved["telemetry"]["saved_at"] -= 2 * telemetry.CURRENT_MIN_S  # stopped two hours
+    store.save(saved)
+    scenario(unreached)
+    scenario(reached)
+    expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
+    assert published == [{**stored, **expired}]
 
 
 # --- parts ----------------------------------------------------------------------------------

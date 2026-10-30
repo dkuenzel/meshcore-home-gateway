@@ -147,17 +147,17 @@ def restated(
     """`contacts/<key>` as last published, in another telemetry state: before the first table
     read of a run the stored document is all there is (ADR 0024). `excluded`: without what an
     exclusion forgets, as far as the document shows it (the position the contact's record carries
-    comes back with the table read)."""
+    comes back with the table read); not excluded, what an exclusion forgot stays forgotten."""
     again = dict(document)
     from_telemetry = document.get("position_source") == "telemetry"
     if excluded:
-        again |= {**dict.fromkeys(_FORGOTTEN), "readings": {}, "telemetry_excluded": True}
+        again |= {**dict.fromkeys(_FORGOTTEN), "readings": {}}
         if from_telemetry:
             again |= dict.fromkeys(_POSITION)
             from_telemetry = False
     telemetry_current, position_current = _current(state, from_telemetry)
     again |= {"telemetry_state": state, "telemetry_current": telemetry_current,
-              "position_current": position_current}  # fmt: skip
+              "position_current": position_current, "telemetry_excluded": excluded}  # fmt: skip
     return again
 
 

@@ -270,7 +270,7 @@ class RetainedKeys:
 class CurrentDocuments:
     """The last published document (`contacts/<key>`) of each companion whose answers count as
     current (ADR 0024): after a restart without the radio, the observer publishes them again
-    once they expire."""
+    once they expire, and keeps them in their latest state until a table read."""
 
     _KEY = "current_contacts"
 
