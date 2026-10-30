@@ -6,12 +6,15 @@ without a radio or a broker; tests/public_interface.json is its snapshot.
 
 It records the structure only: topics with their retained flag and QoS, the subscriptions and the
 last will, the key paths of the documents, the value lists the code declares in one place or
-emits where Home Assistant is told of them, every setting, command, option (with its bounds) and
-option group, the machine-readable outputs and the answers, what Home Assistant refers to, and
-the firmware versions tested.
+emits where Home Assistant is told of them, every setting (with the bounds and choices the parser
+takes), command, option (with its names and bounds) and option group, the machine-readable
+outputs with the values `probe` prints, and the answers, what Home Assistant refers to (with the
+slugs of contact entity IDs), and the firmware versions tested.
 The fixture's names are words that no real name contains (the slug "s" once turned "sensor" into
 "<slug>ensor"); `placeholders` turns them into the snapshot's placeholders, which belong to its
-format and are never renamed.
+format and are never renamed. Each has every kind of character its setting allows, so that a
+change in how the code builds a topic or an ID from it leaves a fixture value in the snapshot,
+which is refused.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import copy
 import dataclasses
 import functools
 import importlib.util
@@ -55,6 +59,7 @@ from meshcore_home_gateway.core.mesh import (
     AirtimeMeter,
     Fix,
     Heard,
+    Mesh,
     Node,
     Signal,
     Tracked,
@@ -86,7 +91,7 @@ from meshcore_home_gateway.mqtt.manage_entities import manage_payload, manage_to
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType
+from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType, TelemetryMode
 from meshcore_home_gateway.radio.session import (
     AdvertHeard,
     CommandFailedError,
@@ -105,6 +110,7 @@ from meshcore_home_gateway.state import (
 from tests.radio_emulator import EmulatedContact, EmulatedRadio
 
 if TYPE_CHECKING:
+    from meshcore_home_gateway.observer import Publisher
     from meshcore_home_gateway.radio.transport import Transport
     from public_interface import Finding  # tools/public_interface.py, loaded below by its path
 
@@ -127,8 +133,13 @@ tool = _load(ROOT / "tools" / "public_interface.py")
 
 # --- the fixture ----------------------------------------------------------------------------------
 
-BASE, NODE, PREFIX, STATUS = "qbaseq", "qnodeq", "qprefixq", "qstatusq"
-ALIAS, CHANNEL_ALIAS, WORD, SLUG = "qaliasq", "qchannelq", "qwordq", "qslugq"
+# q…q in each segment, which `_LEFTOVER` finds; '-', '_', digits (also at the end) and, where the
+# setting allows them, upper-case letters and '/' (config.ID_PATTERN, config.TOPIC_SEGMENT;
+# a command word is any word, taken in lower case; a slug has a-z, 0-9 and '_')
+BASE, NODE = "qBa-se_q1/qMe-sh_q2", "qno-de_q3"
+PREFIX, STATUS = "qPre-fix_q4", "qSta-tus_q5/qBir-th_q6"
+ALIAS, CHANNEL_ALIAS = "qali-as_q7", "qchan-nel_q8"
+WORD, SLUG = "qWo-rd_q9", "qsl_ug_q0"
 KEY, KEY_B, KEY_N = "a1" * 32, "b2" * 32, "c3" * 32  # a contact, one that goes, a heard node
 T = 1_800_000_000.0  # the scenario's clock
 
@@ -243,7 +254,7 @@ def gateway_device() -> str:
 
 
 _DOCUMENTS = "<base_topic>/<node_id>/"  # the topics of the documents and events
-_LEFTOVER = re.compile(r"q[a-z]+q")
+_LEFTOVER = re.compile(r"q[A-Za-z0-9_-]+q")  # a fixture name, also one the code transformed
 
 
 def placeholders(text: str) -> str:
@@ -257,7 +268,7 @@ def placeholders(text: str) -> str:
         (ALIAS, "<alias>"),
         (CHANNEL_ALIAS, "<alias>"),
         (SLUG, "<slug>"),
-        (WORD, "<commands.words>"),
+        (WORD.casefold(), "<commands.words>"),  # as the code takes command words
         *((key, "<key>") for key in (KEY, KEY_B, KEY_N)),
     ):
         text = text.replace(value, placeholder)
@@ -310,12 +321,16 @@ def refusing_errors() -> Iterator[None]:
             raise AssertionError(message)
 
 
-def refuse_leftovers(doc: dict[str, Any]) -> None:
-    """A fixture value that `placeholders` missed would tie the snapshot to the fixture."""
+def refuse_leftovers(doc: Any) -> None:
+    """A fixture value that `placeholders` missed would tie the snapshot to the fixture; one the
+    code transformed is a topic or an ID that changes for users."""
     text = json.dumps(doc)
     keys = {key[:8] for key in (KEY, KEY_B, KEY_N) if key[:8] in text}
     if left := sorted(set(_LEFTOVER.findall(text)) | keys):
-        raise AssertionError(f"fixture values left in the snapshot: {left}: add to placeholders()")
+        raise AssertionError(
+            f"fixture values left in the snapshot: {left}: add to placeholders(), or the code"
+            " transforms a configured name"
+        )
 
 
 def _sorted(value: Any) -> Any:
@@ -405,6 +420,7 @@ def mqtt(tmp: Path) -> dict[str, Any]:
         else:
             entry.payloads.add("text")
             entry.texts.add(payload.decode())
+    refuse_leftovers(sorted(seen))  # a topic built otherwise: before the documents go missing
     if client.will is None:
         raise AssertionError("MqttBus set no last will")
     topic, payload, retained, qos = client.will
@@ -688,6 +704,8 @@ def config() -> dict[str, dict[str, Any]]:
             settings[key] = kept | {"conditional": True}
     for key, (candidates, besides) in _choice_keys().items():
         settings[key]["choices"] = _choices(key, candidates, besides)
+    for key, entry in settings.items():
+        _parsed_bounds(key, entry)
     settings["mqtt.client_id"]["default"] = _client_id()
     for key in _IDENTITY:
         settings[key]["identity"] = True
@@ -766,16 +784,94 @@ def _choices(
     return [value for value in candidates if taken(value)]
 
 
-def _file(settings: dict[str, str | None]) -> str:
-    """MINIMAL with these settings, or without those set to None."""
-    tables: dict[str, dict[str, Any]] = tomllib.loads(MINIMAL)
-    for key, value in settings.items():
-        table, _, name = key.rpartition(".")
-        if value is None:
-            tables.get(table, {}).pop(name, None)
+# a setting that another one allows: what a file sets besides it
+_BESIDES: dict[str, dict[str, Any]] = {
+    "radio.port": {"radio.transport": "tcp", **_transport("tcp")}
+}
+
+
+def _parsed_bounds(key: str, entry: dict[str, Any]) -> None:
+    """The parser takes each bound recorded for `key` and refuses the next value beyond it, as
+    `_choices` checks the choices: a range narrowed after the read would pass unseen. In MINIMAL,
+    where a bound that depends on another setting has that one's default; a setting read only
+    when present in its table as MAXIMAL_TEXT has it."""
+    bounds = [(name, outward) for name, outward in (("min", -1), ("max", 1)) if name in entry]
+    if not bounds:
+        return
+    besides, written = _BESIDES.get(key, {}), key
+    if entry.get("conditional"):
+        maximal_text = tomllib.loads(MAXIMAL_TEXT)
+        written = next(k for k in _keys(maximal_text) if placeholders(k) == key)
+        table = written.rpartition(".")[0]
+        besides = {table: _table(maximal_text, table)}
+
+    def refused(value: float) -> str | None:
+        listed = entry["type"].startswith("list")
+        try:
+            parse_config(_file({**besides, written: [value] if listed else value}))
+        except configuration.ConfigError as exc:
+            return str(exc)
+        return None
+
+    for name, outward in bounds:
+        bound = entry[name]
+        if "integer" in entry["type"]:
+            beyond = bound + outward
         else:
-            tables.setdefault(table, {})[name] = value
-    return "".join(configuration._toml_table(name, values) for name, values in tables.items())
+            beyond = math.nextafter(bound, outward * math.inf)
+        if problem := refused(bound):
+            raise AssertionError(
+                f"{key}: its {name} is not {bound}: the parser refuses it ({problem}); if"
+                " another setting must allow it, set that in _BESIDES"
+            )
+        if refused(beyond) is None:
+            raise AssertionError(f"{key}: its {name} is not {bound}: the parser takes {beyond}")
+
+
+def _keys(tables: dict[str, Any], prefix: str = "") -> Iterator[str]:
+    """Every key of these tables, as `a.b.c`."""
+    for name, value in tables.items():
+        key = f"{prefix}.{name}" if prefix else name
+        yield key
+        if isinstance(value, dict):
+            yield from _keys(value, key)
+
+
+def _table(tables: dict[str, Any], key: str) -> dict[str, Any]:
+    for name in key.split("."):
+        tables = tables[name]
+    return tables
+
+
+def _file(settings: dict[str, Any]) -> str:
+    """MINIMAL with these settings (a table as a dict), or without those set to None."""
+    tables: dict[str, Any] = tomllib.loads(MINIMAL)
+    for key, value in settings.items():
+        *path, name = key.split(".")
+        table = tables
+        for part in path:
+            table = table.setdefault(part, {})
+        if value is None:
+            table.pop(name, None)
+        else:
+            table[name] = copy.deepcopy(value)  # a table given stays as it was
+    return _toml(tables)
+
+
+def _toml(tables: dict[str, Any], name: str = "") -> str:
+    """These tables as TOML, a table in a table as [a.b]."""
+    lines = [f"[{name}]"] if name else []
+    lines += [
+        f"{key} = {configuration._toml_value(value)}"
+        for key, value in tables.items()
+        if not isinstance(value, dict)
+    ]
+    inner = (
+        _toml(value, f"{name}.{key}" if name else key)
+        for key, value in tables.items()
+        if isinstance(value, dict)
+    )
+    return "\n".join(lines) + "\n" + "".join(inner)
 
 
 def _client_id() -> str:
@@ -844,6 +940,7 @@ def command_line(tmp: Path) -> dict[str, Any]:
             "contacts list --json": list(_key_paths(contacts)),
             "listen": list(_key_paths(_listened(tmp))),
         },
+        "values": _probe_values(tmp, probe),
         "answers": _answers(tmp),
     }
 
@@ -861,8 +958,8 @@ def _commands(parser: argparse.ArgumentParser, path: str, out: dict[str, Any]) -
             positionals[place] = {"name": _named(action), "takes_value": True}
             positionals[place] |= {"required": True} if action.required else {}
         elif isinstance(action, argparse._VersionAction):
-            output = str(action.version).replace(__version__, "{version}")
-            options.update((name, {"output": output}) for name in action.option_strings)
+            output = {"output": str(action.version).replace(__version__, "{version}")}
+            options.update((name, output | _names(action)) for name in action.option_strings)
         elif action.option_strings:
             options.update(
                 (name, _argument(action, action.required)) for name in action.option_strings
@@ -903,8 +1000,13 @@ def _group(group: argparse._MutuallyExclusiveGroup) -> dict[str, Any]:
     return {"options": sorted(members), "required": group.required}
 
 
+def _names(action: argparse.Action) -> dict[str, list[str]]:
+    """An option's names, in the record of each: a new one is an alias, not a new option."""
+    return {"names": sorted(action.option_strings)} if action.option_strings else {}
+
+
 def _argument(action: argparse.Action, required: bool) -> dict[str, Any]:
-    entry: dict[str, Any] = {"takes_value": action.nargs != 0}
+    entry: dict[str, Any] = {"takes_value": action.nargs != 0, **_names(action)}
     if required:
         entry["required"] = True
     if action.choices is not None:
@@ -966,6 +1068,61 @@ def _probe_report(tmp: Path) -> dict[str, Any]:
     return asyncio.run(
         cli._probe_radio(radio, ProfileConfig(name="New"), records, protected, configured=True)
     )
+
+
+# the key paths of `probe --json` that hold values of a list
+_PROBE_VALUES = (
+    "advert_location", "auto_add.types", "contacts[].flags", "contacts[].type", "telemetry.*",
+)  # fmt: skip
+
+
+def _probe_values(tmp: Path, probe: list[str]) -> dict[str, list[str]]:
+    """The value lists of probe's machine-readable output, as "<output>:<key path>" (a field of a
+    list by its number), as `probe --json` and `probe --list contacts` print them: for a radio
+    with each advert setting and each telemetry mode, whose contacts have every node type and
+    every flag, and which adds every type."""
+    contacts = [
+        EmulatedContact(
+            bytes([node_type]) * 32, f"Node {node_type}", node_type, flags=sum(ContactFlag)
+        )
+        for node_type in NodeType
+        if node_type != NodeType.NONE
+    ]
+    records = ProfileRecords(JsonStateFile(tmp / "probe.json", read_only=True))
+    values: dict[str, list[str]] = {}
+    for advert_location in (0, 1):  # the firmware's two: without and with the radio's position
+        for mode in TelemetryMode:
+            radio = EmulatedRadio(
+                contacts=contacts, manual_add=False, needs_flush=False,
+                advert_location=advert_location, telemetry_modes=mode * 0b010101,  # each kind
+            )  # fmt: skip
+            report = asyncio.run(
+                cli._probe_radio(radio, ProfileConfig(), records, {}, configured=False)
+            )
+            with _probing(report):
+                printed = json.loads(_printed([*probe, "--json"]))
+                listed = _printed([*probe, "--list", "contacts"])
+            for path in _PROBE_VALUES:
+                values.setdefault(f"probe --json:{path}", []).extend(_values_at(printed, path))
+            lines = [line.split("\t") for line in listed.splitlines()]
+            types = [fields[2] for fields in lines if len(fields) > 2]  # columns: a finding
+            values.setdefault("probe --list contacts:3", []).extend(types)
+    return values
+
+
+def _values_at(value: Any, path: str) -> list[Any]:
+    """What `value` holds at a key path as `_key_paths` writes it, `*` for every key, each list
+    taken apart; nothing where the path is missing (the key paths show that)."""
+    if not path:
+        return list(value) if isinstance(value, list) else [value]
+    step, _, rest = path.partition(".")
+    name = step.removesuffix("[]")
+    if not isinstance(value, dict):
+        return []
+    items = list(value.values()) if name == "*" else [value[name]] if name in value else []
+    if step.endswith("[]"):
+        items = [item for listed in items if isinstance(listed, list) for item in listed]
+    return [found for item in items for found in _values_at(item, rest)]
 
 
 @contextlib.contextmanager
@@ -1166,7 +1323,47 @@ def homeassistant() -> dict[str, Any]:
             "manage_contacts": _components(manage_payload(config, topics, [])["cmps"], device),
             "contact": contacts,
         },
+        "slugs": _slugs(),
     }
+
+
+# contact names: plain, with an umlaut and an apostrophe, with a letter Unicode does not
+# decompose, longer than a slug, without letters; then a second contact named like the first
+NAMED = ("Alice", "Jürgen's Handy", "Groß", "Repeater on the hill behind the old mill", "🙂")
+TAKEN = NAMED[0]
+
+
+def _named_key(index: int) -> str:
+    """The key of the example contact at `index`: digits only, which no example name has."""
+    return f"{index:02}{'0123456789' * 7}"[:64]
+
+
+def _slugs() -> dict[str, str]:
+    """The slug the code gives each example contact, which its entity IDs
+    `<platform>.mesh_<slug>_<component>` keep (docs/home-assistant.md): the contacts come in a
+    table read, then a second contact named like the first in another."""
+    nodes = [Node(_named_key(index), name, NodeType.CHAT) for index, name in enumerate(NAMED)]
+    second = Node(_named_key(len(NAMED)), TAKEN, NodeType.CHAT)
+    bus = cast("Publisher", SimpleNamespace(publish=lambda *_, **__: None))
+    with tempfile.TemporaryDirectory() as tmp:
+        records = ContactDeviceRecords(JsonStateFile(Path(tmp) / "state.json"))
+        devices = ContactDevices(maximal(), Topics(BASE, NODE), bus, records, wall_clock=lambda: T)
+        mesh = Mesh()
+        for table in (nodes, [*nodes, second]):
+            mesh.contacts_read(table, T)
+            devices.update(mesh)
+    slug = {key: record.slug for key, record in records.announced.items()}
+    slugs = {node.name: _key_part(slug[node.public_key], node.public_key) for node in nodes}
+    taken = _key_part(slug[second.public_key], second.public_key)
+    return slugs | {f"{TAKEN} (a second contact)": taken}
+
+
+def _key_part(slug: str, key: str) -> str:
+    """`slug` with the longest start of `key` in it, of 4 digits or more, as <key[:n]>."""
+    for size in range(len(key), 3, -1):
+        if key[:size] in slug:
+            return slug.replace(key[:size], f"<key[:{size}]>")
+    return slug
 
 
 def _tracked(node_type: int) -> Tracked:

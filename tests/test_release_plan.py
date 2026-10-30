@@ -672,22 +672,39 @@ def test_a_shallow_clone_is_told_to_fetch_the_history(tmp_path: Path) -> None:
     assert _checked(shallow, origin.env).stdout.endswith(f"{COMPATIBLE}\n")
 
 
+UNTAGGED = (  # the release in the changelog has no tag here
+    "CHANGELOG.md has 1.0.0, but there is no tag v1.0.0 here: if 1.0.0 was merged just now, CI on"
+    " main tags it once its jobs pass (a re-run of failed jobs tags it), then run again; otherwise"
+    " fetch the tags of the main repository"
+)
+
+
 def test_a_clone_without_the_tag_of_the_last_release_is_told_to_fetch_it(repo: Repo) -> None:
     """A fork synced with the main repository has its commits but not its tags: compared with
     an older release, or with none, a removal would pass."""
     base = after_1_0_0(repo)
     repo.git("tag", "-d", "v1.0.0")
     repo.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(NEW))
-    expected = (
-        "CHANGELOG.md has 1.0.0, but there is no tag v1.0.0 here: fetch the tags of the main"
-        " repository"
-    )
-    with pytest.raises(plan.PlanError, match=re.escape(expected)):
+    with pytest.raises(plan.PlanError, match=re.escape(UNTAGGED)):
         plan.check(base)
     fix = "## [Unreleased]\n\n" + section("1.0.1rc1", "x.", kind="Fixed") + OUT
     repo.commit("1.0.1rc1", fix, interface=snapshot(OLD))
-    with pytest.raises(plan.PlanError, match=re.escape(expected)):
+    with pytest.raises(plan.PlanError, match=re.escape(UNTAGGED)):
         plan.check(base)
+
+
+def test_a_release_merged_but_not_tagged_yet_is_waited_for(repo: Repo) -> None:
+    """CI on main tags 1.0.0 once every job of its merge passed: a pull request on top of that
+    main, or a further push to it, runs in between and is told to run again then."""
+    released(repo, ("1.0.0rc1", FIRST))
+    merged = repo.commit("1.0.0", "## [Unreleased]\n\n" + OUT)  # main, not tagged yet
+    repo.git("checkout", "-q", "-b", "fix")
+    repo.commit("1.0.0", unreleased("Fixed", "A fix."))
+    with pytest.raises(plan.PlanError) as refused:
+        plan.check(merged)
+    assert str(refused.value) == UNTAGGED
+    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", merged)  # CI on main tagged it
+    assert plan.check(merged) == f"no release: __version__ stays 1.0.0\n{COMPATIBLE}"
 
 
 def test_the_release_that_is_not_tagged_yet_needs_no_tag(repo: Repo) -> None:
@@ -713,6 +730,30 @@ def test_the_section_of_a_release_stays_as_tagged(repo: Repo) -> None:
     )
     repo.commit("1.0.0", unreleased("Fixed", "A fix."), interface=snapshot(OLD))
     assert plan.check(base) == f"no release: __version__ stays 1.0.0\n{COMPATIBLE}"
+
+
+def test_the_section_of_a_pre_release_since_the_last_release_stays_as_tagged(repo: Repo) -> None:
+    """A branch merges main after 1.1.0a1: its fix lands in the section of 1.1.0a1, and the
+    notes of 1.1.0a2 would lack it."""
+    after_1_0_0(repo)
+    released(repo, ("1.1.0a1", "## [Unreleased]\n\n" + section("1.1.0a1", "Tx.") + OUT))
+    base = repo.git("rev-parse", "HEAD").strip()
+    moved = section("1.1.0a1", "Tx.", "Moved by a merge.") + OUT
+    repo.commit("1.1.0a1", "## [Unreleased]\n\n" + moved)
+    with pytest.raises(
+        plan.PlanError, match=re.escape("the section of 1.1.0a1 differs from the one at v1.1.0a1")
+    ):
+        plan.check(base)
+
+
+def test_a_released_section_that_is_gone_is_refused(repo: Repo) -> None:
+    """Without its heading, the entries of 1.0.0 would count for the next release."""
+    base = after_1_0_0(repo)
+    repo.commit("1.0.0", "## [Unreleased]\n\n### Added\n\n- Out.\n\n" + FIRST)
+    with pytest.raises(
+        plan.PlanError, match=re.escape("the section of 1.0.0 differs from the one at v1.0.0")
+    ):
+        plan.check(base)
 
 
 def test_a_release_the_branch_does_not_contain_yet_is_not_its_concern(repo: Repo) -> None:

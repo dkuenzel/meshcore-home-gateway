@@ -69,10 +69,16 @@
    "check-config": {
     "options": {
      "--broker": {
+      "names": [
+       "--broker"
+      ],
       "takes_value": false
      },
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      }
@@ -93,6 +99,9 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      }
@@ -102,14 +111,23 @@
    "config render": {
     "options": {
      "--answers": {
+      "names": [
+       "--answers"
+      ],
       "required": true,
       "takes_value": true,
       "type": "path"
      },
      "--group": {
+      "names": [
+       "--group"
+      ],
       "takes_value": true
      },
      "--output": {
+      "names": [
+       "--output"
+      ],
       "required": true,
       "takes_value": true,
       "type": "path"
@@ -131,6 +149,9 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      },
@@ -138,6 +159,9 @@
       "default": 30.0,
       "max": 86400.0,
       "min": 0.0,
+      "names": [
+       "--wait"
+      ],
       "takes_value": true,
       "type": "seconds"
      }
@@ -154,6 +178,9 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      }
@@ -164,10 +191,16 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      },
      "--json": {
+      "names": [
+       "--json"
+      ],
       "takes_value": false
      }
     },
@@ -177,6 +210,9 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      },
@@ -184,6 +220,9 @@
       "default": 30.0,
       "max": 86400.0,
       "min": 0.0,
+      "names": [
+       "--wait"
+      ],
       "takes_value": true,
       "type": "seconds"
      }
@@ -200,12 +239,18 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      },
      "--count": {
       "default": 0,
       "min": 0,
+      "names": [
+       "--count"
+      ],
       "takes_value": true,
       "type": "count"
      },
@@ -220,6 +265,9 @@
        "state"
       ],
       "default": "all",
+      "names": [
+       "--topic"
+      ],
       "takes_value": true
      }
     },
@@ -228,6 +276,9 @@
    "meshcore-home-gateway": {
     "options": {
      "--version": {
+      "names": [
+       "--version"
+      ],
       "output": "meshcore-home-gateway {version}"
      }
     },
@@ -255,10 +306,16 @@
     ],
     "options": {
      "--config": {
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      },
      "--json": {
+      "names": [
+       "--json"
+      ],
       "takes_value": false
      },
      "--list": {
@@ -267,18 +324,30 @@
        "contacts",
        "profile"
       ],
+      "names": [
+       "--list"
+      ],
       "takes_value": true
      },
      "--serial": {
+      "names": [
+       "--serial"
+      ],
       "takes_value": true
      },
      "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
       "takes_value": true,
       "type": "path"
      },
      "--tcp": {
       "max": 65535,
       "min": 1,
+      "names": [
+       "--tcp"
+      ],
       "takes_value": true,
       "type": "host[:port]"
      }
@@ -289,10 +358,16 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      },
      "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
       "takes_value": true,
       "type": "path"
      }
@@ -303,6 +378,9 @@
     "options": {
      "--config": {
       "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
       "takes_value": true,
       "type": "path"
      },
@@ -310,6 +388,9 @@
       "default": 0.0,
       "max": 86400.0,
       "min": 0.0,
+      "names": [
+       "--wait"
+      ],
       "takes_value": true,
       "type": "seconds"
      }
@@ -403,6 +484,42 @@
    "config": "/etc/meshcore-home-gateway/config.toml",
    "state_dir": "/var/lib/meshcore-home-gateway",
    "state_dir_env": "STATE_DIRECTORY"
+  },
+  "values": {
+   "probe --json:advert_location": [
+    "none",
+    "share"
+   ],
+   "probe --json:auto_add.types": [
+    "chat",
+    "repeater",
+    "room",
+    "sensor"
+   ],
+   "probe --json:contacts[].flags": [
+    "favourite",
+    "remote_cli",
+    "telemetry_base",
+    "telemetry_environment",
+    "telemetry_location"
+   ],
+   "probe --json:contacts[].type": [
+    "chat",
+    "repeater",
+    "room",
+    "sensor"
+   ],
+   "probe --json:telemetry.*": [
+    "allow_all",
+    "by_contact",
+    "deny"
+   ],
+   "probe --list contacts:3": [
+    "chat",
+    "repeater",
+    "room",
+    "sensor"
+   ]
   }
  },
  "config": {
@@ -1035,6 +1152,14 @@
    "manage_contacts": {
     "topic": "<prefix>/device/<device>/manage_contacts/config"
    }
+  },
+  "slugs": {
+   "Alice": "alice",
+   "Alice (a second contact)": "alice_<key[:4]>",
+   "Groß": "gross",
+   "Jürgen's Handy": "jurgen_s_handy",
+   "Repeater on the hill behind the old mill": "repeater_on_the_hill_behind_the",
+   "🙂": "<key[:8]>"
   }
  },
  "mqtt": {

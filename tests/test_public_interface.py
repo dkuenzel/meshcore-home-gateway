@@ -26,7 +26,8 @@ from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt.contact_devices import contact_device_id
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.protocol.codes import NodeType, TelemetryMode
+from meshcore_home_gateway.radio.session import AUTO_ADD_TYPES
 from tests import public_interface as interface
 
 if TYPE_CHECKING:
@@ -89,38 +90,68 @@ def test_every_topic_of_the_layout_is_in_the_snapshot(current: dict[str, Any]) -
 
 def test_placeholders_never_meet_real_names() -> None:
     """The slug "s" once turned "sensor" into "<slug>ensor"."""
-    assert interface.placeholders("sensor.qslugq_snr") == "sensor.<slug>_snr"
+    assert interface.placeholders(f"sensor.{interface.SLUG}_snr") == "sensor.<slug>_snr"
     assert interface.placeholders(f"{interface.BASE}/{interface.NODE}/state") == (
         "<base_topic>/<node_id>/state"
     )
 
 
+def _python(code: str) -> subprocess.CompletedProcess[str]:
+    """`code` in a fresh interpreter: no cache or patch of this run reaches it."""
+    return subprocess.run(  # noqa: S603 - the interpreter with a fixed program
+        [sys.executable, "-c", code], cwd=interface.ROOT, capture_output=True, text=True,
+        check=False, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )  # fmt: skip
+
+
 def test_the_configuration_is_recorded_in_a_fresh_state() -> None:
     """`placeholders` runs inside the recorder on the parser: it must not parse a configuration
-    itself, or a test run alone (-k, --lf) would recurse."""
-    interface.maximal.cache_clear()
-    assert "mqtt.node_id" in interface._reads(interface.MINIMAL)
-    interface.maximal.cache_clear()
-    assert "mqtt.node_id" in interface.config()
+    itself, or a test run alone (-k, --lf) would recurse. In this run the snapshot was computed
+    already, so only a fresh interpreter shows it."""
+    code = "from tests import public_interface as pi; pi._reads(pi.MINIMAL); pi.config()"
+    run = _python(code)
+    assert run.returncode == 0, run.stderr[-2000:]
 
 
 def test_the_extractor_imports_without_the_private_names_it_reads() -> None:
     """A renamed helper of the code fails the tests of the interface, not their collection."""
-    code = "from meshcore_home_gateway import cli; del cli._count; import tests.public_interface"
-    run = subprocess.run(  # noqa: S603 - the interpreter with a fixed program
-        [sys.executable, "-c", code], cwd=interface.ROOT, capture_output=True, text=True,
-        check=False, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-    )  # fmt: skip
+    run = _python(
+        "from meshcore_home_gateway import cli; del cli._count; import tests.public_interface"
+    )
     assert run.returncode == 0, run.stderr
 
 
+LEFT = "add to placeholders(), or the code transforms a configured name"
+
+
 def test_a_fixture_value_left_in_the_snapshot_is_refused() -> None:
-    with pytest.raises(AssertionError, match=re.escape("['qmissedq']: add to placeholders()")):
+    with pytest.raises(AssertionError, match=re.escape(f"['qmissedq']: {LEFT}")):
         interface.refuse_leftovers({"mqtt": {"documents": {"qmissedq": []}}})
+    for transformed, left in (
+        (interface.NODE.replace("-", "_"), "qno_de_q"),
+        (interface.NODE.rstrip("0123456789"), "qno-de_q"),
+        (interface.PREFIX.lower(), "qpre-fix_q"),
+        (interface.WORD, "qWo-rd_q"),  # a command word no longer taken in lower case
+    ):
+        with pytest.raises(AssertionError, match=re.escape(f"['{left}']: {LEFT}")):
+            interface.refuse_leftovers({"homeassistant": {"devices": {"x": {"id": transformed}}}})
     with pytest.raises(AssertionError, match=interface.KEY[:8]):
         interface.refuse_leftovers(
             {"homeassistant": {"devices": {"contact": {"id": interface.KEY}}}}
         )
+
+
+def test_a_configured_name_the_code_transforms_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A node ID such as radio-1 would get other topics: the fixture's node ID has a '-', so the
+    snapshot keeps what the code made of it, and that is refused before anything else fails."""
+    built = Topics.__init__
+
+    def underscored(topics: Topics, base_topic: str, node_id: str) -> None:
+        built(topics, base_topic, node_id.replace("-", "_"))
+
+    monkeypatch.setattr(Topics, "__init__", underscored)
+    with pytest.raises(AssertionError, match=re.escape(f"['qno_de_q']: {LEFT}")):
+        interface.surface()
 
 
 def test_an_error_logged_while_computing_is_refused() -> None:
@@ -214,6 +245,41 @@ def test_the_choices_are_what_the_parser_takes() -> None:
     assert manage == ["auto", "always"]
     with pytest.raises(AssertionError, match=re.escape("mqtt.host: the parser checks no choices")):
         interface._choices("mqtt.host", ["broker.example.org"], _nothing)
+
+
+def test_contact_slugs_are_recorded_as_the_code_gives_them(current: dict[str, Any]) -> None:
+    """The entity IDs of a contact keep its slug: a slug made otherwise is another entity ID."""
+    assert current["homeassistant"]["slugs"] == {
+        "Alice": "alice",
+        "Jürgen's Handy": "jurgen_s_handy",  # letters as ASCII, anything else as "_"
+        "Groß": "gross",
+        "Repeater on the hill behind the old mill": "repeater_on_the_hill_behind_the",  # 32 at most
+        "🙂": "<key[:8]>",  # no letters: the key's start
+        "Alice (a second contact)": "alice_<key[:4]>",  # a name taken
+    }
+
+
+def test_probe_prints_every_value_of_its_lists(current: dict[str, Any]) -> None:
+    """The radios of the scenario cover each list of values that `probe` prints."""
+    values = current["cli"]["values"]
+    modes = [cli._mode_name(mode) for mode in TelemetryMode]
+    assert {name: set(found) for name, found in values.items()} == {
+        "probe --json:advert_location": set(cli.ADVERT_LOCATION.values()),
+        "probe --json:auto_add.types": set(AUTO_ADD_TYPES.values()),
+        "probe --json:contacts[].flags": set(cli._FLAG_NAMES.values()),
+        "probe --json:contacts[].type": set(cli.NODE_TYPES.values()),
+        "probe --json:telemetry.*": set(modes),
+        "probe --list contacts:3": set(cli.NODE_TYPES.values()),
+    }
+
+
+def test_values_are_read_by_key_path() -> None:
+    printed = {"contacts": [{"flags": ["a", "b"]}, {"flags": []}, {}], "telemetry": {"x": "c"}}
+    assert interface._values_at(printed, "contacts[].flags") == ["a", "b"]
+    assert interface._values_at(printed, "telemetry.*") == ["c"]
+    assert interface._values_at(printed, "telemetry") == [{"x": "c"}]
+    assert interface._values_at(printed, "advert_location") == []  # a key renamed: none
+    assert interface._values_at({"contacts": {}}, "contacts[].type") == []
 
 
 def test_contacts_have_the_node_types_of_the_wire(current: dict[str, Any]) -> None:
@@ -403,6 +469,7 @@ SMALL: dict[str, Any] = {
         "paths": {"config": "/etc/meshcore-home-gateway/config.toml"},
         "columns": {"probe --list contacts": 3},
         "json": {"probe --json": ["battery_mv", "name"]},
+        "values": {"probe --json:contacts[].type": ["chat", "room"]},
     },
     "homeassistant": {
         "devices": {
@@ -435,6 +502,7 @@ SMALL: dict[str, Any] = {
                 },
             },
         },
+        "slugs": {"Alice": "alice", "🙂": "<key[:8]>"},
     },
     "platforms": {"tested_firmware": [14]},
 }
@@ -523,6 +591,9 @@ BREAKING: dict[str, Mutation] = {
     ).update(output="{version}"),
     "default path": lambda d: d["cli"]["paths"].update(config="/etc/mhg.toml"),
     "probe json key removed": lambda d: d["cli"]["json"]["probe --json"].remove("battery_mv"),
+    "probe value removed": lambda d: d["cli"]["values"]["probe --json:contacts[].type"].remove(
+        "room"
+    ),
     "component removed": lambda d: at(d, *GATEWAY).pop("battery"),
     "entity id changed": lambda d: at(d, *GATEWAY, "battery").update(entity_id="sensor.x"),
     "platform changed": lambda d: at(d, *GATEWAY, "battery").update(platform="number"),
@@ -536,6 +607,8 @@ BREAKING: dict[str, Mutation] = {
         d, "homeassistant", "components", "contact", "send", "node_types"
     ).remove("chat"),
     "device id": lambda d: d["homeassistant"]["devices"]["gateway"].update(id="mhg_<node_id>"),
+    "slug made otherwise": lambda d: d["homeassistant"]["slugs"].update({"🙂": "<key[:12]>"}),
+    "slug example gone": lambda d: d["homeassistant"]["slugs"].pop("Alice"),
     "tested firmware dropped": lambda d: d["platforms"]["tested_firmware"].remove(14),
     "section removed": lambda d: d.pop("homeassistant"),
 }
@@ -591,6 +664,9 @@ COMPATIBLE: dict[str, Mutation] = {
     "exactly one, as a list": lambda d: at(d, *POSITIONAL).update(nargs=1),
     "column list added": lambda d: d["cli"]["columns"].update({"probe --list nodes": 3}),
     "probe json key added": lambda d: d["cli"]["json"]["probe --json"].append("uptime_s"),
+    "probe value added": lambda d: d["cli"]["values"]["probe --json:contacts[].type"].append(
+        "sensor"
+    ),
     "component added": lambda d: at(d, *GATEWAY).update(
         {"uptime": {"platform": "sensor", "entity_id": "sensor.<device>_uptime"}}
     ),
@@ -599,6 +675,7 @@ COMPATIBLE: dict[str, Mutation] = {
     "node type added": lambda d: at(
         d, "homeassistant", "components", "contact", "send", "node_types"
     ).append("room"),
+    "slug example added": lambda d: d["homeassistant"]["slugs"].update({"Groß": "gross"}),
     "firmware tested in addition": lambda d: d["platforms"]["tested_firmware"].append(15),
     "section added": lambda d: d.update({"installer": {"answers": ["setup"]}}),
 }
@@ -882,6 +959,35 @@ def test_names_of_one_length_in_another_order_are_no_change() -> None:
     assert tool.compare(recorded("--tcp", "--net"), recorded("--net", "--tcp")) == []
 
 
+def test_an_alias_of_a_required_option_is_an_addition() -> None:
+    """As `config render --answers` would gain `--answers-file`: every call still works. A rename
+    without the old name breaks every call."""
+
+    def recorded(*names: str) -> dict[str, Any]:
+        parser = argparse.ArgumentParser(prog="render")
+        parser.add_argument(*names, dest="answers", type=Path, required=True)
+        out: dict[str, Any] = {}
+        interface._commands(parser, "", out)
+        return {"format": 1, "cli": {"commands": out}}
+
+    options = f"{C}render > options > "
+    aliased = tool.compare(recorded("--answers"), recorded("--answers", "--answers-file"))
+    assert [(f.kind, str(f)) for f in aliased] == [
+        ("added", f'{options}--answers > names: also has "--answers-file"'),
+        ("added", f"{options}--answers-file: new"),
+    ]
+    renamed = tool.compare(recorded("--answers"), recorded("--answers-file"))
+    assert [(f.kind, str(f)) for f in renamed] == [
+        ("breaking", f"{options}--answers: removed"),
+        ("breaking", f"{options}--answers-file: new and required"),
+    ]
+    dropped = tool.compare(recorded("--answers", "--answers-file"), recorded("--answers"))
+    assert [(f.kind, str(f)) for f in dropped] == [
+        ("breaking", f'{options}--answers > names: no longer has "--answers-file"'),
+        ("breaking", f"{options}--answers-file: removed"),
+    ]
+
+
 def test_a_positional_without_values_is_not_required_on_any_python() -> None:
     """Before 3.13 argparse calls a `*` positional without a default required."""
     parser = argparse.ArgumentParser(prog="x")
@@ -1142,6 +1248,26 @@ GUARDS: dict[str, tuple[Callable[[], object], str]] = {
         lambda: interface._bounds(cli._count, interface._Type("count", 1)),
         "count: its min is not 1",
     ),
+    "a setting's bound the parser exceeds": (
+        lambda: interface._parsed_bounds("mqtt.port", {"type": "integer", "min": 1, "max": 1000}),
+        "mqtt.port: its max is not 1000: the parser takes 1001",
+    ),
+    "a setting's bound the parser refuses": (
+        lambda: interface._parsed_bounds("airtime.burst_s", {"type": "number", "min": 4.0}),
+        "airtime.burst_s: its min is not 4.0: the parser refuses it (airtime.burst_s: must be",
+    ),
+    "a bound of a list": (
+        lambda: interface._parsed_bounds(
+            "messages.ignore_channels", {"type": "list[integer]", "max": 7}
+        ),
+        "messages.ignore_channels: its max is not 7: the parser takes 8",
+    ),
+    "a bound of a setting read only when present": (  # in its table of MAXIMAL_TEXT
+        lambda: interface._parsed_bounds(
+            "targets.<alias>.channel", {"type": "integer", "max": 7, "conditional": True}
+        ),
+        "targets.<alias>.channel: its max is not 7: the parser takes 8",
+    ),
     "a bound the table lacks": (
         lambda: interface._bounds(cli._wait_seconds, interface._Type("seconds", 0.0)),
         "seconds: refuses 1000000000: give it its max in _types()",
@@ -1188,6 +1314,38 @@ GUARDS: dict[str, tuple[Callable[[], object], str]] = {
 def test_a_guard_of_the_extractor(check: Callable[[], object], expected: str) -> None:
     with pytest.raises(AssertionError, match=re.escape(expected)):
         check()
+
+
+def test_a_range_the_parser_narrows_after_the_read_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The typed read takes 10 to 3600 s; a check after it would narrow that unseen."""
+    read = configuration._mqtt
+
+    def narrowed(section: Any) -> configuration.MqttConfig:
+        mqtt = read(section)
+        if mqtt.keepalive_s > 600:
+            raise configuration.ConfigError("mqtt.keepalive_s: 600 at most")
+        return mqtt
+
+    monkeypatch.setattr(configuration, "_mqtt", narrowed)
+    with pytest.raises(
+        AssertionError,
+        match=re.escape(
+            "mqtt.keepalive_s: its max is not 3600: the parser refuses it (mqtt.keepalive_s: 600"
+            " at most)"
+        ),
+    ):
+        interface.config()
+
+
+def test_a_setting_that_another_one_allows_is_checked_with_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """radio.port only with the tcp transport, which MINIMAL lacks."""
+    monkeypatch.delitem(interface._BESIDES, "radio.port")
+    with pytest.raises(AssertionError, match=re.escape("set that in _BESIDES")):
+        interface.config()
 
 
 def test_the_snapshot_refuses_a_fixture_value_that_leaks(monkeypatch: pytest.MonkeyPatch) -> None:

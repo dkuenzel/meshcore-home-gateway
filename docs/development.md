@@ -59,9 +59,10 @@ tools/           build and release helpers: zipapp, release plan, public interfa
 `config.py` (dataclass and validation), its answer type in `config._ANSWER_TYPES` (every setting
 needs one: `--reconfigure` writes the configuration back from its answers, and
 `tests/test_config.py` checks that no setting is missing), `docs/configuration.md`,
-`deploy/config.example.toml`, a test in `tests/test_config.py`, and `make interface`. If the
-installer should ask for it, also the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`. A
-feature behind a switch gets the switch turned on in `MAXIMAL_TEXT` of
+`deploy/config.example.toml`, a test in `tests/test_config.py`, the setting in `ANSWERED` of
+`tests/public_interface.py` (`config answers` must print every setting), and `make interface`. If
+the installer should ask for it, also the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
+A feature behind a switch gets the switch turned on in `MAXIMAL_TEXT` of
 `tests/public_interface.py`, so that the snapshot records its surface.
 
 ## Tool chain updates
@@ -171,7 +172,8 @@ them), and log messages.
 
 - `tests/public_interface.json` records the structural part of the four interfaces, computed from
   the code by `tests/public_interface.py`. `tests/test_public_interface.py` fails when the code
-  and the snapshot differ.
+  and the snapshot differ. The bounds and choices of a setting are those the parser takes. The
+  slugs of contact entity IDs are recorded for example names; a slug made otherwise is breaking.
 - After a deliberate change, `make interface` writes the snapshot again and lists what changed
   against the committed snapshot: breaking, changed (a default, a wider range) or added, one
   finding per fact (each value removed from a list is one). Review its diff like code. A merge
@@ -194,22 +196,23 @@ them), and log messages.
   waiver covers that one finding: another value removed from the same list, or another bound,
   needs its own.
 - A positional argument is recorded with its name, so that arguments in another order show. A
-  rename alone reads as breaking too; since no script can tell, it is waived. A command's
-  subcommand is a positional too, and its mutually exclusive option groups are recorded with
-  whether one of them is required, each option by all its names: a new exclusion between
-  options that existed, or a required group that a call of before need not satisfy, is
-  breaking; a new alias is an addition.
+  rename alone reads as breaking too; since no script can tell, it is waived. Each option is
+  recorded with all its names, so a new alias is an addition, also of a required option. A
+  command's subcommand is a positional too, and its mutually exclusive option groups are recorded
+  with whether one of them is required, each option by all its names: a new exclusion between
+  options that existed, or a required group that a call of before need not satisfy, is breaking.
 - The snapshot does not see, so review keeps:
   - the JSON types and nullability of keys;
   - the size limits and list bounds of MQTT;
-  - the value lists that are not under `mqtt > values`: the `reason` of deliveries, contact and
-    setting events, each setting's `state`, `heard_via`, `position_source`, and `direction`,
-    `kind` and `state` in the history;
+  - the value lists that are not under `mqtt > values` or `cli > values`: the `reason` of
+    deliveries, contact and setting events, each setting's `state`, `heard_via`,
+    `position_source`, and `direction`, `kind` and `state` in the history;
   - the string formats of settings;
   - the forms an option's value takes: `--tcp`'s HOST[:PORT], the keys, labels, links and cards
     `contacts add` accepts;
-  - the values inside machine-readable lines: the actions and the yes and no of
-    `probe --list profile`, the marks of `contacts list`;
+  - the values inside machine-readable lines: the actions of `probe --json` and
+    `probe --list profile`, the yes and no of `probe --list profile`, the marks of
+    `contacts list`;
   - publishing again after a reconnect;
   - the exit status of each case;
   - the platform floors: Python, paho-mqtt, Home Assistant, the firmware and protocol versions;
@@ -247,9 +250,9 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version
    written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed. The
    same check compares the public interface with that of the last release
-   ([Compatibility](#compatibility)), also when the version does not change. The section of a
-   release stays as it was tagged: after merging `main`, the branch's entries must still be under
-   *Unreleased* (git can move them into the newest section without a conflict).
+   ([Compatibility](#compatibility)), also when the version does not change. The sections since
+   the last release stay as they were tagged: after merging `main`, the branch's entries must
+   still be under *Unreleased* (git can move them into the newest section without a conflict).
    `git fetch --tags origin && make release-plan` runs the check locally (it needs the tags; on a
    branch that does not contain the last release it refuses: merge `origin/main` first). It reads
    the commit, not the working tree, so commit first.
@@ -258,7 +261,9 @@ passes. `releases/latest` and the installer's default never pick a pre-release
 3. After the merge, CI on `main` tags the merge commit once every job passed on it, and starts
    `release.yml` on the tag (job *tag and release*); a push of several commits is tagged on its
    last one. A re-run, of the failed job or of all jobs, is safe: it finds the tag on the same
-   commit and starts the release only if there is none and none is running.
+   commit and starts the release only if there is none and none is running. Until a release is
+   tagged, the release plan of every other change refuses ("no tag vX.Y.Z here"): run it again
+   once the tag is there.
 4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
    zipapp, wheel and sdist reproducibly, adds the systemd unit and the Proxmox installer with the
    version written in (`RELEASE="X.Y.Z"`: run from the release's address, it installs this

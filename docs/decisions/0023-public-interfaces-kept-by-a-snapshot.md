@@ -66,14 +66,17 @@ could drift from the code.
   builders. It records structure only. For MQTT: topics with retained flag and QoS,
   subscriptions and the last will, key paths, and the value lists declared in one place or
   emitted where Home Assistant is told of them. For the configuration: settings with type,
-  default, bounds and the choices the parser takes. For the command line: commands with their
-  subcommands, options with type and the bounds their type function takes, mutually exclusive
-  option groups (each option by all its names) and whether one is required, and named
-  positionals; also the columns of the tab-separated lists, the JSON keys of `probe --json`,
-  `contacts list --json` and `listen`, the keys `config answers` prints, the exit codes and the
-  default paths. For Home Assistant: the discovery facts above. Besides, the firmware versions
-  tested. `tests/test_public_interface.py` fails when snapshot and code differ; `make interface`
-  writes it again and lists what changed.
+  default, and the bounds and choices the parser takes. For the command line: commands with their
+  subcommands, options with all their names, type and the bounds their type function takes,
+  mutually exclusive option groups (each option by all its names) and whether one is required,
+  and named positionals; also the columns of the tab-separated lists, the JSON keys of
+  `probe --json`, `contacts list --json` and `listen`, the value lists `probe` prints, the keys
+  `config answers` prints, the exit codes and the default paths. For Home Assistant: the
+  discovery facts above, and the slugs of contact entity IDs for example names. Besides, the
+  firmware versions tested. The fixture's names have every kind of character their settings
+  allow, so a topic or an ID that the code builds otherwise from one shows.
+  `tests/test_public_interface.py` fails when snapshot and code differ; `make interface` writes
+  it again and lists what changed.
 * **The comparison** `tools/public_interface.py` classifies each difference as breaking, changed
   (compatible, but users notice it: a default, a wider range) or added. Attributes of a record are
   compared by a rule each, and an attribute without a rule, or a value of another shape, is an
@@ -104,11 +107,11 @@ could drift from the code.
   extractor.
 * Bad, because the snapshot does not see all that the policy promises; JSON types and
   nullability, the size limits and list bounds of MQTT, the value lists outside `mqtt > values`
-  (the reasons among them), string formats, the forms an option's value takes, the values inside
-  machine-readable lines, publishing after a reconnect, the exit status of each case, platform
-  floors, meanings, units of values, rules between settings and the texts a request accepts stay
-  with review and the written policy ([docs/development.md](../development.md#compatibility)
-  lists them).
+  and `cli > values` (the reasons among them), string formats, the forms an option's value
+  takes, the values inside machine-readable lines, publishing after a reconnect, the exit status
+  of each case, platform floors, meanings, units of values, rules between settings and the texts
+  a request accepts stay with review and the written policy
+  ([docs/development.md](../development.md#compatibility) lists them).
 * Bad, because a fix that adds what was missing, or widens a bound that was too narrow, needs an
   Added or Changed entry and so a minor release, or a waiver.
 * Bad, because surface behind a setting that the fixture does not switch on is missing until the

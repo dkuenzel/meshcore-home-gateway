@@ -13,9 +13,9 @@ differ. Every check also compares the public interface (tests/public_interface.j
 tools/public_interface.py) with that of the last release, which the revision must contain: what
 it removes or narrows needs a `**Breaking:**` entry or a `### Removed` section since then, what it
 adds or changes an entry that makes the next release at least a minor one
-(docs/development.md#compatibility); the sections of the releases it contains stay as tagged.
-It reads the commit, not the working tree. Standard library only; git runs as a subprocess in
-the current directory.
+(docs/development.md#compatibility); the changelog sections since the last release stay as
+tagged. It reads the commit, not the working tree. Standard library only; git runs as a
+subprocess in the current directory.
 """
 
 from __future__ import annotations
@@ -215,8 +215,8 @@ def last_release(
 ) -> Version | None:
     """The newest release among the tags `known`. Refuses a clone without tags whose changelog
     has releases, which would take every version for the first, and one without the tag of the
-    newest release that the changelog dates (a fork: syncing copies no tags), but for the one
-    the revision `releasing` writes."""
+    newest release that the changelog dates, but for the one the revision `releasing` writes:
+    CI on main has not tagged it yet, or a fork lacks the tags (syncing copies none)."""
     if not known and len(_DATED.findall(changelog)) > 1:
         msg = "no release tags v* here, though the changelog has releases: git fetch --tags"
         raise PlanError(msg)
@@ -224,8 +224,9 @@ def last_release(
     newest = max((v for v in dated if v.final and v != releasing), default=None)
     if known and newest is not None and newest not in known:
         msg = (
-            f"{CHANGELOG} has {newest}, but there is no tag v{newest} here: fetch the tags of the"
-            " main repository"
+            f"{CHANGELOG} has {newest}, but there is no tag v{newest} here: if {newest} was merged"
+            " just now, CI on main tags it once its jobs pass (a re-run of failed jobs tags it),"
+            " then run again; otherwise fetch the tags of the main repository"
         )
         raise PlanError(msg)
     return max((v for v in known if v.final), default=None)
@@ -276,9 +277,9 @@ def _waivers(rev: str, last: Version) -> dict[str, str]:
 def interface(rev: str, releasing: Version | None = None) -> str:
     """Refuse `rev` if its public interface breaks that of the last release while the changelog
     since then does not make the next release a major one, or grows or changes it while the
-    changelog makes it a patch; also if it changed the changelog section of a release it
-    contains. Says what it compared, with the breaks a major release takes. `releasing`: the
-    version `rev` writes, whose tag does not exist yet."""
+    changelog makes it a patch; also if it changed a changelog section since the last release
+    (that one's included) that it contains. Says what it compared, with the breaks a major release
+    takes. `releasing`: the version `rev` writes, whose tag does not exist yet."""
     changelog = git("show", f"{rev}:{CHANGELOG}")
     known = tags()
     last = last_release(changelog, known, releasing)

@@ -12,10 +12,11 @@ absent from a record means what its rule says: no unit, any string, exactly one 
 the attributes that mean nothing when absent, not recorded yet, which is growth.
 Everywhere else a dict is a collection (a key that disappears is breaking), a list is a set of
 values (a value that disappears is breaking), and a scalar stays equal; only the option groups
-of a command have a comparison of their own (`_groups`). Sets are compared value by value, so
-that each finding states one fact: a waiver names one finding as `str(finding)` shows it. A
-finding is "breaking", "changed" (compatible, but users notice it: a default, a wider range) or
-"added".
+of a command have a comparison of their own (`_groups`), and a new option that has the name of
+an old one is an alias of it, also when it is required (`_alias`). Sets are compared value by
+value, so that each finding states one fact: a waiver names one finding as `str(finding)` shows
+it. A finding is "breaking", "changed" (compatible, but users notice it: a default, a wider
+range) or "added".
 """
 
 from __future__ import annotations
@@ -199,7 +200,7 @@ ATTRIBUTES: dict[str, Attribute] = {
     "answer": Attribute(_answer, _TEXT), "takes_value": Attribute(_equal, _FLAG),
     "nargs": Attribute(_nargs, _TEXT_OR_INTEGER), "name": Attribute(_equal, _TEXT),
     "output": Attribute(_equal, _TEXT), "identity": Attribute(_ignored, _FLAG),
-    "conditional": Attribute(_conditional, _FLAG),
+    "conditional": Attribute(_conditional, _FLAG), "names": Attribute(_values, _TEXTS),
     # homeassistant
     "id": Attribute(_equal, _TEXT), "topic": Attribute(_equal, _TEXT),
     "platform": Attribute(_equal, _TEXT), "entity_id": Attribute(_equal, _TEXT),
@@ -328,7 +329,8 @@ def _collection(
         elif key not in new:
             out.append(Finding(BREAKING, _name(here), "removed"))
         elif key not in old:
-            if records and new[key].get("required") is True and not _new_table(key, old, new):
+            required = records and new[key].get("required") is True
+            if required and not _new_table(key, old, new) and not _alias(old, new[key]):
                 out.append(Finding(BREAKING, _name(here), "new and required"))
             else:
                 out.append(Finding(ADDED, _name(here), "new"))
@@ -343,6 +345,12 @@ def _new_table(key: str, old: dict[str, Any], new: dict[str, Any]) -> bool:
     table that files have (`targets.<alias>`), or read for every file, every file needs it."""
     table = key.rpartition(".")[0]
     return bool(new[key].get("conditional")) and table in new and table not in old
+
+
+def _alias(old: dict[str, Any], record: dict[str, Any]) -> bool:
+    """A new option that has the name of one that existed: the same option, by another name, so
+    every call that gave it still does."""
+    return any(name in old for name in record.get("names", []))
 
 
 def _record(
