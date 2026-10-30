@@ -51,7 +51,7 @@ from meshcore_home_gateway.core.model import (
     MessageKind,
     Target,
 )
-from meshcore_home_gateway.core.telemetry import LaneFactory
+from meshcore_home_gateway.core.telemetry import LaneFactory, TelemetryStatus
 from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
@@ -295,6 +295,7 @@ class Bridge:
         )  # fmt: skip
         self.observer.telemetry_state = poller.state_of
         self.observer.on_telemetry_exclusion.append(poller.exclusion_changed)
+        poller.on_status = self._publish_state
         return poller
 
     # --- life cycle -----------------------------------------------------------------------------
@@ -378,6 +379,8 @@ class Bridge:
             else:
                 self._session = session
                 self._radio_ready.set()
+                if self._telemetry is not None:
+                    self._observe(self._telemetry.radio_connected)
                 delay = RECONNECT_MIN_S
                 max_contacts = self._radio_info.device.max_contacts
                 self._observe(self.observer.radio_connected, max_contacts, session.tuning)
@@ -981,8 +984,9 @@ class Bridge:
         }
 
     def _telemetry_state(self) -> dict[str, Any]:
+        off: TelemetryStatus = "off"
         state: dict[str, Any] = {
-            "telemetry": "off", "telemetry_reason": None, "telemetry_airtime_1h_s": None,
+            "telemetry": off, "telemetry_reason": None, "telemetry_airtime_1h_s": None,
             "telemetry_mesh_airtime_1h_s": None,
         }  # fmt: skip
         if self._telemetry is None:

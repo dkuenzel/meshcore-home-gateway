@@ -188,7 +188,8 @@ that arrives after a restart of the gateway is judged afresh and accepted if it 
 
 ## State: `state`
 
-Retained; published at start, on every change of the radio link and every 60 s.
+Retained; published at start, on every change of the radio link or of `telemetry` and its
+reason, and every 60 s.
 
 ```json
 {"radio": "connected", "battery_v": 4.012, "airtime_1h_s": 3.2, "airtime_available_s": 9.4,
@@ -211,7 +212,7 @@ is `paused`, `telemetry_reason` says why, else it is `null`:
 | `telemetry_reason` | Meaning |
 | --- | --- |
 | `first_start` | telemetry runs for the first time on this state directory: nobody is asked for an hour after the radio first connected, so the household can exclude strangers first |
-| `no_radio` | the radio is not connected (also for up to a minute after it connected) |
+| `no_radio` | the radio is not connected |
 | `exclusions_unreadable` | `telemetry-excluded.json` cannot be parsed: fix or delete it, then restart the gateway ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)) |
 | `auto_add` | the radio adds contacts of some type on its own |
 | `radio_airtime` | the radio transmitted 180 s in the last hour |

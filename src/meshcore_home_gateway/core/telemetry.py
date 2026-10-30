@@ -148,6 +148,7 @@ class Saved:
     own_debt_s: float = 0.0  # airtime the lanes owed when saved
     mesh_debt_s: float = 0.0
     hold_left_s: float | None = None  # the poller's first-start hold; the scheduler ignores it
+    hold_pending: bool = False  # the hold has not started: the time stopped does not count
 
 
 LaneFactory = Callable[[Costs, float], tuple[AirtimeBudget, AirtimeBudget]]

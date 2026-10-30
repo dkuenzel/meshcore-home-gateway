@@ -1778,6 +1778,39 @@ def test_every_status_and_reason_is_reached() -> None:
     assert {reason for *_, reason in HOLDS.values()} == {*telemetry.PAUSE_REASONS, None}
 
 
+def test_the_status_follows_the_radio_at_once_and_each_change_is_told(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`paused` with `no_radio` as soon as the radio is away, before a step sees it; the
+    listener hears each change of what the status reads, and a bug in it stops no step."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        told: list[tuple[str, str | None]] = []
+        r.poller.on_status = lambda: told.append(r.held())
+        await r.steps(1)
+        assert told == [("on", None)]
+        r.connected[0] = None
+        assert r.held() == ("paused", "no_radio")
+        await r.steps(2)
+        assert told == [("on", None)]  # it read so already
+        r.connected[0] = r.radio
+        await r.steps(2)
+        assert told == [("on", None), ("on", None)]
+
+        def broken() -> None:
+            raise RuntimeError("bug")
+
+        r.poller.on_status = broken
+        r.connected[0] = None
+        await r.steps(1)
+        r.connected[0] = r.radio
+        await r.until_asked(2)
+        assert caplog.text.count("telemetry: the status could not be told") == 1
+
+    asyncio.run(main())
+
+
 @pytest.mark.first_start_hold
 @pytest.mark.parametrize("case", HOLDS)
 def test_the_status_says_what_holds_the_requests(
@@ -2034,6 +2067,29 @@ def test_the_state_file_keeps_what_is_left_of_the_hold(
         await r.until_asked(1)
         r.poller._save(at_once=True)
         assert saved_hold(store) is None
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+def test_a_hold_that_has_not_started_is_kept_whole_over_a_long_stop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The radio's table was never read, so the hold never started: a restart a day later holds
+    all of it, counted from its own first read table."""
+    store = JsonStateFile(tmp_path / "state.json")
+    records = TelemetryRecords(store)
+
+    async def main() -> None:
+        first = rig(monkeypatch, DANA, records=records, read=False)
+        await first.steps(5)
+        first.poller._save(at_once=True)
+        assert store.load()["telemetry"]["hold_pending"] is True
+        second = rig(monkeypatch, DANA, records=records, wall=NOW + 86_400.0)
+        await second.until_asked(1, steps=100)
+        assert second.radio.asked[0][1] - START == pytest.approx(poller_module.FIRST_START_S)
+        second.poller._save(at_once=True)
+        assert store.load()["telemetry"]["hold_pending"] is False
 
     asyncio.run(main())
 

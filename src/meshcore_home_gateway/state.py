@@ -491,6 +491,7 @@ class TelemetryRecords:
             min(own, telemetry.HOUR_S) if _age(own) else 0.0,
             min(mesh, telemetry.HOUR_S) if _age(mesh) else 0.0,
             min(hold, telemetry.MAX_DUE_S) if _age(hold) else None,
+            raw.get("hold_pending") is True,
         ), elapsed  # fmt: skip
 
     def ran_before(self) -> bool:
@@ -521,6 +522,7 @@ class TelemetryRecords:
             "own_debt_s": saved.own_debt_s,
             "mesh_debt_s": saved.mesh_debt_s,
             "hold_left_s": saved.hold_left_s,
+            "hold_pending": saved.hold_pending,
         }  # fmt: skip
         try:
             data = self._store.load()

@@ -266,6 +266,7 @@ class TelemetryPoller:
         self._warned: tuple[CompanionSession, str] | None = None  # the pause last warned of
         self._status: TelemetryStatus = "paused"
         self._reason: PauseReason | None = "no_radio"
+        self.on_status: Callable[[], None] | None = None  # what the status reads changed
         self._restored = False
         self._hold_left: float | None = None  # the first-start hold still to come; None: none
         self._hold_until: float | None = None  # when it ends, once it runs
@@ -323,12 +324,12 @@ class TelemetryPoller:
     def _first_hold(self, saved: core.Saved | None, elapsed: float | None) -> float | None:
         """What is left of the first-start hold: all of it where telemetry never ran (no
         record; no state file either), the record's rest less the time since it was saved
-        (all of the rest when that time is unknown), none for a record this version cannot
-        read."""
+        (all of the rest when that time is unknown, or when the hold had not started: the
+        radio's table was never read), none for a record this version cannot read."""
         if saved is not None:
             if saved.hold_left_s is None:
                 return None
-            left = saved.hold_left_s - (elapsed or 0.0)
+            left = saved.hold_left_s - (0.0 if saved.hold_pending else elapsed or 0.0)
         elif self._records is not None and self._records.ran_before():
             return None
         else:
@@ -356,7 +357,10 @@ class TelemetryPoller:
                 or (not scheduler.urgent and mono - self._saved_mono < SAVE_INTERVAL_S)
             ):
                 return
-            saved = replace(scheduler.export(mono), hold_left_s=self._hold_rest(mono))
+            pending = self._hold_left is not None and self._hold_until is None
+            saved = replace(
+                scheduler.export(mono), hold_left_s=self._hold_rest(mono), hold_pending=pending
+            )
             self._records.save(saved, self._wall())
             self._saved_version, self._saved_mono = scheduler.version, mono
         except Exception:
@@ -389,7 +393,7 @@ class TelemetryPoller:
             await self._accept(key, event, late=True)
             return
         if session is None or session.info is None:  # also why nothing is sent
-            self._status, self._reason = "paused", "no_radio"
+            self._set_status("paused", "no_radio")
             await self._sleep(core.STEP_S)
             return
         if (hold := self._hold(session)) is not None:
@@ -420,7 +424,7 @@ class TelemetryPoller:
         lacks the command, the exclusions cannot be read, the first-start hold, the radio adds
         contacts by itself or transmitted too much."""
         if session is self._unsupported:
-            self._status, self._reason = "unsupported", None
+            self._set_status("unsupported", None)
             return core.STEP_S
         if self._exclusions.unreadable:  # asking nobody rather than everybody
             why = f"the exclusions in {EXCLUSIONS_FILE} cannot be read: fix or delete the file"
@@ -428,7 +432,7 @@ class TelemetryPoller:
                         logging.ERROR)  # fmt: skip
             return core.STEP_S
         if (left := self._first_start(session)) is not None:
-            self._status, self._reason = "paused", "first_start"
+            self._set_status("paused", "first_start")
             return left
         if (paused := self._paused(session)) is not None:
             self._pause(session, *paused)
@@ -436,15 +440,26 @@ class TelemetryPoller:
         if self._warned is not None and self._warned[0] is session:
             log.info("telemetry resumed")
         self._warned = None
-        self._status, self._reason = "on", None
+        self._set_status("on", None)
         busy = self._busy_until - self._mono()
         return busy if busy > 0 else None
+
+    def _set_status(self, status: TelemetryStatus, reason: PauseReason | None) -> None:
+        """Tell the listener (the bridge publishes the state) when what the status reads
+        changes; never raises."""
+        before = self.status, self.reason
+        self._status, self._reason = status, reason
+        if (self.status, self.reason) != before and self.on_status is not None:
+            try:
+                self.on_status()
+            except Exception:
+                log.exception("telemetry: the status could not be told")
 
     def _pause(
         self, session: CompanionSession, reason: PauseReason, why: str,
         level: int = logging.WARNING,
     ) -> None:  # fmt: skip
-        self._status, self._reason = "paused", reason
+        self._set_status("paused", reason)
         if self._warned != (session, reason):  # once per session and reason
             self._warned = (session, reason)
             log.log(level, "telemetry paused: %s", why)
@@ -788,6 +803,10 @@ class TelemetryPoller:
         self._reported[key] = self.state_of(key) or "waiting"
         self._wake.set()
 
+    def radio_connected(self) -> None:
+        """The bridge has a session: the step that finds it comes now, not a STEP_S later."""
+        self._wake.set()
+
     def _late(self, key: str, event: TelemetryReceived) -> None:
         self._held.append((key, event))
         self._wake.set()
@@ -838,13 +857,17 @@ class TelemetryPoller:
 
     @property
     def status(self) -> TelemetryStatus:
-        """ "on", "paused" or "unsupported"."""
-        return self._status
+        """ "on", "paused" or "unsupported"; "paused" as soon as the radio is away."""
+        return "paused" if self._radio_away() else self._status
 
     @property
     def reason(self) -> PauseReason | None:
         """Why telemetry is paused; None while it is not."""
-        return self._reason
+        return "no_radio" if self._radio_away() else self._reason
+
+    def _radio_away(self) -> bool:
+        session = self._session()
+        return session is None or session.info is None
 
     def used_s(self) -> tuple[float, float]:
         """Own and estimated mesh airtime of the last hour."""

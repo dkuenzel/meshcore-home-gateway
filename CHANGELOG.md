@@ -56,8 +56,8 @@ not run for it.
   allows it; one set to *Allow All* that has the gateway as a contact answers. A configuration
   copied from the 1.1.0a1 example says `enabled = false`: remove that line to follow the new
   default. To update from 1.0.0 without any request, see *Update* in docs/deployment.md.
-- `state.telemetry` is `paused`, with the reason `no_radio`, while the radio is away and for up
-  to a minute after it connects (it stayed `on`).
+- `state.telemetry` is `paused`, with the reason `no_radio`, while the radio is away (it stayed
+  `on`); the state document follows each change of `state.telemetry` at once.
 - A contact's tracker turns `unavailable` while its telemetry position is not current: after two
   unanswered requests in a row, after an hour (three of its intervals, if longer) without an
   answer, or an hour after the last answer with a position

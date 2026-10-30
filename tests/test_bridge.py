@@ -1490,6 +1490,30 @@ def test_the_state_says_why_telemetry_waits(
     scenario(main)
 
 
+def test_the_state_follows_the_telemetry_status_when_the_radio_comes_and_goes(
+    tmp_path: Path,
+) -> None:
+    """The poller steps when the radio connects and the state follows its status at once, not
+    a step of a minute later; the state published as the radio goes away says `no_radio`."""
+    radio = EmulatedRadio()
+
+    def on(state: dict[str, Any]) -> bool:
+        return (state["radio"], state["telemetry"]) == ("connected", "on")
+
+    async def main() -> None:
+        async with running(make_config(telemetry=True), radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for("/state", on)
+            since = len(bus.payloads("/state"))
+            radio.disconnect()
+            state = await bus.wait_for(
+                "/state", lambda s: s["radio"] == "disconnected", since=since
+            )
+            assert (state["telemetry"], state["telemetry_reason"]) == ("paused", "no_radio")
+            await bus.wait_for("/state", on, since=since)
+
+    scenario(main)
+
+
 def test_a_bug_in_the_telemetry_state_leaves_the_rest_of_the_state(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
