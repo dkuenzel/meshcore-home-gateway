@@ -366,7 +366,8 @@ companion flooded, never to grant anything.
   integer sent divided as its type says, under the key `ch<channel>_<type>[_<n>][_<unit>]`:
   `<type>` the library's name, `<n>` from 2 for a further reading of one channel and type in an
   answer, the unit as in [mqtt-api.md](mqtt-api.md#reading-keys) (none for luminosity, generic
-  and analog input). The first voltage and the last temperature of channel 1 are published as
+  and analog input). The answer's first entry, if it is the channel 1 voltage, and its last, if
+  it is a channel 1 temperature and nothing after it was left undecoded, are published as
   `battery_v` and `mcu_temperature_c` instead; GPS is the position; other types are decoded and
   not published.
 * **Contact list:** `GET_CONTACTS` sends one contact per main-loop pass (`MyMesh.cpp:2388-2410`),

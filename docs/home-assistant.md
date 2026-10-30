@@ -17,7 +17,9 @@ Public interface: see [compatibility](development.md#compatibility).
   the discovery prefix and `status_topic` equal to the birth message topic in the MQTT options of
   Home Assistant (defaults `homeassistant` and `homeassistant/status`).
 * With a topic ACL on the broker, Home Assistant's user needs `readwrite` on `homeassistant/#`
-  ([mqtt-api.md](mqtt-api.md), last section).
+  ([mqtt-api.md](mqtt-api.md#securing-the-broker)), and for the switch *Telemetry*
+  `topic write <base_topic>/<node_id>/contacts/+/telemetry`, which the example ACL of earlier
+  versions lacks: without it the switch does nothing, and only the broker's log shows why.
 
 Why 2026.8: device-based discovery exists since 2024.11, the entity IDs below (from
 `default_entity_id`) since 2025.10, QoS 1 for every entity from the device level since 2026.5.2,

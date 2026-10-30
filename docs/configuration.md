@@ -268,10 +268,12 @@ Fixed by ADR 0018, not settings:
 Needs: the radio adds contacts by hand only, no type automatically (the managed profile sets
 that; otherwise requests pause, because a node the radio adds could take a companion's place in
 its answers). Over TCP an answer can be lost while the radio's push queue is full; USB stays the
-recommendation. The schedule (no positions) is kept in `state.json`, the exclusions in
-`telemetry-excluded.json`; one that cannot be parsed pauses telemetry until it is fixed or deleted
-and the service restarted ([deployment.md](deployment.md#4-operations)), and meanwhile no contact
-gets back its readings or a position from telemetry from the history.
+recommendation. The schedule (no positions) is kept in `state.json`, and with it the last document
+of each companion whose answers are current, its position and readings included, also with the
+history off. The exclusions are kept in `telemetry-excluded.json`; one that cannot be parsed
+pauses telemetry until it is fixed or deleted and the service restarted
+([deployment.md](deployment.md#4-operations)), and meanwhile no contact gets back its readings or
+a position from telemetry from the history.
 
 ## `[diagnostics]`
 

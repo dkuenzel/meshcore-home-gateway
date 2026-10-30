@@ -938,6 +938,10 @@ def test_a_key_not_on_the_radio_can_be_excluded_in_advance() -> None:
     ask(manager, DAVE_KEY, "on")  # a stored key
     assert (last_result(bus)["event_type"], last_result(bus)["name"]) == ("included", None)
     assert observer.exclusions.keys == {ALICE_KEY}
+    ask(manager, DAVE_KEY, "on")  # again: no longer stored, and not on the radio
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "refused", "unknown_contact",
+    )  # fmt: skip
 
 
 def test_telemetry_requests_are_limited_to_one_a_second_with_bursts_of_30() -> None:

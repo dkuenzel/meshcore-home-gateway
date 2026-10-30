@@ -29,12 +29,14 @@ not run for it.
   with `id` and `"forget": true`) and `meshcore-home-gateway contacts telemetry KEY on|off
   [--forget]`. `off` is taken at once, also for a contact that is not on the radio yet: the
   gateway stops asking, forgets the contact's current battery, readings and telemetry position,
-  and keeps the choice in `telemetry-excluded.json` in its state directory; `forget` also deletes
-  the contact's readings and telemetry positions from the history. Results on `contact`:
-  `excluded` and `included` with `request: "telemetry"`, the reasons `not_saved` and
-  `not_forgotten`, the refusals `not_a_companion` and `too_many` (and `rate_limited` for too
-  many telemetry requests); the *Contact* event entity has the two new types. The `contacts`
-  index gains `telemetry_excluded` (the first 16 keys) and `telemetry_excluded_total`.
+  and keeps the choice in `telemetry-excluded.json` in its state directory (while that file
+  cannot be read, telemetry pauses and no contact gets back its readings or a telemetry position
+  from the history); `forget` also deletes the contact's readings and telemetry positions from
+  the history. Results on `contact`: `excluded` and `included` with `request: "telemetry"`, the
+  reasons `not_saved` and `not_forgotten` (`not_forgotten` first, when both apply), the refusals
+  `not_a_companion` and `too_many` (and `rate_limited` for too many telemetry requests); the
+  *Contact* event entity has the two new types. The `contacts` index gains `telemetry_excluded`
+  (the first 16 keys) and `telemetry_excluded_total`.
 - Events on `telemetry`: `unanswered` when a companion that answered within the day leaves two
   requests in a row unanswered, `answered` when it answers again or for the first time; the event
   entity *Telemetry* on the gateway's device. The sensor *Telemetry status* with the attribute
@@ -55,15 +57,25 @@ not run for it.
   household's in that hour. A companion's firmware refuses telemetry to everyone until its owner
   allows it; one set to *Allow All* that has the gateway as a contact answers. A configuration
   copied from the 1.1.0a1 example says `enabled = false`: remove that line to follow the new
-  default. To update from 1.0.0 without any request, see *Update* in docs/deployment.md.
+  default. To update from 1.0.0 without any request, see *Update* in docs/deployment.md. With a
+  broker ACL, give Home Assistant's user `topic write <base_topic>/<node_id>/contacts/+/telemetry`
+  ([docs/mqtt-api.md](docs/mqtt-api.md#securing-the-broker)), or the switch *Telemetry* does
+  nothing.
 - `state.telemetry` is `paused`, with the reason `no_radio`, while the radio is away (it stayed
-  `on`); the state document follows each change of `state.telemetry` at once.
+  `on`); the state document follows each change of `state.telemetry` at once. It reads `on` again
+  as soon as the radio is back, before the companions answer: the example in
+  docs/home-assistant.md of a person leaving home waits for 10 minutes of `on`.
 - A contact's tracker turns `unavailable` while its telemetry position is not current: after two
   unanswered requests in a row, after an hour (three of its intervals, if longer) without an
   answer, or an hour after the last answer with a position
   ([ADR 0024](docs/decisions/0024-telemetry-values-in-home-assistant-expire.md)). A `person`
   then follows its other trackers or turns `unknown` (docs/home-assistant.md lists which
-  presence triggers fire). Positions from adverts are unchanged.
+  presence triggers fire). Positions from adverts are unchanged. This holds after a restart
+  without the radio too: `state.json` keeps the last document of each companion whose answers
+  are current, with its position and readings, also with the history off.
+- A companion the radio's table adds again, within a day of its removal, is asked within a
+  minute like a new one, and its first answer raises `answered`; it no longer gets back the
+  schedule it had.
 - A downgrade to 1.1.0a1 asks excluded contacts while it runs (it leaves their file alone),
   removes the four new gateway entities (Home Assistant then removes and restores the gateway's
   device once) and leaves a removed contact's *Telemetry* switch behind (delete it under

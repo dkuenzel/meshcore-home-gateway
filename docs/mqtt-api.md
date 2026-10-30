@@ -553,8 +553,9 @@ has them (`null` for a key not on the radio):
 | `included` | `null` | stored |
 | `failed` | `state_unwritable` | `on` could not be stored, or the file cannot be read: nothing changed, the contact stays excluded |
 
-A repeated request gives the same event again; the file is written only when the set changes.
-Refused requests share the limit of the `refused` events above.
+A repeated request gives the same event again, except `on` for a key that is not on the radio:
+once it is no longer excluded, a repeat is refused `unknown_contact`. The file is written only
+when the set changes. Refused requests share the limit of the `refused` events above.
 
 **What an exclusion does.** The gateway asks the contact no more: a request waiting for the radio
 is withdrawn, an answer in flight is dropped. It forgets the contact's battery, readings,

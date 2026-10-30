@@ -238,13 +238,17 @@ pct stop 105 && pct destroy 105
   from 1.1.0a2 on, and the first time it runs on the state directory it asks nobody for an hour
   after the radio connects (*Telemetry status* `paused`, reason `first_start`; the log names the
   number of companions it will ask). Exclude every companion that is not the household's in that
-  hour ([companions.md](companions.md)). To update from 1.0.0 without any request, switch telemetry
-  off right before the update; 1.0.0 refuses the `[telemetry]` table when it starts, so update at
-  once:
+  hour ([companions.md](companions.md)). With a broker ACL, Home Assistant's user needs
+  `topic write <base_topic>/<node_id>/contacts/+/telemetry` for the switch *Telemetry*
+  ([mqtt-api.md](mqtt-api.md#securing-the-broker)): the example ACL of earlier versions lacks it,
+  and without it the switch does nothing. To update from 1.0.0 without any request, switch
+  telemetry off right before the update; 1.0.0 refuses the `[telemetry]` table when it starts, so
+  update at once, and name the version (while 1.1 is a pre-release, `latest` installs 1.0.0,
+  which refuses the table):
 
   ```sh
   pct exec 105 -- sh -c 'grep -q "^\[telemetry\]" /etc/meshcore-home-gateway/config.toml || printf "\n[telemetry]\nenabled = false\n" >> /etc/meshcore-home-gateway/config.toml'
-  bash -c "$(wget -qO- $installer)" -- --update 105
+  bash -c "$(wget -qO- $installer)" -- --release 1.1.0a2 --update 105
   ```
 
   A configuration copied from the 1.1.0a1 example says `enabled = false`: remove that line to follow
