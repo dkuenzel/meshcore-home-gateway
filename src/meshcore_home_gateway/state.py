@@ -3,7 +3,8 @@
 It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
 Home Assistant components of the last discovery document and the contact devices announced
 (docs/home-assistant.md), the contacts whose retained documents were published, the radio
-profile's memory (ADR 0020) and the telemetry schedule (ADR 0018).
+profile's memory (ADR 0020) and the telemetry schedule (ADR 0018). The contacts the household
+excluded from telemetry have a file of their own (TelemetryExclusions).
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ from meshcore_home_gateway.core.profile import Applied, Attempt, Value
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 
 log = logging.getLogger(__name__)
+
+EXCLUSIONS_FILE = "telemetry-excluded.json"
 
 
 class JsonStateFile:
@@ -263,6 +266,133 @@ class RetainedKeys:
         self._keys = set(keys)
 
 
+class TelemetryExclusions:
+    """The contacts the household excluded from telemetry (ADR 0018), in a file of their
+    own: kept until included again, also while they are not in the radio's table and while
+    telemetry is off. Written atomically, only when the set changed."""
+
+    LIMIT = 1024
+    _KEY = "excluded"
+
+    def __init__(self, path: Path | None) -> None:
+        """Loads at once. A missing file: none excluded. An OSError stops the service (as
+        state.json). A file that cannot be parsed, or holds no list under "excluded", is left in
+        place: `unreadable` is set, an error is logged once, nothing is ever written to it, and
+        telemetry stays paused until it is fixed or deleted and the service restarted. Entries
+        that are not 64 lower-case hex digits are skipped (a warning); at most LIMIT kept.
+        None: memory only (tests, and the observer's default)."""
+        self._path = path
+        self._keys: set[str] = set()
+        self._stored: frozenset[str] = frozenset()  # what the file holds
+        self._warned = False  # a change is not stored, and the log said so
+        self.unreadable = False
+        if path is not None:
+            self._load(path)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._keys
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    @property
+    def keys(self) -> frozenset[str]:
+        return frozenset(self._keys)
+
+    @property
+    def pending(self) -> bool:
+        """A change is not stored yet."""
+        return self._keys != self._stored
+
+    def exclude(self, key: str) -> bool:
+        """Excluded from now on, also if the file cannot be written. True when the set is stored
+        (also unchanged with nothing pending); False if not: a warning, once while unsaved, and
+        flush() tries again."""
+        if key in self._keys and not self.pending:
+            return True
+        self._keys.add(key)
+        return self._store()
+
+    def include(self, key: str) -> bool:
+        """Asked again, only once stored: False and nothing changed if the file cannot be
+        written or is unreadable."""
+        if self.unreadable:
+            return False
+        if key not in self._keys:
+            return True  # not excluded: nothing to store
+        rest = self._keys - {key}
+        why = self._write(rest)
+        if why is not None:
+            log.warning("cannot write the telemetry exclusions (%s): %s stays excluded", why,
+                        key[:12])  # fmt: skip
+            return False
+        self._keys = rest
+        self._stored_again()
+        return True
+
+    def flush(self) -> None:
+        """Store a pending change; never raises; an info line once it is stored. Called at
+        every status tick (bridge)."""
+        if self.pending:
+            self._store()
+
+    def _store(self) -> bool:
+        """The set as it is in memory: a warning once while it is not stored."""
+        why = self._write(self._keys)
+        if why is None:
+            self._stored_again()
+            return True
+        if not self._warned:
+            self._warned = True
+            until = "until the service stops" if self.unreadable else "stored once it can be"
+            log.warning("cannot store the telemetry exclusions (%s): in effect, %s", why, until)
+        return False
+
+    def _stored_again(self) -> None:
+        if self._warned:
+            self._warned = False
+            log.info("telemetry exclusions stored")
+
+    def _write(self, keys: set[str]) -> str | None:
+        """None once `keys` are stored, else why not."""
+        if self._path is not None:
+            if self.unreadable:
+                return f"{self._path} is unreadable"
+            try:
+                JsonStateFile(self._path).save({self._KEY: sorted(keys)})
+            except OSError as exc:
+                return str(exc.strerror or exc)
+        self._stored = frozenset(keys)
+        return None
+
+    def _load(self, path: Path) -> None:
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:  # none excluded; another OSError stops the service
+            return
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except ValueError:  # not UTF-8, not JSON
+            data = None
+        entries = data.get(self._KEY) if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            self.unreadable = True
+            log.error("telemetry exclusions %s cannot be read: telemetry paused, nothing "
+                      "written to the file; fix or delete it and restart the service",
+                      path)  # fmt: skip
+            return
+        keys = sorted({e for e in entries if isinstance(e, str) and is_key(e)})
+        skipped = sum(not (isinstance(e, str) and is_key(e)) for e in entries)
+        if skipped:
+            log.warning("telemetry exclusions %s: %d entries that are no contact keys skipped",
+                        path, skipped)  # fmt: skip
+        if len(keys) > self.LIMIT:
+            log.warning("telemetry exclusions %s: %d excluded contacts, %d kept", path,
+                        len(keys), self.LIMIT)  # fmt: skip
+        self._keys = set(keys[: self.LIMIT])
+        self._stored = frozenset(self._keys)
+
+
 class ProfileRecords:
     """What the managed radio profile last wrote (ADR 0020), per radio key: a replaced radio
     starts afresh."""
@@ -355,11 +485,22 @@ class TelemetryRecords:
             else ()
         )  # fmt: skip
         own, mesh = raw.get("own_debt_s", 0.0), raw.get("mesh_debt_s", 0.0)
+        hold = raw.get("hold_left_s")
         return Saved(
             contacts, floods[: telemetry.FLOODS_PER_HOUR],
             min(own, telemetry.HOUR_S) if _age(own) else 0.0,
             min(mesh, telemetry.HOUR_S) if _age(mesh) else 0.0,
+            min(hold, telemetry.MAX_DUE_S) if _age(hold) else None,
         ), elapsed  # fmt: skip
+
+    def ran_before(self) -> bool:
+        """The state file has a telemetry record (any version): telemetry ran on this
+        directory. False also when the file cannot be read (then the hold applies: fewer
+        requests, never more)."""
+        try:
+            return isinstance(self._store.load().get(self._KEY), dict)
+        except Exception:  # noqa: BLE001 - load() logs nothing here; the hold is the safe side
+            return False
 
     def save(self, saved: Saved, wall_now: float) -> None:
         """Replace this key only; a failed write is logged and the schedule stays in memory."""
@@ -372,12 +513,14 @@ class TelemetryRecords:
                     "answered_age_s": c.answered_age_s, "polled_age_s": c.polled_age_s,
                     "flood_age_s": c.flood_age_s, "floods": c.floods, "located": c.located,
                     "still": c.still, "lpp_bytes": c.lpp_bytes, "parked_age_s": c.parked_age_s,
+                    "current_s": c.current_s, "located_age_s": c.located_age_s,
                 }
                 for key, c in saved.contacts.items()
             },
             "floods_age_s": list(saved.floods_age_s),
             "own_debt_s": saved.own_debt_s,
             "mesh_debt_s": saved.mesh_debt_s,
+            "hold_left_s": saved.hold_left_s,
         }  # fmt: skip
         try:
             data = self._store.load()
@@ -395,17 +538,19 @@ def _saved_contact(entry: object) -> SavedContact | None:
     flood, parked = entry.get("flood_age_s"), entry.get("parked_age_s")
     located, still = entry.get("located", False), entry.get("still", telemetry.STILL_POLLS)
     lpp_bytes = entry.get("lpp_bytes", telemetry.DEFAULT_LPP_BYTES)
+    current = entry.get("current_s", telemetry.CURRENT_MIN_S)
+    located_age = entry.get("located_age_s")
     if (
         _age(due) and _small(failures, telemetry.MAX_FAILURES)
         and _small(floods, telemetry.MAX_FAILURES) and _age_or_none(answered)
         and _age_or_none(polled) and _age_or_none(flood) and _age_or_none(parked)
         and isinstance(located, bool)
         and _small(still, telemetry.STILL_POLLS) and _small(lpp_bytes, telemetry.MAX_LPP_BYTES)
-        and lpp_bytes >= 1
+        and lpp_bytes >= 1 and _age(current) and _age_or_none(located_age)
     ):  # fmt: skip
         return SavedContact(
             min(due, telemetry.MAX_DUE_S), failures, answered, polled, flood, floods, located,
-            still, lpp_bytes, parked,
+            still, lpp_bytes, parked, min(current, telemetry.MAX_DUE_S), located_age,
         )  # fmt: skip
     return None
 

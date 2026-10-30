@@ -409,7 +409,7 @@ def test_a_replay_heard_before_the_first_table_read_does_not_win(tmp_path: Path)
 
 
 def answer(at: float, data: bytes = LPP_FULL) -> Answer:
-    return Answer(lpp.decode(data), at, False, 0, False, "resting")
+    return Answer(lpp.decode(data), at, False, 0, False)
 
 
 def test_telemetry_answers_publish_the_position_and_store_only_changes(tmp_path: Path) -> None:

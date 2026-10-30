@@ -475,10 +475,10 @@ class TelemetryPoller:
                   len(event.data), payload.lpp_bytes, " (late)" if late else "")  # fmt: skip
         if payload.undecoded:
             log.debug("telemetry %s: %d bytes not decoded", key[:12], len(payload.undecoded))
+        self._state_changed(key)
         answer = core.Answer(
-            payload, event.received_at, self._routes.get(key, False), record.path_hops, late,
-            self._state_changed(key),
-        )  # fmt: skip
+            payload, event.received_at, self._routes.get(key, False), record.path_hops, late
+        )
         try:
             self._observer.telemetry(key, answer)
         except Exception:

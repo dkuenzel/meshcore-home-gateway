@@ -2,6 +2,8 @@
 
 import itertools
 from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import get_args
 
 import pytest
 
@@ -10,17 +12,23 @@ from meshcore_home_gateway.core.airtime import Costs, meshcore_lora
 from meshcore_home_gateway.core.budget import AirtimeBudget
 from meshcore_home_gateway.core.telemetry import (
     Candidate,
+    PauseReason,
     Poll,
     Saved,
     SavedContact,
     Scheduler,
+    TelemetryEvent,
+    TelemetryState,
+    TelemetryStatus,
     answer_wait_s,
 )
+from meshcore_home_gateway.state import JsonStateFile, TelemetryRecords
 
 EU = meshcore_lora(62_500.0, 8, 8)  # EU/UK Narrow
 A, B, C, D, E = ("a1" * 32, "b2" * 32, "c3" * 32, "d4" * 32, "e5" * 32)
 HOME = (520_000, 100_000)  # cells of 1e-4 degrees: one cell of latitude is 11.1 m
 HOUR = 3600.0
+DAY = 86_400.0
 
 
 def wide(capacity: Costs, now: float) -> tuple[AirtimeBudget, AirtimeBudget]:
@@ -425,8 +433,9 @@ def test_the_schedule_survives_a_restart_without_a_burst() -> None:
     assert not s.urgent
     assert saved.floods_age_s == (80.0,)
     assert saved.contacts[A] == SavedContact(
-        800.0, answered_age_s=98.0, polled_age_s=100.0, located=True, lpp_bytes=19
-    )
+        800.0, answered_age_s=98.0, polled_age_s=100.0, located=True, lpp_bytes=19,
+        located_age_s=98.0,
+    )  # fmt: skip
     assert saved.contacts[B].failures == 1
     assert saved.contacts[B].flood_age_s == 80.0
     # 60 s later, empty lanes: nothing sent at once
@@ -733,3 +742,281 @@ def test_a_debt_carried_over_is_paid_back_also_before_the_first_decision() -> No
     again = Scheduler(1000.0, saved=exported, elapsed_s=0.0)
     first = due_at(again, [direct(A)], 1000.0, 3000.0)
     assert first - 1000.0 == pytest.approx((exported.mesh_debt_s + 0.887) / (90.0 / 3600), abs=0.5)
+
+
+# --- states and expiry (slice 6b, ADR 0024) ------------------------------------------------------
+
+
+def current_s(s: Scheduler, key: str, now: float) -> float:
+    return s.export(now).contacts[key].current_s
+
+
+def slow(capacity: Costs, now: float) -> tuple[AirtimeBudget, AirtimeBudget]:
+    """Lanes that refill so slowly that a planned flood keeps waiting."""
+    return (
+        AirtimeBudget(0.01, capacity.own_s, now, tokens=0.0),
+        AirtimeBudget(0.01, capacity.mesh_s, now, tokens=0.0),
+    )
+
+
+def test_state_answering_then_no_position_after_an_hour_without_a_position() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    assert s.state(A, 0.0) is None
+    ask(s, [direct(A)], 0.0)  # answers at 2 s with a position
+    assert s.state(A, 2.0) == "answering"
+    ask(s, [direct(A)], 900.0, cells=None)  # GPS off: the next answer has none
+    assert s.state(A, 902.0) == "answering"  # one within the hour carried a position
+    assert s.state(A, 2.0 + telemetry.LOCATED_S) == "answering"
+    assert s.state(A, 2.0 + telemetry.LOCATED_S + 1) == "no_position"
+    ask(s, [direct(A)], 4500.0)  # a position again
+    assert s.state(A, 4502.0) == "answering"
+
+
+def test_one_failure_keeps_the_state_two_make_it_away() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0)
+    ask(s, [direct(A)], 900.0, answer=False)
+    assert s.failures(A) == 1
+    assert s.state(A, 905.0) == "answering"  # a single lost answer changes nothing
+    ask(s, [direct(A)], 935.0, answer=False)  # the retry 30 s later
+    assert s.failures(A) == 2
+    assert s.state(A, 940.0) == "away"
+    assert s.failures(B) == 0  # not known
+
+
+def test_away_without_requests_after_the_time_bound() -> None:
+    """The radio away: no decision, no request; the answers expire by the time bound alone."""
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0)  # resting neighbour: 3 x 900 s is less than an hour
+    bound = 2.0 + telemetry.CURRENT_MIN_S
+    assert s.state(A, bound) == "answering"
+    assert s.state(A, bound + 1) == "away"
+    assert s.answered_within_day(A, 2.0 + DAY)
+    assert s.state(A, 2.0 + DAY + 1) == "waiting"  # not asked since an answer over a day old
+    assert not s.answered_within_day(A, 2.0 + DAY + 1)
+    assert not s.answered_within_day(B, 2.0)
+
+
+def test_current_s_is_three_intervals_or_an_hour() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0)  # resting neighbour: 900 s
+    assert current_s(s, A, 2.0) == telemetry.CURRENT_MIN_S
+    ask(s, [direct(A)], 900.0, cells=(HOME[0] + 5, HOME[1]))  # moving: 90 s
+    assert s.interval_s(A, 902.0) == 90.0
+    assert current_s(s, A, 902.0) == telemetry.CURRENT_MIN_S
+    ask(s, [direct(A)], 990.0, cells=None)  # no position: once an hour
+    assert current_s(s, A, 992.0) == 3 * 3600.0
+    s2 = Scheduler(0.0, lanes=wide)
+    ask(s2, [direct(B, hops=2)], 0.0)  # resting behind two repeaters: about 47 min
+    interval = s2.interval_s(B, 2.0)
+    assert interval is not None
+    assert interval == pytest.approx(2791.0, abs=1)
+    assert current_s(s2, B, 2.0) == telemetry.CURRENT_INTERVALS * interval
+    assert s2.state(B, 2.0 + 3 * interval - 1) == "answering"
+    assert s2.state(B, 2.0 + 3 * interval + 1) == "away"
+
+
+def test_no_answer_after_a_day_and_waiting_before_any_request() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    p = poll(s, [direct(A)], 0.0)
+    assert s.state(A, 0.0) == "waiting"
+    s.sent(p, flood=False, now=0.0)
+    assert s.state(A, 1.0) == "waiting"  # in flight
+    s.unanswered(A, 5.0)
+    assert s.state(A, 5.0) == "no_answer"  # never answered: not away
+    s2 = Scheduler(0.0, lanes=wide)
+    ask(s2, [direct(A)], 0.0)
+    ask(s2, [direct(A)], 900.0, answer=False)
+    ask(s2, [direct(A)], 935.0, answer=False)
+    assert s2.state(A, 2.0 + DAY) == "away"
+    assert s2.state(A, 2.0 + DAY + 1) == "no_answer"
+
+
+def test_no_path_for_a_candidate_without_a_path_not_heard_lately() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    assert s.decide(EU, [pathless(A)], 0.0) == telemetry.STEP_S
+    assert s.state(A, 0.0) == "no_path"
+    # flooded (a disconnect cut it: nothing learned), heard again within its flood gap of a day
+    s2 = Scheduler(0.0, lanes=wide)
+    s2.sent(poll(s2, [pathless(A, heard_at=0.0)], 0.0), flood=True, now=0.0)
+    s2.retry(A, 9.0)
+    assert s2.decide(EU, [pathless(A, heard_at=100.0)], 100.0) == telemetry.STEP_S  # not planned
+    assert s2.state(A, 100.0 + 29 * 60) == "waiting"  # heard 29 min ago
+    assert s2.state(A, 100.0 + 31 * 60) == "no_path"
+    # a flood planned (it waits for the lanes): not no_path, also once the hearing is older
+    s3 = Scheduler(0.0, lanes=slow)
+    for now in range(0, 2000, 250):
+        assert isinstance(s3.decide(EU, [pathless(A, heard_at=0.0)], float(now)), float)
+    assert s3.state(A, 1900.0) == "waiting"
+    # restored, not yet compared with a table: its path is not known
+    r = Scheduler(0.0, saved=Saved({A: SavedContact(0.0)}), lanes=wide)
+    assert r.state(A, 0.0) == "waiting"
+    # answered within the day: away first
+    s4 = Scheduler(0.0, lanes=wide)
+    ask(s4, [direct(A)], 0.0)
+    s4.decide(EU, [pathless(A)], 7200.0)  # its path was reset
+    assert s4.state(A, 7200.0) == "away"
+
+
+def test_state_of_restored_and_parked_contacts() -> None:
+    saved = Saved({
+        A: SavedContact(0.0, answered_age_s=100.0, located=True),
+        B: SavedContact(0.0, failures=2, answered_age_s=7200.0, parked_age_s=50.0),
+    })  # fmt: skip
+    r = Scheduler(1000.0, saved=saved, elapsed_s=10.0, lanes=wide)
+    assert r.state(A, 1000.0) == "answering"  # restored, not yet compared with a table
+    assert r.state(B, 1000.0) == "away"  # parked
+    assert r.failures(B) == 2
+    assert r.answered_within_day(B, 1000.0)
+    assert r.state(C, 1000.0) is None
+    r.decide(EU, [direct(C)], 1000.0)  # A left: parked, its answer expires all the same
+    answered = 1000.0 - 110.0
+    assert r.state(A, answered + telemetry.CURRENT_MIN_S) == "answering"
+    assert r.state(A, answered + telemetry.CURRENT_MIN_S + 1) == "away"
+
+
+def test_answered_returns_true_for_the_first_answer_and_after_two_failures() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    s.sent(poll(s, [direct(A)], 0.0), flood=False, now=0.0)
+    assert s.answered(A, 2.0, HOME, 19) is True  # its first
+    s.sent(poll(s, [direct(A)], 900.0), flood=False, now=900.0)
+    assert s.answered(A, 902.0, HOME, 19) is False
+    ask(s, [direct(A)], 1800.0, answer=False)
+    s.sent(poll(s, [direct(A)], 1835.0), flood=False, now=1835.0)
+    assert s.answered(A, 1837.0, HOME, 19) is False  # after one failure
+    ask(s, [direct(A)], 2735.0, answer=False)
+    ask(s, [direct(A)], 2770.0, answer=False)
+    s.sent(poll(s, [direct(A)], 4575.0), flood=False, now=4575.0)
+    assert s.answered(A, 4577.0, HOME, 19) is True  # after two
+    assert s.answered(B, 4600.0, HOME, 19) is False  # a key it does not know
+    r = Scheduler(0.0, saved=Saved({A: SavedContact(0.0, answered_age_s=100.0)}), lanes=wide)
+    r.sent(poll(r, [direct(A)], 0.0), flood=False, now=0.0)
+    assert r.answered(A, 2.0, HOME, 19) is False  # it answered before the restart
+    r.forget(A, 10.0)
+    r.sent(poll(r, [direct(A)], 20.0), flood=False, now=20.0)
+    assert r.answered(A, 22.0, HOME, 19) is True  # its first since it was included again
+
+
+def test_forget_drops_the_answers_and_keeps_the_flood_limits() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0)
+    flood = poll(s, [pathless(A, heard_at=900.0)], 900.0)  # its path was reset; heard
+    s.sent(flood, flood=True, now=900.0)
+    s.answered(A, 903.0, HOME, 19, route=(1, 1))
+    version = s.version
+    s.forget(A, 963.0)  # excluded a minute after the answer
+    assert s.version != version  # saved with the next save
+    assert s.state(A, 963.0) == "waiting"
+    assert s.failures(A) == 0
+    assert not s.answered_within_day(A, 963.0)
+    assert s.located_ages(963.0) == {}
+    assert s.export(963.0).contacts[A] == SavedContact(
+        0.0, polled_age_s=63.0, flood_age_s=63.0, floods=1
+    )
+    # a candidate again: due at once, and its flood gap of a day holds
+    assert s.decide(EU, [pathless(A, heard_at=1000.0)], 1000.0) == telemetry.STEP_S
+    assert poll(s, [direct(A, hops=1)], 1000.0).key == A
+    # parked
+    p = Scheduler(0.0, lanes=wide)
+    ask(p, [direct(A)], 0.0)
+    p.decide(EU, [direct(B)], 10.0)  # A left
+    p.forget(A, 60.0)
+    assert p.state(A, 60.0) == "waiting"
+    assert p.export(60.0).contacts[A].parked_age_s == 50.0  # still parked since it left
+    assert poll(p, [direct(A)], 100.0).key == A  # back: due at once, not at 900 s
+    # restored, not yet compared with a table
+    saved = Saved({A: SavedContact(
+        500.0, answered_age_s=10.0, polled_age_s=12.0, flood_age_s=20.0, floods=2, located=True,
+        current_s=7200.0, located_age_s=10.0,
+    )})  # fmt: skip
+    r = Scheduler(0.0, saved=saved, lanes=wide)
+    r.forget(A, 0.0)
+    assert r.state(A, 0.0) == "waiting"
+    assert r.export(0.0).contacts[A] == SavedContact(
+        0.0, polled_age_s=12.0, flood_age_s=20.0, floods=2
+    )
+    assert poll(r, [direct(A)], 0.0).key == A
+    # the outcome of a request in flight still clears it
+    f = Scheduler(0.0, lanes=wide)
+    f.sent(poll(f, [direct(A)], 0.0), flood=False, now=0.0)
+    f.forget(A, 1.0)
+    assert f.in_flight == A
+    f.retry(A, 2.0)
+    assert [f.in_flight] == [None]
+    f.forget(B, 3.0)  # not known: nothing to forget
+
+
+def test_current_s_and_located_age_are_saved_and_restored() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(B, hops=2)], 0.0)  # answers at 2 s with a position
+    bound = current_s(s, B, 2.0)
+    assert bound == pytest.approx(3 * 2791.0, abs=3)
+    saved = s.export(102.0)
+    assert saved.contacts[B].located_age_s == 100.0
+    assert saved.contacts[B].current_s == bound
+    r = Scheduler(1000.0, saved=saved, elapsed_s=50.0, lanes=wide)
+    assert r.located_ages(1000.0) == {B: 150.0}
+    assert r.state(B, 1000.0) == "answering"
+    answered = 1000.0 - 150.0
+    assert r.state(B, answered + bound - 1) == "answering"
+    assert r.state(B, answered + bound + 1) == "away"
+    assert r.export(1000.0).contacts[B].current_s == bound
+    assert r.export(1000.0).contacts[B].located_age_s == 150.0
+    # how long it was stopped is unknown (the clock went back): not current, no located time
+    unknown = Scheduler(1000.0, saved=saved, elapsed_s=None, lanes=wide)
+    assert unknown.state(B, 1000.0) == "waiting"
+    assert unknown.located_ages(1000.0) == {}
+    assert unknown.export(1000.0).contacts[B].located_age_s is None
+
+
+def test_located_ages() -> None:
+    s = Scheduler(0.0, lanes=wide)
+    assert s.located_ages(0.0) == {}
+    ask(s, [direct(A), direct(B)], 0.0)  # A, with a position
+    ask(s, [direct(A), direct(B)], 12.0, cells=None)  # B, without
+    assert s.located_ages(100.0) == {A: 98.0}
+    ask(s, [direct(A), direct(B)], 900.0, cells=None)  # A without: its last one stays
+    assert s.located_ages(1000.0) == {A: 998.0}
+    s.decide(EU, [direct(B)], 1000.0)  # A left: parked, still counted
+    assert s.located_ages(1100.0) == {A: 1098.0}
+
+
+def test_a_file_without_the_new_fields_reads_as_an_hour_and_no_located_time(
+    tmp_path: Path,
+) -> None:
+    """A schedule saved by 1.1.0a1: its answers count an hour, its positions as the answer
+    said (`located`), never longer."""
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"telemetry": {
+        "version": 1, "saved_at": 1000.0,
+        "contacts": {
+            A: {"due_in_s": 600.0, "answered_age_s": 100.0, "located": True},
+            B: {"due_in_s": 600.0, "answered_age_s": 100.0, "located": False},
+        },
+    }})  # fmt: skip
+    saved, elapsed = TelemetryRecords(store).load(1000.0)
+    assert saved is not None
+    assert saved.contacts[A].current_s == telemetry.CURRENT_MIN_S
+    assert saved.contacts[A].located_age_s is None
+    assert saved.hold_left_s is None
+    r = Scheduler(0.0, saved=saved, elapsed_s=elapsed, lanes=wide)
+    assert r.located_ages(0.0) == {}
+    assert r.state(A, 0.0) == "answering"
+    assert r.state(B, 0.0) == "no_position"
+    assert r.state(A, telemetry.CURRENT_MIN_S - 100.0) == "answering"
+    assert r.state(A, telemetry.CURRENT_MIN_S - 99.0) == "away"
+
+
+def test_the_lists_are_the_literal_types() -> None:
+    assert telemetry.STATES == get_args(TelemetryState) == (
+        "waiting", "answering", "no_position", "away", "no_answer", "no_path", "look_alike",
+        "excluded", "off",
+    )  # fmt: skip
+    assert telemetry.STATUSES == get_args(TelemetryStatus) == ("off", "on", "paused", "unsupported")
+    assert telemetry.PAUSE_REASONS == get_args(PauseReason) == (
+        "first_start", "no_radio", "exclusions_unreadable", "auto_add", "radio_airtime",
+    )  # fmt: skip
+    assert telemetry.EVENTS == get_args(TelemetryEvent) == ("answered", "unanswered")
+    assert {"answering", "no_position"} == telemetry.CURRENT
+    assert set(telemetry.EVENT_STATES) <= set(telemetry.STATES)
+    assert set(telemetry.EVENT_STATES) >= telemetry.CURRENT
