@@ -701,6 +701,16 @@ def test_a_protected_contact_gets_its_device_with_its_first_advert(tmp_path: Pat
     assert bus.take() == []  # once it has a device, it keeps it
 
 
+def test_a_protected_contact_whose_record_has_a_position_gets_its_device_at_once(
+    tmp_path: Path,
+) -> None:
+    """Taken over from a phone app (a shared contact): no advert time, but a name and position
+    of its own, which the profile never writes."""
+    contacts, bus = devices(tmp_path, protected=frozenset({CAROL}))
+    contacts.update(mesh_of(node(CAROL, "Carol", position=Position(52.1, 9.2))))
+    assert [t for t, _ in bus.take()] == [topic(CAROL)]
+
+
 def test_a_protected_contact_put_back_on_the_radio_gets_its_device_back(tmp_path: Path) -> None:
     """Deleted from the radio meanwhile (the phone app): the profile puts it back without an
     advert, and its device comes back at the same connect, with its entity IDs."""

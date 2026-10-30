@@ -515,11 +515,13 @@ class ContactDevices:
     def _unheard(self, tracked: Tracked) -> bool:
         """A protected contact the radio profile put on the radio that never had a device and has
         not advertised yet: only a key and a placeholder name, which would fix its entity IDs.
-        Its device comes with its first advert; one that had a device gets it back at once."""
-        key = tracked.node.public_key
+        Its device comes with its first advert; one that had a device gets it back at once. A
+        record with a position came from elsewhere (a phone app): the profile writes none."""
+        key, node = tracked.node.public_key, tracked.node
         return (
             key in self._protected
-            and not tracked.node.last_advert
+            and not node.last_advert
+            and node.position is None
             and key not in self._records.slugs
         )
 
