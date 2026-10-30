@@ -10,10 +10,11 @@ design can be agreed on before the code is written.
 
 ## Ground rules
 
-- **Design first.** Changes to behaviour, interfaces (MQTT topics and payloads, configuration, CLI) or
-  dependencies start with an update to [`docs/design.md`](docs/design.md) and, for decisions with
-  alternatives, a new record in [`docs/decisions/`](docs/decisions/README.md). Records are never
-  edited after acceptance; a new record supersedes an old one.
+- **Design first.** Changes to behaviour, interfaces (MQTT topics and payloads, configuration, CLI,
+  Home Assistant discovery) or dependencies start with an update to
+  [`docs/design.md`](docs/design.md) and, for decisions with alternatives, a new record in
+  [`docs/decisions/`](docs/decisions/README.md). Records are never edited after acceptance; a new
+  record supersedes an old one.
 - **Test first.** Write the failing test, make it pass, then refactor. Every bug fix comes with a
   test that fails without the fix.
 - **Evidence for every protocol fact.** Statements about the MeshCore firmware cite the source file
@@ -83,8 +84,11 @@ GitHub Actions are pinned to full commit SHAs with the version as a comment.
 
 ## Releases
 
-Semantic Versioning from 1.0.0 on. The MQTT API, the configuration format and the CLI are public
-interfaces: incompatible changes need a new major version, features a new minor version, with a
-clear note in the changelog (an incompatible change starts with `**Breaking:**`). A pull request
+Semantic Versioning from 1.0.0 on. The MQTT API, the configuration format, the CLI and Home
+Assistant discovery are public interfaces
+([compatibility](docs/development.md#compatibility)): incompatible changes need a new major
+version, features a new minor version, with a clear note in the changelog (an incompatible change
+starts with `**Breaking:**`). After a change of one, `make interface` writes
+`tests/public_interface.json` again; CI compares it with the last release. A pull request
 releases by writing the next version and its changelog section; CI checks it and tags the merge
 commit, nobody tags by hand. Release steps are in [`docs/development.md`](docs/development.md).

@@ -6,6 +6,8 @@ typo never falls back to a default silently. Check a file with `meshcore-home-ga
 --config <file>`; the service exits with code 78 on configuration errors and systemd does not
 restart it then.
 
+Public interface: see [compatibility](development.md#compatibility).
+
 A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml).
 
 ## `[radio]`
