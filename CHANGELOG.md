@@ -8,6 +8,46 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [1.1.0a1] - 2026-10-30
+
+A pre-release of 1.1.0, the first of the three telemetry slices: the gateway asks the household's
+companions for their telemetry and puts their positions on the map. The hardware checklist was not
+run for it; 1.1.0 follows its telemetry steps.
+
+### Added
+
+- Telemetry from the radio's companions ([ADR 0018](docs/decisions/0018-telemetry-pulled-from-the-households-companions.md),
+  `[telemetry] enabled`, **off by default** for now): the gateway asks each companion (chat
+  contact) of the radio for its battery, readings and position with `SEND_TELEMETRY_REQ`, one at
+  a time and after the messages, and takes an answer only for the contact asked. Direct only: a
+  companion without a path is flooded only when it was heard within 30 minutes when the flood is
+  planned, at most 4 floods an hour; the gateway never resets or writes a path for it. Within
+  18 s an hour of the gateway's own transmit time and an estimated 90 s an hour of mesh airtime,
+  both starting empty at every start; about every 15 minutes at rest and 90 seconds while moving
+  for a neighbour, once an hour without a position, backing off for one that does not answer.
+  Positions go to `contacts/<key>` and the contact's tracker, with the new `position_accuracy_m`
+  (15) and `position_received_at`; `state.telemetry`, `telemetry_airtime_1h_s` and
+  `telemetry_mesh_airtime_1h_s`. A guide for setting up the companions:
+  [docs/companions.md](docs/companions.md). **No contact can be excluded yet** (it follows with
+  the next release, which turns telemetry on by default): switched on, it asks every chat contact.
+
+### Changed
+
+- `contacts/<key>.heard_via` can be `telemetry`: a companion heard only by its telemetry answers
+  moves `heard_at` (and *Last heard*) at most once an hour, and `hops`, `snr_db` and `rssi_dbm`
+  stay those of its last advert or message. `position_at` is when the position last changed. A
+  contact's tracker carries `gps_accuracy` 15 for a position from telemetry, so a companion up to
+  15 m outside a zone counts as inside.
+- After a path reset (a message's flood fallback) the gateway's copy of the contact table and
+  `contacts/<key>.path_known` show it at once, so the next message to that contact is budgeted
+  as the flood it will be.
+
+### Fixed
+
+- The history's position cap (100 000) no longer removes a contact's newest position, which only
+  `positions_days` removes: a companion at rest kept a single position, and lost it to the
+  positions of a moving one.
+
 ## [1.0.0] - 2026-10-30
 
 The first stable release. It ships the program of 1.0.0rc1, run on hardware with a LilyGo T-Echo

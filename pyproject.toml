@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "The meshcore-home-gateway contributors" }]
 keywords = ["meshcore", "lora", "mesh", "mqtt", "home-assistant", "gateway", "bridge"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: No Input/Output (Daemon)",
   "Intended Audience :: System Administrators",
   "Operating System :: POSIX :: Linux",

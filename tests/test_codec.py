@@ -58,6 +58,8 @@ def payload(frame_hex: str) -> bytes:
         (codec.get_tuning_params(), "3C 01 00 2B"),
         (codec.get_stats(StatsType.CORE), "3C 02 00 38 00"),
         (codec.get_stats(StatsType.PACKETS), "3C 02 00 38 02"),
+        # telemetry request (MyMesh.cpp:1680-1682): three unread bytes, then the full key
+        (codec.send_telemetry_request(h("a1" * 32)), "3C 24 00 27 00 00 00 " + "a1" * 32),
     ],
 )
 def test_request_frames(request_bytes: bytes, frame_hex: str) -> None:
@@ -76,6 +78,9 @@ def test_request_frames(request_bytes: bytes, frame_hex: str) -> None:
         (lambda: codec.send_channel_text(0, "", TS), "text"),
         (lambda: codec.send_channel_text(256, "x", TS), "channel"),
         (lambda: codec.reset_path(PEER[:6]), "public key"),
+        # a 4-byte request would ask the radio itself (MyMesh.cpp:1700)
+        (lambda: codec.send_telemetry_request(b""), "public key"),
+        (lambda: codec.send_telemetry_request(PEER[:6]), "public key"),
         (lambda: codec.set_device_time(-1), "timestamp"),
     ],
 )
@@ -108,6 +113,53 @@ def test_simple_pushes() -> None:
     advert = codec.decode(payload("3E 21 00 80 " + PEER.hex()))
     assert advert == codec.Advert(public_key=PEER, new=False)
     assert codec.decode(payload("3E 21 00 81 " + PEER.hex())) == codec.PathUpdated(PEER)
+
+
+LPP_FULL = h("01 74 01 9c 01 88 07 a5 f2 01 4e ad 00 2f 12 01 67 00 ea")  # 19 bytes
+
+
+@pytest.mark.parametrize(
+    ("frame", "flood", "timeout_ms"),
+    [
+        ("06 00 44 33 22 11 8a 0c 00 00", False, 3210),  # direct: 500 + (6 t + 250) (hops + 1)
+        ("06 01 45 33 22 11 94 1b 00 00", True, 7060),  # flood: 500 + 16 t
+    ],
+)
+def test_sent_after_a_telemetry_request(frame: str, flood: bool, timeout_ms: int) -> None:
+    """SENT carries the route and the estimated timeout; the tag is not needed (MyMesh.cpp:1691)."""
+    sent = codec.decode(h(frame))
+    assert isinstance(sent, codec.Sent)
+    assert (sent.flood, sent.timeout_ms) == (flood, timeout_ms)
+
+
+@pytest.mark.parametrize("padding", [9, 6, 0, 15])  # direct 9, flooded path return 6
+def test_telemetry_response(padding: int) -> None:
+    """Push 0x8B (MyMesh.cpp:739-749): reserved byte, the 6-byte prefix of the contact whose key
+    decrypted the reply, then the LPP with its AES zero padding, which the LPP decoder stops at."""
+    response = codec.decode(h("8b 00 a1 b2 c3 d4 e5 f6") + LPP_FULL + bytes(padding))
+    assert response == codec.TelemetryResponse(h("a1b2c3d4e5f6"), LPP_FULL + bytes(padding))
+    assert codec.decode(h("8b 00 a1 b2 c3 d4 e5 f6")) == codec.TelemetryResponse(
+        h("a1b2c3d4e5f6"), b""
+    )
+
+
+def test_a_binary_response_is_not_decoded() -> None:
+    """Push 0x8C carries a tag but no sender (MyMesh.cpp:750-776): never taken (ADR 0018)."""
+    frame = h("8c 00 44 33 22 11") + LPP_FULL + bytes(9)
+    assert codec.decode(frame) == codec.Unknown(0x8C, frame)
+
+
+def test_a_short_telemetry_response_is_a_protocol_error() -> None:
+    with pytest.raises(codec.ProtocolError):
+        codec.decode(h("8b 00 a1 b2 c3 d4 e5"))
+
+
+@pytest.mark.parametrize(
+    ("path_len", "path_bytes"), [(0xFF, None), (0x00, 0), (0x03, 3), (0x42, 4), (0x81, 3)]
+)
+def test_stored_path_size(path_len: int, path_bytes: int | None) -> None:
+    record = codec.ContactRecord(PEER, 1, 0, path_len, "Bob", 0, 0)
+    assert record.path_bytes == path_bytes
 
 
 def test_receive_log() -> None:

@@ -127,6 +127,13 @@ class ContactsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class TelemetryConfig:
+    """Asking the radio's companions for their telemetry (ADR 0018)."""
+
+    enabled: bool = False  # until contacts can be excluded
+
+
+@dataclass(frozen=True, slots=True)
 class DiagnosticsConfig:
     publish_rx_log: bool = False
     log_level: str = "info"
@@ -143,6 +150,7 @@ class Config:
     targets: tuple[Target, ...] = ()
     history: HistoryConfig = field(default_factory=HistoryConfig)
     contacts: ContactsConfig = field(default_factory=ContactsConfig)
+    telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
 
 
@@ -281,6 +289,7 @@ def _build(root: _Section) -> Config:
         targets=_targets(root.section("targets")),
         history=_checked(root.section("history"), _history),
         contacts=_checked(root.section("contacts"), _contacts),
+        telemetry=_checked(root.section("telemetry"), _telemetry),
         diagnostics=_checked(root.section("diagnostics"), _diagnostics),
     )
     root.check_unknown()
@@ -502,6 +511,10 @@ def _contacts(s: _Section) -> ContactsConfig:
     return ContactsConfig(manage=s.boolean("manage", True))
 
 
+def _telemetry(s: _Section) -> TelemetryConfig:
+    return TelemetryConfig(enabled=s.boolean("enabled", False))
+
+
 def _diagnostics(s: _Section) -> DiagnosticsConfig:
     level = cast(str, s.string("log_level", "info"))
     if level not in LOG_LEVELS:
@@ -527,7 +540,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
-    "contacts.manage": bool,
+    "contacts.manage": bool, "telemetry.enabled": bool,
     "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
 }  # fmt: skip
 

@@ -236,6 +236,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
         JsonStateFile,
         ProfileRecords,
         RetainedKeys,
+        TelemetryRecords,
     )
 
     stop = asyncio.Event()
@@ -267,6 +268,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
         config, bus, lambda: transport_for(config), CommandLedger(store),
         components=AnnouncedComponents(store), observer=observer, devices=devices,
         profile=profile, manage_components=AnnouncedComponents(store, OBJECT_ID),
+        telemetry_records=TelemetryRecords(store),
     )  # fmt: skip
     try:
         await bridge.run(stop)
@@ -330,6 +332,8 @@ def _check_config(args: argparse.Namespace) -> int:
     airtime = config.airtime
     print(f"  airtime    {airtime.budget_s_per_hour:g} s per hour, burst {airtime.burst_s:g} s")
     print(f"  contacts   {'managed on request' if config.contacts.manage else 'not managed'}")
+    telemetry = "asked of every companion" if config.telemetry.enabled else "off"
+    print(f"  telemetry  {telemetry}")
     from meshcore_home_gateway.bridge import protected_look_alikes  # noqa: PLC0415
 
     for warning in protected_look_alikes(config):

@@ -206,7 +206,8 @@ them), and log messages.
   - the size limits and list bounds of MQTT;
   - the value lists that are not under `mqtt > values` or `cli > values`: the `reason` of
     deliveries, contact and setting events, each setting's `state`, `heard_via`,
-    `position_source`, and `direction`, `kind` and `state` in the history;
+    `position_source`, `telemetry` in the state document, and `direction`, `kind` and `state` in
+    the history;
   - the string formats of settings;
   - the forms an option's value takes: `--tcp`'s HOST[:PORT], the keys, labels, links and cards
     `contacts add` accepts;

@@ -195,6 +195,15 @@ def reset_path(public_key: bytes) -> bytes:
     return bytes([Command.RESET_PATH]) + public_key
 
 
+def send_telemetry_request(public_key: bytes) -> bytes:
+    """SEND_TELEMETRY_REQ (MyMesh.cpp:1680-1699): three bytes the firmware does not read, then
+    the full key it looks the contact up by. Four bytes in all would ask the radio itself
+    (:1700), 5 to 35 are refused with ERR 1 (:2059-2061)."""
+    if len(public_key) != KEY_BYTES:
+        raise ValueError("send_telemetry_request needs the full 32-byte public key")
+    return bytes([Command.SEND_TELEMETRY_REQ, 0, 0, 0]) + public_key
+
+
 def expected_ack(timestamp: int, attempt: int, text: str, own_public_key: bytes) -> bytes:
     """ACK code the recipient will send: SHA256(ts LE32 || attempt&3 || text || own key)[0:4]."""
     data = _u32(timestamp, "timestamp") + bytes([attempt & 3]) + text.encode("utf-8")
@@ -351,6 +360,13 @@ class ContactRecord:
         return None if self.out_path_len == NO_PATH else self.out_path_len & 0x3F
 
     @property
+    def path_bytes(self) -> int | None:
+        """Bytes of the stored path (hops times hash size); None without a known path."""
+        if self.out_path_len == NO_PATH:
+            return None
+        return (self.out_path_len & 0x3F) * ((self.out_path_len >> 6) + 1)
+
+    @property
     def path_hashes(self) -> list[bytes]:
         """The repeaters of the stored path, as hashes (prefixes of their keys)."""
         if self.out_path_len == NO_PATH:
@@ -465,6 +481,15 @@ Stats = CoreStats | RadioStats | PacketStats
 
 
 @dataclass(frozen=True, slots=True)
+class TelemetryResponse:
+    """Push 0x8B (MyMesh.cpp:739-749): the answer to the pending telemetry request, matched by
+    the radio on its tag alone. `prefix` names the contact whose key decrypted it."""
+
+    prefix: bytes  # 6 bytes
+    data: bytes  # CayenneLPP, then 0 to 15 zero bytes of AES padding
+
+
+@dataclass(frozen=True, slots=True)
 class RxLog:
     snr_db: float
     rssi_dbm: int
@@ -491,7 +516,7 @@ Decoded = (
     Ok | Err | Disabled | SelfInfo | DeviceInfo | CurrentTime | Sent | SendConfirmed
     | ContactsStart | ContactRecord | EndOfContacts | ChannelInfo | Battery | NoMoreMessages
     | MessageWaiting | Advert | PathUpdated | ContactDeleted | AutoAddConfig | TuningParams
-    | CoreStats | RadioStats | PacketStats | RxLog | Unknown
+    | CoreStats | RadioStats | PacketStats | TelemetryResponse | RxLog | Unknown
 )  # fmt: skip
 
 
@@ -543,6 +568,11 @@ def _advert(p: bytes) -> Advert:
 def _path_updated(p: bytes) -> PathUpdated:
     _need(p, 33)
     return PathUpdated(public_key=p[1:33])
+
+
+def _telemetry_response(p: bytes) -> TelemetryResponse:
+    _need(p, 2 + PREFIX_BYTES)  # byte 1 is reserved
+    return TelemetryResponse(prefix=p[2 : 2 + PREFIX_BYTES], data=p[2 + PREFIX_BYTES :])
 
 
 def _rx_log(p: bytes) -> RxLog:
@@ -715,4 +745,5 @@ _DECODERS: dict[int, Callable[[bytes], Decoded]] = {
     Response.TUNING_PARAMS: _tuning,
     Response.STATS: _stats,
     Push.LOG_RX_DATA: _rx_log,
+    Push.TELEMETRY_RESPONSE: _telemetry_response,
 }

@@ -22,7 +22,10 @@ class AirtimeBudget:
     the service, so each restart within T adds up to burst_s.
     """
 
-    def __init__(self, per_hour_s: float, burst_s: float, now: float) -> None:
+    def __init__(
+        self, per_hour_s: float, burst_s: float, now: float, tokens: float | None = None
+    ) -> None:
+        """`tokens`: the level at the start, if not a full burst (telemetry starts empty)."""
         if not 0.0 < per_hour_s <= HOUR_S:
             raise ValueError(f"airtime budget per hour must be in (0, 3600] s, got {per_hour_s}")
         if burst_s <= 0.0:
@@ -30,7 +33,7 @@ class AirtimeBudget:
         self._per_hour = per_hour_s
         self._rate = per_hour_s / HOUR_S
         self._capacity = burst_s
-        self._tokens = burst_s
+        self._tokens = burst_s if tokens is None else max(0.0, min(burst_s, tokens))
         self._last = now
         self._log: deque[tuple[float, float]] = deque()
 
@@ -58,6 +61,18 @@ class AirtimeBudget:
             raise ValueError(f"{airtime_s:.3f} s requested, {self._tokens:.3f} s available")
         self._tokens = max(0.0, self._tokens - airtime_s)
         self._log.append((now, airtime_s))
+
+    def charge(self, airtime_s: float, now: float) -> None:
+        """Count airtime that was spent, also beyond the level: it may go below zero, a debt
+        that the refill pays back before anything else can be spent."""
+        self._refill(now)
+        self._tokens -= airtime_s
+        self._log.append((now, airtime_s))
+
+    def owe(self, airtime_s: float, now: float) -> None:
+        """Start from a debt spent before this bucket existed (not counted in `used_s`)."""
+        self._refill(now)
+        self._tokens -= airtime_s
 
     def used_s(self, now: float, window_s: float = HOUR_S) -> float:
         """Airtime spent in the last `window_s` seconds (for status reports)."""

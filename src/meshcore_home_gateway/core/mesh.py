@@ -12,11 +12,13 @@ from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 
-from meshcore_home_gateway.core.model import Position
+from meshcore_home_gateway.core.model import Position, distance_m
 
 NODE_TYPES = {1: "chat", 2: "repeater", 3: "room", 4: "sensor"}  # advert types
 MAX_NODES = 50  # heard nodes kept; the least recently heard goes first
 NODE_TTL_S = 7 * 86_400.0  # a heard node is forgotten this long after it was last heard
+FIX_MOVED_M = 20.0  # a telemetry position replaces the fix from this distance on
+HEARD_REFRESH_S = 3600.0  # telemetry answers alone move "last heard" at most this often
 
 
 def type_name(node_type: int) -> str:
@@ -69,6 +71,8 @@ class Tracked:
     first_heard: float | None = None
     heard: Heard | None = None
     fix: Fix | None = None
+    position_received_at: float | None = None  # the newest telemetry answer with a position
+    restored_heard: Heard | None = None  # last heard as the history knew it at the start
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +116,7 @@ class Mesh:
                 tracked = self.nodes.pop(key, None) or Tracked(node)  # a heard node now added
                 heard, fix = self._restored.pop(key, (None, None))
                 tracked.heard = _newer(tracked.heard, heard)
+                tracked.restored_heard = heard
                 tracked.fix = fix
                 tracked.first_heard = tracked.first_heard or (heard.at if heard else None)
                 previous = None
@@ -165,13 +170,46 @@ class Mesh:
             tracked.first_heard = heard.at
         return True
 
-    def contact_fix(self, key: str, fix: Fix) -> bool:
-        """A position reported by the contact itself (telemetry); False if it is no contact."""
+    def contact_answered(
+        self, key: str, at: float, position: Position | None, altitude_m: float | None
+    ) -> bool:
+        """A telemetry answer of the contact (ADR 0018); True when `heard` moved.
+
+        While only its answers are heard, `heard` moves at most every HEARD_REFRESH_S and keeps
+        the signal of the last advert or message (an answer reports none). The fix changes when
+        the position moved FIX_MOVED_M or came from an advert: its time is when it changed, not
+        when it was last confirmed. Answers come in the order the poller took them (by frame,
+        not by the wall clock, which may be set back)."""
         tracked = self.contacts.get(key)
         if tracked is None:
             return False
-        if tracked.fix is None or fix.at >= tracked.fix.at:
-            tracked.fix = fix
+        heard = tracked.heard
+        moved = (
+            heard is None or heard.how != "telemetry" or not 0 <= at - heard.at < HEARD_REFRESH_S
+        )
+        if moved:
+            answer = Heard(at, "telemetry", heard.signal if heard else Signal())
+            if heard is not None and heard.how == "telemetry":  # also after the clock went back
+                tracked.heard = answer
+            else:  # an advert or message newer than the answer stays
+                self.contact_heard(key, answer)
+                moved = tracked.heard is answer
+        if position is not None:
+            tracked.position_received_at = at
+            fix = tracked.fix
+            if (
+                fix is None or fix.source != "telemetry"
+                or distance_m(fix.position, position) >= FIX_MOVED_M
+            ):  # fmt: skip
+                tracked.fix = Fix(position, at, "telemetry", altitude_m)
+        return moved
+
+    def path_reset(self, key: str) -> bool:
+        """The radio forgot its path to the contact; True if the record had one."""
+        tracked = self.contacts.get(key)
+        if tracked is None or tracked.node.path_hops is None:
+            return False
+        tracked.node = replace(tracked.node, path_hops=None)
         return True
 
     # --- heard nodes ---------------------------------------------------------------------------

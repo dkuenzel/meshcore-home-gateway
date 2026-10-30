@@ -13,15 +13,17 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway.bridge import protected_keys
+from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core.telemetry import Answer
 from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Push
-from meshcore_home_gateway.radio.session import AdvertHeard, ContactsRead
+from meshcore_home_gateway.radio.session import AdvertHeard, ContactsRead, PathReset
 from meshcore_home_gateway.state import JsonStateFile, RetainedKeys
 from meshcore_home_gateway.views import iso
-from tests.radio_emulator import EmulatedContact, EmulatedRadio
+from tests.radio_emulator import LPP_FULL, EmulatedContact, EmulatedRadio
 from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
 
 ROOT = "meshcore/radio1"
@@ -404,3 +406,78 @@ def test_a_replay_heard_before_the_first_table_read_does_not_win(tmp_path: Path)
     assert tracked.heard.at == NOW + 30
     assert [(row.name, row.last_advert) for row in history.nodes()] == [("Carol", int(NOW) - 5)]
     history.close()
+
+
+def answer(at: float, data: bytes = LPP_FULL) -> Answer:
+    return Answer(lpp.decode(data), at, False, 0, False, "resting")
+
+
+def test_telemetry_answers_publish_the_position_and_store_only_changes(tmp_path: Path) -> None:
+    """ADR 0018: the position goes to the contact's document (and its tracker); the history
+    gets a position row when it moved and a node row at most hourly from answers alone."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+    tracker_updates: list[bool] = []
+    observer.on_contacts.append(lambda _mesh: tracker_updates.append(True))
+    key = ALICE.public_key.hex()
+    observer.radio_event(ContactsRead({key: contact_record(ALICE)}, NOW))
+    tracker_updates.clear()
+    observer.telemetry(key, answer(NOW + 10))
+    document = last(bus, f"{ROOT}/contacts/{key}")
+    assert (document["latitude"], document["longitude"], document["altitude_m"]) == (
+        50.12345, 8.56775, 120.5,
+    )  # fmt: skip
+    assert (document["position_source"], document["position_accuracy_m"]) == ("telemetry", 15.0)
+    assert document["heard_via"] == "telemetry"
+    assert tracker_updates == [True]  # its device gets a tracker at once
+    observer.telemetry(key, answer(NOW + 100))  # resting: nothing new but the time received
+    assert tracker_updates == [True]
+    document = last(bus, f"{ROOT}/contacts/{key}")
+    assert document["position_at"] == iso(NOW + 10)
+    assert document["position_received_at"] == iso(NOW + 100)
+    assert document["heard_at"] == iso(NOW + 10)  # moves hourly from answers alone
+    assert len(history.trace(key, 0)) == 1
+    assert [row.heard.at for row in history.nodes() if row.key == key] == [NOW + 10]
+    observer.telemetry(key, answer(NOW + 3610))
+    assert [row.heard.at for row in history.nodes() if row.key == key] == [NOW + 3610]
+    observer.telemetry("e5" * 32, answer(NOW + 3620))  # not a contact (any more): nothing
+    assert not retained(bus, f"{ROOT}/contacts/{'e5' * 32}")
+    history.close()
+
+
+def test_an_answer_without_position_keeps_the_last_one() -> None:
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
+    key = ALICE.public_key.hex()
+    observer.radio_event(ContactsRead({key: contact_record(ALICE)}, NOW))
+    observer.telemetry(key, answer(NOW + 10))
+    observer.telemetry(key, answer(NOW + 20, bytes.fromhex("0174018b016700d9")))
+    document = last(bus, f"{ROOT}/contacts/{key}")
+    assert (document["latitude"], document["position_received_at"]) == (50.12345, iso(NOW + 10))
+
+
+def test_a_path_reset_is_published_before_the_next_table_read() -> None:
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
+    key = BOB.public_key.hex()
+    observer.radio_event(ContactsRead({key: contact_record(BOB)}, NOW))
+    assert last(bus, f"{ROOT}/contacts/{key}")["path_known"] is True
+    observer.radio_event(PathReset(BOB.public_key))
+    document = last(bus, f"{ROOT}/contacts/{key}")
+    assert (document["path_known"], document["path_hops"]) == (False, None)
+    published = len(bus.published)
+    observer.radio_event(PathReset(BOB.public_key))  # nothing changed
+    observer.radio_event(PathReset(ALICE.public_key))  # no contact
+    assert len(bus.published) == published
+
+
+def test_the_radios_own_time_on_air_needs_two_readings(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, _bus, _notes):
+            assert bridge.observer.radio_tx_1h_s() is None  # one reading, at the connect
+
+    scenario(main)

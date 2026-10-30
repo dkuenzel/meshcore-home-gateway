@@ -116,13 +116,13 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `queue_ttl_s` | `600` | time to live of a message, 1–86400: no attempt starts after it. Never sent within it, it expires; sent but not acknowledged, it fails when the acknowledgement wait of its last attempt ends (up to 60 s after the time to live) |
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
-| `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels) |
+| `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
 
 ## `[airtime]`
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `budget_s_per_hour` | `36` | seconds of transmission per hour for the bridge's messages (1 % of the hour), 0.001–3600 |
+| `budget_s_per_hour` | `36` | seconds of transmission per hour for the bridge's messages (1 % of the hour), 0.001–3600; telemetry has its own lanes (`[telemetry]`) |
 | `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
 
 Within one run of the service, the airtime the bridge counts over any interval *T* stays below
@@ -166,7 +166,8 @@ host that takes the radio's network address can pose as the radio and forge comm
 ## `[history]`
 
 The gateway keeps a history in `/var/lib/meshcore-home-gateway/history.sqlite3`: messages in and
-out, positions of contacts, and when each node was last heard
+out, positions of contacts (from their adverts and their telemetry, one row per change), and when
+each node was last heard
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)). It fills the `history`
 document after a restart, and later the position traces. Positions are kept only for contacts,
 never for nodes the gateway merely heard.
@@ -175,7 +176,7 @@ never for nodes the gateway merely heard.
 | --- | --- | --- |
 | `enabled` | `true` | keep the history; with `false` nothing is written (delete the file by hand to remove what is there) |
 | `messages_days` | `30` | days messages are kept, 1–3650; at most 10 000 messages |
-| `positions_days` | `30` | days positions are kept, 1–3650 |
+| `positions_days` | `30` | days positions are kept, 1–3650; beyond 100 000 positions the oldest go first, except each contact's newest, which only its age removes |
 
 The file holds message texts and positions of the household's people: it is readable only by the
 service user. If it cannot be opened or written, the gateway logs it and runs without a history;
@@ -194,6 +195,49 @@ senders share their first 6 bytes: the radio names a sender by them only (ADR 00
 profile, when it writes, adds the lower key unless the other is on the radio, and never both;
 with `protect_contacts = false` or `manage = "observe"` the gateway adds neither, and refuses
 requests to add either. If both are on the radio, remove one.
+
+## `[telemetry]`
+
+The gateway asks the radio's companions for their telemetry: battery, readings and, with a GPS,
+their position ([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)).
+A companion answers only contacts it allows: set the household's companions up first
+([companions.md](companions.md)).
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | ask every companion (chat contact) of the radio's table, one at a time, after the messages; positions go to `contacts/<key>` and the contact's tracker in Home Assistant |
+
+**No contact can be excluded yet** (ADR 0018 provides it; it follows in the next release, and the
+default becomes `true` with it). Switching telemetry on asks every chat contact of the radio:
+keep only household companions as chat contacts before you do. A contact that answers everyone
+would be tracked like a household member.
+
+Fixed by ADR 0018, not settings:
+
+* **Lanes**, separate from `[airtime]`: 18 s per hour of the gateway's own transmit time (0.5 %)
+  and 90 s per hour of estimated airtime in the mesh (every hop of request and answer, a flood as
+  repeated by 20 repeaters: an estimate nothing measures). Over any interval *T* telemetry stays
+  below 0.82 s + 18 s × *T* / 3600 of own transmit time and 20.4 s + 90 s × *T* / 3600 in the
+  mesh at EU/UK Narrow, plus at most one request beyond. The lanes start empty at every start (a
+  debt is carried over), so unlike `[airtime]` a restart adds no burst: the first request goes out
+  about 76 s after the radio connects (EU/UK Narrow). Requests pause while the radio's own measured
+  transmit time reaches 180 s in an hour.
+* **Intervals**: 1 % of channel time per companion while it moves, 0.1 % at rest, at least 90 s
+  and 15 minutes; once an hour without a position. A companion that stops answering is asked again
+  after 30 s, then at least every 30 minutes for a day (or at its normal interval, if that is
+  longer: an hour without a position), then up to every 6 hours.
+* **Routes**: direct only. A companion without a stored path is asked by flood only when it was
+  heard within 30 minutes when the flood is planned (an advert, a message, a path it sent; the
+  flood may go out later while it waits for its airtime or the hourly limit, with several
+  companions waiting an hour or more), at most 4 floods an hour and one per companion per
+  30 minutes; one that has not answered within a day, once a day. The gateway
+  never resets or writes a path for telemetry: a companion whose path a message's flood fallback
+  (`flood_after`) reset is asked again once it advertises or sends something, then at once.
+
+Needs: the radio adds contacts by hand only, no type automatically (the managed profile sets
+that; otherwise requests pause, because a node the radio adds could take a companion's place in
+its answers). Over TCP an answer can be lost while the radio's push queue is full; USB stays the
+recommendation. The schedule (no positions) is kept in `state.json`.
 
 ## `[diagnostics]`
 

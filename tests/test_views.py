@@ -43,7 +43,25 @@ def test_a_contact_document_has_every_key_and_iso_times() -> None:
         "heard_at": "2027-01-15T08:00:05+00:00", "heard_via": "message", "hops": 2,
         "snr_db": 6.25, "rssi_dbm": -97, "latitude": 53.55, "longitude": 9.99,
         "altitude_m": None, "position_at": "2027-01-15T07:59:00+00:00",
-        "position_source": "advert", "advert_position": True,
+        "position_source": "advert", "position_accuracy_m": None, "position_received_at": None,
+        "advert_position": True,
+    }  # fmt: skip
+
+
+def test_a_telemetry_position_has_its_accuracy_and_when_it_was_received() -> None:
+    mesh = Mesh()
+    mesh.contacts_read([Node(KEY, "Alice", 1)], T)
+    mesh.contact_answered(KEY, T + 10, Position(50.12345, 8.56775), 120.5)
+    mesh.contact_answered(KEY, T + 100, Position(50.12345, 8.56775), 120.5)
+    document = contact_document(mesh.contacts[KEY])
+    assert {k: document[k] for k in (
+        "latitude", "longitude", "altitude_m", "position_at", "position_source",
+        "position_accuracy_m", "position_received_at", "heard_via", "advert_position",
+    )} == {
+        "latitude": 50.12345, "longitude": 8.56775, "altitude_m": 120.5,
+        "position_at": "2027-01-15T08:00:10+00:00", "position_source": "telemetry",
+        "position_accuracy_m": 15.0, "position_received_at": "2027-01-15T08:01:40+00:00",
+        "heard_via": "telemetry", "advert_position": False,
     }  # fmt: skip
 
 
@@ -55,7 +73,7 @@ def test_a_contact_never_heard_has_nulls() -> None:
     assert nulls == {
         "path_hops", "last_advert_at", "first_heard_at", "heard_at", "heard_via", "hops",
         "snr_db", "rssi_dbm", "latitude", "longitude", "altitude_m", "position_at",
-        "position_source",
+        "position_source", "position_accuracy_m", "position_received_at",
     }  # fmt: skip
     assert (document["path_known"], document["flags"], document["type"]) == (False, [], "repeater")
 

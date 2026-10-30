@@ -5,8 +5,11 @@ frames (codes >= 0x80) in between. The session therefore
 
 * sends one command at a time (`asyncio.Lock`) and hands the waiting command only the frames
   with the response codes it expects; anything else is logged and dropped;
-* routes push frames: new messages trigger a sync, acknowledgements, received-packet logs and
-  adverts go to the event queue, adverts also mark the contact table for a refresh;
+* routes push frames: new messages trigger a sync, acknowledgements, received-packet logs,
+  adverts, path updates and telemetry answers go to the event queue, adverts and path updates
+  also mark the contact table for a refresh;
+* numbers every frame it reads, so an answer pushed before or after a command's answer can be
+  told apart (telemetry, ADR 0018);
 * reports every contact table it reads and the radio's statistics (with the battery heartbeat)
   to the event queue, for the views of the radio and its contacts;
 * reports every full key the radio names to `on_contact_key`, with whether the radio holds or
@@ -20,12 +23,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import itertools
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol, TypeVar
 
+from meshcore_home_gateway.core.airtime import LoRaParams, meshcore_lora
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.model import InboundMessage
 from meshcore_home_gateway.protocol import codec
@@ -87,6 +92,11 @@ class RadioInfo:
     def name(self) -> str:
         return self.self_info.name
 
+    @property
+    def lora(self) -> LoRaParams:
+        s = self.self_info
+        return meshcore_lora(float(s.bandwidth_hz), s.spreading_factor, s.coding_rate)
+
 
 @dataclass(frozen=True, slots=True)
 class MessageReceived:
@@ -100,6 +110,41 @@ class MessageReceived:
 class AckReceived:
     ack: bytes
     round_trip_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class TelemetryReceived:
+    """Push 0x8B: the answer to the pending telemetry request, named by the 6-byte prefix of
+    the contact whose key decrypted it."""
+
+    prefix: bytes
+    data: bytes
+    received_at: float
+    seq: int  # the frame's number in its session
+    session_serial: int  # numbers are compared only within one session
+
+
+@dataclass(frozen=True, slots=True)
+class TelemetrySent:
+    """The radio's answer to a telemetry request: it sent it."""
+
+    flood: bool  # the route it took
+    timeout_ms: int  # the radio's estimate of the round trip
+    seq: int  # the number of the SENT frame
+
+
+@dataclass(frozen=True, slots=True)
+class PathChanged:
+    """Push 0x81: the radio stored a path the contact sent (also the same one again)."""
+
+    public_key: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class PathReset:
+    """RESET_PATH was answered: the radio floods to the contact until it learns a path."""
+
+    public_key: bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,14 +188,20 @@ class Barrier:
 
 
 RadioEvent = (
-    MessageReceived | AckReceived | PacketLogged | AdvertHeard | ContactsRead | StatsRead | Barrier
-)
+    MessageReceived | AckReceived | PacketLogged | AdvertHeard | ContactsRead | StatsRead
+    | TelemetryReceived | PathChanged | PathReset | Barrier
+)  # fmt: skip
 
 
 @dataclass
 class _Pending:
     expected: ResponseCodes
     frames: asyncio.Queue[bytes] = field(default_factory=asyncio.Queue)
+    seq: int = -1  # the number of the first frame queued
+
+
+class _WithdrawnError(Exception):
+    """A command's `unless` held once it had the lock: nothing was written."""
 
 
 class CompanionSession:
@@ -184,8 +235,11 @@ class CompanionSession:
         self.on_contact_key: Callable[[str, bool], None] | None = None  # key, held as contact
         self.profile: ProfileHook | None = None  # the managed radio profile (ADR 0020)
         self.contacts_read_at = -1  # command count of the read behind contact_records
+        self.contacts_read_started_at = -1  # command count of the newest read, also one running
         self._contacts_changed_at = -1  # command count at the last contact push
         self._commands_sent = 0
+        self._frames_read = 0
+        self.serial = next(_SERIALS)  # tells this session's frame numbers from another's
         self.contact_records: dict[str, codec.ContactRecord] = {}
         self.channels: dict[int, str] = {}
         self.battery: codec.Battery | None = None
@@ -396,7 +450,43 @@ class CompanionSession:
         await self._expect_ok("send channel text", codec.send_channel_text(index, text, timestamp))
 
     async def reset_path(self, public_key: bytes) -> None:
+        """RESET_PATH. The radio changes only the path length (MyMesh.cpp:1317-1327) and pushes
+        nothing: the cached record is patched the same way, so nothing plans on the path it
+        forgot, and a `PathReset` goes to the event queue."""
         await self._expect_ok("reset path", codec.reset_path(public_key))
+        key = public_key.hex()
+        record = self.contact_records.get(key)
+        if record is not None and record.path_known:
+            raw = record.raw
+            if len(raw) == codec.CONTACT_RECORD_BYTES:  # byte 34 is the path length
+                raw = raw[:34] + bytes([codec.NO_PATH]) + raw[35:]
+            patched = replace(record, out_path_len=codec.NO_PATH, out_path=b"", raw=raw)
+            # a new mapping: a table already reported keeps the one it was read as
+            self.contact_records = {**self.contact_records, key: patched}
+        await self._events.put(PathReset(public_key))
+
+    async def request_telemetry(
+        self, public_key: bytes, *, unless: Callable[[], bool] | None = None
+    ) -> TelemetrySent | None:
+        """SEND_TELEMETRY_REQ; the answer comes later as a `TelemetryReceived`. None: `unless()`
+        was true once the command had the lock, and nothing was written. CommandFailedError:
+        `unsupported_cmd` (no such command), `not_found` (no such contact), `table_full` (no
+        packet buffer free) (MyMesh.cpp:1680-1699)."""
+        name = "telemetry request"
+        request = codec.send_telemetry_request(public_key)
+        try:
+            async with self._command(request, {Response.SENT}, unless=unless) as pending:
+                decoded = self._decode(await self._next(pending), name)
+                seq = pending.seq
+        except _WithdrawnError:
+            return None
+        if isinstance(decoded, codec.Err):
+            raise CommandFailedError(name, decoded.name)
+        if not isinstance(decoded, codec.Sent):
+            error = RadioError(f"{name}: unexpected answer {type(decoded).__name__}")
+            self._end(error)
+            raise error
+        return TelemetrySent(decoded.flood, decoded.timeout_ms, seq)
 
     async def refresh_contacts(self, *, newer_than: int | None = None) -> None:
         """Read the contact table. With `newer_than`, a read that started after that command count
@@ -409,7 +499,7 @@ class CompanionSession:
                 return
         records: dict[str, codec.ContactRecord] = {}
         async with self._command(codec.get_contacts(), _CONTACT_CODES) as pending:
-            started = self._commands_sent
+            started = self.contacts_read_started_at = self._commands_sent
             while True:
                 decoded = self._decode(await self._next(pending), "get contacts")
                 if isinstance(decoded, codec.Err):
@@ -558,15 +648,18 @@ class CompanionSession:
             self._end(exc if isinstance(exc, RadioError) else RadioError(str(exc) or repr(exc)))
 
     async def _dispatch(self, frame: bytes) -> None:
-        code = frame[0]
+        self._frames_read += 1
+        seq, code = self._frames_read, frame[0]
         if code >= PUSH_MIN:
-            await self._push(frame)
+            await self._push(frame, seq)
         elif self._pending is not None and code in self._pending.expected:
+            if self._pending.seq < 0:
+                self._pending.seq = seq
             self._pending.frames.put_nowait(frame)
         else:
             log.debug("radio: unexpected frame 0x%02x dropped", code)
 
-    async def _push(self, frame: bytes) -> None:
+    async def _push(self, frame: bytes, seq: int) -> None:
         try:
             decoded = codec.decode(frame)
         except codec.ProtocolError as exc:
@@ -585,6 +678,12 @@ class CompanionSession:
         elif isinstance(decoded, codec.PathUpdated | codec.ContactDeleted):
             self._report_key(decoded.public_key)
             self._contacts_changed()
+            if isinstance(decoded, codec.PathUpdated):
+                await self._events.put(PathChanged(decoded.public_key))
+        elif isinstance(decoded, codec.TelemetryResponse):  # a prefix, not a key: none reported
+            await self._events.put(
+                TelemetryReceived(decoded.prefix, decoded.data, self._wall(), seq, self.serial)
+            )
         elif frame[0] == Push.CONTACTS_FULL:
             self._contacts_changed()
         else:
@@ -599,13 +698,19 @@ class CompanionSession:
             self.on_contact_key(public_key.hex(), held)
 
     @contextlib.asynccontextmanager
-    async def _command(self, request: bytes, expected: Iterable[int]) -> AsyncIterator[_Pending]:
-        """Send one command; the yielded queue receives the frames with the expected codes."""
+    async def _command(
+        self, request: bytes, expected: Iterable[int], *, unless: Callable[[], bool] | None = None
+    ) -> AsyncIterator[_Pending]:
+        """Send one command; the yielded queue receives the frames with the expected codes.
+        `unless`: checked once the command has the lock; if true, nothing is written and
+        `_WithdrawnError` is raised."""
         if self.closed:
             raise self._not_sent()
         async with self._lock:
             if self.closed:  # it ended while this command waited for the lock: send nothing
                 raise self._not_sent()
+            if unless is not None and unless():
+                raise _WithdrawnError
             pending = _Pending(frozenset(expected) | {Response.ERR})
             self._pending = pending
             try:
@@ -678,6 +783,7 @@ class CompanionSession:
             raise CommandFailedError(name, "disabled")
 
 
+_SERIALS = itertools.count(1)
 _CONTACT_CODES = frozenset({Response.CONTACTS_START, Response.CONTACT, Response.END_OF_CONTACTS})
 _SYNC_CODES = codec.MESSAGE_CODES | {Response.NO_MORE_MESSAGES}
 

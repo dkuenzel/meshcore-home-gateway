@@ -31,6 +31,9 @@ flowchart LR
   are deduplicated.
 - **Commands** only from direct messages of allowlisted contacts (bound to their full public key),
   with replay protection; channel messages never command.
+- **Telemetry of the household's companions** (optional): battery and position asked of each in
+  turn, within an airtime budget of its own, only from those who allow the gateway; positions on
+  Home Assistant's map ([`docs/companions.md`](docs/companions.md)).
 - **Home Assistant:** nothing to install there; MQTT discovery creates one device with radio
   link, battery, airtime and queue sensors, event entities for messages, deliveries and commands,
   and a notify entity per target.
@@ -126,6 +129,7 @@ automations on the event entities *Message*, *Command* and *Delivery*. Examples:
 | [`docs/mqtt-api.md`](docs/mqtt-api.md) | Topics and payloads |
 | [`docs/home-assistant.md`](docs/home-assistant.md) | Entities, discovery, example automations |
 | [`docs/configuration.md`](docs/configuration.md) | Every setting with default and meaning |
+| [`docs/companions.md`](docs/companions.md) | Setting up the household's companions for telemetry |
 | [`docs/deployment.md`](docs/deployment.md) | Proxmox installer, manual installation, updates, operations |
 | [`docs/protocol.md`](docs/protocol.md) | The companion protocol subset, with firmware sources |
 | [`docs/testing.md`](docs/testing.md) | Test suites and the hardware checklist |

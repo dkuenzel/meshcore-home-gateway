@@ -147,8 +147,10 @@ flowchart TB
 | Package / module | Responsibility |
 | --- | --- |
 | `core.text` | Clean, transliterate and limit outgoing text. |
-| `core.airtime` | LoRa time on air; on-air size of MeshCore text packets. |
-| `core.budget` | Airtime token bucket; event rate limit; duplicate suppression. |
+| `core.airtime` | LoRa time on air; on-air size of MeshCore text and telemetry packets, the airtime a telemetry request causes. |
+| `core.budget` | Airtime token bucket (with a debt for airtime already spent); event rate limit; duplicate suppression. |
+| `core.lpp` | CayenneLPP decoder for telemetry answers; the position in them. |
+| `core.telemetry` | The telemetry schedule: whom to ask next, by which route and when, within two airtime lanes (§6.11). |
 | `core.contacts` | Resolve 6-byte key prefixes to full keys; detect ambiguity. |
 | `core.commands` | Decide whether a message is an authorised command. |
 | `core.mesh` | The observer's view of the mesh: contacts with when they were heard and where they are, nodes heard but not added; the radio's measured airtime over an hour. |
@@ -160,7 +162,8 @@ flowchart TB
 | `radio.transport` | Serial port (termios) and TCP byte streams. |
 | `radio.session` | Connection handshake, request/response, pushes, message sync, time sync. |
 | `bridge` | Outbound queue with delivery and retries, inbound handling, status reporting, supervision. |
-| `observer` | Feeds the mesh view and the history from the radio's reports, messages and deliveries; publishes the documents. |
+| `observer` | Feeds the mesh view and the history from the radio's reports, messages, telemetry answers and deliveries; publishes the documents. |
+| `telemetry_poller` | Asks the companions for telemetry, one at a time, after the messages; takes an answer only for the contact asked (§6.11). |
 | `history` | The local history in SQLite. |
 | `mqtt.topics`, `mqtt.payloads` | Topic layout and JSON payloads of the public API. |
 | `mqtt.discovery` | Home Assistant device discovery document. |
@@ -186,9 +189,13 @@ Long-running tasks on the loop, supervised by a task group:
   for a fresh read of the radio's contact table, §7.3, without delaying acknowledgements);
 * **request reader**: turns MQTT send requests into queue entries or rejections;
 * **status reporter**: publishes the state document on change and every 60 s and pings the systemd
-  watchdog.
+  watchdog;
+* **telemetry poller** (only with `[telemetry] enabled`): one request to a companion at a time
+  (§6.11).
 
-On stop the radio supervisor ends first and closes the session. The radio events and the message
+On stop the telemetry poller is cancelled first, so no request goes out after it, and saves its
+schedule; an answer that arrives later is dropped. Then the radio supervisor ends and closes the
+session. The radio events and the message
 handler then finish the messages the radio has already handed over, for at most 2 s (a command
 waiting for its table read is rejected, `sender_unverified`); then the other tasks are cancelled.
 Messages still waiting in the radio are fetched at the next start.
@@ -282,6 +289,15 @@ sequenceDiagram
   not add, with its position) and the heartbeat's readings. The full contact records keep the
   path, flags and the position of the contact's last advert that carried one (protocol.md,
   section 3).
+* **Telemetry.** `request_telemetry` sends `SEND_TELEMETRY_REQ` and returns the route and the
+  estimated timeout from `SENT`; the answer is a push, awaited by the poller outside the command
+  lock (§6.11). Its condition (`unless`, a message waiting in the outbox) is checked once the
+  command holds the lock, so a message that came meanwhile goes first and nothing is written.
+  The session numbers every frame it reads, so an answer read before a request's `SENT` belongs
+  to the request before. `PATH_UPDATED` and `TELEMETRY_RESPONSE` go to the event queue.
+* **Path reset.** `RESET_PATH` makes the radio forget the stored path without a push: the session
+  patches its cached record the same way and reports the reset, so the outbox budgets the floods
+  that follow and the contact's document says at once that no path is known.
 * **Single client.** The radio must not serve another client (phone app) at the same time: both
   would drain the same message queue.
 
@@ -381,7 +397,8 @@ with a full burst. The count is exact except for a flooded attempt to a recipien
 bytes away, whose returned path packet is longer than estimated (protocol.md §6).
 Each attempt of a direct message counts. The radio's other transmissions (acknowledgements it
 sends, adverts, path returns) are not counted; the default leaves 9 percentage points of the 10 %
-EU duty cycle for them.
+EU duty cycle for them. Telemetry has two budgets of its own, which never take from this one
+(§6.11).
 
 ### 6.4 Inbound path
 
@@ -461,8 +478,16 @@ flowchart LR
   from a logged advert of the same key within 10 s before such a push; the logged content itself is
   never trusted (protocol.md, section 4).
 * **Positions** come from contact records (the radio keeps the position of a contact's newest
-  advert that carried one) and, later, from the contacts' own telemetry; a position is stored when
-  it changes. Nodes that are not contacts keep none.
+  advert that carried one) and from the contacts' own telemetry (§6.11). A telemetry position
+  replaces the fix when it moved 20 m or more, or when the fix came from an advert; its time is when
+  it changed, so a companion at rest writes nothing per answer, neither in the history nor in Home
+  Assistant's recorder. It carries an accuracy of 15 m (the cell of 0.0001° the encoder truncates
+  to, and the receiver's own error). A changed advert position replaces a telemetry fix, an
+  unchanged one does not. Positions do not expire yet: the last one stays until a newer one comes.
+  Nodes that are not contacts keep none.
+* **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
+  answers moves it at most once an hour, keeping the signal of its last advert or message (an
+  answer reports none).
 * **Failures stay local**: an exception in the observer is logged and does not stop messages,
   deliveries or commands; a history that cannot be written switches itself off for the run.
 
@@ -578,6 +603,116 @@ systemd unit does not restart on it).
 * The `state` document and the Home Assistant diagnostic entities show the radio link, battery and
   airtime use; the `delivery` event shows every failure.
 
+### 6.11 Telemetry
+
+[ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md): the gateway asks the
+household's companions for battery, readings and position with `SEND_TELEMETRY_REQ`; a companion
+answers only contacts it allows (denial is silence). Off by default (`[telemetry] enabled`) until a
+contact can be excluded from it, which the ADR provides and the next release adds.
+
+```mermaid
+sequenceDiagram
+    participant P as poller
+    participant S as session
+    participant R as radio
+    participant C as companion
+    P->>P: outbox quiet 10 s, schedule says who and how
+    P->>S: request_telemetry (unless the outbox is busy)
+    S->>R: SEND_TELEMETRY_REQ (key)
+    R-->>S: SENT (route, estimated timeout)
+    R->>C: request (direct on the stored path)
+    C->>R: answer (CayenneLPP)
+    R-->>S: TELEMETRY_RESPONSE (6-byte prefix, data)
+    S-->>P: event, matched by prefix and frame order
+    P->>P: unique prefix on a current table: taken
+```
+
+* **Who.** Every chat contact of the radio's table whose first 6 key bytes no other contact and not
+  the radio's own key share: the 0x8B names the answering contact by those bytes only. Nothing is
+  asked while the radio adds contacts of any type on its own (a look-alike could enter the table
+  and answer in its place); the managed profile switches that off.
+* **One at a time.** The firmware keeps one pending request; the poller is its only user (the
+  gateway sends no other remote request). It waits `max(5 s, 1.25 × est_timeout)` from `SENT`. An
+  answer is taken for the contact asked, or as the late answer of the last request until the next
+  one, at most 60 s after its wait; an answer read before a request's `SENT` belongs to the one
+  before (frame numbers). It is taken only on a table that shows every change the radio reported
+  (held up to 15 s for the re-read), with the prefix still unique; a late answer older than one
+  taken is dropped (frame numbers within a session, not the wall clock, which may be set back).
+  The binary answer 0x8C carries no sender and is never read.
+* **Messages first.** No request while the outbox has a message, is delivering one (which includes
+  waiting for its acknowledgement), or had one or received one in the last 10 s (not a message of a
+  channel the configuration ignores, which nothing answers); a message queued while a request waits
+  for the radio withdraws it unwritten. A message queued after the request went out is sent at once;
+  it may share the channel with the request's answer for about a second (direct), or with a flood
+  for up to its timeout.
+* **Routes.** Direct only: a contact with a stored path is asked on it. One without a path is asked
+  by flood only when it was heard by other means within 30 minutes when the flood is planned (an
+  advert, also one from before it was added or, as the history keeps it, from before a restart; a
+  message as it arrived; a path it sent; never its own telemetry answers, never a message fetched at
+  connect, never the path of the gateway's own flood, never an advert of a repeater, room or sensor
+  the radio did not add). Heard after its last request (sent or tried), it is due at once, and its
+  flood is planned also while the hourly limit holds. A flood once planned stays planned while it
+  waits for the lanes, a retry or the hourly limit, however the contact is heard meanwhile, as long
+  as the gateway keeps deciding (plans are dropped after 5 minutes without a decision, the radio
+  away) and the contact stays a candidate without a path and its own gap stays over (one that leaves
+  loses its plan, and so does one whose gap grows to a day when its last answer turns a day old; a
+  restart drops every plan). At most 4 floods an hour for the gateway and one per contact per 30
+  minutes, the gap doubling with each flood until a direct answer (up to a day); a contact that has
+  not answered within a day gets one flood a day. A flooded request teaches both sides a path, so
+  the next requests go direct. **The gateway never resets or writes a path for telemetry:** a stored
+  path that no longer works stays until the companion sends a path or a message's flood fallback
+  resets it (§6.2); a contact whose path was reset is then asked again only once it is heard. A
+  companion away when an alert to it fell back to a flood is therefore found again when it
+  advertises or sends a message, not by itself. A request written whose `SENT` never came (the link
+  broke, or the gateway stopped) counts as sent as planned, so a reconnect or a restart does not
+  repeat a flood, and its answer is still taken as late for two minutes. A request refused or
+  withdrawn counts as tried: a sign of life from before it does not bring it forward again.
+* **Lanes.** Two token buckets, separate from the message budget: 18 s an hour of the gateway's own
+  transmit time and 90 s an hour of estimated airtime in the mesh (every hop of request and answer;
+  a flood as repeated by 20 repeaters, an assumption). Both start empty at every start (a restart
+  adds no burst; a debt is saved and carried over, less what the stop paid back) and when the
+  radio's settings change (the debt carried over again), and hold the costliest planned request, a
+  flood (0.821 s and 20.4 s at EU/UK Narrow). A request is charged in full when the radio reports
+  it sent, answered or not; a flood the radio sent for a request planned direct, and a flooded
+  answer the packet log shows, are charged as what they were, as a debt the refill pays back first.
+  A direct request costing more than a lane holds is not sent (at EU/UK Narrow more than 18 hops
+  for a 19-byte answer with one-byte path hashes; fewer with longer hashes or answers).
+  A due flood waits at most 10 minutes behind direct requests, then goes first. Over any interval
+  *T* telemetry's own transmit time is at most `0.821 + 18 × T / 3600` s plus one charge beyond the
+  level, and its estimated mesh airtime `20.4 + 90 × T / 3600` s plus one; the radio's measured
+  transmit time is a backstop for its own share only (polls pause from 180 s in an hour), nothing
+  measures the others'.
+* **Intervals** from a share of channel time per companion, request to request: 1 % while it moves,
+  0.1 % at rest, at least 90 s and 15 minutes (a neighbour at EU/UK Narrow: 90 s and 15 min; over
+  two repeaters 4.7 and 47 min); once an hour without a position in its answers. Moving means 50 m
+  or more from the last fix; two answers under 50 m mean resting again (at rest the reference
+  stays, so slow drift adds up and jitter never counts). A new contact counts as resting.
+* **Back-off.** An unanswered request is retried after 30 s once (a contact that answered within a
+  day, asked directly), then asked at its interval doubling with every failure: at least every
+  `max(30 min, its interval)` while it answered within the day, so it is found again that long
+  after it comes back without sending anything (30 min for a neighbour at rest, an hour without a
+  position); up to 6 h after a day without an answer and for one that never answered. Hearing it by
+  other means ends the back-off: the next request follows its interval after the last one, never
+  sooner (a contact without a path: at once, see Routes). Over TCP a timeout during a table
+  listing, one that ran or was still running in the wait (when the radio's push queue drops
+  frames), counts only the second time in a row.
+* **Refusals.** `ERR 1` switches telemetry off until the radio reconnects (firmware without the
+  command, or a later one that dropped it); `ERR 2` skips the contact until the next table read;
+  `ERR 3` (no free packet buffer) pauses requests for 60 s. A disconnect during the wait counts
+  nothing.
+* **Positions** go to the contact's document and its tracker (§6.6); readings, the answer's time
+  and a per-contact state follow with the next release.
+* **Persistence.** The schedule (per contact the due time, failures, the times of its last answer,
+  request and flood, whether it was last moving, the size of its answers, since when it left the
+  candidates; the gateway's floods of the last hour and the lanes' debt) is kept under
+  `telemetry` in the state file, relative to the time it was saved (a contact of the last run
+  keeps its schedule until a table read lacks it, however long the radio was away),
+  without positions. It is saved every 5 minutes after a change, at once after a flood (before its
+  wait, so a crash cannot repeat it) and at the stop. A contact that left the candidates keeps its
+  schedule for a day. When the clock went back while the gateway was stopped, the time stopped is
+  unknown: it counts as nothing, except that every last answer counts as more than a day old
+  (fewer requests until the next answer, never more).
+
 ## 7 Security
 
 ### 7.1 Assets and trust boundaries
@@ -672,6 +807,16 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
+* Telemetry (§6.11) asks every chat contact of the radio while it is on, and the gateway cannot
+  read a companion's permissions: a contact that answers everyone ("Allow All") is tracked like a
+  household member. Until a contact can be excluded, keep only household companions as chat
+  contacts before switching it on. An answer is bound to a contact by its 6-byte prefix: a
+  look-alike in the table could answer in its place, so no contact with a shared prefix is asked
+  and nothing is asked while the radio adds contacts on its own. A position comes from the
+  companion's receiver and may be old (some trackers send their last one with GPS off); the
+  gateway shows when it received a position and when it last changed, never when it was fixed.
+  Positions do not expire yet: an automation must not take a mesh tracker as its only presence
+  source.
 * The radio firmware and its key storage are trusted.
 * Messages on the radio are only as confidential as MeshCore's encryption; channel secrets of
   public or hashtag channels are known to everyone.
@@ -692,6 +837,11 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
 | State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
 | Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
+| Companion silent (away, switched off, no permission) | no telemetry answer within the wait | one retry after 30 s, then a back-off: at least every `max(30 min, its interval)` for a day on its stored path, then up to 6 h; never a flood unless heard | log info per state change |
+| Telemetry answer from another contact or a look-alike | prefix, table | dropped; with a look-alike in the table nobody with that prefix is asked | log debug or warning |
+| Radio adds contacts on its own, or transmitted 180 s in the last hour | settings, statistics | telemetry paused | `state.telemetry = paused`; log warning |
+| Radio without `SEND_TELEMETRY_REQ` | `ERR 1` | telemetry off until it reconnects | `state.telemetry = unsupported` |
+| Bug in the telemetry poller | exception | logged; the next step goes on after 60 s; messages are not affected | log error |
 
 ## 9 Deployment and operations
 
@@ -801,7 +951,7 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; every companion a recipient; statistics and contact sensors on the gateway's device | 0017 |
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
 | 5 | Contact management: the gateway, the MQTT requests, the command line and the Home Assistant controls (add a heard node, add by key or link, remove; the gateway's QR code) | 0017 |
-| 6 | Telemetry and positions of the household's companions, with traces on the map | 0018 |
+| 6 | Telemetry and positions of the household's companions, with traces on the map. **6a** (this release): the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b**: readings, the answer's time and state, exclusion of a contact, on by default; **6c**: the check for positions in adverts, traces | 0018 |
 | 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
 | 8 | Generated dashboards for desktop and mobile | 0021 |
 

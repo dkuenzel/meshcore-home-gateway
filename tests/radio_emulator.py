@@ -19,6 +19,9 @@ from meshcore_home_gateway.protocol.framing import TO_RADIO, encode_frame
 
 SELF_KEY = bytes(range(0x10, 0x30))
 START_TIME = 1_800_000_000
+# voltage 4.12 V, position 50.12345/8.56775 at 120.5 m, MCU temperature 23.4 °C (19 bytes)
+LPP_FULL = bytes.fromhex("0174019c018807a5f2014ead002f12016700ea")
+TELEMETRY_T_MS = 410  # time on air of the request at EU/UK Narrow, as the radio estimates it
 
 
 def frame(payload: bytes) -> bytes:
@@ -49,6 +52,19 @@ class EmulatedContact:
 
 
 @dataclass
+class RemoteCompanion:
+    """The companion behind a contact, as it answers a telemetry request. `lpp=None` is
+    silence: no permission, the gateway not its contact, or out of range (MyMesh.cpp:666, 687)."""
+
+    lpp: bytes | None = LPP_FULL
+    hops: int = 0  # the path the radio learns from a flood (one-byte hashes)
+    auto: bool = True  # answer by itself; False: the test calls EmulatedRadio.answer_telemetry()
+    flood_reply: bool = False  # floods its answer to a direct request: the packet log shows it
+    same_write: bool = False  # answer in the same write as SENT, not a moment later
+    delay_s: float = 0.05  # how long after SENT it answers (the firmware's is 300 ms and more)
+
+
+@dataclass
 class SentText:
     prefix: bytes
     text: str
@@ -75,6 +91,8 @@ class EmulatedRadio:
     tuning: tuple[int, int] | None = (0, 1000)  # rx delay base, airtime factor, x 1000
     stats: bool = True  # firmware with GET_STATS (1.11 and later)
     packets_received: int = 120
+    tx_airtime_s: int = 41  # the radio's own time on air, as GET_STATS counts it
+    remotes: dict[bytes, RemoteCompanion] = field(default_factory=dict)  # key -> its companion
     auto_ack: bool = True
     ack_round_trip_ms: int = 1500
     errors: dict[int, int] = field(default_factory=dict)  # command code -> error code, once
@@ -102,6 +120,9 @@ class EmulatedRadio:
         self.texts: list[SentText] = []
         self.channel_texts: list[tuple[int, str, int]] = []
         self.path_resets: list[bytes] = []
+        self.telemetry_requests: list[tuple[bytes, bool]] = []  # key, flooded
+        self._asked: tuple[bytes, bool] | None = None  # the pending telemetry request
+        self._tag = 0x11223344
         self.queue: list[bytes] = []
         self._out: asyncio.Queue[bytes | Exception] = asyncio.Queue()
         self._buffer = bytearray()
@@ -192,6 +213,29 @@ class EmulatedRadio:
     def commands(self) -> list[int]:
         return [p[0] for p in self.received]
 
+    def answer_telemetry(self) -> None:
+        """The pending request's companion answers (MyMesh.cpp:739-749): a direct request
+        directly (or by flood, if it has no path back), a flooded one by a path return, whose
+        path the radio stores and reports first (BaseChatMesh.cpp:353-367)."""
+        if self._asked is None:
+            return
+        key, flood = self._asked
+        remote = self.remotes.get(key)
+        if remote is None or remote.lpp is None:
+            return
+        self._asked = None  # the radio clears its slot on a match
+        if flood:
+            contact = next(c for c in self.contacts if c.public_key == key)
+            contact.out_path_len, contact.out_path = remote.hops, bytes(range(1, remote.hops + 1))
+            self.emit(bytes([Push.PATH_UPDATED]) + key)
+            padding = (16 - (6 + remote.hops + len(remote.lpp)) % 16) % 16
+        else:
+            if remote.flood_reply:  # a flooded RESPONSE to this radio, logged before decryption
+                packet = bytes([0x05, 0x00, SELF_KEY[0], key[0], 0xBE, 0xEF]) + bytes(32)
+                self.emit(bytes([Push.LOG_RX_DATA, 24, 0xA0]) + packet)
+            padding = (16 - (4 + len(remote.lpp)) % 16) % 16
+        self.emit(telemetry_push(key, remote.lpp + bytes(padding)))
+
     # --- firmware model -------------------------------------------------------------------------
 
     def _handle(self, p: bytes) -> None:  # noqa: PLR0912 - one branch per command
@@ -268,6 +312,8 @@ class EmulatedRadio:
                 if code not in self.ignored:
                     self.contacts.remove(gone)
                 self.emit(bytes([Response.OK]))
+        elif code == Command.SEND_TELEMETRY_REQ and len(p) >= 36:
+            self._telemetry(p[4:36])
         elif code == Command.RESET_PATH:
             self.path_resets.append(p[1:33])
             for contact in self.contacts:
@@ -348,12 +394,39 @@ class EmulatedRadio:
         if self.auto_ack:
             self.acknowledge(ack, self.ack_round_trip_ms)
 
+    def _telemetry(self, key: bytes) -> None:
+        """SEND_TELEMETRY_REQ (MyMesh.cpp:1680-1699): SENT with the route and the estimate
+        (:888-896); a new request replaces the pending one."""
+        contact = next((c for c in self.contacts if c.public_key == key), None)
+        if contact is None:
+            self.emit(bytes([Response.ERR, 2]))
+            return
+        flood = contact.out_path_len == 0xFF
+        hops = 0 if flood else contact.out_path_len & 0x3F
+        t = TELEMETRY_T_MS
+        timeout = 500 + 16 * t if flood else 500 + (6 * t + 250) * (hops + 1)
+        self._tag += 1
+        self.emit(bytes([Response.SENT, int(flood)]) + struct.pack("<II", self._tag, timeout))
+        self.telemetry_requests.append((key, flood))
+        self._asked = (key, flood)
+        remote = self.remotes.get(key)
+        if remote is not None and remote.auto:
+            if remote.same_write:
+                self.answer_telemetry()
+            else:
+                asyncio.get_running_loop().call_later(remote.delay_s, self._answer_if, key)
+
+    def _answer_if(self, key: bytes) -> None:
+        """The delayed answer, if this request is still the radio's pending one."""
+        if self._asked is not None and self._asked[0] == key:
+            self.answer_telemetry()
+
     def _stats(self, kind: int) -> None:
         """GET_STATS (MyMesh.cpp:1914-1964)."""
         if kind == 0:
             body = struct.pack("<HIHB", 4012, 3600, 0, 0)
         elif kind == 1:
-            body = struct.pack("<hbbII", -118, -97, 26, 41, 300)
+            body = struct.pack("<hbbII", -118, -97, 26, self.tx_airtime_s, 300)
         elif kind == 2:
             body = struct.pack("<7I", self.packets_received, 30, 10, 20, 70, 50, 2)
         else:
@@ -378,6 +451,11 @@ class EmulatedRadio:
             + b"15 Oct 2026".ljust(12, b"\x00") + b"Example Radio".ljust(40, b"\x00")
             + b"v1.18.0".ljust(20, b"\x00") + bytes([0, 0])
         )  # fmt: skip
+
+
+def telemetry_push(key: bytes, data: bytes) -> bytes:
+    """Push 0x8B: reserved byte, the prefix of the contact that answered, its LPP."""
+    return bytes([Push.TELEMETRY_RESPONSE, 0]) + key[:6] + data
 
 
 _SETTERS = frozenset({

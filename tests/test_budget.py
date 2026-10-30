@@ -172,3 +172,18 @@ def test_a_token_refilled_to_its_rounding_counts() -> None:
     assert limit.wait_s(now) == 0.0
     assert limit.allow(now)
     assert limit.wait_s(now) > 1.0
+
+
+def test_a_budget_can_start_empty_and_charge_beyond_its_level() -> None:
+    """Telemetry's lanes (ADR 0018): empty at the start, charged with what was spent, also a
+    debt that the refill pays back before anything else fits."""
+    budget = AirtimeBudget(36.0, 2.0, now=0.0, tokens=0.0)
+    assert budget.available_s(0.0) == 0.0
+    assert budget.wait_s(1.0, 0.0) == pytest.approx(100.0)
+    budget.charge(1.0, 100.0)
+    assert budget.available_s(100.0) == pytest.approx(0.0)
+    budget.charge(1.5, 100.0)  # more than the level: debt
+    assert budget.available_s(100.0) == pytest.approx(-1.5)
+    assert budget.wait_s(1.0, 100.0) == pytest.approx(250.0)
+    assert budget.used_s(100.0) == pytest.approx(2.5)
+    assert AirtimeBudget(36.0, 2.0, now=0.0, tokens=9.0).available_s(0.0) == 2.0

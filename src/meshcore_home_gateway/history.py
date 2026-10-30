@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 SCHEMA_VERSION = 2  # 2: node.last_advert
 DAY_S = 86_400.0
 MAX_MESSAGES = 10_000
-MAX_POSITIONS = 100_000
+MAX_POSITIONS = 100_000  # beyond it the oldest go, except each contact's newest
 _SCHEMA = """
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,
@@ -156,15 +156,23 @@ class History:
         )  # fmt: skip
 
     def purge(self, now: float) -> None:
-        """Drop what is older than the retention, and messages and positions beyond their caps."""
+        """Drop what is older than the retention, and messages and positions beyond their caps
+        (the oldest first; never a contact's newest position, which only its age removes)."""
         r = self._retention
-        beyond = (
-            "DELETE FROM {0} WHERE id <= (SELECT id FROM {0} ORDER BY id DESC LIMIT 1 OFFSET ?)"
-        )
         self._write("DELETE FROM message WHERE at < ?", (now - r.messages_days * DAY_S,))
-        self._write(beyond.format("message"), (MAX_MESSAGES,))
+        self._write(
+            "DELETE FROM message WHERE id <= "
+            "(SELECT id FROM message ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            (MAX_MESSAGES,),
+        )
         self._write("DELETE FROM position WHERE at < ?", (now - r.positions_days * DAY_S,))
-        self._write(beyond.format("position"), (MAX_POSITIONS,))
+        self._write(  # never the newest of a contact: the row last_fixes() reads
+            "DELETE FROM position WHERE id <= (SELECT id FROM position ORDER BY id DESC LIMIT 1 "
+            "OFFSET ?) AND id NOT IN (SELECT (SELECT id FROM position WHERE contact_key = "
+            "p.contact_key ORDER BY at DESC, id DESC LIMIT 1) FROM (SELECT DISTINCT contact_key "
+            "FROM position) p)",
+            (MAX_POSITIONS,),
+        )
         self._write("DELETE FROM node WHERE heard_at < ?", (now - r.nodes_days * DAY_S,))
 
     def _write(self, sql: str, args: tuple[Any, ...]) -> None:

@@ -14,6 +14,7 @@ from meshcore_home_gateway.config import parse_config
 from meshcore_home_gateway.core.mesh import Heard, Mesh, Node, Tracked
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Position
 from meshcore_home_gateway.mqtt.contact_devices import (
+    ACCURACY_KNOWN,
     ECHO_S,
     ContactDevices,
     contact_discovery_subscription,
@@ -163,7 +164,11 @@ def test_a_repeater_with_a_position_gets_a_tracker_only() -> None:
     assert tracker["json_attributes_topic"] == f"meshcore/radio1/contacts/{HILL}"
     assert tracker["availability_mode"] == "all"
     assert tracker["availability"][0] == {"topic": "meshcore/radio1/availability"}
-    assert "gps_accuracy" not in tracker["json_attributes_template"]  # would make it `home`
+    # an accuracy only where the document has one (telemetry): it widens Home Assistant's zone
+    # test, and a document of an earlier version has no such key
+    template = tracker["json_attributes_template"]
+    assert template.count("'gps_accuracy': value_json.position_accuracy_m") == 1
+    assert template.index(ACCURACY_KNOWN) > template.index("'gps_accuracy'")
     others = [c for k, c in cmps.items() if k != "position"]
     assert all("json_attributes_topic" not in c for c in others)
     unnamed = contact_payload(CONFIG, TOPICS, Tracked(node(HILL, "")), "x")

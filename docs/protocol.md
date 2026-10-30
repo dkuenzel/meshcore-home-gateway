@@ -75,6 +75,7 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
 | 2 | `SEND_TXT_MSG` | text type, attempt, uint32 timestamp, 6-byte key prefix, text (`MyMesh.cpp:1132-1146`) | `SENT` / `ERR` |
 | 3 | `SEND_CHANNEL_TXT_MSG` | text type 0, channel index, uint32 timestamp, text (`MyMesh.cpp:1178-1185`) | **`OK`** / `ERR` |
 | 13 | `RESET_PATH` | full 32-byte public key (`MyMesh.cpp:1317-1327`) | `OK` / `ERR` |
+| 39 | `SEND_TELEMETRY_REQ` | 3 bytes the radio does not read, then the full 32-byte public key (`MyMesh.cpp:1680-1699`) | `SENT` / `ERR 1, 2, 3`; the answer is the push 0x8B |
 | 59 | `GET_AUTOADD_CONFIG` | – (`MyMesh.cpp:2030-2035`); 1.11 and older answer `ERR 1` | `AUTOADD_CONFIG` |
 | 43 | `GET_TUNING_PARAMS` | – (`MyMesh.cpp:1481-1487`) | `TUNING_PARAMS` |
 | 56 | `GET_STATS` | statistics type: 0 core, 1 radio, 2 packets (`MyMesh.cpp:70-73, 1914-1964`); another type gives `ERR 6` | `STATS` |
@@ -123,6 +124,12 @@ Details that matter:
   An index inside the range but never configured is not an error: the radio sends with an all-zero
   key *(inferred)*. The bridge only sends to channels whose `CHANNEL_INFO` has a name.
 * `SENT` means "queued for transmission" (`src/Mesh.cpp:637-715`).
+* `SEND_TELEMETRY_REQ` with exactly 4 bytes asks the radio itself (`MyMesh.cpp:1700`); 5 to 35
+  bytes fall through to `ERR 1`. With the key it looks the contact up by key alone, of any type,
+  and answers `ERR 2` if none, `ERR 3` if no packet could be built (no free buffer), else `SENT`
+  with the route (1 flood, 0 direct), the request's tag and the estimated timeout. The command is
+  marked "can deprecate, in favour of `CMD_SEND_BINARY_REQ`" (`MyMesh.cpp:1680`);
+  a golden frame in `tests/test_codec.py` pins its layout.
 
 ## 3 Responses
 
@@ -230,16 +237,19 @@ Codes 0x80 and above can arrive at any time, also between the frames of `GET_CON
 | Code | Name | Content | Bridge |
 | --- | --- | --- | --- |
 | 0x80 | `ADVERT` | public key of a contact in the table that advertised (`MyMesh.cpp:358-367`) | remember the key if it shares a command sender's prefix (ADR 0009); refresh contacts; report the advert |
-| 0x81 | `PATH_UPDATED` | public key | remember the key, as above; refresh contacts |
+| 0x81 | `PATH_UPDATED` | public key: the radio stored a path the contact sent, also the same one again (`BaseChatMesh.cpp:353-359`) | remember the key, as above; refresh contacts; for telemetry, the contact was heard, unless it is the path of the gateway's own flooded request |
 | 0x82 | `SEND_CONFIRMED` | 4-byte ACK code, uint32 round trip in ms | match to a waiting message |
 | 0x83 | `MSG_WAITING` | – | sync messages |
 | 0x88 | `LOG_RX_DATA` | SNR × 4 (int8), RSSI (int8 dBm), raw packet: every packet the radio receives, before it handles it (`MyMesh.cpp:291-302`, `src/Dispatcher.cpp:199`); see below | optional `rx` topic |
+| 0x8B | `TELEMETRY_RESPONSE` | reserved byte, the 6-byte key prefix of the contact whose key decrypted the answer, CayenneLPP data with its AES zero padding (`MyMesh.cpp:739-749`) | the answer to the gateway's telemetry request: taken only for the contact asked (section 5) |
 | 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added; 1.11 and older also send it for a contact they have just added (`BaseChatMesh.cpp:88-134` of `companion-v1.11.0`) | renew the key if it is already remembered; refresh contacts; report the advert with its record |
 | 0x8F | `CONTACT_DELETED` | public key of a contact overwritten to make room (`MyMesh.cpp:342-349`) | remember the key, as above; refresh contacts |
 | 0x90 | `CONTACTS_FULL` | – | refresh contacts |
 
-Further pushes (0x84–0x87, 0x89, 0x8B–0x8E: raw data, login, status, trace, telemetry, binary and
-path-discovery responses, control data) are ignored (`MyMesh.cpp:117-133`).
+Further pushes (0x84–0x87, 0x89, 0x8C–0x8E: raw data, login, status, trace, binary and
+path-discovery responses, control data) are ignored (`MyMesh.cpp:117-133`). The binary response
+0x8C also carries answers to a telemetry request the radio no longer waits for, but with a tag
+and no sender, so anyone who guesses the tag could fill it (`MyMesh.cpp:750-776`): never read.
 
 **Raw packets in `LOG_RX_DATA`** (wire format, `src/Packet.cpp:65-85`): header (1: bits 0–1 route
 0 flood with transport codes, 1 flood, 2 direct, 3 direct with transport codes; bits 2–5 payload
@@ -254,7 +264,10 @@ feature field each; 0x80 the rest is the name). The radio drops an advert withou
 (`BaseChatMesh.cpp:122-127`). **A logged advert is unverified**: its signature is checked by the
 radio only after the log (`src/Mesh.cpp:271-290`), and the bridge cannot check Ed25519 signatures
 with the standard library. Only the `ADVERT` or `NEW_ADVERT` that follows for the same key and
-timestamp shows that the radio accepted it.
+timestamp shows that the radio accepted it. A RESPONSE (payload type 1, `src/Packet.h:20`)
+starts with the one-byte hashes of destination and source, then the MAC (`src/Mesh.cpp:488-509`):
+the gateway reads them from a flooded one to count the airtime of a telemetry answer that the
+companion flooded, never to grant anything.
 
 ## 5 Semantics
 
@@ -282,7 +295,10 @@ timestamp shows that the radio accepted it.
   `500 + (6 · t + 250) · (hops + 1)` ms, with `t` the estimated airtime of the packet. The bridge
   waits 1.2 times that, between 5 and 60 s, like meshcore_py.
 * **Path reset:** after unanswered direct attempts, `RESET_PATH` makes the next send flood
-  (meshcore_py and meshcore-cli do this before the third attempt).
+  (meshcore_py and meshcore-cli do this before the third attempt). The radio sets only the path
+  length to `0xFF` (the path bytes stay) and pushes nothing (`MyMesh.cpp:1317-1327`): the
+  session patches its cached record the same way, and the contact's document says at once that
+  no path is known.
 * **No replay protection for text messages** in the firmware beyond the seen-packet table
   (`BaseChatMesh.cpp:133-136` checks timestamps only for adverts). The bridge adds its own for
   commands (ADR 0009).
@@ -313,6 +329,34 @@ timestamp shows that the radio accepted it.
   main-loop pass (`SerialWifiInterface.cpp:85-100`), and a contact listing adds one frame per pass
   because `isWriteBusy` is always false (`SerialWifiInterface.cpp:42-44`, `MyMesh.cpp:2392-2402`).
   Pushes that arrive during a listing fill the queue for the rest of it.
+* **Telemetry requests** (ADR 0018). The radio keeps **one** pending request: each request
+  replaces the last one's tag (`clearPendingReqs`, `MyMesh.cpp:1688-1689`, `MyMesh.h:192-194`), a
+  refused one (`ERR`) leaves it, and a text send does not touch it. It never times a request out
+  (`onSendTimeout` is empty, `MyMesh.cpp:898`). An answer with the pending tag becomes 0x8B and
+  clears the slot (`MyMesh.cpp:739-749`); one for an older tag, a 0x8C. The radio tries every
+  contact whose first key byte matches the answer's source hash (`BaseChatMesh.cpp:203-211`) and
+  names the one whose shared secret verified the MAC (`src/Mesh.cpp:147-160`): another contact that
+  guesses the tag puts its own prefix into the 0x8B, and only a contact with the same 6-byte
+  prefix (a look-alike) could pass for the one asked. **Denial is silence:** a companion answers
+  only a contact of its own table holding the base permission (`MyMesh.cpp:641-687`); otherwise it
+  sends nothing (`BaseChatMesh.cpp:314-315`). **Routes:** the radio floods a request to a contact
+  without a path (`BaseChatMesh.cpp:701-712`). A flooded request is answered by a flooded path
+  return carrying the answer (`BaseChatMesh.cpp:316-320`): the radio stores the path and pushes
+  0x81, **then** 0x8B (`BaseChatMesh.cpp:353-367`), and sends a path back directly 500 ms later
+  (`src/Mesh.cpp:174-177`). A direct request is answered directly if the companion has a path back,
+  else by flood (`BaseChatMesh.cpp:321-327`); after a flooded answer the radio sends its path back
+  again 3 s later (`BaseChatMesh.cpp:332-337, 385-390`), without a 0x81. The companion answers
+  after 300 ms (`BaseChatMesh.cpp:4-6`). **Timeout** as for messages, from the airtime `t` of the
+  26-byte request packet before routing (`BaseChatMesh.cpp:703`): 410 ms at EU/UK Narrow, so direct
+  3210 ms for a neighbour, flood 7060 ms. The gateway waits `max(5 s, 1.25 × est_timeout)`.
+* **CayenneLPP** (library 1.6.1, `CayenneLPP.h:27-111`, `CayenneLPP.cpp`): per reading a channel,
+  a type and big-endian values. A companion's own readings are on channel 1 (voltage 116, GPS
+  136, temperature 103, …); sensors on further channels. GPS is three 24-bit two's complement
+  values: latitude and longitude × 10⁴ (truncated toward zero, so a position is off by up to one
+  cell of 11 m), altitude × 100 in metres. Voltage (116) and current (117) are signed, although
+  the header's comments say otherwise. The AES padding is 0 to 15 zero bytes, and channel 0 is
+  never used, so a reading on channel 0 ends the data. An unknown type has no known size: the
+  rest cannot be read.
 * **Contact list:** `GET_CONTACTS` sends one contact per main-loop pass (`MyMesh.cpp:2388-2410`),
   so the list is not a snapshot; a contact overwritten during the read can be missing, while its
   push arrives (over USB). The eight slots for temporary contacts (type 0, which a client creates
@@ -335,6 +379,8 @@ Encryption: AES-128-ECB in 16-byte blocks, zero-padded, with a 2-byte MAC in fro
 | channel text, name `N` bytes | `3 + 16 · ⌈(7 + N + L) / 16⌉` (channel hash 1, MAC 2, timestamp, flags, `"name: "`) |
 | acknowledgement | 6 |
 | path packet returned after a flooded acknowledgement | `4 + 16 · ⌈(6 + P) / 16⌉` for a way back of `P` path bytes (hashes 2, MAC 2, path length 1, path, type 1, random 4); sent direct along the way there (`src/Mesh.cpp:173-178, 448-486`) |
+| telemetry request | `4 + 16 · ⌈13 / 16⌉ = 20` (tag 4, type 1, reserved 4, random 4; `BaseChatMesh.cpp:693-698`): 22 bytes on air plus the path direct, 26 flooded |
+| telemetry answer, `L` LPP bytes | direct `4 + 16 · ⌈(4 + L) / 16⌉` (tag and LPP); as a flooded path return `4 + 16 · ⌈(6 + P + L) / 16⌉` with the path of `P` bytes (`src/Mesh.cpp:452-480`) |
 
 A flood leaves the originating radio with an empty path; each repeater adds its hash
 (`src/Mesh.cpp:344-357, 647-678`). The bridge counts the transport codes on every flood and,
@@ -343,6 +389,15 @@ with one-byte hashes, either way): 26 bytes on air. Up to that distance the esti
 high side. A more distant recipient makes the path packet larger than counted: at EU/UK Narrow a
 flooded attempt then takes about 0.2 s more airtime than estimated at 16 path bytes, and about
 1 s more at the maximum of 64.
+
+**Telemetry airtime** (`core/airtime.py`, ADR 0018). A direct request and its answer cost every
+transmission both ways: a repeater removes its hash before it forwards (`src/Mesh.cpp:102-107`),
+so transmission `k` of `h` hops carries `h − k` hashes. A flood is estimated as repeated by 20
+repeaters, both the request and the path return, plus the path the radio sends back: an
+assumption, not a measurement. At EU/UK Narrow with the usual 19-byte answer *(calculated)*: a
+direct request to a neighbour 0.378 s of the gateway's own transmit time and 0.887 s in all
+(1.839 s over one repeater, 2.791 s over two), a flood 0.821 s own and 20.4 s in all, a flooded
+answer to a direct request 11.8 s more.
 
 ## 7 Radio parameters and time on air
 

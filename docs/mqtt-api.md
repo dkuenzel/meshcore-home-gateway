@@ -194,11 +194,20 @@ Retained; published at start, on every change of the radio link and every 60 s.
  "public_key": "…", "model": "…", "firmware": "v1.18.0", "frequency_mhz": 869.618,
  "bandwidth_khz": 62.5, "spreading_factor": 8, "coding_rate": 8, "tx_power_dbm": 22,
  "contact_link": "meshcore://contact/add?name=Gateway&public_key=…&type=1",
- "version": "0.1.0"}
+ "version": "0.1.0", "telemetry": "on", "telemetry_airtime_1h_s": 4.5,
+ "telemetry_mesh_airtime_1h_s": 10.6}
 ```
 
 `contact_link` adds the gateway in the MeshCore app, for example as a QR code (`null` until the
 radio is known). It carries no position.
+
+`telemetry` says whether the gateway asks the companions for their telemetry
+([configuration.md](configuration.md#telemetry)): `off`, `on`, `paused` (the radio adds contacts
+on its own, or transmitted 180 s in the last hour) or `unsupported` (its firmware does not take the
+request, until it reconnects); `null` if it cannot be told. `telemetry_airtime_1h_s` is the
+gateway's own transmit time for telemetry in the last hour, `telemetry_mesh_airtime_1h_s` the
+estimated airtime its requests caused in the mesh (every hop both ways); both `null` with
+telemetry off.
 
 ## Radio statistics: `stats`
 
@@ -251,7 +260,7 @@ adverts carried a position, which everyone in range can read.
  "heard_via": "message", "hops": 2, "snr_db": 7.25, "rssi_dbm": null,
  "latitude": 53.55, "longitude": 9.99, "altitude_m": null,
  "position_at": "2026-10-18T08:55:00+00:00", "position_source": "advert",
- "advert_position": true}
+ "position_accuracy_m": null, "position_received_at": null, "advert_position": true}
 ```
 
 | Key | Meaning |
@@ -261,10 +270,12 @@ adverts carried a position, which everyone in range can read.
 | `protected` | a configured contact target or command sender ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
 | `removable` | a remove request would be taken: `manage` of the index, and this contact is not protected |
 | `verified` | the radio holds the time of a signed advert of this key, so name and type are the key holder's own: a node the gateway heard advertising is `true` at once; one it had not heard (added from a link, a card or a bare key) is `false` until its first advert |
-| `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods |
+| `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods. After a path reset (a message's flood fallback) `false` at once |
 | `last_advert_at` | the contact's clock at its newest advert |
-| `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`); `hops` `null` for a direct route; `rssi_dbm` only from adverts |
-| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) or reported by itself (`telemetry`); `position_at` is when the gateway learned it (for an advert read at start, the time of the newest advert) |
+| `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`, `telemetry`): its telemetry answers move `heard_at` at most once an hour; `hops`, `snr_db` and `rssi_dbm` are those of its last advert or message (an answer reports none), `hops` `null` for a direct route, `rssi_dbm` only from adverts |
+| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; for an advert read at start, the time of the newest advert), never when the companion took it. Positions do not expire yet |
+| `position_accuracy_m` | 15 for a position from telemetry (the 0.0001° cell it is sent in, and the receiver's own error), else `null` |
+| `position_received_at` | the newest telemetry answer that carried a position (also when it did not move); `null` after a restart until the next one |
 | `advert_position` | its adverts carried a position: everyone in range can read it |
 
 ## Nodes heard: `nodes`

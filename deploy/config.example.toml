@@ -53,6 +53,12 @@ senders = []                                           # full public keys
 words = []                                             # e.g. ["status", "arm", "disarm"]
 max_age_s = 900                                        # 0 disables the clock check
 
+# Telemetry: battery, readings and position of the radio's companions, asked of each in turn
+# (docs/companions.md sets them up). Every companion contact of the radio is asked: none can be
+# excluded yet.
+[telemetry]
+enabled = false
+
 [diagnostics]
 publish_rx_log = false                                 # SNR/RSSI of every received packet
 log_level = "info"

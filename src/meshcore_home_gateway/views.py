@@ -22,6 +22,7 @@ from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, Telemetry
 INDEX_LIMIT_BYTES = 32 * 1024  # the contact index; Home Assistant reads only its count
 ATTRIBUTE_LIMIT_BYTES = 15 * 1024  # documents read into attributes: below the recorder's 16 KiB
 WARNING_KEYS = 16  # keys listed per warning in the contact index; the total is counted
+TELEMETRY_ACCURACY_M = 15.0  # of a position from telemetry: cell centring and the GNSS (ADR 0018)
 _FLAGS = {
     ContactFlag.FAVOURITE: "favourite",
     ContactFlag.TELEMETRY_BASE: "telemetry_base",
@@ -106,8 +107,12 @@ def contact_document(
         "latitude": fix.position.latitude if fix else None,
         "longitude": fix.position.longitude if fix else None,
         "altitude_m": fix.altitude_m if fix else None,
-        "position_at": iso(fix.at) if fix else None,
+        "position_at": iso(fix.at) if fix else None,  # when it last changed, never a fix time
         "position_source": fix.source if fix else None,
+        "position_accuracy_m": (
+            TELEMETRY_ACCURACY_M if fix is not None and fix.source == "telemetry" else None
+        ),
+        "position_received_at": iso(tracked.position_received_at),  # the newest answer with one
         "advert_position": node.position is not None,  # its adverts carried a position
     }
 

@@ -262,6 +262,13 @@ def test_the_codec_has_no_command_that_could_harm_the_radio() -> None:
     assert denied.isdisjoint(int(c) for c in Command)
 
 
+def test_telemetry_is_the_only_remote_request() -> None:
+    """The radio keeps one pending remote request (MyMesh.h:192-194): telemetry polls are its only
+    user (ADR 0018). Login, status, binary, path discovery and anonymous requests are not sent."""
+    assert {26, 27, 50, 52, 57}.isdisjoint(int(c) for c in Command)
+    assert int(Command.SEND_TELEMETRY_REQ) == 39
+
+
 # --- on the emulated radio -----------------------------------------------------------------------
 
 
