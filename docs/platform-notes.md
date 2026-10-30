@@ -505,13 +505,13 @@ mosquitto -c m.conf & broker=$!
   meshcore/#\nuser obs\ntopic read #\n' > acl`, `mosquitto_passwd -b pw obs o`, add `acl_file
   <dir>/acl` and restart.
 * **Over MQTT 3.1.1, a QoS 1 PUBLISH that the ACL denies is acknowledged like any other.** Only
-  MQTT 5 carries the reason (135, "Not authorized"); the broker logs `Denied PUBLISH`. *Verified:*
-  2.0.18, with paho-mqtt 2.1.0 (`on_publish` reports `Success`, `is_published()` is true) and
-  `mosquitto_pub`. *Here:* the gateway speaks MQTT 3.1.1 (`make_paho_client()`), so
-  `MqttBus.publish()` and `send` (`_publish()` in `cli.py`) take a denied message as delivered;
-  only the broker's log shows the denial. *Check:* `mosquitto_pub -p 18830 -u mhg -P s3cret -q 1
-  -t meshcore/radio1/availability -m online` exits with 0; with `-V mqttv5` it prints `Warning:
-  Publish 1 failed: Not authorized.`.
+  MQTT 5 carries the reason (135, "Not authorized"); the broker logs `Denied PUBLISH` only with
+  `log_type debug` or `all`. *Verified:* 2.0.18, with paho-mqtt 2.1.0 (`on_publish` reports
+  `Success`, `is_published()` is true) and `mosquitto_pub`. *Here:* the gateway speaks MQTT 3.1.1
+  (`make_paho_client()`), so `MqttBus.publish()` and `send` (`_publish()` in `cli.py`) take a denied
+  message as delivered; only the broker's log shows the denial. *Check:* `mosquitto_pub -p 18830 -u
+  mhg -P s3cret -q 1 -t meshcore/radio1/availability -m online` exits with 0; with `-V mqttv5` it
+  prints `Warning: Publish 1 failed: Not authorized.`.
 * **The `acl_file` check never refuses a SUBSCRIBE.** A subscription to a topic the user may not
   read is granted at the requested QoS; its messages are then not delivered, and nothing is
   logged. *Verified:* 2.0.18, MQTT 3.1.1 and 5; `src/security_default.c:383` ("FIXME - implement

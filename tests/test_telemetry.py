@@ -385,6 +385,20 @@ def test_a_late_answer_undoes_the_timeout() -> None:
     assert due_at(s, [direct(A)], 931.0, 5000.0) == pytest.approx(1800.0)  # request to request
 
 
+def test_an_answer_taken_later_counts_from_when_it_came() -> None:
+    """A late answer taken 70 s after it came: its answer and its position count from then, the
+    next request from the request before it; a time after now counts as now."""
+    s = Scheduler(0.0, lanes=wide)
+    ask(s, [direct(A)], 0.0)
+    s.sent(poll(s, [direct(A)], 900.0), flood=False, now=900.0)
+    s.unanswered(A, 905.0)
+    s.answered(A, 990.0, HOME, 19, late=True, at=920.0)
+    assert s.answered_ages(1000.0) == s.located_ages(1000.0) == {A: 80.0}
+    assert due_at(s, [direct(A)], 991.0, 5000.0) == pytest.approx(1800.0)
+    s.answered(A, 2000.0, HOME, 19, late=True, at=2005.0)  # the wall clock went back meanwhile
+    assert s.state(A, 2000.0) == "answering"
+
+
 def test_an_uncertain_timeout_counts_only_the_second_time() -> None:
     """Over TCP an answer can be lost while the radio's push queue is full."""
     s = Scheduler(0.0, lanes=wide)

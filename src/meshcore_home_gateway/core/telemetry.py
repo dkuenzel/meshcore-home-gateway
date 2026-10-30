@@ -442,10 +442,12 @@ class Scheduler:
     def answered(
         self, key: str, now: float, cells: tuple[int, int] | None, lpp_bytes: int, *,
         route: tuple[int | None, int | None] | None = None, late: bool = False,
+        at: float | None = None,
     ) -> bool:  # fmt: skip
         """An answer of the contact asked; `late`: after its wait, before the next request.
-        `route`: hops and path bytes in the table the answer was accepted on. True when it is
-        back: its first answer (since it was added or included again), or one after two or more
+        `route`: hops and path bytes in the table the answer was accepted on. `at`: when it
+        came (None: now); its answer and position count from then. True when it is back: its
+        first answer (since it was added or included again), or one after two or more
         unanswered requests in a row."""
         if not late:
             self._in_flight, self._gap_until = None, now + POLL_GAP_S
@@ -453,7 +455,8 @@ class Scheduler:
         if s is None:
             return False
         back = s.answered_at is None or s.failures >= 2
-        s.failures, s.uncertain, s.answered_at = 0, False, now
+        came = now if at is None else min(now, at)
+        s.failures, s.uncertain, s.answered_at = 0, False, came
         s.flood_waiting_since = None
         if not s.last_flood:
             s.floods = 0  # a direct answer: the route works
@@ -465,7 +468,7 @@ class Scheduler:
         s.due_at = (s.polled_at if s.polled_at is not None else now) + interval
         s.current_s = max(CURRENT_MIN_S, CURRENT_INTERVALS * interval)
         if cells is not None:
-            s.located_at = now
+            s.located_at = came
         self.version += 1
         return back
 

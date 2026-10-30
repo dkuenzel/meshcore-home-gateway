@@ -19,7 +19,9 @@ Public interface: see [compatibility](development.md#compatibility).
 * With a topic ACL on the broker, Home Assistant's user needs `readwrite` on `homeassistant/#`
   ([mqtt-api.md](mqtt-api.md#securing-the-broker)), and for the switch *Telemetry*
   `topic write <base_topic>/<node_id>/contacts/+/telemetry`, which the example ACL of earlier
-  versions lacks: without it the switch does nothing, and only the broker's log shows why.
+  versions lacks: without it the switch does nothing, and only the broker's debug log shows why
+  (`log_type debug` or `all`; in the Mosquitto add-on, `debug` in its option `log_type`, not
+  `debug: true`, which also logs passwords).
 
 Why 2026.8: device-based discovery exists since 2024.11, the entity IDs below (from
 `default_entity_id`) since 2025.10, QoS 1 for every entity from the device level since 2026.5.2,
@@ -381,7 +383,8 @@ that leaves range, an hour without a position, an outage of the radio, an exclus
 position from adverts, and the seconds of every restart of the gateway. Use a state trigger on
 the person `from: home` with `for: "00:05:00"` (a restart lasts seconds) and the condition
 *Telemetry status* `on` for 10 minutes: the status is not `on` while the radio is away, telemetry
-is paused or the gateway is stopped, and reads `on` again before the companions answer
+is paused or the gateway is stopped, and reads `on` again before the companions answer; it is also
+`unavailable` for a moment when Home Assistant starts or reconnects to the broker
 ([example](#examples)).
 
 ## What reaches Home Assistant
@@ -698,7 +701,8 @@ the gateway makes the person `unknown` for seconds, which the `for` skips. The c
 outage of the radio, a pause and a stopped gateway, and the wait for the first answers after them:
 *Telemetry status* reads `on` again at once, and the companions answer about 76 s apart (EU/UK
 Narrow). Its 10 minutes cover about seven companions; add 76 s for each more. It also skips a
-departure in the first 5 minutes after them.
+departure in the first 5 minutes after them, and after Home Assistant starts or reconnects to the
+broker (every MQTT entity, the status too, is `unavailable` for a moment).
 
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.

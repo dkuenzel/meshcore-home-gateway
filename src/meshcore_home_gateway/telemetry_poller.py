@@ -622,6 +622,7 @@ class TelemetryPoller:
         back = self._scheduler.answered(
             key, now, found.cells if found else None, payload.lpp_bytes,
             route=(record.path_hops, record.path_bytes), late=late,
+            at=now - (self._wall() - event.received_at),  # when it came: a late one is taken later
         )  # fmt: skip
         self._newest[key] = (event.session_serial, event.seq)
         if self._own_flood is not None and self._own_flood[0] == key:

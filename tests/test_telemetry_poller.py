@@ -23,7 +23,7 @@ from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core import lpp, telemetry
 from meshcore_home_gateway.core.airtime import Costs, meshcore_lora
 from meshcore_home_gateway.core.budget import AirtimeBudget
-from meshcore_home_gateway.core.mesh import Heard, Signal
+from meshcore_home_gateway.core.mesh import ANSWERED_SLACK_S, Heard, Signal
 from meshcore_home_gateway.core.telemetry import Candidate, Poll
 from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt.client import ContactRequest
@@ -2159,6 +2159,50 @@ def test_restored_readings_of_an_answer_older_than_the_saved_one_are_dropped(
         erin = r.bus.payloads(f"/contacts/{ERIN_KEY}")[-1]
         assert (erin["telemetry_state"], erin["battery_v"], erin["readings_at"]) == (
             "excluded", None, None,
+        )  # fmt: skip
+
+    asyncio.run(main())
+    history.close()
+
+
+def test_readings_of_a_late_answer_taken_a_while_after_it_came_stay_after_a_restart(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Gina's answer came after her wait, while a message was delivered, and was taken after
+    that and Dana's wait, more than ANSWERED_SLACK_S later: the saved schedule knows it from
+    when it came, so the readings the history kept of it come back after a restart."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    store = JsonStateFile(tmp_path / "state.json")
+    pushed: list[float] = []
+
+    async def main() -> None:
+        first = rig(monkeypatch, GINA, DANA, records=TelemetryRecords(store), history=history)
+        await first.until_asked(1)  # silent
+
+        async def delivering(_quiet_s: float, *, timeout_s: float) -> bool:
+            first.clock[0] += 2.0
+            pushed.append(first.wall())
+            first.poller.answer(TelemetryReceived(GINA.public_key[:6], LPP_FULL, pushed[0], 99, 1))
+            first.clock[0] += 50.0  # the message delivered, then quiet
+            return True
+
+        def waited(_key: str) -> None:
+            first.clock[0] += 15.0
+
+        monkeypatch.setattr(first.poller._outbox, "wait_quiet", delivering)
+        first.radio.on_request = waited
+        await first.steps(2)  # Dana asked and silent; then Gina's answer taken
+        assert [key for key, _ in first.radio.asked] == [GINA_KEY, KEY]
+        gina = first.bus.payloads(f"/contacts/{GINA_KEY}")[-1]
+        assert (gina["battery_v"], gina["readings_at"]) == (4.12, iso(pushed[0]))
+        assert first.wall() - pushed[0] > ANSWERED_SLACK_S
+        first.poller._save(at_once=True)
+        second = rig(monkeypatch, GINA, DANA, records=TelemetryRecords(store), history=history,
+                     wall=first.wall() + 300.0)  # fmt: skip
+        gina = second.bus.payloads(f"/contacts/{GINA_KEY}")[-1]
+        assert (gina["telemetry_current"], gina["battery_v"], gina["readings_at"]) == (
+            True, 4.12, iso(pushed[0]),
         )  # fmt: skip
 
     asyncio.run(main())
