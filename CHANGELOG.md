@@ -8,6 +8,15 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-30
+
+The first stable release. It ships the program of 1.0.0rc1, run on hardware with a LilyGo T-Echo
+Lite on companion firmware 1.18.0 over USB, in a Proxmox container, with Home Assistant 2026.10.
+From now on the four public interfaces follow Semantic Versioning, kept by the compatibility
+policy and its snapshot of the code: an incompatible change raises the major version, a feature
+the minor version, a fix the patch version. Releases are tagged by CI from the version a pull
+request writes.
+
 ### Added
 
 - The compatibility policy ([docs/development.md](docs/development.md#compatibility),
