@@ -747,7 +747,9 @@ class TelemetryPoller:
     def _refresh_states(self, keys: Collection[str] | None = None) -> None:
         """The state of each companion of the table as last read (or of `keys`) now; the
         observer republishes the document of one whose state changed. A contact's first state
-        is no change: its document was built with it."""
+        is told too: its document may have been built with another (a contact the observer got
+        during a request, answers that expired before the first step); the observer publishes
+        only a changed document."""
         contacts = self._observer.mesh.contacts
         for key in [k for k in self._reported if k not in contacts]:  # contacts that left
             del self._reported[key]
@@ -759,7 +761,7 @@ class TelemetryPoller:
             state = self._state(key, prefixes, now) or "waiting"
             before = self._reported.get(key)
             self._reported[key] = state
-            if before is not None and before != state:
+            if before != state:
                 self._observer.telemetry_state_changed(key)
 
     def _state(self, key: str, prefixes: Counter[str], now: float) -> TelemetryState | None:
@@ -802,6 +804,14 @@ class TelemetryPoller:
         self._scheduler.forget(key, self._mono())
         self._reported[key] = self.state_of(key) or "waiting"
         self._wake.set()
+
+    def contact_added(self, key: str) -> None:
+        """Observer listener: a table read added the contact, whose values the mesh no longer
+        has. Its schedule forgets its answers as at an inclusion (one removed and added again
+        within a day would get them back), so its next answer is its first; its state is
+        evaluated anew (the observer publishes its document next)."""
+        self._scheduler.forget(key, self._mono())
+        self._reported.pop(key, None)
 
     def radio_connected(self) -> None:
         """The bridge has a session: the step that finds it comes now, not a STEP_S later."""

@@ -285,7 +285,7 @@ class Bridge:
         self, records: TelemetryRecords | None, lanes: LaneFactory | None
     ) -> TelemetryPoller | None:
         """The task that asks the companions, if telemetry is enabled: it gives the observer each
-        companion's state and hears of every exclusion."""
+        companion's state and hears of every exclusion and every contact added."""
         if not self.config.telemetry.enabled:
             return None
         poller = TelemetryPoller(
@@ -295,6 +295,7 @@ class Bridge:
         )  # fmt: skip
         self.observer.telemetry_state = poller.state_of
         self.observer.on_telemetry_exclusion.append(poller.exclusion_changed)
+        self.observer.on_contact_added.append(poller.contact_added)
         poller.on_status = self._publish_state
         return poller
 

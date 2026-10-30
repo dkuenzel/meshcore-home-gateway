@@ -1426,7 +1426,8 @@ def test_watchdog_is_pinged_at_half_its_interval_and_the_state_repeated(
 
 def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
     """The shipped default (ADR 0018): a configuration without [telemetry] asks the companions.
-    The poller gives each companion's document its state and hears of every exclusion."""
+    The poller gives each companion's document its state and hears of every exclusion and every
+    contact added."""
     plain = parse_config(
         '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
     )
@@ -1437,9 +1438,11 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
     assert poller is not None
     assert bridge.observer.telemetry_state == poller.state_of
     assert bridge.observer.on_telemetry_exclusion == [poller.exclusion_changed]
+    assert bridge.observer.on_contact_added == [poller.contact_added]
     off = Bridge(make_config(), FakeBus(), EmulatedRadio, CommandLedger(store))
     assert off._telemetry is None
     assert (off.observer.telemetry_state, off.observer.on_telemetry_exclusion) == (None, [])
+    assert off.observer.on_contact_added == []
 
 
 def test_the_saved_schedule_is_restored_before_anything_runs(

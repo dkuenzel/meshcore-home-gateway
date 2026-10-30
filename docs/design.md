@@ -787,8 +787,9 @@ sequenceDiagram
   keeps its schedule until a table read lacks it, however long the radio was away),
   without positions. It is saved every 5 minutes after a change, at once after a flood (before its
   wait, so a crash cannot repeat it) and at the stop. A contact that left the candidates keeps its
-  schedule for a day. When the clock went back while the gateway was stopped, the time stopped is
-  unknown: it counts as nothing, except that every last answer counts as more than a day old
+  schedule for a day; one the radio's table adds again forgets its answers, as at an inclusion.
+  When the clock went back while the gateway was stopped, the time stopped is unknown: it counts
+  as nothing, except that every last answer counts as more than a day old
   (fewer requests until the next answer, never more) and no located time is kept. Restored before
   any task runs, the schedule gives each contact its state back at once, and the observer the time
   of its newest answer with a position, so a restart flips no state and raises no event. The

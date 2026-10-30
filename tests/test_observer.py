@@ -567,6 +567,53 @@ def test_an_answer_publishes_its_readings_and_stores_each_value(
     history.close()
 
 
+def test_a_first_position_gives_the_device_its_tracker_at_once_without_new_values() -> None:
+    """A companion that first answered without a position (location not allowed, GPS off) and
+    then with one: the answer brings no new value, its device still gets a tracker at once."""
+    observer = Observer(FakeBus(), TOPICS, wall_clock=lambda: NOW)
+    updates: list[bool] = []
+    observer.on_contacts.append(lambda _mesh: updates.append(True))
+    key = ALICE.public_key.hex()
+    observer.radio_event(ContactsRead(table(ALICE), NOW))
+    observer.telemetry(key, answer(NOW + 10, bytes.fromhex("0174019c016700ea")))  # no position
+    updates.clear()
+    observer.telemetry(key, answer(NOW + 20))  # the same values, and a position
+    assert updates == [True]
+
+
+def test_each_contact_a_table_read_adds_is_told_before_its_document(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """At the first table read only one the last run did not have; a listener that fails stops
+    neither the others nor the documents."""
+    store = JsonStateFile(tmp_path / "state.json")
+    alice, bob, greenhouse = (c.public_key.hex() for c in (ALICE, BOB, GREENHOUSE))
+    RetainedKeys(store, "contacts").replace({alice})
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, retained=RetainedKeys(store, "contacts"),
+                        wall_clock=lambda: NOW)  # fmt: skip
+    states: dict[str, TelemetryState] = {alice: "answering", bob: "answering"}
+    observer.telemetry_state = states.get
+    told: list[str] = []
+
+    def broken(_key: str) -> None:
+        raise RuntimeError("bug")
+
+    def forget(key: str) -> None:
+        told.append(key)
+        states.pop(key, None)
+
+    observer.on_contact_added += [broken, forget]
+    observer.radio_event(ContactsRead(table(ALICE, BOB), NOW))
+    assert told == [bob]  # Alice is one of the last run
+    assert last(bus, f"{ROOT}/contacts/{alice}")["telemetry_state"] == "answering"
+    assert last(bus, f"{ROOT}/contacts/{bob}")["telemetry_state"] == "waiting"
+    observer.radio_event(ContactsRead(table(ALICE), NOW + 10))  # Bob removed
+    observer.radio_event(ContactsRead(table(ALICE, BOB, GREENHOUSE), NOW + 20))
+    assert told == [bob, bob, greenhouse]
+    assert "contact added listener failed" in caplog.text
+
+
 def test_the_state_is_pulled_and_an_event_follows_the_document() -> None:
     bus = FakeBus()
     observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)

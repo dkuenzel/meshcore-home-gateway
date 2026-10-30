@@ -113,6 +113,9 @@ class Observer:
         self.telemetry_state: Callable[[str], TelemetryState | None] | None = None
         # called after an exclusion (True) or an inclusion (False) of a key: the poller
         self.on_telemetry_exclusion: list[Callable[[str, bool], None]] = []
+        # called with each key a table read added (at the first, only one the last run did not
+        # have), before its document is published: the poller
+        self.on_contact_added: list[Callable[[str], None]] = []
         self.manage = manage
         self._bus = bus
         self._topics = topics
@@ -403,6 +406,12 @@ class Observer:
             known = self._retained.keys if self._retained else frozenset(records)
             gone = tuple(sorted(known - set(records)))
             change = TableChange(tuple(k for k in change.added if k not in known), gone)
+        for key in change.added:  # its document carries what the listeners change
+            for added in self.on_contact_added:
+                try:
+                    added(key)
+                except Exception:  # the documents still go out
+                    log.exception("contact added listener failed")
         self._contacts_changed()
         for key in change.removed:  # after the devices are gone (Home Assistant reads them)
             self._clear(self._topics.contact(key))

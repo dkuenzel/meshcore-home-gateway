@@ -1432,6 +1432,7 @@ def rig(
     radio.answer = poller.answer
     observer.telemetry_state = poller.state_of
     observer.on_telemetry_exclusion.append(poller.exclusion_changed)
+    observer.on_contact_added.append(poller.contact_added)
 
     async def sleep(seconds: float) -> None:
         clock[0] += max(0.0, seconds)
@@ -1598,6 +1599,85 @@ def test_an_included_contact_is_waiting_and_asked_at_once(monkeypatch: pytest.Mo
     asyncio.run(main())
 
 
+def test_a_companion_added_again_within_a_day_is_waiting_and_asked_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Removed from the radio, her values are gone: added again, her schedule forgets its
+    answers as at an inclusion, and her next answer is her first since she was added."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        assert r.events() == [("answered", KEY, "answering")]
+        record = r.radio.contact_records.pop(KEY)
+        r.read()  # removed
+        await r.steps(1)  # no longer a candidate: parked
+        r.bus.published.clear()  # her topic was cleared
+        r.clock[0] += 300.0
+        r.radio.contact_records[KEY] = record
+        r.read()  # added again
+        added = r.clock[0]
+        assert r.state() == "waiting"
+        await r.until_asked(2)
+        assert r.radio.asked[1][1] - added <= telemetry.POLL_GAP_S + poller_module.QUIET_S
+        assert r.events() == [("answered", KEY, "answering")]
+
+    asyncio.run(main())
+
+
+def test_a_companion_removed_and_added_again_during_her_request_has_her_state_published(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The table read that added her again built her document `waiting`; her silence is
+    published, although it gives the state reported before the request."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)  # silent
+        await r.until_asked(1)
+        assert r.state() == "no_answer"
+
+        def removed_and_added(_key: str) -> None:
+            r.radio.on_request = None
+            record = r.radio.contact_records.pop(KEY)
+            r.read()
+            r.bus.published.clear()  # her topic was cleared
+            r.radio.contact_records[KEY] = record
+            r.read()
+            assert r.state() == "waiting"
+
+        r.radio.on_request = removed_and_added
+        await r.until_asked(2)
+        assert r.state() == "no_answer"
+
+    asyncio.run(main())
+
+
+def test_the_first_table_read_after_a_restart_forgets_no_schedule(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The contacts of the last run are not added: her state, her due time and her last answer
+    stay (D9)."""
+    store = JsonStateFile(tmp_path / "state.json")
+
+    async def main() -> None:
+        first = rig(monkeypatch, DANA, records=TelemetryRecords(store))
+        first.radio.answers[KEY] = LPP_FULL
+        await first.until_asked(1)
+        interval = first.poller._scheduler.interval_s(KEY, first.clock[0])
+        assert interval is not None
+        due = first.radio.asked[0][1] + interval - first.clock[0]
+        first.poller._save(at_once=True)
+        second = rig(monkeypatch, DANA, records=TelemetryRecords(store), wall=first.wall())
+        assert second.state() == "answering"
+        second.radio.answers[KEY] = LPP_FULL
+        await second.until_asked(1)
+        assert second.radio.asked[0][1] - START == pytest.approx(due)
+        assert second.events() == []
+
+    asyncio.run(main())
+
+
 def test_the_state_of_a_contact(monkeypatch: pytest.MonkeyPatch) -> None:
     """Excluded; a look-alike from the table as last read and the radio's own key, also before
     any decision and while paused; else the schedule's state (None: it does not know it)."""
@@ -1635,8 +1715,11 @@ def test_a_changed_state_is_reported_once_and_a_silence_at_once(
         r = rig(monkeypatch, DANA)
         reported = changes(monkeypatch, r)
         r.connected[0] = None  # the radio away: the steps only evaluate
+        published = len(r.bus.published)
         await r.steps(3)
-        assert reported == []  # the first evaluation is no change
+        assert reported == [KEY]  # the first evaluation, once
+        assert len(r.bus.published) == published  # her document was built with that state
+        reported.clear()
         r.connected[0] = r.radio
         r.radio.answers[KEY] = LPP_FULL
         await r.until_asked(1)
@@ -1646,6 +1729,54 @@ def test_a_changed_state_is_reported_once_and_a_silence_at_once(
         del r.radio.answers[KEY]
         await r.until_asked(3)  # the second silence
         assert (reported, r.state()) == ([KEY, KEY], "away")  # at once, with the silence
+
+    asyncio.run(main())
+
+
+def test_the_first_state_of_a_contact_added_during_her_request_is_published(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The session read Erin's table before the step's states were evaluated, the observer got
+    it while she was asked: her document was built `waiting`, and her silence is published."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA)
+        r.radio.answers[KEY] = LPP_FULL
+        await r.until_asked(1)
+        r.radio.contact_records[ERIN_KEY] = chat_record(ERIN)
+
+        def read_once(_key: str) -> None:
+            r.radio.on_request = None
+            r.read()
+            assert r.state(ERIN_KEY) == "waiting"
+
+        r.radio.on_request = read_once
+        await r.until_asked(2)
+        assert r.radio.asked[1][0] == ERIN_KEY
+        assert r.state(ERIN_KEY) == r.poller.state_of(ERIN_KEY) == "no_answer"
+
+    asyncio.run(main())
+
+
+def test_answers_expiring_after_a_restart_before_the_first_step_are_published(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Her answers count 20 s more at the first table read after the restart, and the first
+    step comes later: her document no longer reads current."""
+    store = JsonStateFile(tmp_path / "state.json")
+
+    async def main() -> None:
+        first = rig(monkeypatch, DANA, records=TelemetryRecords(store))
+        first.radio.answers[KEY] = LPP_FULL
+        await first.until_asked(1)
+        first.poller._save(at_once=True)
+        restart = NOW + telemetry.CURRENT_MIN_S - 20.0
+        second = rig(monkeypatch, DANA, records=TelemetryRecords(store), wall=restart)
+        assert second.state() == "answering"
+        second.clock[0] += 40.0
+        await second.steps(1)
+        document = second.bus.payloads(f"/contacts/{KEY}")[-1]
+        assert (document["telemetry_state"], document["telemetry_current"]) == ("away", False)
 
     asyncio.run(main())
 
@@ -2094,6 +2225,34 @@ def test_the_state_file_keeps_what_is_left_of_the_hold(
         await r.until_asked(1)
         r.poller._save(at_once=True)
         assert saved_hold(store) is None
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+def test_the_hold_is_saved_as_started_also_after_the_save_of_an_earlier_step(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The service saves after every step, the first before the radio's table is read: the
+    save when the hold starts must not wait for a change of the schedule, or an abrupt stop
+    makes the next start hold the whole hour again."""
+    store = JsonStateFile(tmp_path / "state.json")
+    records = TelemetryRecords(store)
+
+    async def main() -> None:
+        first = rig(monkeypatch, DANA, records=records, read=False)
+        await first.steps(1)
+        first.poller._save()  # as run() does after each step
+        assert store.load()["telemetry"]["hold_pending"] is True
+        first.clock[0] += 120.0
+        first.read()
+        started = first.wall()
+        await first.steps(1)  # the hold starts
+        first.poller._save()
+        assert store.load()["telemetry"]["hold_pending"] is False
+        second = rig(monkeypatch, DANA, records=records, wall=started + 3000.0)  # stopped abruptly
+        await second.until_asked(1)
+        assert second.radio.asked[0][1] - START == pytest.approx(600.0)
 
     asyncio.run(main())
 
