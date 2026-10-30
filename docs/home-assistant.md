@@ -377,8 +377,9 @@ person whose only GPS tracker is the mesh tracker:
 that leaves range, an hour without a position, an outage of the radio, an exclusion without a
 position from adverts, and the seconds of every restart of the gateway. Use a state trigger on
 the person `from: home` with `for: "00:05:00"` (a restart lasts seconds) and the condition
-*Telemetry status* `on`, which is false while the radio is away, telemetry is paused or the
-gateway is stopped ([example](#examples)).
+*Telemetry status* `on` for 10 minutes: the status is not `on` while the radio is away, telemetry
+is paused or the gateway is stopped, and reads `on` again before the companions answer
+([example](#examples)).
 
 ## What reaches Home Assistant
 
@@ -680,6 +681,7 @@ conditions:
   - condition: state
     entity_id: sensor.meshcore_home_gateway_radio1_telemetry_status
     state: "on"
+    for: "00:10:00"
 actions:
   - action: persistent_notification.create
     data:
@@ -690,7 +692,10 @@ mode: single
 
 For a person whose only GPS tracker is the mesh tracker, `zone.left` never fires, and a restart of
 the gateway makes the person `unknown` for seconds, which the `for` skips. The condition skips an
-outage of the radio, a pause, and a stopped gateway.
+outage of the radio, a pause and a stopped gateway, and the wait for the first answers after them:
+*Telemetry status* reads `on` again at once, and the companions answer about 76 s apart (EU/UK
+Narrow). Its 10 minutes cover about seven companions; add 76 s for each more. It also skips a
+departure in the first 5 minutes after them.
 
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.

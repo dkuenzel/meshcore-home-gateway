@@ -12,12 +12,14 @@ examples of the guide exactly as written.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -39,7 +41,7 @@ from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import Mesh, Node, Readings
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.telemetry import STATES, STATUSES, TelemetryState
-from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
+from meshcore_home_gateway.mqtt.contact_devices import READING_ENTITIES, ContactDevices
 from meshcore_home_gateway.state import JsonStateFile
 from meshcore_home_gateway.views import contact_document, contact_event, telemetry_event
 from test_contact_devices import (
@@ -68,6 +70,12 @@ SENSORS = sorted(ALICE_ANSWER_IDS - {TRACKER})
 # BME280 on channel 2 (21.3 °C, 55.5 %, 1013.2 hPa, 120 m)
 BATTERY_4_12, MCU = "0174019c", "016700ea"
 BME280 = "026700d502686f0273279402790078"
+# one entry of each type the documents publish, on channel 3: 3.3 V, -0.125 A, 12 W, 21.5 °C,
+# 55.5 %, 1013.2 hPa, 120 m, luminosity 300, generic 7, analog input 1.23, 80 %, 868 Hz, 1.5 m
+EVERY_TYPE = (
+    "0374014a0375ff830380000c036700d703686f03732794037900780365012c"
+    "0364000000070302007b0378500376000003640382000005dc"
+)
 NEW_KEYS = {  # the keys of contacts/<key> that 1.1.0a1 did not write
     "telemetry_state", "telemetry_excluded", "telemetry_current", "position_current",
     "readings_at", "battery_v", "mcu_temperature_c", "readings",
@@ -141,6 +149,15 @@ async def later(hass: HomeAssistant, seconds: float) -> None:
     await hass.async_block_till_done()
 
 
+async def elapse(hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float) -> None:
+    """`seconds` go by: the clock moves on, which the `for` of a condition reads, and the event
+    loop runs the timers then due after what it has ready (async_fire_time_changed would run
+    them first: the timeout of an MQTT subscription before its waiting acknowledgement)."""
+    freezer.tick(timedelta(seconds=seconds))
+    await asyncio.sleep(0)  # the loop takes the timers now due
+    await hass.async_block_till_done()
+
+
 # --- the contact's device -----------------------------------------------------------------------
 
 
@@ -194,6 +211,30 @@ async def test_an_answer_adds_its_entities_to_the_contact_device(
     )  # fmt: skip
     assert telemetry_state.attributes["friendly_name"] == "Alice Telemetry state"
     assert hass.states.get(SWITCH).attributes["friendly_name"] == "Alice Telemetry"
+    assert problems(caplog) == []
+
+
+async def test_every_published_reading_type_gets_its_class_unit_and_precision(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    """Home Assistant takes the sensor of each reading type as the gateway announces it, without
+    a warning (docs/platform-notes.md)."""
+    mesh, _devices, _broker = await with_alice(hass, tmp_path, BATTERY_4_12, EVERY_TYPE, MCU)
+    registry = er.async_get(hass)
+    shown, announced = {}, {}  # by LPP type
+    for key, value in document(mesh)["readings"].items():
+        component = lpp.component_of(key)
+        _channel, lpp_type, _n = lpp.parse_component(component)
+        entity_id, entity = f"sensor.mesh_alice_{component}", READING_ENTITIES[lpp_type]
+        state, entry = hass.states.get(entity_id), registry.async_get(entity_id)
+        shown[lpp_type] = (
+            state.state, state.attributes.get("device_class"),
+            state.attributes.get("unit_of_measurement"),
+            entry.options["sensor"]["suggested_display_precision"],
+        )  # fmt: skip
+        announced[lpp_type] = (str(value), entity.device_class, entity.unit, entity.precision)
+    assert set(announced) == set(lpp.UNITS)  # every type the documents publish
+    assert shown == announced
     assert problems(caplog) == []
 
 
@@ -509,8 +550,9 @@ async def test_the_not_answering_example_posts_one_notification_per_event(
 
 
 async def test_the_left_home_example_skips_a_paused_telemetry_and_a_restart(
-    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path
-) -> None:
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path,
+    freezer: FrozenDateTimeFactory,
+) -> None:  # fmt: skip
     await with_person(hass)
     mesh, _devices, _broker = await with_alice(hass, tmp_path, BATTERY_4_12, gps(home(hass)), MCU)
     await fire(hass, TOPICS.state, telemetry_state_document("on", None), retain=True)
@@ -521,24 +563,57 @@ async def test_the_left_home_example_skips_a_paused_telemetry_and_a_restart(
 
     await fire(hass, TOPICS.availability, "offline")  # the gateway restarts
     assert hass.states.get("person.alice").state == "unknown"
-    await later(hass, 10)
+    await elapse(hass, freezer, 10)
     await fire(hass, TOPICS.availability, "online")  # live: the broker clears the retain flag
     assert hass.states.get("person.alice").state == "home"
-    await later(hass, 6 * 60)
+    await elapse(hass, freezer, 6 * 60)
     assert notifications(hass) == []
 
     await fire(hass, TOPICS.state, telemetry_state_document("paused", "no_radio"))
     await fire(hass, TOPICS.contact(ALICE), document(mesh, "away"))  # an hour without the radio
-    await later(hass, 6 * 60)
+    await elapse(hass, freezer, 6 * 60)
     assert notifications(hass) == []
 
     await fire(hass, TOPICS.contact(ALICE), document(mesh))
     await fire(hass, TOPICS.state, telemetry_state_document("on", None))
+    await elapse(hass, freezer, 5 * 60)  # her answers come again
     await fire(hass, TOPICS.contact(ALICE), document(mesh, "away"))  # she left
-    await later(hass, 4 * 60)
+    await elapse(hass, freezer, 4 * 60)
     assert notifications(hass) == []
-    await later(hass, 5 * 60 + 1)
+    await elapse(hass, freezer, 60 + 1)  # the status has read `on` for 10 minutes
     assert notifications(hass) == ["unknown"]
+    assert problems(caplog) == []
+
+
+async def test_the_left_home_example_waits_for_the_first_answer_after_the_radio_returns(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path,
+    freezer: FrozenDateTimeFactory,
+) -> None:  # fmt: skip
+    """*Telemetry status* reads `on` as soon as the radio is back, and Alice answers later: after
+    her answers expired during the outage, or when they expire while she waits for her turn."""
+    await with_person(hass)
+    mesh, _devices, _broker = await with_alice(hass, tmp_path, BATTERY_4_12, gps(home(hass)), MCU)
+    await fire(hass, TOPICS.state, telemetry_state_document("paused", "no_radio"), retain=True)
+    automation = guide_automation("Alice left home")
+    assert await async_setup_component(hass, "automation", {"automation": [automation]})
+    await hass.async_block_till_done()
+
+    await fire(hass, TOPICS.contact(ALICE), document(mesh, "away"))  # an hour without the radio
+    await elapse(hass, freezer, 4 * 60)
+    await fire(hass, TOPICS.state, telemetry_state_document("on", None))  # the radio is back
+    await elapse(hass, freezer, 60 + 1)  # the trigger's `for` ends before her first answer
+    assert notifications(hass) == []
+    await fire(hass, TOPICS.contact(ALICE), document(mesh))
+    assert hass.states.get("person.alice").state == "home"
+
+    await fire(hass, TOPICS.state, telemetry_state_document("paused", "no_radio"))
+    await fire(hass, TOPICS.state, telemetry_state_document("on", None))  # back within the hour
+    await elapse(hass, freezer, 2 * 60)
+    await fire(hass, TOPICS.contact(ALICE), document(mesh, "away"))  # others are asked first
+    await elapse(hass, freezer, 5 * 60 + 1)  # the status has read `on` for 7 minutes
+    assert notifications(hass) == []
+    await fire(hass, TOPICS.contact(ALICE), document(mesh))
+    assert hass.states.get("person.alice").state == "home"
     assert problems(caplog) == []
 
 

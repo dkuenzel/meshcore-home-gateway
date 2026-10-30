@@ -1142,10 +1142,10 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
 * **The device classes and units of the reading sensors are accepted: voltage V, current A, power
   W, temperature °C, humidity %, atmospheric pressure hPa, distance m, frequency Hz.** *Verified:*
   2026.10.0, source `components/sensor/const.py` lines 646-760 (`DEVICE_CLASS_UNITS`);
-  `test_an_answer_adds_its_entities_to_the_contact_device` (every reading key, no warning).
-  *Here:* `READING_ENTITIES` in `src/meshcore_home_gateway/mqtt/contact_devices.py`; luminosity,
-  generic and analog input have neither class nor unit, percentage a unit without a class.
-  *Check:* `make ha-test`.
+  `test_every_published_reading_type_gets_its_class_unit_and_precision` (a reading of each
+  published type, no warning). *Here:* `READING_ENTITIES` in
+  `src/meshcore_home_gateway/mqtt/contact_devices.py`; luminosity, generic and analog input have
+  neither class nor unit, percentage a unit without a class. *Check:* `make ha-test`.
 
 ## Home Assistant dashboards
 
