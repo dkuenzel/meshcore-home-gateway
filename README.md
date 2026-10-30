@@ -43,13 +43,13 @@ flowchart LR
 
 ## Status
 
-Version 1.0 release candidate. Developed against MeshCore companion firmware 1.18.0 (protocol
-version 3) and Home Assistant 2026.10 (2026.8 or newer is required). From 1.0.0 on, its four public
-interfaces follow Semantic Versioning: the MQTT API, the configuration format, the command line
-and Home Assistant discovery ([compatibility](docs/development.md#compatibility)); see
-[`CHANGELOG.md`](CHANGELOG.md). Every finished step is published as a signed pre-release on the
-repository's releases page; 1.0.0 follows the
-[hardware checklist](docs/testing.md#hardware-checklist).
+Version 1.0. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and Home
+Assistant 2026.10 (2026.8 or newer is required); tested on hardware with a LilyGo T-Echo Lite on
+companion firmware 1.18.0 over USB, in a Proxmox container. Its four public interfaces follow
+Semantic Versioning: the MQTT API, the configuration format, the command line and Home Assistant
+discovery ([compatibility](docs/development.md#compatibility)); see [`CHANGELOG.md`](CHANGELOG.md).
+Every finished step is published as a signed pre-release on the repository's releases page, every
+release after the [hardware checklist](docs/testing.md#hardware-checklist).
 
 ## Quick start
 
