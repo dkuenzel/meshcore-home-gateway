@@ -54,6 +54,7 @@ from meshcore_home_gateway.contact_manager import Job
 from meshcore_home_gateway.core import profile
 from meshcore_home_gateway.core.commands import Rejection
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
+from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
     NODE_TYPES,
     AirtimeMeter,
@@ -61,6 +62,7 @@ from meshcore_home_gateway.core.mesh import (
     Heard,
     Mesh,
     Node,
+    Readings,
     Signal,
     Tracked,
     type_name,
@@ -107,7 +109,7 @@ from meshcore_home_gateway.state import (
     JsonStateFile,
     ProfileRecords,
 )
-from tests.radio_emulator import EmulatedContact, EmulatedRadio
+from tests.radio_emulator import LPP_ALL_READINGS, EmulatedContact, EmulatedRadio
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.observer import Publisher
@@ -234,6 +236,7 @@ channel = 1
 enabled = false
 messages_days = 7
 positions_days = 90
+readings_days = 14
 [contacts]
 manage = false
 [diagnostics]
@@ -1379,7 +1382,10 @@ def _tracked(node_type: int) -> Tracked:
     )  # fmt: skip
     heard = Heard(T, "message", Signal(hops=1, snr_db=5.0, rssi_dbm=-90))
     fix = Fix(position, T, "advert", altitude_m=10.0)
-    tracked = Tracked(node, T - 60, heard, fix, position_received_at=T, restored_heard=heard)
+    tracked = Tracked(
+        node, T - 60, heard, fix, position_received_at=T, restored_heard=heard,
+        readings=Readings(T, Named(4.12, 23.4, LPP_ALL_READINGS)),
+    )  # fmt: skip
     _filled(tracked)
     return tracked
 
