@@ -44,7 +44,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
 | `sensor.meshcore_home_gateway_radio1_contacts` | count | contacts in the radio's table; attribute `max` |
 | `sensor.meshcore_home_gateway_radio1_nodes` | count | nodes heard in the last 7 days that are not contacts |
-| `event.meshcore_home_gateway_radio1_contact` | event: `added`, `removed`, `hidden`, `shown`, `refused`, `failed` | a contact added to or removed from the radio, the result of a contact request (`refused`, `failed`, with `request`, `id` and `reason`), or a device hidden in Home Assistant and shown again |
+| `event.meshcore_home_gateway_radio1_contact` | event: `added`, `removed`, `hidden`, `shown`, `refused`, `failed`, `excluded`, `included` | a contact added to or removed from the radio, the result of a contact request (`refused`, `failed`, with `request`, `id` and `reason`), a contact excluded from telemetry or included again, or a device hidden in Home Assistant and shown again |
 | `event.meshcore_home_gateway_radio1_node` | event: `new` | a node heard for the first time |
 | `sensor.meshcore_home_gateway_radio1_noise_floor` | signal strength (dBm), diagnostic | the radio's noise floor |
 | `sensor.meshcore_home_gateway_radio1_radio_airtime` | duration (s), diagnostic | what the radio itself counted as sent in the last hour, adverts and acknowledgements included; attributes `window_s`, `airtime_factor`, `duty_cycle_percent` |
@@ -57,6 +57,9 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_profile` | enum, diagnostic: `ok`, `written`, `drift`, `differs`, `problem` | the managed radio profile at the last connect; the `settings` document as attributes ([configuration.md](configuration.md#radioprofile)) |
 | `event.meshcore_home_gateway_radio1_setting` | event: `written`, `failed`, `not_taken`, `not_converging`, `drift` | a radio setting set, refused, not taken, given up or found changed |
 | `sensor.meshcore_home_gateway_radio1_uptime`, `..._packets_received`, `..._packets_sent`, `..._receive_errors` | diagnostic | the radio's uptime and packet counters; disabled until enabled in Home Assistant |
+| `sensor.meshcore_home_gateway_radio1_telemetry_status` | enum, diagnostic: `off`, `on`, `paused`, `unsupported` | whether the gateway asks the companions for telemetry; attribute `reason` while `paused` ([below](#telemetry-of-the-households-companions)) |
+| `sensor.meshcore_home_gateway_radio1_telemetry_airtime`, `..._telemetry_mesh_airtime` | duration (s), diagnostic | *Telemetry airtime last hour*: the gateway's own transmit time for telemetry (its lane allows 18 s an hour); *Telemetry mesh airtime last hour*: the airtime its requests caused in the mesh, as estimated (90 s an hour); disabled until enabled in Home Assistant |
+| `event.meshcore_home_gateway_radio1_telemetry` | event: `answered`, `unanswered` | a companion left two requests in a row unanswered, or answers again; attributes `key`, `prefix`, `name`, `state` |
 
 A `-` in the node ID becomes `_` in the entity IDs, as in an alias: node `radio-1` gives
 `sensor.meshcore_home_gateway_radio_1_battery`. The discovery topic, the device and the unique
@@ -86,20 +89,28 @@ from its own name, not from a placeholder. The entities, for a companion named *
 | `sensor.mesh_alice_last_heard` | timestamp | when the gateway last heard the contact (advert, message; its telemetry answers at most once an hour) |
 | `sensor.mesh_alice_hops` | diagnostic | repeaters the last advert or message passed (*unknown*: direct, or not known) |
 | `sensor.mesh_alice_snr` | signal strength (dB), diagnostic | its signal-to-noise ratio, of its last advert or message |
-| `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at` (when it last changed), `position_source` (`advert`, `telemetry`); `gps_accuracy` 15 for a position from telemetry | the contact's position; only once one is known |
+| `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at` (when it last changed), `position_source` (`advert`, `telemetry`); `gps_accuracy` 15 for a position from telemetry | the contact's position; only once one is known; `unavailable` while a position from telemetry is not current |
 | `button.mesh_alice_remove` | configuration | *Remove from radio* ([below](#adding-and-removing-contacts)); `unavailable` for a contact target or command sender |
+| `switch.mesh_alice_telemetry` | switch, configuration | *Telemetry*: on while the gateway may ask the companion for telemetry, off excludes it ([below](#telemetry-of-the-households-companions)); companions only |
+| `sensor.mesh_alice_telemetry_state` | enum | *Telemetry state*: whether its answers are current, and why not; companions only |
+| `sensor.mesh_alice_battery` | voltage (V) | its battery, from its telemetry answers |
+| `sensor.mesh_alice_mcu_temperature` | temperature (°C), diagnostic | its processor's temperature |
+| `sensor.mesh_alice_ch2_temperature`, … | the reading's class and unit | each further reading of its answers, such as those of an environment sensor on channel 2 |
 
 Components exist only where they have data: repeaters and sensors get no notify and message
 entities, room servers no notify entity, and the tracker appears with the first position, from
-the contact's telemetry ([companions.md](companions.md), `[telemetry]`) or its adverts. Every
-contact has the remove button. A component, once there, stays as long as the
+the contact's telemetry ([companions.md](companions.md), `[telemetry]`) or its adverts.
+*Battery*, *MCU temperature* and the reading sensors appear with the first telemetry answer that
+carries them, at most 16 readings per contact. Every companion has the switch *Telemetry* and
+*Telemetry state* at once, also while telemetry is off, so it can be excluded before it is asked.
+Every contact has the remove button. A component, once there, stays as long as the
 contact does (Home Assistant would clear the whole device when the gateway removed a disabled
 one). The tracker is the only entity with coordinates,
 so Home Assistant's map shows each contact once; it turns `unavailable` while no position is known.
 Its attributes change only when the position moved 20 m or more, so a companion at rest adds no
 state per answer. With `gps_accuracy` Home Assistant counts a companion up to 15 m outside a zone's
-radius as inside it. Positions do not expire yet: a tracker keeps the last one until a newer one
-comes, so it is no presence source for an alarm on its own.
+radius as inside it. A position from telemetry expires when the companion stops answering
+([below](#telemetry-of-the-households-companions)); one from adverts does not.
 
 * **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
@@ -115,7 +126,10 @@ comes, so it is no presence source for an alarm on its own.
   on the gateway's device is pressed. The contact stays on the radio. When the device comes back,
   Home Assistant restores its name, area and the entities' settings, except renamed entity IDs,
   which return to the IDs above. A deletion made while the gateway is not connected to the broker
-  is not noticed; the device comes back with the next announcement.
+  is not noticed; the device comes back with the next announcement. Hiding does not exclude
+  from telemetry: a hidden companion, and one without a device because of the limit, has no
+  switch *Telemetry* but is still asked; exclude it with
+  `meshcore-home-gateway contacts telemetry KEY off`.
 * A contact device whose entity was disabled by hand: removing it makes Home Assistant log
   *No device components to cleanup*, which is harmless.
 
@@ -198,6 +212,174 @@ user can press a button and set a select or text. The broker's ACL decides which
 the topics ([mqtt-api.md](mqtt-api.md#securing-the-broker)); `manage = false` switches the
 requests off for all of them.
 
+## Telemetry of the household's companions
+
+The gateway asks the companions of its radio for their battery, their sensors and their position
+([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)); a handheld answers
+once it is set up as [companions.md](companions.md) says. Telemetry is on by default
+([configuration.md](configuration.md#telemetry)). Alice's handheld, with its GPS on and a BME280
+on channel 2, shows on its device page:
+
+| Section | Entity | Shows |
+| --- | --- | --- |
+| Configuration | *Telemetry* (`switch.mesh_alice_telemetry`) | on: the gateway asks her handheld; off: it does not |
+| Sensors | *Battery* (`sensor.mesh_alice_battery`) | 4.12 V |
+| Sensors | *Telemetry state* (`sensor.mesh_alice_telemetry_state`) | `answering` |
+| Sensors | *Temperature 2*, *Humidity 2*, *Pressure 2*, *Altitude 2* (`sensor.mesh_alice_ch2_temperature`, `sensor.mesh_alice_ch2_humidity`, `sensor.mesh_alice_ch2_barometric_pressure`, `sensor.mesh_alice_ch2_altitude`) | 21.3 °C, 55.5 %, 1013.2 hPa, 120 m |
+| Diagnostic | *MCU temperature* (`sensor.mesh_alice_mcu_temperature`) | 23.4 °C |
+| – | *Position* (`device_tracker.mesh_alice`) | on the map |
+
+A repeater, room server or sensor contact gets none of these: only companions are asked. A
+companion that never answers keeps the switch and the state.
+
+**Readings.** Each reading of an answer has a sensor, named after its type and channel. Channel 1
+holds the companion's own readings, channels 2 and up the sensors it found when it booted, in
+that order. A second reading of one type on one channel is named like *Temperature 1 (2)*. The
+entity ID ends in the reading's key without its unit, such as `sensor.mesh_<name>_ch2_temperature`
+([mqtt-api.md](mqtt-api.md#contacts-contacts-and-contactskey) has the keys):
+
+| Name | Entity ID ends in | Class, unit |
+| --- | --- | --- |
+| Voltage | `_ch<c>_voltage` | voltage, V |
+| Current | `_ch<c>_current` | current, A |
+| Power | `_ch<c>_power` | power, W |
+| Temperature | `_ch<c>_temperature` | temperature, °C |
+| Humidity | `_ch<c>_humidity` | humidity, % |
+| Pressure | `_ch<c>_barometric_pressure` | atmospheric pressure, hPa |
+| Altitude | `_ch<c>_altitude` | distance, m (barometric) |
+| Luminosity | `_ch<c>_luminosity` | none: lux on most boards, 0–100 on the T1000-E |
+| Generic, Analog input | `_ch<c>_generic`, `_ch<c>_analog_input` | none |
+| Percentage | `_ch<c>_percentage` | %, no class |
+| Frequency | `_ch<c>_frequency` | frequency, Hz |
+| Distance | `_ch<c>_distance` | distance, m |
+
+*Battery* is the answer's first value, the channel 1 voltage, in volts (a percentage: the
+template [below](#on-a-dashboard)). *MCU temperature* is its last one, the channel 1 temperature:
+on a board without a processor sensor, a channel 1 sensor that comes last gets that name. Every
+numeric telemetry sensor has the state class `measurement`, so Home Assistant keeps long-term
+statistics of it. A sensor missing at one boot moves the later ones to a lower channel: the old
+sensor then stays `unknown`; disable it under *Settings → Entities*. At most 16 reading sensors
+per contact; a further reading stays in the document. Home Assistant records a state for each
+answer in which a value changed, so a noisy sensor adds one with most answers
+([Privacy](#privacy)).
+
+**States.** *Telemetry state* says whether the values are current, and why not. Home Assistant
+shows the raw values, as below: MQTT entities have no translations yet.
+
+| State | Meaning |
+| --- | --- |
+| `waiting` | not asked yet, or not since its last answer more than a day ago |
+| `answering` | its answers are current and carry a position, or one did within the last hour |
+| `no_position` | its answers are current, without a position: no GPS, GPS off, no fix, or location not allowed |
+| `away` | it answered within the day, not lately: out of range, switched off, or not asked meanwhile (telemetry paused, the radio away, no path) |
+| `no_answer` | asked, no answer within a day: it does not allow the gateway, does not have it as a contact, or is out of range; the gateway cannot tell which |
+| `no_path` | not asked: the radio has no path to it and has not heard it within 30 minutes; a message from it, or its advert, brings it back |
+| `look_alike` | another contact or the radio itself has its first 6 key bytes, so an answer could not be told apart: not asked |
+| `excluded` | the household excluded it |
+| `off` | telemetry is off in the configuration |
+
+**Expiry.** Telemetry is current while the companion answers. After two unanswered requests in a
+row, or an hour without an answer (three of its intervals if that is longer), its tracker and
+telemetry sensors turn unavailable until it answers again. Its position counts while an answer
+within the last hour carried one. *Telemetry state* and the switch stay available, and the
+documents keep the last values. A position from adverts does not expire.
+
+| Moment (EU/UK Narrow, next to the gateway) | In Home Assistant |
+| --- | --- |
+| added to the radio | its device with *Telemetry* on and *Telemetry state* `waiting` (`no_path` if the radio has no path to it and has not heard it within 30 minutes) |
+| first answer (about 76 s after the radio connects, then about every 15 minutes at rest) | *Battery*, *MCU temperature*, the readings and the tracker appear; `answering`; event `answered` |
+| a lost answer | nothing: it is asked again 30 s later |
+| GPS off | `no_position` an hour after the last answer with a position; the tracker `unavailable`, the sensors stay |
+| leaves range right after an answer | at its next request and the retry: `away`, tracker and telemetry sensors `unavailable`, event `unanswered`; after about 16 minutes at rest, 2 while moving, 48 at rest behind two repeaters |
+| a day without an answer | `no_answer` (asked less and less, up to every 6 hours), or `no_path` when the radio lost its path |
+| comes back | asked at least every 30 minutes (or its interval, if longer): `answering`, all available, event `answered` |
+| the radio unplugged | *Telemetry status* `paused` with `no_radio` at once; an hour after its last answer `away`, its tracker and sensors `unavailable`; no event |
+| the gateway restarts | every gateway entity `unavailable` for the seconds the restart takes; then the states come back from its state file and the readings from its history: nothing expires |
+| *Telemetry* switched off | at once `excluded`, its telemetry sensors `unavailable`; event *Contact* `excluded` |
+| *Telemetry* switched on | `waiting`, asked at once (as the airtime lanes allow); values with its next answer; event *Contact* `included`, then `answered` |
+
+**Events.** *Telemetry* (`event.meshcore_home_gateway_radio1_telemetry`) has `unanswered` when a
+companion that answered within the day leaves two requests in a row unanswered, once per absence,
+and `answered` when it answers again after that, or for the first time. No event comes when
+nothing was asked (the radio away, telemetry paused, no path, the gateway stopped), nor for a
+companion that never answered. Its attributes are `key`, `prefix`, `name` and `state`, never a
+position or a reading.
+
+**Excluding a companion.** Switch *Telemetry* off on its device page, run
+`meshcore-home-gateway contacts telemetry KEY off`, or publish `off` to `contacts/<key>/telemetry`
+([mqtt-api.md](mqtt-api.md)). A full key also works before the contact is on the radio, so a
+neighbour can be excluded before it is added; a protected contact (a target, a command sender)
+can be excluded too. At once the gateway asks it no more (a request waiting for the radio is
+withdrawn, an answer in flight is dropped) and forgets its battery, readings and telemetry
+position: the tracker shows the position its adverts carried, which can be old, or turns
+`unavailable`. *Last heard* keeps the time of its last answer.
+
+The switch follows the gateway, not the click: it turns off once the gateway took the request,
+and a refused request leaves it on (the event *Contact* says why). The gateway keeps the
+exclusions in `telemetry-excluded.json` in its state directory: also when the contact leaves the
+radio and comes back, while telemetry is off, and across restarts. Its history keeps the
+contact's readings and telemetry positions for `readings_days` and `positions_days`;
+`meshcore-home-gateway contacts telemetry --forget KEY off` deletes them too. Home Assistant's own
+history stays ([Privacy](#privacy)). Every user who may switch entities can switch it on again;
+the broker's ACL decides who may write `contacts/+/telemetry`.
+
+**The first hour.** Where telemetry never ran (an update from 1.0.0, from 1.1.0a1 with telemetry
+off, or a new installation), the gateway asks nobody for an hour after the radio first connects:
+*Telemetry status* reads `paused` with the reason `first_start`, and its log names the number of
+companions it will ask. The switches and states are there meanwhile: exclude every companion that
+is not the household's. Then the status reads `on`.
+
+**Telemetry status** (`sensor.meshcore_home_gateway_radio1_telemetry_status`) is `on`, `off` (in
+the configuration), `unsupported` (the radio's firmware does not take the request) or `paused`.
+While paused, its attribute `reason` says why: `first_start` (the first hour), `no_radio` (the
+radio is not connected), `exclusions_unreadable` (`telemetry-excluded.json` cannot be read: fix or
+delete it, then restart the gateway), `auto_add` (the radio adds contacts of some type on its own)
+or `radio_airtime` (the radio transmitted 180 s in the last hour).
+
+### On a dashboard
+
+An entities card for a handheld:
+
+```yaml
+type: entities
+title: Alice's handheld
+entities:
+  - entity: sensor.mesh_alice_telemetry_state
+  - entity: sensor.mesh_alice_battery
+  - entity: device_tracker.mesh_alice
+  - entity: switch.mesh_alice_telemetry
+```
+
+The battery as a percentage: a template sensor (*Settings → Devices & services → Helpers →
+Template → Sensor*, class *Battery*, unit %, state class *Measurement*, device: the contact's),
+linear from 3.0 V (the MeshCore app's 0 %) to 4.2 V:
+
+```jinja
+{% set v = states('sensor.mesh_alice_battery') | float(none) %}
+{{ none if v is none else ([0, [100, ((v - 3.0) / 1.2 * 100) | round(0)] | min] | max) | int }}
+```
+
+## Positions and presence
+
+A `person` follows its device trackers and skips one that is `unavailable`: when the mesh tracker
+expires, the person follows its other GPS trackers, or turns `unknown` with none, and its zone no
+longer counts it. The map drops the marker; `contacts/<key>` keeps the last position. For a
+person whose only GPS tracker is the mesh tracker:
+
+| Trigger | On expiry (`home` → `unknown`) | On return (`unknown` → `home`) |
+| --- | --- | --- |
+| `zone`, `event: leave` / `enter` | `leave` fires | `enter` fires |
+| state of the person, `from: home` | fires | – |
+| `zone.left` / `zone.entered` | never | never |
+| `zone.occupancy_cleared` / `occupancy_detected` | fires if it was the last one in the zone | fires |
+
+"Never" includes a real departure, which also ends as `unknown`. Every expiry counts: a companion
+that leaves range, an hour without a position, an outage of the radio, an exclusion without a
+position from adverts, and the seconds of every restart of the gateway. Use a state trigger on
+the person `from: home` with `for: "00:05:00"` (a restart lasts seconds) and the condition
+*Telemetry status* `on`, which is false while the radio is away, telemetry is paused or the
+gateway is stopped ([example](#examples)).
+
 ## What reaches Home Assistant
 
 | MQTT | In Home Assistant |
@@ -215,7 +397,11 @@ requests off for all of them.
 | `nodes`: `look_alike`, `look_alike_total` | *Look-alike node heard* |
 | `contact`, `node` | the events *Contact* and *New node* |
 | `contacts/<key>` | a contact's sensors and tracker |
-| `state`: `telemetry`, `telemetry_airtime_1h_s`, `telemetry_mesh_airtime_1h_s` | not yet: they stay on MQTT in this release |
+| `contacts/<key>`: `telemetry_state`, `telemetry_excluded`, `battery_v`, `mcu_temperature_c`, `readings` | *Telemetry state*, the switch *Telemetry*, *Battery*, *MCU temperature* and the reading sensors; `readings_at` stays on MQTT |
+| `contacts/<key>`: `telemetry_current`, `position_current` | whether the telemetry sensors and a tracker of a position from telemetry are available |
+| `state`: `telemetry`, `telemetry_reason`, `telemetry_airtime_1h_s`, `telemetry_mesh_airtime_1h_s` | *Telemetry status* with the attribute `reason`, and the two telemetry airtime sensors |
+| `telemetry` | the event *Telemetry* |
+| `contacts/<key>/telemetry` | the switch *Telemetry* |
 | `contacts/<key>/received`, `contacts/<key>/send` | a contact's message event and notify entity |
 | `homeassistant/show_hidden` | the button *Show hidden contacts* |
 | `homeassistant/add_node`, `add_contact`, `contacts/<key>/remove` | *Add heard node*, *Add contact (key or link)*, *Remove from radio* |
@@ -339,9 +525,10 @@ integration of the release pinned in
 [`home-assistant/requirements.in`](../home-assistant/requirements.in): the entity IDs above, the
 device pages, sensors and attributes, availability, the removal of components and of contact
 devices (also after a restart of Home Assistant), a device deleted by the user, the map, the
-controls that add and remove contacts, the Markdown cards, the actions of the first steps and the
-dashboard, and the examples below, exactly as written here (`make ha-test`,
-[testing.md](testing.md)).
+controls that add and remove contacts, the telemetry entities and their expiry, a `person` and
+the triggers of [Positions and presence](#positions-and-presence), the Markdown cards, the actions
+of the first steps, the dashboard cards, the battery template, and the examples below, exactly as
+written here (`make ha-test`, [testing.md](testing.md)).
 
 ## Examples
 
@@ -409,7 +596,9 @@ mode: queued
 Do not report a failed delivery over the mesh to the same target: when the radio cannot reach it,
 the report fails too and uses airtime.
 
-Get told when a contact was not added or removed (a node already on the radio is left out):
+Get told when a contact was not added or removed (a node already on the radio is left out), or
+an exclusion from telemetry was not stored (`not_saved`: it took effect, and the gateway tries
+again every minute) or its history not deleted (`not_forgotten`):
 
 ```yaml
 alias: Mesh contact not changed
@@ -418,10 +607,11 @@ triggers:
     target:
       entity_id: event.meshcore_home_gateway_radio1_contact
     options:
-      event_type: [refused, failed]
+      event_type: [refused, failed, excluded, included]
 conditions:
   - condition: template
-    value_template: "{{ trigger.to_state.attributes.reason != 'already_contact' }}"
+    value_template: >-
+      {{ trigger.to_state.attributes.reason not in [none, 'already_contact'] }}
 actions:
   - action: persistent_notification.create
     data:
@@ -434,6 +624,73 @@ mode: queued
 
 A notification renders Markdown, so the message has only machine values: the name a node claims
 would be markup.
+
+Warn a handheld's owner when its battery runs low:
+
+```yaml
+alias: Handheld battery low
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.mesh_alice_battery
+    below: 3.5
+    for: "00:10:00"
+actions:
+  - action: notify.send_message
+    target:
+      entity_id: notify.mesh_alice
+    data:
+      message: "Your handheld battery is low"
+```
+
+A `numeric_state` trigger ignores `unavailable`, so a handheld out of range cannot warn: pair a
+warning that matters with the next example.
+
+Get told when a handheld stops answering:
+
+```yaml
+alias: Mesh handheld not answering
+triggers:
+  - trigger: event.received
+    target:
+      entity_id: event.meshcore_home_gateway_radio1_telemetry
+    options:
+      event_type: [unanswered]
+actions:
+  - action: persistent_notification.create
+    data:
+      title: Mesh handheld not answering
+      message: >-
+        {% set a = trigger.to_state.attributes %}
+        {{ a.prefix }}: {{ a.state }}
+mode: queued
+```
+
+It needs no condition: the event comes only for requests that were sent.
+
+Get told when Alice left home ([Positions and presence](#positions-and-presence)):
+
+```yaml
+alias: Alice left home
+triggers:
+  - trigger: state
+    entity_id: person.alice
+    from: home
+    for: "00:05:00"
+conditions:
+  - condition: state
+    entity_id: sensor.meshcore_home_gateway_radio1_telemetry_status
+    state: "on"
+actions:
+  - action: persistent_notification.create
+    data:
+      title: Alice left home
+      message: "{{ trigger.to_state.state }}"
+mode: single
+```
+
+For a person whose only GPS tracker is the mesh tracker, `zone.left` never fires, and a restart of
+the gateway makes the person `unknown` for seconds, which the `for` skips. The condition skips an
+outage of the radio, a pause, and a stopped gateway.
 
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.
@@ -457,5 +714,30 @@ recorder:
 
 The contacts' trackers store their positions in the history too, which draws their traces on the
 map: a companion that moves writes one state per 20 m it moved, at most about one per telemetry
-answer (every 90 s or more). Exclude `device_tracker.mesh_*` as well to keep no traces; a
-`person` that a tracker belongs to keeps its own copy of the position.
+answer (every 90 s or more). Readings, *Telemetry state*, the switch *Telemetry* and the
+gateway's event *Telemetry* (a dated log of who left range and came back, with `prefix`, `name`
+and `state`) are recorded as well, a noisy reading with most answers. To keep them out, exclude
+them too:
+
+```yaml
+recorder:
+  exclude:
+    entity_globs:
+      - device_tracker.mesh_*
+      - sensor.mesh_*_battery*
+      - sensor.mesh_*_mcu_temperature*
+      - sensor.mesh_*_ch[1-9]*
+      - sensor.mesh_*_telemetry_state*
+      - switch.mesh_*_telemetry*
+      - event.meshcore_home_gateway_*_telemetry
+```
+
+The `*` at the end also takes the IDs Home Assistant numbers with `_2`. An excluded sensor keeps
+no statistics. A contact whose name gives such a part of an entity ID, such as *Team ch2* (`_ch`
+and a digit) or *Old battery*, loses the history of its other sensors too, which is harmless. Home
+Assistant keeps the last event's attributes in `core.restore_state`, as for messages, and a
+`person` keeps its own copy of the position. Excluding a contact in the gateway does not purge
+Home Assistant's history: `recorder.purge_entities` removes its states and events, **not** the
+long-term statistics of its `measurement` sensors; delete those under *Developer tools →
+Statistics*. The gateway's own history of the contact goes with `--forget`
+([above](#telemetry-of-the-households-companions)).

@@ -130,8 +130,9 @@ READING_ENTITIES: Mapping[int, ReadingEntity] = MappingProxyType({
 
 
 def number_at(*path: str) -> str:
-    """A template for a number in the document at `path` (`battery_v`, or `readings` and a
-    reading key), None where it is missing, also in a document of an earlier version."""
+    """A template for a number in the document at `path` (`hops`, `battery_v`, or `readings`
+    and a reading key), None where it is missing, also in a document of an earlier version and
+    in the empty message that clears the document."""
     value = "value_json." + ".".join(path)
     guards = ["value_json is defined"]
     guards += [f"value_json.{'.'.join(path[:end])} is defined" for end in range(1, len(path))]
@@ -149,7 +150,7 @@ POSITION_ATTRIBUTES = (
     + _position_attributes(", 'gps_accuracy': value_json.position_accuracy_m")
     + f" if {ACCURACY_KNOWN} else "
     + _position_attributes()
-    + f") if {POSITION_KNOWN} else {{}}) | tojson }}}}"
+    + f") if value_json is defined and {POSITION_KNOWN} else {{}}) | tojson }}}}"
 )
 
 
@@ -203,20 +204,23 @@ def contact_payload(
             "default_entity_id": f"{platform}.mesh_{slug}{suffix}", **options,
         }  # fmt: skip
 
+    # every template asks whether the document is JSON: the empty message that clears it can
+    # reach Home Assistant before the removal of the device took effect
     state = {"state_topic": document}
     components: dict[str, dict[str, Any]] = {
         "last_heard": component(
             "last_heard", "sensor", "_last_heard", name="Last heard", device_class="timestamp",
-            value_template="{{ value_json.heard_at }}", **state,
+            value_template="{{ value_json.heard_at if value_json is defined else None }}",
+            **state,
         ),
         "hops": component(
             "hops", "sensor", "_hops", name="Hops", icon="mdi:transit-connection-variant",
-            entity_category="diagnostic", value_template="{{ value_json.hops }}", **state,
+            entity_category="diagnostic", value_template=number_at("hops"), **state,
         ),
         "snr": component(  # no name: Home Assistant names it after the class, translated
             "snr", "sensor", "_snr", device_class="signal_strength", unit_of_measurement="dB",
             state_class="measurement", suggested_display_precision=2,
-            entity_category="diagnostic", value_template="{{ value_json.snr_db }}", **state,
+            entity_category="diagnostic", value_template=number_at("snr_db"), **state,
         ),
     }  # fmt: skip
     if node.node_type in TEXT_TYPES or "message" in kept:  # the text is an event attribute

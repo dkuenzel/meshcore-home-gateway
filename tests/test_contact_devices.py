@@ -238,6 +238,30 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         assert read <= known, component["unique_id"]
 
 
+def test_every_template_reads_the_document_only_when_it_is_json() -> None:
+    """The empty message that clears a contact's document can reach Home Assistant before the
+    removal of its device took effect; a template that reads `value_json` without asking whether
+    it is defined then logs an error (home-assistant/tests/test_telemetry.py)."""
+    mesh = mesh_of(node(ALICE, "Alice", position=Position(52.1, 9.2)))
+    readings = Readings(NOW, Named(4.12, 23.4, LPP_ALL_READINGS))
+    mesh.contact_answered(ALICE, NOW, Position(52.2, 9.3), 120.0, readings)
+    cmps = contact_payload(CONFIG, TOPICS, mesh.contacts[ALICE], "alice")["cmps"]
+    for key, component in cmps.items():
+        templates = [
+            (component.get("state_topic"), component.get("value_template", "")),
+            (component.get("json_attributes_topic"), component.get("json_attributes_template", "")),
+            *((a["topic"], a.get("value_template", "")) for a in component.get("availability", [])),
+        ]  # fmt: skip
+        for topic, template in templates:
+            if topic == DOCUMENT and "value_json" in template:
+                assert "value_json is defined" in template, (key, template)
+    assert cmps["last_heard"]["value_template"] == (
+        "{{ value_json.heard_at if value_json is defined else None }}"
+    )
+    assert cmps["hops"]["value_template"] == number_at("hops")
+    assert cmps["snr"]["value_template"] == number_at("snr_db")
+
+
 def _inner_keys(template: str) -> set[str]:
     """The keys inside an object that a template reads, as `<key>.<inner key>`."""
     found = re.findall(r"value_json\.(\w+)\.(\w+)", template)
