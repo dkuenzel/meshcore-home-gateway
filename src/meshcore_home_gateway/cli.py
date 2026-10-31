@@ -5,7 +5,8 @@ configuration error (EX_CONFIG; the systemd unit does not restart on it).
 
 Texts for people follow the language of the environment, except those of `run`, which go to the
 journal (ADR 0019); every text is a whole message marked with tr(), tr_help() or trn(). Machine
-output (lists, JSON, `config answers`, `--version`) is the same in every language.
+output (lists, JSON, `config answers`, `--version`) is the same in every language; the dashboard
+follows [homeassistant] language, as the names in Home Assistant do.
 """
 
 from __future__ import annotations
@@ -220,6 +221,19 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     _contacts_parser(commands)
+
+    dashboard = command(
+        "dashboard",
+        tr_help("write a Home Assistant dashboard for this gateway (YAML, to standard output)"),
+        _dashboard,
+    )
+    dashboard.add_argument(
+        "--state-dir", type=Path, default=None,
+        help=tr_help(
+            "the service's state, read only, for the contacts on the map (default: "
+            "$STATE_DIRECTORY or /var/lib/meshcore-home-gateway)"
+        ),
+    )  # fmt: skip
 
     config = commands.add_parser("config", help=tr_help("configuration helpers"))
     config_commands = config.add_subparsers(required=True, metavar="action")
@@ -523,6 +537,36 @@ def _summary(config: Config, login: str) -> list[str]:
         if config.telemetry.enabled
         else tr("  telemetry  off"),
     ]  # fmt: skip
+
+
+# --- dashboard ------------------------------------------------------------------------------
+
+
+def _dashboard(args: argparse.Namespace) -> int:
+    from meshcore_home_gateway.dashboard import dashboard  # noqa: PLC0415
+
+    config = load_config(args.config)
+    if not config.homeassistant.discovery:
+        off = tr(
+            "Home Assistant discovery is off ([homeassistant] discovery = false): the dashboard "
+            "would find no entities."
+        )
+        print(PREFIX + off, file=sys.stderr)
+        return EX_FAILURE
+    state_dir = args.state_dir or Path(os.environ.get("STATE_DIRECTORY", DEFAULT_STATE_DIR))
+    text, count = dashboard(config, state_dir)
+    sys.stdout.flush()
+    sys.stdout.buffer.write(text.encode("utf-8"))  # whatever the terminal's encoding
+    sys.stdout.buffer.flush()
+    print(
+        trn(
+            "The map lists {count} contact with a position.",
+            "The map lists {count} contacts with a position.",
+            count,
+        ),
+        file=sys.stderr,
+    )
+    return EX_OK
 
 
 # --- probe ----------------------------------------------------------------------------------

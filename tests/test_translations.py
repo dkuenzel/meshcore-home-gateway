@@ -70,3 +70,14 @@ def test_the_installer_template_holds_its_dialogs_and_errors() -> None:
     msgids = {entry.msgid for entry in entries}
     assert {"Error: {message}", "Container ID", "invalid settings: {reason}"} <= msgids
     assert all(not entry.references for entry in entries)  # one file: none
+
+
+def test_the_template_holds_the_dashboards_texts() -> None:
+    """Every text of the dashboard's template, in the context of the dashboard (ADR 0019: one
+    catalog per language)."""
+    _, entries = tool.read_po(PROJECT.template.read_text(encoding="utf-8"))
+    texts = {entry.msgid: entry for entry in entries if entry.msgctxt == "dashboard"}
+    assert {"Mesh", "Overview", "{n} min ago", "request refused"} <= set(texts)
+    assert {entry.references for entry in texts.values()} == {
+        ("src/meshcore_home_gateway/dashboard.yaml",)
+    }

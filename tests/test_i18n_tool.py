@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway import dashboard
 from meshcore_home_gateway.catalog import Entry, PoError, read_po
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -272,6 +273,73 @@ def test_this_pythons_argparse_texts_are_found() -> None:
     assert ("usage: ", None) in found
     assert ("expected %s argument", "expected %s arguments") in found
     assert all(msgid for msgid, _ in found)
+
+
+DASHBOARD = "src/meshcore_home_gateway/dashboard.yaml"
+DASHBOARD_TEMPLATE = """\
+# meshcore-home-gateway dashboard for node @node@
+# Translators: the dashboard's title
+# in the sidebar.
+title: _("Mesh")
+views:
+  - title: _("Overview")
+    cards:
+      - type: markdown
+        content: |-
+          {%- macro ago(value) -%}
+          {#- Translators: how long ago; n is a whole number -#}
+          {%- set n = 5 -%}_("{n} min ago") _("{n} h ago")
+          {%- endmacro -%}
+          > _("Mesh")
+          _("Node \\"{node}\\"")
+"""
+
+
+def test_the_dashboards_texts_are_extracted(tmp_path: Path) -> None:
+    """Every marker of the template, in the context of the dashboard, with the translator's note
+    of the line above it: a YAML comment above a whole value, a Jinja one inside a card."""
+    path = tmp_path / DASHBOARD
+    path.parent.mkdir(parents=True)
+    path.write_text(DASHBOARD_TEMPLATE, encoding="utf-8")
+    found = {entry.key: entry for entry in tool.extract_dashboard(path, tmp_path)}
+    reference, brace, ago = (
+        (DASHBOARD,),
+        ("python-brace-format",),
+        ("how long ago; n is a whole number",),
+    )
+    assert found == {
+        "dashboard\x04Mesh": Entry(
+            "Mesh", ("",), "dashboard", comments=("the dashboard's title", "in the sidebar."),
+            references=reference,
+        ),
+        "dashboard\x04Overview": Entry("Overview", ("",), "dashboard", references=reference),
+        "dashboard\x04{n} min ago": Entry(
+            "{n} min ago", ("",), "dashboard", flags=brace, comments=ago, references=reference
+        ),
+        "dashboard\x04{n} h ago": Entry(
+            "{n} h ago", ("",), "dashboard", flags=brace, comments=ago, references=reference
+        ),
+        'dashboard\x04Node "{node}"': Entry(
+            'Node "{node}"', ("",), "dashboard", flags=brace, references=reference
+        ),
+    }  # fmt: skip
+
+
+def test_a_dashboard_text_that_is_no_format_string_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / DASHBOARD
+    path.parent.mkdir(parents=True)
+    path.write_text('content: |-\n  _("{0} min")\n', encoding="utf-8")
+    with pytest.raises(tool.ExtractError, match=r"dashboard\.yaml:2: .* needs named fields"):
+        tool.extract_dashboard(path, tmp_path)
+
+
+def test_the_template_is_made_of_the_code_argparse_and_the_dashboard() -> None:
+    project = tool.Project(ROOT)
+    assert [(extract.__name__, path) for extract, path in tool.sources(project)] == [
+        ("extract_python", project.package),
+        ("extract_dashboard", project.package / "dashboard.yaml"),
+        ("extract_argparse", project.argparse_list),
+    ]
 
 
 def extract_sh(tmp_path: Path, source: str) -> dict[str, Entry]:
@@ -707,6 +775,27 @@ def test_no_control_characters(entry: Entry, finding: str) -> None:
     assert finding in found
 
 
+@pytest.mark.parametrize(
+    "bad", [*dashboard.FORBIDDEN, "\r", "\n", "\u2028", "\u2029", "\u200e", "\x7f"], ids=repr
+)
+def test_a_dashboard_translation_holds_nothing_a_card_reads_as_code(bad: str) -> None:
+    """The rule the command applies (dashboard.unsafe): Jinja, HTML, Markdown links and
+    addresses, a marker, line breaks; the English text would show instead."""
+    entry = Entry("{n} min ago", (f"vor {{n}} {bad} Min.",), "dashboard")
+    (found,) = tool.dashboard_texts("de.po", *catalog(entry))
+    assert found.startswith("de.po: '{n} min ago' (dashboard): ")
+
+
+def test_a_dashboard_translation_without_them_passes() -> None:
+    entries = [
+        Entry("{n} min ago", ("vor {n} Min.",), "dashboard"),
+        Entry("Mesh", ("Netz ‹Funk›: ein Gerät",), "dashboard"),
+        Entry("Removed", ("<Entfernt> @ www.example.org",)),  # not a dashboard text
+        Entry("Radio", ("<Funk>",), "home assistant"),
+    ]
+    assert tool.dashboard_texts("de.po", *catalog(*entries)) == []
+
+
 def test_home_assistant_names_may_hold_narrow_spaces() -> None:
     entries = [
         Entry("Duty cycle", ("Rapport cyclique\u202f%",), "home assistant"),
@@ -838,10 +927,12 @@ die 'cannot read {{file}}' file "$1"
 
 @pytest.fixture
 def project(tmp_path: Path) -> Any:
-    """A checkout with one module, a short argparse list, an installer and no catalog."""
+    """A checkout with one module, a dashboard, a short argparse list, an installer and no
+    catalog."""
     package = tmp_path / "src" / "meshcore_home_gateway"
     (package / "locale").mkdir(parents=True)
     (package / "cli.py").write_text('tr("Removed")\n', encoding="utf-8")
+    (package / "dashboard.yaml").write_text('title: _("Mesh")\n', encoding="utf-8")
     (tmp_path / "tools").mkdir()
     listed = [["usage: ", None], ["an argparse text of an older Python", None]]
     (tmp_path / "tools" / "argparse_messages.json").write_text(json.dumps(listed), encoding="utf-8")
@@ -862,6 +953,10 @@ def test_update_writes_the_template_and_merges_the_catalogs(project: Any) -> Non
     _, template = read_po(project.template.read_text(encoding="utf-8"))
     assert template[0] == Entry("Removed", ("",), references=("src/meshcore_home_gateway/cli.py",))
     assert template[-1].references == ("tools/argparse_messages.json",)
+    mesh = Entry(
+        "Mesh", ("",), "dashboard", references=("src/meshcore_home_gateway/dashboard.yaml",)
+    )
+    assert template[1] == mesh
     assert tool.update(project) == []
 
     german = project.locale / "de.po"
@@ -879,6 +974,17 @@ def test_update_writes_the_template_and_merges_the_catalogs(project: Any) -> Non
     assert len(findings) == len(entries)
     assert findings[0] == "src/meshcore_home_gateway/locale/de.po: untranslated: 'Removed'"
     assert all(": untranslated: " in finding for finding in findings)
+
+
+def test_check_finds_a_dashboard_text_a_card_would_read_as_code(project: Any) -> None:
+    tool.update(project)
+    german = project.locale / "de.po"
+    entries = [Entry("Mesh", ("<b>Netz</b>",), "dashboard"), Entry("Removed", ("Entfernt",))]
+    german.write_text(tool.write_po({"Language": "de"}, entries), encoding="utf-8")
+    tool.update(project)
+    findings = tool.check(project, {"en": "English", "de": "Deutsch"})
+    name = "src/meshcore_home_gateway/locale/de.po"
+    assert f"{name}: 'Mesh' (dashboard): '<' cannot be in a dashboard text" in findings
 
 
 def test_check_finds_a_template_behind_the_code(project: Any) -> None:

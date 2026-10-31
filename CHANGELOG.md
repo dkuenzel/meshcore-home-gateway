@@ -43,6 +43,12 @@ format, the command line and Home Assistant discovery are public interfaces
   the language's pack from where the script comes from (its release, the checkout next to it,
   else `main`) into memory, checks it against a digest the script carries, and continues in
   English when the pack cannot be loaded.
+- `meshcore-home-gateway dashboard`: writes a Home Assistant dashboard for this gateway as YAML
+  (for the raw configuration editor or a YAML-mode dashboard): the gateway's status and its
+  radio's health, the last message and delivery with a form to write one, the contacts, the last
+  contact event and the heard nodes, and a map with the contacts' traces. English; its texts are
+  in the translation catalog. `--state-dir` names the service's state, from which it takes the
+  contacts on the map.
 
 ### Changed
 

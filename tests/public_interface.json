@@ -282,6 +282,26 @@
      }
     }
    },
+   "dashboard": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
+   },
    "listen": {
     "options": {
      "--config": {

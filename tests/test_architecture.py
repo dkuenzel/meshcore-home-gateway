@@ -1,5 +1,5 @@
-"""Architecture rules (ADR 0007): the core and the protocol codec are pure; only the command line
-and the builders of the names sent to Home Assistant choose a language (ADR 0019)."""
+"""Architecture rules (ADR 0007): the core and the protocol codec are pure; only the command line,
+the builders of the names sent to Home Assistant and the dashboard choose a language (ADR 0019)."""
 
 import ast
 from pathlib import Path
@@ -21,7 +21,7 @@ PURE = sorted([
 # translate where they show them.
 SPEAKING = {
     "cli.py", "config.py", "mqtt/discovery.py", "mqtt/manage_entities.py",
-    "mqtt/contact_devices.py",
+    "mqtt/contact_devices.py", "dashboard.py",
 }  # fmt: skip
 I18N = "meshcore_home_gateway.i18n"
 

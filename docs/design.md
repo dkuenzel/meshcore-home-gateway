@@ -652,6 +652,7 @@ the file.
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
 | `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
 | `meshcore-home-gateway contacts telemetry [--wait S] [--forget] CONTACT {on,off}` | Ask a companion for telemetry again (`on`) or exclude it (`off`; a full key also before it is on the radio, `KEY12…KEY8` from the index); `--forget` with `off` also deletes its readings and positions from telemetry from the history. Exit 0 on `excluded` or `included` without a reason, 1 on `refused`, `failed`, any reason, no result in time or the gateway offline, 2 on a usage error. |
+| `meshcore-home-gateway dashboard [--state-dir DIR]` | Print a Home Assistant dashboard for this gateway as YAML, its texts in `[homeassistant] language`; the map lists the contacts with a position in the service's state (read only, default `$STATE_DIRECTORY` or `/var/lib/meshcore-home-gateway`), and standard error says how many. Exit 1 when `[homeassistant] discovery` is off. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
 

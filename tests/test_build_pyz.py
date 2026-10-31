@@ -104,3 +104,45 @@ msgstr ""
 msgid "Removed"
 msgstr "Entfernt"
 """
+
+
+CONFIG = (
+    '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
+    '[mqtt]\nhost = "broker.example.org"\nnode_id = "radio1"\n'
+)
+
+
+def test_the_zipapp_reads_the_dashboards_template_from_inside(tmp_path: Path) -> None:
+    """The template is package data, like the catalogs: `dashboard` reads it from the archive."""
+    source = tmp_path / "src"
+    shutil.copytree(ROOT / "src", source, ignore=shutil.ignore_patterns("__pycache__"))
+    template = source / "meshcore_home_gateway" / "dashboard.yaml"
+    template.write_text(template.read_text(encoding="utf-8") + "# from the archive\n", "utf-8")
+    pyz = build_pyz.build(source, tmp_path / "app.pyz", "/usr/bin/python3")
+    with zipfile.ZipFile(pyz) as archive:
+        assert "meshcore_home_gateway/dashboard.yaml" in archive.namelist()
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE")}
+    shown = subprocess.run(  # noqa: S603 - this Python on the archive just built
+        [sys.executable, "-I", str(pyz), "dashboard", "--config", str(config), "--state-dir",
+         str(tmp_path / "state")],
+        env=env, capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    assert shown.stdout.startswith("# meshcore-home-gateway dashboard for node radio1, ")
+    assert shown.stdout.endswith("\n# from the archive\n")
+    assert shown.stderr == "The map lists 0 contacts with a position.\n"
+
+
+BUILD_WHEEL = "import sys, flit_core.buildapi as b; print(b.build_wheel(sys.argv[1]))"
+
+
+def test_the_wheel_holds_the_dashboards_template(tmp_path: Path) -> None:
+    """flit packs every file of the package (Makefile, dist)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE")}
+    built = subprocess.run(  # noqa: S603 - flit's own build of this checkout
+        [sys.executable, "-c", BUILD_WHEEL, str(tmp_path)],
+        cwd=ROOT, env=env, capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    with zipfile.ZipFile(tmp_path / built.stdout.strip().splitlines()[-1]) as wheel:
+        assert "meshcore_home_gateway/dashboard.yaml" in wheel.namelist()

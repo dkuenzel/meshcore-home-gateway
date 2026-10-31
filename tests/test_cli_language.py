@@ -521,8 +521,8 @@ VALUES = (
     "positions_days", "None", "radio.device", "systemctl reload mosquitto",
     "docs/deployment.md, troubleshooting", "meshcore-home-gateway listen --topic contact",
     "meshcore-home-gateway", "command", "bogus", "maybe", "run", "check-config", "probe", "send",
-    "listen", "contacts", "config", "state", "on", "--serial", "--tcp", "--wait", "--count",
-    "--bogus", KEY, TWIN, OTHER, NODE, NODE_TWIN,
+    "listen", "contacts", "dashboard", "config", "state", "on", "--serial", "--tcp", "--wait",
+    "--count", "--bogus", KEY, TWIN, OTHER, NODE, NODE_TWIN,
 )  # fmt: skip
 # absolute paths, and keys, parts of keys and request ids as the command line shows them
 _MACHINE = re.compile(
@@ -539,9 +539,21 @@ class Ran:
     err: str
 
 
+class _Output(io.StringIO):
+    """Standard output with the byte layer that `dashboard` writes its YAML to, in UTF-8."""
+
+    buffer: Any
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.buffer = SimpleNamespace(
+            write=lambda data: self.write(data.decode("utf-8")), flush=lambda: None
+        )
+
+
 def _main(argv: list[str]) -> Ran:
     """A command's exit status and output; argparse's exits included."""
-    out, err = io.StringIO(), io.StringIO()
+    out, err = _Output(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:
             status = main(argv)
@@ -872,9 +884,18 @@ def _usage(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return printed
 
 
+def _dashboard(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Its YAML follows [homeassistant] language; what it says on standard error, the command
+    line's language."""
+    dashboard = ["dashboard", "--state-dir", str(tmp)]
+    on = _written(tmp, "config.toml", SUMMARIES["tcp"])
+    off = _written(tmp, "off.toml", SUMMARIES["tcp"] + "[homeassistant]\ndiscovery = false\n")
+    return [_main([*dashboard, "--config", path]).err for path in (on, off)]
+
+
 SCENARIOS = {
     "check-config": _check_config, "probe": _probe, "send": _send, "contacts": _contacts,
-    "render": _render, "usage": _usage,
+    "render": _render, "usage": _usage, "dashboard": _dashboard,
 }  # fmt: skip
 
 
@@ -1010,7 +1031,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
     with cli._speaking(translator):
         parser = cli._parser()
         helps = [command.format_help() for command in _parsers(parser)]
-    assert len(helps) == 15  # the program, its commands and theirs
+    assert len(helps) == 16  # the program, its commands and theirs
     if language == "xx":
         assert all(text.startswith("‹usage: ›") for text in helps)
     if language in {"hostile", "percents"}:  # argparse formats them: English
@@ -1059,6 +1080,7 @@ def _machine_outputs(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[R
         for more in (["list"], ["list", "--json"], ["link"])
     ]
     ran.append(_main(["config", "answers", "--config", config]))
+    ran.append(_main(["dashboard", "--config", config, "--state-dir", str(tmp)]))
     ran.append(_main(["--version"]))
     by_id = re.compile(r"cli-[0-9a-f]{8}")  # a new request id each time
     machine = [Ran(r.status, by_id.sub("cli-<id>", r.out), "") for r in ran]

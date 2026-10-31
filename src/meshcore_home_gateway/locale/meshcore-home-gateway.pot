@@ -145,11 +145,22 @@ msgstr ""
 msgid "Gateway between home automation (MQTT) and a MeshCore companion radio."
 msgstr ""
 
+#: src/meshcore_home_gateway/cli.py
+msgid "Home Assistant discovery is off ([homeassistant] discovery = false): the dashboard would find no entities."
+msgstr ""
+
 #. after a contact's name in probe's report: it may use the radio's
 #. command line over the air
 #: src/meshcore_home_gateway/cli.py
 msgid "REMOTE CLI"
 msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "The map lists {count} contact with a position."
+msgid_plural "The map lists {count} contacts with a position."
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/meshcore_home_gateway/cli.py
 #, python-format
@@ -691,6 +702,11 @@ msgid "the service's state, read only, for its exact plan (default: $STATE_DIREC
 msgstr ""
 
 #: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "the service's state, read only, for the contacts on the map (default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
 msgid "the text is not valid UTF-8"
 msgstr ""
 
@@ -736,6 +752,11 @@ msgstr ""
 #: src/meshcore_home_gateway/cli.py
 #, python-format
 msgid "with off: also delete its readings and its positions from telemetry from the gateway's history"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "write a Home Assistant dashboard for this gateway (YAML, to standard output)"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli.py
@@ -997,6 +1018,384 @@ msgstr ""
 #: src/meshcore_home_gateway/core/contacts.py
 #, python-brace-format
 msgid "public key must be {digits} hex digits, got {key!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Add a contact"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Add the gateway in the MeshCore app"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Check the problems below."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Contacts"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Contacts on the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Gateway"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Gateway not found."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Gateway offline."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Gateway ready."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Heard"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Home Assistant gets no answer from the gateway: nothing is sent or received."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Home Assistant has no entity of node {node}: check MQTT discovery, or generate the dashboard for the right node."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Last contact event"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Last message"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Last sent"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Map"
+msgstr ""
+
+#. the dashboard's title, above its views
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Mesh"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Messages"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Messages waiting: {queue}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Name"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "No companion, room server or sensor heard that is not a contact."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "No contact event yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "No contact had a position when this dashboard was made. Generate it again once one has."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "No contact has a device in Home Assistant."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "No message yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "No value yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Nodes heard"
+msgstr ""
+
+#. names are the contacts' names, separated by commas
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Not on this map: {names}. Generate the dashboard again to add them."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Nothing sent yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Overview"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Radio connected, nothing waiting."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Radio disconnected."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Radio health"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Telemetry"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway has not reported its radio since Home Assistant started."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway runs and its radio is connected."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway runs but cannot reach its radio; messages wait."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway's controls are not in Home Assistant yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The radio is not known yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "They wait for the radio or for airtime."
+msgstr ""
+
+#. version and running are versions of the gateway, such as 1.1.0
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "This dashboard was made for version {version}; the gateway runs {running}. Generate it again."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "To write messages here, add the script Mesh message once, as the guide shows (Home Assistant, Dashboard)."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Type"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Write"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Write a message"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "added to the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "answering"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "away"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "confirmed"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "device back in Home Assistant"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "device deleted in Home Assistant"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "excluded"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "excluded from telemetry"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "expired"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "failed"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "included in telemetry"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "look-alike"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no answer"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no path"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no position"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "not sent again: a duplicate"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "off"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "queued"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "rejected"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "removed from the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "request failed"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "request refused"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "sent"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "shares its position in adverts"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "waiting"
+msgstr ""
+
+#. how long ago; n is a whole number
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{n} d ago"
+msgstr ""
+
+#. how long ago; n is a whole number
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{n} h ago"
+msgstr ""
+
+#. how long ago; n is a whole number
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{n} min ago"
 msgstr ""
 
 #. key is the setting mqtt.cert_file; path and key_file are files.

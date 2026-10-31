@@ -4,8 +4,9 @@ language packs and their checks.
     python3 tools/i18n.py update   # what `make translations` runs: templates, catalogs, packs, pins
     python3 tools/i18n.py check    # the checks of the tests, without pytest; exit 1 on a finding
 
-`update` extracts every text marked in the package (docs/development.md, Translations) and
-argparse's own words into src/meshcore_home_gateway/locale/meshcore-home-gateway.pot, adds the
+`update` extracts every text marked in the package (docs/development.md, Translations), the
+texts of the dashboard's template and argparse's own words into
+src/meshcore_home_gateway/locale/meshcore-home-gateway.pot, adds the
 running Python's argparse texts to tools/argparse_messages.json (it never removes one: the list
 serves every Python of the matrix) and merges each catalog with the template. The installer's
 texts go into deploy/proxmox/locale/installer.pot the same way; each of its catalogs also gives
@@ -40,7 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from meshcore_home_gateway import i18n  # noqa: E402 - once src/ is on the path
+from meshcore_home_gateway import dashboard, i18n  # noqa: E402 - once src/ is on the path
 from meshcore_home_gateway.catalog import Entry, PoError, plural_rule, read_po  # noqa: E402
 
 PROJECT_NAME: Final = "meshcore-home-gateway"
@@ -319,6 +320,45 @@ def _add(found: dict[str, Entry], entry: Entry, where: str) -> None:
         comments=tuple(dict.fromkeys([*known.comments, *entry.comments])),
         references=tuple(dict.fromkeys([*known.references, *entry.references])),
     )
+
+
+# a translator's note in a card's content, where a `#` line would be the card's own text
+_JINJA_NOTE: Final = re.compile(r"\{#-?\s*Translators:\s*(.*?)\s*-?#\}")
+
+
+def extract_dashboard(path: Path, top: Path) -> list[Entry]:
+    """The texts of the dashboard's template, msgctxt "dashboard": every _("…") (dashboard.py),
+    with the translator's note of the line above it, a `# Translators:` comment above a whole
+    value and a `{#- Translators: … -#}` line in a card's content."""
+    name = path.relative_to(top).as_posix()
+    lines = path.read_text(encoding="utf-8").split("\n")
+    comments = _comment_blocks({
+        number: line.strip()[1:].strip()
+        for number, line in enumerate(lines, 1)
+        if line.strip().startswith("#")
+    })  # fmt: skip
+    notes = {
+        number + 1: (match.group(1),)
+        for number, line in enumerate(lines, 1)
+        if (match := _JINJA_NOTE.fullmatch(line.strip()))
+    }
+    found: dict[str, Entry] = {}
+    for number, line in enumerate(lines, 1):
+        where = f"{name}:{number}"
+        note = comments if dashboard.VALUE.match(line) else notes
+        for marker in dashboard.MARKER.finditer(line):
+            try:
+                msgid = json.loads(f'"{marker.group(1)}"')
+            except ValueError as exc:
+                raise ExtractError(
+                    f"{where}: {marker.group()} holds no JSON string: {exc}"
+                ) from exc
+            if not msgid:
+                raise ExtractError(f"{where}: an empty msgid")
+            flags = ("python-brace-format",) if _field_names(msgid, where) else ()
+            entry = Entry(msgid, ("",), i18n.DASHBOARD, None, flags, note.get(number, ()), (name,))
+            _add(found, entry, where)
+    return list(found.values())
 
 
 def extract_argparse(path: Path, top: Path) -> list[Entry]:
@@ -770,8 +810,13 @@ def shell_hazards(path: Path, top: Path) -> list[str]:
 
 
 def sources(project: Project) -> list[tuple[Callable[[Path, Path], list[Entry]], Path]]:
-    """What the template is made of; the dashboards' template will join it (ADR 0021)."""
-    return [(extract_python, project.package), (extract_argparse, project.argparse_list)]
+    """What the template is made of: the package's code, the dashboard's template (ADR 0021) and
+    argparse's words."""
+    return [
+        (extract_python, project.package),
+        (extract_dashboard, project.package / dashboard.TEMPLATE),
+        (extract_argparse, project.argparse_list),
+    ]
 
 
 def template(project: Project) -> list[Entry]:
@@ -1281,8 +1326,21 @@ def control_characters(name: str, header: Mapping[str, str], entries: Sequence[E
     return findings
 
 
+def dashboard_texts(name: str, header: Mapping[str, str], entries: Sequence[Entry]) -> list[str]:
+    """A text of the dashboard holds nothing a card reads as code, as the command checks it
+    (dashboard.unsafe): no Jinja, HTML, Markdown link or address, marker or line break."""
+    return [
+        f"{name}: {_label(entry)}: {found} cannot be in a dashboard text"
+        for entry in entries
+        if entry.msgctxt == i18n.DASHBOARD
+        for form in entry.msgstr
+        if (found := dashboard.unsafe(form)) is not None
+    ]
+
+
 CATALOG_CHECKS: Final = (
     untranslated, fuzzy, placeholders, percent, plural_forms, tokens, control_characters,
+    dashboard_texts,
 )  # fmt: skip
 
 

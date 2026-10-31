@@ -1,9 +1,10 @@
 """Build the single-file zipapp `meshcore-home-gateway.pyz` reproducibly, with the standard library.
 
 The archive holds the `meshcore_home_gateway` package, its message catalogs as PO files (compiled
-when a language is first used, ADR 0027) and a `__main__.py`. Entries are sorted and
-carry a fixed date and fixed permissions, so the same sources give the same bytes (with the same
-zlib). The installer builds it inside the container; `make pyz` builds it locally.
+when a language is first used, ADR 0027), the template of the dashboard (dashboard.yaml) and a
+`__main__.py`. Entries are sorted and carry a fixed date and fixed permissions, so the same
+sources give the same bytes (with the same zlib). The installer builds it inside the container;
+`make pyz` builds it locally.
 
     python3 tools/build_pyz.py --output FILE.pyz [--interpreter "/usr/bin/python3 -I"]
 """
@@ -18,6 +19,8 @@ from pathlib import Path
 FIXED_DATE = (1980, 1, 1, 0, 0, 0)
 MAIN = b"from meshcore_home_gateway.cli import main\n\nraise SystemExit(main())\n"
 PACKAGE = "meshcore_home_gateway"
+# the package's modules, its catalogs and the dashboard's template
+SUFFIXES = frozenset({".py", ".typed", ".po", ".yaml"})
 
 
 def package_files(source: Path) -> list[Path]:
@@ -25,7 +28,7 @@ def package_files(source: Path) -> list[Path]:
     return sorted(
         p
         for p in root.rglob("*")
-        if p.is_file() and "__pycache__" not in p.parts and p.suffix in {".py", ".typed", ".po"}
+        if p.is_file() and "__pycache__" not in p.parts and p.suffix in SUFFIXES
     )
 
 
