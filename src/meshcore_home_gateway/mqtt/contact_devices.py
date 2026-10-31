@@ -9,10 +9,11 @@ one contact only. Rules checked against Home Assistant 2026.10 (home-assistant/t
   and each reading once a companion's telemetry answer has the value (at most 16 readings). The
   button that removes the contact from the radio is on every one and available while a request
   would be taken (not for a protected contact, not with management off, not while the radio is
-  away). Every companion has the switch that excludes it from telemetry and its telemetry state
-  at once (ADR 0018). Only the tracker carries coordinates, because the map shows every entity
-  with `latitude` and `longitude` attributes. A tracker of a telemetry position and the
-  telemetry sensors are unavailable while the answers are not current (ADR 0024).
+  away). Every companion has the switch that excludes it from telemetry, its telemetry state and
+  whether its adverts carry its position at once (ADR 0018). Only the tracker carries
+  coordinates, because the map shows every entity with `latitude` and `longitude` attributes.
+  A tracker of a telemetry position and the telemetry sensors are unavailable while the answers
+  are not current (ADR 0024).
   None is disabled by default:
   Home Assistant clears the discovery topic itself when it removes a device with a disabled
   entity, and warns about the echo.
@@ -95,6 +96,10 @@ TELEMETRY_STATE = (
 )
 TELEMETRY_SWITCH = (  # on unless excluded: a document of 1.1.0a1 excluded nobody
     "{{ 'off' if value_json is defined and value_json.telemetry_excluded is true else 'on' }}"
+)
+ADVERT_POSITION = (  # unknown for a document of 1.1.0a2 and for `null` (no companion any more)
+    "{{ ('ON' if value_json.advert_carries_position else 'OFF') if value_json is defined "
+    "and value_json.advert_carries_position is boolean else None }}"
 )
 MAX_READING_COMPONENTS = 16  # besides battery and MCU temperature: channels shift at a boot
 EXCLUDE_HINT = "unless excluded (meshcore-home-gateway contacts telemetry KEY off)"
@@ -254,6 +259,11 @@ def contact_payload(
         components["telemetry_state"] = component(
             "telemetry_state", "sensor", "_telemetry_state", name="Telemetry state",
             device_class="enum", options=list(STATES), value_template=TELEMETRY_STATE, **state,
+        )  # fmt: skip
+    if companion or "advert_position" in kept:  # the household acts on it: no category
+        components["advert_position"] = component(
+            "advert_position", "binary_sensor", "_advert_position", name="Position in adverts",
+            device_class="problem", value_template=ADVERT_POSITION, **state,
         )  # fmt: skip
     components.update(_telemetry_sensors(tracked, keep, component, topics, document))
     if tracked.fix is not None or "position" in kept:

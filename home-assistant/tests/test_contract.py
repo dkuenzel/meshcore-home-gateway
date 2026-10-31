@@ -421,7 +421,7 @@ async def test_the_documented_automations_work(
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
     automations = guide_automations()
-    assert len(automations) == 7  # the contacts' one: tests/test_manage_contacts.py
+    assert len(automations) == 8  # the contacts' one: tests/test_manage_contacts.py
     telemetry = {"Handheld battery low", "Mesh handheld not answering", "Alice left home"}
     assert telemetry <= {a["alias"] for a in automations}  # tests/test_telemetry.py, with Alice
     assert await async_setup_component(hass, "persistent_notification", {})

@@ -279,13 +279,19 @@ def _mesh_components(
             ),
             **contacts,
         ),
+        # the household's companions whose newest advert carries their position (ADR 0018);
+        # an index of 1.1.0a2 lacks the keys: `is number` and .get log nothing
         "advert_position": component(
             "advert_position", "binary_sensor", "Companion position in adverts",
             device_class="problem", entity_category="diagnostic",
-            value_template="{{ 'ON' if value_json.advert_position_total else 'OFF' }}",
+            value_template=(
+                "{{ ('ON' if value_json.advert_carries_position_total > 0 else 'OFF') if "
+                "value_json is defined and value_json.advert_carries_position_total is number "
+                "else None }}"
+            ),
             json_attributes_template=(
-                "{{ {'contacts': value_json.advert_position, "
-                "'total': value_json.advert_position_total} | tojson }}"
+                "{{ {'contacts': value_json.get('advert_carries_position', []), "
+                "'total': value_json.get('advert_carries_position_total', 0)} | tojson }}"
             ),
             **contacts,
         ),
@@ -306,6 +312,7 @@ def _mesh_components(
             "contact", "event", "Contact", state_topic=topics.contact_event,
             event_types=[
                 "added", "removed", "hidden", "shown", "refused", "failed", "excluded", "included",
+                "position_in_advert",
             ],
         ),
         "node": component(

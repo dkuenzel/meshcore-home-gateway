@@ -387,6 +387,31 @@ is paused or the gateway is stopped, and reads `on` again before the companions 
 `unavailable` for a moment when Home Assistant starts or reconnects to the broker
 ([example](#examples)).
 
+### Traces on the map
+
+A companion's trace is its tracker's history in Home Assistant: one point for each move of
+20 m or more reported by telemetry, one for each advert that carried a changed position, and
+one when the position switches between adverts and telemetry; none per answer at rest. A map
+card draws it when `hours_to_show` is set; the Map panel and a card without it show only where
+the trackers are now.
+
+```yaml
+type: map
+entities:
+  - device_tracker.mesh_alice
+hours_to_show: 24
+```
+
+List one tracker per companion. The trace reaches back as far as the recorder keeps states
+(10 days by default); the gateway's own history keeps positions for `positions_days`, but Home
+Assistant cannot read it. While a tracker is `unavailable` (its telemetry expired, or its
+position from adverts went), it has no position: the card joins the points before and after
+with a straight line. A restart of the gateway or of Home Assistant adds a second point on the
+same spot. A tracker kept out of the recorder ([Privacy](#privacy)) has no trace after a
+reload; a card open at that moment still draws the points that come while it stays open. With
+`show_all: true` instead of `entities`, the card draws the traces of every tracker and person,
+and shows a person instead of a tracker that is the person's current source.
+
 ## What reaches Home Assistant
 
 | MQTT | In Home Assistant |
@@ -704,6 +729,31 @@ Narrow). Its 10 minutes cover about seven companions; add 76 s for each more. It
 departure in the first 5 minutes after them, and after Home Assistant starts or reconnects to the
 broker (every MQTT entity, the status too, is `unavailable` for a moment).
 
+Get told when a handheld shares its position in adverts:
+
+```yaml
+alias: Mesh handheld shares its position
+triggers:
+  - trigger: event.received
+    target:
+      entity_id: event.meshcore_home_gateway_radio1_contact
+    options:
+      event_type: [position_in_advert]
+actions:
+  - action: persistent_notification.create
+    data:
+      title: Mesh handheld shares its position
+      message: >-
+        {{ trigger.to_state.attributes.prefix }}: its adverts carry its position; turn off
+        "Share Position in Advert" on it and press Advert near the gateway
+mode: queued
+```
+
+Everyone in range can read an advert. The event comes when a handheld starts sharing (also with
+0, 0, from one that never had a position), when one that shares is added, and when one that
+shares is included in telemetry again; *Position in adverts* on its device stays on while it
+shares. Machine values only: a name from the mesh would be Markdown in a notification.
+
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.
 The event's keys are in `trigger.to_state.attributes`, for example `args` of a command.
@@ -724,12 +774,12 @@ recorder:
       - event.mesh_*_message*
 ```
 
-The contacts' trackers store their positions in the history too, which draws their traces on the
-map: a companion that moves writes one state per 20 m it moved, at most about one per telemetry
-answer (every 90 s or more). Readings, *Telemetry state*, the switch *Telemetry* and the
-gateway's event *Telemetry* (a dated log of who left range and came back, with `prefix`, `name`
-and `state`) are recorded as well, a noisy reading with most answers. To keep them out, exclude
-them too:
+The contacts' trackers store their positions in the history too, which a map card with
+`hours_to_show` draws as their traces ([Traces on the map](#traces-on-the-map)): a companion that
+moves writes one state per 20 m it moved, at most about one per telemetry answer (every 90 s or
+more). Readings, *Telemetry state*, the switch *Telemetry* and the gateway's event *Telemetry* (a
+dated log of who left range and came back, with `prefix`, `name` and `state`) are recorded as well,
+a noisy reading with most answers. To keep them out, exclude them too:
 
 ```yaml
 recorder:
@@ -744,12 +794,15 @@ recorder:
       - event.meshcore_home_gateway_*_telemetry
 ```
 
-The `*` at the end also takes the IDs Home Assistant numbers with `_2`. An excluded sensor keeps
-no statistics. A contact whose name gives such a part of an entity ID, such as *Team ch2* (`_ch`
-and a digit) or *Old battery*, loses the history of its other sensors too, which is harmless. Home
-Assistant keeps the last event's attributes in `core.restore_state`, as for messages, and a
-`person` keeps its own copy of the position. Excluding a contact in the gateway does not purge
-Home Assistant's history: `recorder.purge_entities` removes its states and events, **not** the
-long-term statistics of its `measurement` sensors; delete those under *Developer tools →
-Statistics*. The gateway's own history of the contact goes with `--forget`
-([above](#telemetry-of-the-households-companions)).
+The `*` at the end also takes the IDs Home Assistant numbers with `_2`. Excluding
+`device_tracker.mesh_*` keeps the positions out of the database, while a map card open at that
+moment still draws the points that come while it stays open. *Position in adverts* and the
+*Contact* event record when a companion's adverts started or stopped carrying its position, never
+where: no pattern is needed for them. An excluded sensor keeps no statistics. A contact whose name
+gives such a part of an entity ID, such as *Team ch2* (`_ch` and a digit) or *Old battery*, loses
+the history of its other sensors too, which is harmless. Home Assistant keeps the last event's
+attributes in `core.restore_state`, as for messages, and a `person` keeps its own copy of the
+position. Excluding a contact in the gateway does not purge Home Assistant's history:
+`recorder.purge_entities` removes its states and events, **not** the long-term statistics of its
+`measurement` sensors; delete those under *Developer tools → Statistics*. The gateway's own history
+of the contact goes with `--forget` ([above](#telemetry-of-the-households-companions)).

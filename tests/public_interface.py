@@ -118,7 +118,13 @@ from meshcore_home_gateway.state import (
     JsonStateFile,
     ProfileRecords,
 )
-from tests.radio_emulator import LPP_ALL, LPP_ALL_READINGS, EmulatedContact, EmulatedRadio
+from tests.radio_emulator import (
+    LPP_ALL,
+    LPP_ALL_READINGS,
+    EmulatedContact,
+    EmulatedRadio,
+    advert_packet,
+)
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.observer import Publisher
@@ -461,10 +467,15 @@ async def _refreshed(newer_than: int) -> None:
     """The stub session's contact table is current."""
 
 
+TA, AT_E6 = int(T) - 60, (1_000_000, 2_000_000)  # each record's newest advert: time, position
+# Alice's newest advert as the radio logs it, with her position (flag 0x10)
+ADVERT_RAW = advert_packet(EmulatedContact(bytes.fromhex(KEY), "Alice"), TA, AT_E6)
+
+
 def _record(key: str, name: str, node_type: int) -> codec.ContactRecord:
     return codec.ContactRecord(
-        bytes.fromhex(key), node_type, 0x01, 2, name, int(T) - 60, int(T) - 60,
-        latitude_e6=1_000_000, longitude_e6=2_000_000,
+        bytes.fromhex(key), node_type, 0x01, 2, name, TA, TA,
+        latitude_e6=AT_E6[0], longitude_e6=AT_E6[1],
     )  # fmt: skip
 
 
@@ -518,7 +529,10 @@ async def _published(tmp: Path) -> _Paho:
     alice, bob = _record(KEY, "Alice", NodeType.CHAT), _record(KEY_B, "Bob", NodeType.CHAT)
     observer.radio_connected(350, codec.TuningParams(0, 9000))
     observer.radio_event(ContactsRead({KEY: alice}, T))
-    observer.radio_event(ContactsRead({KEY: alice, KEY_B: bob}, T))  # added
+    # Alice's advert: its log, the radio's push directly after it, and the read that shows it
+    observer.radio_event(PacketLogged(codec.RxLog(5.0, -90, ADVERT_RAW), T, 10, 1))
+    observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY), False), T, 11, 1))
+    observer.radio_event(ContactsRead({KEY: alice, KEY_B: bob}, T))  # added; position_in_advert
     observer.radio_event(ContactsRead({KEY: alice}, T))  # removed: its document and device cleared
     observer.telemetry(KEY, Answer(lpp.decode(LPP_ALL), T, False, 1, False))  # every reading key
     observer.telemetry_event("answered", KEY, "answering")

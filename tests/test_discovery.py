@@ -210,6 +210,27 @@ def test_a_look_alike_node_is_a_problem() -> None:
     assert "value_json.get('look_alike', [])" in sensor["json_attributes_template"]
 
 
+def test_the_companion_position_sensor_follows_the_households_companions() -> None:
+    """On while a companion not excluded from telemetry sends its position in its newest advert,
+    as the gateway checked it (design 6c D11). An index of 1.1.0a2 lacks the keys: `is number`
+    and `.get` log nothing in Home Assistant (home-assistant/tests/test_adverts.py)."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["advert_position"]
+    assert (sensor["p"], sensor["name"], sensor["device_class"], sensor["entity_category"]) == (
+        "binary_sensor", "Companion position in adverts", "problem", "diagnostic",
+    )  # fmt: skip
+    assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.contacts
+    assert sensor["value_template"] == (
+        "{{ ('ON' if value_json.advert_carries_position_total > 0 else 'OFF') if value_json is "
+        "defined and value_json.advert_carries_position_total is number else None }}"
+    )
+    assert sensor["json_attributes_template"] == (
+        "{{ {'contacts': value_json.get('advert_carries_position', []), "
+        "'total': value_json.get('advert_carries_position_total', 0)} | tojson }}"
+    )
+    read = template_keys(sensor["value_template"] + sensor["json_attributes_template"])
+    assert read == {"advert_carries_position", "advert_carries_position_total"}
+
+
 def test_the_telemetry_entities_are_always_there() -> None:
     """Also with telemetry off: a disabled component that goes takes the whole device away."""
     off = parse_config(
@@ -254,6 +275,7 @@ def test_the_telemetry_entities_are_always_there() -> None:
         assert event["event_types"] == list(telemetry.EVENTS) == ["answered", "unanswered"]
         assert cmps["contact"]["event_types"] == [
             "added", "removed", "hidden", "shown", "refused", "failed", "excluded", "included",
+            "position_in_advert",
         ]  # fmt: skip
 
 
