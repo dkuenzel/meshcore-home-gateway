@@ -509,6 +509,8 @@ def test_the_snapshot_is_the_same_in_every_language(
     translator = {"xx": pseudo, "hostile": hostile}.get(catalog, i18n.translator)(catalog)
     language = speaking(monkeypatch, translator).language
     assert interface._sorted(interface.command_line(tmp_path, language)) == current["cli"]
+    names = interface.homeassistant(language)
+    assert interface._sorted(names) == current["homeassistant"]
 
 
 def test_the_command_line_without_a_snapshot(

@@ -77,6 +77,28 @@ the controls that change the radio's contacts also while the radio is not connec
 management is off (also on untested firmware). The state values come from retained documents, so they are back right after a
 restart of either side.
 
+### Language of the names
+
+The names the gateway sends follow `homeassistant.language`
+([configuration.md](configuration.md#homeassistant)): the entity names, the models of the
+contacts' devices (*Companion*, *Repeater*, *Room server*, *Sensor*), the reading types
+(*Temperature 2*) and the default device name `MeshCore radio`. This guide gives them in English.
+The same in every language:
+
+* the entity IDs and unique IDs, so automations, dashboards, statistics and recorder settings
+  keep working when the language changes;
+* the event types, the options of the select and of the enum sensors, which Home Assistant shows
+  as they are (MQTT entities have no translations), attribute keys, units and classes;
+* data: a contact's name, a target's alias in *Send to …*, a device name you set, and the type of
+  a node this version does not know.
+
+A contact's SNR sensor has no name of its own: Home Assistant names it after its class, in its own
+language. A contact's notify entity has the contact's name.
+
+A change of language renames the display names at the next start of the gateway. Home Assistant
+takes the new names of the entities it knows and keeps their IDs, their history and the names you
+gave them; no entity is added or removed.
+
 ## Contacts
 
 Every contact in the radio's table gets a device of its own, listed under *Connected devices* on the
@@ -569,7 +591,8 @@ device pages, sensors and attributes, availability, the removal of components an
 devices (also after a restart of Home Assistant), a device deleted by the user, the map, the
 controls that add and remove contacts, the telemetry entities and their expiry, a `person` and
 the triggers of [Positions and presence](#positions-and-presence), the Markdown cards, the actions
-of the first steps, the dashboard cards, the battery template, and the examples below, exactly as
+of the first steps, the dashboard cards, the battery template, the names in another language
+(the same entities, a rename that keeps the user's names), and the examples below, exactly as
 written here (`make ha-test`, [testing.md](testing.md)).
 
 ## Examples

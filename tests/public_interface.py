@@ -1375,8 +1375,13 @@ def _columns(listings: dict[str, str]) -> dict[str, int]:
 # --- Home Assistant -------------------------------------------------------------------------------
 
 
-def homeassistant() -> dict[str, Any]:
+def homeassistant(language: str = "en") -> dict[str, Any]:
+    """Home Assistant's side of the interface; with names in another language, the same (ADR
+    0019): names are not recorded, and nothing recorded may follow them
+    (tests/test_public_interface.py)."""
     config, device, topics = maximal(), gateway_device(), Topics(BASE, NODE)
+    names = dataclasses.replace(config.homeassistant, language=language)
+    config = dataclasses.replace(config, homeassistant=names)
     contact = contact_device_id(config, KEY)
     contacts: dict[str, dict[str, Any]] = {}
     for node_type in NodeType:  # the components of a contact depend on its type
@@ -1404,7 +1409,7 @@ def homeassistant() -> dict[str, Any]:
             "manage_contacts": _components(manage_payload(config, topics, [])["cmps"], device),
             "contact": contacts,
         },
-        "slugs": _slugs(),
+        "slugs": _slugs(config),
     }
 
 
@@ -1419,7 +1424,7 @@ def _named_key(index: int) -> str:
     return f"{index:02}{'0123456789' * 7}"[:64]
 
 
-def _slugs() -> dict[str, str]:
+def _slugs(config: Config) -> dict[str, str]:
     """The slug the code gives each example contact, which its entity IDs
     `<platform>.mesh_<slug>_<component>` keep (docs/home-assistant.md): the contacts come in a
     table read, then a second contact named like the first in another."""
@@ -1428,7 +1433,7 @@ def _slugs() -> dict[str, str]:
     bus = cast("Publisher", SimpleNamespace(publish=lambda *_, **__: None))
     with tempfile.TemporaryDirectory() as tmp:
         records = ContactDeviceRecords(JsonStateFile(Path(tmp) / "state.json"))
-        devices = ContactDevices(maximal(), Topics(BASE, NODE), bus, records, wall_clock=lambda: T)
+        devices = ContactDevices(config, Topics(BASE, NODE), bus, records, wall_clock=lambda: T)
         mesh = Mesh()
         for table in (nodes, [*nodes, second]):
             mesh.contacts_read(table, T)

@@ -1011,6 +1011,425 @@ msgstr ""
 msgid "{key}: cannot load {path}: {detail}"
 msgstr ""
 
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Altitude"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Analog input"
+msgstr ""
+
+#. sensor (voltage) of a companion: the battery of its radio
+#. sensor (voltage) of the gateway: the battery of its own radio
+#: src/meshcore_home_gateway/mqtt/contact_devices.py src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Battery"
+msgstr ""
+
+#. the model of a contact's device in Home Assistant: the MeshCore node type
+#. (companion: a person's radio; room server: a node that keeps messages for a group)
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Companion"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Current"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Distance"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Frequency"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Generic"
+msgstr ""
+
+#. sensor of a contact: how many repeaters its last packet passed
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Hops"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Humidity"
+msgstr ""
+
+#. sensor (timestamp) of a contact: when the gateway's radio last heard
+#. it. Home Assistant shows the contact's name first.
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Last heard"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Luminosity"
+msgstr ""
+
+#. sensor (temperature) of a companion: the temperature of its radio's
+#. microcontroller (MCU), not of the air
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "MCU temperature"
+msgstr ""
+
+#. event entity of a contact: a message from it
+#. event entity of the gateway: a message received from a contact or on
+#. a channel
+#: src/meshcore_home_gateway/mqtt/contact_devices.py src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Message"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Percentage"
+msgstr ""
+
+#. device tracker of a contact: its position on the map
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Position"
+msgstr ""
+
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Position in adverts"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Power"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Pressure"
+msgstr ""
+
+#. button of a contact: removes it from the contacts of the gateway's radio
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Remove from radio"
+msgstr ""
+
+#. the model of a contact's device in Home Assistant: the MeshCore node type
+#. (companion: a person's radio; room server: a node that keeps messages for a group)
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Repeater"
+msgstr ""
+
+#. the model of a contact's device in Home Assistant: the MeshCore node type
+#. (companion: a person's radio; room server: a node that keeps messages for a group)
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Room server"
+msgstr ""
+
+#. the model of a contact's device in Home Assistant: the MeshCore node type
+#. (companion: a person's radio; room server: a node that keeps messages for a group)
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Sensor"
+msgstr ""
+
+#. switch of a companion: whether the gateway asks it for telemetry
+#. event entity of the gateway: a companion answered a telemetry
+#. request, or did not
+#: src/meshcore_home_gateway/mqtt/contact_devices.py src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Telemetry"
+msgstr ""
+
+#. sensor (enum) of a companion: whether it answers the gateway's
+#. telemetry requests; keep it apart from "Telemetry status" of the gateway
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Telemetry state"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Temperature"
+msgstr ""
+
+#. a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
+#. channel after the name ("Temperature 2"), and the occurrence when a channel has two
+#. ("Temperature 2 (2)").
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Voltage"
+msgstr ""
+
+#. sensor (duration) of the gateway: the transmit time left in its
+#. hourly budget
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Airtime available"
+msgstr ""
+
+#. sensor (duration) of the gateway: how long it transmitted in the
+#. last hour (airtime: the time on air, as in Home Assistant's own words)
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Airtime last hour"
+msgstr ""
+
+#. event entity of the gateway: a command word from an allowed sender
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Command"
+msgstr ""
+
+#. binary sensor (problem) of the gateway: on while a companion of the
+#. household sends its position in its adverts, which every node hears (companion: a
+#. person's radio; advert: the packet a node announces itself with)
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Companion position in adverts"
+msgstr ""
+
+#. event entity of the gateway: a contact was added, removed, hidden,
+#. shown, refused, excluded or included
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Contact"
+msgstr ""
+
+#. binary sensor (problem) of the gateway: on while a contact may use its
+#. radio's command line over the air
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Contact with remote access"
+msgstr ""
+
+#. sensor of the gateway: the number of contacts on its radio
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Contacts"
+msgstr ""
+
+#. event entity of the gateway: how far a message it sent has come
+#. (queued, sent, confirmed, failed)
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Delivery"
+msgstr ""
+
+#. sensor (signal strength) of the gateway: the received signal strength
+#. (RSSI) of the last packet its radio heard
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Last packet RSSI"
+msgstr ""
+
+#. sensor (signal strength) of the gateway: the signal-to-noise ratio
+#. (SNR) of the last packet its radio heard
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Last packet SNR"
+msgstr ""
+
+#. binary sensor (problem) of the gateway: on while it hears a node
+#. whose key begins like a protected contact's, which may pose as that contact
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Look-alike node heard"
+msgstr ""
+
+#. the default name of the gateway's device in Home Assistant; MeshCore is the
+#. name of the mesh firmware
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "MeshCore radio"
+msgstr ""
+
+#. event entity of the gateway: its radio heard a node for the first
+#. time
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "New node"
+msgstr ""
+
+#. sensor of the gateway: the number of nodes its radio heard lately
+#. (node: any MeshCore station)
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Nodes heard"
+msgstr ""
+
+#. sensor (signal strength) of the gateway: the noise its radio hears
+#. when nobody transmits
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Noise floor"
+msgstr ""
+
+#. sensor of the gateway: a counter of the packets its radio received
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Packets received"
+msgstr ""
+
+#. sensor of the gateway: a counter of the packets its radio sent
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Packets sent"
+msgstr ""
+
+#. sensor of the gateway: the messages waiting to be sent
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Queue"
+msgstr ""
+
+#. binary sensor (connectivity) of the gateway: its USB or TCP link to
+#. its own radio, not a link over the air. Home Assistant shows the device name first.
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Radio link"
+msgstr ""
+
+#. sensor (enum) of the gateway: whether its radio's settings match the
+#. profile the gateway keeps on it
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Radio profile"
+msgstr ""
+
+#. event entity of the gateway: it wrote a setting of the profile to its
+#. radio, or could not
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Radio setting"
+msgstr ""
+
+#. sensor (duration) of the gateway: what its radio itself counted as
+#. sent in the last hour, adverts and acknowledgements included
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Radio transmit time last hour"
+msgstr ""
+
+#. sensor (duration) of the gateway: the time since its radio started
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Radio uptime"
+msgstr ""
+
+#. sensor of the gateway: a counter of the packets its radio could not
+#. read
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Receive errors"
+msgstr ""
+
+#. the name of an entity that exists only for a moment, while the gateway
+#. removes it from Home Assistant
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Removed"
+msgstr ""
+
+#. notify entity of the gateway: sends a message to a target of the
+#. configuration; {alias} is the target's name there, as the user wrote it
+#: src/meshcore_home_gateway/mqtt/discovery.py
+#, python-brace-format
+msgctxt "home assistant"
+msgid "Send to {alias}"
+msgstr ""
+
+#. button of the gateway: brings back the contacts' devices the user
+#. deleted in Home Assistant
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Show hidden contacts"
+msgstr ""
+
+#. sensor (duration) of the gateway: its own transmit time for
+#. telemetry requests in the last hour
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Telemetry airtime last hour"
+msgstr ""
+
+#. sensor (duration) of the gateway: the airtime its telemetry requests
+#. caused in the whole mesh in the last hour, as estimated
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Telemetry mesh airtime last hour"
+msgstr ""
+
+#. sensor (enum) of the gateway: whether it asks the household's
+#. companions for telemetry; keep it apart from "Telemetry state" of a contact
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Telemetry status"
+msgstr ""
+
+#. text entity of the gateway: a node's public key or a contact link
+#. typed or pasted here adds that node as a contact
+#: src/meshcore_home_gateway/mqtt/manage_entities.py
+msgctxt "home assistant"
+msgid "Add contact (key or link)"
+msgstr ""
+
+#. select of the gateway: choosing one of the nodes its radio heard adds
+#. that node as a contact
+#: src/meshcore_home_gateway/mqtt/manage_entities.py
+msgctxt "home assistant"
+msgid "Add heard node"
+msgstr ""
+
 #: src/meshcore_home_gateway/protocol/links.py
 msgid "a MeshCore link, but not one that adds a contact"
 msgstr ""

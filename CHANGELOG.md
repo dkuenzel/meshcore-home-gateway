@@ -25,7 +25,8 @@ format, the command line and Home Assistant discovery are public interfaces
   the languages the gateway translates them into
   ([configuration.md](docs/configuration.md#homeassistant)). Entity IDs, event types, options,
   attributes and units stay the same in every language; a change renames only the display names
-  at the next start, and names you changed stay.
+  at the next start, and names you changed stay
+  ([home-assistant.md](docs/home-assistant.md#language-of-the-names)).
 - The command line follows the language of its environment (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`,
   `LANG`; [configuration.md](docs/configuration.md#language-of-the-command-line)): help, errors,
   warnings, `check-config` and the `probe` report. Machine output (`--list`, `--json`, `listen`,
