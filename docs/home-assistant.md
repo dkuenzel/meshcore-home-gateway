@@ -763,9 +763,11 @@ mode: queued
 
 Everyone in range can read an advert. The event comes when a handheld starts sharing (also with
 0, 0, from one that never had a position), when one that shares is added after the gateway heard
-its advert (*Add heard node*; one added from a key or a link is reported at its next advert), and
-when one that shares is included in telemetry again; *Position in adverts* on its device stays on
-while it shares. Machine values only: a name from the mesh would be Markdown in a notification.
+its advert (*Add heard node*; one the gateway did not hear before the add, added from a key or a
+link first or after a restart of the gateway between hearing and adding it, is reported at its
+next advert), and when one that shares is included in telemetry again; *Position in adverts* on
+its device stays on while it shares. Machine values only: a name from the mesh would be Markdown
+in a notification.
 
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.

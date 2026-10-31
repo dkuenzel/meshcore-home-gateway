@@ -1314,7 +1314,7 @@ The entries below are what that page does not cover.
   the push); `MyMesh.cpp:358-366` (`ADVERT` is the key only);
   `examples/companion_radio/DataStore.cpp:278-279, 312-313` (loaded and saved). *Here:*
   `advert_position` says what the record holds; `advert_carries_position` what the newest checked
-  advert carries, and a position from adverts is shown only while that check carried one
+  advert carries, and a position from adverts is shown only while that check, if any, carried one
   ([mqtt-api.md](mqtt-api.md#contacts-contacts-and-contactskey)). *Check:* in the firmware tree,
   `sed -n '108,120p;186,201p' src/helpers/BaseChatMesh.cpp`.
 * **A companion that shares its position in adverts sends the last valid one when it has no fix,

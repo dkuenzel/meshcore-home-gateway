@@ -18,8 +18,9 @@ versions.
    ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)) or with
    `meshcore-home-gateway contacts add`. Best add it after the gateway heard its advert (*Add
    heard node*), so that the gateway checks that advert at once
-   ([positions in adverts](#positions-in-adverts)); one added from a key or a link is checked at
-   its next advert.
+   ([positions in adverts](#positions-in-adverts)); one the gateway did not hear before the add
+   (added from a key or a link first, or after a restart of the gateway between hearing and adding
+   it) is checked at its next advert.
 3. **Every chat contact of the radio is asked** unless it is excluded. Exclude every chat contact
    that is not the household's: with the switch *Telemetry* on its device in Home Assistant, or
    `meshcore-home-gateway contacts telemetry KEY off`. Best do it before you add it: a full key
@@ -161,11 +162,11 @@ Until the gateway has checked a companion's newest advert (after the update, an 
 or one made while it was stopped), it goes by the radio's record: the sensor is on while the last
 check carried a position or the record holds one from an earlier advert. The radio keeps that
 position after the companion stops sharing, so the sensor can be on although it no longer shares.
-It can also be off although it shares, while the record holds no position: the companion never
-had one, or it was added (by the gateway before 1.1.0a3, or from a key or a link) and has not
-adverted since. So press *Advert* once on each companion within range of the gateway's radio, or
-send a flood advert from its app, after the update whatever its sensor shows, and after switching
-sharing off.
+It can also be off although it shares, while the record holds no position: the companion never had
+one, or it was added (by the gateway before 1.1.0a3, from a key or a link before the gateway heard
+it, or after a restart of the gateway between hearing and adding it) and has not adverted since.
+So press *Advert* once on each companion within range of the gateway's radio, or send a flood
+advert from its app, after the update whatever its sensor shows, and after switching sharing off.
 
 ## Privacy
 

@@ -30,9 +30,9 @@ gateway can check it. The hardware checklist was not run for it.
   `advert_carries_position` (the first 16 companions not excluded from telemetry for which it is
   `true`) and `advert_carries_position_total`.
 - The event `position_in_advert` on `contact` when a companion that is not excluded from
-  telemetry starts to send its position in its adverts, is added while its adverts carry it, or
-  is included in telemetry again while they do. Never a position. The event entity *Contact*
-  lists it.
+  telemetry starts to send its position in its adverts, is added after the gateway heard an
+  advert of it that carries it, or is included in telemetry again while its adverts do. Never a
+  position. The event entity *Contact* lists it.
 - *Position in adverts* (`binary_sensor.mesh_<name>_advert_position`, problem) on every
   companion's device.
 - docs/home-assistant.md: a map card that draws a companion's trace from Home Assistant's
@@ -50,13 +50,16 @@ gateway can check it. The hardware checklist was not run for it.
   companion held a position, also long after the companion stopped sharing, and off for one that
   sends 0, 0 because it never had a position. `advert_position` keeps its meaning (the radio's
   record holds a position from one of the contact's adverts); the documentation now says so.
-- A position from adverts is shown only while the radio's record holds one and the contact's
-  newest checked advert carried one: once a checked advert carries none (or 0, 0), its tracker
-  turns `unavailable` unless telemetry gives a position, also after an exclusion and a restart.
-  An advert with a position brings it back. A record without a position now drops an advert
-  position of every contact, also one never checked, repeaters included. Before, the tracker
-  kept the last position the companion ever shared. A position in an advert can be one the
-  companion saved long ago: the advert does not say when the fix was taken.
+- A position from adverts is shown only while the radio's record holds one and the contact's last
+  checked advert, if any, carried one: once a checked advert carries none (or 0, 0), its tracker
+  turns `unavailable` unless telemetry gives a position, also after an exclusion and a restart (a
+  crash included). A checked advert with a position brings it back. Until the gateway has checked
+  one (after the update), and for repeaters, room servers and sensors, which it does not check,
+  the record decides: an old position of a companion stays until the *Advert* asked for above. A
+  record without a position now drops an advert position of every contact, also one never
+  checked, repeaters included. Before, the tracker kept the last position the companion ever
+  shared. A position in an advert can be one the companion saved long ago: the advert does not
+  say when the fix was taken.
 
 ### Fixed
 

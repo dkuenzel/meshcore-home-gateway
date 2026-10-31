@@ -68,9 +68,12 @@ sends nothing to the radio and does not turn the warning off for a companion tha
 * **A position from adverts follows the check.** It is shown only while the record holds one and
   the contact's last checked advert, if any, carried one. A check never drops a telemetry
   position; a changed advert position replaces it, as before, also at the check that shows the
-  companion shares again. An advert that could not be checked changes nothing.
+  companion shares again. An advert that could not be checked changes nothing. The kept document
+  of a companion whose answers are current
+  ([ADR 0024](0024-telemetry-values-in-home-assistant-expire.md)) is stored at once when it loses
+  that position, so a crash does not bring it back.
 * The last check of each companion is kept in the state file, without a position. A logged
-  position is held only to compare it, for at most about two minutes, and never stored,
+  position is held only to compare it, for at most about three minutes, and never stored,
   published or logged.
 
 The documents keep growing only: `advert_position` keeps its meaning (the record holds a

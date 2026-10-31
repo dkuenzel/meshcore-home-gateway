@@ -106,8 +106,8 @@ def outcome(  # noqa: PLR0911 - one return per row of design 6c §3.3
         return Outcome(record)
     t = node.last_advert
     # the radio pushes a contact's advert only when it is newer than the record it held
-    # (BaseChatMesh.cpp:133-136): a record no newer than its own log, or than the read before,
-    # was sent before the radio took it, also while a log of the record's time is in the window
+    # (BaseChatMesh.cpp:133-136): a record older than its own log, or no newer than at the read
+    # before, was sent before the radio took it, even with a log of the record's time in the window
     older = (pushed.adjacent is not None and pushed.adjacent.timestamp > t) or (
         previous is not None and t <= previous.last_advert
     )

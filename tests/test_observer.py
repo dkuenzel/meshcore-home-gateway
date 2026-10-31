@@ -1503,6 +1503,32 @@ def test_an_advert_the_gateway_cannot_check_is_logged_as_not_checked(
     assert caplog.text.count("was not checked") == 1
 
 
+def test_a_heard_companions_advert_without_its_log_is_logged_once_when_it_comes(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Gail's NEW_ADVERT without its log (too long for a frame) is not checked: one debug line
+    when it comes, with that reason. Her heard node keeps the check before. The read that adds her
+    shows that advert, which the radio did report: no second line (hardware row 44)."""
+    _observer, bus, air = checking(tmp_path, ALICE)
+    caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway.observer")
+    gail = EmulatedContact(bytes.fromhex("e9" * 32), "Gail")
+    key = gail.public_key.hex()
+    first = gail.last_advert + 60
+    air.heard(gail, timestamp=first)
+    air.clock.now += 3600
+    unlogged = first + 3600
+    air.heard(gail, timestamp=unlogged, logged=False)
+    line = f"node {key[:12]}: its advert at {iso(unlogged)} was not checked (not logged)"
+    assert caplog.text.count(line) == 1
+    air.records[gail.public_key] = replace(gail, last_advert=unlogged)  # added by the gateway
+    air.read()
+    document = last(bus, f"{ROOT}/contacts/{key}")
+    assert (document["advert_checked_at"], document["last_advert_at"]) == (
+        iso(first), iso(unlogged),
+    )  # fmt: skip
+    assert caplog.text.count("was not checked") == 1
+
+
 def test_a_table_read_older_than_the_advert_waits_for_the_next_one(tmp_path: Path) -> None:
     """A read that started before the radio took the advert (radio/session.py:491-515) does not
     show it yet: the advert waits for the next read, which decides (design 6c D2)."""
@@ -1817,6 +1843,39 @@ def test_an_exclusion_brings_back_no_position_the_adverts_no_longer_carry(tmp_pa
     observer.telemetry_excluded(key, True)
     assert checked(bus, key) == (False, iso(stopped), None, None)
     assert last(bus, f"{ROOT}/contacts/{key}")["advert_position"] is True
+
+
+@pytest.mark.parametrize(
+    ("state", "data", "expected"),
+    [("no_position", LPP_T1000E, (None, None)), ("answering", LPP_FULL, (50.12345, "telemetry"))],
+    ids=["a check without", "telemetry"],
+)
+def test_a_kept_document_that_loses_its_advert_position_is_stored_at_once(
+    tmp_path: Path, state: TelemetryState, data: bytes, expected: tuple[Any, ...]
+) -> None:
+    """Alice's answers are current, so her document is kept for a restart, with the position from
+    her adverts. When that goes (a check that carries none, or a position from telemetry), the
+    document is stored at once, not at the tick: after a stop without a tick (a crash), the next
+    start brings back no place she stopped sharing, also while the radio stays away (design 6c
+    D12, ADR 0024)."""
+    store = JsonStateFile(tmp_path / "state.json")
+    key = ALICE.public_key.hex()
+    _observer, bus, air = checking(tmp_path, ALICE, current=CurrentDocuments(store))
+    air.observer.telemetry_state = lambda _key: state
+    air.advert(ALICE, SHARED)
+    air.read()
+    air.observer.tick()
+    assert CurrentDocuments(store).documents[key]["position_source"] == "advert"
+    air.clock.now += 30
+    air.observer.telemetry(key, answer(air.clock.now, data))
+    air.advert(ALICE)  # she stopped sharing
+    air.read()
+    assert checked(bus, key)[0] is False
+    bus = restarted_on(tmp_path, air, current=CurrentDocuments(store))
+    air.observer.telemetry_state = lambda _key: state
+    air.observer.publish_all()  # the broker connected; the radio is away
+    document = last(bus, f"{ROOT}/contacts/{key}")
+    assert (document["latitude"], document["position_source"]) == expected
 
 
 def test_a_companion_heard_before_it_is_added_starts_checked(

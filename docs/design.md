@@ -506,19 +506,20 @@ flowchart LR
   is the frame directly before the push; otherwise every log of the key with that timestamp must
   agree. A flagged log must hold the record's position; a new position in the record since the
   read before, with a newer `last_advert`, is evidence on its own. The radio pushes a contact's
-  advert only when it is newer than its record, so a read whose record is no newer than the push's
-  own log, or than at the read before, was sent before the radio took it: it waits for the next
-  read (at most 30 s), also while a log of the record's time is in the window. A read with no log
-  of the record's time waits too while a newer log of the key is in the window. A heard companion's
-  `NEW_ADVERT` carries the record made from that advert alone and is checked at once; its heard
-  node keeps only the time and flag, and the table read that adds it takes them. When nothing is
-  learned the last check stays and one debug line says "not checked". While a companion's newest
-  advert is not checked, `advert_carries_position` is the last check's flag, or `true` when the
-  record holds a position: it errs to warn. The index lists the companions not excluded from
-  telemetry whose value is `true`; the event `position_in_advert` comes when such a companion's
-  check turns to carrying, at an add with a check that carries, and at an inclusion while it
-  carries. The last check of each companion is kept in the state file (`advert_checks`, no
-  position); a logged position is held at most about two minutes and never stored or published.
+  advert only when it is newer than its record, so a read whose record is older than the push's
+  own log, or no newer than at the read before, was sent before the radio took it: it waits for
+  the next read (at most 30 s), also while a log of the record's time is in the window. A read
+  with no log of the record's time waits too while a newer log of the key is in the window. A
+  heard companion's `NEW_ADVERT` carries the record made from that advert alone and is checked at
+  once; its heard node keeps only the time and flag, and the table read that adds it takes them.
+  When nothing is learned the last check stays and one debug line says "not checked". While a
+  companion's newest advert is not checked, `advert_carries_position` is the last check's flag, or
+  `true` when the record holds a position: it errs to warn. The index lists the companions not
+  excluded from telemetry whose value is `true`; the event `position_in_advert` comes when such a
+  companion's check turns to carrying, at an add with a check that carries, and at an inclusion
+  while it carries. The last check of each companion is kept in the state file (`advert_checks`,
+  no position); a logged position is held at most about three minutes (its log up to 40 s before
+  the push, which is held up to 70 s, until the next minute tick) and never stored or published.
 * **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
   `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
   history's table `reading`, one row per value, in one transaction. The table was added to the
@@ -671,7 +672,8 @@ systemd unit does not restart on it).
   keeps an older one)" when it does), a logged copy that differs from the advert the radio took as
   a warning, and each advert the radio took that the gateway could not check at debug level
   ("contact …: its advert at <time> was not checked (not logged)" or "(no report from the
-  radio)"). A heard node's differing copies are logged at debug level only ("node …"). No
+  radio)"). A heard companion's differing copies and its advert without a log are logged at debug
+  level only, when its `NEW_ADVERT` comes ("node …"), and not again at the read that adds it. No
   coordinate is logged.
 
 ### 6.11 Telemetry
@@ -838,7 +840,8 @@ sequenceDiagram
   any task runs, the schedule gives each contact its state back at once, and the observer the time
   of its newest answer with a position, so a restart flips no state and raises no event. The
   observer keeps the last document of each companion whose answers are current in the state file
-  too (at once when one turns current or no longer, else with its minute tick and at the stop).
+  too (at once when one turns current or no longer, or loses a position from adverts, so that a
+  crash brings back none a check dropped; else with its minute tick and at the stop).
   Before the first table read it has no contacts. It keeps these documents in their latest state,
   also once they expired, stores each change at once, and publishes them again when their state
   changes, and each again at every connect of the broker (it may have missed one: a run that
