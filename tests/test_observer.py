@@ -744,7 +744,7 @@ def test_with_an_unreadable_exclusions_file_no_contact_gets_back_its_readings_or
     tmp_path: Path,
 ) -> None:
     """The file may exclude anyone: as telemetry asks nobody then (D12), the history gives back
-    when contacts were heard and their advert positions only."""
+    when contacts were heard and their advert positions only, while their records hold one."""
     history = History.open(tmp_path / "history.sqlite3")
     assert history is not None
     greenhouse, alice = GREENHOUSE.public_key.hex(), ALICE.public_key.hex()
@@ -772,13 +772,17 @@ def test_with_an_unreadable_exclusions_file_no_contact_gets_back_its_readings_or
     document = last(bus, f"{ROOT}/contacts/{greenhouse}")
     assert (document["position_source"], document["latitude"]) == ("advert", 53.56)  # its record
     document = last(bus, f"{ROOT}/contacts/{alice}")
-    assert (document["position_source"], document["latitude"]) == ("advert", 53.55)
+    # her record holds none: not where she is (design 6c D12)
+    assert (document["position_source"], document["latitude"]) == (None, None)
     assert (document["heard_via"], document["heard_at"]) == ("message", iso(NOW - 5))
     history.close()
 
 
-def test_an_excluded_contact_gets_back_its_last_advert_position(tmp_path: Path) -> None:
-    """Its newest advert no longer carries one: the history's advert position stays."""
+def test_an_excluded_contact_whose_record_holds_no_position_gets_no_advert_position_back(
+    tmp_path: Path,
+) -> None:
+    """The record holds none (after an advert with 0, 0, or the gateway's own add): the history's
+    advert position is not known to be where the contact is (design 6c D12)."""
     history = History.open(tmp_path / "history.sqlite3")
     assert history is not None
     key = ALICE.public_key.hex()
@@ -790,7 +794,9 @@ def test_an_excluded_contact_gets_back_its_last_advert_position(tmp_path: Path) 
                         wall_clock=lambda: NOW)  # fmt: skip
     observer.radio_event(ContactsRead(table(ALICE), NOW))  # its record has no position
     document = last(bus, f"{ROOT}/contacts/{key}")
-    assert (document["position_source"], document["latitude"]) == ("advert", 53.56)
+    position = ("latitude", "longitude", "altitude_m", "position_at", "position_source")
+    assert {name: document[name] for name in position} == dict.fromkeys(position)
+    assert document["position_current"] is None
     history.close()
 
 

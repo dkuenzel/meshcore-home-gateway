@@ -58,6 +58,7 @@ from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
     NODE_TYPES,
+    AdvertCheck,
     AirtimeMeter,
     Fix,
     Heard,
@@ -1432,6 +1433,7 @@ def _tracked(node_type: int) -> Tracked:
     tracked = Tracked(
         node, T - 60, heard, fix, position_received_at=T, restored_heard=heard,
         readings=Readings(T, Named(4.12, 23.4, LPP_ALL_READINGS)),
+        advert=AdvertCheck(int(T) - 60, True),
     )  # fmt: skip
     _filled(tracked)
     return tracked

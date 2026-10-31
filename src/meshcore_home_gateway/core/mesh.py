@@ -4,6 +4,12 @@ about them, and the nodes it heard but did not add.
 Fed with what the radio reports and the wall-clock time; documents are built from it in
 `views`. Positions and telemetry readings are kept for contacts only: a node the radio merely
 heard keeps none (privacy, ADR 0016).
+
+Each companion keeps the last check of its adverts (ADR 0018, `core.adverts`): whether the newest
+advert the gateway checked carried its position. A position from adverts is shown only while the
+radio's record holds one and that check, if any, carried one: the record keeps a position after
+the companion stops sharing it (design 6c D12). A heard node keeps the time and flag of its
+checked advert, never a position.
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.model import Position, distance_m
 
 NODE_TYPES = {1: "chat", 2: "repeater", 3: "room", 4: "sensor"}  # advert types
+COMPANION = 1  # the advert type of a chat contact (NODE_TYPES): the only one checked
 MAX_NODES = 50  # heard nodes kept; the least recently heard goes first
 NODE_TTL_S = 7 * 86_400.0  # a heard node is forgotten this long after it was last heard
 FIX_MOVED_M = 20.0  # a telemetry position replaces the fix from this distance on
@@ -68,6 +75,21 @@ class Fix:
 
 
 @dataclass(frozen=True, slots=True)
+class AdvertCheck:
+    """A companion's newest advert whose content the gateway checked (ADR 0018)."""
+
+    at: int  # its timestamp, the contact's clock: the record's `last_advert` then
+    carries: bool  # flag 0x10: a position everyone in range can read (also 0, 0: never had one)
+
+
+def newer_check(one: AdvertCheck | None, other: AdvertCheck | None) -> AdvertCheck | None:
+    """The check of the newer advert; `one` on a tie."""
+    if one is None or (other is not None and other.at > one.at):
+        return other
+    return one
+
+
+@dataclass(frozen=True, slots=True)
 class Readings:
     """The readings of a contact's newest telemetry answer (ADR 0018)."""
 
@@ -84,6 +106,8 @@ class Tracked:
     position_received_at: float | None = None  # the newest telemetry answer with a position
     restored_heard: Heard | None = None  # last heard as the history knew it at the start
     readings: Readings | None = None  # of the newest telemetry answer
+    # the last check of its adverts; on a heard node only its time and flag, never a position
+    advert: AdvertCheck | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +118,7 @@ class _Kept:
     fix: Fix | None = None
     readings: Readings | None = None
     position_received_at: float | None = None
+    advert: AdvertCheck | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +171,11 @@ class Mesh:
             return
         self._restored[key] = replace(kept, readings=None)
 
+    def restore_advert(self, key: str, check: AdvertCheck) -> None:
+        """The check an earlier run stored; it applies at the contact's first table read."""
+        kept = self._restored.get(key, _Kept())
+        self._restored[key] = replace(kept, advert=check)
+
     def contacts_read(self, nodes: Iterable[Node], at: float) -> TableChange:
         """A complete read of the radio's contact table."""
         current = {node.public_key: node for node in nodes}
@@ -165,12 +195,15 @@ class Mesh:
                 tracked.readings = kept.readings
                 tracked.position_received_at = kept.position_received_at
                 tracked.first_heard = tracked.first_heard or (heard.at if heard else None)
+                tracked.advert = newer_check(tracked.advert, kept.advert)  # heard, stored
                 previous = None
             else:
                 previous = tracked.node
                 if previous != node:
                     changed.append(key)
             tracked.node = node
+            if node.node_type != COMPANION:
+                tracked.advert = None
             self._advert_fix(tracked, previous, at)
             self.contacts[key] = tracked
         for tracked in gone:  # after the heard nodes just added left them: none of them evicted
@@ -179,21 +212,28 @@ class Mesh:
 
     def _heard_again(self, tracked: Tracked, at: float) -> None:
         """A contact that left the table is a heard node again while it counts as recently heard
-        (so it can be added back), without what only a contact has: flags, path, position. In its
-        place by the time it was heard; then the limits apply."""
+        (so it can be added back), without what only a contact has: flags, path, position. It
+        keeps the time and flag of its checked advert, so that it is checked when added back
+        (design 6c D27). In its place by the time it was heard; then the limits apply."""
         if tracked.heard is None or at - tracked.heard.at > self._node_ttl_s:
             return
         node = replace(tracked.node, flags=0, path_hops=None, position=None)
-        self.nodes[node.public_key] = Tracked(node, tracked.first_heard, tracked.heard)
+        self.nodes[node.public_key] = Tracked(
+            node, tracked.first_heard, tracked.heard, advert=tracked.advert
+        )
         ordered = sorted(self.nodes.items(), key=lambda item: _heard_at(item[1]))  # stable
         self.nodes = dict(ordered)
         self.forget_nodes(at)
 
     def _advert_fix(self, tracked: Tracked, previous: Node | None, at: float) -> None:
         """A position from the contact's record: new when it differs from the record read before;
-        on the first read of this run, kept unless the history already has a fix."""
+        on the first read of this run, kept unless the history already has a fix. None from
+        adverts while the record holds none or the contact no longer shares it (`_shared`): an
+        advert fix goes then, a telemetry fix stays."""
         position = tracked.node.position
-        if position is None:
+        if position is None or not _shared(tracked):  # design 6c D12: no position from adverts
+            if _from_advert(tracked.fix):
+                tracked.fix = None
             return
         if previous is not None:
             if previous.position != position:
@@ -205,6 +245,27 @@ class Mesh:
             # the newest advert is at most this old; the one with the position may be older
             advert = tracked.node.last_advert
             tracked.fix = Fix(position, advert if 0 < advert <= at else at, "advert")
+
+    def advert_checked(self, key: str, check: AdvertCheck, at: float) -> bool:
+        """A companion's advert was checked (`core.adverts`): the check replaces the one held,
+        unless it is older, and the advert fix follows `_shared` (design 6c D12): dropped when the
+        check carries none, the record's position when it carries one and the contact has no fix
+        or an advert fix elsewhere. A telemetry fix is never touched. True when the fix changed;
+        nothing for a key that is no companion."""
+        tracked = self.contacts.get(key)
+        if tracked is None or tracked.node.node_type != COMPANION:
+            return False
+        if tracked.advert is not None and check.at < tracked.advert.at:
+            return False
+        tracked.advert = check
+        before, position = tracked.fix, tracked.node.position
+        if position is None or not _shared(tracked):
+            if _from_advert(before):
+                tracked.fix = None
+        elif before is None or (_from_advert(before) and before.position != position):
+            advert = tracked.node.last_advert  # the newest advert carried it: its own time
+            tracked.fix = Fix(position, advert if 0 < advert <= at else at, "advert")
+        return tracked.fix != before
 
     def contact_heard(self, key: str, heard: Heard) -> bool:
         """A contact was heard (advert, message, telemetry); False if it is no contact."""
@@ -257,8 +318,9 @@ class Mesh:
     def forget_telemetry(self, key: str, at: float) -> bool:
         """The contact was excluded from telemetry: its readings, `position_received_at` and a
         position from telemetry are forgotten, on the contact or in what is kept for its first
-        table read. The position its record carries takes the place, as at a first table read.
-        `heard` stays. True if anything changed."""
+        table read. The position its record carries takes the place, as at a first table read,
+        while the contact still shares it (design 6c D12). `heard` stays. True if anything
+        changed."""
         changed = False
         if (kept := self._restored.get(key)) is not None:
             fix = None if _from_telemetry(kept.fix) else kept.fix
@@ -304,6 +366,14 @@ class Mesh:
         self.forget_nodes(heard.at)
         return new
 
+    def advert_heard(self, key: str, check: AdvertCheck) -> None:
+        """A heard chat node's advert was checked from its NEW_ADVERT (`core.adverts.heard`):
+        kept with the heard node, unless older, for the table read that adds it (design 6c
+        D27)."""
+        tracked = self.nodes.get(key)
+        if tracked is not None and tracked.node.node_type == COMPANION:
+            tracked.advert = newer_check(tracked.advert, check)
+
     def forget_nodes(self, now: float) -> list[str]:
         """Drop heard nodes beyond the limits; returns their keys."""
         dropped = []
@@ -320,6 +390,18 @@ def _heard_at(tracked: Tracked) -> float:
 
 def _from_telemetry(fix: Fix | None) -> bool:
     return fix is not None and fix.source == "telemetry"
+
+
+def _from_advert(fix: Fix | None) -> bool:
+    return fix is not None and fix.source == "advert"
+
+
+def _shared(tracked: Tracked) -> bool:
+    """The record's position is one the contact still shares in its adverts: the record holds
+    one, and the last advert the gateway checked, if any, carried one. A newer advert that could
+    not be checked changes nothing (design 6c D4)."""
+    check = tracked.advert
+    return tracked.node.position is not None and (check is None or check.carries)
 
 
 def _newer(current: Heard | None, other: Heard | None) -> Heard | None:
