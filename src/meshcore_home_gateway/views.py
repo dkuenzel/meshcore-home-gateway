@@ -83,6 +83,21 @@ def _heard(tracked: Tracked) -> dict[str, Any]:
     }
 
 
+def advert_carries_position(tracked: Tracked) -> bool | None:
+    """Whether a companion's adverts carry its position, which everyone in range can read: the
+    flag of its newest advert, as the gateway checked it. While its newest advert is not checked
+    (none yet, or a newer one the gateway missed), the last check's flag, or True when the
+    radio's record holds a position from an earlier advert, which it may still send: it errs to
+    warn (design 6c D4, D5; ADR 0025). None for other node types, which share theirs by design and
+    are not checked."""
+    node, check = tracked.node, tracked.advert
+    if node.node_type != NodeType.CHAT:
+        return None
+    if check is not None and node.last_advert <= check.at:  # the newest advert, checked
+        return check.carries
+    return (check is not None and check.carries) or node.position is not None
+
+
 def contact_document(
     tracked: Tracked, *, protected: bool = False, manage: bool = False,
     telemetry_state: TelemetryState | None = None, excluded: bool = False,
@@ -90,6 +105,7 @@ def contact_document(
     """`contacts/<key>`: one contact of the radio and what the gateway learned about it.
     `telemetry_state`: None for a contact that is never asked (no companion)."""
     node, fix, readings = tracked.node, tracked.fix, tracked.readings
+    check = tracked.advert if node.node_type == NodeType.CHAT else None  # companions only
     from_telemetry = fix is not None and fix.source == "telemetry"
     telemetry_current, position_current = _current(telemetry_state, from_telemetry)
     named = readings.named if readings else None
@@ -117,7 +133,10 @@ def contact_document(
         "position_source": fix.source if fix else None,
         "position_accuracy_m": TELEMETRY_ACCURACY_M if from_telemetry else None,
         "position_received_at": iso(tracked.position_received_at),  # the newest answer with one
-        "advert_position": node.position is not None,  # its adverts carried a position
+        # the radio's record holds a position from an advert, kept after sharing stops
+        "advert_position": node.position is not None,
+        "advert_carries_position": advert_carries_position(tracked),
+        "advert_checked_at": iso(check.at) if check and check.at else None,
         "telemetry_state": telemetry_state,
         "telemetry_excluded": excluded and node.node_type == NodeType.CHAT,
         "telemetry_current": telemetry_current,
@@ -149,6 +168,10 @@ def restated(
     exclusion forgets, as far as the document shows it (the position the contact's record carries
     comes back with the table read); not excluded, what an exclusion forgot stays forgotten."""
     again = dict(document)
+    # keys added since the document was stored (1.1.0a3): what the gateway would say without a check
+    chat = document.get("type") == "chat"
+    again.setdefault("advert_carries_position", document.get("advert_position") if chat else None)
+    again.setdefault("advert_checked_at", None)
     from_telemetry = document.get("position_source") == "telemetry"
     if excluded:
         again |= {**dict.fromkeys(_FORGOTTEN), "readings": {}}
@@ -187,9 +210,12 @@ def contacts_document(
     contacts = mesh.contacts.items()
     # contacts that may run the radio's command line over the air (flag 0x10)
     remote_cli = sorted(k for k, t in contacts if t.node.flags & ContactFlag.REMOTE_CLI)
-    # companions whose adverts carried a position: everyone in range can see it
+    # companions whose record holds a position from their adverts: everyone in range saw it
     shared = sorted(k for k, t in contacts if t.node.position is not None and t.node.node_type == 1)
-    stored = sorted(set(excluded))
+    stored_set = set(excluded)
+    # companions not excluded whose adverts carry their position (ADR 0018): the household's
+    carrying = sorted(k for k, t in contacts if k not in stored_set and advert_carries_position(t))
+    stored = sorted(stored_set)
     return {
         "total": total,
         "max": mesh.max_contacts,
@@ -198,6 +224,8 @@ def contacts_document(
         "remote_cli_total": len(remote_cli),
         "advert_position": shared[:WARNING_KEYS],
         "advert_position_total": len(shared),
+        "advert_carries_position": carrying[:WARNING_KEYS],
+        "advert_carries_position_total": len(carrying),
         "telemetry_excluded": stored[:WARNING_KEYS],
         "telemetry_excluded_total": len(stored),
         "truncated": len(kept) < total,

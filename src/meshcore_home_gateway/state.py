@@ -3,9 +3,9 @@
 It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
 Home Assistant components of the last discovery document and the contact devices announced
 (docs/home-assistant.md), the contacts whose retained documents were published, the documents of
-the companions whose answers are current (ADR 0024), the radio profile's memory (ADR 0020) and the
-telemetry schedule (ADR 0018). The contacts the household excluded from telemetry have a file of
-their own (TelemetryExclusions).
+the companions whose answers are current (ADR 0024), the last checked advert of each companion
+(ADR 0018), the radio profile's memory (ADR 0020) and the telemetry schedule (ADR 0018). The
+contacts the household excluded from telemetry have a file of their own (TelemetryExclusions).
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from typing import Any, TypeGuard
 
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.contacts import is_key
+from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.profile import Applied, Attempt, Value
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 
@@ -299,6 +300,57 @@ class CurrentDocuments:
             log.warning("cannot store the current contact documents: %s", exc)
             return
         self._documents = dict(documents)
+
+
+class AdvertChecks:
+    """The newest advert of each companion whose content the gateway checked (ADR 0018), so that
+    a restart neither raises nor clears the check: `advert_checks` = {key: {"advert_at": int,
+    "carries": bool}}. No position."""
+
+    _KEY = "advert_checks"
+
+    def __init__(self, store: JsonStateFile) -> None:
+        """Loads at once. Invalid entries (a key the gateway does not write, `advert_at` not an
+        int ≥ 0, `carries` not a bool, an entry not an object) are skipped with one warning."""
+        self._store = store
+        raw = store.load().get(self._KEY, {})
+        entries = raw.items() if isinstance(raw, dict) else ()
+        self._checks = {
+            key: check for key, entry in entries if (check := _advert_check(key, entry)) is not None
+        }
+        if not isinstance(raw, dict) or len(self._checks) < len(raw):
+            log.warning("state file %s: invalid advert checks skipped, %d kept", store.path,
+                        len(self._checks))  # fmt: skip
+
+    @property
+    def checks(self) -> dict[str, AdvertCheck]:
+        return dict(self._checks)
+
+    def replace(self, checks: Mapping[str, AdvertCheck]) -> None:
+        """Store them if they changed; a failed write is logged (the next change tries again)."""
+        if checks == self._checks:
+            return
+        try:
+            data = self._store.load()
+            data[self._KEY] = {
+                key: {"advert_at": check.at, "carries": check.carries}
+                for key, check in checks.items()
+            }
+            self._store.save(data)
+        except OSError as exc:
+            log.warning("cannot store the advert checks: %s", exc)
+            return
+        self._checks = dict(checks)
+
+
+def _advert_check(key: object, entry: object) -> AdvertCheck | None:
+    if not (isinstance(key, str) and is_key(key) and isinstance(entry, dict)):
+        return None
+    at, carries = entry.get("advert_at"), entry.get("carries")
+    # the sender's clock, 32 bits as the record's `last_advert`
+    if _small(at, 0xFFFFFFFF) and isinstance(carries, bool):
+        return AdvertCheck(at, carries)
+    return None
 
 
 class TelemetryExclusions:

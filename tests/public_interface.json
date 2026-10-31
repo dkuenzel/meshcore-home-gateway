@@ -1511,6 +1511,8 @@
     "type"
    ],
    "contacts": [
+    "advert_carries_position",
+    "advert_carries_position_total",
     "advert_position",
     "advert_position_total",
     "contacts",
@@ -1529,6 +1531,8 @@
     "truncated"
    ],
    "contacts/<key>": [
+    "advert_carries_position",
+    "advert_checked_at",
     "advert_position",
     "altitude_m",
     "battery_v",
