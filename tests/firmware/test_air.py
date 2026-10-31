@@ -11,7 +11,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from tests.firmware.air import HELLO, TRANSMIT, Air, AirThread, RadioSettings
+from tests.firmware.air import HELLO, TRANSMIT, Air, AirThread, Outcome, RadioSettings
 
 EU_NARROW = RadioSettings(869_618, 62_500, 8, 8, 20)
 QUIET_S = 0.3  # nothing arrives within this time: nothing was sent
@@ -110,6 +110,50 @@ def test_a_link_can_be_one_way_and_goes_with_unlink(
     air.unlink(alice.node_id, bob.node_id)
     alice.transmit(b"\x05again", 50)
     assert bob.receive(QUIET_S) is None
+
+
+def test_a_lossy_link_drops_packets_the_same_way_at_every_run() -> None:
+    def outcomes(seed: int) -> list[Outcome]:
+        with AirThread(seed=seed) as air:
+            alice, bob = StandIn(1, air.port), StandIn(2, air.port)
+            wait_for_hellos(air, [alice, bob])
+            air.link(alice.node_id, bob.node_id, loss=0.5)
+            for n in range(20):
+                alice.transmit(bytes([0x05, n]), 10)
+                time.sleep(0.02)  # one after the other, no collisions
+            time.sleep(QUIET_S)
+            found = [t.outcomes[bob.node_id] for t in air.transmissions()]
+            alice.socket.close()
+            bob.socket.close()
+            return found
+
+    first = outcomes(seed=7)
+    assert first == outcomes(seed=7)
+    assert set(first) == {"received", "lost"}
+
+
+def test_a_lost_packet_is_not_even_heard_as_busy(air: AirThread, stand_ins: list[StandIn]) -> None:
+    alice, bob, _ = stand_ins
+    air.link(alice.node_id, bob.node_id, loss=1.0)
+    alice.transmit(b"\x05gone", 50)
+    assert bob.receive(QUIET_S) is None
+    assert [t.outcomes for t in air.transmissions()] == [{2: "lost"}]
+
+
+def test_a_delayed_link_hands_over_the_packet_later(
+    air: AirThread, stand_ins: list[StandIn]
+) -> None:
+    alice, bob, carol = stand_ins
+    air.link(alice.node_id, bob.node_id, delay_s=0.5)
+    air.link(alice.node_id, carol.node_id)
+    started = time.monotonic()
+    alice.transmit(b"\x05late", 100)
+    assert carol.receive() == b"B" + struct.pack("<I", 100)
+    assert bob.receive() == b"B" + struct.pack("<I", 100)
+    assert time.monotonic() - started >= 0.49  # busy only once the packet reaches it
+    assert bob.receive() is not None
+    (sent,) = air.transmissions()
+    assert sent.ended[bob.node_id] - sent.ended[carol.node_id] == pytest.approx(0.5, abs=0.05)
 
 
 def test_only_the_coding_rate_may_differ(air: AirThread, stand_ins: list[StandIn]) -> None:

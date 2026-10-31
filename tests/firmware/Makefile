@@ -37,7 +37,7 @@ MESH := $(addprefix $(MC)/src/,Dispatcher.cpp Identity.cpp Mesh.cpp Packet.cpp U
   helpers/ConfigSerializer.cpp helpers/DynamicConfigSerializer.cpp \
   helpers/CommonRadioPrefs.cpp helpers/sensors/EnvironmentSensorManager.cpp)
 BOARD := board/runtime.cpp board/SimRadio.cpp board/crypto.cpp
-COMPANION := $(MESH) $(LPP)/CayenneLPP.cpp $(BOARD) \
+COMPANION := $(MESH) $(LPP)/CayenneLPP.cpp $(BOARD) board/companion.cpp \
   $(addprefix $(MC)/examples/companion_radio/,main.cpp MyMesh.cpp DataStore.cpp)
 REPEATER := $(MESH) $(LPP)/CayenneLPP.cpp $(BOARD) \
   $(MC)/src/helpers/CommonCLI.cpp $(MC)/src/helpers/ClientACL.cpp \

@@ -20,6 +20,8 @@ UNIT := meshcore-home-gateway.service
 
 # Firmware tests: MeshCore's firmware at the release tests/firmware/sources.toml pins, built natively
 FIRMWARE_BUILD ?= build/firmware
+# what `make firmware-test` runs, e.g. FIRMWARE_TESTS=tests/firmware/test_paths.py
+FIRMWARE_TESTS ?= tests/firmware
 
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
   firmware-fetch firmware firmware-test dist pyz release release-plan check hooks clean
@@ -98,7 +100,8 @@ firmware: firmware-fetch ## Build MeshCore's companion and repeater natively (ne
 	  OUT=$(abspath $(FIRMWARE_BUILD))
 
 firmware-test: venv firmware ## The gateway against the real firmware on a simulated air
-	MESHCORE_HOME_GATEWAY_FIRMWARE=$(abspath $(FIRMWARE_BUILD)) $(BIN)/python -m pytest tests/firmware
+	MESHCORE_HOME_GATEWAY_FIRMWARE=$(abspath $(FIRMWARE_BUILD)) $(BIN)/python -m pytest \
+	  $(FIRMWARE_TESTS)
 
 # The snapshot test fails until this runs (docs/development.md#compatibility). Review the
 # snapshot's diff like code: a removal or narrowing of what the last release had needs a

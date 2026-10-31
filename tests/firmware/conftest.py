@@ -4,6 +4,7 @@ nodes on it. `make firmware-test` runs these tests; `make test` does not collect
 
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from collections.abc import Generator, Iterator
@@ -12,7 +13,13 @@ from pathlib import Path
 
 import pytest
 
+from meshcore_home_gateway import bridge
+from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core.airtime import Costs
+from meshcore_home_gateway.core.budget import AirtimeBudget
+from tests.conftest import Broker
 from tests.firmware.air import AirThread
+from tests.firmware.gateway import Watcher, configuration
 from tests.firmware.node import Node, start_node
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +29,8 @@ BUILD = Path(
     os.environ.get("MESHCORE_HOME_GATEWAY_FIRMWARE", ROOT / "build" / "firmware")
 ).resolve()
 LOG_LINES = 60  # of each log in the report of a failed test
+# the schedule's intervals in the scenarios (fast_schedule): a request about every 15 s
+SCHEDULE_S = 15.0
 
 
 @dataclass(frozen=True)
@@ -128,3 +137,58 @@ def pytest_runtest_makereport(
 def companion(nodes: Nodes) -> Node:
     """Radio A of the hardware checklist: the companion on the gateway's serial port."""
     return nodes.companion("A")
+
+
+@dataclass
+class Scene:
+    """What a scenario with the gateway uses: the air, its nodes, the broker with a client that
+    keeps what the gateway publishes, the test's directory and the service's log."""
+
+    air: AirThread
+    nodes: Nodes
+    broker: Broker
+    watcher: Watcher
+    directory: Path
+    caplog: pytest.LogCaptureFixture
+
+    def configuration(self, radio: Node, more: str = "") -> str:
+        return configuration(radio.serial, self.broker, more)
+
+    @property
+    def state_dir(self) -> Path:
+        return self.directory / "state"
+
+
+@pytest.fixture
+def scene(
+    air: AirThread, nodes: Nodes, broker: Broker, tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[Scene]:  # fmt: skip
+    caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway")
+    watcher = Watcher(broker)
+    try:
+        yield Scene(air, nodes, broker, watcher, tmp_path, caplog)
+    finally:
+        watcher.close()
+
+
+@pytest.fixture
+def fast_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The telemetry schedule in seconds instead of minutes, so a scenario fits in a test: the
+    airtime lanes start full and refill a second a second, every interval is SCHEDULE_S, a
+    retry comes after 10 s, and the state document every 2 s. Nothing else changes: the 10 s
+    quiet after a message, the 10 s gap after every outcome, the answer waits, the flood limits,
+    the routes. The intervals of the hardware checklist need a clock of their own
+    (docs/testing.md)."""
+
+    def full_lanes(capacity: Costs, now: float) -> tuple[AirtimeBudget, AirtimeBudget]:
+        own, mesh = capacity.own_s, capacity.mesh_s
+        return AirtimeBudget(3600.0, own, now), AirtimeBudget(3600.0, mesh, now)
+
+    monkeypatch.setattr(telemetry, "build_lanes", full_lanes)
+    for interval in ("MOVING_MIN_S", "RESTING_MIN_S", "UNLOCATED_S", "PROBE_S"):
+        monkeypatch.setattr(telemetry, interval, SCHEDULE_S)
+    for share in ("MOVING_SHARE", "RESTING_SHARE"):
+        monkeypatch.setattr(telemetry, share, 1.0)  # the interval is never the airtime's
+    monkeypatch.setattr(telemetry, "RETRY_S", 10.0)
+    monkeypatch.setattr(bridge, "STATUS_INTERVAL_S", 2.0)

@@ -272,7 +272,11 @@ bool radio_init() {
 
 // ---------------------------------------------------------------- control lines on stdin
 
+// The board's user button, where the firmware has one (board/companion.cpp)
+void sim_button_advert() __attribute__((weak));
+
 // gps attach | gps detach | gps nofix | gps <lat> <lon> [<alt>] | batt <mV> | temp <C>|nan | reboot
+// | advert (the Advert button)
 static void control(const char* line) {
   char cmd[16] = {0}, a[32] = {0}, b[32] = {0}, c[32] = {0};
   int n = sscanf(line, "%15s %31s %31s %31s", cmd, a, b, c);
@@ -299,6 +303,12 @@ static void control(const char* line) {
     board.mcu_temp = strcmp(a, "nan") == 0 ? NAN : atof(a);
   } else if (strcmp(cmd, "reboot") == 0) {
     board.reboot();
+  } else if (strcmp(cmd, "advert") == 0) {
+    if (sim_button_advert) {
+      sim_button_advert();
+    } else {
+      fprintf(stderr, "[%s] this firmware has no Advert button\n", node_name());
+    }
   }
 }
 

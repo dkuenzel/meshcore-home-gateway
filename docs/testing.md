@@ -48,7 +48,7 @@ home-assistant.md.
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
 | Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py` (above) | `make ha-test`: Python 3.14.2 or newer |
-| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice), `test_air.py` (the air with stand-in nodes: time on air, collisions, one-way links, radio settings) | `make firmware-test`: git, `g++`, `libssl-dev` |
+| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice), `test_air.py` (the air with stand-in nodes: time on air, collisions, one-way links, loss, delay, radio settings), the scenarios of checklist steps 29–39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`) and `test_adverts_and_positions.py` ([above](#scenarios-of-the-hardware-checklist)) | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
@@ -67,9 +67,9 @@ tests run the firmware itself: MeshCore's companion and repeater firmware of the
 `tests/firmware/sources.toml` pins, compiled for Linux, each node a process. A simulated LoRa air
 connects them, and the gateway talks to a companion through its own serial transport on a pseudo
 terminal ([ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)).
-They need git, `g++` and OpenSSL's headers (`apt install g++ libssl-dev`). `make test` and
-`make check` leave them out, so those need neither a compiler nor network; CI runs them in a job
-of their own.
+They need git, `g++` and OpenSSL's headers, and `mosquitto` for the scenarios with the gateway's
+service (`apt install g++ libssl-dev mosquitto`). `make test` and `make check` leave them out, so
+those need neither a compiler nor network; CI runs them in a job of their own.
 
 - `make firmware-fetch` puts the pinned sources into `build/firmware/src`: the firmware by its
   tags `companion-vX.Y.Z` and `repeater-vX.Y.Z`, and CayenneLPP in the version the firmware's
@@ -81,9 +81,11 @@ of their own.
   libraries, `tests/firmware/board` for the board (the radio on the simulated air, the USB serial
   on a pseudo terminal, the flash in a directory). `make firmware V=1` shows the compiler's
   command lines.
-- `make firmware-test` runs `tests/firmware` with pytest. `tests/firmware/air.py` is the air, in
-  the test's process; `tests/firmware/node.py` starts a node; the fixtures in
-  `tests/firmware/conftest.py` give a test the air and its nodes.
+- `make firmware-test` runs `tests/firmware` with pytest; `FIRMWARE_TESTS` narrows it, for
+  example `make firmware-test FIRMWARE_TESTS=tests/firmware/test_paths.py`. Once the firmware is
+  built, `.venv/bin/python -m pytest tests/firmware/test_paths.py` works too.
+  `tests/firmware/air.py` is the air, in the test's process; `tests/firmware/node.py` starts a
+  node; the fixtures in `tests/firmware/conftest.py` give a test the air and its nodes.
 
 Every node runs the EU/UK Narrow preset with CR 4/8 (869.618 MHz, 62.5 kHz, SF 8), the settings
 the hardware checklist assumes. Each node writes its packet log, debug output and, on the
@@ -95,6 +97,41 @@ The simulation does not show radio propagation, the noise floor and the capture 
 packet, the time on air of a real chip, GPS, USB, the code paths of ESP32 and nRF52 boards (it
 builds the RP2040 ones), the phone app or Home Assistant. Those stay on the hardware checklist.
 The nodes run in real time, so a scenario of an hour takes an hour.
+
+### Scenarios of the hardware checklist
+
+The scenarios play steps 29–39 of the [hardware checklist](#hardware-checklist) with the
+gateway's service and the real firmware; [below the checklist](#steps-2940-on-the-simulated-air)
+it says which. `tests/firmware/household.py` starts radio A, Bob's companion B with a GPS (its fix
+at a public landmark) and, for the steps with hops, repeaters in a chain.
+`tests/firmware/app.py` plays Bob's phone app on B's serial port, on the gateway's own transport,
+framing and codec: it sets B up as [companions.md](companions.md) says, and sends adverts,
+messages and path resets when a scenario says so. The app's own policies, such as when it gives up
+a direct attempt and floods, are scripted. `tests/firmware/gateway.py` runs the service in the
+test's process, as `meshcore-home-gateway run` runs it, on A's pseudo terminal and a private
+`mosquitto`, and keeps everything it publishes.
+
+The nodes run in real time. So that a scenario takes a minute, not hours, the fixture
+`fast_schedule` shortens the telemetry schedule: the airtime lanes start full, every interval is
+15 s, and a retry comes after 10 s. The rules the checklist checks stay as they are: the 10 s
+quiet after a message, the 10 s gap after every outcome, the answer waits, the flood limits and the
+routes. The first-start test runs with the real lanes and shortens only the hour of its hold.
+The air has knobs for a worse mesh: links one way only, `loss` (the share of packets a receiver
+misses) and `delay_s` (a packet reaches the receiver that much later, as if the mesh held it).
+Collisions are real, so the scenarios link only the nodes a step needs.
+
+`tests/firmware/test_adverts_and_positions.py` runs no gateway. It pins down what the firmware
+does with adverts and positions, which the advert-position check of the next telemetry slice
+relies on: at receive delay 0 an accepted advert's packet log (0x88) is the frame right before the
+radio's push (0x80); a node the radio does not add arrives as 0x8A right after its log; an advert
+flagged with a position (0x10) sets the contact's position, one without the flag leaves it, and
+one flagged with 0, 0 zeroes it; the device's Advert button sends zero hop, which a repeater does
+not forward, while the app's flood advert is forwarded; with the GPS on and no fix, telemetry
+carries the last fix, and after a reboot the position saved with the settings, at altitude 0.
+
+The whole suite takes 11 to 12 minutes on four cores, the longest test about 2 minutes, so none is
+marked slow. A failed scenario's report ends with the last lines of each node's log
+and of the air's; `--log-file=gateway.log --log-file-level=DEBUG` keeps the gateway's own log.
 
 ### Testing another firmware release
 
@@ -193,3 +230,20 @@ Telemetry on (the default); `log_level = "debug"` where the log is read.
 | 38 | Give a `person` in Home Assistant B's tracker only. Carry B out of all range silently (no message, no advert) for an hour, bring it back | no path reset, no flood; direct requests at most 30 min apart while it is away; about 16 min after it left (at rest; about 2 min while moving) `away`, *Telemetry* `unanswered`, tracker and telemetry sensors `unavailable`, the person `unknown`; B's position updates within 30 min of its return: `answering`, `answered`, all available |
 | 39 | B two hops away, with its path to the gateway reset on B (it floods its answer), `publish_rx_log` on | a flooded RESPONSE in the packet log after a direct request; `telemetry_mesh_airtime_1h_s` rises by the direct request plus about 12.6 s; A sends its path back 3 s later; the next answer comes direct |
 | 40 | As 38, and send B a message 10 min after it left | the message: two direct attempts, a path reset, a flood, `failed`; `contacts/<B>.path_known` `false` at once; no request to B until it advertises after its return; `away` within `max(1 h, 3 × its interval)` after its last answer, without `unanswered`; a day after its last answer `no_path` until it advertises; then one flood, the path, direct requests again |
+
+### Steps 29–40 on the simulated air
+
+The [firmware tests](#scenarios-of-the-hardware-checklist) play parts of steps 29–40 against the
+real firmware, with the gateway's service and a shortened schedule. They do not replace a step:
+what they cannot show stays here.
+
+| # | Shown by the firmware tests | Stays on the hardware checklist |
+| --- | --- | --- |
+| 29 | **partly**, `test_first_start.py`: the first-start hold (`paused`, `first_start` from connected, one warning with the number of companions, no request; the hour shortened to 15 s); on the later start the first request 75.6 s after connected, direct; B's document with the position from telemetry, `position_accuracy_m` 15, `answering`, `battery_v` as B's app reads it; *Telemetry* `answered` once; an answer of 28 bytes | the hour itself; the intervals (15, 31 and 47 minutes, 82 s behind a repeater); Home Assistant's entities and log; a real board's battery and MCU temperature; `telemetry_airtime_1h_s` against `stats.tx_airtime_1h_s` (the simulation measures its own estimate) |
+| 30 | **partly**, B's part, `test_permissions.py`: "No", nothing allowed, base only, base and location, everything, the gateway removed give silence, silence, battery and MCU temperature only, the position, the same (B has no environment sensor), silence; every request direct; `no_answer` without `unanswered`, then `no_position`, then `answering` | B2 and C: their sensors; the app's labels and counts |
+| 31 | **partly**, the firmware's part, `test_adverts_and_positions.py`: with the GPS on and no fix a companion still sends a position, its last fix, after a reboot the saved one at altitude 0. The expected "without position" for "on without a fix" does not hold for this firmware | the whole step: check "on without a fix" with a real GPS |
+| 33 | **partly** (most), `test_paths.py`: the requests on the stale direct path go unanswered, direct, without a path reset; B's flooded message brings A the path over the repeater (0x81); the next request goes direct over the repeater and is answered | the app's own retries (scripted: one direct attempt, then the path reset and the flood) |
+| 34 | **fully**, `test_answer_sizes.py`: 28 bytes with 9 zero bytes direct, over no, one and two repeaters; after a flood 26 with 7 to a neighbour, 25 with 6 over one repeater, 24 with 5 over two; no "bytes not decoded"; an answer held back past the wait is taken as late until the next request, and after it the radio pushes it as 0x8C, which the gateway ignores | a check with each firmware release; here the late answer comes from the air's delay knob on a neighbour, not from distance |
+| 35 | **partly** (most), the ordering rules, `test_message_order.py`: no request between a message's queueing and its confirmation, nor within 10 s after, for a message right after a flooded request and for messages while B is asked; the wait of the message after the flood is recorded, not judged | a large table read; the waits on a real radio over USB |
+| 39 | **partly** (most), `test_paths.py`: over two repeaters, the flooded RESPONSE after a direct request in the packet log (`rx`), `telemetry_mesh_airtime_1h_s` up by the direct request plus 12.6 s, A's path back 3.0 s later, the next answer direct | whether 12.6 s matches real air; the SNR and RSSI in `rx` are those the test gives the links |
+| 32, 36, 37, 38, 40 | **not yet**: they take hours, Home Assistant, a TCP interface or a USB cable | all |

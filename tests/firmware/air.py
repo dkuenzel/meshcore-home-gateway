@@ -6,7 +6,9 @@ channel activity detection), and hands it the packet when the time on air is ove
 link's SNR and RSSI. A reception that overlaps another at the same node is lost, and so is the
 other (a collision). A node on another frequency, bandwidth or spreading factor hears nothing;
 the coding rate is in the packet's header, so a node hears any rate. Links are one-way;
-`link()` makes both directions by default.
+`link()` makes both directions by default. Two knobs per link stand in for a worse mesh: `loss`,
+the share of packets the receiver misses (it hears nothing of them), and `delay_s`, how much
+later than the sender's time on air a packet reaches the receiver (as if the mesh held it).
 
 `Air` runs in the caller's event loop. `AirThread` runs one in a thread of its own, for the
 synchronous fixtures and for tests that run the gateway with `asyncio.run` beside it.
@@ -15,6 +17,7 @@ synchronous fixtures and for tests that run the gateway with `asyncio.run` besid
 from __future__ import annotations
 
 import asyncio
+import random
 import struct
 import threading
 import time
@@ -25,7 +28,7 @@ from types import TracebackType
 from typing import Any, Literal, TextIO, TypeVar
 
 T = TypeVar("T")
-Outcome = Literal["received", "collided"]
+Outcome = Literal["received", "collided", "lost"]
 
 # src/Packet.h: the route in bits 0-1 of the header, the payload type in bits 2-5
 ROUTES = {0: "TF", 1: "F", 2: "D", 3: "TD"}  # (transport) flood, (transport) direct
@@ -56,6 +59,8 @@ class RadioSettings:
 class Link:
     snr: float  # dB
     rssi: int  # dBm
+    loss: float = 0.0  # the share of packets the receiver misses, 0 to 1
+    delay_s: float = 0.0  # the packet reaches the receiver this much later
 
 
 @dataclass
@@ -66,6 +71,10 @@ class Transmission:
     packet: bytes
     # by receiver, once the time on air is over
     outcomes: dict[int, Outcome] = field(default_factory=dict)
+    ended: dict[int, float] = field(default_factory=dict)  # by receiver: when it was over
+
+    def heard_by(self, receiver: int) -> bool:
+        return self.outcomes.get(receiver) == "received"
 
     @property
     def kind(self) -> str:
@@ -83,7 +92,8 @@ class _Reception:
 
 
 class Air:
-    def __init__(self, log_path: Path | None = None) -> None:
+    def __init__(self, log_path: Path | None = None, *, seed: int = 1) -> None:
+        """`seed`: the losses of `Link.loss` repeat from run to run."""
         self.port = 0
         self.settings: dict[int, RadioSettings] = {}  # by node, from its hello
         self.links: dict[tuple[int, int], Link] = {}  # (sender, receiver)
@@ -96,6 +106,7 @@ class Air:
         self._log_path = log_path
         self._log: TextIO | None = None
         self._start = 0.0
+        self._random = random.Random(seed)  # noqa: S311 - a simulation, not a secret
 
     async def start(self) -> int:
         loop = asyncio.get_running_loop()
@@ -135,14 +146,19 @@ class Air:
         await self.close()
 
     def link(
-        self, a: int, b: int, snr: float = 8.0, rssi: int | None = None, *, both: bool = True
-    ) -> None:
-        """Let b hear a (and a hear b) with this SNR; the RSSI follows from it unless given."""
-        found = Link(snr, rssi if rssi is not None else round(-110 + snr))
+        self, a: int, b: int, snr: float = 8.0, rssi: int | None = None, *, both: bool = True,
+        loss: float = 0.0, delay_s: float = 0.0,
+    ) -> None:  # fmt: skip
+        """Let b hear a (and a hear b) with this SNR; the RSSI follows from it unless given. A
+        packet already on its way keeps the link it left with."""
+        if not 0.0 <= loss <= 1.0 or delay_s < 0.0:
+            raise ValueError(f"loss is 0 to 1 and the delay not negative: {loss}, {delay_s}")
+        found = Link(snr, rssi if rssi is not None else round(-110 + snr), loss, delay_s)
         self.links[(a, b)] = found
         if both:
             self.links[(b, a)] = found
-        self._write(f"link {a} {'<->' if both else '->'} {b} snr={snr:g} rssi={found.rssi}")
+        knobs = (f" loss={loss:g}" if loss else "") + (f" delay={delay_s:g}s" if delay_s else "")
+        self._write(f"link {a} {'<->' if both else '->'} {b} snr={snr:g} rssi={found.rssi}{knobs}")
 
     def unlink(self, a: int, b: int, *, both: bool = True) -> None:
         self.links.pop((a, b), None)
@@ -173,32 +189,53 @@ class Air:
         self._write(f"{sender} TX {airtime_ms} ms {sent.kind} len={len(packet)} {packet.hex()}")
         self._timers = {t for t in self._timers if t.when() > now}
         own = self.settings.get(sender)
-        for (a, b), link in self.links.items():
+        for (a, b), link in list(self.links.items()):
             if a != sender or b not in self._addresses:
                 continue
             theirs = self.settings.get(b)
             if own is not None and theirs is not None and not own.hears(theirs):
                 continue
-            self._send(b, b"B" + struct.pack("<I", airtime_ms))
-            reception = _Reception(now + airtime_ms / 1000)
-            ongoing = [r for r in self._receiving.get(b, []) if r.end > now]
-            for other in ongoing:
-                other.collided = reception.collided = True
-            self._receiving[b] = [*ongoing, reception]
-            timer = loop.call_later(airtime_ms / 1000, self._deliver, sent, b, link, reception)
-            self._timers.add(timer)
+            if link.loss and self._random.random() < link.loss:
+                sent.outcomes[b] = "lost"
+                self._write(f"  {sender} -> {b} lost {sent.kind}")
+            elif link.delay_s:
+                self._timers.add(loop.call_later(link.delay_s, self._arrive, sent, b, link))
+            else:
+                self._arrive(sent, b, link)
+
+    def _arrive(self, sent: Transmission, receiver: int, link: Link) -> None:
+        """The packet starts to reach the receiver: its channel is busy for the time on air."""
+        loop = asyncio.get_running_loop()
+        now, airtime_s = loop.time(), sent.airtime_ms / 1000
+        self._send(receiver, b"B" + struct.pack("<I", sent.airtime_ms))
+        reception = _Reception(now + airtime_s)
+        ongoing = [r for r in self._receiving.get(receiver, []) if r.end > now]
+        for other in ongoing:
+            other.collided = reception.collided = True
+        self._receiving[receiver] = [*ongoing, reception]
+        timer = loop.call_later(airtime_s, self._deliver, sent, receiver, link, reception)
+        self._timers.add(timer)
 
     def _deliver(
         self, sent: Transmission, receiver: int, link: Link, reception: _Reception
     ) -> None:
         outcome: Outcome = "collided" if reception.collided else "received"
         sent.outcomes[receiver] = outcome
+        sent.ended[receiver] = round(asyncio.get_running_loop().time() - self._start, 3)
         if outcome == "received":
             snr = round(link.snr * 4)  # the radio reports a quarter dB
             self._send(receiver, b"R" + struct.pack("<hh", snr, link.rssi) + sent.packet)
         else:
             self._send(receiver, b"X")
         self._write(f"  {sent.sender} -> {receiver} {outcome} {sent.kind} snr={link.snr:g}")
+
+    @property
+    def started(self) -> float:
+        """time.monotonic() when the air started: `Transmission.at` counts from it."""
+        return self._start
+
+    def elapsed(self) -> float:
+        return time.monotonic() - self._start
 
     def on_closed(self) -> None:
         if self._closed is not None:
@@ -237,8 +274,8 @@ class AirThread:
     """An `Air` in an event loop of its own thread. Every call waits for the air's answer, so the
     test reads a consistent state."""
 
-    def __init__(self, log_path: Path | None = None) -> None:
-        self.air = Air(log_path)
+    def __init__(self, log_path: Path | None = None, *, seed: int = 1) -> None:
+        self.air = Air(log_path, seed=seed)
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, name="air", daemon=True)
 
@@ -278,9 +315,10 @@ class AirThread:
         return self._wait(run())
 
     def link(
-        self, a: int, b: int, snr: float = 8.0, rssi: int | None = None, *, both: bool = True
-    ) -> None:
-        self.call(lambda air: air.link(a, b, snr, rssi, both=both))
+        self, a: int, b: int, snr: float = 8.0, rssi: int | None = None, *, both: bool = True,
+        loss: float = 0.0, delay_s: float = 0.0,
+    ) -> None:  # fmt: skip
+        self.call(lambda air: air.link(a, b, snr, rssi, both=both, loss=loss, delay_s=delay_s))
 
     def unlink(self, a: int, b: int, *, both: bool = True) -> None:
         self.call(lambda air: air.unlink(a, b, both=both))
@@ -288,11 +326,47 @@ class AirThread:
     def settings(self) -> dict[int, RadioSettings]:
         return self.call(lambda air: dict(air.settings))
 
+    @property
+    def started(self) -> float:
+        return self.air.started
+
+    def elapsed(self) -> float:
+        return self.air.elapsed()
+
+    def sent_by(self, sender: int, kind: str = "") -> list[Transmission]:
+        """The transmissions of `sender` whose kind starts with `kind` (such as `REQ/`)."""
+        return [t for t in self.transmissions() if t.sender == sender and t.kind.startswith(kind)]
+
+    async def next_sent(
+        self, sender: int, kind: str, *, after: int, timeout_s: float = 60.0
+    ) -> Transmission:
+        """The first transmission of `sender` whose kind starts with `kind`, after the first
+        `after` transmissions of the air; for a test in its own event loop."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            for found in self.transmissions()[after:]:
+                if found.sender == sender and found.kind.startswith(kind):
+                    return found
+            if time.monotonic() > deadline:
+                raise AssertionError(f"node {sender} sent no {kind} within {timeout_s:g} s")
+            await asyncio.sleep(0.05)
+
+    def again(self, sent: Transmission) -> Transmission:
+        """A transmission as the air knows it now: with the outcomes that came since."""
+        (found,) = [t for t in self.transmissions() if (t.sender, t.at) == (sent.sender, sent.at)]
+        return found
+
+    def count(self) -> int:
+        """The number of transmissions so far, for `next_sent`."""
+        return self.call(lambda air: len(air.transmissions))
+
     def transmissions(self) -> list[Transmission]:
         """A copy of the transmissions so far, with the outcomes known so far."""
         return self.call(
             lambda air: [
-                Transmission(t.at, t.sender, t.airtime_ms, t.packet, dict(t.outcomes))
+                Transmission(
+                    t.at, t.sender, t.airtime_ms, t.packet, dict(t.outcomes), dict(t.ended)
+                )
                 for t in air.transmissions
             ]
         )

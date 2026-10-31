@@ -3,8 +3,9 @@
 Each node has a directory of its own: `flash/` (its file system), `serial` (a symlink to its
 pseudo terminal, the USB serial port) and `node.log` (its packet log, debug output and, for the
 repeater, its command line's replies). Control lines on its standard input steer the board:
-`gps <lat> <lon> [<alt>]`, `gps nofix`, `gps detach`, `batt <mV>`, `temp <C>`, `reboot`. The end
-of its input stops it, so no node outlives the test that started it.
+`gps <lat> <lon> [<alt>]`, `gps nofix`, `gps detach`, `batt <mV>`, `temp <C>`, `reboot`, and
+`advert` presses a companion's Advert button. The end of its input stops it, so no node outlives
+the test that started it.
 """
 
 from __future__ import annotations
@@ -48,17 +49,23 @@ class Node:
         self.process.stdin.write(line.encode() + b"\n")
         self.process.stdin.flush()
 
-    def wait_ready(self, timeout: float = START_S) -> None:
-        """Until the firmware's setup() is done and the serial port is there. A node without GPS
-        takes about 5 s: the firmware looks that long for one."""
+    def wait_ready(self, timeout: float = START_S, *, starts: int = 1) -> None:
+        """Until the firmware's setup() is done (the `starts`th time) and the serial port is
+        there. A node without GPS takes about 5 s: the firmware looks that long for one."""
         deadline = time.monotonic() + timeout
         while self.process.poll() is None and time.monotonic() < deadline:
-            if self.serial.is_symlink() and READY in self.log_text():
+            if self.serial.is_symlink() and self.log_text().count(READY) >= starts:
                 return
             time.sleep(0.02)
         self.stop()
         tail = "\n".join(self.log_text().splitlines()[-20:])
         raise NodeError(f"{self.name} did not start, exit {self.process.returncode}:\n{tail}")
+
+    def reboot(self) -> None:
+        """Restart the firmware on the same flash and serial port, and wait for its setup()."""
+        starts = self.log_text().count(READY)
+        self.control("reboot")
+        self.wait_ready(starts=starts + 1)
 
     def stop(self) -> None:
         if self.process.poll() is None:
