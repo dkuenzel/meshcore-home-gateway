@@ -8,6 +8,63 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [1.1.0a3] - 2026-10-31
+
+A pre-release of 1.1.0, the third of the three telemetry slices: the gateway checks whether the
+household's companions send their position in their adverts, and the guide shows their traces on
+a map. After the update, press *Advert* once on each companion within range of the gateway's
+radio (the button's advert crosses no repeater), or send a flood advert from its app, so that the
+gateway can check it. The hardware checklist was not run for it.
+
+### Added
+
+- The check for positions in adverts: `contacts/<key>` gains `advert_carries_position` and
+  `advert_checked_at`. For a companion, `advert_carries_position` says whether its newest advert
+  carries its position (also 0, 0 from a companion that never had one), which everyone in range
+  can read, as the gateway checked it; while the gateway has not checked its newest advert, the
+  last check or, if the radio's record holds a position from an earlier advert, `true`; `null`
+  for repeaters, room servers and sensors. `advert_checked_at` is the checked advert's time
+  (`null` before a check). The gateway reads the advert in the radio's packet log once the radio
+  has accepted it, also the advert of a node it adds afterwards, and sends nothing. The last
+  check of each companion is kept in `state.json`, without a position. The `contacts` index gains
+  `advert_carries_position` (the first 16 companions not excluded from telemetry for which it is
+  `true`) and `advert_carries_position_total`.
+- The event `position_in_advert` on `contact` when a companion that is not excluded from
+  telemetry starts to send its position in its adverts, is added while its adverts carry it, or
+  is included in telemetry again while they do. Never a position. The event entity *Contact*
+  lists it.
+- *Position in adverts* (`binary_sensor.mesh_<name>_advert_position`, problem) on every
+  companion's device.
+- docs/home-assistant.md: a map card that draws a companion's trace from Home Assistant's
+  history, what a trace shows across expiry and restarts, and an automation that tells the
+  household when a handheld shares its position.
+- [ADR 0025](docs/decisions/0025-positions-in-adverts-checked-from-the-packet-log.md): positions
+  in adverts are checked from the radio's packet log; until the newest advert is checked, the
+  radio's record decides, erring to warn. It amends ADR 0018.
+
+### Changed
+
+- *Companion position in adverts* on the gateway's device follows the check: on while a
+  companion not excluded from telemetry has `advert_carries_position` `true`, also when it sends
+  0, 0; its attributes `contacts` and `total` follow. It was on while the radio's record of any
+  companion held a position, also long after the companion stopped sharing, and off for one that
+  sends 0, 0 because it never had a position. `advert_position` keeps its meaning (the radio's
+  record holds a position from one of the contact's adverts); the documentation now says so.
+- A position from adverts is shown only while the radio's record holds one and the contact's
+  newest checked advert carried one: once a checked advert carries none (or 0, 0), its tracker
+  turns `unavailable` unless telemetry gives a position, also after an exclusion and a restart.
+  An advert with a position brings it back. A record without a position now drops an advert
+  position of every contact, also one never checked, repeaters included. Before, the tracker
+  kept the last position the companion ever shared. A position in an advert can be one the
+  companion saved long ago: the advert does not say when the fix was taken.
+
+### Fixed
+
+- Hops, SNR and RSSI of an advert come from that advert's own log, the frame directly before the
+  radio's report of it, while the radio's receive delay is 0 (its default), also when the gateway
+  reads the report more than 10 s after the log. Otherwise a log of its key within 10 s gives
+  them, as before.
+
 ## [1.1.0a2] - 2026-10-30
 
 A pre-release of 1.1.0, the second of the three telemetry slices: the household's handhelds

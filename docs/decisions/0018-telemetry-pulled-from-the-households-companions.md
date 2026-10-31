@@ -122,6 +122,9 @@ items for routes, permissions, GPS states and padding.
 
 ## More Information
 
+* Amended on 2026-10-31 by [ADR 0025](0025-positions-in-adverts-checked-from-the-packet-log.md):
+  until the gateway has checked a companion's newest advert, the radio's record decides, erring to
+  warn; the check reads the packet log, not the stored copy.
 * Frames, routes, permissions, payload and airtime with firmware citations: research for the
   design sprint (2026-10-23), summarised in [protocol.md](../protocol.md) with the implementation.
 * Revisit when MeshCore offers pushed or subscribed telemetry, when command 39 is deprecated, or

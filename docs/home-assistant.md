@@ -48,12 +48,12 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
 | `sensor.meshcore_home_gateway_radio1_contacts` | count | contacts in the radio's table; attribute `max` |
 | `sensor.meshcore_home_gateway_radio1_nodes` | count | nodes heard in the last 7 days that are not contacts |
-| `event.meshcore_home_gateway_radio1_contact` | event: `added`, `removed`, `hidden`, `shown`, `refused`, `failed`, `excluded`, `included` | a contact added to or removed from the radio, the result of a contact request (`refused`, `failed`, with `request`, `id` and `reason`), a contact excluded from telemetry or included again, or a device hidden in Home Assistant and shown again |
+| `event.meshcore_home_gateway_radio1_contact` | event: `added`, `removed`, `hidden`, `shown`, `refused`, `failed`, `excluded`, `included`, `position_in_advert` | a contact added to or removed from the radio, the result of a contact request (`refused`, `failed`, with `request`, `id` and `reason`), a contact excluded from telemetry or included again, a device hidden in Home Assistant and shown again, or a household companion whose adverts carry its position ([example](#examples)) |
 | `event.meshcore_home_gateway_radio1_node` | event: `new` | a node heard for the first time |
 | `sensor.meshcore_home_gateway_radio1_noise_floor` | signal strength (dBm), diagnostic | the radio's noise floor |
 | `sensor.meshcore_home_gateway_radio1_radio_airtime` | duration (s), diagnostic | what the radio itself counted as sent in the last hour, adverts and acknowledgements included; attributes `window_s`, `airtime_factor`, `duty_cycle_percent` |
 | `binary_sensor.meshcore_home_gateway_radio1_remote_cli` | problem, diagnostic | a contact may use the radio's command line over the air; attribute `contacts` ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
-| `binary_sensor.meshcore_home_gateway_radio1_advert_position` | problem, diagnostic | a companion's adverts carry its position, which everyone in range can read; attribute `contacts` |
+| `binary_sensor.meshcore_home_gateway_radio1_advert_position` | problem, diagnostic | *Companion position in adverts*: a companion not excluded from telemetry sends its position in its newest advert, which everyone in range can read (until the gateway has checked that advert, as the radio's record says); attributes `contacts` (at most 16 keys) and `total` |
 | `button.meshcore_home_gateway_radio1_show_hidden` | configuration | shows the contacts deleted in Home Assistant again (next section) |
 | `select.meshcore_home_gateway_radio1_add_node` | select, configuration | *Add heard node*: adds the heard node picked to the radio ([below](#adding-and-removing-contacts)) |
 | `text.meshcore_home_gateway_radio1_add_contact` | text, configuration | *Add contact (key or link)*: adds the contact of a public key or contact link |
@@ -94,10 +94,11 @@ by another client of the radio, such as a phone app) gets it at once. The entiti
 | `sensor.mesh_alice_last_heard` | timestamp | when the gateway last heard the contact (advert, message; its telemetry answers at most once an hour) |
 | `sensor.mesh_alice_hops` | diagnostic | repeaters the last advert or message passed (*unknown*: direct, or not known) |
 | `sensor.mesh_alice_snr` | signal strength (dB), diagnostic | its signal-to-noise ratio, of its last advert or message |
-| `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at` (when it last changed), `position_source` (`advert`, `telemetry`); `gps_accuracy` 15 for a position from telemetry | the contact's position; only once one is known; `unavailable` while a position from telemetry is not current |
+| `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at` (when it last changed), `position_source` (`advert`, `telemetry`); `gps_accuracy` 15 for a position from telemetry | the contact's position; only once one is known; `unavailable` while no position is known: a position from telemetry that is not current, or one from adverts that a checked advert no longer carries |
 | `button.mesh_alice_remove` | configuration | *Remove from radio* ([below](#adding-and-removing-contacts)); `unavailable` for a contact target or command sender |
 | `switch.mesh_alice_telemetry` | switch, configuration | *Telemetry*: on while the gateway may ask the companion for telemetry, off excludes it ([below](#telemetry-of-the-households-companions)); companions only |
 | `sensor.mesh_alice_telemetry_state` | enum | *Telemetry state*: whether its answers are current, and why not; companions only |
+| `binary_sensor.mesh_alice_advert_position` | problem | *Position in adverts*: on while the companion's newest advert carries its position, which everyone in range can read, as the gateway checked it; while that advert is not checked (before the first check, or one the gateway missed), on while the last check carried one or the radio's record holds a position from an earlier advert; companions only |
 | `sensor.mesh_alice_battery` | voltage (V) | its battery, from its telemetry answers |
 | `sensor.mesh_alice_mcu_temperature` | temperature (°C), diagnostic | its processor's temperature |
 | `sensor.mesh_alice_ch2_temperature`, … | the reading's class and unit | each further reading of its answers, such as those of an environment sensor on channel 2 |
@@ -106,16 +107,19 @@ Components exist only where they have data: repeaters and sensors get no notify 
 entities, room servers no notify entity, and the tracker appears with the first position, from
 the contact's telemetry ([companions.md](companions.md), `[telemetry]`) or its adverts.
 *Battery*, *MCU temperature* and the reading sensors appear with the first telemetry answer that
-carries them, at most 16 readings per contact. Every companion has the switch *Telemetry* and
-*Telemetry state* at once, also while telemetry is off, so it can be excluded before it is asked.
+carries them, at most 16 readings per contact. Every companion has the switch *Telemetry*,
+*Telemetry state* and *Position in adverts* at once, also while telemetry is off, so it can be
+excluded before it is asked.
 Every contact has the remove button. A component, once there, stays as long as the
 contact does (Home Assistant would clear the whole device when the gateway removed a disabled
 one). The tracker is the only entity with coordinates,
 so Home Assistant's map shows each contact once; it turns `unavailable` while no position is known.
-Its attributes change only when the position moved 20 m or more, so a companion at rest adds no
-state per answer. With `gps_accuracy` Home Assistant counts a companion up to 15 m outside a zone's
-radius as inside it. A position from telemetry expires when the companion stops answering
-([below](#telemetry-of-the-households-companions)); one from adverts does not.
+Its attributes change when telemetry reports a move of 20 m or more, when an advert carries a
+changed position, and when the position switches between adverts and telemetry, so a companion at
+rest adds no state per answer. With `gps_accuracy` Home Assistant counts a companion up to 15 m
+outside a zone's radius as inside it. A position from telemetry expires when the companion stops
+answering ([below](#telemetry-of-the-households-companions)); one from adverts stays while the
+companion shares it in its adverts.
 
 * **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
@@ -287,7 +291,8 @@ shows the raw values, as below: MQTT entities have no translations yet.
 row, or an hour without an answer (three of its intervals if that is longer), its tracker and
 telemetry sensors turn unavailable until it answers again. Its position counts while an answer
 within the last hour carried one. *Telemetry state* and the switch stay available, and the
-documents keep the last values. A position from adverts does not expire.
+documents keep the last values. A position from adverts does not expire; it goes once a checked
+advert no longer carries it.
 
 | Moment (EU/UK Narrow, next to the gateway) | In Home Assistant |
 | --- | --- |
@@ -316,8 +321,8 @@ position or a reading.
 neighbour can be excluded before it is added; a protected contact (a target, a command sender)
 can be excluded too. At once the gateway asks it no more (a request waiting for the radio is
 withdrawn, an answer in flight is dropped) and forgets its battery, readings and telemetry
-position: the tracker shows the position its adverts carried, which can be old, or turns
-`unavailable`. *Last heard* keeps the time of its last answer.
+position: the tracker shows the position its adverts carry while the companion still shares it
+(which can be old), or turns `unavailable`. *Last heard* keeps the time of its last answer.
 
 The switch follows the gateway, not the click: it turns off once the gateway took the request,
 and a refused request leaves it on (the event *Contact* says why). The gateway keeps the
@@ -380,7 +385,8 @@ person whose only GPS tracker is the mesh tracker:
 
 "Never" includes a real departure, which also ends as `unknown`. Every expiry counts: a companion
 that leaves range, an hour without a position, an outage of the radio, an exclusion without a
-position from adverts, and the seconds of every restart of the gateway. Use a state trigger on
+position from adverts, a companion that stops sending its position in adverts, without a position
+from telemetry, and the seconds of every restart of the gateway. Use a state trigger on
 the person `from: home` with `for: "00:05:00"` (a restart lasts seconds) and the condition
 *Telemetry status* `on` for 10 minutes: the status is not `on` while the radio is away, telemetry
 is paused or the gateway is stopped, and reads `on` again before the companions answer; it is also
@@ -424,13 +430,14 @@ and shows a person instead of a tracker that is the person's current source.
 | `rx`: `rssi_dbm`, `snr_db` | the packet sensors; `raw`, `length` and `received_at` stay on MQTT |
 | `send/<alias>` | the notify entities of the targets |
 | `stats`: `noise_floor_dbm`, `tx_airtime_1h_s`, `uptime_s`, `packets_received`, `packets_sent`, `receive_errors` | the radio's sensors; `tx_airtime_window_s`, `airtime_factor`, `duty_cycle_percent` as attributes of *Radio transmit time last hour* |
-| `contacts`: `total`, `max`, `remote_cli…`, `advert_position…` | *Contacts* and the two problem sensors |
+| `contacts`: `total`, `max`, `remote_cli…`, `advert_carries_position…` | *Contacts* and the two problem sensors; `advert_position…` stays on MQTT |
 | `nodes`: `total` | *Nodes heard* |
 | `nodes`: `look_alike`, `look_alike_total` | *Look-alike node heard* |
 | `contact`, `node` | the events *Contact* and *New node* |
 | `contacts/<key>` | a contact's sensors and tracker |
 | `contacts/<key>`: `telemetry_state`, `telemetry_excluded`, `battery_v`, `mcu_temperature_c`, `readings` | *Telemetry state*, the switch *Telemetry*, *Battery*, *MCU temperature* and the reading sensors; `readings_at` stays on MQTT |
 | `contacts/<key>`: `telemetry_current`, `position_current` | whether the telemetry sensors and a tracker of a position from telemetry are available |
+| `contacts/<key>`: `advert_carries_position` | *Position in adverts*; `advert_position` and `advert_checked_at` stay on MQTT |
 | `state`: `telemetry`, `telemetry_reason`, `telemetry_airtime_1h_s`, `telemetry_mesh_airtime_1h_s` | *Telemetry status* with the attribute `reason`, and the two telemetry airtime sensors |
 | `telemetry` | the event *Telemetry* |
 | `contacts/<key>/telemetry` | the switch *Telemetry* |
@@ -721,6 +728,9 @@ actions:
 mode: single
 ```
 
+It also fires when Alice's only position came from her adverts and she switches "Share Position
+in Advert" off: once the gateway checks her next advert, the tracker turns `unavailable`.
+
 For a person whose only GPS tracker is the mesh tracker, `zone.left` never fires, and a restart of
 the gateway makes the person `unknown` for seconds, which the `for` skips. The condition skips an
 outage of the radio, a pause and a stopped gateway, and the wait for the first answers after them:
@@ -776,10 +786,12 @@ recorder:
 
 The contacts' trackers store their positions in the history too, which a map card with
 `hours_to_show` draws as their traces ([Traces on the map](#traces-on-the-map)): a companion that
-moves writes one state per 20 m it moved, at most about one per telemetry answer (every 90 s or
-more). Readings, *Telemetry state*, the switch *Telemetry* and the gateway's event *Telemetry* (a
-dated log of who left range and came back, with `prefix`, `name` and `state`) are recorded as well,
-a noisy reading with most answers. To keep them out, exclude them too:
+moves writes one state per 20 m telemetry reports it moved, at most about one per telemetry answer
+(every 90 s or more), one per advert with a changed position, and one when the position switches
+between adverts and telemetry. Readings, *Telemetry state*, the switch *Telemetry* and the
+gateway's event *Telemetry* (a dated log of who left range and came back, with `prefix`, `name` and
+`state`) are recorded as well, a noisy reading with most answers. To keep them out, exclude them
+too:
 
 ```yaml
 recorder:

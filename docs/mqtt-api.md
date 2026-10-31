@@ -25,7 +25,7 @@ API is a public interface under semantic versioning
 | `nodes` | bridge → | yes | JSON: nodes heard but not added |
 | `history` | bridge → | yes | JSON: the latest messages in and out |
 | `settings` | bridge → | yes | JSON: the managed radio profile at the last connect |
-| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused` or `failed` |
+| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
 | `telemetry` | bridge → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
 | `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
 | `setting` | bridge → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
@@ -253,7 +253,8 @@ empty retained message, also if that happened while the gateway was stopped.
 
 ```json
 {"total": 2, "max": 350, "manage": true, "remote_cli": [], "remote_cli_total": 0,
- "advert_position": [], "advert_position_total": 0, "telemetry_excluded": ["c3d4…"],
+ "advert_position": [], "advert_position_total": 0, "advert_carries_position": [],
+ "advert_carries_position_total": 0, "telemetry_excluded": ["c3d4…"],
  "telemetry_excluded_total": 1, "truncated": false,
  "contacts": [{"key": "a1b2…", "name": "Alice", "type": "chat",
                "heard_at": "2026-10-18T09:00:02+00:00", "protected": true}]}
@@ -263,9 +264,12 @@ The index lists the contacts most recently heard first, up to 32 KiB. `max` is t
 size; `manage` whether the gateway takes add and remove requests: `[contacts] manage`, and,
 once the radio is known, firmware the gateway is tested with or `radio.profile.manage = "always"`. `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
 (flag 0x10; the gateway never sets it, remove such contacts), `advert_position` companions whose
-adverts carried a position, which everyone in range can read. `telemetry_excluded` lists (up to
-16, sorted) the keys excluded from telemetry, also those not on the radio,
-`telemetry_excluded_total` counts them all ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
+record on the radio holds a position from their adverts. `advert_carries_position` lists (up to
+16, sorted) the companions not excluded from telemetry whose `advert_carries_position` is `true`:
+the household's companions whose adverts carry their position, which everyone in range can read;
+`advert_carries_position_total` counts them all. `telemetry_excluded` lists (up to 16, sorted) the
+keys excluded from telemetry, also those not on the radio, `telemetry_excluded_total` counts them
+all ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 
 ```json
 {"key": "a1b2…", "prefix": "a1b2c3d4e5f6", "name": "Alice", "type": "chat",
@@ -276,7 +280,9 @@ adverts carried a position, which everyone in range can read. `telemetry_exclude
  "latitude": 53.55, "longitude": 9.99, "altitude_m": 12.0,
  "position_at": "2026-10-18T08:40:05+00:00", "position_source": "telemetry",
  "position_accuracy_m": 15, "position_received_at": "2026-10-18T09:00:05+00:00",
- "advert_position": false, "telemetry_state": "answering", "telemetry_excluded": false,
+ "advert_position": false, "advert_carries_position": false,
+ "advert_checked_at": "2026-10-18T08:55:00+00:00", "telemetry_state": "answering",
+ "telemetry_excluded": false,
  "telemetry_current": true, "position_current": true, "readings_at": "2026-10-18T09:00:05+00:00",
  "battery_v": 4.12, "mcu_temperature_c": 23.4,
  "readings": {"ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5,
@@ -293,14 +299,16 @@ adverts carried a position, which everyone in range can read. `telemetry_exclude
 | `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods. After a path reset (a message's flood fallback) `false` at once |
 | `last_advert_at` | the contact's clock at its newest advert |
 | `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`, `telemetry`): its telemetry answers move `heard_at` at most once an hour; `hops`, `snr_db` and `rssi_dbm` are those of its last advert or message (an answer reports none), `hops` `null` for a direct route, `rssi_dbm` only from adverts |
-| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; for an advert read at start, the time of the newest advert), never when the companion took it. A position from telemetry expires (`position_current`); the document keeps it |
+| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) while its newest checked advert carries one (`null` after one that does not, unless telemetry gives one), or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; for an advert read at start, the time of the newest advert; when a carrying advert brings a position back, that advert's time), never when the companion took it: a position in an advert or an answer can be one the companion saved long ago, and neither carries the fix's age. A position from telemetry expires (`position_current`); the document keeps it |
 | `position_accuracy_m` | 15 for a position from telemetry (the 0.0001° cell it is sent in, and the receiver's own error), else `null` |
 | `position_received_at` | the newest telemetry answer that carried a position (also when it did not move); after a restart from the saved schedule (`null` if the clock went back meanwhile) |
-| `advert_position` | its adverts carried a position: everyone in range can read it |
+| `advert_position` | the radio's record of the contact holds a position from one of its adverts. The radio keeps it after the contact stops sharing, until an advert with another one; an advert that shares 0, 0 (a companion that never had a position) clears it, and a contact just added by the gateway has none until its next advert. Whether the newest advert carries one is `advert_carries_position` |
+| `advert_carries_position` | for a companion: its newest advert carries its position (flag 0x10, also 0, 0 from a companion that never had one), which everyone in range can read, as the gateway checked it ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)). While its newest advert is not checked (before the first check, or an advert the gateway missed: `advert_checked_at` is `null` or older than `last_advert_at`), the last check's flag, or `true` when the radio's record holds a position from an earlier advert: it errs to warn. `null` for repeaters, room servers and sensors, which share theirs by design |
+| `advert_checked_at` | the contact's clock at the newest advert the gateway checked (for a companion it added after hearing it: that advert); `null` before a check, and for repeaters, room servers and sensors. Older than `last_advert_at` when a newer advert could not be checked (its report or log lost, or the gateway stopped) |
 | `telemetry_state` | its telemetry state ([below](#telemetry-states)); `null` for a repeater, room server or sensor, which are never asked |
 | `telemetry_excluded` | the household excluded it from telemetry ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)); `false` for other types |
 | `telemetry_current` | its answers are current: `telemetry_state` is `answering` or `no_position`; `null` for other types |
-| `position_current` | a position from telemetry that is current (`telemetry_state` `answering`); `false`: from telemetry, no longer confirmed; `null`: no position, or one from adverts, which does not expire |
+| `position_current` | a position from telemetry that is current (`telemetry_state` `answering`); `false`: from telemetry, no longer confirmed; `null`: no position, or one from adverts, which does not expire by time but goes once a checked advert no longer carries it |
 | `readings_at` | the gateway's time of the answer that the next three keys come from (never the companion's); after a restart the newest answer the history kept, unless telemetry is on and its saved schedule knows a later one the history missed (then `null`, and no values; after the clock went back while the gateway was stopped, it cannot tell, and the history's newest comes back, not as current) |
 | `battery_v` | its battery: the answer's first value if it is the channel 1 voltage; the companion truncates it to 0.01 V (4.20 V reads 4.19) |
 | `mcu_temperature_c` | its processor's temperature: the answer's last value if it is a channel 1 temperature (on a board without a processor sensor, a channel 1 sensor that comes last is named so) |
@@ -428,7 +436,17 @@ telemetry requests (`excluded`, `included`, with `request: "telemetry"`; see
 [excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)). After a
 start of the gateway, it reports what changed while it was stopped: contacts that are new, and
 contacts that are gone (`name` and `type` are then `null`). `hidden` and `shown` report a
-contact device deleted in Home Assistant and shown again; the contact stays on the radio. `node` reports a node heard for the first time
+contact device deleted in Home Assistant and shown again; the contact stays on the radio.
+`position_in_advert` reports a companion not excluded from telemetry whose adverts carry its
+position, which everyone in range can read, as the gateway checked it
+([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)): when its check
+turns to carrying from not carrying or none (also its first check, and for 0, 0 from a companion
+that never had a position), when it is added to the table with a check that carries (the gateway
+heard that advert before the add), and when it is included in telemetry again while its check
+carries. It comes after the contact's document and the index, with `request`, `id` and `reason`
+`null`, and never carries a position. None for an excluded companion, for the radio's record
+while the newest advert is not checked, for a further advert that still carries one, when it
+stops, or at a restart. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
 adverts with invented keys does not flood the bus.
 
@@ -562,10 +580,10 @@ when the set changes. Refused requests share the limit of the `refused` events a
 **What an exclusion does.** The gateway asks the contact no more: a request waiting for the radio
 is withdrawn, an answer in flight is dropped. It forgets the contact's battery, readings,
 `readings_at`, `position_received_at` and a position from telemetry; the position its adverts
-carried takes the place, which can be old. `heard_at` and `heard_via` of its last answer stay. Its
-rows in the history stay until `readings_days` and `positions_days` (unless `forget`), and are not
-restored while it is excluded. An inclusion makes it `waiting`, and it is asked at once, as the
-airtime lanes allow.
+carried takes the place while it still shares it (its last checked advert, if any, carried one),
+which can be old. `heard_at` and `heard_via` of its last answer stay. Its rows in the history stay
+until `readings_days` and `positions_days` (unless `forget`), and are not restored while it is
+excluded. An inclusion makes it `waiting`, and it is asked at once, as the airtime lanes allow.
 
 **Where it is kept.** In `telemetry-excluded.json` in the state directory
 ([deployment.md](deployment.md#4-operations)): also when the contact leaves the table and

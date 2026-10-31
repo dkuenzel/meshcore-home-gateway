@@ -1146,6 +1146,16 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   published type, no warning). *Here:* `READING_ENTITIES` in
   `src/meshcore_home_gateway/mqtt/contact_devices.py`; luminosity, generic and analog input have
   neither class nor unit, percentage a unit without a class. *Check:* `make ha-test`.
+* **A discovery update that keeps an entity's `state_topic`, QoS and encoding keeps its
+  subscription, so the broker does not send the retained message again: the entity keeps its
+  state, read with the old template, until the next message on the topic.** *Verified:*
+  2026.10.0, source `components/mqtt/subscription.py` lines 29-37 and 66-81
+  (`resubscribe_if_necessary` reuses the old subscription unless topic, QoS or encoding differ);
+  an experiment with the gateway's discovery of 1.1.0a3 over that of 1.1.0a2 kept the state of
+  *Companion position in adverts* and logged nothing. *Here:* after the update to 1.1.0a3 the
+  gateway sensor keeps its 1.1.0a2 state until the gateway publishes the `contacts` index again
+  (when the radio connects, and at each table read). *Check:* `src 2026.10.0
+  components/mqtt/subscription.py | sed -n 66,81p`.
 
 ## Home Assistant dashboards
 
@@ -1192,6 +1202,34 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   [hardware checklist](testing.md#hardware-checklist). *Check:*
   `grep -o '"ha-qr-code":\[[^]]*\]'` over `hass_frontend/frontend_latest/*.js` of the
   `home-assistant-frontend` wheel.
+
+* **A map card draws a trail only with `hours_to_show` above 0, which defaults to 0; the Map panel
+  sets none. A trail is the entity's recorder rows that have `latitude` and `longitude`: a row
+  without them (`unavailable`) is skipped, and the line joins its neighbours.** The card asks for
+  its configured entities with the `history/stream` subscription, `minimal_response`,
+  `significant_changes_only` and `no_attributes` all false, only while the `history` integration
+  is loaded. *Verified:* frontend `20260930.2` (Home Assistant 2026.10.0),
+  `src/panels/lovelace/cards/hui-map-card.ts` lines 79 (`DEFAULT_HOURS_TO_SHOW = 0`), 609-633 (the
+  request) and 944-953 (the points); `20260729.5` (2026.8.0) line 48; the drawing was not run in a
+  browser. *Here:* the guide's card lists the trackers and sets `hours_to_show: 24`
+  ([Traces on the map](home-assistant.md#traces-on-the-map)); `home-assistant/tests/test_traces.py`
+  sends the card's exact request against the real recorder: one row per move, none per resting
+  answer, an expiry as a row without coordinates. *Check:* `make ha-test`.
+* **A device tracker is `force_update`: every write is a new state, so a write after an MQTT
+  reconnect or a restart adds a second point on one spot. A card open while its entity is kept out
+  of the recorder still draws the points that come while it stays open, and a `person` keeps its
+  own copy of the position.** *Verified:* 2026.10.0, source `components/device_tracker/entity.py`
+  lines 297-301; `test_without_the_recorder_there_is_no_trace_but_a_person_keeps_one` (no rows
+  from the database, the open subscription gets the next point, the person records its rows).
+  *Here:* the guide says how expiry, restarts and the recorder exclusion look on a trace.
+  *Check:* `make ha-test`.
+* **A map card's `conditions` filter the markers; the trails come from the configured entities,
+  with `show_all` from every entity with a location.** *Verified:* read only, frontend
+  `20260930.2`, `hui-map-card.ts` lines 451-456 (the markers filtered) and 609-633 (the trails'
+  request); whether a filtered entity still draws a trail is step 45 of the
+  [hardware checklist](testing.md#hardware-checklist). *Here:* the guide lists one tracker per
+  companion instead of `show_all`. *Check:* `sed -n 451,456p
+  src/panels/lovelace/cards/hui-map-card.ts` in the frontend's source at `20260930.2`.
 
 ## MeshCore companion firmware
 
@@ -1258,9 +1296,77 @@ The entries below are what that page does not cover.
   *Here:* the gateway refuses to add a key that is already a contact (`already_contact`) and adds
   a heard node with the time of its signed advert, so the radio drops older replays from then on
   ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)); its own memory
-  of heard nodes keeps the newest advert's record (`core/mesh.py`). *Check:* in the firmware
-  tree, `sed -n '194,217p;1328,1358p' examples/companion_radio/MyMesh.cpp` and
+  of heard nodes keeps the newest advert's record (`core/mesh.py`). The gateway writes position
+  0, 0, and the radio then refuses the heard advert as not newer, so the record of a companion it
+  adds holds no position until its next advert; the gateway checks the advert it heard before the
+  add instead (`NEW_ADVERT`, [ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)).
+  Another client that writes a contact with a newer advert time and another position looks like
+  an advert that carried one. *Check:* in the firmware tree,
+  `sed -n '194,217p;1328,1358p' examples/companion_radio/MyMesh.cpp` and
   `sed -n '129,139p' src/helpers/BaseChatMesh.cpp`.
+* **The radio's record keeps the position of a contact's last advert that carried one.** An
+  accepted advert sets latitude and longitude only when it has flag 0x10, then the advert time,
+  then the push; an advert without the flag leaves the old position, and the flag with 0, 0 writes
+  0, 0. A node the radio did not add gets `NEW_ADVERT` with a record made from that advert alone,
+  in the same call. The positions are saved with the contacts and survive a reboot. *Verified:*
+  `companion-v1.18.0`; `BaseChatMesh.cpp:108-120` (the record of a new node), `:122-200` (the
+  name check, the replay check, the stored copy, then `:193-197` the position and the time, `:200`
+  the push); `MyMesh.cpp:358-366` (`ADVERT` is the key only);
+  `examples/companion_radio/DataStore.cpp:278-279, 312-313` (loaded and saved). *Here:*
+  `advert_position` says what the record holds; `advert_carries_position` what the newest checked
+  advert carries, and a position from adverts is shown only while that check carried one
+  ([mqtt-api.md](mqtt-api.md#contacts-contacts-and-contactskey)). *Check:* in the firmware tree,
+  `sed -n '108,120p;186,201p' src/helpers/BaseChatMesh.cpp`.
+* **A companion that shares its position in adverts sends the last valid one when it has no fix,
+  after a reboot the one it saved; 0, 0 only when it never had a position.** The advert builder
+  sets flag 0x10 whatever the values. The values are the sensor manager's, which keep the live fix
+  while it is valid and are loaded from the saved preferences at boot; every setting saves them,
+  and the app can set them by hand. No age of the fix is sent. *Verified:* `companion-v1.18.0`,
+  read only; `MyMesh.cpp:980-981, 1268-1278, 1297-1303, 1488-1502, 2436-2441`, `MyMesh.h:197-200`,
+  `src/helpers/sensors/EnvironmentSensorManager.cpp:937-951`, `src/helpers/SensorManager.h:17`,
+  `src/helpers/AdvertDataHelpers.h:29-30`, `src/helpers/AdvertDataHelpers.cpp:7-8`. Whether a
+  resting fix jitters, so that a position repeated bit for bit marks a saved one, is step 42 of
+  the [hardware checklist](testing.md#hardware-checklist). *Here:* the flag counts as sharing,
+  also with 0, 0; the guide says a position from adverts can be one the companion saved long ago.
+  *Check:* `sed -n '2436,2448p' examples/companion_radio/MyMesh.cpp`.
+* **The device button sends a zero-hop advert, which no repeater forwards; the app sends zero hop
+  or, with the parameter 1, a flood.** *Verified:* `companion-v1.18.0`;
+  `examples/companion_radio/ui-new/UITask.cpp:586-592` calls `advert()`, which sends
+  `sendZeroHop` (`MyMesh.cpp:2436-2448`); `CMD_SEND_SELF_ADVERT` at `MyMesh.cpp:1297-1316`;
+  `src/Mesh.cpp:344-357, 717-726`. *Here:* the guide asks for *Advert* within range of the
+  gateway's radio, or a flood advert from the app, after switching sharing off
+  ([companions.md](companions.md#positions-in-adverts)). *Check:* `sed -n '586,592p'
+  examples/companion_radio/ui-new/UITask.cpp`.
+* **The radio logs every received packet (`LOG_RX_DATA`) before it checks or handles it, if the
+  frame fits 176 bytes: an advert is not logged when its path is longer than 71 bytes minus its
+  app data (67 with transport codes).** An advert's raw packet is 2 bytes of header and path
+  length, the path, 100 bytes of key, time and signature, and up to 32 bytes of app data.
+  Repeaters at 1.17.1 and 1.18.0 forward no advert with 8 hops or more, so with default repeaters
+  every advert the radio takes fits *(inferred)*. *Verified:* `companion-v1.18.0`;
+  `src/Dispatcher.cpp:199`, `MyMesh.cpp:291-302`, `src/helpers/BaseSerialInterface.h:5`,
+  `src/MeshCore.h:8, 11, 12`; repeaters `examples/simple_repeater/MyMesh.cpp:908`
+  (`:907` at 1.17.1), `src/helpers/RoutingPolicy.h:15-21`. *Here:* a pushed advert without its
+  log is not checked (a debug line "not checked (not logged)"); a new position in the record still
+  counts. *Check:* `sed -n '289,302p' examples/companion_radio/MyMesh.cpp`.
+* **With the default receive delay 0 the radio logs a packet and handles it in the same pass, so
+  an advert's push is the frame right after its log; with a delay above 0 a flood waits up to
+  32 s and is handled at the start of a later pass.** Only `SET_TUNING_PARAMS` raises the delay;
+  the line that would set 10 is commented out. *Verified:* `companion-v1.18.0`;
+  `src/Dispatcher.cpp:11, 138-145, 191-256`, `MyMesh.cpp:273-276, 934, 985, 1470-1477`,
+  `examples/companion_radio/NodePrefs.h:29`. *Here:* the gateway reads the receive delay at
+  connect; only while it is 0 does the log right before the push decide, and give the advert's
+  signal ([design.md](design.md#66-observer-documents-and-history)). *Check:* `sed -n
+  '138,145p;236,256p' src/Dispatcher.cpp`.
+* **`EXPORT_CONTACT` (17) with a key reads the radio's stored copy of the contact's advert into
+  its 177-byte frame buffer; an ESP32 or RP2040 radio reads up to 255 bytes there, and a frame
+  over 176 bytes is never sent.** On nRF52 and STM32 the store keeps a limited number of copies
+  by a 7-byte prefix and refuses one that is too long, keeping the older. *Verified:*
+  `companion-v1.18.0`, at the code level; `MyMesh.cpp:1379-1405`, `MyMesh.h:268-269` (the buffer,
+  followed by another object), `examples/companion_radio/DataStore.cpp:4-8, 370, 501-557, 573`,
+  `BaseChatMesh.cpp:584-586`, `src/helpers/wifi/SerialWifiInterface.cpp:22-25`; what the overrun
+  does on a radio was not tested. *Here:* the gateway never sends command 17; it reads the advert
+  in the packet log ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)).
+  *Check:* `sed -n '1379,1405p' examples/companion_radio/MyMesh.cpp`.
 
 * **A companion denies telemetry to everyone until its owner allows it.** The three telemetry
   modes (base, location, environment) start at 0, *deny*; only the app's command changes them.
@@ -1294,7 +1400,8 @@ Already in protocol.md, with the firmware lines:
   port at 1200 baud and dropping DTR reboots them into the bootloader:
   [section 1](protocol.md#1-framing-usb-serial-and-tcp).
 * TCP on port 5000 has no authentication, serves one client and drops frames while its 4-frame
-  queue is full: [section 1](protocol.md#1-framing-usb-serial-and-tcp) and
+  queue is full; an advert's log and its push are queued in one pass, so a push never comes
+  without its log: [section 1](protocol.md#1-framing-usb-serial-and-tcp) and
   [section 5](protocol.md#5-semantics), "Over TCP pushes can be lost".
 * `SET_DEVICE_TIME` only moves the clock forward: [section 2](protocol.md#2-commands).
 * The offline queue holds 16 messages by default, in RAM; `MSG_WAITING` comes once per message,
