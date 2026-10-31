@@ -9,7 +9,7 @@ frames (codes >= 0x80) in between. The session therefore
   adverts, path updates and telemetry answers go to the event queue, adverts and path updates
   also mark the contact table for a refresh;
 * numbers every frame it reads, so an answer pushed before or after a command's answer can be
-  told apart (telemetry, ADR 0018);
+  told apart (telemetry, ADR 0018), and so can the log directly before an advert's push;
 * reports every contact table it reads and the radio's statistics (with the battery heartbeat)
   to the event queue, for the views of the radio and its contacts;
 * reports every full key the radio names to `on_contact_key`, with whether the radio holds or
@@ -151,6 +151,8 @@ class PathReset:
 class PacketLogged:
     rx: codec.RxLog
     received_at: float
+    seq: int = 0  # the frame's number in its session; 0: not from a session (tests)
+    session_serial: int = 0  # numbers are compared only within one session
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +162,8 @@ class AdvertHeard:
 
     advert: codec.Advert
     received_at: float
+    seq: int = 0  # the frame's number: with no receive delay, the log just before is its own
+    session_serial: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -670,11 +674,11 @@ class CompanionSession:
         elif isinstance(decoded, codec.SendConfirmed):
             await self._events.put(AckReceived(decoded.ack, decoded.round_trip_ms))
         elif isinstance(decoded, codec.RxLog):
-            await self._events.put(PacketLogged(decoded, self._wall()))
+            await self._events.put(PacketLogged(decoded, self._wall(), seq, self.serial))
         elif isinstance(decoded, codec.Advert):
             self._report_key(decoded.public_key, held=not decoded.new)  # before later frames
             self._contacts_changed()
-            await self._events.put(AdvertHeard(decoded, self._wall()))
+            await self._events.put(AdvertHeard(decoded, self._wall(), seq, self.serial))
         elif isinstance(decoded, codec.PathUpdated | codec.ContactDeleted):
             self._report_key(decoded.public_key)
             self._contacts_changed()
