@@ -30,9 +30,9 @@ gateway can check it. The hardware checklist was not run for it.
   `advert_carries_position` (the first 16 companions not excluded from telemetry for which it is
   `true`) and `advert_carries_position_total`.
 - The event `position_in_advert` on `contact` when a companion that is not excluded from
-  telemetry starts to send its position in its adverts, is added after the gateway heard an
-  advert of it that carries it, or is included in telemetry again while its adverts do. Never a
-  position. The event entity *Contact* lists it.
+  telemetry starts to send its position in its adverts, is added after the gateway heard its
+  newest advert carrying it (in the same run of the gateway), or is included in telemetry again
+  while its adverts do. Never a position. The event entity *Contact* lists it.
 - *Position in adverts* (`binary_sensor.mesh_<name>_advert_position`, problem) on every
   companion's device.
 - docs/home-assistant.md: a map card that draws a companion's trace from Home Assistant's

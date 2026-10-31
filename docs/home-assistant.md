@@ -323,8 +323,9 @@ position or a reading.
 neighbour can be excluded before it is added; a protected contact (a target, a command sender)
 can be excluded too. At once the gateway asks it no more (a request waiting for the radio is
 withdrawn, an answer in flight is dropped) and forgets its battery, readings and telemetry
-position: the tracker shows the position its adverts carry while the companion still shares it
-(which can be old), or turns `unavailable`. *Last heard* keeps the time of its last answer.
+position: the tracker shows the position from its adverts while its last checked advert, if any,
+carried one (which can be old), or turns `unavailable`. *Last heard* keeps the time of its last
+answer.
 
 The switch follows the gateway, not the click: it turns off once the gateway took the request,
 and a refused request leaves it on (the event *Contact* says why). The gateway keeps the

@@ -138,7 +138,8 @@ Telemetry is on by default (`[telemetry] enabled`, [configuration.md](configurat
   [home-assistant.md](home-assistant.md#positions-and-presence).
 * A telemetry position carries an accuracy of 15 m, so Home Assistant counts a companion up to
   15 m outside a zone's radius as inside it.
-* **A position from adverts** stays only while the companion shares it in its adverts: once the
+* **A position from adverts** stays only while the last advert the gateway checked carried it,
+  or, before a first check (after the update), while the radio's record holds one: once the
   gateway checked an advert without it, its tracker turns `unavailable` unless telemetry gives a
   position. A position in an advert can be one the companion saved long ago.
 * A position from telemetry is stored in the history (and written by Home Assistant's recorder)

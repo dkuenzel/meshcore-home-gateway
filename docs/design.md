@@ -534,10 +534,10 @@ flowchart LR
   history show the same answer.
 * **Exclusion** (§6.11): an excluded companion's readings, its time of the newest position and a
   position from telemetry are forgotten, and the position its record carries takes the place, as
-  at a first table read, while the companion still shares it; its rows in the history stay until
-  their age removes them and are not restored while it is excluded. `forget` deletes its readings
-  and positions from telemetry in one transaction; its advert positions and when it was last
-  heard stay.
+  at a first table read, while its last checked advert, if any, carried one; its rows in the
+  history stay until their age removes them and are not restored while it is excluded. `forget`
+  deletes its readings and positions from telemetry in one transaction; its advert positions and
+  when it was last heard stay.
 * **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
   answers moves it at most once an hour, keeping the signal of its last advert or message (an
   answer reports none).
