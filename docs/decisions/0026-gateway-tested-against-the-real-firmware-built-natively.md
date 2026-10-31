@@ -40,7 +40,8 @@ serial transport. Should the project test against that firmware, and how?
 ## Decision Outcome
 
 Chosen option: "the real firmware built natively on stand-ins, on a simulated air", because it is
-the only one that runs the firmware's own code on every change without hardware, in seconds.
+the only one that runs the firmware's own code on every change without hardware: it builds in
+seconds, and the suite plays the checklist's scenarios in about 12 minutes.
 
 * **Pinned sources, never committed.** `tests/firmware/sources.toml` names each source by its
   tags and the full commit they point to: MeshCore (`companion-vX.Y.Z` and `repeater-vX.Y.Z` of

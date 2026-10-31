@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import struct
 import time
 from collections.abc import Callable, Collection
@@ -26,6 +27,8 @@ from meshcore_home_gateway.radio.transport import SerialTransport
 from tests.firmware.node import Node
 
 COMMAND_S = 5.0  # the radio answers a command at once
+# the node frees a closed port's exclusive lock a moment after the close (board/runtime.cpp)
+OPEN_TRIES, OPEN_RETRY_S = 20, 0.005
 # MyMesh.cpp:1297-1316: a second byte 1 floods the advert, otherwise it goes zero hop
 SEND_SELF_ADVERT = 7
 SET_ADVERT_LATLON = 14  # :1266-1280: latitude and longitude in 10^-6 degrees, int32 each
@@ -64,7 +67,7 @@ class App:
         self._reader: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> App:
-        await self._transport.open()
+        await self._open()
         self._reader = asyncio.create_task(self._read(), name=f"app {self.node.name}")
         return self
 
@@ -79,6 +82,21 @@ class App:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._reader
         await self._transport.close()
+
+    async def _open(self) -> None:
+        """Opens the port, also right after another program closed it. A USB port drops that
+        program's exclusive lock (TIOCEXCL) with the close; the node frees it a moment later, so
+        an open in between waits a little."""
+        for _ in range(OPEN_TRIES - 1):
+            try:
+                await self._transport.open()
+            except OSError as exc:
+                if exc.errno != errno.EBUSY:
+                    raise
+                await asyncio.sleep(OPEN_RETRY_S)
+            else:
+                return
+        await self._transport.open()
 
     async def _read(self) -> None:
         while True:

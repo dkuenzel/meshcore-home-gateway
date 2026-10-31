@@ -131,7 +131,10 @@ def test_a_flooded_answer_brings_the_path_back_three_seconds_later(scene: Scene)
     path, charged, flooded_at = asyncio.run(everything())
     heard = [t for t in scene.air.transmissions() if t.kind == "RESPONSE/F" and t.at >= flooded_at]
     first_heard = min(t.ended[alice] for t in heard if t.heard_by(alice))
-    assert 3.0 <= path.at - first_heard < 3.5  # the firmware's 3 s, and its own duty cycle
+    # the firmware's 3000 ms on its millisecond clock can come up to 1 ms early, the air rounds
+    # its times to milliseconds, and A's duty cycle may hold the path a little longer
+    waited_ms = round((path.at - first_heard) * 1000)
+    assert 2998 <= waited_ms < 3500
     lora = airtime.LoRaParams(62_500, 8, 8, 32)  # EU/UK Narrow with MeshCore's preamble
     direct = airtime.direct_poll_costs(2, 2, 19, lora).mesh_s
     assert charged - direct == pytest.approx(12.6, abs=0.05)

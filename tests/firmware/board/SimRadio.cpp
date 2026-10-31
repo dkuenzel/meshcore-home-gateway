@@ -71,10 +71,7 @@ void SimRadio::poll() {
       int16_t snr4, rssi;
       memcpy(&snr4, &buf[1], 2);
       memcpy(&rssi, &buf[3], 2);
-      if (_tx_active) {  // half duplex: deaf while transmitting
-        n_recv_errors++;
-        continue;
-      }
+      // half duplex is the air's to decide: a reception during this node's transmission is an 'X'
       _rxq.push_back({std::vector<uint8_t>(buf + 5, buf + n), snr4 / 4.0f, (float)rssi});
     } else if (buf[0] == 'X') {
       n_recv_errors++;

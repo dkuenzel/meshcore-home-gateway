@@ -24,8 +24,9 @@ COMPANION_DEFS := $(COMMON) -DENABLE_USB_INTERFACE -DMAX_CONTACTS=350 -DMAX_GROU
 REPEATER_DEFS := $(COMMON) -DADVERT_NAME='"Repeater"' -DADMIN_PASSWORD='"sim-admin"' \
   -DMAX_NEIGHBOURS=50
 
-# -w: the firmware and the libraries are third-party code, built as they are
-FLAGS := -O1 -g -w -MMD -MP
+# -w: the firmware and the libraries are third-party code, built as they are; -pthread: the
+# node's serial port has a thread (board/runtime.cpp)
+FLAGS := -O1 -g -w -MMD -MP -pthread
 # V=1 shows the compiler's command lines
 Q := $(if $(filter 1,$(V)),,@)
 INCLUDES := -Ishim -Iboard -I$(LPP) -I$(MC)/src -I$(MC)/lib/ed25519
@@ -77,7 +78,7 @@ all: $(OUT)/bin/companion $(OUT)/bin/repeater
 $(OUT)/bin/%:
 	@mkdir -p $(dir $@)
 	@echo "  LD   $(@:$(OUT)/%=%)"
-	$(Q)$(CXX) -o $@ $^ -lcrypto
+	$(Q)$(CXX) -pthread -o $@ $^ -lcrypto
 
 $(OUT)/bin/companion: $(COMPANION_OBJS) $(ED25519_OBJS)
 $(OUT)/bin/repeater: $(REPEATER_OBJS) $(ED25519_OBJS)

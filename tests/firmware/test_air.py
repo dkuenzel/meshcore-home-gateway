@@ -97,6 +97,24 @@ def test_overlapping_receptions_are_both_lost(air: AirThread, stand_ins: list[St
     assert [t.outcomes for t in air.transmissions()] == [{2: "collided"}, {2: "collided"}]
 
 
+def test_a_node_hears_nothing_while_it_transmits(air: AirThread, stand_ins: list[StandIn]) -> None:
+    """Half duplex: a reception that overlaps the receiver's own transmission is lost to it,
+    whether the reception or the transmission began first; the air records it as `deaf`."""
+    alice, bob, _ = stand_ins
+    air.link(alice.node_id, bob.node_id)
+    alice.transmit(b"\x05long", 300)
+    time.sleep(0.1)
+    bob.transmit(b"\x05short", 50)  # during alice's packet, which alice still sends
+    assert [bob.receive(), bob.receive()] == [b"B" + struct.pack("<I", 300), b"X"]
+    assert [alice.receive(), alice.receive()] == [b"B" + struct.pack("<I", 50), b"X"]
+    bob.transmit(b"\x05later", 50)  # alice's packet is over: she hears this one
+    assert alice.receive() == b"B" + struct.pack("<I", 50)
+    assert (alice.receive() or b"")[:1] == b"R"
+    sent = air.transmissions()
+    assert [t.outcomes for t in sent] == [{2: "deaf"}, {1: "deaf"}, {1: "received"}]
+    assert not sent[1].heard_by(alice.node_id)
+
+
 def test_a_link_can_be_one_way_and_goes_with_unlink(
     air: AirThread, stand_ins: list[StandIn]
 ) -> None:

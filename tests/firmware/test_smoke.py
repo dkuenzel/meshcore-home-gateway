@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -17,6 +18,7 @@ from meshcore_home_gateway import cli
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
 from meshcore_home_gateway.radio.transport import SerialTransport
 from tests.firmware.air import AirThread, RadioSettings
+from tests.firmware.app import App
 from tests.firmware.conftest import Firmware, Nodes
 from tests.firmware.node import Node
 
@@ -55,8 +57,25 @@ def test_the_probe_reads_the_companion_through_the_serial_transport(
     assert report["model"] == "Native Sim"
     lora = (report["frequency_mhz"], report["bandwidth_khz"], report["spreading_factor"])
     assert (*lora, report["coding_rate"]) == (869.618, 62.5, 8, 8)
-    # the port opens again once the probe closed it, as a USB serial port does (also without root)
+    # the port opens again after the probe closed it, also without root: the node frees the
+    # probe's exclusive lock a moment after the close, a USB serial port with the close
     assert probe(companion, tmp_path, capsys)["public_key"] == report["public_key"]
+
+
+def test_the_port_is_exclusive_and_opens_again_right_after_a_close(companion: Node) -> None:
+    """While a program has the port open, no other opens it (TIOCEXCL); right after the close
+    the next one does, waiting at most a moment for the node to free the lock (app.py). The node
+    frees it from a thread of its own, not in the firmware's loop (board/runtime.cpp)."""
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses TIOCEXCL")
+
+    async def reopen() -> None:
+        for _ in range(50):
+            async with App(companion):  # opens right after the last one closed
+                with pytest.raises(OSError, match="busy"):
+                    await SerialTransport(str(companion.serial)).open()
+
+    asyncio.run(reopen())
 
 
 def test_every_node_is_on_the_eu_uk_narrow_preset(nodes: Nodes, air: AirThread) -> None:

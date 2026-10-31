@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <random>
 #include <string>
+#include <thread>
 
 #include "target.h"
 
@@ -88,8 +89,6 @@ static void pty_open() {
     setenv("SIM_PTY_SLAVE_FD", buf, 1);
   }
   const char* slave = ptsname(pty_master);
-  pty_closes = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-  inotify_add_watch(pty_closes, slave, IN_CLOSE_WRITE | IN_CLOSE_NOWRITE);
   const char* link = getenv("SIM_PTY_LINK");
   if (link) {
     unlink(link);
@@ -100,13 +99,22 @@ static void pty_open() {
 
 // The gateway opens the port exclusively (TIOCEXCL). A USB serial port loses that lock when the
 // gateway closes it, because the device closes with it; this terminal stays open in the node, so
-// the node clears the lock when another program closes the port. Without it, only root could
-// open the port a second time.
+// a thread of the node clears the lock when another program closes the port. The thread waits
+// for the close itself, not for the firmware's loop, so the lock goes a fraction of a millisecond
+// after the close. Without it, only root could open the port a second time.
 static void pty_release() {
   char events[512];
-  bool closed = false;
-  while (read(pty_closes, events, sizeof(events)) > 0) closed = true;
-  if (closed) ioctl(pty_slave, TIOCNXCL);
+  for (;;) {
+    ssize_t n = read(pty_closes, events, sizeof(events));  // blocks until a close
+    if (n > 0) ioctl(pty_slave, TIOCNXCL);
+    if (n < 0 && errno != EINTR) return;
+  }
+}
+
+static void pty_watch() {
+  pty_closes = inotify_init1(IN_CLOEXEC);
+  inotify_add_watch(pty_closes, ptsname(pty_master), IN_CLOSE_WRITE | IN_CLOSE_NOWRITE);
+  std::thread(pty_release).detach();  // a reboot (exec) ends it, and the new program starts one
 }
 
 static void pty_fill() {
@@ -353,11 +361,11 @@ int main(int argc, char** argv) {
   if (const char* v = getenv("SIM_BATT_MV")) board.batt_mv = atoi(v);
   LittleFS.begin();
   pty_open();
+  pty_watch();
   setup();
   fprintf(stderr, "[%s] setup done\n", node_name());
   for (;;) {
     poll_stdin();
-    pty_release();
     loop();
     usleep(500);
   }

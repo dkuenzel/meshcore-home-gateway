@@ -48,13 +48,13 @@ home-assistant.md.
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
 | Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py` (above) | `make ha-test`: Python 3.14.2 or newer |
-| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice), `test_air.py` (the air with stand-in nodes: time on air, collisions, one-way links, loss, delay, radio settings), the scenarios of checklist steps 29–39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`) and `test_adverts_and_positions.py` ([above](#scenarios-of-the-hardware-checklist)) | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
+| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`) and `test_adverts_and_positions.py`, the firmware's part of step 31 ([above](#scenarios-of-the-hardware-checklist)) | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
 installed they **fail** with a hint; set `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them on
-purpose. One transport test is skipped when running as root, because root bypasses the exclusive
-lock it checks; CI runs it as a normal user.
+purpose. One transport test and one firmware test are skipped when running as root, because root
+bypasses the exclusive lock they check; CI runs them as a normal user.
 
 ## Tests against the real firmware
 
@@ -100,8 +100,8 @@ The nodes run in real time, so a scenario of an hour takes an hour.
 
 ### Scenarios of the hardware checklist
 
-The scenarios play steps 29–39 of the [hardware checklist](#hardware-checklist) with the
-gateway's service and the real firmware; [below the checklist](#steps-2940-on-the-simulated-air)
+The scenarios play parts of steps 29–39 of the [hardware checklist](#hardware-checklist) with
+the gateway's service and the real firmware; [below the checklist](#steps-2940-on-the-simulated-air)
 it says which. `tests/firmware/household.py` starts radio A, Bob's companion B with a GPS (its fix
 at a public landmark) and, for the steps with hops, repeaters in a chain.
 `tests/firmware/app.py` plays Bob's phone app on B's serial port, on the gateway's own transport,
@@ -118,7 +118,8 @@ quiet after a message, the 10 s gap after every outcome, the answer waits, the f
 routes. The first-start test runs with the real lanes and shortens only the hour of its hold.
 The air has knobs for a worse mesh: links one way only, `loss` (the share of packets a receiver
 misses) and `delay_s` (a packet reaches the receiver that much later, as if the mesh held it).
-Collisions are real, so the scenarios link only the nodes a step needs.
+Collisions are real, so the scenarios link only the nodes a step needs. A node hears nothing
+while it transmits (half duplex: the air records such a reception as `deaf`).
 
 `tests/firmware/test_adverts_and_positions.py` runs no gateway. It pins down what the firmware
 does with adverts and positions, which the advert-position check of the next telemetry slice

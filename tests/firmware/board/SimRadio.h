@@ -1,7 +1,9 @@
 #pragma once
 // mesh::Radio on the simulated air (tests/firmware/air.py): a node sends its transmissions as UDP
 // datagrams to the air, which delivers them after their time on air to the nodes linked to the
-// sender, with the link's SNR and RSSI, and drops receptions that overlap (collisions).
+// sender, with the link's SNR and RSSI, and drops receptions that overlap (collisions) and those
+// that overlap the receiver's own transmission (half duplex). The air decides both, so its record
+// is what the node received.
 // Replaces RadioLibWrapper and CustomSX1262Wrapper (src/helpers/radiolib/) of the boards.
 //
 // Datagrams, node to air: 'H' id u32 freq_khz u32 bw_hz u8 sf u8 cr i8 dbm  hello, every 2 s
@@ -9,7 +11,8 @@
 //                         'T' id u32 airtime_ms packet                      a transmission
 // air to node:            'B' u32 ms                    a linked node transmits (channel busy)
 //                         'R' i16 snr*4 i16 rssi packet  a reception, at the end of its airtime
-//                         'X'                           a reception lost in a collision
+//                         'X'                           a reception lost in a collision or
+//                                                       while the node transmitted
 // Numbers are little-endian.
 #include <Mesh.h>
 

@@ -4,8 +4,11 @@ A node greets the air with its radio settings and sends each transmission with i
 The air tells every node linked to the sender at once that the channel is busy (the receiver's
 channel activity detection), and hands it the packet when the time on air is over, with the
 link's SNR and RSSI. A reception that overlaps another at the same node is lost, and so is the
-other (a collision). A node on another frequency, bandwidth or spreading factor hears nothing;
-the coding rate is in the packet's header, so a node hears any rate. Links are one-way;
+other (`collided`). A node hears nothing while it transmits (half duplex): a reception that
+overlaps one of the receiver's own transmissions is lost to it (`deaf`), whichever began first.
+The node gets an `X` for a lost reception and trusts the air on both, so the air's record is
+what the firmware received. A node on another frequency, bandwidth or spreading factor hears
+nothing; the coding rate is in the packet's header, so a node hears any rate. Links are one-way;
 `link()` makes both directions by default. Two knobs per link stand in for a worse mesh: `loss`,
 the share of packets the receiver misses (it hears nothing of them), and `delay_s`, how much
 later than the sender's time on air a packet reaches the receiver (as if the mesh held it).
@@ -28,7 +31,7 @@ from types import TracebackType
 from typing import Any, Literal, TextIO, TypeVar
 
 T = TypeVar("T")
-Outcome = Literal["received", "collided", "lost"]
+Outcome = Literal["received", "collided", "deaf", "lost"]
 
 # src/Packet.h: the route in bits 0-1 of the header, the payload type in bits 2-5
 ROUTES = {0: "TF", 1: "F", 2: "D", 3: "TD"}  # (transport) flood, (transport) direct
@@ -89,6 +92,7 @@ class Transmission:
 class _Reception:
     end: float  # loop time
     collided: bool = False
+    deaf: bool = False  # the receiver transmitted during it
 
 
 class Air:
@@ -100,6 +104,7 @@ class Air:
         self.transmissions: list[Transmission] = []
         self._addresses: dict[int, tuple[str, int]] = {}
         self._receiving: dict[int, list[_Reception]] = {}
+        self._sending_until: dict[int, float] = {}  # by node: loop time its transmission ends
         self._timers: set[asyncio.TimerHandle] = set()
         self._transport: asyncio.DatagramTransport | None = None
         self._closed: asyncio.Event | None = None
@@ -188,6 +193,10 @@ class Air:
         self.transmissions.append(sent)
         self._write(f"{sender} TX {airtime_ms} ms {sent.kind} len={len(packet)} {packet.hex()}")
         self._timers = {t for t in self._timers if t.when() > now}
+        self._sending_until[sender] = now + airtime_ms / 1000
+        for reception in self._receiving.get(sender, []):
+            if reception.end > now:
+                reception.deaf = True  # half duplex: the sender no longer hears it
         own = self.settings.get(sender)
         for (a, b), link in list(self.links.items()):
             if a != sender or b not in self._addresses:
@@ -208,7 +217,7 @@ class Air:
         loop = asyncio.get_running_loop()
         now, airtime_s = loop.time(), sent.airtime_ms / 1000
         self._send(receiver, b"B" + struct.pack("<I", sent.airtime_ms))
-        reception = _Reception(now + airtime_s)
+        reception = _Reception(now + airtime_s, deaf=self._sending_until.get(receiver, 0.0) > now)
         ongoing = [r for r in self._receiving.get(receiver, []) if r.end > now]
         for other in ongoing:
             other.collided = reception.collided = True
@@ -219,7 +228,9 @@ class Air:
     def _deliver(
         self, sent: Transmission, receiver: int, link: Link, reception: _Reception
     ) -> None:
-        outcome: Outcome = "collided" if reception.collided else "received"
+        outcome: Outcome = (
+            "deaf" if reception.deaf else "collided" if reception.collided else "received"
+        )
         sent.outcomes[receiver] = outcome
         sent.ended[receiver] = round(asyncio.get_running_loop().time() - self._start, 3)
         if outcome == "received":

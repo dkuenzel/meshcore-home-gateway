@@ -152,6 +152,15 @@ def test_the_advert_button_sends_zero_hop_and_the_apps_flood_advert_is_repeated(
     asyncio.run(scenario())
 
 
+def at(found: lpp.LppPosition, place: tuple[float, float, float]) -> bool:
+    """Whether the position is the place's, to the cell of 1e-4 degrees."""
+    latitude, longitude, _ = place
+    return (
+        abs(found.lat_cells / 1e4 - latitude) < 1e-4
+        and abs(found.lon_cells / 1e4 - longitude) < 1e-4
+    )
+
+
 def test_without_a_fix_b_sends_its_last_position_and_after_a_reboot_the_saved_one(
     nodes: Nodes, air: AirThread
 ) -> None:
@@ -203,10 +212,14 @@ def test_without_a_fix_b_sends_its_last_position_and_after_a_reboot_the_saved_on
 
     first, second, last, saved = asyncio.run(scenario())
     assert first is not None
+    assert at(first, LANDMARK)
+    assert first.altitude_cm == round(LANDMARK[2] * 100)
     assert second is not None
+    assert at(second, SECOND_LANDMARK)  # the second fix took effect
+    assert second.altitude_cm == round(SECOND_LANDMARK[2] * 100)
+    assert second.cells != first.cells
     assert last == second  # no fix: the last one, with its altitude
     assert saved is not None
-    assert (saved.lat_cells, saved.lon_cells) == (first.lat_cells, first.lon_cells)
+    assert saved.cells == first.cells  # saved with the settings, before the second fix
+    assert saved.cells != last.cells
     assert saved.altitude_cm == 0
-    assert abs(first.lat_cells / 1e4 - LANDMARK[0]) < 1e-4
-    assert first.altitude_cm == round(LANDMARK[2] * 100)
