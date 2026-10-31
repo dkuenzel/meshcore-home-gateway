@@ -53,15 +53,18 @@ OWN = {"id", "entity_id", "unique_id", "device_id", "config_entry_id", "created_
 SPOKEN = ["xx", *(code for code in i18n.LANGUAGES if code != "en")]
 
 
-def pseudo(language: str = "xx") -> i18n.Translator:
-    """Every text of the template as `‹xx text›`, compiled in memory (ADR 0027)."""
+def pseudo(language: str = "xx", mark: str = "‹{language} {text}›") -> i18n.Translator:
+    """Every text of the template marked, `‹xx text›` unless `mark` says otherwise, compiled in
+    memory (ADR 0027)."""
     template = i18n.CATALOGS / "meshcore-home-gateway.pot"
     _, entries = catalog.read_po(template.read_text(encoding="utf-8"), template.name)
     marked = [
         dataclasses.replace(
             entry,
             msgstr=tuple(
-                f"‹{language} {text}›" for text in (entry.msgid, entry.msgid_plural) if text
+                mark.format(language=language, text=text)
+                for text in (entry.msgid, entry.msgid_plural)
+                if text
             ),
         )
         for entry in entries
@@ -75,12 +78,14 @@ def pseudo(language: str = "xx") -> i18n.Translator:
     return i18n.Translator(language, gettext.GNUTranslations(io.BytesIO(mo)))
 
 
-def offer(language: str, monkeypatch: pytest.MonkeyPatch) -> i18n.Translator:
+def offer(
+    language: str, monkeypatch: pytest.MonkeyPatch, mark: str = "‹{language} {text}›"
+) -> i18n.Translator:
     """The language's translator; the pseudo-language offered as a language of this version
     first: the configuration and the builders look the languages up through the module."""
     if language != "xx":
         return i18n.translator(language)
-    offered, original = pseudo(), i18n.translator
+    offered, original = pseudo(mark=mark), i18n.translator
     languages = MappingProxyType({**i18n.LANGUAGES, offered.language: "Pseudo"})
     monkeypatch.setattr(i18n, "LANGUAGES", languages)
 

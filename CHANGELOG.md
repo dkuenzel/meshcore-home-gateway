@@ -49,11 +49,20 @@ format, the command line and Home Assistant discovery are public interfaces
   contact event and the heard nodes, and a map with the contacts' traces. English; its texts are
   in the translation catalog. `--state-dir` names the service's state, from which it takes the
   contacts on the map.
+- docs/home-assistant.md *Dashboard*: installing it, the script *Mesh message* for the form, and
+  when to make it again.
 
 ### Changed
 
 - `check-config` writes "1 sender" or "2 senders" instead of "sender(s)", and names the language
   of the names in Home Assistant.
+
+### Fixed
+
+- The *Last mesh message* card in docs/home-assistant.md (*First steps*) now also replaces line
+  breaks in the sender's name: a contact's name is chosen by its owner, and with a blank line in
+  it the card's text after that line could load an image from the internet. Paste the card
+  again if you use it.
 
 ## [1.1.0a3] - 2026-10-31
 

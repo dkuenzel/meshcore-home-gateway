@@ -410,9 +410,11 @@ async def test_the_radio_profile_shows_its_status_and_settings(
 
 
 def guide_automations() -> list[dict[str, Any]]:
-    """The automations of docs/home-assistant.md, exactly as a user would paste them."""
+    """The automations of docs/home-assistant.md, exactly as a user would paste them (its
+    script, which has no triggers, aside: tests/test_dashboard.py)."""
     blocks = re.findall(r"```yaml\n(.*?)```", GUIDE.read_text(encoding="utf-8"), re.DOTALL)
-    return [yaml.safe_load(block) for block in blocks if block.startswith("alias:")]
+    loaded = [yaml.safe_load(block) for block in blocks if block.startswith("alias:")]
+    return [automation for automation in loaded if "triggers" in automation]
 
 
 async def test_the_documented_automations_work(
@@ -509,21 +511,25 @@ HOSTILE = (
     [
         (MessageKind.CONTACT, HOSTILE, Contact(SENDER, "<i>Mallory</i> [y](https://example.org)")),
         (MessageKind.CHANNEL, f"<b>Mallory</b>: {HOSTILE}", None),  # the claimed name, too
+        (MessageKind.CONTACT, HOSTILE, Contact(SENDER, "x\n\n![](https://example.org/p.png)")),
     ],
 )
 async def test_the_markdown_card_keeps_a_hostile_text_inert(
     hass: HomeAssistant, mqtt: Any, kind: MessageKind, text: str, sender: Contact | None
 ) -> None:
-    """Anyone in radio range writes the text and a channel sender's name. In a Markdown
-    paragraph even an escaped text becomes an image or a link; in an HTML block on one line, the
-    escaped text stays text (CommonMark: a blank line ends the block)."""
+    """Anyone in radio range writes the text and a channel sender's name, and a contact chooses
+    its own, line breaks included. In a Markdown paragraph even an escaped text becomes an image
+    or a link; in an HTML block on one line, the escaped text stays text (CommonMark: a blank line
+    ends the block)."""
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
     card = Template(guide_block("type: markdown\ntitle: Last mesh message")["content"], hass)
     message = InboundMessage(kind, text, 1_760_000_000, 1_760_000_001.0, sender_prefix=SENDER[:12],
                              channel_index=1 if kind is MessageKind.CHANNEL else None)  # fmt: skip
     await fire(hass, TOPICS.received, received_payload(message, sender, "alerts"))
-    lines = [line for line in card.async_render(parse_result=False).splitlines() if line.strip()]
+    output = card.async_render(parse_result=False)
+    assert not re.search(r"\n[ \t]*\n.*!\[", output, re.DOTALL)  # no image after a blank line
+    lines = [line for line in output.splitlines() if line.strip()]
     assert len(lines) == 1
     (line,) = lines
     assert line.startswith("<div>")

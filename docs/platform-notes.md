@@ -1168,7 +1168,9 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `www.example.org` intact; in a paragraph they become an `<img>` (a tracking pixel), an `<a>` and
   an autolink. A line that starts with `<div>` opens a CommonMark HTML block, which marked passes on
   as HTML, so the escaped text stays literal; a blank line ends the block, so line breaks in the
-  text must go. Anyone in radio range chooses a message's text and a channel sender's claimed name.
+  text must go: only LF and CR end it, while VT, FF, NEL, NUL, U+2028 and U+2029 inside a `<div>`
+  line keep it one HTML token. Anyone in radio range chooses a message's text, a channel sender's
+  claimed name and a contact's own name (an advert renames the contact), line breaks included.
   *Verified:* frontend `20260930.2`, the release Home Assistant 2026.10.0 pins:
   `src/resources/markdown-worker.ts:19-36` (whitelist) and `:71-74` (each token filtered),
   `src/components/ha-markdown-element.ts:92-93` (`gfm: true`), with marked 18.0.14 and xss 1.0.15
@@ -1176,9 +1178,16 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   steps](home-assistant.md#first-steps), rendered by Home Assistant 2026.10.0's template engine with
   a hostile text and sender name and then by a replica of that pipeline with the same library
   versions (not in a browser): the earlier card gave two `<img>` and three `<a>`, the current one a
-  single HTML token with everything literal. *Here:* the card escapes the text and the sender name
-  and keeps them in a `<div>` on one line; `test_the_markdown_card_keeps_a_hostile_text_inert` in
-  the contract tests checks the form of its output. *Check:* `printf
+  single HTML token with everything literal; a `<div>` line with two of each line ending in it
+  before the Markdown of an image: LF, CR and CRLF gave an `<img>`, the six others one HTML token. A
+  contact named `x`, a blank line and `![](https://example.org/p.png)` put the image after a blank
+  line in the card of 1.1.0a3, which escaped the sender's name but kept its line breaks. *Here:*
+  the card escapes the text and the sender name, replaces their line breaks with spaces, and keeps
+  them in a `<div>` on one line; each card of the generated dashboard prints every value it reads
+  from Home Assistant through one macro that does the same, on a line that is one `<div>`,
+  `<table>` or `<ha-qr-code>` element. `test_the_markdown_card_keeps_a_hostile_text_inert` and
+  `home-assistant/tests/test_dashboard.py` (hostile names, three with line breaks, in every place
+  a name reaches) check the form of their output. *Check:* `printf
   '![](https://example.org/p.png)' | npx marked@18.0.14` prints an `<img>`; `printf
   '<div>![](https://example.org/p.png)</div>' | npx marked@18.0.14` prints the input unchanged.
 
@@ -1223,13 +1232,45 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   from the database, the open subscription gets the next point, the person records its rows).
   *Here:* the guide says how expiry, restarts and the recorder exclusion look on a trace.
   *Check:* `make ha-test`.
-* **A map card's `conditions` filter the markers; the trails come from the configured entities,
-  with `show_all` from every entity with a location.** *Verified:* read only, frontend
-  `20260930.2`, `hui-map-card.ts` lines 451-456 (the markers filtered) and 609-633 (the trails'
-  request); whether a filtered entity still draws a trail is step 45 of the
-  [hardware checklist](testing.md#hardware-checklist). *Here:* the guide lists one tracker per
-  companion instead of `show_all`. *Check:* `sed -n 451,456p
-  src/panels/lovelace/cards/hui-map-card.ts` in the frontend's source at `20260930.2`.
+* **A map card's `conditions` filter only the markers: with `show_all`, every entity with a
+  location draws its trail, a phone's and a person's too, also when its marker is filtered out.
+  `show_all` takes the entities that have a location when the card gets its configuration; one
+  without a location then (an `unavailable` tracker) gets neither marker nor trail until the page
+  loads again.** *Verified:* read only, frontend `20260930.2`, `hui-map-card.ts` lines 160-178
+  (`show_all`: the entities with a location, persons' sources left out), 205-211 and 425-434 (taken
+  once), 451-458 (the markers filtered), 609-633 (the history of every configured entity) and
+  934-960 (a trail for each entity of that history); not run in a browser. *Here:* the guide's card
+  and the generated dashboard list one tracker per contact instead of `show_all`. *Check:* `sed -n
+  451,458p src/panels/lovelace/cards/hui-map-card.ts` in the frontend's source at `20260930.2`.
+* **A Markdown card's `entity_id` option does nothing: Home Assistant renders the template again
+  when what it read changes, and a template that calls `now()` also each minute.** The frontend
+  sends the option as `entity_ids` with the `render_template` subscription; Home Assistant accepts
+  the key and does not read it. *Verified:* 2026.10.0, source
+  `components/websocket_api/commands.py` lines 759 (the schema) and 767-850 (the handler); frontend
+  `20260930.2`, `hui-markdown-card.ts` lines 220-242. *Here:* the generated dashboard's contacts
+  table calls `now()` once, so a new contact shows within a minute also when no row has a time,
+  and reads its contacts from the registry, which sets up no listener; `test_dashboard.py` checks
+  `has_time` and that no card listens to a whole domain. *Check:* `make ha-test`.
+* **A card's visibility condition `state` reads a missing entity, and a missing attribute, as
+  `unknown`, and compares the values as they are: an unquoted `on` in YAML is the boolean true,
+  which matches no state.** *Verified:* read only, frontend `20260930.2`,
+  `src/panels/lovelace/common/validate-condition.ts` lines 161-207; Home Assistant 2026.10.0 loads
+  a YAML-mode dashboard with PyYAML, which reads YAML 1.1, where `on` is a boolean. *Here:* the
+  dashboard's hint for the script shows while `script.mesh_message` is missing
+  (`state_not: ["on", "off"]`), the version card hides while the gateway is unavailable (its
+  attributes go then), and every `on`, `off` and version is quoted;
+  `test_cards_show_only_while_their_state_says_so` evaluates the conditions as that code does.
+  *Check:* `sed -n 161,207p src/panels/lovelace/common/validate-condition.ts` at `20260930.2`.
+* **A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and
+  its more-info dialog shows a form for its `fields`.** *Verified:* read only, frontend
+  `20260930.2`, `src/panels/config/script/ha-script-editor.ts` lines 714-722 and 959-980,
+  `src/dialogs/more-info/controls/more-info-script.ts` lines 63-131 (the fields from the services'
+  descriptions); Home Assistant 2026.10.0 registers them as the script's description
+  (`components/script/__init__.py` lines 759-765), and its service takes any data, so `fields`
+  only make the form. *Here:* the guide's script *Mesh message* is `script.mesh_message` when its
+  name is kept, and the dashboard's tile opens its form;
+  `test_the_guides_script_is_a_form_that_sends_for_a_household_user` checks its description and
+  that a household user sends with it. *Check:* `make ha-test`.
 
 ## MeshCore companion firmware
 
