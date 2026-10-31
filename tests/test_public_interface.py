@@ -476,6 +476,27 @@ def test_the_command_line_compares_and_writes(
     assert capsys.readouterr().out == f"{path} is the public interface of the code\n"
 
 
+def test_the_command_line_takes_the_snapshot_in_english(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, current: dict[str, Any]
+) -> None:
+    """The command line follows the environment's language (ADR 0019): the snapshot must not
+    follow the shell that runs `make interface`, so main() takes it as the tests do."""
+    _with_snapshot(monkeypatch, tmp_path, current, tool.render(current))
+    names = ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")
+    for name in names:
+        monkeypatch.setenv(name, "de_DE.UTF-8")
+    seen = []
+
+    def surface() -> dict[str, Any]:
+        seen.append({name: os.environ.get(name) for name in names})
+        return copy.deepcopy(current)
+
+    monkeypatch.setattr(interface, "surface", surface)
+    assert interface.main([]) == 0
+    assert seen == [{"LANGUAGE": None, "LC_ALL": "C.UTF-8", "LC_MESSAGES": None, "LANG": None}]
+    assert os.environ["LANGUAGE"] == "de_DE.UTF-8"  # the caller's environment again
+
+
 def test_the_command_line_without_a_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

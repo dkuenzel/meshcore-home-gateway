@@ -12,6 +12,8 @@ import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
+from meshcore_home_gateway.texts import TextError
+
 KEY_HEX_DIGITS = 64
 PREFIX_HEX_DIGITS = 12
 _HEX = re.compile(r"[0-9a-f]+")
@@ -24,10 +26,12 @@ def is_key(text: str) -> bool:
 
 
 def normalise_key(key: str) -> str:
-    """Lower-case a full public key (32 bytes, 64 hex digits) or raise ValueError."""
+    """Lower-case a full public key (32 bytes, 64 hex digits) or raise ValueError (a TextError)."""
     value = key.strip().lower()
     if len(value) != KEY_HEX_DIGITS or not _HEX.fullmatch(value):
-        raise ValueError(f"public key must be {KEY_HEX_DIGITS} hex digits, got {key!r}")
+        raise TextError(
+            "public key must be {digits} hex digits, got {key!r}", digits=KEY_HEX_DIGITS, key=key
+        )
     return value
 
 

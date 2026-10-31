@@ -47,7 +47,7 @@ from unittest import mock
 
 import paho.mqtt.client as paho
 
-from meshcore_home_gateway import __version__, cli, views
+from meshcore_home_gateway import __version__, cli, i18n, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
@@ -227,6 +227,7 @@ prefix = "{PREFIX}"
 device_name = "Gateway"
 status_topic = "{STATUS}"
 contact_devices = 10
+language = "en"
 [messages]
 ascii_only = true
 truncate = false
@@ -748,6 +749,7 @@ def _choice_keys() -> dict[str, tuple[Sequence[str], Callable[[str], dict[str, s
         "radio.transport": (_literal(configuration.RadioConfig, "transport"), _transport),
         "radio.profile.manage": (_literal(ProfileConfig, "manage"), lambda _: {}),
         "diagnostics.log_level": (configuration.LOG_LEVELS, lambda _: {}),
+        "homeassistant.language": (tuple(i18n.LANGUAGES), lambda _: {}),
     }
 
 
@@ -1578,11 +1580,23 @@ def _report(committed: str, current: dict[str, Any], *, written: bool) -> str:
     return "\n".join(_findings(findings)) or f"{_shown(SNAPSHOT)}: only its form changes"
 
 
+@contextlib.contextmanager
+def english() -> Iterator[None]:
+    """The environment of an English command line, as tests/conftest.py gives every test: the
+    command line follows the environment's language (ADR 0019), the snapshot never does."""
+    with mock.patch.dict(os.environ):
+        for name in ("LANGUAGE", "LC_MESSAGES", "LANG"):
+            os.environ.pop(name, None)
+        os.environ["LC_ALL"] = "C.UTF-8"
+        yield
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="the public interface of the code (snapshot)")
     parser.add_argument("--write", action="store_true", help="write the snapshot (make interface)")
     args = parser.parse_args(argv)
-    current = surface()
+    with english():
+        current = surface()
     text = tool.render(current)
     committed = SNAPSHOT.read_text(encoding="utf-8") if SNAPSHOT.exists() else None
     if args.write:

@@ -89,13 +89,32 @@ def tls_context(config: MqttConfig) -> ssl.SSLContext:
     try:
         context = ssl.create_default_context(cafile=config.ca_file)
     except OSError as exc:  # also ssl.SSLError: not a certificate
-        raise ConfigError(f"mqtt.ca_file: cannot load {config.ca_file}: {_reason(exc)}") from exc
+        # Translators: key is a setting, path a file, detail the system's or OpenSSL's reason.
+        raise ConfigError(
+            "{key}: cannot load {path}: {detail}",
+            key="mqtt.ca_file",
+            path=config.ca_file,
+            detail=_reason(exc),
+        ) from exc
     if config.cert_file:
         try:
             context.load_cert_chain(config.cert_file, config.key_file)
         except OSError as exc:
-            files = " and ".join(f for f in (config.cert_file, config.key_file) if f)
-            raise ConfigError(f"mqtt.cert_file: cannot load {files}: {_reason(exc)}") from exc
+            if config.key_file:
+                # Translators: key is the setting mqtt.cert_file; path and key_file are files.
+                raise ConfigError(
+                    "{key}: cannot load {path} and {key_file}: {detail}",
+                    key="mqtt.cert_file",
+                    path=config.cert_file,
+                    key_file=config.key_file,
+                    detail=_reason(exc),
+                ) from exc
+            raise ConfigError(
+                "{key}: cannot load {path}: {detail}",
+                key="mqtt.cert_file",
+                path=config.cert_file,
+                detail=_reason(exc),
+            ) from exc
     return context
 
 

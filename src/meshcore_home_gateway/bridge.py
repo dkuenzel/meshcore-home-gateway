@@ -92,6 +92,7 @@ from meshcore_home_gateway.radio.transport import Transport
 from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger, TelemetryRecords
 from meshcore_home_gateway.systemd import notify, watchdog_interval_s
 from meshcore_home_gateway.telemetry_poller import OutboxActivity, TelemetryPoller
+from meshcore_home_gateway.texts import Text
 
 log = logging.getLogger(__name__)
 
@@ -1088,20 +1089,26 @@ def protected_keys(config: Config) -> frozenset[str]:
     return frozenset(targets | set(config.commands.senders))
 
 
-def protected_look_alikes(config: Config) -> list[str]:
+def protected_look_alikes(config: Config) -> list[Text]:
     """Warnings about protected keys with one 6-byte prefix: the radio names a sender by its
     prefix only, so it can hold one of them (ADR 0009); the managed profile adds them in key
-    order."""
-    roles: dict[str, list[str]] = {}
+    order. Logged in English, shown by `check-config` in the command line's language."""
+    roles: dict[str, list[Text]] = {}
     for target in config.targets:
         if target.public_key is not None:
-            roles.setdefault(target.public_key, []).append(f"target {target.alias}")
+            roles.setdefault(target.public_key, []).append(
+                Text("target {alias}", alias=target.alias)
+            )
     for key in config.commands.senders:
-        roles.setdefault(key, []).append("command sender")
+        roles.setdefault(key, []).append(Text("command sender"))
     keys = sorted(roles)
 
-    def named(key: str) -> str:
-        return f"{key[:12]}…{key[-8:]} ({', '.join(roles[key])})"
+    def short(key: str) -> str:
+        return f"{key[:12]}…{key[-8:]}"
+
+    def named(key: str) -> Text:
+        # Translators: a contact's key, shortened, and its roles, such as "target gate".
+        return Text("{key} ({roles})", key=short(key), roles=tuple(roles[key]))
 
     profile = config.radio.profile
     writes = profile.protect_contacts and profile.manage != "observe"
@@ -1109,14 +1116,26 @@ def protected_look_alikes(config: Config) -> list[str]:
     for i, a in enumerate(keys):
         for b in (k for k in keys[i + 1 :] if k[:12] == a[:12]):
             if writes:  # in key order, and never next to the other
-                outcome = (f"the managed profile, when it writes, adds {a[:12]}…{a[-8:]} unless "
-                           "the other is on the radio, never both")  # fmt: skip
+                # Translators: first and second are contacts, each a shortened key and its roles;
+                # key is the first one's key. A security warning: the radio may hold the wrong one.
+                warning = Text(
+                    "protected contacts {first} and {second} have the same first 6 bytes: the "
+                    "radio names a sender by them only (ADR 0009); the managed profile, when it "
+                    "writes, adds {key} unless the other is on the radio, never both",
+                    first=named(a),
+                    second=named(b),
+                    key=short(a),
+                )
             else:
-                outcome = "the gateway adds neither, and refuses requests to add either"
-            warnings.append(
-                f"protected contacts {named(a)} and {named(b)} have the same first 6 bytes: the "
-                f"radio names a sender by them only (ADR 0009); {outcome}"
-            )
+                # Translators: first and second are contacts, each a shortened key and its roles.
+                warning = Text(
+                    "protected contacts {first} and {second} have the same first 6 bytes: the "
+                    "radio names a sender by them only (ADR 0009); the gateway adds neither, and "
+                    "refuses requests to add either",
+                    first=named(a),
+                    second=named(b),
+                )
+            warnings.append(warning)
     return warnings
 
 

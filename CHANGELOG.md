@@ -20,6 +20,12 @@ format, the command line and Home Assistant discovery are public interfaces
   companion's phone app played on the gateway's own codec
   ([testing.md](docs/testing.md#steps-2945-on-the-simulated-air) lists what they show).
   `make check` still needs neither a compiler nor network.
+- `[homeassistant] language` (default `en`): the language of the entity, device and model names
+  the gateway sends to Home Assistant, also of the default device name `MeshCore radio`; one of
+  the languages the gateway translates them into
+  ([configuration.md](docs/configuration.md#homeassistant)). Entity IDs, event types, options,
+  attributes and units stay the same in every language; a change renames only the display names
+  at the next start, and names you changed stay.
 
 ## [1.1.0a3] - 2026-10-31
 

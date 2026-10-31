@@ -190,6 +190,59 @@ def test_texts_whose_values_come_later_are_extracted(tmp_path: Path, call: str) 
     assert len(extract(tmp_path, f"def show(n, values):\n    {call}\n")) == 1
 
 
+ERRORS = """\
+def check(key, kind, problem):
+    # Translators: key is a setting, such as mqtt.port.
+    raise ConfigError("{key}: required", key=key)
+    raise config.ConfigError("{key}: {detail}", key=key, detail=problem)
+    raise ConfigError(problem.msgid, **problem.values)
+    raise LinkError("invalid_link", "the contact link is malformed")
+    raise links.LinkError("unsupported_type", "the contact link has type {kind!r}", kind=kind)
+"""
+
+
+def test_configuration_and_link_errors_are_extracted(tmp_path: Path) -> None:
+    """ConfigError takes its text first, LinkError second, after the reason, which is a code."""
+    found = extract(tmp_path, ERRORS)
+    brace = ("python-brace-format",)
+    reference = (MODULE,)
+    assert found == {
+        "{key}: required": Entry(
+            "{key}: required",
+            ("",),
+            flags=brace,
+            comments=("key is a setting, such as mqtt.port.",),
+            references=reference,
+        ),
+        "{key}: {detail}": Entry("{key}: {detail}", ("",), flags=brace, references=reference),
+        "the contact link is malformed": Entry(
+            "the contact link is malformed", ("",), references=reference
+        ),
+        "the contact link has type {kind!r}": Entry(
+            "the contact link has type {kind!r}", ("",), flags=brace, references=reference
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("call", "reason"),
+    [
+        ('ConfigError(f"{key}: required")', "string literal"),
+        ('config.ConfigError("{key}: " + "required", key=key)', "string literal"),
+        ('ConfigError("{key}: required")', "no value for key"),
+        ('LinkError("unsupported_type", f"the contact link has type {kind!r}")', "string literal"),
+        ('LinkError("unsupported_type", "the link has type {kind!r}")', "no value for kind"),
+        ('LinkError("invalid_link")', "no text"),
+        ('LinkError("invalid_link", "")', "empty"),
+    ],
+)
+def test_configuration_and_link_errors_that_cannot_be_extracted_are_refused(
+    tmp_path: Path, call: str, reason: str
+) -> None:
+    with pytest.raises(tool.ExtractError, match=f"^{MODULE}:2: .*{reason}"):
+        extract(tmp_path, f"def check(key, kind):\n    raise {call}\n")
+
+
 def test_argparse_texts_are_listed_with_their_flag(tmp_path: Path) -> None:
     listed = tmp_path / "tools" / "argparse_messages.json"
     listed.parent.mkdir()

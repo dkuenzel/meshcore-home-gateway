@@ -142,6 +142,8 @@ KEYWORDS: Final = {
     "pgettext": Keyword(msgid=1, context=0),
     "Text": Keyword(),
     "TextError": Keyword(),
+    "ConfigError": Keyword(),
+    "LinkError": Keyword(msgid=1),  # after the reason, a code of the contact event
 }
 
 

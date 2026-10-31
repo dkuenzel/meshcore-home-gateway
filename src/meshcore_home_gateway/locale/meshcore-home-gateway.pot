@@ -5,6 +5,320 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: src/meshcore_home_gateway/bridge.py
+msgid "command sender"
+msgstr ""
+
+#. first and second are contacts, each a shortened key and its roles.
+#: src/meshcore_home_gateway/bridge.py
+#, python-brace-format
+msgid "protected contacts {first} and {second} have the same first 6 bytes: the radio names a sender by them only (ADR 0009); the gateway adds neither, and refuses requests to add either"
+msgstr ""
+
+#. first and second are contacts, each a shortened key and its roles;
+#. key is the first one's key. A security warning: the radio may hold the wrong one.
+#: src/meshcore_home_gateway/bridge.py
+#, python-brace-format
+msgid "protected contacts {first} and {second} have the same first 6 bytes: the radio names a sender by them only (ADR 0009); the managed profile, when it writes, adds {key} unless the other is on the radio, never both"
+msgstr ""
+
+#: src/meshcore_home_gateway/bridge.py
+#, python-brace-format
+msgid "target {alias}"
+msgstr ""
+
+#. a contact's key, shortened, and its roles, such as "target gate".
+#: src/meshcore_home_gateway/bridge.py
+#, python-brace-format
+msgid "{key} ({roles})"
+msgstr ""
+
+#. the rule of node IDs and target aliases, after "use" or "alias must be".
+#: src/meshcore_home_gateway/config.py
+msgid "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit, not ending with '-' or '_', and no two of them in a row"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "a host name or IP address only (a part between dots is empty or longer than 63 characters), got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "a host name or IP address only, an IPv6 address without brackets, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "a host name or IP address only, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "a host name or IP address only, without a scheme such as mqtt:// (TLS and port are settings of their own), got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "a host name or IP address only, without the port (that is the setting port), got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "answers line {number}: expected key=value"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "cannot read {path}: not valid UTF-8 (byte {byte})"
+msgstr ""
+
+#. detail is the system's reason, such as "No such file or directory".
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "cannot read {path}: {detail}"
+msgstr ""
+
+#. detail is the TOML reader's English text, with the line and column.
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "invalid TOML: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: 1 to {most} bytes of UTF-8 without control characters, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: a single topic segment, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: alias must be {rule}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: an item contains a comma, which the answers cannot express"
+msgstr ""
+
+#. kind is a Python type: str, int, float, bool or list.
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: cannot read {value!r} as {kind}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: contains a line break, which the answers cannot express"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected a list of integers {lo}..{hi}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected a list of strings"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected a non-empty string"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected a number"
+msgstr ""
+
+#. key is a setting or table of the file, such as mqtt or mqtt.port.
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected a table"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected an integer"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected channel:<index> or contact:<public key>, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected true or false"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: must be 'serial' or 'tcp', got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: must be an absolute path, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: must be between {lo} and {hi}, got {value}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: needs cert_file"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: needs username"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: no blank at the start or end, got {value!r}"
+msgstr ""
+
+#. choices are the values the setting takes, such as "debug, info, warning, error".
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: one of {choices}, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: only used with tls = true"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: only used with transport = {transport!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: required"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: required for the serial transport"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: required for the tcp transport"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: segments of A-Z, a-z, 0-9, '-', '_' separated by '/', got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: set exactly one of 'channel' or 'contact'"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: unknown answer"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: unknown setting"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: use {rule}, got {value!r}"
+msgstr ""
+
+#. key is a setting; detail is a whole text of its own, such as "a host name
+#. or IP address only, got 'mqtt://broker'".
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/core/commands.py
+#, python-brace-format
+msgid "command word must be a single word, got {word!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/core/commands.py
+#, python-brace-format
+msgid "max_age_s must not be negative, got {value}"
+msgstr ""
+
+#: src/meshcore_home_gateway/core/contacts.py
+#, python-brace-format
+msgid "public key must be {digits} hex digits, got {key!r}"
+msgstr ""
+
+#. key is the setting mqtt.cert_file; path and key_file are files.
+#: src/meshcore_home_gateway/mqtt/client.py
+#, python-brace-format
+msgid "{key}: cannot load {path} and {key_file}: {detail}"
+msgstr ""
+
+#. key is a setting, path a file, detail the system's or OpenSSL's reason.
+#: src/meshcore_home_gateway/mqtt/client.py
+#, python-brace-format
+msgid "{key}: cannot load {path}: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "a MeshCore link, but not one that adds a contact"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "not a contact link or contact card"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "not a public key, contact link or contact card"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+#, python-brace-format
+msgid "the contact card has type {node_type}"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "the contact card holds no advert"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "the contact link has no valid public key"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+#, python-brace-format
+msgid "the contact link has type {kind!r}, not 1 to 4"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "the contact link is malformed"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "the contact link repeats a parameter"
+msgstr ""
+
+#: src/meshcore_home_gateway/protocol/links.py
+msgid "the text is not valid Unicode"
+msgstr ""
+
 #. Python's argparse: usage, help and errors
 #: tools/argparse_messages.json
 #, python-format

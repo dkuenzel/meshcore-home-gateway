@@ -17,6 +17,7 @@
     "homeassistant.contact_devices",
     "homeassistant.device_name",
     "homeassistant.discovery",
+    "homeassistant.language",
     "homeassistant.prefix",
     "homeassistant.status_topic",
     "messages.ascii_only",
@@ -680,6 +681,14 @@
    "answer": "bool",
    "default": true,
    "type": "boolean"
+  },
+  "homeassistant.language": {
+   "answer": "str",
+   "choices": [
+    "en"
+   ],
+   "default": "en",
+   "type": "string"
   },
   "homeassistant.prefix": {
    "answer": "str",

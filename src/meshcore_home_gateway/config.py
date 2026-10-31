@@ -15,12 +15,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from meshcore_home_gateway import i18n
 from meshcore_home_gateway.core.commands import CommandRules
 from meshcore_home_gateway.core.contacts import normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
+from meshcore_home_gateway.texts import Text, TextError
 
 ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
-ID_RULE = (
+# Translators: the rule of node IDs and target aliases, after "use" or "alias must be".
+ID_RULE = Text(
     "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit, not ending with '-' or '_', "
     "and no two of them in a row"
 )
@@ -37,10 +40,12 @@ MAX_RADIO_NAME_BYTES = 31  # the radio keeps 32 bytes with the terminating NUL
 MIN_BURST_S = (
     5.0  # must hold the longest single packet (about 2 s at SF 8 / 62.5 kHz, configuration.md)
 )
+DEFAULT_DEVICE_NAME = "MeshCore radio"  # sent in the language of the names (docs/configuration.md)
 
 
-class ConfigError(ValueError):
-    """Invalid configuration; the message names the key."""
+class ConfigError(TextError):
+    """Invalid configuration; the message names the key. str() is English (the journal), `.text`
+    is for the command line, which shows it in its language."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,9 +92,10 @@ class MqttConfig:
 class HomeAssistantConfig:
     discovery: bool = True
     prefix: str = "homeassistant"
-    device_name: str = "MeshCore radio"
+    device_name: str = DEFAULT_DEVICE_NAME
     status_topic: str = "homeassistant/status"
     contact_devices: int = 50  # contacts with a device of their own (ADR 0017)
+    language: str = "en"  # of the names sent to Home Assistant (ADR 0019)
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,16 +170,20 @@ def read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise ConfigError(f"cannot read {path}: {exc.strerror}") from exc
+        # Translators: detail is the system's reason, such as "No such file or directory".
+        raise ConfigError("cannot read {path}: {detail}", path=path, detail=exc.strerror) from exc
     except UnicodeDecodeError as exc:
-        raise ConfigError(f"cannot read {path}: not valid UTF-8 (byte {exc.start})") from exc
+        raise ConfigError(
+            "cannot read {path}: not valid UTF-8 (byte {byte})", path=path, byte=exc.start
+        ) from exc
 
 
 def parse_config(text: str) -> Config:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"invalid TOML: {exc}") from exc
+        # Translators: detail is the TOML reader's English text, with the line and column.
+        raise ConfigError("invalid TOML: {detail}", detail=str(exc)) from exc
     return _build(_Section(data, ""))
 
 
@@ -203,7 +213,8 @@ class _Section:
         if value is None:
             value = {}
         if not isinstance(value, dict):
-            raise ConfigError(f"{self.key(name)}: expected a table")
+            # Translators: key is a setting or table of the file, such as mqtt or mqtt.port.
+            raise ConfigError("{key}: expected a table", key=self.key(name))
         return _Section(value, self.key(name))
 
     def string(
@@ -212,10 +223,10 @@ class _Section:
         value = self.raw(name)
         if value is None:
             if required:
-                raise ConfigError(f"{self.key(name)}: required")
+                raise ConfigError("{key}: required", key=self.key(name))
             return default
         if not isinstance(value, str) or not value.strip():
-            raise ConfigError(f"{self.key(name)}: expected a non-empty string")
+            raise ConfigError("{key}: expected a non-empty string", key=self.key(name))
         return value
 
     def boolean(self, name: str, default: bool) -> bool:
@@ -223,7 +234,7 @@ class _Section:
         if value is None:
             return default
         if not isinstance(value, bool):
-            raise ConfigError(f"{self.key(name)}: expected true or false")
+            raise ConfigError("{key}: expected true or false", key=self.key(name))
         return value
 
     def integer(self, name: str, default: int, lo: int, hi: int) -> int:
@@ -231,9 +242,9 @@ class _Section:
         if value is None:
             return default
         if not isinstance(value, int) or isinstance(value, bool):
-            raise ConfigError(f"{self.key(name)}: expected an integer")
+            raise ConfigError("{key}: expected an integer", key=self.key(name))
         if not lo <= value <= hi:
-            raise ConfigError(f"{self.key(name)}: must be between {lo} and {hi}, got {value}")
+            raise _out_of_range(self.key(name), lo, hi, value)
         return value
 
     def number(self, name: str, default: float, lo: float, hi: float = math.inf) -> float:
@@ -241,9 +252,9 @@ class _Section:
         if value is None:
             return default
         if not isinstance(value, int | float) or isinstance(value, bool):
-            raise ConfigError(f"{self.key(name)}: expected a number")
+            raise ConfigError("{key}: expected a number", key=self.key(name))
         if not lo <= value <= hi:
-            raise ConfigError(f"{self.key(name)}: must be between {lo} and {hi}, got {value}")
+            raise _out_of_range(self.key(name), lo, hi, value)
         return float(value)
 
     def strings(self, name: str) -> list[str]:
@@ -251,7 +262,7 @@ class _Section:
         if value is None:
             return []
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-            raise ConfigError(f"{self.key(name)}: expected a list of strings")
+            raise ConfigError("{key}: expected a list of strings", key=self.key(name))
         return cast(list[str], value)
 
     def integers(self, name: str, lo: int, hi: int) -> list[int]:
@@ -261,7 +272,9 @@ class _Section:
         if not isinstance(value, list) or not all(
             isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi for v in value
         ):
-            raise ConfigError(f"{self.key(name)}: expected a list of integers {lo}..{hi}")
+            raise ConfigError(
+                "{key}: expected a list of integers {lo}..{hi}", key=self.key(name), lo=lo, hi=hi
+            )
         return cast(list[int], value)
 
     def names(self) -> list[str]:
@@ -270,7 +283,20 @@ class _Section:
     def check_unknown(self) -> None:
         for name in self._data:
             if name not in self._read:
-                raise ConfigError(f"{self.key(name)}: unknown setting")
+                raise ConfigError("{key}: unknown setting", key=self.key(name))
+
+
+def _out_of_range(key: str, lo: float, hi: float, value: float) -> ConfigError:
+    return ConfigError(
+        "{key}: must be between {lo} and {hi}, got {value}", key=key, lo=lo, hi=hi, value=value
+    )
+
+
+def _one_of(key: str, choices: Iterable[str], value: object) -> ConfigError:
+    # Translators: choices are the values the setting takes, such as "debug, info, warning, error".
+    return ConfigError(
+        "{key}: one of {choices}, got {value!r}", key=key, choices=", ".join(choices), value=value
+    )
 
 
 def _checked(section: _Section, builder: Callable[[_Section], Any]) -> Any:
@@ -300,16 +326,24 @@ def _build(root: _Section) -> Config:
 def _radio(s: _Section) -> RadioConfig:
     transport = s.string("transport", required=True)
     if transport not in ("serial", "tcp"):
-        raise ConfigError(f"{s.key('transport')}: must be 'serial' or 'tcp', got {transport!r}")
+        raise ConfigError(
+            "{key}: must be 'serial' or 'tcp', got {value!r}",
+            key=s.key("transport"),
+            value=transport,
+        )
     for name, used_by in (("device", "serial"), ("host", "tcp"), ("port", "tcp")):
         if s.has(name) and transport != used_by:  # it would have no effect
-            raise ConfigError(f"{s.key(name)}: only used with transport = {used_by!r}")
+            raise ConfigError(
+                "{key}: only used with transport = {transport!r}",
+                key=s.key(name),
+                transport=used_by,
+            )
     device = _absolute_path(s, "device")
     host = _host(s)
     if transport == "serial" and device is None:
-        raise ConfigError(f"{s.key('device')}: required for the serial transport")
+        raise ConfigError("{key}: required for the serial transport", key=s.key("device"))
     if transport == "tcp" and host is None:
-        raise ConfigError(f"{s.key('host')}: required for the tcp transport")
+        raise ConfigError("{key}: required for the tcp transport", key=s.key("host"))
     return RadioConfig(
         transport=cast(Literal["serial", "tcp"], transport),
         device=device,
@@ -323,14 +357,16 @@ def _radio(s: _Section) -> RadioConfig:
 def _profile(s: _Section) -> ProfileConfig:
     manage = s.string("manage", "auto")
     if manage not in ("auto", "observe", "always"):
-        raise ConfigError(f"{s.key('manage')}: one of auto, observe, always, got {manage!r}")
+        raise _one_of(s.key("manage"), ("auto", "observe", "always"), manage)
     name = s.string("name")
     if name is not None:
         size = len(name.encode("utf-8"))
         if not 1 <= size <= MAX_RADIO_NAME_BYTES or any(ord(c) < 0x20 or c == "\x7f" for c in name):
             raise ConfigError(
-                f"{s.key('name')}: 1 to {MAX_RADIO_NAME_BYTES} bytes of UTF-8 without control "
-                f"characters, got {name!r}"
+                "{key}: 1 to {most} bytes of UTF-8 without control characters, got {value!r}",
+                key=s.key("name"),
+                most=MAX_RADIO_NAME_BYTES,
+                value=name,
             )
     duty = None
     if s.has("duty_cycle_percent"):  # the firmware cannot limit below 10 % (ADR 0020)
@@ -347,10 +383,12 @@ def _host(s: _Section, *, required: bool = False) -> str | None:
     """A host name or address. A URL or `host:port` would only fail when connecting; a name that
     the resolver cannot encode (an empty or overlong part) would end paho's network thread."""
     host = s.string("host", required=required)
-    hint = None if host is None else _host_problem(host)
-    if hint is None:
+    problem = None if host is None else _host_problem(host)
+    if problem is None:
         return host
-    raise ConfigError(f"{s.key('host')}: a host name or IP address only{hint}, got {host!r}")
+    # Translators: key is a setting; detail is a whole text of its own, such as "a host name
+    # or IP address only, got 'mqtt://broker'".
+    raise ConfigError("{key}: {detail}", key=s.key("host"), detail=problem)
 
 
 def _ipv6_address(host: str) -> bool:
@@ -362,28 +400,46 @@ def _ipv6_address(host: str) -> bool:
     return not percent or HOST_NAME.fullmatch(zone) is not None
 
 
-def _host_problem(host: str) -> str | None:
-    """None for a usable host, else a hint for the message (may be empty)."""
+def _host_problem(host: str) -> Text | None:
+    """None for a usable host, else what is wrong with it, one whole text per case."""
     if "://" in host:
-        return ", without a scheme such as mqtt:// (TLS and port are settings of their own)"
+        return Text(
+            "a host name or IP address only, without a scheme such as mqtt:// (TLS and port are "
+            "settings of their own), got {value!r}",
+            value=host,
+        )
     if "]:" in host or (host.count(":") == 1 and "[" not in host):
-        return ", without the port (that is the setting port)"
+        return Text(
+            "a host name or IP address only, without the port (that is the setting port), "
+            "got {value!r}",
+            value=host,
+        )
     if "[" in host or "]" in host:
-        return ", an IPv6 address without brackets"
+        return Text(
+            "a host name or IP address only, an IPv6 address without brackets, got {value!r}",
+            value=host,
+        )
+    anything_else = Text("a host name or IP address only, got {value!r}", value=host)
     if ":" in host:  # an IPv6 address, with a zone for a link-local one
-        return None if _ipv6_address(host) else ""
+        return None if _ipv6_address(host) else anything_else
     try:
         name = host.encode("idna").decode("ascii")  # what the resolver gets, as Python sends it
     except UnicodeError:
-        return " (a part between dots is empty or longer than 63 characters)"
-    return None if HOST_NAME.fullmatch(name) else ""
+        return Text(
+            "a host name or IP address only (a part between dots is empty or longer than 63 "
+            "characters), got {value!r}",
+            value=host,
+        )
+    return None if HOST_NAME.fullmatch(name) else anything_else
 
 
 def _absolute_path(s: _Section, name: str) -> str | None:
     """A file path that does not depend on the working directory: the service runs in /."""
     value = s.string(name)
     if value is not None and not Path(value).is_absolute():
-        raise ConfigError(f"{s.key(name)}: must be an absolute path, got {value!r}")
+        raise ConfigError(
+            "{key}: must be an absolute path, got {value!r}", key=s.key(name), value=value
+        )
     return value
 
 
@@ -394,25 +450,28 @@ def _is_id(name: str) -> bool:
 def _mqtt(s: _Section) -> MqttConfig:
     node_id = cast(str, s.string("node_id", required=True))
     if not _is_id(node_id):
-        raise ConfigError(f"{s.key('node_id')}: use {ID_RULE}, got {node_id!r}")
+        raise ConfigError(
+            "{key}: use {rule}, got {value!r}", key=s.key("node_id"), rule=ID_RULE, value=node_id
+        )
     base = cast(str, s.string("base_topic", "meshcore"))
     if not all(TOPIC_SEGMENT.fullmatch(part) for part in base.split("/")):
-        raise ConfigError(
-            f"{s.key('base_topic')}: segments of A-Z, a-z, 0-9, '-', '_' separated by '/', "
-            f"got {base!r}"
-        )
+        raise _not_segments(s.key("base_topic"), base)
     tls = s.boolean("tls", False)
     files = {name: _absolute_path(s, name) for name in ("ca_file", "cert_file", "key_file")}
     for name, value in files.items():
         if value is not None and not tls:  # never fall back to a plain connection silently
-            raise ConfigError(f"{s.key(name)}: only used with tls = true")
+            raise ConfigError("{key}: only used with tls = true", key=s.key(name))
     if files["key_file"] is not None and files["cert_file"] is None:
-        raise ConfigError(f"{s.key('key_file')}: needs cert_file")
+        raise ConfigError("{key}: needs cert_file", key=s.key("key_file"))
     username, password = s.string("username"), s.string("password")
     if password is not None and username is None:  # the client would not send it
-        raise ConfigError(f"{s.key('password')}: needs username")
+        raise ConfigError("{key}: needs username", key=s.key("password"))
     if username is not None and username != username.strip():  # copied with a blank, mostly
-        raise ConfigError(f"{s.key('username')}: no blank at the start or end, got {username!r}")
+        raise ConfigError(
+            "{key}: no blank at the start or end, got {value!r}",
+            key=s.key("username"),
+            value=username,
+        )
     return MqttConfig(
         host=cast(str, _host(s, required=True)),
         node_id=node_id,
@@ -432,19 +491,30 @@ def _mqtt(s: _Section) -> MqttConfig:
 def _homeassistant(s: _Section) -> HomeAssistantConfig:
     prefix = cast(str, s.string("prefix", "homeassistant"))
     if not TOPIC_SEGMENT.fullmatch(prefix):
-        raise ConfigError(f"{s.key('prefix')}: a single topic segment, got {prefix!r}")
+        raise ConfigError(
+            "{key}: a single topic segment, got {value!r}", key=s.key("prefix"), value=prefix
+        )
     status_topic = cast(str, s.string("status_topic", "homeassistant/status"))
     if not all(TOPIC_SEGMENT.fullmatch(part) for part in status_topic.split("/")):
-        raise ConfigError(
-            f"{s.key('status_topic')}: segments of A-Z, a-z, 0-9, '-', '_' separated by '/', "
-            f"got {status_topic!r}"
-        )
+        raise _not_segments(s.key("status_topic"), status_topic)
+    language = cast(str, s.string("language", "en"))
+    if language not in i18n.LANGUAGES:  # read now: the tests offer a language of their own
+        raise _one_of(s.key("language"), i18n.LANGUAGES, language)
     return HomeAssistantConfig(
         discovery=s.boolean("discovery", True),
         prefix=prefix,
-        device_name=cast(str, s.string("device_name", "MeshCore radio")),
+        device_name=cast(str, s.string("device_name", DEFAULT_DEVICE_NAME)),
         status_topic=status_topic,
         contact_devices=s.integer("contact_devices", 50, 0, MAX_CONTACT_DEVICES),
+        language=language,
+    )
+
+
+def _not_segments(key: str, value: str) -> ConfigError:
+    return ConfigError(
+        "{key}: segments of A-Z, a-z, 0-9, '-', '_' separated by '/', got {value!r}",
+        key=key,
+        value=value,
     )
 
 
@@ -474,9 +544,9 @@ def _commands(s: _Section) -> CommandRules:
     max_age = s.number("max_age_s", 900.0, 0.0, 86_400.0)
     try:
         return CommandRules.create(senders=senders, words=words, max_age_s=max_age)
-    except ValueError as exc:
+    except TextError as exc:
         name = "senders" if "public key" in str(exc) else "words"
-        raise ConfigError(f"{s.key(name)}: {exc}") from exc
+        raise ConfigError("{key}: {detail}", key=s.key(name), detail=exc.text) from exc
 
 
 def _targets(s: _Section) -> tuple[Target, ...]:
@@ -484,17 +554,19 @@ def _targets(s: _Section) -> tuple[Target, ...]:
     for alias in s.names():
         t = s.section(alias)
         if not _is_id(alias):
-            raise ConfigError(f"{t.key('')[:-1]}: alias must be {ID_RULE}")
+            raise ConfigError("{key}: alias must be {rule}", key=t.key("")[:-1], rule=ID_RULE)
         if t.has("channel") == t.has("contact"):
-            raise ConfigError(f"{t.key('')[:-1]}: set exactly one of 'channel' or 'contact'")
+            raise ConfigError(
+                "{key}: set exactly one of 'channel' or 'contact'", key=t.key("")[:-1]
+            )
         if t.has("channel"):
             index = t.integer("channel", 0, 0, CHANNEL_INDEX_MAX)
             targets.append(Target(alias, MessageKind.CHANNEL, channel_index=index))
         else:
             try:
                 key = normalise_key(cast(str, t.string("contact", required=True)))
-            except ValueError as exc:
-                raise ConfigError(f"{t.key('contact')}: {exc}") from exc
+            except TextError as exc:
+                raise ConfigError("{key}: {detail}", key=t.key("contact"), detail=exc.text) from exc
             targets.append(Target(alias, MessageKind.CONTACT, public_key=key))
         t.check_unknown()
     return tuple(targets)
@@ -520,7 +592,7 @@ def _telemetry(s: _Section) -> TelemetryConfig:
 def _diagnostics(s: _Section) -> DiagnosticsConfig:
     level = cast(str, s.string("log_level", "info"))
     if level not in LOG_LEVELS:
-        raise ConfigError(f"{s.key('log_level')}: one of {', '.join(LOG_LEVELS)}, got {level!r}")
+        raise _one_of(s.key("log_level"), LOG_LEVELS, level)
     return DiagnosticsConfig(publish_rx_log=s.boolean("publish_rx_log", False), log_level=level)
 
 
@@ -535,7 +607,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
     "homeassistant.discovery": bool, "homeassistant.prefix": str,
     "homeassistant.device_name": str, "homeassistant.status_topic": str,
-    "homeassistant.contact_devices": int,
+    "homeassistant.contact_devices": int, "homeassistant.language": str,
     "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,
@@ -567,18 +639,18 @@ def render_config(answers: str) -> str:
         key, sep, value = line.partition("=")
         key = key.strip()
         if not sep:
-            raise ConfigError(f"answers line {number}: expected key=value")
+            raise ConfigError("answers line {number}: expected key=value", number=number)
         if value == "":
             continue
         table, _, name = key.rpartition(".")
         if table == "target":
             if not _is_id(name):  # before it becomes a TOML table header
-                raise ConfigError(f"{key}: alias must be {ID_RULE}")
+                raise ConfigError("{key}: alias must be {rule}", key=key, rule=ID_RULE)
             tables.setdefault(f"targets.{name}", {}).update(_target_answer(key, value))
             continue
         kind = _ANSWER_TYPES.get(key)
         if kind is None:
-            raise ConfigError(f"{key}: unknown answer")
+            raise ConfigError("{key}: unknown answer", key=key)
         tables.setdefault(table, {})[name] = _convert(key, value, kind)
     text = HEADER + "".join(_toml_table(name, values) for name, values in tables.items())
     parse_config(text)  # the same validation as at startup
@@ -617,12 +689,14 @@ def _answer_value(key: str, value: Any) -> str:
         return "true" if value else "false"
     if isinstance(value, list):
         if any("," in str(item) for item in value):
-            raise ConfigError(f"{key}: an item contains a comma, which the answers cannot express")
+            raise ConfigError(
+                "{key}: an item contains a comma, which the answers cannot express", key=key
+            )
         text = ",".join(str(item) for item in value)
     else:
         text = str(value)
     if "\n" in text or "\r" in text:
-        raise ConfigError(f"{key}: contains a line break, which the answers cannot express")
+        raise ConfigError("{key}: contains a line break, which the answers cannot express", key=key)
     return text
 
 
@@ -632,7 +706,11 @@ def _target_answer(key: str, value: str) -> dict[str, Any]:
         return {"channel": int(ref)}
     if kind == "contact" and ref:
         return {"contact": ref}
-    raise ConfigError(f"{key}: expected channel:<index> or contact:<public key>, got {value!r}")
+    raise ConfigError(
+        "{key}: expected channel:<index> or contact:<public key>, got {value!r}",
+        key=key,
+        value=value,
+    )
 
 
 def _convert(key: str, value: str, kind: type) -> Any:
@@ -646,7 +724,10 @@ def _convert(key: str, value: str, kind: type) -> Any:
             return kind(value)
     except ValueError:
         pass
-    raise ConfigError(f"{key}: cannot read {value!r} as {kind.__name__}")
+    # Translators: kind is a Python type: str, int, float, bool or list.
+    raise ConfigError(
+        "{key}: cannot read {value!r} as {kind}", key=key, value=value, kind=kind.__name__
+    )
 
 
 def _toml_table(name: str, values: Mapping[str, Any]) -> str:
