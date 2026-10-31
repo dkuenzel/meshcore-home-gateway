@@ -1,5 +1,6 @@
 """Catalogs for tests: real ones compiled in memory, the pseudo-language `xx` that marks every text
-of the template, and a hostile one that breaks every text a translator can break.
+of the template (also with wide letters), a hostile one that breaks every text a translator can
+break, and one that adds a percent sign to every text.
 
 `speaking(monkeypatch, translator)` offers a test catalog as if it were shipped: `LANGUAGE=xx` and
 `[homeassistant] language = "xx"` then use it. It reaches only this process (the code under test
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import gettext
 import io
+import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import MappingProxyType
@@ -58,10 +60,51 @@ def pseudo(language: str = "xx") -> i18n.Translator:
     return compiled(language, _translated(_marked))
 
 
+# what a translation keeps as it is: brace fields and variables; in a text argparse formats, also
+# its %-directives
+_KEPT = re.compile(r"\{[^{}]*\}|\$[A-Z_]+")
+_KEPT_BY_ARGPARSE = re.compile(_KEPT.pattern + "|" + i18n._PERCENT.pattern)
+_WIDE = {letter: letter + 0xFEE0 for letter in range(0x21, 0x7F) if chr(letter).isalpha()}
+
+
+def wide(language: str = "xx") -> i18n.Translator:
+    """The pseudo-language with wide letters (U+FF41 for a), fields and %-directives kept: a text
+    that did not pass through the catalog shows by its plain letters, also where it is the value
+    of another text."""
+    entries = [
+        Entry(
+            entry.msgid,
+            tuple(
+                _marked(widened(text, "python-format" in entry.flags)) for text in _english(entry)
+            ),
+            entry.msgctxt,
+            entry.msgid_plural,
+        )
+        for entry in template()
+    ]
+    return compiled(language, entries)
+
+
+def widened(text: str, argparse: bool = False) -> str:
+    """The text with wide letters, but its fields, variables and (`argparse`) %-directives."""
+    kept = _KEPT_BY_ARGPARSE if argparse else _KEPT
+    parts, end = [], 0
+    for match in kept.finditer(text):
+        parts += [text[end : match.start()].translate(_WIDE), match.group()]
+        end = match.end()
+    return "".join([*parts, text[end:].translate(_WIDE)])
+
+
 def hostile(language: str = "xx") -> i18n.Translator:
     """Every text of the template with ' 50 %' and a lone '{' added: the guard must show English
     (D7) wherever argparse formats a text or values are filled in."""
     return compiled(language, _translated(lambda text: f"{text} 50 % {{"))
+
+
+def percents(language: str = "xx") -> i18n.Translator:
+    """Every text of the template with ' 50 %' added, a valid text wherever nothing %-formats it:
+    only texts argparse formats must show English (D7)."""
+    return compiled(language, _translated(lambda text: f"{text} 50 %"))
 
 
 def _translated(translate: Callable[[str], str]) -> list[Entry]:

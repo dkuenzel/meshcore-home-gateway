@@ -984,9 +984,18 @@ _FAR = 10**9  # beyond every bound: a number type without a bound takes it
 _FEWEST: dict[Any, int] = {None: 1, "?": 0, "*": 0, "+": 1, argparse.REMAINDER: 0}
 
 
-def command_line(tmp: Path) -> dict[str, Any]:
+def command_line(tmp: Path, language: str = "en") -> dict[str, Any]:
+    """The command line's interface; with another language, the same (ADR 0019): its parser is
+    built in that language, where a name translated by mistake would show, and its commands run in
+    an environment that asks for it (tests/test_public_interface.py)."""
     commands: dict[str, Any] = {}
-    _commands(cli._parser(), "", commands)
+    with cli._speaking(i18n.translator(language)):
+        _commands(cli._parser(), "", commands)
+    with mock.patch.dict(os.environ, {"LANGUAGE": language}):
+        return _command_line(tmp, commands)
+
+
+def _command_line(tmp: Path, commands: dict[str, Any]) -> dict[str, Any]:
     report = _probe_report(tmp)
     probe = ["probe", "--tcp", "192.0.2.10", "--state-dir", str(tmp)]
     with _probing(report):

@@ -26,6 +26,17 @@ format, the command line and Home Assistant discovery are public interfaces
   ([configuration.md](docs/configuration.md#homeassistant)). Entity IDs, event types, options,
   attributes and units stay the same in every language; a change renames only the display names
   at the next start, and names you changed stay.
+- The command line follows the language of its environment (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`,
+  `LANG`; [configuration.md](docs/configuration.md#language-of-the-command-line)): help, errors,
+  warnings, `check-config` and the `probe` report. Machine output (`--list`, `--json`, `listen`,
+  `send --wait`, the results of `contacts add`, `remove` and `telemetry` with `--wait`,
+  `contacts list`, `contacts link`, `config answers`, `--version`), `run` and the service's log
+  stay English.
+
+### Changed
+
+- `check-config` writes "1 sender" or "2 senders" instead of "sender(s)", and names the language
+  of the names in Home Assistant.
 
 ## [1.1.0a3] - 2026-10-31
 

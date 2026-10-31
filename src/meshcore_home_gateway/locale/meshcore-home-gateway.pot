@@ -33,6 +33,740 @@ msgstr ""
 msgid "{key} ({roles})"
 msgstr ""
 
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  airtime    {budget:g} s per hour, burst {burst:g} s"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  broker     {host}:{port} (TLS), {login}, topics {root}/..."
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  broker     {host}:{port}, {login}, topics {root}/..."
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  commands   {words} from {count} sender"
+msgid_plural "  commands   {words} from {count} senders"
+msgstr[0] ""
+msgstr[1] ""
+
+#. a contact the managed profile adds or makes a favourite: its first 12 key
+#. digits, its name, what the gateway does
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  contact {key} {name}  ({action})"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+msgid "  contacts   managed on request"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+msgid "  contacts   not managed"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+msgid "  discovery  off"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  discovery  on, prefix {prefix}, names in {language}"
+msgstr ""
+
+#. a line of check-config's summary, its value in the column of the others
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  login      accepted by {host}:{port}"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  radio      {transport} {where}"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  target     {alias}: channel {index}"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  target     {alias}: contact {key}"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+msgid "  telemetry  asked of every companion not excluded"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+msgid "  telemetry  off"
+msgstr ""
+
+#. {state} is the command's word off, which stays
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "--forget goes with {state} only"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "Gateway between home automation (MQTT) and a MeshCore companion radio."
+msgstr ""
+
+#. after a contact's name in probe's report: it may use the radio's
+#. command line over the air
+#: src/meshcore_home_gateway/cli.py
+msgid "REMOTE CLI"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "WiFi companion, port 5000 by default; IPv6 as [ADDRESS]:PORT"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "a public key (64 hex digits), a heard node as KEY12…KEY8 (the first 12 and the last 8 digits of its key, the name after them optional, as Home Assistant lists it), a contact link or a contact card"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "add a contact to the radio"
+msgstr ""
+
+#. what the gateway does about a contact it keeps on the radio, in brackets after
+#. the contact's line; {reported} says why it only reports it ("only reported: …")
+#: src/meshcore_home_gateway/cli.py
+msgid "added as a favourite at the next connect"
+msgstr ""
+
+#. a line of probe's report. Its value starts in the column where the other
+#. lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "airtime    factor {factor:g}: the radio sends at most {duty:.3g} %"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "also log in to the broker with the configured user name and password"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "ask a companion for its telemetry, or not (exclude it)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "both documents as JSON"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "broker did not answer"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "broker did not confirm the request"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "broker did not confirm the subscription"
+msgstr ""
+
+#. the reason is the broker's, in English (paho's text)
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "broker refused the connection: {reason}"
+msgstr ""
+
+#. the reason is the broker's, in English (paho's text)
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "broker refused the subscription to {topic}: {reason}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "brokers such as Mosquitto refuse a wrong password, an unknown user and missing credentials alike; a standalone Mosquitto knows a user added with mosquitto_passwd only after '{command}' ({guide})"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "cannot connect to the broker {host}:{port}: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "cannot write {path}: {detail}"
+msgstr ""
+
+#. what the gateway does about a setting of the radio that differs from the
+#. managed profile, in brackets after the setting's line
+#: src/meshcore_home_gateway/cli.py
+msgid "changed on the radio; kept"
+msgstr ""
+
+#. a heading in probe's report, above the radio's channels
+#: src/meshcore_home_gateway/cli.py
+msgid "channels"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "configuration error: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "configuration file"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "configuration helpers"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "configuration {path}: valid"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "connect to a radio directly and list what it knows"
+msgstr ""
+
+#. a line of probe's report on how the radio adds the nodes it hears; its value
+#. starts in the column of the other lines; {types} lists node types (chat, repeater, room,
+#. sensor), which stay as they are
+#: src/meshcore_home_gateway/cli.py
+msgid "contacts   added manually"
+msgstr ""
+
+#. a line of probe's report on how the radio adds the nodes it hears; its value
+#. starts in the column of the other lines; {types} lists node types (chat, repeater, room,
+#. sensor), which stay as they are
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "contacts   added manually, but {types} automatically"
+msgstr ""
+
+#. a line of probe's report on how the radio adds the nodes it hears; its value
+#. starts in the column of the other lines; {types} lists node types (chat, repeater, room,
+#. sensor), which stay as they are
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "contacts   added manually, but {types} automatically; a full table overwrites the oldest"
+msgstr ""
+
+#. a line of probe's report on how the radio adds the nodes it hears; its value
+#. starts in the column of the other lines; {types} lists node types (chat, repeater, room,
+#. sensor), which stay as they are
+#: src/meshcore_home_gateway/cli.py
+msgid "contacts   all added automatically"
+msgstr ""
+
+#. a line of probe's report on how the radio adds the nodes it hears; its value
+#. starts in the column of the other lines; {types} lists node types (chat, repeater, room,
+#. sensor), which stay as they are
+#: src/meshcore_home_gateway/cli.py
+msgid "contacts   all added automatically; a full table overwrites the oldest"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "did not take effect at {count} connect; no longer set"
+msgid_plural "did not take effect at {count} connects; no longer set"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "everything as JSON"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "expected 0 to {limit} seconds, got {text!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "expected [ADDRESS]:PORT, got {text!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "expected a whole number, 0 or more, got {text!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "file with key=value lines"
+msgstr ""
+
+#. a line of probe's report. Its value starts in the column where the other
+#. lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "firmware   {version} (code {code}), {model}, built {date}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "give the contact's full key (64 hex digits) or KEY12…KEY8"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "group that may read the file (mode 0640)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "its public key, also of a contact not on the radio yet, or KEY12…KEY8 (a name may follow)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "its public key, or KEY12…KEY8 (a name may follow)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "key {groups}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "key {groups}  {name!r}"
+msgstr ""
+
+#. the name a contact link or card gives itself, which nobody checked
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "key {groups}  {name!r} (claimed)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "list the contacts and the nodes heard"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "list, add and remove the radio's contacts, and exclude companions from telemetry, through the broker"
+msgstr ""
+
+#. a line of probe's report. Its value starts in the column where the other
+#. lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "lora       {frequency:.3f} MHz, {bandwidth:g} kHz, SF {sf}, CR 4/{cr}, {power} dBm"
+msgstr ""
+
+#. what the gateway does about a contact it keeps on the radio, in brackets after
+#. the contact's line; {reported} says why it only reports it ("only reported: …")
+#: src/meshcore_home_gateway/cli.py
+msgid "made a favourite at the next connect"
+msgstr ""
+
+#. a contact or heard node given as KEY12…KEY8 that the gateway's list lacks
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no contact {label}"
+msgstr ""
+
+#. a contact or heard node given as KEY12…KEY8 that the gateway's list lacks
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no contact {label} (the published list is cut: give the full key)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "no delivery result in time"
+msgstr ""
+
+#. what the gateway does about a contact it keeps on the radio, in brackets after
+#. the contact's line; {reported} says why it only reports it ("only reported: …")
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no favourite; {reported}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no group {group!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no host in {text!r}"
+msgstr ""
+
+#. a contact or heard node given as KEY12…KEY8 that the gateway's list lacks
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no node {label}"
+msgstr ""
+
+#. a contact or heard node given as KEY12…KEY8 that the gateway's list lacks
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no node {label} (the published list is cut: give the full key)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no result in time (request {request}; it may still be handled: {command})"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "no target {alias!r} in {path}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "no user name"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "not on the radio now: excluded in advance"
+msgstr ""
+
+#. what the gateway does about a contact it keeps on the radio, in brackets after
+#. the contact's line; {reported} says why it only reports it ("only reported: …")
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "not on the radio; {reported}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "off: excluded; on: asked again"
+msgstr ""
+
+#. why the gateway does not change a setting or contact; it follows a
+#. setting's or contact's line, for example "not on the radio; only reported: …"
+#: src/meshcore_home_gateway/cli.py
+msgid "only reported: radio.profile.manage = observe"
+msgstr ""
+
+#. why the gateway does not change a setting or contact; it follows a
+#. setting's or contact's line, for example "not on the radio; only reported: …"
+#: src/meshcore_home_gateway/cli.py
+msgid "only reported: the firmware is untested; radio.profile.manage = always sets it"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "port must be 1..65535, got {port!r}"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: the radio's
+#. position, and whether its adverts carry it
+#: src/meshcore_home_gateway/cli.py
+msgid "position   none, not in adverts"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: the radio's
+#. position, and whether its adverts carry it
+#: src/meshcore_home_gateway/cli.py
+msgid "position   none, shared in adverts"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: the radio's
+#. position, and whether its adverts carry it
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "position   {latitude}, {longitude}, not in adverts"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: the radio's
+#. position, and whether its adverts carry it
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "position   {latitude}, {longitude}, shared in adverts"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "print a configuration as key=value answers (the inverse of render; shows secrets)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "print events from the broker as JSON lines"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "print the gateway's contact link (for a QR code)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "probe failed: {detail}"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's settings differ from the managed profile, which the setting radio.profile
+#. configures or leaves to its default
+#: src/meshcore_home_gateway/cli.py
+msgid "profile    differs from the configured profile:"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's settings differ from the managed profile, which the setting radio.profile
+#. configures or leaves to its default
+#: src/meshcore_home_gateway/cli.py
+msgid "profile    differs from the default observer profile:"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's settings differ from the managed profile, which the setting radio.profile
+#. configures or leaves to its default
+#: src/meshcore_home_gateway/cli.py
+msgid "profile    the radio matches the configured profile"
+msgstr ""
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's settings differ from the managed profile, which the setting radio.profile
+#. configures or leaves to its default
+#: src/meshcore_home_gateway/cli.py
+msgid "profile    the radio matches the default observer profile"
+msgstr ""
+
+#. a line of probe's report. Its value starts in the column where the other
+#. lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "radio      {name}  {key}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "remove a contact from the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "request not sent: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "run the bridge (the systemd service does this)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "send a text to a configured target through the broker"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "serial device, e.g. /dev/serial/by-id/..."
+msgstr ""
+
+#. what the gateway does about a setting of the radio that differs from the
+#. managed profile, in brackets after the setting's line
+#: src/meshcore_home_gateway/cli.py
+msgid "set at the next connect"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "show what the [radio.profile] of this configuration changes (default: the observer profile without a name)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "stop after this many events (0: never)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "tab-separated list only"
+msgstr ""
+
+#. a line of probe's report. Its value starts in the column where the other
+#. lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "telemetry  {modes}"
+msgstr ""
+
+#. what the gateway does about a setting of the radio that differs from the
+#. managed profile, in brackets after the setting's line
+#: src/meshcore_home_gateway/cli.py
+msgid "the firmware does not support it"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway has published no contact link"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway has published no contacts"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway is offline"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway is offline: the lists are as it last saw them"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "the gateway lists {shown} of {count} contact (its document is bounded); give the others by full key"
+msgid_plural "the gateway lists {shown} of {count} contacts (its document is bounded); give the others by full key"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "the gateway lists {shown} of {count} node (its document is bounded); give the others by full key"
+msgid_plural "the gateway lists {shown} of {count} nodes (its document is bounded); give the others by full key"
+msgstr[0] ""
+msgstr[1] ""
+
+#. {readings} and {positions} are the names of two settings, which stay
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway stops asking it and forgets its battery, readings and position and deletes them from its history"
+msgstr ""
+
+#. {readings} and {positions} are the names of two settings, which stay
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "the gateway stops asking it and forgets its battery, readings and position; its history keeps them for {readings} and {positions}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "the radio drops its direct messages from then on; messages queued to it fail"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "the service's state, read only, for its exact plan (default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "the text is not valid UTF-8"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "user {user!r} with a password"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "user {user!r} without a password"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "validate the configuration and print a summary"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "wait for the delivery result; exit 1 unless sent or confirmed"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "wait this long for the result; 0: only send the request (default 30)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "wait this long for the result; 0: only send the request (default 30: the gateway reads the radio's table before and after the change, several seconds for a large table)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+msgid "warning: another node has the same first 12 key digits: compare the full key above with the node's own screen; the one added first keeps them"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "warning: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "with off: also delete its readings and its positions from telemetry from the gateway's history"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "write a validated configuration from key=value answers"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "wrote {path}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "{count} key matches: {keys}"
+msgid_plural "{count} keys match: {keys}"
+msgstr[0] ""
+msgstr[1] ""
+
+#. why the broker did not take the login, then who logged in
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "{detail} ({login})"
+msgstr ""
+
+#. why the text is no contact, then the code of the reason (stays)
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "{detail} ({reason})"
+msgstr ""
+
 #. the rule of node IDs and target aliases, after "use" or "alias must be".
 #: src/meshcore_home_gateway/config.py
 msgid "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit, not ending with '-' or '_', and no two of them in a row"

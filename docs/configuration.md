@@ -297,3 +297,19 @@ writes TOML.
 present in a configuration file as answers, with public keys normalised. The installer's
 `--reconfigure` uses them as defaults and passes on the settings it does not ask for. The output
 includes the broker password.
+
+## Language of the command line
+
+The command line's texts for people (help, errors, warnings, the summary of `check-config`, the
+report of `probe`) follow the environment, as Python's gettext reads it: the first of `LANGUAGE`,
+`LC_ALL`, `LC_MESSAGES` and `LANG` that is set and not empty decides. `LANGUAGE` may list several
+languages (`LANGUAGE=pl:de`): the first of them that the gateway has its texts in, English
+included, wins; with none of them, English. `LANGUAGE=en` gives English. `LC_ALL=C` (or `C.UTF-8`) gives English only while
+`LANGUAGE` is unset: unlike GNU programs, which ignore `LANGUAGE` under `C`, Python reads it first.
+
+`run` and the service's log stay English, so the journal reads the same everywhere; so do the
+outputs that programs read (`probe --list`, `--json`, `listen`, `send --wait`, the results of
+`contacts add`, `remove` and `telemetry` with `--wait`, `contacts list`, `contacts link`,
+`config answers`, `--version`), the names of commands, options and settings, and the texts the
+system or the broker gives (a file's error, the broker's reason). The names sent to Home Assistant
+follow [`[homeassistant] language`](#homeassistant), never the environment.
