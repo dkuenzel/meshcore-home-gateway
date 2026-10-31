@@ -24,7 +24,7 @@ FIRMWARE_BUILD ?= build/firmware
 FIRMWARE_TESTS ?= tests/firmware
 
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
-  firmware-fetch firmware firmware-test dist pyz release release-plan check hooks clean
+  translations firmware-fetch firmware firmware-test dist pyz release release-plan check hooks clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -109,6 +109,12 @@ firmware-test: venv firmware ## The gateway against the real firmware on a simul
 interface: venv ## Write tests/public_interface.json from the code, after a deliberate interface change
 	$(BIN)/python -m tests.public_interface --write
 
+# The translation tests fail until this runs (tools/i18n.py): it writes the
+# template from the marked texts and argparse's own words (adding this Python's), and merges the
+# catalogs with it. Every new text then needs its translations in each catalog.
+translations: venv ## Write the translation template and merge the catalogs, after changing a text
+	$(BIN)/python tools/i18n.py update
+
 unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
 	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
 	  sed 's|^ExecStart=/usr/local/bin/meshcore-home-gateway |ExecStart=$(CURDIR)/dist/$(PYZ) |' \
@@ -116,7 +122,12 @@ unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
 	  systemd-analyze verify "$$tmp/$(UNIT)" && \
 	  systemd-analyze security --offline=true --threshold=20 "$$tmp/$(UNIT)" | tail -n 1
 
+# flit packs every file of the package, untracked ones too: a catalog compiled by Poedit next to
+# its PO file would reach the wheel and the sdist (the program compiles them itself, ADR 0027).
 dist: venv ## Wheel, sdist and the single-file zipapp in dist/
+	@compiled=$$(find src -name '*.mo'); if [ -n "$$compiled" ]; then \
+	  printf 'dist: remove %s: Poedit wrote it, and flit would pack it into the wheel and sdist\n' \
+	    $$compiled >&2; exit 1; fi
 	rm -rf dist
 	$(BIN)/python -m build --no-isolation --outdir dist .
 	$(MAKE) --no-print-directory pyz

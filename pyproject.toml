@@ -59,13 +59,20 @@ src = ["src", "tests", "tools"]
 [tool.ruff.lint]
 select = [
   "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "S", "PT", "RET", "PIE",
-  "PERF", "PL", "RUF", "ASYNC", "TRY", "LOG", "G", "ISC", "T20", "DTZ", "BLE", "FURB",
+  "PERF", "PL", "RUF", "ASYNC", "TRY", "LOG", "G", "ISC", "T20", "DTZ", "BLE", "FURB", "INT",
 ]
 ignore = [
   "PLR2004",  # protocol code is full of byte offsets and codes; they are named where it helps
   "PLR0913",  # dataclass-like constructors legitimately take many arguments
   "TRY003",   # short messages in exceptions are fine
 ]
+
+# the marks of the tests' pseudo-language (tests/i18n_helpers.py)
+allowed-confusables = ["‹", "›"]
+
+[tool.ruff.lint.flake8-gettext]
+# the functions that mark texts for translation (docs/development.md, Translations)
+extend-function-names = ["tr", "tr_help", "trn", "N_", "ha_name", "N_ha"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "S108", "PLR0915", "PLC0415"]
@@ -91,6 +98,7 @@ filterwarnings = ["error"]
 markers = [
   "broker: starts a local mosquitto broker (integration test)",
   "first_start_hold: keeps telemetry's first-start hold (tests/conftest.py skips it elsewhere)",
+  "real_catalogs: looks up texts the template lacks (tests/conftest.py fails such a lookup elsewhere)",
 ]
 
 [tool.coverage.run]

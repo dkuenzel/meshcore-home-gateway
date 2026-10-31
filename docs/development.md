@@ -13,8 +13,10 @@ make help    # all targets
 ```
 
 Requirements: Linux with systemd (for `make unit-check`), Python ≥ 3.11 with `venv`
-(`python3-venv` on Debian and Ubuntu), GNU make, git, `mosquitto` for the integration tests, `uv`
-only to update the lock file, `g++` and `libssl-dev` only for the firmware tests
+(`python3-venv` on Debian and Ubuntu), GNU make, git, `mosquitto` for the integration tests, GNU
+gettext (`msgfmt`) for the tests of the message catalogs (without it they fail;
+`MESHCORE_HOME_GATEWAY_SKIP_GETTEXT_TESTS=1` skips them deliberately), `uv` only to update the
+lock file, `g++` and `libssl-dev` only for the firmware tests
 ([testing.md](testing.md#tests-against-the-real-firmware)).
 
 ## Layout

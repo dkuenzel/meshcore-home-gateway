@@ -1,6 +1,7 @@
 """Build the single-file zipapp `meshcore-home-gateway.pyz` reproducibly, with the standard library.
 
-The archive holds the `meshcore_home_gateway` package and a `__main__.py`. Entries are sorted and
+The archive holds the `meshcore_home_gateway` package, its message catalogs as PO files (compiled
+when a language is first used, ADR 0027) and a `__main__.py`. Entries are sorted and
 carry a fixed date and fixed permissions, so the same sources give the same bytes (with the same
 zlib). The installer builds it inside the container; `make pyz` builds it locally.
 
@@ -24,7 +25,7 @@ def package_files(source: Path) -> list[Path]:
     return sorted(
         p
         for p in root.rglob("*")
-        if p.is_file() and "__pycache__" not in p.parts and p.suffix in {".py", ".typed"}
+        if p.is_file() and "__pycache__" not in p.parts and p.suffix in {".py", ".typed", ".po"}
     )
 
 

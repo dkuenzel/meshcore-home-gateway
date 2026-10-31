@@ -1,0 +1,268 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: meshcore-home-gateway\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid " (default: %(default)s)"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "%(heading)s:"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "%(prog)s: error: %(message)s\n"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "%(prog)s: warning: %(message)s\n"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "%r is not callable"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "'required' is an invalid argument for positionals"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid ".__call__() not defined"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "ambiguous option: %(option)s could match %(matches)s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "argument \"-\" with mode %r"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "argument %(argument_name)s: %(message)s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "argument '%(argument_name)s' is deprecated"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "can't open '%(filename)s': %(error)s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "cannot have multiple subparser arguments"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "cannot merge actions - two groups are named %r"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "command '%(parser_name)s' is deprecated"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "conflicting option string: %s"
+msgid_plural "conflicting option strings: %s"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "conflicting subparser alias: %s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "conflicting subparser: %s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "dest= is required for options like %r"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "expected %s argument"
+msgid_plural "expected %s arguments"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "expected at least one argument"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "expected at most one argument"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "expected one argument"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "ignored explicit argument %r"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "invalid %(type)s value: %(value)r"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "invalid choice: %(value)r (choose from %(choices)s)"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "invalid choice: %(value)r, maybe you meant %(closest)r? (choose from %(choices)s)"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "invalid conflict_resolution value: %r"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "invalid option string %(option)r: must start with a character %(prefix_chars)r"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "mutually exclusive arguments must be optional"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "not allowed with argument %s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "one of the arguments %s is required"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "option '%(option)s' is deprecated"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "options"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "positional arguments"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "show program's version number and exit"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "show this help message and exit"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "subcommands"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "the following arguments are required: %s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "unexpected option string: %s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "unknown parser %(parser_name)r (choices: %(choices)s)"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "unrecognized arguments: %s"
+msgstr ""
+
+#. Python's argparse: usage, help and errors
+#: tools/argparse_messages.json
+#, python-format
+msgid "usage: "
+msgstr ""

@@ -252,3 +252,93 @@ def test_a_changed_pyproject_keeps_the_environment(tmp_path: Path) -> None:
     assert refresh.returncode == 0, refresh.stderr
     assert "--clear" not in refresh.stdout
     assert kept.exists()
+
+
+def job_commands(job: str) -> list[str]:
+    """The shell commands of a workflow job: each `run:` line and the lines of a `run: |` block."""
+    commands: list[str] = []
+    block: int | None = None
+    for line in job.splitlines():
+        indent = len(line) - len(line.lstrip())
+        if block is not None and line.strip() and indent > block:
+            commands.append(line.strip())
+            continue
+        block = None
+        run = re.match(r"\s*(?:- )?run: (.*)$", line)
+        if run and run[1].strip() in {"|", ">"}:
+            block = indent
+        elif run:
+            commands.append(run[1])
+    return commands
+
+
+def make_targets(command: str) -> set[str]:
+    """The targets a command passes to make (options and variables left out)."""
+    targets: set[str] = set()
+    for arguments in re.findall(r"(?:^|[;&|(]\s*)make((?:\s+[^\s;&|]+)*)", command):
+        targets.update(a for a in arguments.split() if not a.startswith("-") and "=" not in a)
+    return targets
+
+
+def test_jobs_that_run_the_tests_install_their_tools() -> None:
+    """Without mosquitto or GNU gettext the tests fail (CONTRIBUTING.md): in the release
+    workflow that would lose the version of the tag (docs/development.md)."""
+    testing = []
+    for workflow in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        jobs = workflow.read_text(encoding="utf-8").split("\njobs:\n", 1)[1]
+        for job in re.split(r"^  (?=[\w-]+:$)", jobs, flags=re.MULTILINE)[1:]:
+            commands = job_commands(job)
+            if not {"check", "test", "matrix"} & set().union(*map(make_targets, commands)):
+                continue
+            testing.append(f"{workflow.name}: {job.split(':', 1)[0]}")
+            installs = [c for c in commands if "apt-get install" in c]
+            assert any(
+                re.search(r"\bmosquitto\b", c) and re.search(r"\bgettext\b", c) for c in installs
+            ), f"{testing[-1]} installs {installs}"
+    assert testing == ["ci.yml: test", "release.yml: build"]
+
+
+def test_make_targets_are_read_from_commands() -> None:
+    assert make_targets("make check") == {"check"}
+    assert make_targets('make --jobs="$(nproc)" firmware-test') == {"firmware-test"}
+    assert make_targets("make ha-test HA_PYTHON=python") == {"ha-test"}
+    assert make_targets("sudo apt-get update && make lint test") == {"lint", "test"}
+    assert make_targets("python3 -I tools/release_plan.py tag") == set()
+
+
+def test_dist_refuses_a_compiled_catalog(tmp_path: Path) -> None:
+    """flit packs every file of the package, untracked ones too: a catalog Poedit compiled next
+    to its PO file would reach the wheel and the sdist."""
+    locale = tmp_path / "src" / "meshcore_home_gateway" / "locale"
+    locale.mkdir(parents=True)
+    (locale / "xx.po").write_text("", encoding="utf-8")
+    (tmp_path / "requirements").mkdir()
+    for name in ("requirements/dev.txt", "pyproject.toml"):
+        (tmp_path / name).write_text("", encoding="utf-8")
+    environment = tmp_path / "venv"
+    environment.mkdir()
+    for stamp in (".locked", ".installed"):  # newer than the lock and pyproject.toml
+        (environment / stamp).write_text("", encoding="utf-8")
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    executable(tools / "python", '#!/bin/sh\necho "python $*" >>"$0.log"\n')
+    options = [f"VENV={environment}", f"BIN={tools}", "MAKE=true"]
+    env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+
+    def dist() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(  # noqa: S603 - our Makefile with fixed arguments
+            [MAKE, "--no-print-directory", "-f", str(ROOT / "Makefile"), "-C", str(tmp_path),
+             "dist", *options],
+            env=env, capture_output=True, text=True, check=False,
+        )  # fmt: skip
+
+    clean = dist()
+    assert clean.returncode == 0, clean.stderr
+    assert "-m build" in (tools / "python.log").read_text(encoding="utf-8")
+    (tools / "python.log").unlink()
+    (locale / "xx.mo").write_bytes(b"\xde\x12\x04\x95")
+    refused = dist()
+    assert refused.returncode != 0
+    assert "src/meshcore_home_gateway/locale/xx.mo" in refused.stderr
+    assert "flit would pack it" in refused.stderr
+    assert not (tools / "python.log").exists()  # refused before the build
