@@ -1,6 +1,6 @@
 """What the firmware does with adverts and positions, at the protocol level: the facts the
-advert-position check of the next telemetry slice relies on (docs/design.md, telemetry), seen on
-the companion's serial port. No gateway runs here; phone apps drive the radios."""
+gateway's check for positions in adverts relies on (ADR 0025), seen on the companion's serial
+port. No gateway runs here; phone apps drive the radios. test_advert_check.py runs the check."""
 
 from __future__ import annotations
 

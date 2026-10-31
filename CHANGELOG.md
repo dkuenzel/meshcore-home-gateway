@@ -15,9 +15,10 @@ format, the command line and Home Assistant discovery are public interfaces
   MeshCore's companion and repeater firmware of the pinned release (1.18.0), fetched by tag and
   checked against its commit, built for Linux unchanged and run on a simulated LoRa air with the
   EU/UK Narrow preset; the gateway's probe reads a companion through its serial transport.
-  Scenarios of the hardware checklist's steps 29, 30, 33, 34, 35 and 39 run the gateway's service
-  against it, with the companion's phone app played on the gateway's own codec
-  ([testing.md](docs/testing.md#steps-2940-on-the-simulated-air) lists what they show).
+  Scenarios of the hardware checklist's steps 29, 30, 33, 34, 35 and 39, and parts of steps 41
+  and 43 (the check for positions in adverts), run the gateway's service against it, with the
+  companion's phone app played on the gateway's own codec
+  ([testing.md](docs/testing.md#steps-2945-on-the-simulated-air) lists what they show).
   `make check` still needs neither a compiler nor network.
 
 ## [1.1.0a3] - 2026-10-31

@@ -41,7 +41,7 @@ serial transport. Should the project test against that firmware, and how?
 
 Chosen option: "the real firmware built natively on stand-ins, on a simulated air", because it is
 the only one that runs the firmware's own code on every change without hardware: it builds in
-seconds, and the suite plays the checklist's scenarios in about 12 minutes.
+seconds, and the suite plays the checklist's scenarios in about 14 minutes.
 
 * **Pinned sources, never committed.** `tests/firmware/sources.toml` names each source by its
   tags and the full commit they point to: MeshCore (`companion-vX.Y.Z` and `repeater-vX.Y.Z` of
@@ -65,8 +65,9 @@ seconds, and the suite plays the checklist's scenarios in about 12 minutes.
 
 ### Consequences
 
-* Good, because firmware behaviour (paths, floods, retries, timeouts, the bytes of an answer) is
-  tested on every change, and a scenario of the checklist can become a test.
+* Good, because firmware behaviour (paths, floods, retries, timeouts, the bytes of an answer,
+  what an advert carries and how the radio reports it) is tested on every change, and a scenario
+  of the checklist can become a test.
 * Good, because trying a new firmware release is two lines in `sources.toml` and a run of
   `make firmware-test`.
 * Bad, because the stand-ins can differ from a board: the RP2040 code paths instead of those of
