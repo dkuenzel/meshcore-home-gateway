@@ -344,6 +344,16 @@ async def guide_script(hass: HomeAssistant) -> dict[str, Any]:
 # --- it loads, and names what exists ------------------------------------------------------------
 
 
+async def test_a_component_set_up_after_the_websocket_client_still_registers_its_views(
+    hass: HomeAssistant, hass_ws_client: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The cards are rendered while discovery still sets up notify, whose repairs registers a
+    view: the test client must keep the router open, as Home Assistant's own server does."""
+    await hass_ws_client(hass)
+    assert await async_setup_component(hass, "repairs", {})
+    assert problems(caplog) == []
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
     hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, monkeypatch: pytest.MonkeyPatch,
