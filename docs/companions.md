@@ -172,8 +172,9 @@ sharing off.
 "Allow All" instead of "From Specific Contacts" gives the position to every contact of the
 companion: anyone it has as a contact can ask. "Share Position in Advert" gives it to everyone in
 range. The radio's record of a companion keeps the last position its adverts carried; the gateway
-shows a position from adverts only while the last advert it checked carried it (press *Advert*
-near the gateway after switching sharing off). The gateway itself reveals
+shows a position from adverts only while the last advert it checked carried it, or, before it has
+checked one (after the update), while the record holds one. So press *Advert* near the gateway
+after the update and after switching sharing off. The gateway itself reveals
 nothing it learns on the mesh; positions and readings reach the MQTT broker and Home Assistant,
 and the history keeps them for `[history] positions_days` and `readings_days`. Excluding a
 companion stops the requests and forgets its current values;

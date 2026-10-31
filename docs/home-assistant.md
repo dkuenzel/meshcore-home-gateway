@@ -119,8 +119,9 @@ changed position, and when the position switches between adverts and telemetry, 
 rest adds no state per answer. With `gps_accuracy` Home Assistant counts a companion up to 15 m
 outside a zone's radius as inside it. A position from telemetry expires when the companion stops
 answering ([below](#telemetry-of-the-households-companions)); one from adverts stays while the
-last advert the gateway checked carried it (press *Advert* near the gateway after switching
-sharing off, [companions.md](companions.md#positions-in-adverts)).
+last advert the gateway checked carried it, or, before it has checked one (after the update),
+while the radio's record holds one (press *Advert* near the gateway after the update and after
+switching sharing off, [companions.md](companions.md#positions-in-adverts)).
 
 * **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the

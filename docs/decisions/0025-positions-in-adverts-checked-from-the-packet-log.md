@@ -52,11 +52,13 @@ sends nothing to the radio and does not turn the warning off for a companion tha
   copy is never there. Otherwise every log of the key with that timestamp within 40 s before the
   push must agree. A flagged log must hold the position the record took. A new position in the
   record since the read before, with a newer `last_advert`, is evidence on its own. A table read
-  that shows the record from before the pushed advert waits for the next one. A chat node
-  the radio did not add is checked from its `NEW_ADVERT`, whose record the radio made from that
-  advert alone; the gateway keeps the time and flag with the heard node and the table read that
-  adds it takes them. The flag with 0, 0 (a companion that never had a position) counts as
-  sharing.
+  that shows the record from before the pushed advert waits for the next one, at most 30 s, when
+  the gateway can tell: the push's own log, directly before it, is newer than the record (receive
+  delay 0), the record did not grow since the read before, or no log has the record's time while
+  a newer one is there. A chat node the radio did not add is checked from its `NEW_ADVERT`, whose
+  record the radio made from that advert alone; the gateway keeps the time and flag with the heard
+  node and the table read that adds it takes them. The flag with 0, 0 (a companion that never had
+  a position) counts as sharing.
 * **Until the newest advert is checked, the radio's record decides, erring to warn.**
   `advert_carries_position` is the newest advert's flag once it is checked; before the first
   check, whether the record holds a position from an earlier advert; after a newer advert the
@@ -87,6 +89,10 @@ position), and `advert_carries_position`, `advert_checked_at`, the index keys, t
   instead of keeping its last shared place for ever.
 * Bad, because a companion that stopped sharing warns again after an advert the gateway could not
   check, until its next checked advert.
+* Bad, because a second advert during the table read that the first one started goes unchecked
+  when no log of its own is directly before its push (a receive delay above 0 or not reported, or
+  a log too long for a frame): the read shows the first advert's record, whose log decides, and
+  the gateway cannot tell that it is old.
 * Bad, because a companion whose record holds no position reads `false` until its next advert,
   also if it shares: one that never had a position (0, 0), one the gateway added before 1.1.0a3
   or after a restart between hearing and adding it, and one added from a key or a link before the

@@ -507,7 +507,8 @@ flowchart LR
   read before, with a newer `last_advert`, is evidence on its own. The radio pushes a contact's
   advert only when it is newer than its record, so a read whose record is no newer than the push's
   own log, or than at the read before, was sent before the radio took it: it waits for the next
-  read (at most 30 s), also while a log of the record's time is in the window. A heard companion's
+  read (at most 30 s), also while a log of the record's time is in the window. A read with no log
+  of the record's time waits too while a newer log of the key is in the window. A heard companion's
   `NEW_ADVERT` carries the record made from that advert alone and is checked at once; its heard
   node keeps only the time and flag, and the table read that adds it takes them. When nothing is
   learned the last check stays and one debug line says "not checked". While a companion's newest
@@ -1016,9 +1017,9 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Radio away | no session | telemetry paused at once; states turn `away` after `current_s`; no event | `state.telemetry = paused`, `telemetry_reason = no_radio` |
 | The clock set back while stopped | negative age | ages unknown: last answers count as more than a day old, no located time, the first-start hour kept whole | – |
 | An advert the radio took but did not report (over TCP its push dropped) | `last_advert` grew without a push | not checked: a new position in the record at the next table read counts; else the last check stays, and the value errs to warn | log debug "not checked"; `advert_checked_at` older than `last_advert_at` |
-| An advert made while the gateway was stopped | at the first table read, `last_advert` is newer than the stored check | not checked: the first read compares nothing, so the last check stays and the value errs to warn; no event, and no advert position comes back | log debug "not checked" at the first read; `advert_checked_at` older than `last_advert_at` |
+| An advert made while the gateway was stopped | at the first table read, `last_advert` is newer than the stored check | not checked: the first read compares nothing, so the last check stays and the value errs to warn; no event. While the last check carried none, no advert position comes back; while it carried one, the record's position is shown, also a new one from that advert | log debug "not checked" at the first read; `advert_checked_at` older than `last_advert_at` |
 | An advert without its log (too long for a frame), or a read that never shows the logged advert | no log with the record's time | not checked: a new position in the record counts; else the last check stays, and the value errs to warn | log debug "not checked" |
-| A table read that started before the radio took the advert (its push came during the read) | the push's own log is newer than the record, or the record is no newer than at the read before | the read waits for the next one, at most 30 s, which decides | – |
+| A table read that started before the radio took the advert (its push came during the read) | the push's own log is newer than the record, the record is no newer than at the read before, or no log has the record's time while a newer one is in the window | the read waits for the next one, at most 30 s, which decides | – |
 | Logged copies of one advert that differ, or a log against the record | comparison | nothing learned; the last check stays | log warning |
 | A receive delay above 0, or firmware that reports no tuning | the tuning read at connect | the frame before the push does not decide; all logs of the key with the advert's time must agree | – |
 | Advert checks in the state file invalid or not writable | validation, error on save | invalid entries skipped; the checks are kept in memory, and the next change writes them again | log warning |

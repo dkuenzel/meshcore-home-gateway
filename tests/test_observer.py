@@ -1405,6 +1405,30 @@ def test_a_restart_neither_raises_nor_clears_a_check(tmp_path: Path) -> None:
     history.close()
 
 
+def test_an_advert_made_while_stopped_shows_its_position_while_the_last_check_carried_one(
+    tmp_path: Path,
+) -> None:
+    """The first read of a run compares nothing: an advert made while the gateway was stopped is
+    not checked and raises no event. While the last check carried one, the record's position is
+    shown, also a new one from that advert, in place of the history's (design.md §6)."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    _observer, bus, air = checking(tmp_path, ALICE, history=history)
+    key = ALICE.public_key.hex()
+    shared = air.advert(ALICE, SHARED)
+    air.read()
+    history.close()
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    bus = restarted_on(tmp_path, air, history=history)
+    moved = air.advert(ALICE, MOVED, logged=False, pushed=False)  # while it was stopped
+    air.read()
+    assert checked(bus, key) == (True, iso(shared), 50.124, "advert")
+    assert last(bus, f"{ROOT}/contacts/{key}")["position_at"] == iso(moved)
+    assert bus.payloads(f"{ROOT}/contact") == []
+    history.close()
+
+
 def test_with_no_receive_delay_the_log_directly_before_the_push_decides(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -1535,6 +1559,29 @@ def test_a_read_that_sent_her_record_before_her_next_advert_waits_for_the_next_o
     assert "was not checked" not in caplog.text
 
 
+@pytest.mark.parametrize("tuning", [DELAYED, None], ids=["delayed", "unknown"])
+def test_the_first_read_after_a_restart_waits_for_an_advert_pushed_during_it(
+    tmp_path: Path, tuning: codec.TuningParams | None
+) -> None:
+    """With a receive delay, or none reported, no log is tied to the push, and a run's first read
+    has no read before. A read that shows her record from before the push, while her newer log is
+    in the window, still waits for the next one, which decides (design 6c §3.3)."""
+    alice = replace(ALICE, latitude_e6=SHARED[0], longitude_e6=SHARED[1])
+    key = alice.public_key.hex()
+    _observer, bus, air = checking(tmp_path, alice, tuning=tuning)
+    shared = air.advert(alice, SHARED)
+    air.read()
+    bus = restarted_on(tmp_path, air)
+    air.observer.radio_connected(100, tuning)
+    sent = table(*air.records.values())  # the start's read had sent her record
+    stopped = air.advert(alice)  # she stopped sharing
+    air.observer.radio_event(ContactsRead(sent, air.clock.now))
+    assert checked(bus, key) == (True, iso(shared), 50.123456, "advert")
+    air.clock.now += 2
+    air.read()
+    assert checked(bus, key) == (False, iso(stopped), None, None)
+
+
 def test_a_check_that_turns_to_carrying_raises_the_event(tmp_path: Path) -> None:
     """She was added after an advert without her position, or stopped sharing; then she shares
     it: `position_in_advert` (design 6c D9, the guide's automation)."""
@@ -1572,6 +1619,26 @@ def test_sharing_again_from_another_place_replaces_a_telemetry_position(tmp_path
     again = air.advert(ALICE, MOVED)  # the record's position did not change
     air.read()
     assert checked(bus, key) == (True, iso(again), 50.12345, "telemetry")
+
+
+def test_sharing_again_from_another_place_without_a_fix_gives_the_adverts_time(
+    tmp_path: Path,
+) -> None:
+    """She stopped sharing and no telemetry gave her position. She shares again from another
+    place: the position comes back at the time of the advert that carried it, not at the read
+    (docs/mqtt-api.md, `position_at`)."""
+    _observer, bus, air = checking(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    air.advert(ALICE, SHARED)
+    air.read()
+    stopped = air.advert(ALICE)
+    air.read()
+    assert checked(bus, key) == (False, iso(stopped), None, None)
+    moved = air.advert(ALICE, MOVED)
+    air.clock.now += 5
+    air.read()
+    assert checked(bus, key) == (True, iso(moved), 50.124, "advert")
+    assert last(bus, f"{ROOT}/contacts/{key}")["position_at"] == iso(moved)
 
 
 def test_a_logged_position_that_is_not_the_records_decides_nothing(

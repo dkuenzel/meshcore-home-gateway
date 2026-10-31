@@ -491,6 +491,22 @@ def test_a_check_that_carries_a_changed_position_replaces_a_telemetry_fix() -> N
     assert tracked.fix == Fix(FIELD, T + 130, "telemetry")
 
 
+def test_a_check_that_carries_a_changed_position_without_a_fix_gives_the_adverts_time() -> None:
+    """With no fix there is nothing to replace: a changed position comes back at the time of
+    the advert that carried it, as the same position does (docs/mqtt-api.md, `position_at`)."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    elsewhere = Position(53.57, 10.02)
+    moved = replace(SHARED, last_advert=int(T) + 60, position=elsewhere)
+    mesh.contacts_read([moved], T + 120)
+    tracked = mesh.contacts[key]
+    assert tracked.fix is None  # the check before carried none
+    assert mesh.advert_checked(key, AdvertCheck(int(T) + 60, True), T + 120, SHARED)
+    assert tracked.fix == Fix(elsewhere, T + 60, "advert")
+
+
 def test_an_older_check_is_ignored() -> None:
     mesh = Mesh()
     key = ALICE.public_key

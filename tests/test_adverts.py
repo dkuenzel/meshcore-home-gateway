@@ -167,6 +167,12 @@ def test_a_read_older_than_the_push_waits_then_gives_up() -> None:
     back = push([log(10, at=T + 1)], 11)  # the wall clock went back between the log and the push
     assert (back.adjacent is not None, back.logged) == (True, ())
     assert outcome(back, stale, None, T + 1) == Outcome(wait=True)
+    # without an adjacent log (a receive delay, or none known) a newer log in the window waits
+    # too: at a run's first read, and after a record that grew with an advert not logged
+    window = push([log(10)], 11, no_delay=False)
+    assert outcome(window, stale, None, T + 1) == Outcome(wait=True)
+    assert outcome(window, stale, record(TA - 120), T + 1) == Outcome(wait=True)
+    assert outcome(window, stale, None, T + WAIT_S + 1) == Outcome(problem="not_logged")
 
 
 def test_a_read_older_than_the_push_waits_also_with_a_log_of_its_own_time() -> None:
