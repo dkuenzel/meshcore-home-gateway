@@ -20,6 +20,7 @@ from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Positi
 from meshcore_home_gateway.core.telemetry import STATES
 from meshcore_home_gateway.mqtt.contact_devices import (
     ACCURACY_KNOWN,
+    ADVERT_POSITION,
     ECHO_S,
     MAX_READING_COMPONENTS,
     POSITION_AVAILABLE,
@@ -143,6 +144,7 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
     cmps = document["cmps"]
     assert set(cmps) == {
         "last_heard", "hops", "snr", "message", "send", "remove", "telemetry", "telemetry_state",
+        "advert_position",
     }  # fmt: skip
     assert cmps["send"]["name"] is None  # named like the device
     assert cmps["send"]["command_topic"] == f"meshcore/radio1/contacts/{ALICE}/send"
@@ -155,6 +157,7 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
         "sensor.mesh_alice_last_heard", "sensor.mesh_alice_hops", "sensor.mesh_alice_snr",
         "event.mesh_alice_message", "notify.mesh_alice", "button.mesh_alice_remove",
         "switch.mesh_alice_telemetry", "sensor.mesh_alice_telemetry_state",
+        "binary_sensor.mesh_alice_advert_position",
     }  # fmt: skip
     for key, component in cmps.items():
         assert component["unique_id"] == f"{GATEWAY}_contact_{ALICE}_{key}"
@@ -224,7 +227,7 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.contact_received(ALICE): set(_received()),
         TOPICS.state: STATE_KEYS,
     }
-    assert len(cmps) == 11 + len(LPP_ALL_READINGS)  # every component a contact can have
+    assert len(cmps) == 12 + len(LPP_ALL_READINGS)  # every component a contact can have
     for component in cmps.values():
         templates = [
             component.get("value_template", ""),
@@ -294,6 +297,31 @@ def test_a_companion_gets_the_telemetry_switch_and_state_at_once(config: Config)
         "device_class": "enum", "options": list(STATES), "state_topic": DOCUMENT,
         "value_template": TELEMETRY_STATE,
     }  # fmt: skip
+
+
+@pytest.mark.parametrize("config", [TELEMETRY_ON, TELEMETRY_OFF], ids=["on", "off"])
+def test_every_companion_shows_whether_its_adverts_carry_its_position(config: Config) -> None:
+    """At once: its document has a value from the first table read, also before the gateway
+    checked an advert, and the check runs with telemetry off too (design 6c D5, D10, D16). No
+    entity category: a trigger aimed at the device skips entities that have one."""
+    cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
+    assert cmps["advert_position"] == {
+        "p": "binary_sensor", "unique_id": f"{GATEWAY}_contact_{ALICE}_advert_position",
+        "default_entity_id": "binary_sensor.mesh_alice_advert_position",
+        "name": "Position in adverts", "device_class": "problem", "state_topic": DOCUMENT,
+        "value_template": ADVERT_POSITION,
+    }  # fmt: skip
+
+
+def test_position_in_adverts_reads_the_check_and_knows_no_value_without_one() -> None:
+    """On, off, or unknown: for a document of 1.1.0a2 without the key, for `null` (no
+    companion any more) and for the empty message that clears the document; `is boolean` logs
+    nothing in Home Assistant (home-assistant/tests/test_adverts.py). No coordinates."""
+    assert ADVERT_POSITION == (
+        "{{ ('ON' if value_json.advert_carries_position else 'OFF') if value_json is defined "
+        "and value_json.advert_carries_position is boolean else None }}"
+    )
+    assert template_keys(ADVERT_POSITION) == {"advert_carries_position"}
 
 
 @pytest.mark.parametrize("node_type", [NodeType.REPEATER, NodeType.ROOM_SERVER, NodeType.SENSOR])
@@ -432,7 +460,9 @@ def test_templates_of_keys_newer_than_the_documents_log_nothing() -> None:
         "value_json.readings is defined and value_json.readings.ch2_temperature_c is number "
         "else None }}"
     )
-    for template in (TELEMETRY_CURRENT, POSITION_AVAILABLE, TELEMETRY_STATE, TELEMETRY_SWITCH):
+    for template in (
+        TELEMETRY_CURRENT, POSITION_AVAILABLE, TELEMETRY_STATE, TELEMETRY_SWITCH, ADVERT_POSITION,
+    ):  # fmt: skip
         assert template.count("value_json is defined and ") == 1
     assert "telemetry_current is false" in TELEMETRY_CURRENT  # online for an older document
     assert "telemetry_excluded is true" in TELEMETRY_SWITCH  # on: it excluded nobody
@@ -555,6 +585,7 @@ def test_a_removed_contact_loses_its_device(tmp_path: Path) -> None:
     assert empty is None
     assert set(bind["cmps"]) == {
         "last_heard", "hops", "snr", "message", "send", "remove", "telemetry", "telemetry_state",
+        "advert_position",
     }  # fmt: skip
     assert all("enabled_by_default" not in c for c in bind["cmps"].values())
     assert bind["cmps"]["send"]["unique_id"] == f"{GATEWAY}_contact_{ALICE}_send"
@@ -669,7 +700,8 @@ def test_a_component_stays_when_its_data_goes(tmp_path: Path) -> None:
     restarted, bus = devices(tmp_path)
     restarted.update(sensor)
     ((_, document),) = bus.take()
-    assert {"send", "message", "position", "telemetry", "telemetry_state"} <= set(document["cmps"])
+    kept = {"send", "message", "position", "telemetry", "telemetry_state", "advert_position"}
+    assert kept <= set(document["cmps"])
     assert document["cmps"]["send"]["command_topic"].endswith("/send")
     assert document["dev"]["mdl"] == "Sensor"
     assert all(set(c) != {"p"} for c in document["cmps"].values())

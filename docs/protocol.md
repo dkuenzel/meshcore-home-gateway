@@ -263,11 +263,20 @@ the sender's clock), signature (64), then app data of at most 32 bytes
 feature field each; 0x80 the rest is the name). The radio drops an advert without a name
 (`BaseChatMesh.cpp:122-127`). **A logged advert is unverified**: its signature is checked by the
 radio only after the log (`src/Mesh.cpp:271-290`), and the bridge cannot check Ed25519 signatures
-with the standard library. Only the `ADVERT` or `NEW_ADVERT` that follows for the same key and
-timestamp shows that the radio accepted it. A RESPONSE (payload type 1, `src/Packet.h:20`)
-starts with the one-byte hashes of destination and source, then the MAC (`src/Mesh.cpp:488-509`):
-the gateway reads them from a flooded one to count the airtime of a telemetry answer that the
-companion flooded, never to grant anything.
+with the standard library. What the radio accepted shows only afterwards. `ADVERT` carries the
+key only, no timestamp and no content (`MyMesh.cpp:358-366`); with the default receive delay 0 the
+radio writes it directly after the advert's log, in the same pass (`src/Dispatcher.cpp:191-256`).
+The timestamp of the advert it accepted is the record's `last_advert` at the next table read
+(`BaseChatMesh.cpp:197`). The record takes latitude and longitude only from an advert with flag
+0x10 (`BaseChatMesh.cpp:193-196`): it keeps a position the adverts no longer carry, and 0, 0 with
+the flag zeroes it. `NEW_ADVERT` carries the record the radio made from that advert alone
+(cleared first, the position only with the flag; `BaseChatMesh.cpp:108-120, 156-179`), written
+right after its log. The gateway checks a companion's advert from these
+([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md),
+[design §6.6](design.md#66-observer-documents-and-history)). A RESPONSE (payload type 1,
+`src/Packet.h:20`) starts with the one-byte hashes of destination and source, then the MAC
+(`src/Mesh.cpp:488-509`): the gateway reads them from a flooded one to count the airtime of a
+telemetry answer that the companion flooded, never to grant anything.
 
 ## 5 Semantics
 
@@ -328,7 +337,21 @@ companion flooded, never to grant anything.
   while the queue is full (`SerialWifiInterface.cpp:27-31`); it sends one queued frame per
   main-loop pass (`SerialWifiInterface.cpp:85-100`), and a contact listing adds one frame per pass
   because `isWriteBusy` is always false (`SerialWifiInterface.cpp:42-44`, `MyMesh.cpp:2392-2402`).
-  Pushes that arrive during a listing fill the queue for the rest of it.
+  Pushes that arrive during a listing fill the queue for the rest of it. An advert's log and its
+  push are queued in the same pass of the receive step, which runs before the interface sends
+  (`MyMesh.cpp:2388-2391, 2415-2421`), so a push never comes without its own log unless the log
+  was too long for a frame; a log can come without its push (3 frames queued), or neither (4)
+  *(inferred)*.
+* **An advert and its push.** With a receive delay above 0 (only `SET_TUNING_PARAMS` raises it,
+  the default is 0), a flood is handled up to 32 s after its log, at the start of a later pass, so
+  other frames can come between an advert's log and its push (`src/Dispatcher.cpp:11, 138-145,
+  238-256`). An advert whose raw packet does not fit a frame (path longer than 71 bytes minus the
+  app data, 67 with transport codes) is not logged at all (`MyMesh.cpp:291-302`).
+* **`EXPORT_CONTACT` (17) is not used.** With a key it returns the radio's stored copy of the
+  contact's advert, read into a 177-byte frame buffer (`MyMesh.cpp:1398-1405`, `MyMesh.h:268-269`);
+  an ESP32 or RP2040 radio reads up to 255 bytes there
+  (`examples/companion_radio/DataStore.cpp:573`), and a frame over 176 bytes is never sent
+  (`SerialWifiInterface.cpp:22-25`), so a long copy is never answered.
 * **Telemetry requests** (ADR 0018). The radio keeps **one** pending request: each request
   replaces the last one's tag (`clearPendingReqs`, `MyMesh.cpp:1688-1689`, `MyMesh.h:192-194`), a
   refused one (`ERR`) leaves it, and a text send does not touch it. It never times a request out

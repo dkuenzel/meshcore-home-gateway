@@ -478,16 +478,48 @@ flowchart LR
   file, so contacts removed while the gateway was stopped are cleared at its first table read.
 * **Signals of adverts**: the radio logs every packet before it handles it, and pushes `ADVERT` or
   `NEW_ADVERT` only for adverts whose signature it accepted. The observer takes hops, SNR and RSSI
-  from a logged advert of the same key within 10 s before such a push; the logged content itself is
-  never trusted (protocol.md, section 4).
+  from the push's own log. While the radio's receive delay is 0 (its default, read at connect),
+  that is the logged advert of the same key that is the frame directly before the push, for a
+  `NEW_ADVERT` only with its record's time, for an `ADVERT` only when it is newer than the record
+  the observer holds (the radio pushes a contact's advert only when it is newer than its record).
+  Any other log is another packet (a late copy of an older advert, or a forged one), so a push
+  without its own log gets no signal, as an advert that was not logged. With a receive delay
+  above 0, or one not known, a logged advert of the key within 10 s before the push gives them.
+  The logged content itself is never trusted on its own (protocol.md, section 4).
 * **Positions** come from contact records (the radio keeps the position of a contact's newest
-  advert that carried one) and from the contacts' own telemetry (§6.11). A telemetry position
-  replaces the fix when it moved 20 m or more, or when the fix came from an advert; its time is when
-  it changed, so a companion at rest writes nothing per answer, neither in the history nor in Home
-  Assistant's recorder. It carries an accuracy of 15 m (the cell of 0.0001° the encoder truncates
-  to, and the receiver's own error). A changed advert position replaces a telemetry fix, an
-  unchanged one does not. A position from telemetry expires (§6.11): `position_current` says
-  whether it is current, and the document keeps it. Nodes that are not contacts keep none.
+  advert that carried one, also after the contact stopped sharing it) and from the contacts' own
+  telemetry (§6.11). A position from adverts exists only while the record holds one and the
+  contact's last checked advert, if any, carried one (next item); a record without a position
+  drops an advert position of any contact, and a telemetry position is never touched. A telemetry
+  position replaces the fix when it moved 20 m or more, or when the fix came from an advert; its
+  time is when it changed, so a companion at rest writes nothing per answer, neither in the
+  history nor in Home Assistant's recorder. It carries an accuracy of 15 m (the cell of 0.0001°
+  the encoder truncates to, and the receiver's own error). A changed advert position replaces a
+  telemetry fix, also at the check that shows a companion shares it again; an unchanged one does
+  not. A position from telemetry expires (§6.11):
+  `position_current` says whether it is current, and the document keeps it. Nodes that are not
+  contacts keep none.
+* **Positions in adverts** ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md),
+  `core/adverts.py`): the observer keeps each logged advert (at most 64, at most 40 s) and, at a
+  contact's `ADVERT`, its pending advert with the key's logs. The next table read whose record
+  shows the logged timestamp as `last_advert` decides: while the receive delay is 0, the log that
+  is the frame directly before the push; otherwise every log of the key with that timestamp must
+  agree. A flagged log must hold the record's position; a new position in the record since the
+  read before, with a newer `last_advert`, is evidence on its own. The radio pushes a contact's
+  advert only when it is newer than its record, so a read whose record is older than the push's
+  own log, or no newer than at the read before, was sent before the radio took it: it waits for
+  the next read (at most 30 s), also while a log of the record's time is in the window. A read
+  with no log of the record's time waits too while a newer log of the key is in the window. A
+  heard companion's `NEW_ADVERT` carries the record made from that advert alone and is checked at
+  once; its heard node keeps only the time and flag, and the table read that adds it takes them.
+  When nothing is learned the last check stays and one debug line says "not checked". While a
+  companion's newest advert is not checked, `advert_carries_position` is the last check's flag, or
+  `true` when the record holds a position: it errs to warn. The index lists the companions not
+  excluded from telemetry whose value is `true`; the event `position_in_advert` comes when such a
+  companion's check turns to carrying, at an add with a check that carries, and at an inclusion
+  while it carries. The last check of each companion is kept in the state file (`advert_checks`,
+  no position); a logged position is held at most about three minutes (its log up to 40 s before
+  the push, which is held up to 70 s, until the next minute tick) and never stored or published.
 * **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
   `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
   history's table `reading`, one row per value, in one transaction. The table was added to the
@@ -502,9 +534,10 @@ flowchart LR
   history show the same answer.
 * **Exclusion** (§6.11): an excluded companion's readings, its time of the newest position and a
   position from telemetry are forgotten, and the position its record carries takes the place, as
-  at a first table read; its rows in the history stay until their age removes them and are not
-  restored while it is excluded. `forget` deletes its readings and positions from telemetry in one
-  transaction; its advert positions and when it was last heard stay.
+  at a first table read, while its last checked advert, if any, carried one; its rows in the
+  history stay until their age removes them and are not restored while it is excluded. `forget`
+  deletes its readings and positions from telemetry in one transaction; its advert positions and
+  when it was last heard stay.
 * **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
   answers moves it at most once an hour, keeping the signal of its last advert or message (an
   answer reports none).
@@ -533,7 +566,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Contacts, Nodes heard | `sensor` | `contacts` → `total`, `nodes` → `total` |
 | Contact, New node | `event` | `contact`, `node` |
 | Noise floor, Radio transmit time last hour, uptime and packet counters | `sensor`, diagnostic; the counters disabled by default | `stats` |
-| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` |
+| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` → `remote_cli_total`, `advert_carries_position_total` |
 | Look-alike node heard | `binary_sensor` (problem) | `nodes` → `look_alike_total` |
 | Show hidden contacts | `button` | → `homeassistant/show_hidden` |
 | Add heard node | `select`, its own document | the heard nodes' labels → `homeassistant/add_node` |
@@ -544,6 +577,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Telemetry | `event` (`answered`, `unanswered`) | `telemetry` |
 | Telemetry | `switch`, configuration, on each companion's device | `contacts/<key>` → `telemetry_excluded`; → `contacts/<key>/telemetry` |
 | Telemetry state | `sensor` (enum) on each companion's device | `contacts/<key>` → `telemetry_state` |
+| Position in adverts | `binary_sensor` (problem) on each companion's device | `contacts/<key>` → `advert_carries_position` |
 | Battery, MCU temperature, a sensor per reading | `sensor` (their class and unit, state class `measurement`) on a companion's device, with its first answer that carries them | `contacts/<key>` → `battery_v`, `mcu_temperature_c`, `readings`; available while `telemetry_current` |
 
 All entities share the availability topic, so they become unavailable when the bridge is offline.
@@ -563,10 +597,10 @@ gateway's device ID and follows the radio's table: it is announced after a table
 when its document changes, and removed with placeholders first and then an empty document, once
 more after Home Assistant's next birth message if it may not have been running. Its components
 exist only with data (sending for companions, messages for companions and room servers, the
-tracker once a position is known, the telemetry switch and state for companions, battery, MCU
-temperature and up to 16 readings with an answer that carries them) and are never removed one by
-one; only the tracker has coordinates. The tracker of a position from telemetry and the telemetry
-sensors are available only while the answers are current
+tracker once a position is known, the telemetry switch and state and *Position in adverts* for
+companions, battery, MCU temperature and up to 16 readings with an answer that carries them) and
+are never removed one by one; only the tracker has coordinates. The tracker of a position from
+telemetry and the telemetry sensors are available only while the answers are current
 ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the device and state
 classes are interface and recorded in the snapshot. Entity IDs use a slug of the contact's name kept from its first appearance, also when
 it comes back. The gateway subscribes to these topics: an empty document it did not send is the user
@@ -633,6 +667,14 @@ systemd unit does not restart on it).
   the event loop at half the watchdog interval, `STOPPING=1` on shutdown.
 * The `state` document and the Home Assistant diagnostic entities show the radio link, battery and
   airtime use; the `delivery` event shows every failure.
+* The check for positions in adverts (§6.6) logs each check at info level ("contact
+  a1b2c3d4e5f6: its advert carries its position", or "no position", with "(the radio's record
+  keeps an older one)" when it does), a logged copy that differs from the advert the radio took as
+  a warning, and each advert the radio took that the gateway could not check at debug level
+  ("contact …: its advert at <time> was not checked (not logged)" or "(no report from the
+  radio)"). A heard companion's differing copies and its advert without a log are logged at debug
+  level only, when its `NEW_ADVERT` comes ("node …"), and not again at the read that adds it. No
+  coordinate is logged.
 
 ### 6.11 Telemetry
 
@@ -798,7 +840,8 @@ sequenceDiagram
   any task runs, the schedule gives each contact its state back at once, and the observer the time
   of its newest answer with a position, so a restart flips no state and raises no event. The
   observer keeps the last document of each companion whose answers are current in the state file
-  too (at once when one turns current or no longer, else with its minute tick and at the stop).
+  too (at once when one turns current or no longer, or loses a position from adverts, so that a
+  crash brings back none a check dropped; else with its minute tick and at the stop).
   Before the first table read it has no contacts. It keeps these documents in their latest state,
   also once they expired, stores each change at once, and publishes them again when their state
   changes, and each again at every connect of the broker (it may have missed one: a run that
@@ -833,6 +876,8 @@ sequenceDiagram
 | Privilege escalation in the service | Dedicated system user, systemd sandboxing, unprivileged container. |
 | Telemetry of someone outside the household: a companion that allows everyone and has the gateway as a contact answers | A companion's firmware denies telemetry by default and answers only a requester in its own table; the household excludes every other companion (the switch, the command line, MQTT; a full key also before it is added); the first time telemetry runs on an installation it waits an hour after the radio connects, so the household can do so first; exclusions survive restarts and the contact leaving the table, and an unreadable exclusions file pauses telemetry instead of asking everyone. |
 | Presence decided on a position nobody confirmed | A position from telemetry and the readings expire when the companion stops answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the state says why; `paused` with `no_radio` while the radio is away, and no events then. |
+| A household companion shares its position in adverts, which everyone in range can read | The gateway checks each companion's newest advert ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)): *Position in adverts* on its device, the gateway's *Companion position in adverts* and the event `position_in_advert` warn the household. Until the newest advert is checked, the radio's record decides, erring to warn. The gateway reads only what the radio logged and accepted; it sends no command for it and never writes a companion. |
+| A forged advert in the packet log (the radio logs every packet before it checks the signature) | A log counts only for an advert the radio pushed and whose timestamp the next table read shows as `last_advert`. While the receive delay is 0, the log that is the frame directly before the push decides, and a forged copy is never there; otherwise all logs of the key with that time must agree, and differing copies decide nothing. A flagged log must hold the position the record took. A forged position is never shown: positions come from the record. |
 
 ### 7.3 Command authorisation in detail
 
@@ -914,6 +959,23 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   Values count for up to an hour (three of the companion's intervals) after its last answer, and
   coming back takes up to 30 minutes. Any Home Assistant user who may switch entities can include
   an excluded companion again; the broker's ACL decides who may write `contacts/+/telemetry`.
+* The check for positions in adverts cannot read every advert: a report the radio dropped over
+  TCP, a log too long for a frame (non-default repeaters), an advert made while the gateway was
+  stopped, a companion added from a key or a link before the gateway heard it. Until the newest
+  advert is checked the radio's record decides: a companion that stopped sharing warns again after
+  an unchecked advert, until its next checked advert; one that starts sharing while unchecked is
+  missed only if its record holds no position, until its next advert: it never had one (0, 0); the
+  gateway added it before 1.1.0a3, or after a restart between hearing and adding it; or it was
+  added from a key or a link before the gateway heard it. A second advert during the table read
+  that the first one started goes unchecked when no log of its own is directly before its push (a
+  receive delay above 0 or not known, or a log too long for a frame): the read shows the first,
+  and the gateway cannot tell that it is old. Two adverts between two table reads, sharing switched
+  off in between, read as sharing when the first one changed the record's position; another
+  client of the radio that writes a contact with a newer advert time and another position does
+  the same.
+  A forged copy without the flag decides only when the real advert's log was too long for a frame
+  and the forgery is the adjacent or only copy, or when another client raised the receive delay
+  during a session (the gateway reads it at connect): a wrong "no position" until the next advert.
 * Excluding a contact does not purge Home Assistant's own history: its recorder keeps the states
   until it purges them, and the long-term statistics of `measurement` sensors until they are
   deleted by hand (home-assistant.md, *Privacy*). The gateway's history of the contact goes with
@@ -958,6 +1020,13 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | A bug while the states are evaluated | exception | logged at most once a minute; the step goes on | log error |
 | Radio away | no session | telemetry paused at once; states turn `away` after `current_s`; no event | `state.telemetry = paused`, `telemetry_reason = no_radio` |
 | The clock set back while stopped | negative age | ages unknown: last answers count as more than a day old, no located time, the first-start hour kept whole | – |
+| An advert the radio took but did not report (over TCP its push dropped) | `last_advert` grew without a push | not checked: a new position in the record at the next table read counts; else the last check stays, and the value errs to warn | log debug "not checked"; `advert_checked_at` older than `last_advert_at` |
+| An advert made while the gateway was stopped | at the first table read, `last_advert` is newer than the stored check | not checked: the first read compares nothing, so the last check stays and the value errs to warn; no event. While the last check carried none, no advert position comes back; while it carried one, the record's position is shown, also a new one from that advert | log debug "not checked" at the first read; `advert_checked_at` older than `last_advert_at` |
+| An advert without its log (too long for a frame), or a read that never shows the logged advert | no log with the record's time | not checked: a new position in the record counts; else the last check stays, and the value errs to warn | log debug "not checked" |
+| A table read that started before the radio took the advert (its push came during the read) | the push's own log is newer than the record, the record is no newer than at the read before, or no log has the record's time while a newer one is in the window | the read waits for the next one, at most 30 s, which decides | – |
+| Logged copies of one advert that differ, or a log against the record | comparison | nothing learned; the last check stays | log warning |
+| A receive delay above 0, or firmware that reports no tuning | the tuning read at connect | the frame before the push does not decide; all logs of the key with the advert's time must agree | – |
+| Advert checks in the state file invalid or not writable | validation, error on save | invalid entries skipped; the checks are kept in memory, and the next change writes them again | log warning |
 
 ## 9 Deployment and operations
 
@@ -1049,6 +1118,7 @@ version, like the CI matrix, and fails if one is missing.
 | Contacts on the radio, each with its own device | [0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md) |
 | Telemetry pulled from the household's companions | [0018](decisions/0018-telemetry-pulled-from-the-households-companions.md) |
 | Telemetry values in Home Assistant expire | [0024](decisions/0024-telemetry-values-in-home-assistant-expire.md) |
+| Positions in adverts checked from the packet log | [0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md) |
 | Internationalisation with gettext | [0019](decisions/0019-internationalisation-with-gettext.md) |
 | Managed radio profile for the observer | [0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | Generated dashboards for desktop and mobile | [0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) |
@@ -1071,7 +1141,7 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; every companion a recipient; statistics and contact sensors on the gateway's device | 0017 |
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
 | 5 | Contact management: the gateway, the MQTT requests, the command line and the Home Assistant controls (add a heard node, add by key or link, remove; the gateway's QR code) | 0017 |
-| 6 | Telemetry and positions of the household's companions, with traces on the map. **6a**: the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b** (this release): readings, the answer's time and state, expiry, events, exclusion of a contact, on by default with a first-start hour; **6c**: the check for positions in adverts, traces | 0018, 0024 |
+| 6 | Telemetry and positions of the household's companions, with traces on the map. **6a**: the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b**: readings, the answer's time and state, expiry, events, exclusion of a contact, on by default with a first-start hour; **6c** (this release): the check for positions in adverts, traces on Home Assistant's map | 0018, 0024, 0025 |
 | 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
 | 8 | Generated dashboards for desktop and mobile | 0021 |
 

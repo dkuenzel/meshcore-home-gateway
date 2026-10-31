@@ -126,6 +126,7 @@ ALICE_IDS = {
     "notify.mesh_alice", "event.mesh_alice_message", "sensor.mesh_alice_last_heard",
     "sensor.mesh_alice_hops", "sensor.mesh_alice_snr", "button.mesh_alice_remove",
     "switch.mesh_alice_telemetry", "sensor.mesh_alice_telemetry_state",
+    "binary_sensor.mesh_alice_advert_position",
 }  # fmt: skip
 ALICE_ANSWER_IDS = {  # with her answers (tests/test_telemetry.py): GPS and a BME280 on channel 2
     "device_tracker.mesh_alice", "sensor.mesh_alice_battery", "sensor.mesh_alice_mcu_temperature",
@@ -484,7 +485,10 @@ async def test_the_observer_documents_fill_the_gateway_entities(
     assert states[f"sensor.{PREFIX}_nodes"].state == "0"
     remote = states[f"binary_sensor.{PREFIX}_remote_cli"]
     assert (remote.state, remote.attributes["contacts"]) == ("on", [HILL])
-    assert states[f"binary_sensor.{PREFIX}_advert_position"].state == "off"
+    advert = states[f"binary_sensor.{PREFIX}_advert_position"]  # Alice's record has no position
+    assert (advert.state, advert.attributes["contacts"], advert.attributes["total"]) == (
+        "off", [], 0,
+    )  # fmt: skip
     assert states[f"sensor.{PREFIX}_noise_floor"].state == "unknown"
     await fire(hass, TOPICS.contact_event, {"event_type": "hidden", "key": ALICE, "name": "Alice",
                                             "type": "chat"})  # fmt: skip
@@ -550,6 +554,8 @@ def test_the_telemetry_exclusions_keep_the_telemetry_out() -> None:
     }  # fmt: skip
     assert excluded_by(globs, contact_entity_ids()) == telemetry | {f"{e}_2" for e in telemetry}
     assert excluded_by(globs, GATEWAY_IDS) == {f"event.{PREFIX}_telemetry"}
+    # whether and when a companion's adverts carried its position, never where (the guide)
+    assert not excluded_by(globs, {"binary_sensor.mesh_alice_advert_position"})
     for name in ("Team ch2", "Old battery"):
         slug = slugify(name)
         others = {f"sensor.mesh_{slug}_{s}" for s in ("last_heard", "hops", "snr")}

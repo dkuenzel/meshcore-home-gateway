@@ -903,6 +903,14 @@
  "homeassistant": {
   "components": {
    "contact": {
+    "advert_position": {
+     "device_class": "problem",
+     "entity_id": "binary_sensor.mesh_<slug>_advert_position",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "binary_sensor"
+    },
     "battery": {
      "device_class": "voltage",
      "entity_id": "sensor.mesh_<slug>_battery",
@@ -1238,6 +1246,7 @@
       "failed",
       "hidden",
       "included",
+      "position_in_advert",
       "refused",
       "removed",
       "shown"
@@ -1511,6 +1520,8 @@
     "type"
    ],
    "contacts": [
+    "advert_carries_position",
+    "advert_carries_position_total",
     "advert_position",
     "advert_position_total",
     "contacts",
@@ -1529,6 +1540,8 @@
     "truncated"
    ],
    "contacts/<key>": [
+    "advert_carries_position",
+    "advert_checked_at",
     "advert_position",
     "altitude_m",
     "battery_v",
@@ -1947,6 +1960,7 @@
     "failed",
     "hidden",
     "included",
+    "position_in_advert",
     "refused",
     "removed",
     "shown"

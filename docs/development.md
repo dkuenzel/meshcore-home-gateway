@@ -212,7 +212,8 @@ them), and log messages.
   with whether one of them is required, each option by all its names: a new exclusion between
   options that existed, or a required group that a call of before need not satisfy, is breaking.
 - The snapshot does not see, so review keeps:
-  - the JSON types and nullability of keys;
+  - the JSON types and nullability of keys (1.1.0a3 added `advert_carries_position`, a boolean or
+    `null`, and `advert_checked_at`, a string or `null`, to `contacts/<key>`);
   - the size limits and list bounds of MQTT;
   - the value lists that are not under `mqtt > values` or `cli > values`: the `reason` of
     deliveries, contact and setting events (1.1.0a2 added `not_a_companion`, `too_many`,
@@ -229,7 +230,10 @@ them), and log messages.
   - the exit status of each case;
   - the platform floors: Python, paho-mqtt, Home Assistant, the firmware and protocol versions;
   - meanings and units of values, rules between settings, and the texts a request accepts (such
-    as `on`, `off` and `forget` of `contacts/<key>/telemetry`).
+    as `on`, `off` and `forget` of `contacts/<key>/telemetry`). Since 1.1.0a3 the state of
+    *Companion position in adverts* follows `advert_carries_position…` of the `contacts` index,
+    while `advert_position` keeps its meaning: the radio's record holds a position from one of the
+    contact's adverts.
 
 ## Release
 

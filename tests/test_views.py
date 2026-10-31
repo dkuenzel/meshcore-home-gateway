@@ -1,12 +1,14 @@
 """The providers' documents (views.py, ADR 0015): shapes, keys always present, sizes bounded."""
 
 import json
+from typing import Any
 
 import pytest
 
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
+    AdvertCheck,
     AirtimeMeter,
     Fix,
     Heard,
@@ -24,6 +26,7 @@ from meshcore_home_gateway.views import (
     INDEX_LIMIT_BYTES,
     HistoryEntry,
     RadioReadings,
+    advert_carries_position,
     bounded,
     contact_document,
     contact_event,
@@ -61,9 +64,10 @@ def test_a_contact_document_has_every_key_and_iso_times() -> None:
         "snr_db": 6.25, "rssi_dbm": -97, "latitude": 53.55, "longitude": 9.99,
         "altitude_m": None, "position_at": "2027-01-15T07:59:00+00:00",
         "position_source": "advert", "position_accuracy_m": None, "position_received_at": None,
-        "advert_position": True, "telemetry_state": None, "telemetry_excluded": False,
-        "telemetry_current": None, "position_current": None, "readings_at": None,
-        "battery_v": None, "mcu_temperature_c": None, "readings": {},
+        "advert_position": True, "advert_carries_position": True, "advert_checked_at": None,
+        "telemetry_state": None, "telemetry_excluded": False, "telemetry_current": None,
+        "position_current": None, "readings_at": None, "battery_v": None,
+        "mcu_temperature_c": None, "readings": {},
     }  # fmt: skip
 
 
@@ -92,8 +96,9 @@ def test_a_contact_never_heard_has_nulls() -> None:
     assert nulls == {
         "path_hops", "last_advert_at", "first_heard_at", "heard_at", "heard_via", "hops",
         "snr_db", "rssi_dbm", "latitude", "longitude", "altitude_m", "position_at",
-        "position_source", "position_accuracy_m", "position_received_at", "telemetry_state",
-        "telemetry_current", "position_current", "readings_at", "battery_v", "mcu_temperature_c",
+        "position_source", "position_accuracy_m", "position_received_at",
+        "advert_carries_position", "advert_checked_at", "telemetry_state", "telemetry_current",
+        "position_current", "readings_at", "battery_v", "mcu_temperature_c",
     }  # fmt: skip
     assert (document["path_known"], document["flags"], document["type"]) == (False, [], "repeater")
     assert (document["telemetry_excluded"], document["readings"]) == (False, {})
@@ -115,8 +120,11 @@ def test_the_index_is_sorted_by_last_heard_and_bounded() -> None:
         nodes[7].public_key, True, iso(T),
     )  # fmt: skip
     assert document["max"] == 510
-    # companions whose adverts carry a position: counted, the first keys listed
+    # companions whose record holds a position from their adverts: counted, the first keys listed
     assert (document["advert_position_total"], len(document["advert_position"])) == (510, 16)
+    # none checked yet: the record says their adverts may carry it (design 6c D5)
+    assert document["advert_carries_position"] == sorted(n.public_key for n in nodes)[:16]
+    assert document["advert_carries_position_total"] == 510
 
 
 def test_the_index_reports_contacts_with_the_remote_cli_flag() -> None:
@@ -125,6 +133,8 @@ def test_the_index_reports_contacts_with_the_remote_cli_flag() -> None:
     document = contacts_document(mesh)
     assert (document["remote_cli"], document["remote_cli_total"]) == ([KEY], 1)
     assert (document["advert_position"], document["advert_position_total"]) == ([], 0)
+    assert document["advert_carries_position"] == []
+    assert document["advert_carries_position_total"] == 0
     assert document["truncated"] is False
 
 
@@ -349,7 +359,118 @@ def test_the_largest_contact_document_stays_within_the_attribute_bound() -> None
     tracked = Tracked(
         node, T, Heard(T, "telemetry", Signal(64, -32.25, -128)),
         Fix(Position(-89.99999, -179.99999), T, "telemetry", -8388.608), T,
-        readings=Readings(T, Named(-327.68, -3276.8, readings)),
+        readings=Readings(T, Named(-327.68, -3276.8, readings)), advert=AdvertCheck(int(T), True),
     )  # fmt: skip
     document = contact_document(tracked, protected=True, manage=True, telemetry_state="no_answer")
     assert 2048 < len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
+
+
+# --- positions in adverts (ADR 0018, design 6c) -------------------------------------------------
+
+LAST = int(T) - 60  # the contact's clock at its newest advert, as the radio's record has it
+HERE = Position(53.55, 9.99)
+CHECK_KEYS = ("advert_position", "advert_carries_position", "advert_checked_at")
+
+
+def _check_keys(
+    check: AdvertCheck | None, position: Position | None = HERE, *, last_advert: int = LAST,
+    node_type: int = 1,
+) -> tuple[Any, ...]:  # fmt: skip
+    """`advert_position`, `advert_carries_position` and `advert_checked_at` of a contact whose
+    record has this position and time, with this check."""
+    node = Node(KEY, "Alice", node_type, last_advert=last_advert, position=position)
+    document = contact_document(Tracked(node, advert=check))
+    assert advert_carries_position(Tracked(node, advert=check)) == document[CHECK_KEYS[1]]
+    return tuple(document[k] for k in CHECK_KEYS)
+
+
+def test_a_checked_newest_advert_says_whether_it_carries_the_position() -> None:
+    """`advert_position` stays the record's: it keeps a position after sharing stops, and 0, 0
+    clears it (design 6c D6, D8)."""
+    assert _check_keys(AdvertCheck(LAST, True)) == (True, True, iso(LAST))
+    assert _check_keys(AdvertCheck(LAST, False)) == (True, False, iso(LAST))  # an older one kept
+    assert _check_keys(AdvertCheck(LAST, True), None) == (False, True, iso(LAST))  # 0, 0
+    assert _check_keys(AdvertCheck(LAST, False), None) == (False, False, iso(LAST))
+    # a clock at 0 gives no time, as for `last_advert_at`
+    assert _check_keys(AdvertCheck(0, True), None, last_advert=0) == (False, True, None)
+
+
+def test_before_its_first_check_the_record_decides() -> None:
+    """A position in the record came from an earlier advert, which may still carry it: it errs
+    to warn (design 6c D5)."""
+    assert _check_keys(None) == (True, True, None)
+    assert _check_keys(None, None) == (False, False, None)
+
+
+def test_while_its_newest_advert_is_not_checked_the_value_errs_to_warn() -> None:
+    """A newer advert than the check (one the gateway missed, or made while it was stopped): the
+    last check's flag, or True when the record holds a position (design 6c D4; the scenarios S1
+    and S2 of the policy check: she started sharing, or her push was dropped)."""
+    older = LAST - 600
+    assert _check_keys(AdvertCheck(older, False)) == (True, True, iso(older))
+    assert _check_keys(AdvertCheck(older, False), None) == (False, False, iso(older))
+    assert _check_keys(AdvertCheck(older, True), None) == (False, True, iso(older))
+    assert _check_keys(AdvertCheck(older, True)) == (True, True, iso(older))
+
+
+def test_a_check_newer_than_the_record_decides() -> None:
+    """A companion the gateway heard and then added: the record the add wrote has no position and
+    a protected contact's the time 0 (design 6c F12, D27); the heard check decides."""
+    assert _check_keys(AdvertCheck(LAST, False), last_advert=0) == (True, False, iso(LAST))
+    mesh = Mesh()
+    mesh.node_heard(Node(KEY, "Bob", 1, last_advert=LAST, position=HERE), Heard(T, "advert"))
+    mesh.advert_heard(KEY, AdvertCheck(LAST, True))
+    mesh.contacts_read([Node(KEY, "Bob", 1, last_advert=0)], T + 5)
+    document = contact_document(mesh.contacts[KEY])
+    assert tuple(document[k] for k in CHECK_KEYS) == (False, True, iso(LAST))
+
+
+@pytest.mark.parametrize("node_type", [2, 3, 4])
+def test_other_node_types_are_not_checked(node_type: int) -> None:
+    """Repeaters, room servers and sensors share their position by design (design 6c D15)."""
+    expected = (True, None, None)
+    assert _check_keys(AdvertCheck(LAST, True), node_type=node_type) == expected
+    assert _check_keys(None, node_type=node_type) == expected
+
+
+def test_the_index_lists_the_households_companions_whose_adverts_carry_the_position() -> None:
+    """Companions not excluded from telemetry (design 6c D7): a neighbour that shares on purpose
+    does not count. `advert_position` stays the records' (D6)."""
+    mesh = Mesh()
+    carrying = [f"{i:064x}" for i in range(20)]
+    excluded, stopped, unchecked = "e1" * 32, "d1" * 32, "c1" * 32
+    nodes = [Node(key, "Alice", 1, last_advert=LAST, position=HERE) for key in carrying]
+    nodes += [Node(key, "Bob", 1, last_advert=LAST, position=HERE)
+              for key in (excluded, stopped, unchecked)]  # fmt: skip
+    nodes += [Node("b2" * 32, "Hill", 2, last_advert=LAST, position=HERE)]
+    mesh.contacts_read(nodes, T)
+    for key in [*carrying, excluded]:
+        mesh.advert_checked(key, AdvertCheck(LAST, True), T)
+    mesh.advert_checked(stopped, AdvertCheck(LAST, False), T)  # its record keeps the position
+    document = contacts_document(mesh, excluded={excluded, "f1" * 32})
+    expected = sorted([*carrying, unchecked])
+    assert document["advert_carries_position"] == expected[:16]
+    assert document["advert_carries_position_total"] == 21
+    assert document["advert_position_total"] == 23  # every companion's record holds one
+    assert document["telemetry_excluded"] == [excluded, "f1" * 32]  # unchanged
+
+
+@pytest.mark.parametrize(("node_type", "position"), [(1, HERE), (1, None), (2, HERE)])
+def test_a_document_stored_by_1_1_0a2_is_restated_with_the_keys_of_the_check(
+    node_type: int, position: Position | None
+) -> None:
+    """Before the first table read the stored document is all there is, and 1.1.0a2 stored it
+    without these keys: what the gateway says without a check (design 6c D5, D6)."""
+    state: TelemetryState | None = "answering" if node_type == 1 else None
+    tracked = Tracked(Node(KEY, "Alice", node_type, last_advert=LAST, position=position))
+    built = contact_document(tracked, telemetry_state=state)
+    stored = {k: v for k, v in built.items() if k not in CHECK_KEYS[1:]}
+    assert restated(stored, state) == built
+    assert restated(stored, state, excluded=True).keys() == built.keys()
+
+
+def test_a_restated_document_keeps_its_check() -> None:
+    node = Node(KEY, "Alice", 1, last_advert=LAST, position=HERE)
+    stored = contact_document(Tracked(node, advert=AdvertCheck(LAST, False)))
+    again = restated(stored, "waiting")
+    assert tuple(again[k] for k in CHECK_KEYS) == (True, False, iso(LAST))

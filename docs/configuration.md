@@ -171,9 +171,10 @@ readings of the companions' telemetry answers (one row per value: the contact, t
 of the answer, the reading's key such as `battery_v` or `ch2_temperature_c`, and the value), and
 when each node was last heard
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)). It fills the `history`
-document after a restart, gives each companion its newest readings back, and later the position
-traces. Positions and readings are kept only for contacts, never for nodes the gateway merely
-heard.
+document after a restart and gives each companion its newest readings back. Home Assistant draws
+traces from its own recorder ([home-assistant.md](home-assistant.md#traces-on-the-map)); the
+history keeps positions for later front ends. Positions and readings are kept only for contacts,
+never for nodes the gateway merely heard.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

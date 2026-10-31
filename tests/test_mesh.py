@@ -1,7 +1,10 @@
 """The observer's view of the mesh (core/mesh.py) and the radio's own airtime meter."""
 
+from dataclasses import replace
+
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import (
+    AdvertCheck,
     AirtimeMeter,
     Fix,
     Heard,
@@ -10,6 +13,7 @@ from meshcore_home_gateway.core.mesh import (
     Readings,
     Signal,
     TableChange,
+    newer_check,
     type_name,
 )
 from meshcore_home_gateway.core.model import Position
@@ -385,7 +389,7 @@ def test_forgetting_telemetry_before_the_first_table_read() -> None:
     mesh.restore(BOB.public_key, None, Fix(HOME, T - 60, "advert"))
     assert not mesh.forget_telemetry(BOB.public_key, T)  # an advert fix is kept
     mesh.contacts_read([ALICE, BOB], T)
-    assert mesh.contacts[BOB.public_key].fix == Fix(HOME, T - 60, "advert")
+    assert mesh.contacts[BOB.public_key].fix is None  # but Bob's record holds no position now
 
 
 def test_a_contact_that_leaves_the_table_loses_its_readings() -> None:
@@ -398,3 +402,269 @@ def test_a_contact_that_leaves_the_table_loses_its_readings() -> None:
     mesh.contacts_read([ALICE], T + 2)
     tracked = mesh.contacts[key]
     assert (tracked.readings, tracked.position_received_at, tracked.fix) == (None, None, None)
+
+
+# --- the check for positions in adverts (design 6c) -----------------------------------------------
+
+SHARED = Node(ALICE.public_key, "Alice", 1, last_advert=int(T) - 600, position=HOME)
+
+
+def test_the_newer_check_is_the_one_of_the_newer_advert() -> None:
+    older, newer = AdvertCheck(int(T) - 600, True), AdvertCheck(int(T) - 60, False)
+    assert newer_check(older, newer) == newer
+    assert newer_check(newer, older) == newer
+    assert newer_check(None, older) == older
+    assert newer_check(older, None) == older
+    assert newer_check(None, None) is None
+    same = AdvertCheck(int(T) - 600, False)
+    assert newer_check(older, same) is older  # a tie: the first
+
+
+def test_a_check_without_a_position_drops_an_advert_fix_and_keeps_a_telemetry_fix() -> None:
+    """The radio's record keeps a position after sharing stops (BaseChatMesh.cpp:193-196): it is
+    shown only while the last checked advert carried one (design D12)."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    tracked = mesh.contacts[key]
+    assert mesh.contacts[key].fix == Fix(HOME, T - 600, "advert")
+    assert mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T + 2)
+    assert (tracked.advert, tracked.fix) == (AdvertCheck(int(T) - 600, False), None)
+    mesh.contacts_read([SHARED], T + 60)
+    assert mesh.contacts[key].fix is None  # the record holds it, the companion no longer shares it
+    mesh.contact_answered(key, T + 70, FIELD, None)
+    newer = replace(SHARED, last_advert=int(T) + 100)
+    mesh.contacts_read([newer], T + 120)
+    assert not mesh.advert_checked(key, AdvertCheck(int(T) + 100, False), T + 122)
+    assert (tracked.advert, tracked.fix) == (
+        AdvertCheck(int(T) + 100, False), Fix(FIELD, T + 70, "telemetry"),
+    )  # fmt: skip
+
+
+def test_a_check_with_a_position_brings_the_record_position_back_at_the_adverts_time() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.restore_advert(key, AdvertCheck(int(T) - 900, False))
+    mesh.contacts_read([SHARED], T)  # an advert since that the gateway did not check
+    tracked = mesh.contacts[key]
+    assert mesh.contacts[key].fix is None
+    assert mesh.advert_checked(key, AdvertCheck(int(T) - 600, True), T + 2)
+    assert tracked.fix == Fix(HOME, T - 600, "advert")  # the advert's own time
+    assert not mesh.advert_checked(key, AdvertCheck(int(T) - 600, True), T + 3)  # nothing new
+    tracked.fix = Fix(FIELD, T - 900, "advert")  # an advert fix elsewhere
+    assert mesh.advert_checked(key, AdvertCheck(int(T) - 600, True), T + 4)
+    assert tracked.fix == Fix(HOME, T - 600, "advert")
+    gps = Fix(FIELD, T + 5, "telemetry")
+    tracked.fix = gps
+    assert not mesh.advert_checked(key, AdvertCheck(int(T) - 600, True), T + 6)
+    assert tracked.fix == gps  # a telemetry fix stays
+    future = replace(SHARED, last_advert=int(T) + 999)  # the companion's clock is ahead
+    mesh.contacts_read([future], T + 10)
+    tracked.fix = None
+    assert mesh.advert_checked(key, AdvertCheck(int(T) + 999, True), T + 12)
+    assert tracked.fix == Fix(HOME, T + 12, "advert")
+
+
+def test_a_check_that_carries_a_changed_position_replaces_a_telemetry_fix() -> None:
+    """The table read takes the record before its advert is checked: under the check before
+    (none carried) the changed position was not shared. The check that carries it replaces a
+    telemetry fix as a changed advert position does (design 6c G26); an unchanged one does not."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    mesh.contact_answered(key, T + 10, FIELD, None)
+    elsewhere = Position(53.57, 10.02)
+    moved = replace(SHARED, last_advert=int(T) + 60, position=elsewhere)
+    mesh.contacts_read([moved], T + 120)
+    tracked = mesh.contacts[key]
+    assert tracked.fix == Fix(FIELD, T + 10, "telemetry")  # the check before carried none
+    assert mesh.advert_checked(key, AdvertCheck(int(T) + 60, True), T + 120, SHARED)
+    assert tracked.fix == Fix(elsewhere, T + 120, "advert")
+    mesh.contact_answered(key, T + 130, FIELD, None)
+    stopped = replace(moved, last_advert=int(T) + 90)
+    mesh.contacts_read([stopped], T + 140)
+    mesh.advert_checked(key, AdvertCheck(int(T) + 90, False), T + 140)
+    again = replace(moved, last_advert=int(T) + 150)
+    mesh.contacts_read([again], T + 160)
+    assert not mesh.advert_checked(key, AdvertCheck(int(T) + 150, True), T + 160, stopped)
+    assert tracked.fix == Fix(FIELD, T + 130, "telemetry")
+
+
+def test_a_check_that_carries_a_changed_position_without_a_fix_gives_the_adverts_time() -> None:
+    """With no fix there is nothing to replace: a changed position comes back at the time of
+    the advert that carried it, as the same position does (docs/mqtt-api.md, `position_at`)."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    elsewhere = Position(53.57, 10.02)
+    moved = replace(SHARED, last_advert=int(T) + 60, position=elsewhere)
+    mesh.contacts_read([moved], T + 120)
+    tracked = mesh.contacts[key]
+    assert tracked.fix is None  # the check before carried none
+    assert mesh.advert_checked(key, AdvertCheck(int(T) + 60, True), T + 120, SHARED)
+    assert tracked.fix == Fix(elsewhere, T + 60, "advert")
+
+
+def test_an_older_check_is_ignored() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    tracked = mesh.contacts[key]
+    assert mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    assert not mesh.advert_checked(key, AdvertCheck(int(T) - 900, True), T + 1)
+    assert (tracked.advert, tracked.fix) == (AdvertCheck(int(T) - 600, False), None)
+    assert mesh.advert_checked(key, AdvertCheck(int(T) - 600, True), T + 2)  # the same advert
+    assert tracked.advert == AdvertCheck(int(T) - 600, True)
+    assert tracked.fix == Fix(HOME, T - 600, "advert")
+
+
+def test_only_companions_are_checked() -> None:
+    mesh = Mesh()
+    repeater = Node(BOB.public_key, "Bob", 2, last_advert=int(T) - 600, position=HOME)
+    mesh.contacts_read([repeater], T)
+    assert not mesh.advert_checked(BOB.public_key, AdvertCheck(int(T) - 600, False), T)
+    tracked = mesh.contacts[BOB.public_key]
+    assert (tracked.advert, tracked.fix) == (None, Fix(HOME, T - 600, "advert"))
+    assert not mesh.advert_checked(ALICE.public_key, AdvertCheck(int(T) - 600, False), T)
+    assert ALICE.public_key not in mesh.contacts
+
+
+def test_an_unchecked_newer_advert_does_not_bring_an_old_position_back() -> None:
+    """The last check decides, whatever advert it was of: a newer advert the gateway could not
+    check (its report dropped, the gateway stopped) says nothing (design D4, D12)."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    newer = replace(SHARED, last_advert=int(T) + 60)
+    mesh.contacts_read([newer], T + 120)
+    assert mesh.contacts[key].fix is None
+    restarted = Mesh()  # the check stored, the advert fix in the history
+    restarted.restore(key, None, Fix(HOME, T - 600, "advert"))
+    restarted.restore_advert(key, AdvertCheck(int(T) - 600, False))
+    restarted.contacts_read([newer], T + 300)
+    tracked = restarted.contacts[key]
+    assert (tracked.advert, tracked.fix) == (AdvertCheck(int(T) - 600, False), None)
+    unknown = Mesh()  # never checked: today's rule
+    unknown.restore(key, None, Fix(HOME, T - 600, "advert"))
+    unknown.contacts_read([newer], T + 300)
+    assert unknown.contacts[key].fix == Fix(HOME, T - 600, "advert")
+
+
+def test_a_record_without_a_position_drops_an_advert_fix() -> None:
+    """After an advert that shares 0, 0 (a companion that never had a position) or the gateway's
+    own add, the record holds none: the old place is not known to be current, also for a contact
+    never checked (design D12)."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    repeater = Node(BOB.public_key, "Bob", 2, last_advert=int(T) - 600, position=FIELD)
+    mesh.contacts_read([SHARED, repeater], T)
+    zeroed = [
+        replace(SHARED, last_advert=int(T) + 60, position=None), replace(repeater, position=None),
+    ]  # fmt: skip
+    mesh.contacts_read(zeroed, T + 120)
+    assert [t.fix for t in mesh.contacts.values()] == [None, None]
+    mesh.contact_answered(key, T + 130, FIELD, None)
+    mesh.contacts_read(zeroed, T + 180)
+    assert mesh.contacts[key].fix == Fix(FIELD, T + 130, "telemetry")
+
+
+def test_an_exclusion_falls_back_to_the_record_only_while_it_is_shared() -> None:
+    """A contact excluded from telemetry gets its record's position back only while its adverts
+    carry it (6b's open point n5)."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    mesh.contact_answered(key, T + 10, FIELD, None)
+    assert mesh.forget_telemetry(key, T + 20)
+    tracked = mesh.contacts[key]
+    assert tracked.fix is None
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, True), T + 30)
+    mesh.contact_answered(key, T + 40, FIELD, None)
+    assert mesh.forget_telemetry(key, T + 50)
+    assert tracked.fix == Fix(HOME, T - 600, "advert")
+
+
+def test_a_stored_check_applies_at_the_first_read() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    check = AdvertCheck(int(T) - 600, True)
+    heard = Heard(T - 300, "message")
+    mesh.restore(key, heard, None)
+    mesh.restore_advert(key, check)
+    mesh.restore(BOB.public_key, None, None)
+    mesh.restore_advert(BOB.public_key, check)
+    mesh.restore(BOB.public_key, heard, None)  # either order
+    mesh.contacts_read([SHARED, Node(BOB.public_key, "Bob", 1)], T)
+    tracked, bob = mesh.contacts[key], mesh.contacts[BOB.public_key]
+    assert (tracked.advert, tracked.heard, tracked.fix) == (
+        check, heard, Fix(HOME, T - 600, "advert"),
+    )  # fmt: skip
+    assert (bob.advert, bob.heard) == (check, heard)
+    mesh.contacts_read([], T + 1)
+    mesh.contacts_read([SHARED], T + 2)  # back: what the last run knew is used up
+    assert mesh.contacts[key].advert == check  # kept by its heard node
+
+
+def test_a_contact_that_leaves_keeps_its_check_as_a_heard_node() -> None:
+    """A time and a flag, never a position: a contact removed and added again through the
+    gateway keeps its check (design D27)."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    check = AdvertCheck(int(T) - 600, True)
+    mesh.contacts_read([SHARED], T)
+    mesh.contact_heard(key, Heard(T, "advert"))
+    mesh.advert_checked(key, check, T)
+    mesh.contacts_read([], T + 10)
+    node = mesh.nodes[key]
+    assert (node.advert, node.node.position, node.fix) == (check, None, None)
+    mesh.contacts_read([replace(SHARED, position=None)], T + 20)  # the gateway's add: no position
+    assert mesh.contacts[key].advert == check
+
+
+def test_a_contact_that_is_no_longer_a_companion_drops_it() -> None:
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    mesh.contacts_read([replace(SHARED, node_type=3)], T + 10)  # a room server now
+    tracked = mesh.contacts[key]
+    assert tracked.advert is None
+    assert tracked.fix is None  # its record's position comes back with the next change
+    restored = Mesh()
+    restored.restore_advert(BOB.public_key, AdvertCheck(int(T) - 600, True))
+    restored.contacts_read([BOB], T)
+    assert restored.contacts[BOB.public_key].advert is None
+
+
+def test_a_heard_check_is_kept_without_a_position_and_taken_at_the_add() -> None:
+    """A chat node's NEW_ADVERT is checked at once; the table read that adds it takes the newer
+    of that check and the one an earlier run stored (design D27)."""
+    mesh = Mesh()
+    carol = Node("c3" * 32, "Carol", 1, last_advert=int(T) - 60, position=HOME)
+    heard = AdvertCheck(int(T) - 60, True)
+    mesh.node_heard(carol, Heard(T, "advert"))
+    mesh.advert_heard(carol.public_key, heard)
+    mesh.advert_heard(carol.public_key, AdvertCheck(int(T) - 120, False))  # older: not taken
+    tracked = mesh.nodes[carol.public_key]
+    assert (tracked.advert, tracked.node.position, tracked.fix) == (heard, None, None)
+    dave = Node("d4" * 32, "Dave", 2, last_advert=int(T) - 60)
+    mesh.node_heard(dave, Heard(T, "advert"))
+    mesh.advert_heard(dave.public_key, heard)  # a repeater shares its position by design
+    assert mesh.nodes[dave.public_key].advert is None
+    mesh.advert_heard("e5" * 32, heard)  # not heard (forgotten): nothing
+    assert "e5" * 32 not in mesh.nodes
+    mesh.restore_advert(carol.public_key, AdvertCheck(int(T) - 600, False))
+    added = replace(carol, position=None)  # the gateway's add writes no position
+    mesh.contacts_read([added], T + 30)
+    assert mesh.contacts[carol.public_key].advert == heard
+    erin = Node("e5" * 32, "Erin", 1, last_advert=int(T) - 600)
+    mesh.node_heard(erin, Heard(T, "advert"))
+    mesh.advert_heard(erin.public_key, AdvertCheck(int(T) - 600, False))
+    stored = AdvertCheck(int(T) - 60, True)  # from a later advert, before a restart
+    mesh.restore_advert(erin.public_key, stored)
+    mesh.contacts_read([added, erin], T + 40)
+    assert mesh.contacts[erin.public_key].advert == stored
