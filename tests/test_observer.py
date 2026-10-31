@@ -178,8 +178,7 @@ def test_contacts_heard_by_advert_and_message_and_the_history(tmp_path: Path) ->
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
             key = ALICE.public_key.hex()
-            radio.emit(advert_log(ALICE, hops=1))
-            radio.advertise(ALICE)
+            radio.send_advert(ALICE, hops=1)  # newer than her record: the radio pushes it
             doc = await bus.wait_for(f"{ROOT}/contacts/{key}", lambda d: d["heard_via"] == "advert")
             assert doc["hops"] == 1
             radio.queue_direct_message(ALICE.public_key[:6], "hi there", int(NOW) - 10)
@@ -1724,6 +1723,31 @@ def test_the_signal_of_an_advert_comes_from_its_own_log(tmp_path: Path) -> None:
         air.clock.now += 11
         air.push(ALICE)  # the frame before it, but no longer in the window
         assert signal()[:2] == (None, None)
+
+
+def test_a_log_no_newer_than_the_record_read_gives_a_push_no_signal(tmp_path: Path) -> None:
+    """The radio pushes a contact's advert only when it is newer than its record
+    (BaseChatMesh.cpp:133-136), which is at least the one the gateway read. Her newest advert is
+    too long for a frame, and a late copy of the advert the gateway read is the frame directly
+    before its push: that copy gives no signal. Her next advert's own log gives its signal, also
+    before the gateway read the record of the one before (design 6c D13)."""
+    _observer, bus, air = checking(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    read = air.advert(ALICE)
+    air.read()
+
+    def signal() -> tuple[Any, ...]:
+        document = last(bus, f"{ROOT}/contacts/{key}")
+        return document["hops"], document["snr_db"], document["heard_at"]
+
+    air.clock.now += 5
+    air.log(ALICE, read, hops=3, snr_db=-2.0)  # a late copy of the advert the gateway read
+    air.advert(ALICE, logged=False)  # too long for a frame
+    assert signal() == (None, None, iso(air.clock.now))  # heard, without a signal
+    air.clock.now += 5
+    air.log(ALICE, read + 120, hops=2, snr_db=4.5)  # her next advert's own log
+    air.push(ALICE)
+    assert signal() == (2, 4.5, iso(air.clock.now))
 
 
 def test_a_heard_nodes_signal_comes_from_its_own_log(tmp_path: Path) -> None:

@@ -609,9 +609,7 @@ class Observer:
             # it writes an advert's log directly before its push: any other log is another
             # packet, a late copy of an older advert or a forged one (design 6c D13). Without
             # its own log the advert has no signal, as one that was not logged at all.
-            record = advert.record
-            own = near is not None and (record is None or near.timestamp == record.last_advert)
-            signal = near.signal if near is not None and own else Signal()
+            signal = near.signal if near is not None and self._own_log(near, advert) else Signal()
         # the advert the radio took, for the next table read; later logs do not count for it
         pushed = adverts.Pushed(at, near, adverts.candidates(self._logged_adverts, key, at))
         heard = Heard(at, "advert", signal)
@@ -647,6 +645,19 @@ class Observer:
                 "rssi_dbm": signal.rssi_dbm, "heard_at": iso(at),
                 "look_alike": key in look_alike_nodes(self.mesh, self._protected),
             })  # fmt: skip
+
+    def _own_log(self, near: adverts.Logged, advert: codec.Advert) -> bool:
+        """Whether the log directly before a push can be its advert's own (design 6c D13). For a
+        NEW_ADVERT it has the time of the record the radio made from that advert. The radio pushes
+        a contact's advert only when it is newer than its record (BaseChatMesh.cpp:133-136), which
+        is no older than the one the gateway read (a client's write aside): a log no newer than
+        that is a late copy of an older advert. Until the gateway reads the newer record, a copy
+        of an advert between the two passes. A contact the gateway does not hold yet has no record
+        here, and the signal of its push is not kept (`Mesh.contact_heard`)."""
+        if advert.record is not None:
+            return near.timestamp == advert.record.last_advert
+        tracked = self.mesh.contacts.get(near.key)
+        return tracked is None or near.timestamp > tracked.node.last_advert
 
     def _packet(self, rx: codec.RxLog, at: float, frame: adverts.FrameId) -> None:
         """An advert in the packet log: its signal, for the radio's push that follows, and what it

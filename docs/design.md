@@ -480,11 +480,12 @@ flowchart LR
   `NEW_ADVERT` only for adverts whose signature it accepted. The observer takes hops, SNR and RSSI
   from the push's own log. While the radio's receive delay is 0 (its default, read at connect),
   that is the logged advert of the same key that is the frame directly before the push, for a
-  `NEW_ADVERT` only with its record's time. Any other log is another packet (a late copy of an
-  older advert, or a forged one), so a push without its own log gets no signal, as an advert that
-  was not logged. With a receive delay above 0, or one not known, a logged advert of the key within
-  10 s before the push gives them. The logged content itself is never trusted on its own
-  (protocol.md, section 4).
+  `NEW_ADVERT` only with its record's time, for an `ADVERT` only when it is newer than the record
+  the observer holds (the radio pushes a contact's advert only when it is newer than its record).
+  Any other log is another packet (a late copy of an older advert, or a forged one), so a push
+  without its own log gets no signal, as an advert that was not logged. With a receive delay
+  above 0, or one not known, a logged advert of the key within 10 s before the push gives them.
+  The logged content itself is never trusted on its own (protocol.md, section 4).
 * **Positions** come from contact records (the radio keeps the position of a contact's newest
   advert that carried one, also after the contact stopped sharing it) and from the contacts' own
   telemetry (§6.11). A position from adverts exists only while the record holds one and the
