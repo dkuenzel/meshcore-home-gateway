@@ -8,6 +8,17 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [1.1.0a4] - 2026-10-31
+
+A pre-release of 1.1.0, with two slices: the texts of the command line, the Proxmox installer
+and the names in Home Assistant come from translation catalogs, and `meshcore-home-gateway
+dashboard` writes a first Home Assistant dashboard for the gateway, its texts in the same
+catalogs. No language but English ships yet: a language comes as a contribution of its catalog
+files ([translations.md](docs/translations.md#adding-a-language)), German first. Machine
+interfaces stay the same in every language. Also new: tests against MeshCore's real firmware. If
+you use the guide's *Last mesh message* card, paste it again (*Fixed*). The hardware checklist
+was not run for it.
+
 ### Added
 
 - Tests against the real firmware (`make firmware-test`, a CI job;
@@ -20,9 +31,9 @@ format, the command line and Home Assistant discovery are public interfaces
   companion's phone app played on the gateway's own codec
   ([testing.md](docs/testing.md#steps-2945-on-the-simulated-air) lists what they show).
   `make check` still needs neither a compiler nor network.
-- `[homeassistant] language` (default `en`): the language of the entity, device and model names
-  the gateway sends to Home Assistant, also of the default device name `MeshCore radio`; one of
-  the languages the gateway translates them into
+- `[homeassistant] language` (default `en`, so far the only choice): the language of the entity,
+  device and model names the gateway sends to Home Assistant, also of the default device name
+  `MeshCore radio` and of the dashboard
   ([configuration.md](docs/configuration.md#homeassistant)). Entity IDs, event types, options,
   attributes and units stay the same in every language; a change renames only the display names
   at the next start, and names you changed stay
@@ -51,6 +62,10 @@ format, the command line and Home Assistant discovery are public interfaces
   contacts on the map.
 - docs/home-assistant.md *Dashboard*: installing it, the script *Mesh message* for the form, and
   when to make it again.
+- [docs/translations.md](docs/translations.md): the rules for translators and how to add a
+  language. [ADR 0027](docs/decisions/0027-message-catalogs-compiled-when-loaded.md): the
+  message catalogs are compiled when they are loaded, in the zipapp, the wheel and a checkout
+  alike; it amends ADR 0019.
 
 ### Changed
 

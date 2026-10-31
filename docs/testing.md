@@ -26,7 +26,10 @@ controls that add and remove contacts, `test_telemetry.py` the companions' telem
 readings, states, switch and expiry, a `person` and its presence triggers, the telemetry examples),
 `test_adverts.py` the check for positions in adverts (*Position in adverts*, the gateway's sensor,
 the event and its example), `test_traces.py` the traces on the map (the map card's own request
-against the real recorder) and `test_dashboard.py` the generated dashboard (loaded as a YAML-mode
+against the real recorder), `test_languages.py` the names in another language (the same entity
+IDs, unique IDs and attributes in English and in a pseudo-language, a change of language that
+renames only display names, a device name the user chose kept) and `test_dashboard.py` the
+generated dashboard (loaded as a YAML-mode
 dashboard, its Markdown cards rendered as the frontend asks for them, also with hostile names and
 texts in every place, the visibility of its cards, the map's trackers and hint, the guide's script
 run by a household user, in English and in a pseudo-language) into the MQTT integration of the
@@ -48,14 +51,16 @@ dashboard's template or home-assistant.md.
 | MQTT | `tests/test_mqtt_client.py` | `mosquitto` for the tests marked `broker` |
 | Documents, Home Assistant discovery, payloads | `tests/test_views.py`, `test_discovery.py`, `test_payloads.py`, `test_contact_devices.py`, `test_manage_entities.py` | nothing |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
-| Configuration, state, history, packaging | `tests/test_config.py`, `test_state.py`, `test_history.py`, `test_build_pyz.py`, `test_release_notes.py` | nothing |
-| CLI | `tests/test_cli.py`, `test_cli_contacts.py` | `mosquitto` for the tests marked `broker` |
+| Configuration, state, history, packaging | `tests/test_config.py`, `test_state.py`, `test_history.py`, `test_build_pyz.py` (the zipapp holds the catalogs and the dashboard's template, no compiled catalog), `test_release_notes.py` | nothing |
+| Translations | `tests/test_texts.py`, `test_catalog.py` (the PO reader and the MO writer, against a golden catalog and GNU `msgfmt`), `test_i18n.py` (the language asked for, the catalogs, the guard against a translation that would break a text), `test_i18n_tool.py` (extraction, merge, checks, the installer's packs and pins), `test_translations.py` (the committed templates, catalogs and packs as `make translations` writes them) | GNU gettext (`msgfmt`) for the tests that compare with it |
+| CLI | `tests/test_cli.py`, `test_cli_contacts.py`, `test_cli_language.py` (every command in a pseudo-language and with catalogs that would break it; machine output the same in every language; `run` English), `test_cli_dashboard.py` | `mosquitto` for the tests marked `broker` |
+| Dashboard | `tests/test_dashboard.py` (the generator, and the template's rules on the shipped template: markers, the macro `m`, quoting, translator notes, the mapping macros against the gateway's value lists) | nothing |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
 | Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_dashboard.py` (above) | `make ha-test`: Python 3.14.2 or newer |
 | Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)) | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
-| Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
+| Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`), `test_installer_language.py` (the messages block cut out and run alone, packs and their pins, the language menu with a pseudo-language, where a pack comes from, the program's messages in the dialogs' language, the size of the published script) | bash |
 
 ### The dashboard in the frontend's Markdown pipeline
 
@@ -80,8 +85,19 @@ element. With frontend 20260930.2: 0 images, 0 links, 22 `ha-alert` in and out p
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
 installed they **fail** with a hint; set `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them on
-purpose. One transport test and one firmware test are skipped when running as root, because root
-bypasses the exclusive lock they check; CI runs them as a normal user.
+purpose. The same holds for the tests that compare our catalogs with GNU gettext's `msgfmt`
+(`apt install gettext`; `MESHCORE_HOME_GATEWAY_SKIP_GETTEXT_TESTS=1`); CI's test jobs and the
+release workflow install it. One transport test and one firmware test are skipped when running
+as root, because root bypasses the exclusive lock they check; CI runs them as a normal user.
+
+Every test runs with a strict catalog: looking up a text that the template lacks fails the test,
+so a text nobody marked cannot pass ([development.md](development.md#translations)). The helpers
+in `tests/i18n_helpers.py` offer the pseudo-language `xx` (every text marked `‹…›`) and
+catalogs that would break a careless caller (wide letters, stray fields, `%` signs). The
+installer's language tests make a pack of `xx` from the installer's template and serve it from a
+copy of the script whose block of language packs lists it (`offering`): through a `wget` stub, or
+next to a checkout. They keep the published script within 98,304 bytes (96 KiB, three quarters
+of what Linux takes as one argument, `bash -c "$(wget …)"`).
 
 ## Tests against the real firmware
 
@@ -197,6 +213,11 @@ and exits non-zero when they differ from what was typed. It sends keys on timing
 check, not part of `make check`. It caught three bugs the stub could not show: dialogs drawn into
 captured output, names starting with `-` taken for options, and non-ASCII characters dropped in a
 locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
+
+While the installer offers English only, it shows no language menu; once it offers another
+language, the menu comes first and the script needs a key for it. Whether whiptail draws a
+no-break space (U+00A0, U+202F) is not checked yet: until it is, the catalog checks refuse one in
+the command line's texts, which the installer's boxes show too.
 
 ## Hardware checklist
 

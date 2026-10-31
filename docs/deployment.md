@@ -71,7 +71,17 @@ gh attestation verify meshcore-home-gateway-lxc.sh --repo dkuenzel/meshcore-home
 bash meshcore-home-gateway-lxc.sh && rm meshcore-home-gateway-lxc.sh
 ```
 
-The first dialog chooses the setup. **Default** asks only what has no sensible default: the
+Once the gateway offers a language besides English (1.1.0a4 offers English only), the first
+dialog chooses the installer's language, preselected from your session (`LANGUAGE`, `LC_ALL`,
+`LC_MESSAGES`, `LANG`). The script reads that language's pack from where the script comes from
+(its release, the checkout next to it, else `main`) into memory, stores nothing, and uses it only
+when its SHA-256 is the one the script carries (the release attests the script); else the dialogs
+stay English and a box says so. The dialogs, their buttons and boxes, and the program's messages
+they show then follow the language; on a new installation it becomes the default of the
+language of the names in Home Assistant. The script's own log lines, `--help`, errors before the
+menu, `--update` and runs with `--answers` stay English.
+
+The next dialog chooses the setup. **Default** asks only what has no sensible default: the
 radio, the broker address, user and password, and at the end the targets. **Advanced** asks for
 every setting in the table.
 
@@ -192,7 +202,8 @@ starting with `#` are ignored. There are two kinds of keys:
   goes into the configuration as given. The configuration check refuses unknown settings and
   invalid values: when the script installs a clone, before anything is created; otherwise in the
   new container right after the program is installed, before the radio is read (the message says
-  how to remove the container).
+  how to remove the container). `homeassistant.language` sets the language of the names in Home
+  Assistant (`en` when missing); a version before 1.1.0a4 refuses it.
 
 Missing keys take the defaults above; without a broker address (or a radio address for TCP) the
 script stops before it creates anything. Without `mqtt.username` the gateway logs in without a
@@ -317,6 +328,10 @@ install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system
 editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-config
 systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 ```
+
+The command line's texts follow `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`
+([configuration.md](configuration.md#language-of-the-command-line)); `LANGUAGE=en` keeps them
+English. The service's log is always English.
 
 ## 4 Operations
 

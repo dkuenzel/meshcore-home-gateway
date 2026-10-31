@@ -92,7 +92,7 @@ directory where `check-config` is started.
 | `device_name` | `MeshCore radio` | name of the device in Home Assistant (the default is translated, see `language`) |
 | `status_topic` | `homeassistant/status` | topic of Home Assistant's birth message (MQTT options, *birth message*); it does not follow `prefix`. Segments of `A-Z a-z 0-9 - _` separated by `/` |
 | `contact_devices` | `50` | contacts that get a device of their own, 0–1000; `0` removes them ([home-assistant.md](home-assistant.md#contacts)) |
-| `language` | `en` | language of the names the gateway sends to Home Assistant (entities, devices, models), later also of the generated dashboards: `en` or a language the gateway translates them into; any other value is an error that lists the choices. A change renames the display names at the next start; entity IDs, automations and names you changed stay. The default `device_name` (`MeshCore radio`) is shown in this language; a name you set is kept (write another name to keep it English) |
+| `language` | `en` | language of the names the gateway sends to Home Assistant (entities, devices, models), also of the dashboard (`meshcore-home-gateway dashboard`): `en`, the only one so far ([more by contribution](translations.md#adding-a-language)); any other value is an error that lists the choices. A change renames the display names at the next start; entity IDs, automations and names you changed stay. The default `device_name` (`MeshCore radio`) is shown in this language; a name you set is kept (write another name to keep it English) |
 
 ## `[targets.<alias>]`
 

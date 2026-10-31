@@ -76,6 +76,17 @@ GitHub Actions are pinned to full commit SHAs with the version as a comment.
 - Shell: `shellcheck` clean, `set -Eeuo pipefail`, functions over long scripts.
 - Documentation in English, plain and short sentences; Markdown, one sentence per idea.
 
+## Translations
+
+The texts of the command line, the installer, the Home Assistant names and the dashboard are in
+gettext catalogs: `src/meshcore_home_gateway/locale/` and `deploy/proxmox/locale/`. Edit a PO
+file with any editor or with Poedit; switch off line wrapping and compiling on save (git ignores
+the compiled `.mo`, but the wheel would pack it, so `make dist` refuses it). Weblate is not set
+up yet. Run `make translations` before a pull request. A new or changed text needs its
+translation in every shipped language in the same pull request; ask in the pull request if you
+cannot write one. The files hold no names or addresses: the git history credits the translators.
+[`docs/translations.md`](docs/translations.md) has the rules and how to add a language.
+
 ## Commits and pull requests
 
 - One logical change per commit; imperative subject line of at most 72 characters.

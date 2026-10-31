@@ -32,12 +32,17 @@ src/meshcore_home_gateway/
   state.py       persistent state (command ledger)
   systemd.py     sd_notify
   cli.py         command line
-deploy/          systemd unit, Proxmox installer, example configuration
+  texts.py       Text and TextError: texts made where no language is known (pure)
+  catalog.py     the PO reader and the MO writer (pure)
+  i18n.py        languages, their choice and the catalogs (Translations, below)
+  locale/        the template of the texts and one PO file per language
+  dashboard.py   the Home Assistant dashboard, from the template dashboard.yaml
+deploy/          systemd unit, Proxmox installer and its catalogs, example configuration
 docs/            design, decisions, protocol, API, operations
 tests/           pytest suites, emulated radio, broker fixture; tests/manual: checks run by hand;
                  tests/firmware: the real firmware on a simulated air (make firmware-test)
 tools/           build and release helpers: zipapp, release plan, public interface comparison,
-                 the pinned fetch of the firmware
+                 the pinned fetch of the firmware, the translation templates and checks (i18n.py)
 .github/         CI workflow, Dependabot, issue forms, pull request template
 ```
 
@@ -69,6 +74,83 @@ needs one: `--reconfigure` writes the configuration back from its answers, and
 the installer should ask for it, also the dialog in `deploy/proxmox/meshcore-home-gateway-lxc.sh`.
 A feature behind a switch gets the switch turned on in `MAXIMAL_TEXT` of
 `tests/public_interface.py`, so that the snapshot records its surface.
+
+## Translations
+
+Texts for people are translated through gettext catalogs
+([design §6.12](design.md#612-translations)); translators read
+[translations.md](translations.md). A text is marked where the code holds it, as a string
+literal, so that `make translations` finds it:
+
+* `tr("…", name=value)` in `cli.py`: a text the command line shows, in its language. `trn("…",
+  "…", count, name=value)` for a count; `{count}` is filled in. `tr_help("…")` for a help or
+  description text: argparse %-formats it later, so it is never filled.
+* `N_("…")` marks a text in a table that is shown elsewhere (`tr(table[key], …)`); `N_ha("…")`
+  the same for a Home Assistant name.
+* `ha_name("…", name=value)`, from `i18n.translator(config.homeassistant.language).ha_name`, for
+  every name sent to Home Assistant (`msgctxt "home assistant"`).
+* `Text("…", name=value)`, `TextError("…", …)`, `ConfigError("…", …)` and `LinkError(reason,
+  "…", …)` for a text made where no language is known: its `str()` is the English text (logs,
+  MQTT, tests), and the command line shows it translated (`tr("…{detail}", detail=exc.text)`).
+* In the dashboard's template, `_("…")` with a JSON string inside (`msgctxt "dashboard"`).
+
+The rules:
+
+* A whole line or sentence is one text, with named fields whose values the call gives; never an
+  f-string, `+`, `%` or `.format()` in a text, never a sentence glued from parts. The program's
+  prefix (`meshcore-home-gateway: `) stays outside every text. Commands, paths and option names a
+  user copies are fields where the line allows it.
+* A `# Translators:` comment directly above the call or its statement goes into the catalog: say
+  where the text is shown and what a field holds. In a card of the dashboard's template it is
+  `{#- Translators: … -#}` on the line above the text (a `#` line there is card content); never in
+  a GitHub-alert line, which it would join to the next.
+* Never translate a log call, machine output (`--json`, `--list`, the results with `--wait`,
+  `config answers`, `--version`), a value of MQTT or Home Assistant (entity IDs, event types,
+  options, attribute keys), a configuration key, or data from the mesh, the radio or the user.
+* Never name anything `_` (`cli.tcp_address` assigns it). Reach `i18n.translator`,
+  `i18n.LANGUAGES` and `i18n.choose` through the module (`i18n.translator(…)`), never by
+  importing the names: the tests replace them.
+* After a change of a marked text, run `make translations`: it writes the templates, merges the
+  catalogs, writes the installer's language packs and their pins. The tests fail until it ran.
+  They run with a strict catalog that fails the lookup of any text the template lacks, so a
+  forgotten mark shows as a failing test; a test marked `real_catalogs` looks up texts of its own.
+* `tests/i18n_helpers.py` offers languages to a test: `speaking(monkeypatch, pseudo())` gives the
+  pseudo-language `xx`, which marks every text (`‹…›`); `wide()`, `hostile()` and `percents()`
+  give catalogs that would break a careless caller.
+
+**The dashboard's template** (`src/meshcore_home_gateway/dashboard.yaml`) follows rules that
+`tests/test_dashboard.py` checks on the shipped file:
+
+1. A marker is a whole YAML value or sits in a literal block (`content: |-`), never inside
+   `{{ }}`, `{% %}` or a flow value. A field in a marker is `node`, `version`, or a Jinja variable
+   the card sets before it.
+2. Every Markdown card that prints a value starts its content with the macro
+   `{%- macro m(x) -%}{{ (x or '') | string | replace('\r', ' ') | replace('\n', ' ') | e }}{%- endmacro -%}`
+   and prints every value read from Home Assistant (states, attributes, the registry) through it,
+   or through a mapping macro of the card that ends in `m(v)`, on a line that starts with `<div>`,
+   `<table>` or `<ha-qr-code`. `| e` appears nowhere else. GitHub-alert lines print only our texts
+   and integers.
+3. The mapping macros (`said`, `telemetry`, `what`) have one branch per value of the gateway's
+   list (`DeliveryState`, `telemetry.STATES`, the `contact` events' types).
+4. `on`, `off` and versions are quoted (YAML 1.1 reads `on` as true).
+5. `_("` and `@word@` appear only as markers and placeholders.
+
+A translation of a dashboard text is used only when `dashboard.unsafe()` finds nothing in it (no
+Jinja, HTML, Markdown link or address, no line break); the catalog check applies the same test.
+
+**The installer** has its own catalog (`deploy/proxmox/locale/installer.pot`). Its texts go
+through `t 'text' name "$value"` (a dialog's text, `{name}` fields filled in), `tp context 'text'`
+(a label: the buttons), `die 'text' …` for every error, and `$say 'text' …` in the two functions
+that write a block both into the log and into a box (`_fill` for the log, `t` for the box). A text
+is a single-quoted literal, or double-quoted without `$`, backtick and backslash; only `die`
+passes a text it was given on (`t "$@"`). No `eval`, `source` or bash's `$"…"`: a pack is data,
+and the extractor and a test refuse them. The functions live between the marker lines
+`# --- messages` and `# --- end of messages`, which the tests cut out and run alone. The block
+between `# --- language packs` and `# --- end of language packs` offers the languages and pins
+their packs; `make translations` writes it. The language menu shows only while it offers more
+than English. `knows_language` decides whether the program to configure reads
+`homeassistant.language`: the checkout's own program (`OWN_PROGRAM`) always does, a version
+before 1.1.0a4 never.
 
 ## Tool chain updates
 
@@ -114,8 +196,8 @@ says what users must change. Pre-releases promise nothing beyond the last releas
 with every X.Y.Z and means the same.
 
 - Compatible: new optional settings and tables (a new optional table may require settings of
-  its own); wider ranges, formats and choices; a number where an integer was required; a
-  changed default (listed under *Changed*).
+  its own); wider ranges, formats and choices (a new language of `homeassistant.language`); a
+  number where an integer was required; a changed default (listed under *Changed*).
 - Breaking:
   - a setting or table removed or renamed (unknown keys are errors, so the service would not
     start);
@@ -153,7 +235,7 @@ with every X.Y.Z and means the same.
   - other default paths.
 - Not interface: abbreviated options (write them in full, since a new option can make an
   abbreviation ambiguous); text meant for people (reports, summaries, messages on standard
-  error), which may change and will be translated.
+  error), which may change and are translated.
 
 **Home Assistant discovery** ([home-assistant.md](home-assistant.md)). What automations,
 dashboards and statistics refer to:
@@ -164,8 +246,9 @@ dashboards and statistics refer to:
   entity ID, platform or unit changed; its device class or state class removed or changed (an
   entity without its state class keeps no long-term statistics, and a device class decides the
   units Home Assistant converts to); an event type, option or attribute key removed.
-- Not interface: names (they will be translated), icons, entity categories, and which entities
-  are enabled by default.
+- Not interface: names (they are translated), icons, entity categories, and which entities
+  are enabled by default. The generated dashboard is not an interface either; the entity IDs it
+  names are.
 
 **Platforms.** A major version keeps its floors: Python 3.11 with paho-mqtt 2.x (Debian 13 for
 the installer), Home Assistant 2026.8, and MeshCore companion firmware 1.18.0 (protocol version
@@ -174,7 +257,8 @@ an addition; dropping a tested one is breaking. The snapshot below records the t
 versions (`TESTED_FIRMWARE`); the floors stay with review.
 
 **Not public:** the Python modules, the files in the state directory (the gateway migrates
-them), and log messages.
+them), log messages, the translation catalogs, the installer's language packs and their format,
+and the dashboard's template.
 
 **How it is checked.**
 

@@ -659,6 +659,9 @@ the file.
 Exit codes: 0 success, 1 failure, 2 usage error (invalid arguments), 78 configuration error (the
 systemd unit does not restart on it).
 
+Texts for people follow the language of the environment ([§6.12](#612-translations)); machine
+output, exit codes and `run` never change with it.
+
 ### 6.10 Logging and observability
 
 * Logs go to standard error; under systemd (`JOURNAL_STREAM` set) without time stamps, because the
@@ -849,6 +852,127 @@ sequenceDiagram
   stopped before it was back). So after a restart without the radio they still expire at their
   bound, also when a run stopped before the broker connected. The first table read replaces
   them. The exclusions are kept in their own file (above).
+
+### 6.12 Translations
+
+The command line, the installer and the names sent to Home Assistant are translatable through
+gettext catalogs ([ADR 0019](decisions/0019-internationalisation-with-gettext.md)). 1.1.0a4 ships
+the machinery and English only: `i18n.LANGUAGES` is `{"en": "English"}`. A language comes as a
+contribution of its catalog files ([translations.md](translations.md#adding-a-language)).
+
+| Output | Reader | Language from |
+| --- | --- | --- |
+| `--help`, argparse's errors, `check-config`, `config render`'s errors, the `probe` report, the notes and errors of `send` and `contacts` | operator, installer boxes | the environment |
+| everything `run` prints, the log, `sd_notify` | journal, support | always English |
+| `probe --list`, `--json`, `listen`, `send --wait`, the results of `contacts add`, `remove` and `telemetry` with a wait, `contacts list`, `contacts link`, `config answers`, `--version` | scripts, the installer | always English |
+| entity, device and model names in Home Assistant; the dashboard ([§6.13](#613-dashboard-mvp)) | the household | `[homeassistant] language` |
+| the installer's dialogs, buttons and boxes | operator on the host | its first menu, shown once a language besides English is offered |
+| the installer's own log lines, `--help`, errors before the menu, `--update`, `--answers` runs | operator, support | always English |
+
+* **Catalogs compiled when loaded** ([ADR 0027](decisions/0027-message-catalogs-compiled-when-loaded.md)).
+  `src/meshcore_home_gateway/locale/` holds the template `meshcore-home-gateway.pot` and one PO
+  file per language besides English. `i18n.translator(language)` compiles a language's file in
+  memory with `catalog.write_mo` when it is first used. `texts.py` (`Text`, `TextError`) and
+  `catalog.py` (the PO reader and the MO writer) are pure, so `core/` and `protocol/` raise
+  translatable errors without importing `i18n`.
+* **Texts that go to logs and to people are `Text`s.** `str()` of a `Text` is always its English
+  text (logs, MQTT reasons, `str(exc)`); the command line renders it in its language, nested
+  `Text`s too. `ConfigError`, `LinkError` and the errors of `core/` are `TextError`s.
+* **The command line's language** is the first of `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`
+  that is set and not empty, in Python's order: `LANGUAGE` also counts under `C`, unlike in GNU
+  programs ([configuration.md](configuration.md#language-of-the-command-line)). `run` is English,
+  decided before the arguments are parsed, so the journal reads the same everywhere. argparse's
+  own words are translated through its module attributes, restored after each command.
+* **No translation can break a command.** A translation is used only when it formats with the
+  given values and names only the fields of its English text; a text argparse %-formats (help and
+  description texts, argparse's own words) only when its `%` directives equal the English ones.
+  Otherwise the English text. The catalog checks hold the shipped catalogs to the same rules.
+* **Home Assistant.** Every name goes through `ha_name` (`msgctxt "home assistant"`); entity IDs,
+  unique IDs, event types, options, attribute keys and units stay. The default device name
+  `MeshCore radio` is translated whenever the setting equals it. `[homeassistant] language` is
+  strict, one of `i18n.LANGUAGES`, default `en`; a change renames the display names at the next
+  start, and Home Assistant keeps the entity IDs and the names a user gave
+  ([home-assistant.md](home-assistant.md#language-of-the-names)).
+* **Whole messages.** One text per line or sentence, with named fields (`{alias}`), plurals
+  through `trn`, the program's prefix outside every text; never an f-string. English output stays
+  as it was, except two lines of `check-config` (`1 sender`, the language of the names).
+* **The installer** keeps its texts in its own catalog (`deploy/proxmox/locale/installer.pot`).
+  Each language's catalog gives a plain-text pack (`<language>.messages`), whose SHA-256 the
+  script carries in a block that `make translations` writes. The pack is fetched from where the
+  script comes from (its release, the checkout next to it, else `main`), read into memory without
+  `eval`, and checked against its digest; one that cannot be loaded leaves English dialogs, a log
+  line and one English box. With a pack loaded, `LANGUAGE` goes into the container's commands, so
+  the program's messages in the boxes match the dialogs. A new installation gets the menu's
+  language as `homeassistant.language`; a reconfiguration keeps the configured one; a version
+  before 1.1.0a4, which lacks the setting, gets it only from an answers file.
+* **Checks are tests** (`make check`): every text of a listed language translated and none fuzzy,
+  the same fields, `%` directives and kept tokens as the English text, valid plural headers,
+  canonical files, the templates current, byte identity with GNU `msgfmt` (CI installs `gettext`),
+  only the modules that show texts import `i18n`, a test-wide catalog that fails a lookup of a
+  text the template lacks, and a pseudo-language through the command line, the builders, the
+  installer and Home Assistant: machine output, the snapshot and the entity IDs the same in every
+  language.
+
+### 6.13 Dashboard (MVP)
+
+`meshcore-home-gateway dashboard` writes one Home Assistant dashboard for the gateway it runs
+beside ([home-assistant.md](home-assistant.md#dashboard)). This is the first part of
+[ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md), which stays the
+target: no new entity, topic or setting, only the entities and the cards Home Assistant has.
+
+* **Four sections views:** *Overview* (a status line, a card while the gateway runs another
+  version than the dashboard was made for, the radio's link, airtime, queue, battery and health,
+  each problem sensor while it is on), *Messages* (the form, the last message, the last delivery
+  step), *Contacts* (the contacts on the radio, the add controls, the last contact event, the
+  nodes heard, the QR code) and *Map* (the contacts' trackers with 24 hours of traces). Sections
+  reflow on a phone, so there is one variant; visibility conditions only on states.
+* **The form** is the guide's script *Mesh message* (`script.mesh_message`): its more-info dialog
+  asks for a notify entity of MQTT and a text and calls `notify.send_message`. A hint replaces the
+  tile while the script is missing.
+* **What changes while the dashboard stays** comes from Markdown templates over the device
+  registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
+  the heard nodes, the last contact event. What a card needs as fixed IDs is written when the
+  dashboard is made: the gateway's entity IDs from `mqtt.node_id`, and the map's trackers from
+  the state file (`ha_contact_devices`, the announced contacts with a position, read only). A
+  hint names a tracker of this gateway whose contact's key no listed tracker has.
+* **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
+  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
+  `["@trackers@"]`, one conditional in comment lines, and texts marked `_("…")` with
+  `msgctxt "dashboard"`. A marked whole YAML value becomes a quoted scalar; a marked text inside a
+  card's content becomes the text, `{node}` and `{version}` filled in, any other field the Jinja
+  variable of that name. The same inputs give the same bytes.
+* **Translations of its texts** are used only when they hold no Jinja, HTML, Markdown link or
+  address (`{{`, `{%`, `{#`, `<`, `>`, `@`, `](`, `://`, `www.`, `_("`), no control, format, line
+  or paragraph separator character, and only the fields of the English text; else the English
+  text. The catalog check applies the same rule (`dashboard.FORBIDDEN`, `dashboard.UNSAFE`).
+* **Values from the mesh are text.** Every value a card reads from a state, an attribute or the
+  registry (message texts, names, labels, versions, the contact link) goes through the card's
+  macro `m`, which turns line breaks into spaces and escapes, onto a line that is one `<div>`,
+  `<table>` or `<ha-qr-code>` element: a CommonMark HTML block, which a blank line would end. The
+  alerts carry only our texts and integers. Machine values of a closed list (delivery steps,
+  telemetry states, contact events) are mapped to texts, with the value itself, through `m`, for
+  one added later; reason codes stay codes, in `<code>`.
+* **Interface:** the command is the only growth (`cli > commands > dashboard`); the dashboard's
+  content is not an interface, the entity IDs it names are.
+
+Where the MVP departs from ADR 0021:
+
+1. The template lives in the package, not in `home-assistant/dashboard/`: a file outside it
+   reaches neither the zipapp nor the wheel.
+2. The map shows the contacts' trackers only, no heard repeater without a contact: the gateway
+   keeps no stranger's position ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Showing them
+   needs a gateway change.
+3. Relative times ("5 min ago") and counts are formatted in the templates: a Markdown card cannot
+   hand a value to the frontend's formatter. The tiles still format their own values; the
+   dashboard shows no clock time, so no time zone is involved.
+4. The version card says that the versions differ, not which is newer.
+
+Deferred: release files per node and language, `--language` and `--output`, a second variant,
+more languages, a message history, the gateway's own compose entities, remove and telemetry
+controls per contact on the dashboard (today only on the device page, which only administrators
+open), settings and help views, heard repeaters on the map, reason codes as texts, a colour
+legend, a list of the gateways on the broker, and the right tracker IDs when the contacts of two
+gateways share a name.
 
 ## 7 Security
 
@@ -1041,7 +1165,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   Debian and the program inside the container (a release's zipapp checked against its
   `SHA256SUMS`, or the source of `main` built there), validates the answers with it, probes the
   radio to offer its channels and contacts as targets, writes the configuration and starts the
-  service. Commands in the container run with a clean environment.
+  service. Commands in the container run with a clean environment. Once the gateway offers a
+  language besides English, the first dialog chooses the installer's language and the default of
+  `[homeassistant] language`; the language's pack is read into memory and checked against a
+  digest the script carries ([§6.12](#612-translations)).
 * **Any systemd Linux:** install the two packages, copy the zipapp to
   `/usr/local/lib/meshcore-home-gateway/`, the unit to `/etc/systemd/system/`, write the
   configuration.
@@ -1087,10 +1214,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Unit | core, protocol codec, configuration, payloads, discovery | pytest, golden byte vectors from the firmware source, reference values for time on air |
 | Component | session and bridge | an in-memory radio that emulates the firmware's responses and pushes |
 | Integration | MQTT adapter and bridge end to end | a private `mosquitto` per test on a free port; the system test runs the service as a process (its coverage is measured too) |
-| Contract | discovery, payloads and the documented automations in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`) |
+| Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text |
 | Firmware | the gateway against MeshCore's own companion and repeater firmware | the pinned release built natively on stand-ins, nodes as processes on a simulated LoRa air, the gateway on a pseudo terminal; scenarios of the hardware checklist's steps 29, 30, 33, 34, 35 and 39 and parts of steps 41 and 43 (the check for positions in adverts) run the gateway's service against it, and a test pins down the firmware's part of step 31 (`make firmware-test`, [which parts](testing.md#steps-2945-on-the-simulated-air), [ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)) |
 | Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a manual check drives the real whiptail |
-| Static | style, types, shell, workflows, unit file | ruff, mypy --strict, shellcheck, zizmor, systemd-analyze (verify, exposure score) |
+| Static | style, types, shell, workflows, unit file, translations | ruff, mypy --strict, shellcheck, zizmor, systemd-analyze (verify, exposure score); the catalog checks of `tools/i18n.py` as tests, the compiler against GNU `msgfmt` |
 | Hardware | real radios | checklist in [`testing.md`](testing.md), with each release candidate before its release (not for the pre-releases of increments) |
 
 `make check` runs everything except the contract and firmware tests, which have their own targets
@@ -1121,6 +1248,7 @@ version, like the CI matrix, and fails if one is missing.
 | Telemetry values in Home Assistant expire | [0024](decisions/0024-telemetry-values-in-home-assistant-expire.md) |
 | Positions in adverts checked from the packet log | [0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md) |
 | Internationalisation with gettext | [0019](decisions/0019-internationalisation-with-gettext.md) |
+| Message catalogs compiled when they are loaded | [0027](decisions/0027-message-catalogs-compiled-when-loaded.md) |
 | Managed radio profile for the observer | [0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | Generated dashboards for desktop and mobile | [0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) |
 | The gateway tested against the real firmware, built natively | [0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md) |
@@ -1143,9 +1271,9 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 3 | Home Assistant: one device per contact with its entities, created and removed with the contact; every companion a recipient; statistics and contact sensors on the gateway's device | 0017 |
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
 | 5 | Contact management: the gateway, the MQTT requests, the command line and the Home Assistant controls (add a heard node, add by key or link, remove; the gateway's QR code) | 0017 |
-| 6 | Telemetry and positions of the household's companions, with traces on the map. **6a**: the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b**: readings, the answer's time and state, expiry, events, exclusion of a contact, on by default with a first-start hour; **6c** (this release): the check for positions in adverts, traces on Home Assistant's map | 0018, 0024, 0025 |
-| 7 | Translations of the command line, the installer and the Home Assistant names | 0019 |
-| 8 | Generated dashboards for desktop and mobile | 0021 |
+| 6 | Telemetry and positions of the household's companions, with traces on the map. **6a**: the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b**: readings, the answer's time and state, expiry, events, exclusion of a contact, on by default with a first-start hour; **6c**: the check for positions in adverts, traces on Home Assistant's map | 0018, 0024, 0025 |
+| 7 | Translations of the command line, the installer and the Home Assistant names. **The machinery** (this release), English only so far; more languages come by contribution, German first ([translations.md](translations.md#adding-a-language)) | 0019, 0027 |
+| 8 | Generated dashboards for desktop and mobile. **MVP** (this release): four views on the existing entities, English, `meshcore-home-gateway dashboard`; deferred: [§6.13](#613-dashboard-mvp) | 0021 |
 
 Later: a terminal dashboard and a web dashboard on the same documents, Home Assistant as a
 control surface for selected radio settings, the household's own repeaters.

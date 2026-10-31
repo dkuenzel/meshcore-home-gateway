@@ -7,7 +7,8 @@ project does about it, and how to check it yourself. Behaviour changes between v
 release changes one of these, the entry gets the new version or goes.
 
 Sections: [Proxmox VE](#proxmox-ve), [Shell](#shell), [Debian, systemd and
-Linux](#debian-systemd-and-linux), [Python](#python), [GitHub](#github), [whiptail](#whiptail),
+Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext),
+[GitHub](#github), [whiptail](#whiptail),
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
 [paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
 dashboards](#home-assistant-dashboards), [MeshCore companion
@@ -157,6 +158,15 @@ firmware](#meshcore-companion-firmware).
   run when `/dev/stdin` is a pipe and names `bash -c "$(wget -qO- URL)"` or `--answers FILE`
   instead; `in_ct()` runs container commands with `</dev/null`. *Check:*
   `printf 'read -r x\necho never runs\necho after\n' | bash` prints only `after`.
+* **A long here-string goes through a temporary file; process substitution never does.** bash
+  writes a here-string or here-document longer than the pipe holds into a file `sh-thd.*` in
+  `$TMPDIR` (else `/tmp`), so it fails where no temporary file can be made; a short one goes
+  through a pipe. `< <(printf …)` is a pipe at any length. *Verified:* GNU bash 5.2.21 under
+  `strace -e trace=openat`: `cat <<<"$x"` opened `/tmp/sh-thd.*` twice for 70,000 bytes and never
+  for 1,000; `cat < <(printf '%s\n' "$x")` opened none. *Here:* the installer reads a language
+  pack with `done < <(printf '%s\n' "$text")`, so a pack is never written to the host's disk.
+  *Check:* `strace -f -e trace=openat bash -c 'x=$(head -c 70000 /dev/zero | tr "\0" a); cat
+  <<<"$x" >/dev/null' 2>&1 | grep -c sh-thd` prints a number above 0, and 0 with 1000.
 * **In `bash -c SCRIPT ARG...`, the first argument becomes `$0`, not `$1`.**
   `bash -c "$(wget -qO- URL)" --answers FILE` gives the script `$0=--answers` and `$1=FILE`.
   *Verified:* GNU bash 5.2.21. *Here:* options follow a `--`, which becomes `$0`;
@@ -260,6 +270,48 @@ firmware](#meshcore-companion-firmware).
   `wait_for()` is built on `asyncio.timeout()` (gh-96764,
   <https://docs.python.org/3.12/whatsnew/changelog.html>). *Here:* waits with a time limit use
   `asyncio.timeout()`. *Check:* `grep -rn 'wait_for(' src/` finds nothing.
+* **Python's `gettext` reads `LANGUAGE` also under the `C` locale; the C library ignores it
+  there.** With `LANGUAGE=de` and `LC_ALL`, `LC_MESSAGES` or `LANG` set to `C` or `C.UTF-8`,
+  `gettext.translation()` finds the German catalog, while glibc's `dgettext()` after
+  `setlocale(LC_ALL, "")` returns the English text. *Verified:* Python 3.12.3 and glibc
+  2.39-0ubuntu8.9, with a one-entry catalog compiled by GNU `msgfmt` 0.21, for
+  `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `LC_ALL=C` and `LANG=C`. *Here:* the command line follows
+  Python's order, `LANGUAGE` first ([configuration.md](configuration.md#language-of-the-command-line)
+  says so, and that `LC_ALL=C` alone does not give English then). The installer runs the
+  container's commands with `LANG=C.UTF-8` and adds `LANGUAGE` for a loaded pack: the program
+  speaks its language, `apt` and `systemctl` stay English. *Check:* compile a catalog
+  `loc/de/LC_MESSAGES/x.mo`, then `LC_ALL=C.UTF-8 LANGUAGE=de python3 -c "import gettext;
+  print(gettext.translation('x', 'loc').gettext('Hello'))"` prints the German text.
+* **argparse %-formats help texts, and a description that contains `%(prog)`: a lone `%` there
+  stops the program.** A `help=` text with `10 %` raises `TypeError` at `--help` on 3.11–3.13
+  and `ValueError: badly formed help string` in `add_argument` on 3.14; a description with
+  `%(prog)s` and a lone `%` raises `TypeError` in `format_help()` on all four; a description
+  without `%(prog)` is not formatted. argparse looks its own words up through the module's `_`
+  and `ngettext` when a parser is built and used, so `vars(argparse).update(_=…, ngettext=…)`
+  translates them (titles, `usage: `, `-h`'s help, its errors). *Verified:* Python 3.11.17,
+  3.12.3, 3.13.16 and 3.14.6, a script that builds a parser each way and formats its help.
+  *Here:* `tr_help` marks our help and description texts; a translation of one, and of
+  argparse's own words, is used only with the `%` directives of the English text
+  ([design §6.12](design.md#612-translations)); `cli._speaking()` sets argparse's words for one
+  command and restores them. *Check:* `python3 -c "import argparse; p =
+  argparse.ArgumentParser(); p.add_argument('--x', help='10 % of it'); p.print_help()"` raises.
+
+## GNU gettext
+
+* **`msgfmt -c` warns about a header without translator fields but exits 0, does not compare
+  `{x!r}` fields, and keeps a plural entry with an empty form.** A header with only `Language`,
+  `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding` and `Plural-Forms` gives four
+  warnings (`Project-Id-Version`, `PO-Revision-Date`, `Last-Translator`, `Language-Team`
+  missing) and status 0. In a `python-brace-format` entry, `{value}` translated as `{wert}` is a
+  fatal error (status 1), but `{value!r}` as `{wert!r}` passes. `--no-hash` compiles a plural
+  entry whose second form is empty, and Python's gettext then returns `""` for a count of 2.
+  *Verified:* GNU gettext-tools 0.21 and Python 3.12.3, with one-entry catalogs. *Here:* the
+  catalogs carry exactly those five header fields (no dates or names); `tools/i18n.py`'s own
+  checks compare every field, `!r` included; our MO writer leaves a plural entry with an empty
+  form out, so the text stays English, and equals GNU's bytes for every other catalog
+  ([ADR 0027](decisions/0027-message-catalogs-compiled-when-loaded.md)); `make check` judges a
+  catalog by the tests, not by `msgfmt`'s status. *Check:* `msgfmt -c -o /dev/null x.po; echo $?`
+  on such files.
 
 ## GitHub
 
@@ -366,6 +418,16 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   (port, topics, container settings), and with `--reconfigure` the input boxes hold the current
   settings, the user name included, which have to be cleared before typing new ones. *Check:*
   `whiptail --inputbox User 10 50 example 2>u; cat u`, type `bob` and Enter: `examplebob`.
+* **`--yes-button`, `--no-button`, `--ok-button` and `--cancel-button` set the labels of every box
+  kind and keep the exit status.** *Verified:* experiment, 0.52.24-2ubuntu2, in a pseudo
+  terminal under `LC_ALL=C.UTF-8`: `Ja`/`Nein` on a yes/no box (Enter 0, Tab and Enter 1),
+  `Weiter`/`Abbrechen` on an input box (0 with the text, 1 on the second button), and a
+  13-character label on a message box, each shown. The slice's research also ran 0.52.23 and
+  0.52.25 with the labels of five languages, every box kind with all four options at once, and
+  saw a 31-character label run over the right border of a 40-column box. *Here:* the installer
+  passes the four labels only while a language pack is loaded (English keeps whiptail's own), and
+  the translator notes ask for at most 12 characters. *Check:*
+  `whiptail --yes-button Ja --no-button Nein --yesno -- Text 10 40; echo $?`.
 * **In a password or input box, Tab moves the focus to the buttons instead of being typed, and
   what is typed after it is lost.** Typing or pasting `ab`, Tab, `cd` and pressing Enter returns
   `ab` with exit status 0, so a password that contains a Tab is cut without a warning. A second
@@ -826,6 +888,15 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `src/meshcore_home_gateway/bridge.py`;
   [home-assistant.md, How discovery behaves](home-assistant.md#how-discovery-behaves)). *Check:*
   `make ha-test`.
+* **A known entity that comes with another name keeps its entity ID and the name a user gave it:
+  Home Assistant updates only its original name.** *Verified:* 2026.10.0,
+  `helpers/entity_registry.py` lines 1520-1577 (`async_get_or_create` of a known unique ID calls
+  `_async_update_entity` with `original_name`, never the entity ID or `name`);
+  `test_a_language_change_renames_only_display_names` in `home-assistant/tests/test_languages.py`
+  announces a gateway again in another language, after a user renamed an entity and the device.
+  *Here:* a change of `[homeassistant] language` renames the
+  display names at the next start ([home-assistant.md](home-assistant.md#language-of-the-names)).
+  *Check:* `make ha-test`.
 * **`default_entity_id` sets the entity ID only when Home Assistant registers the unique ID for the
   first time, or again after the entity was deleted; a changed value does not rename an existing
   entity, and an entity ID set by the user stays.** Home Assistant keeps the part after the first
