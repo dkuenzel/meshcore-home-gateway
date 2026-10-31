@@ -1,4 +1,4 @@
-"""The setup of the hardware checklist's steps 29-40 on the simulated air: radio A on the gateway,
+"""The setup of the hardware checklist's steps 29-43 on the simulated air: radio A on the gateway,
 Bob's companion B with a GPS, set up by his phone app as docs/companions.md says, and repeaters
 between them where a step needs hops.
 

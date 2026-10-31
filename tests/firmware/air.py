@@ -14,13 +14,15 @@ the share of packets the receiver misses (it hears nothing of them), and `delay_
 later than the sender's time on air a packet reaches the receiver (as if the mesh held it).
 
 `Air` runs in the caller's event loop. `AirThread` runs one in a thread of its own, for the
-synchronous fixtures and for tests that run the gateway with `asyncio.run` beside it.
+synchronous fixtures and for tests that run the gateway with `asyncio.run` beside it. `StandIn` is
+a node that the test plays itself.
 """
 
 from __future__ import annotations
 
 import asyncio
 import random
+import socket
 import struct
 import threading
 import time
@@ -56,6 +58,9 @@ class RadioSettings:
         return (self.frequency_khz, self.bandwidth_hz, self.spreading_factor) == (
             other.frequency_khz, other.bandwidth_hz, other.spreading_factor,
         )  # fmt: skip
+
+
+EU_NARROW = RadioSettings(869_618, 62_500, 8, 8, 20)
 
 
 @dataclass(frozen=True)
@@ -384,3 +389,41 @@ class AirThread:
 
     def _wait(self, coroutine: Coroutine[Any, Any, T]) -> T:
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(WAIT_S)
+
+
+class StandIn:
+    """A node as the air sees it: a UDP socket that sends and reads the datagrams of
+    board/SimRadio.h."""
+
+    def __init__(self, node_id: int, port: int, settings: RadioSettings = EU_NARROW) -> None:
+        self.node_id = node_id
+        self._air = ("127.0.0.1", port)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind(("127.0.0.1", 0))
+        self.hello(settings)
+
+    def hello(self, settings: RadioSettings) -> None:
+        self.socket.sendto(
+            HELLO.pack(
+                b"H", self.node_id, settings.frequency_khz, settings.bandwidth_hz,
+                settings.spreading_factor, settings.coding_rate, settings.tx_power_dbm,
+            ),
+            self._air,
+        )  # fmt: skip
+
+    def transmit(self, packet: bytes, airtime_ms: int) -> None:
+        self.socket.sendto(TRANSMIT.pack(b"T", self.node_id, airtime_ms) + packet, self._air)
+
+    def receive(self, timeout: float = 2.0) -> bytes | None:
+        self.socket.settimeout(timeout)
+        try:
+            return self.socket.recv(1024)
+        except TimeoutError:
+            return None
+
+
+def wait_for_hellos(air: AirThread, nodes: list[StandIn]) -> None:
+    deadline = time.monotonic() + 2.0
+    while not all(n.node_id in air.settings() for n in nodes):
+        assert time.monotonic() < deadline, "the air heard no hello"
+        time.sleep(0.01)

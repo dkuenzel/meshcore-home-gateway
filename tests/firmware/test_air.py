@@ -4,47 +4,23 @@ of board/SimRadio.h."""
 from __future__ import annotations
 
 import asyncio
-import socket
 import struct
 import time
 from collections.abc import Iterator
 
 import pytest
 
-from tests.firmware.air import HELLO, TRANSMIT, Air, AirThread, Outcome, RadioSettings
+from tests.firmware.air import (
+    EU_NARROW,
+    Air,
+    AirThread,
+    Outcome,
+    RadioSettings,
+    StandIn,
+    wait_for_hellos,
+)
 
-EU_NARROW = RadioSettings(869_618, 62_500, 8, 8, 20)
 QUIET_S = 0.3  # nothing arrives within this time: nothing was sent
-
-
-class StandIn:
-    """A node as the air sees it."""
-
-    def __init__(self, node_id: int, port: int, settings: RadioSettings = EU_NARROW) -> None:
-        self.node_id = node_id
-        self._air = ("127.0.0.1", port)
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.socket.bind(("127.0.0.1", 0))
-        self.hello(settings)
-
-    def hello(self, settings: RadioSettings) -> None:
-        self.socket.sendto(
-            HELLO.pack(
-                b"H", self.node_id, settings.frequency_khz, settings.bandwidth_hz,
-                settings.spreading_factor, settings.coding_rate, settings.tx_power_dbm,
-            ),
-            self._air,
-        )  # fmt: skip
-
-    def transmit(self, packet: bytes, airtime_ms: int) -> None:
-        self.socket.sendto(TRANSMIT.pack(b"T", self.node_id, airtime_ms) + packet, self._air)
-
-    def receive(self, timeout: float = 2.0) -> bytes | None:
-        self.socket.settimeout(timeout)
-        try:
-            return self.socket.recv(1024)
-        except TimeoutError:
-            return None
 
 
 @pytest.fixture
@@ -60,13 +36,6 @@ def stand_ins(air: AirThread) -> Iterator[list[StandIn]]:
     yield nodes
     for node in nodes:
         node.socket.close()
-
-
-def wait_for_hellos(air: AirThread, nodes: list[StandIn]) -> None:
-    deadline = time.monotonic() + 2.0
-    while not all(n.node_id in air.settings() for n in nodes):
-        assert time.monotonic() < deadline, "the air heard no hello"
-        time.sleep(0.01)
 
 
 def test_a_linked_node_hears_a_transmission_after_its_time_on_air(

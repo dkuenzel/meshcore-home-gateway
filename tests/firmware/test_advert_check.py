@@ -12,21 +12,25 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import pytest
 
+from meshcore_home_gateway.core import adverts
 from meshcore_home_gateway.protocol.packet import AdvertData, parse_advert, parse_packet
 from meshcore_home_gateway.views import iso
-from tests.firmware.air import Transmission
+from tests.firmware.air import StandIn, Transmission, wait_for_hellos
 from tests.firmware.app import BY_CONTACT, App
 from tests.firmware.conftest import Scene
-from tests.firmware.gateway import Published, log_lines, running
+from tests.firmware.gateway import Published, log_lines, logged, running
 from tests.firmware.household import LANDMARK, Household, household_ready, start
 
 # in [diagnostics], then a table: the packet log on `rx`, and no telemetry
 SETTINGS = "publish_rx_log = true\n[telemetry]\nenabled = false\n"
 CHECKED_S = 3.0  # the gateway reads the table 2 s after the radio's push
 REPEATED_S = 5.0  # longer than a repeater's longest delay for an advert
+STRANGER = 9  # a stand-in on the air: a stranger's radio in range of A
+MAX_FRAME = 176  # the radio's longest frame (src/helpers/BaseSerialInterface.h:5)
 # a `contact` event: never a coordinate
 EVENT_KEYS = {"event_type", "key", "prefix", "name", "type", "request", "id", "reason"}
 
@@ -189,7 +193,7 @@ def test_b_beside_a_shares_its_position_in_an_advert_and_stops(scene: Scene) -> 
     assert stopped["advert_checked_at"] == stopped["last_advert_at"] == off.at
     assert stopped["advert_position"] is True  # the radio's record keeps the older one
     assert (stopped["latitude"], stopped["position_source"]) == (None, None)
-    assert (index_off["advert_carries_position"], index_on["advert_position"]) == ([], [key])
+    assert (index_off["advert_carries_position"], index_off["advert_position"]) == ([], [key])
     assert len(log_lines(scene.caplog, f"contact {key[:12]}: its advert carries its position")) == 1
     kept = f"contact {key[:12]}: its advert carries no position (the radio's record keeps an older"
     assert len(log_lines(scene.caplog, kept)) == 1
@@ -343,6 +347,7 @@ def test_a_restart_keeps_the_check_and_an_advert_while_stopped_stays_unchecked(
             before_next = watcher.mark()
             following = await button(scene, household)
             last = (await checked(scene, key, following)).json()
+        stored.append(advert_checks(scene.state_dir))
         documents = [shared, restarted, stopped, started, index, last]
         return documents, [on, off, unchecked, following], [second, before_next]
 
@@ -381,15 +386,29 @@ def test_a_restart_keeps_the_check_and_an_advert_while_stopped_stays_unchecked(
     assert from_advert(last, following.advert)
     assert len(in_advert(scene, key, before_next)) == 1
     assert len(in_advert(scene, key)) == 2  # the first check and the one after the stop
+    assert stored[2] == {key: {"advert_at": following.advert.timestamp, "carries": True}}
     assert all(m.payload for m in watcher.on(f"contacts/{key}"))  # never cleared
 
 
+def logs_of(scene: Scene, advert: Sent) -> list[tuple[int, float, int]]:
+    """The advert's copies in the packet log (`rx`): their hops, SNR and RSSI."""
+    found = []
+    for message in scene.watcher.on("rx"):
+        entry = message.json()
+        packet = parse_packet(bytes.fromhex(entry["raw"]))
+        if packet is not None and parse_advert(packet) == advert.advert:
+            found.append((len(packet.path_hashes), entry["snr_db"], entry["rssi_dbm"]))
+    return found
+
+
 @pytest.mark.broker
-def test_an_adverts_signal_is_that_of_its_own_packet_log(scene: Scene) -> None:
-    """At receive delay 0 (the firmware's default) the hops, SNR and RSSI on B's document are
-    those of the advert's own packet log, the frame right before the radio's push. B's flood
-    advert reaches A twice: directly, which the radio takes, and over the repeater, which it
-    logs as well and drops as a copy. `rx` shows both; the document shows the first."""
+def test_an_adverts_signal_is_that_of_the_reception_the_radio_took(scene: Scene) -> None:
+    """B's flood advert reaches A twice: directly, which the radio takes, and over the repeater,
+    which it logs as well and drops as a copy. `rx` shows both. The hops, SNR and RSSI on B's
+    document are those of the direct reception: the repeater's copy is logged after the radio's
+    push and does not replace them. A gateway that drops the signal fails. At receive delay 0 an
+    advert's own log comes directly before its push, so any rule that reads a log at the push
+    gives these values here; the next test tells the rules apart."""
     household = start(scene.nodes, scene.air, hops=1)
     alice, repeater, bob_id = (n.node_id for n in household.chain)
     scene.air.link(bob_id, alice, snr=6.5, rssi=-96)  # in range of A as well
@@ -411,12 +430,101 @@ def test_an_adverts_signal_is_that_of_its_own_packet_log(scene: Scene) -> None:
         return document, flooded
 
     document, flooded = asyncio.run(scenario())
-    logged = []
-    for message in scene.watcher.on("rx"):
-        entry = message.json()
-        packet = parse_packet(bytes.fromhex(entry["raw"]))
-        if packet is not None and parse_advert(packet) == flooded.advert:
-            logged.append((len(packet.path_hashes), entry["snr_db"], entry["rssi_dbm"]))
-    assert logged == [(0, 6.5, -96), (1, 2.25, -106)]  # direct, then the repeater's copy
-    assert (document["hops"], document["snr_db"], document["rssi_dbm"]) == logged[0]
+    logs = logs_of(scene, flooded)
+    assert logs == [(0, 6.5, -96), (1, 2.25, -106)]  # direct, then the repeater's copy
+    assert (document["hops"], document["snr_db"], document["rssi_dbm"]) == logs[0]
     assert document["advert_checked_at"] == flooded.at
+
+
+def forwarded(advert: Sent, path: bytes) -> bytes:
+    """The advert as a flood that passed the repeaters of `path` (one-byte hashes). Its signature
+    does not cover the path (src/Mesh.cpp:271-280)."""
+    packet = parse_packet(advert.transmission.packet)
+    assert packet is not None
+    header = (advert.transmission.packet[0] & ~0x03) | 0x01  # the route: flood
+    return bytes([header, len(path)]) + path + packet.payload
+
+
+async def relay(scene: Scene, stranger: StandIn, packet: bytes, airtime_ms: int, to: int) -> Sent:
+    """The stranger sends the packet, until `to` has it."""
+    after = scene.air.count()
+    stranger.transmit(packet, airtime_ms)
+    found = await scene.air.next_sent(stranger.node_id, "ADVERT/F", after=after, timeout_s=10)
+    advert = advert_in(found)
+    assert advert is not None
+    relayed = Sent(found, advert)
+    await arrived(scene, relayed, to)
+    return relayed
+
+
+@pytest.mark.broker
+def test_an_advert_without_its_own_log_has_no_signal_and_no_check(scene: Scene) -> None:
+    """B shares and is checked. A no longer hears B, and B advertises again. A stranger's radio
+    (a stand-in on the air) sends A a late copy of B's first advert over one hop, then B's new
+    advert over 63 hops. The radio logs no packet whose log would not fit its 176-byte frame
+    (examples/companion_radio/MyMesh.cpp:291-302), so it takes the new advert without a log, and
+    the frame right before its push is the log of the late copy. The gateway gives the push no
+    hops, SNR or RSSI and does not check it: `advert_checked_at` stays at the first advert while
+    `last_advert_at` moves, one debug line "not checked (not logged)", no second event. A
+    gateway that takes the late copy's signal fails here: one that reads any log of the key within
+    10 s, the newest log, or the log right before the push whatever its time."""
+    household = start(scene.nodes, scene.air)
+    alice, bob_id = household.alice.node_id, household.bob.node_id
+    stranger = StandIn(STRANGER, scene.air.port, scene.air.settings()[alice])
+    wait_for_hellos(scene.air, [stranger])
+    scene.air.link(STRANGER, alice, snr=3.5, rssi=-104, both=False)
+    adjacent: list[adverts.Logged | None] = []  # what the gateway found before each push
+    original = adverts.adjacent
+
+    def spy(last: adverts.Logged | None, key: str, frame: adverts.FrameId) -> adverts.Logged | None:
+        adjacent.append(found := original(last, key, frame))
+        return found
+
+    async def scenario() -> tuple[str, list[Any], list[Sent]]:
+        async with App(household.bob) as bob:
+            async with App(household.alice) as app:
+                await household_ready(household, app, bob, route=False)
+            key = household.bob_key.hex()
+            topic, config = f"contacts/{key}", scene.configuration(household.alice, SETTINGS)
+            with mock.patch.object(adverts, "adjacent", spy):
+                async with running(config, scene.state_dir):
+                    await scene.watcher.wait(topic)
+                    await share(bob, True)
+                    first = await button(scene, household)
+                    shared = (await checked(scene, key, first)).json()
+                    scene.air.unlink(bob_id, alice, both=False)
+                    second = await button(scene, household)  # nobody hears it
+                    hashes = bytes(range(0x40, 0x7F))  # 63 repeaters
+                    late = forwarded(first, hashes[:1])
+                    new = forwarded(second, hashes)
+                    assert len(new) + 3 > MAX_FRAME  # the log: code, SNR, RSSI, the packet
+                    copy = await relay(scene, stranger, late, first.transmission.airtime_ms, alice)
+                    await relay(scene, stranger, new, second.transmission.airtime_ms, alice)
+                    taken = await scene.watcher.wait(
+                        topic, lambda d: d["last_advert_at"] == second.at
+                    )
+                    not_checked = f"contact {key[:12]}: its advert at {second.at} was not checked"
+                    await logged(scene.caplog, f"{not_checked} (not logged)")
+        return key, [shared, taken.json()], [first, second, copy]
+
+    try:
+        key, documents, sent = asyncio.run(scenario())
+    finally:
+        stranger.socket.close()
+    shared, taken = documents
+    first, second, copy = sent
+    assert second.advert.timestamp > first.advert.timestamp
+    assert copy.advert == first.advert
+    assert logs_of(scene, first) == [(0, 8.0, -102), (1, 3.5, -104)]  # then the late copy
+    assert logs_of(scene, second) == []  # too long for a log
+    assert (shared["advert_checked_at"], shared["advert_carries_position"]) == (first.at, True)
+    assert (taken["hops"], taken["snr_db"], taken["rssi_dbm"]) == (None, None, None)
+    assert taken["heard_via"] == "advert"
+    assert taken["heard_at"] > shared["heard_at"]
+    assert len(adjacent) == 2  # the radio's two pushes
+    before_push = adjacent[1]
+    assert before_push is not None
+    assert before_push.timestamp == first.advert.timestamp  # the late copy's log
+    assert (taken["advert_checked_at"], taken["advert_carries_position"]) == (first.at, True)
+    assert len(log_lines(scene.caplog, f"contact {key[:12]}: its advert at {second.at}")) == 1
+    assert len(in_advert(scene, key)) == 1
