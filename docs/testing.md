@@ -48,14 +48,114 @@ home-assistant.md.
 | CLI | `tests/test_cli.py`, `test_cli_contacts.py` | `mosquitto` for the tests marked `broker` |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
-| Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py` | nothing |
+| Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
 | Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py` (above) | `make ha-test`: Python 3.14.2 or newer |
+| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)) | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
 installed they **fail** with a hint; set `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them on
-purpose. One transport test is skipped when running as root, because root bypasses the exclusive
-lock it checks; CI runs it as a normal user.
+purpose. One transport test and one firmware test are skipped when running as root, because root
+bypasses the exclusive lock they check; CI runs them as a normal user.
+
+## Tests against the real firmware
+
+```sh
+make firmware-test   # fetch and build MeshCore's firmware, then run the gateway against it
+```
+
+The tests above talk to an emulated radio, which answers as the firmware's source says. These
+tests run the firmware itself: MeshCore's companion and repeater firmware of the release that
+`tests/firmware/sources.toml` pins, compiled for Linux, each node a process. A simulated LoRa air
+connects them, and the gateway talks to a companion through its own serial transport on a pseudo
+terminal ([ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)).
+They need git, `g++` and OpenSSL's headers, and `mosquitto` for the scenarios with the gateway's
+service (`apt install g++ libssl-dev mosquitto`). `make test` and `make check` leave them out, so
+those need neither a compiler nor network; CI runs them in a job of their own.
+
+- `make firmware-fetch` puts the pinned sources into `build/firmware/src`: the firmware by its
+  tags `companion-vX.Y.Z` and `repeater-vX.Y.Z`, and CayenneLPP in the version the firmware's
+  `platformio.ini` names. `tools/fetch_firmware.py` refuses a tag that points to another commit
+  than the pinned one. A second run needs no network. `MESHCORE_SOURCE` and `CAYENNELPP_SOURCE`
+  name local git repositories to fetch from instead of GitHub, for example a clone of MeshCore.
+- `make firmware` builds `build/firmware/bin/companion` and `build/firmware/bin/repeater`. The
+  firmware is compiled unchanged: `tests/firmware/shim` stands in for the Arduino core and the
+  libraries, `tests/firmware/board` for the board (the radio on the simulated air, the USB serial
+  on a pseudo terminal, the flash in a directory). `make firmware V=1` shows the compiler's
+  command lines.
+- `make firmware-test` runs `tests/firmware` with pytest; `FIRMWARE_TESTS` narrows it, for
+  example `make firmware-test FIRMWARE_TESTS=tests/firmware/test_paths.py`. Once the firmware is
+  built, `.venv/bin/python -m pytest tests/firmware/test_paths.py` works too.
+  `tests/firmware/air.py` is the air, in the test's process; `tests/firmware/node.py` starts a
+  node; the fixtures in `tests/firmware/conftest.py` give a test the air and its nodes.
+
+Every node runs the EU/UK Narrow preset with CR 4/8 (869.618 MHz, 62.5 kHz, SF 8), the settings
+the hardware checklist assumes. Each node writes its packet log, debug output and, on the
+repeater, its command line's replies to `node.log` in its directory under the test's temporary
+directory; the air writes `air.log` there. A failed test shows the last lines of each. A node
+without GPS takes about 5 s to start, because the firmware looks that long for a GPS module.
+
+The simulation does not show radio propagation, the noise floor and the capture of a stronger
+packet, the time on air of a real chip, GPS, USB, the code paths of ESP32 and nRF52 boards (it
+builds the RP2040 ones), the phone app or Home Assistant. Those stay on the hardware checklist.
+The nodes run in real time, so a scenario of an hour takes an hour.
+
+### Scenarios of the hardware checklist
+
+The scenarios play parts of steps 29–43 of the [hardware checklist](#hardware-checklist) with
+the gateway's service and the real firmware; [below the checklist](#steps-2945-on-the-simulated-air)
+it says which. `tests/firmware/household.py` starts radio A, Bob's companion B with a GPS (its fix
+at a public landmark) and, for the steps with hops, repeaters in a chain.
+`tests/firmware/app.py` plays Bob's phone app on B's serial port, on the gateway's own transport,
+framing and codec: it sets B up as [companions.md](companions.md) says, and sends adverts,
+messages and path resets when a scenario says so. The app's own policies, such as when it gives up
+a direct attempt and floods, are scripted. `tests/firmware/gateway.py` runs the service in the
+test's process, as `meshcore-home-gateway run` runs it, on A's pseudo terminal and a private
+`mosquitto`, and keeps everything it publishes.
+
+The nodes run in real time. So that a scenario takes a minute, not hours, the fixture
+`fast_schedule` shortens the telemetry schedule: the airtime lanes start full, every interval is
+15 s, and a retry comes after 10 s. The rules the checklist checks stay as they are: the 10 s
+quiet after a message, the 10 s gap after every outcome, the answer waits, the flood limits and the
+routes. The first-start test runs with the real lanes and shortens only the hour of its hold.
+The air has knobs for a worse mesh: links one way only, `loss` (the share of packets a receiver
+misses) and `delay_s` (a packet reaches the receiver that much later, as if the mesh held it).
+Collisions are real, so the scenarios link only the nodes a step needs. A node hears nothing
+while it transmits (half duplex: the air records such a reception as `deaf`).
+
+`tests/firmware/test_adverts_and_positions.py` runs no gateway. It pins down what the firmware
+does with adverts and positions, which the gateway's check for positions in adverts
+([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)) relies on: at
+receive delay 0 an accepted advert's packet log (0x88) is the frame right before the
+radio's push (0x80); a node the radio does not add arrives as 0x8A right after its log; an advert
+flagged with a position (0x10) sets the contact's position, one without the flag leaves it, and
+one flagged with 0, 0 zeroes it; the device's Advert button sends zero hop, which a repeater does
+not forward, while the app's flood advert is forwarded; with the GPS on and no fix, telemetry
+carries the last fix, and after a reboot the position saved with the settings, at altitude 0.
+
+`tests/firmware/test_advert_check.py` runs that check in the gateway's service, with telemetry
+off, so that a position on B's document can only come from B's adverts. The board's control line
+`advert` presses B's Advert button; the request on `add_contact`, which `contacts add` sends,
+stands in for Home Assistant's *Add heard node*. The restart test stops and starts the service on
+one state directory. A stand-in on the air (`StandIn` in `air.py`) plays a stranger's radio that
+sends A copies of B's adverts with a path of its own.
+
+The whole suite takes about 14 minutes on four cores, the longest test about 2 minutes, so none is
+marked slow. A failed scenario's report ends with the last lines of each node's log
+and of the air's; `--log-file=gateway.log --log-file-level=DEBUG` keeps the gateway's own log.
+
+### Testing another firmware release
+
+1. Put the release's tags and the commit they point to into `tests/firmware/sources.toml`.
+   `git ls-remote https://github.com/meshcore-dev/MeshCore.git 'refs/tags/*-vX.Y.Z*'` lists them;
+   for an annotated tag the line ending in `^{}` names the commit. Keep CayenneLPP at the version
+   the release's `platformio.ini` names.
+2. Run `make firmware-test`. A release that needs more of the Arduino core or of a library fails
+   to build or to link: extend the stand-in in `tests/firmware/shim` or `tests/firmware/board`.
+3. The smoke test expects the gateway to count the release as tested. Adding its firmware code to
+   `TESTED_FIRMWARE` in `src/meshcore_home_gateway/core/profile.py` follows the hardware checklist
+   with the release and is an addition to the public interface
+   ([development.md](development.md#compatibility)).
 
 ## Installer dialogs with the real whiptail
 
@@ -75,8 +175,8 @@ locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
 
 ## Hardware checklist
 
-The automated tests emulate the radio. This checklist covers what an emulator cannot: real radio
-links, acknowledgements over the air, a USB cable pulled out, the watchdog of a real systemd. It is
+The automated tests emulate the radio or run its firmware on a simulated air. This checklist covers
+what they cannot: real radio links, acknowledgements over the air, a USB cable pulled out, the watchdog of a real systemd. It is
 the same for every installation and needs no particular hardware: any two MeshCore radios with
 companion firmware will do. Run it before every release and after raising the supported firmware
 version, and record the firmware versions, radio models and results in the pull request. The
@@ -151,3 +251,23 @@ automated tests.
 | 43 | Restart the service between the two adverts of 41. With sharing off on B (checked `false`): stop the service, switch sharing on B, press *Advert* beside A, start it; then *Advert* again. Separately, start 1.1.0a3 on a state directory of 1.1.0a2 whose radio holds an old advert position of B (sharing off since) | the restart raises and clears nothing; `state.json` `advert_checks` holds B with no position. After the stop: both sensors on (B's record took its position; the advert is unchecked), `advert_checked_at` older than `last_advert_at`, no event, no old position back on the tracker, one debug line "not checked"; the next *Advert* checks it: `advert_checked_at` moves, one `position_in_advert`. First start: B's sensor on (the record), the gateway's sensor keeps its 1.1.0a2 state until the radio connects, then on; `advert_checked_at` `null`, no event; B's *Advert* turns both off |
 | 44 | Radio over TCP (if available): B adverts ten times during a large table read; then an hour behind a busy repeater with B sending a flood advert from the app every 5 minutes; count B's adverts | the debug lines "not checked" (with their reason) and the info lines of checks counted, and compared with B's adverts and with the changes of `advert_checked_at`; an advert whose push was dropped never turns `advert_carries_position` to `false` while B shares; the next advert checks it. Write the counts into [platform-notes.md](platform-notes.md#meshcore-companion-firmware): they decide whether a later release needs the radio's stored copy of the advert, and whether 40 s and 64 logged adverts are enough in a busy mesh |
 | 45 | Browser: the guide's map card ([Traces on the map](home-assistant.md#traces-on-the-map)) with B's tracker. Walk B 200 m away and back; let it expire (step 38) and come back; restart the gateway; then exclude `device_tracker.mesh_*` from the recorder, restart Home Assistant, open the card. For slice 8: a `show_all` card with `conditions` on an attribute only mesh trackers have (`position_source`), `hours_to_show: 24`, with a phone tracker in Home Assistant, and B's tracker `unavailable` when the card loads | a dot per move of 20 m or more, a line between, older ones fainter; none while B rests; the expiry as a straight segment; the restart as a second dot on one spot; a trail of exactly two points drawn with sensible opacity; with the exclusion no trail after the reload, a `person` of B still has one. `show_all`: whether the phone's trail shows although its marker is filtered, and whether a tracker `unavailable` at load gets a trail. Both into [platform-notes.md](platform-notes.md#home-assistant-dashboards); slice 8 decides its map and the tracker attributes on them |
+
+### Steps 29–45 on the simulated air
+
+The [firmware tests](#scenarios-of-the-hardware-checklist) play parts of steps 29–43 against the
+real firmware, with the gateway's service: the telemetry steps on a shortened schedule, the steps
+on adverts with telemetry off. They do not replace a step: what they cannot show stays here.
+
+| # | Shown by the firmware tests | Stays on the hardware checklist |
+| --- | --- | --- |
+| 29 | **partly**, `test_first_start.py`: the first-start hold (`paused`, `first_start` from connected, one warning with the number of companions, no request; the hour shortened to 15 s); on the later start the first request 75.6 s after connected, direct; B's document with the position from telemetry, `position_accuracy_m` 15, `answering`, `battery_v` as B's app reads it; *Telemetry* `answered` once; an answer of 28 bytes | the hour itself; the intervals (15, 31 and 47 minutes, 82 s behind a repeater); Home Assistant's entities and log; a real board's battery and MCU temperature; `telemetry_airtime_1h_s` against `stats.tx_airtime_1h_s` (the simulation measures its own estimate) |
+| 30 | **partly**, B's part, `test_permissions.py`: "No", nothing allowed, base only, base and location, everything, the gateway removed give silence, silence, battery and MCU temperature only, the position, the same (B has no environment sensor), silence; every request direct; `no_answer` without `unanswered`, then `no_position`, then `answering` | B2 and C: their sensors; the app's labels and counts |
+| 31 | **partly**, the firmware's part, `test_adverts_and_positions.py`: with the GPS on and no fix a companion still sends a position, its last fix, after a reboot the saved one at altitude 0. The expected "without position" for "on without a fix" does not hold for this firmware | the whole step: check "on without a fix" with a real GPS |
+| 33 | **partly** (most), `test_paths.py`: the requests on the stale direct path go unanswered, direct, without a path reset; B's flooded message brings A the path over the repeater (0x81); the next request goes direct over the repeater and is answered | the app's own retries (scripted: one direct attempt, then the path reset and the flood) |
+| 34 | **fully**, `test_answer_sizes.py`: 28 bytes with 9 zero bytes direct, over no, one and two repeaters; after a flood 26 with 7 to a neighbour, 25 with 6 over one repeater, 24 with 5 over two; no "bytes not decoded"; an answer held back past the wait is taken as late until the next request, and after it the radio pushes it as 0x8C, which the gateway ignores | a check with each firmware release; here the late answer comes from the air's delay knob on a neighbour, not from distance |
+| 35 | **partly** (most), the ordering rules, `test_message_order.py`: no request between a message's queueing and its confirmation, nor within 10 s after, for a message right after a flooded request and for messages while B is asked; the wait of the message after the flood is recorded, not judged | a large table read; the waits on a real radio over USB |
+| 39 | **partly** (most), `test_paths.py`: over two repeaters, the flooded RESPONSE after a direct request in the packet log (`rx`), `telemetry_mesh_airtime_1h_s` up by the direct request plus 12.6 s, A's path back 3.0 s later, the next answer direct | whether 12.6 s matches real air; the SNR and RSSI in `rx` are those the test gives the links |
+| 41 | **partly**, `test_advert_check.py`. Beside A, sharing on with a GPS fix: within 3 s of the button's advert reaching A (2.0 s measured), `advert_carries_position` `true` with `advert_checked_at` the advert's time, B in the index's `advert_carries_position` (the gateway's sensor), the advert's position on B's document, one `position_in_advert` without a coordinate, the info line; sharing off: `false`, B out of the index, the advert position gone, `advert_position` still `true`, the info line "no position (the radio's record keeps an older one)", no event. Behind the repeater: the button's zero-hop advert reaches only the repeater, `last_advert_at` stays; the app's flood advert is checked, one hop, with one event, and the next one moves `advert_checked_at` without a second. Added after it was heard: A, which never held B, gets B's advert as a node it does not add; B added with `add_contact` starts `true` with `advert_checked_at` that advert's time, one `position_in_advert` after `added`, no position until B's next advert, which raises no second event. The advert's hops, SNR and RSSI are those of the direct reception the radio took, not of the repeater's copy logged after it (`rx` shows both). Without its own log: a stand-in sends A a late copy of B's older advert, then B's next advert over 63 hops, too long for the radio's packet log; the radio takes it, and the gateway gives it no hops, SNR or RSSI (not those of the late copy, the frame before the push) and no check (`advert_checked_at` stays, one debug line "not checked (not logged)", no second event). Forged copies and a receive delay above 0 are shown only by the unit tests (`tests/test_observer.py`, `tests/test_adverts.py`) | Home Assistant: *Position in adverts*, the gateway's sensor, the tracker; the repeat with B excluded from telemetry and included again; *Remove from radio* and *Add heard node* (here B was never on A); B asked after the add, and its telemetry position; the time on a real radio over USB |
+| 42 | **not yet**: `test_adverts_and_positions.py` shows the saved position in telemetry after a reboot, not in adverts | all |
+| 43 | **partly**, `test_advert_check.py`: a restart after the check `true` keeps it (`advert_checked_at`, the advert position) and raises no event; after each run `state.json` `advert_checks` holds B's advert time and flag, no position. Checked `false`, stopped, B shares and advertises beside A, started: `advert_checked_at` older than `last_advert_at`, `advert_carries_position` `true` and B in the index, no position on B's document, no event, one debug line "not checked"; the next Advert checks it, `advert_checked_at` moves, one `position_in_advert`; B's document is never cleared | Home Assistant's sensors and the tracker; the first start on a state directory of 1.1.0a2 |
+| 32, 36, 37, 38, 40, 44, 45 | **not yet**: they take hours, Home Assistant, a browser, a TCP interface or a USB cable | all |

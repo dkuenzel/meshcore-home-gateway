@@ -18,11 +18,16 @@ RELEASE_BASE ?= origin/main
 PYZ := meshcore-home-gateway.pyz
 UNIT := meshcore-home-gateway.service
 
+# Firmware tests: MeshCore's firmware at the release tests/firmware/sources.toml pins, built natively
+FIRMWARE_BUILD ?= build/firmware
+# what `make firmware-test` runs, e.g. FIRMWARE_TESTS=tests/firmware/test_paths.py
+FIRMWARE_TESTS ?= tests/firmware
+
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
-  dist pyz release release-plan check hooks clean
+  firmware-fetch firmware firmware-test dist pyz release release-plan check hooks clean
 
 help: ## List the targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
 
 venv: $(VENV)/.installed ## Development environment from the hash-pinned lock file
 
@@ -85,6 +90,19 @@ ha-test: $(HA_VENV)/.installed ## Contract tests against the pinned Home Assista
 	$(HA_VENV)/bin/python -m pytest -c home-assistant/pytest.ini -p no:cacheprovider \
 	  home-assistant/tests
 
+# The firmware tests are not part of `make check`: they need git access to the pinned sources (or a
+# local clone in MESHCORE_SOURCE and CAYENNELPP_SOURCE), a C++ compiler and OpenSSL's headers.
+firmware-fetch: ## Fetch the pinned MeshCore firmware and CayenneLPP (MESHCORE_SOURCE: a local clone)
+	$(PYTHON) -I tools/fetch_firmware.py tests/firmware/sources.toml $(FIRMWARE_BUILD)/src
+
+firmware: firmware-fetch ## Build MeshCore's companion and repeater natively (needs g++, libssl-dev)
+	$(MAKE) --no-print-directory -C tests/firmware SOURCES=$(abspath $(FIRMWARE_BUILD))/src \
+	  OUT=$(abspath $(FIRMWARE_BUILD))
+
+firmware-test: venv firmware ## The gateway against the real firmware on a simulated air
+	MESHCORE_HOME_GATEWAY_FIRMWARE=$(abspath $(FIRMWARE_BUILD)) $(BIN)/python -m pytest \
+	  $(FIRMWARE_TESTS)
+
 # The snapshot test fails until this runs (docs/development.md#compatibility). Review the
 # snapshot's diff like code: a removal or narrowing of what the last release had needs a
 # **Breaking:** entry in CHANGELOG.md, an addition or change an Added or Changed entry.
@@ -138,7 +156,7 @@ release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, 
 release-plan: ## Check that a changed __version__ is the next one and the public interface stays compatible
 	python3 -I tools/release_plan.py check --base "$$(git merge-base HEAD $(RELEASE_BASE))"
 
-check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test and release-plan
+check: lint shellcheck workflows test dist unit-check ## Everything CI runs, except ha-test, firmware-test, release-plan
 
 hooks: ## Run `make check` before every push
 	git config core.hooksPath .githooks

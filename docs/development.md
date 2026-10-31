@@ -13,8 +13,9 @@ make help    # all targets
 ```
 
 Requirements: Linux with systemd (for `make unit-check`), Python ≥ 3.11 with `venv`
-(`python3-venv` on Debian and Ubuntu), GNU make, `mosquitto` for the integration tests, `uv` only
-to update the lock file.
+(`python3-venv` on Debian and Ubuntu), GNU make, git, `mosquitto` for the integration tests, `uv`
+only to update the lock file, `g++` and `libssl-dev` only for the firmware tests
+([testing.md](testing.md#tests-against-the-real-firmware)).
 
 ## Layout
 
@@ -31,8 +32,10 @@ src/meshcore_home_gateway/
   cli.py         command line
 deploy/          systemd unit, Proxmox installer, example configuration
 docs/            design, decisions, protocol, API, operations
-tests/           pytest suites, emulated radio, broker fixture; tests/manual: checks run by hand
-tools/           build and release helpers: zipapp, release plan, public interface comparison
+tests/           pytest suites, emulated radio, broker fixture; tests/manual: checks run by hand;
+                 tests/firmware: the real firmware on a simulated air (make firmware-test)
+tools/           build and release helpers: zipapp, release plan, public interface comparison,
+                 the pinned fetch of the firmware
 .github/         CI workflow, Dependabot, issue forms, pull request template
 ```
 
@@ -75,7 +78,9 @@ run `make ha-test` and adjust "tested with" in `docs/home-assistant.md`. Review 
 pinned to commit SHAs; Dependabot proposes updates with the same cooldown. `paho-mqtt` stays at the
 version of Debian 13 (ADR 0005), and Dependabot ignores it: raise it with the deployment target.
 A changed lock file gives `make venv` a fresh environment, so that no package the lock dropped
-stays installed.
+stays installed. The firmware that the firmware tests build is pinned in
+`tests/firmware/sources.toml`, which Dependabot does not read: move it with a firmware release
+([testing.md](testing.md#testing-another-firmware-release)).
 
 ## Compatibility
 
