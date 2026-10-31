@@ -33,6 +33,16 @@ format, the command line and Home Assistant discovery are public interfaces
   `send --wait`, the results of `contacts add`, `remove` and `telemetry` with `--wait`,
   `contacts list`, `contacts link`, `config answers`, `--version`), `run` and the service's log
   stay English.
+- The Proxmox installer writes `[homeassistant] language` for a new installation: `en`, or the
+  value of the answers file; a reconfiguration keeps the configured one, and a version before
+  1.1.0a4, which lacks the setting, gets it only from the answers file. Once the gateway offers
+  languages besides English, the installer asks for its own language first (the default from
+  your session), shows its dialogs, buttons and error boxes in it, passes it to the program,
+  whose messages its log then quotes in that language, and makes it the default of
+  `[homeassistant] language` for a new installation, which the advanced setup also asks. It reads
+  the language's pack from where the script comes from (its release, the checkout next to it,
+  else `main`) into memory, checks it against a digest the script carries, and continues in
+  English when the pack cannot be loaded.
 
 ### Changed
 

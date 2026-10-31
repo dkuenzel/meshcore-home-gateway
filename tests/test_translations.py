@@ -53,6 +53,12 @@ def test_packs_follow_their_catalogs() -> None:
     assert tool.stale_packs(PROJECT) == []
 
 
+def test_the_installer_pins_its_packs() -> None:
+    """The installer offers the languages of i18n.LANGUAGES and checks each pack it loads against
+    the digest that `make translations` wrote into it."""
+    assert tool.stale_pins(PROJECT, tool.i18n.LANGUAGES) == []
+
+
 def test_the_template_holds_argparses_texts() -> None:
     """The template exists before any catalog: argparse's own words are its first texts."""
     _, entries = tool.read_po(PROJECT.template.read_text(encoding="utf-8"))

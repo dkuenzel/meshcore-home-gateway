@@ -826,8 +826,13 @@ def test_the_pin_block_refuses_what_the_installer_cannot_offer(
         tool.pin_block(languages, packs)
 
 
-INSTALLER_SCRIPT = """#!/usr/bin/env bash
-die 'cannot read {file}' file "$1"
+INSTALLER_SCRIPT = f"""#!/usr/bin/env bash
+{tool.PINS_START}
+L10N_ORDER=(en)
+declare -A L10N_NAME=([en]=English)
+declare -A L10N_SHA256=()
+{tool.PINS_END}
+die 'cannot read {{file}}' file "$1"
 """
 
 
@@ -869,7 +874,8 @@ def test_update_writes_the_template_and_merges_the_catalogs(project: Any) -> Non
     header, entries = read_po(german.read_text(encoding="utf-8"))
     assert header == tool.catalog_header("de", GERMANIC)
     assert [e.msgid for e in entries] == [e.msgid for e in template]
-    findings = tool.check(project, {"en": "English", "de": "Deutsch"})
+    pins, *findings = tool.check(project, {"en": "English", "de": "Deutsch"})
+    assert pins == f"{INSTALLER}: no pack for de"  # the installer has no catalog of it
     assert len(findings) == len(entries)
     assert findings[0] == "src/meshcore_home_gateway/locale/de.po: untranslated: 'Removed'"
     assert all(": untranslated: " in finding for finding in findings)
@@ -925,7 +931,7 @@ def test_the_installer_has_its_own_template_catalogs_and_packs(project: Any) -> 
     ]
     project.installer.write_text(INSTALLER_SCRIPT + 'die "gone $x"\n', encoding="utf-8")
     (finding,) = tool.check(project)
-    assert finding.startswith(f"{INSTALLER}:3: ")
+    assert finding.startswith(f"{INSTALLER}:8: ")
     with pytest.raises(tool.ExtractError):
         tool.update(project)
 
@@ -942,7 +948,9 @@ def test_an_installer_catalog_that_no_pack_can_hold_is_found(project: Any) -> No
     assert finding.startswith("deploy/proxmox/locale/de.po: '{count} file': a plural")
     german.write_text('msgid "a"\nmsgstr "\\q"\n', encoding="utf-8")
     assert tool.stale_packs(project) == []  # canonical() names a catalog it cannot read
-    assert any(f.startswith("deploy/proxmox/locale/de.po:2: ") for f in tool.check(project))
+    findings = tool.check(project)
+    assert any(f.startswith("deploy/proxmox/locale/de.po:2: ") for f in findings)
+    assert not [f for f in findings if f.startswith(INSTALLER)]  # its pins need no German pack
 
 
 def test_a_wrong_installer_translation_is_found(project: Any) -> None:
@@ -955,6 +963,59 @@ def test_a_wrong_installer_translation_is_found(project: Any) -> None:
     (finding,) = tool.check(project)
     assert finding.startswith("deploy/proxmox/locale/de.po: 'cannot read {file}': ")
     assert "{datei}" in finding
+
+
+GERMAN = {"en": "English", "de": "Deutsch"}
+
+
+def test_update_pins_each_pack_in_the_installer(project: Any) -> None:
+    """The installer's block of language packs: the languages of i18n.LANGUAGES, their names and
+    the digest of each pack, written by update and checked by check."""
+    tool.update(project)
+    assert tool.stale_pins(project, {"en": "English"}) == []
+    german = project.installer_locale / "de.po"
+    german.write_text(
+        tool.write_po(tool.catalog_header("de", GERMANIC),
+                      [Entry("cannot read {file}", ("{file} unlesbar",))]),
+        encoding="utf-8",
+    )  # fmt: skip
+    tool.update(project)
+    assert tool.stale_pins(project, GERMAN) == [
+        f"{INSTALLER}: the block of language packs is not current: run make translations"
+    ]
+    assert tool.update(project, GERMAN) == [project.installer]
+    pack = project.pack("de").read_text(encoding="utf-8")
+    assert tool.pin_block(GERMAN, {"de": pack}) in project.installer.read_text(encoding="utf-8")
+    assert project.installer.read_text(encoding="utf-8").endswith(
+        "\ndie 'cannot read {file}' file \"$1\"\n"
+    )
+    assert tool.stale_pins(project, GERMAN) == []
+    assert tool.update(project, GERMAN) == []
+
+    german.write_text(
+        german.read_text(encoding="utf-8").replace("unlesbar", "nicht lesbar"), encoding="utf-8"
+    )
+    assert tool.stale_pins(project, GERMAN) == [
+        f"{INSTALLER}: the block of language packs is not current: run make translations"
+    ]
+    assert tool.update(project, GERMAN) == [project.pack("de"), project.installer]
+    assert tool.check(project, GERMAN) == [
+        "src/meshcore_home_gateway/locale/de.po: missing: i18n.LANGUAGES offers de"
+    ]
+
+
+@pytest.mark.parametrize("blocks", [0, 2])
+def test_the_installer_needs_one_block_of_language_packs(project: Any, blocks: int) -> None:
+    text = project.installer.read_text(encoding="utf-8")
+    block = tool.pin_block({"en": "English"}, {})
+    project.installer.write_text(text.replace(block, block * blocks), encoding="utf-8")
+    (finding,) = tool.stale_pins(project, {"en": "English"})
+    assert finding == (
+        f"{INSTALLER}: the script needs one block of language packs, between "
+        f"{tool.PINS_START!r} and {tool.PINS_END!r}"
+    )
+    with pytest.raises(ValueError, match="one block of language packs"):
+        tool.update(project)
 
 
 def test_main_runs_the_commands(

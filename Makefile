@@ -111,9 +111,9 @@ interface: venv ## Write tests/public_interface.json from the code, after a deli
 
 # The translation tests fail until this runs (tools/i18n.py): it writes the templates from the
 # marked texts, argparse's own words (adding this Python's) and the installer's texts, merges the
-# catalogs with them and writes the installer's language packs. Every new text then needs its
-# translations in each catalog.
-translations: venv ## Write the translation templates, merge the catalogs, write the installer's packs
+# catalogs with them, writes the installer's language packs and pins them in the installer. Every
+# new text then needs its translations in each catalog.
+translations: venv ## Write the translation templates, merge the catalogs, write the installer's packs and pins
 	$(BIN)/python tools/i18n.py update
 
 unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0

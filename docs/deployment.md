@@ -86,6 +86,7 @@ every setting in the table.
 | Broker TLS, port | no, 1883 (8883 with TLS) | Advanced |
 | Base topic, node id | `meshcore`, `radio1` | Advanced |
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
+| Language of the names in Home Assistant (asked while it offers more than English) | the dialogs' language; on `--reconfigure` the configured one, else `en` | Advanced |
 | ASCII only | no | Advanced |
 | Channels and contacts to send to | read from the radio | both |
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |

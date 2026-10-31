@@ -94,6 +94,9 @@ msgstr ""
 msgid "IPv4 gateway"
 msgstr ""
 
+msgid "Language of the names in Home Assistant"
+msgstr ""
+
 msgid "MQTT broker port"
 msgstr ""
 
@@ -487,4 +490,24 @@ msgstr ""
 
 #, python-brace-format
 msgid "{setting}: {live}, not {wanted} (the firmware does not support it)"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Cancel"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "No"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Ok"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Yes"
 msgstr ""

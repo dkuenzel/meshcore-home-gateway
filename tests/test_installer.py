@@ -64,7 +64,15 @@ STUBS = {
             shift 3
             if [[ ${1-} != env || ${2-} != -i ]]; then echo "stub: no env -i" >&2; exit 97; fi
             shift 2
-            while [[ ${1-} == *=* ]]; do shift; done
+            language=""
+            while [[ ${1-} == *=* ]]; do
+              if [[ $1 == LANGUAGE=* ]]; then language=${1#LANGUAGE=}; fi
+              shift
+            done
+            say() {  # a line of the program, in the pseudo-language when LANGUAGE names it
+              printf 'meshcore-home-gateway: '
+              if [[ $language == xx ]]; then printf '‹%s›\n' "$1"; else printf '%s\n' "$1"; fi
+            }
             if [[ -p /dev/stdin ]]; then  # files sent into the container through the input
               mkdir -p "$STUB/pushed"
               cat >"$STUB/input"
@@ -81,12 +89,12 @@ STUBS = {
                 read -ra codes <<<"${BROKER_ANSWERS:-0}"
                 code=${codes[n]:-${codes[-1]}}  # the last one repeats
                 case $code in  # 3: a version without the check, 4: the settings refused
-                  1) echo "meshcore-home-gateway: broker refused the connection: Not authorized" ;;
-                  4) echo "meshcore-home-gateway: configuration error: mqtt.port: not a number" ;;
+                  1) say 'broker refused the connection: Not authorized' ;;
+                  4) say 'configuration error: mqtt.port: not a number' ;;
                 esac
                 exit "$code" ;;
               *'--output $dir/config.toml'*)  # the settings check
-                [[ -z ${CHECK_FAILS-} ]] || { echo "bad" >&2; exit 78; } ;;
+                [[ -z ${CHECK_FAILS-} ]] || { say bad >&2; exit 78; } ;;
               *"daemon-reload"*)  # the installation step
                 [[ -z ${INSTALL_FAILS-} ]] || exit 1
                 echo "${STUB_VERSION:-0.0.0}" ;;
@@ -177,6 +185,14 @@ STUBS = {
             done ;;
         esac
     """,
+    "wget": r"""
+        log wget "$@"
+        [[ -z ${WGET_FAILS-} ]] || exit 4  # a network failure
+        address=${!#}
+        file=$STUB/www/${address#https://}  # what the test serves at that address
+        [[ -f $file ]] || exit 8  # the server answered with an error
+        cat -- "$file"
+    """,
     "pveversion": 'echo "pve-manager/${PVE_VERSION:-9.0.10}/0123abcd (running kernel: 6.14)"',
     "dpkg-query": 'printf "%s" "${PVE_CONTAINER:-6.1.14}"',
     "id": 'echo "${STUB_UID:-0}"',
@@ -196,6 +212,7 @@ STUBS = {
         printf '\033[H[screen]'  # the real one draws on stdout; captured, it would corrupt answers
         [[ $* == *--msgbox* ]] && exit 0
         answer=$(head -n 1 "$STUB/dialog"); sed -i 1d "$STUB/dialog"
+        [[ $answer != '<cancel>' ]] || exit 1  # the Cancel button
         if [[ $* == *--yesno* ]]; then [[ $answer == yes ]]; exit; fi
         printf '%s' "$answer" | tr '|' '\n' >&2
     """,

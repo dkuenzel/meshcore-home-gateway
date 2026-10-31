@@ -22,6 +22,7 @@ REPO_DIR=""    # SOURCE=checkout: the checkout
 REF=main       # SOURCE=ref: the branch, tag or commit whose source is built in the container
 PICKED=""      # SOURCE=release: the release to install, this copy's or the one --release names
 VERSION=""     # known in advance for a checkout and a release, else after the installation
+OWN_PROGRAM=0  # 1: the program to configure is this checkout's own (not on --reconfigure)
 TITLE="meshcore-home-gateway"
 BROKER_LOGIN=""   # check_broker's result for the final message: accepted, unchecked, failed
 SERIAL_DIR=${MESHCORE_HOME_GATEWAY_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
@@ -38,6 +39,14 @@ CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # answers that steer the installer; every other key in --answers FILE is a configuration setting
 INSTALLER_KEYS=" setup ct.id ct.hostname ct.storage ct.disk_gb ct.memory_mb ct.bridge ct.ip \
 ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
+# --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
+L10N_ORDER=(en)
+declare -A L10N_NAME=([en]=English)
+declare -A L10N_SHA256=()
+# --- end of language packs
+L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
+for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
+HA_LANGUAGE=""   # the language menu's choice: the default of homeassistant.language
 declare -A ANSWERS=()   # from --answers FILE
 declare -A CURRENT=()   # settings of the installation being reconfigured
 declare -A OUT=()       # answers for `meshcore-home-gateway config render`
@@ -282,6 +291,67 @@ choose_setup() {
   if [[ $setup == advanced ]]; then ADVANCED=1; fi
 }
 
+# --- language -------------------------------------------------------------------------------
+
+env_language() {  # the caller's language as the command line reads it, if offered; else en
+  local name value="" item code
+  local -a items=()
+  for name in LANGUAGE LC_ALL LC_MESSAGES LANG; do  # Python's order: LANGUAGE also under C
+    value=${!name-}
+    if [[ -n $value ]]; then break; fi
+  done
+  IFS=: read -r -a items <<<"$value"   # LANGUAGE may name several: pt_BR:de
+  for item in "${items[@]}"; do
+    code=${item%%[.@]*}   # de_AT.UTF-8@euro: de_AT
+    if [[ $code == C || $code == POSIX ]]; then break; fi
+    code=${code%%_*}
+    code=${code,,}
+    # checked before it becomes a subscript, which some versions of bash expand once more
+    if [[ $code =~ ^[a-z]{2}$ && -v "L10N_NAME[$code]" ]]; then printf '%s' "$code"; return; fi
+  done
+  printf en
+}
+
+pack_text() {  # pack_text LANG: the pack of this script's texts, at most 256 KiB, on stdout: its
+  # release's, else the one next to it in a checkout, else main's; never what --release installs
+  local name=meshcore-home-gateway-lxc.$1.messages here=""
+  if [[ -z $RELEASE && -n $SCRIPT && -f $SCRIPT ]]; then
+    here=$(dirname -- "$SCRIPT")/locale/$1.messages
+  fi
+  if [[ -n $here && -f $here ]]; then head -c 262144 -- "$here"; return; fi
+  command -v wget >/dev/null || return 1
+  if [[ -n $RELEASE ]]; then
+    wget -qO- --timeout=20 "$RELEASES/download/v$RELEASE/$name" | head -c 262144
+  else
+    wget -qO- --timeout=20 \
+      "https://raw.githubusercontent.com/$REPOSITORY/main/deploy/proxmox/locale/$1.messages" \
+      | head -c 262144
+  fi
+}
+
+choose_language() {  # choose_language MODE: the dialogs' language, the first dialog; on a new
+  # installation also the default of homeassistant.language (a reconfiguration keeps its own)
+  local lang text
+  if (( ${#L10N_ORDER[@]} < 2 )); then return 0; fi   # only English is offered
+  lang=$(show_dialog menu "Language / Sprache / Taal / Język / Langue" "$(env_language)" \
+    "${L10N_MENU[@]}")
+  if [[ $1 == install ]]; then HA_LANGUAGE=$lang; fi
+  if [[ $lang == en ]]; then return 0; fi
+  # in memory only, and checked against its digest above before a line of it is read
+  if text=$(pack_text "$lang") && load_messages "$text" "${L10N_SHA256[$lang]-}"; then
+    L10N_LANG=$lang
+    CT_ENV+=("LANGUAGE=$lang")   # the program's messages in the dialogs' language
+    # Translators: a button of every dialog; at most 12 characters.
+    BUTTONS=(--yes-button "$(tp button Yes)" --no-button "$(tp button No)")
+    # Translators: a button of every dialog; at most 12 characters.
+    BUTTONS+=(--ok-button "$(tp button Ok)" --cancel-button "$(tp button Cancel)")
+  else  # in English: the pack's texts are what failed
+    log "the language pack $lang was not loaded: the dialogs stay in English"
+    whiptail --title "$TITLE" --msgbox -- "${L10N_NAME[$lang]}: the language pack could not be \
+loaded; the installer continues in English." 12 72 >&2 || true
+  fi
+}
+
 # --- checks ---------------------------------------------------------------------------------
 
 usage() {
@@ -308,7 +378,7 @@ detect_source() {  # where meshcore-home-gateway comes from, unless --release or
   if [[ -z $SOURCE && -n $SCRIPT && -f $SCRIPT ]]; then
     dir=$(cd -- "$(dirname -- "$SCRIPT")/../.." && pwd)
     if [[ -f $dir/src/meshcore_home_gateway/__init__.py && -f $dir/tools/build_pyz.py ]]; then
-      SOURCE=checkout REPO_DIR=$dir
+      SOURCE=checkout REPO_DIR=$dir OWN_PROGRAM=1
       VERSION=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' \
         "$dir/src/meshcore_home_gateway/__init__.py")
     fi
@@ -319,6 +389,12 @@ detect_source() {  # where meshcore-home-gateway comes from, unless --release or
 }
 
 prerelease() { [[ $PICKED =~ (a|b|rc|dev)[0-9]+$ ]]; }   # as the release workflow marks them
+
+knows_language() {  # does the program that renders the configuration read homeassistant.language?
+  # a checkout's own does, whatever version it names; else every version but the ones before it,
+  # an unknown one too (--ref before the installation: write_answers drops it if it is older)
+  (( OWN_PROGRAM )) || ! [[ $VERSION =~ ^(0\.|1\.0\.|1\.1\.0a[1-3]$) ]]
+}
 
 invocation() {  # how to run this installer again, for the final message
   local address
@@ -844,9 +920,20 @@ ask_bridge() {  # broker, topics, Home Assistant and message settings
   if [[ ${OUT[homeassistant.discovery]} == true ]]; then
     OUT[homeassistant.device_name]=$(ask_advanced homeassistant.device_name input \
       "$(t 'Device name in Home Assistant')" "MeshCore radio")
+    if knows_language; then ask_names_language; fi   # unknown version: asked, maybe dropped
   fi
   OUT[messages.ascii_only]=$(ask_advanced messages.ascii_only yesno \
     "$(t 'Send ASCII only (for handhelds without Unicode fonts)?')" "false")
+}
+
+ask_names_language() {  # homeassistant.language: on a new installation the language menu's
+  # choice, on a reconfiguration the configured one; a menu in the advanced setup
+  if (( ${#L10N_ORDER[@]} > 1 )); then
+    OUT[homeassistant.language]=$(ask_advanced homeassistant.language menu \
+      "$(t 'Language of the names in Home Assistant')" "${HA_LANGUAGE:-en}" "${L10N_MENU[@]}")
+  else  # only English is offered: nothing to ask; the answers' or the configured one stays
+    OUT[homeassistant.language]=${OUT[homeassistant.language]-en}
+  fi
 }
 
 slug() {  # alias from a name: lower case, a-z 0-9 - _, starts with a letter or digit, max 32
@@ -1081,10 +1168,17 @@ drop_offered() {  # drop_offered KIND OFFERED: forget the targets the dialog ask
 }
 
 write_answers() {  # the answers for `meshcore-home-gateway config render`, one key=value per line
-  local key
+  local key left=""
+  if language_dropped; then left=homeassistant.language; fi
   for key in "${!OUT[@]}"; do
-    printf '%s=%s\n' "$key" "${OUT[$key]}"
+    if [[ $key != "$left" ]]; then printf '%s=%s\n' "$key" "${OUT[$key]}"; fi
   done | LC_ALL=C sort
+}
+
+language_dropped() {  # the installer's own homeassistant.language, which the version lacks
+  # (learned after the installation); an answer goes as given, for the program to judge
+  [[ -v "OUT[homeassistant.language]" && ! -v "ANSWERS[homeassistant.language]" ]] \
+    && ! knows_language
 }
 
 configure() {  # write the configuration into the container
@@ -1188,6 +1282,10 @@ install() {
   start_container "${CT[id]}"
   if [[ ${OUT[radio.transport]} == serial ]]; then check_device_group "${CT[id]}"; fi
   install_service "${CT[id]}"
+  if language_dropped; then
+    log "meshcore-home-gateway $VERSION in container ${CT[id]} has no setting" \
+      "homeassistant.language: the names in Home Assistant stay English"
+  fi
   if [[ $SOURCE != checkout ]]; then check_settings_in "${CT[id]}"; fi
   check_broker "${CT[id]}"
   choose_targets "${CT[id]}"
@@ -1224,7 +1322,8 @@ reconfigure() {
   version=$(in_ct "$ctid" meshcore-home-gateway --version) && version=${version##* }
   [[ $version =~ ^[0-9][0-9A-Za-z.+-]*$ ]] \
     || die 'cannot read the version of meshcore-home-gateway in container {ctid}' ctid "$ctid"
-  VERSION=$version TITLE="meshcore-home-gateway $version"   # what runs there, not this installer
+  # what runs there, not this installer; it also renders the configuration, not a checkout's own
+  VERSION=$version TITLE="meshcore-home-gateway $version" OWN_PROGRAM=0
   pass_settings
   choose_setup
   ask_bridge
@@ -1263,6 +1362,7 @@ main() {
   detect_source
   preflight "$mode"
   WORK=$(mktemp -d)
+  if (( INTERACTIVE )) && [[ $mode != update ]]; then choose_language "$mode"; fi
   case $mode in
     install) install ;;
     update) update "$ctid" ;;

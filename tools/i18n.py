@@ -1,7 +1,7 @@
 """Translations (ADR 0019, ADR 0027): the templates of the texts, the catalogs, the installer's
 language packs and their checks.
 
-    python3 tools/i18n.py update   # what `make translations` runs: templates, catalogs, packs
+    python3 tools/i18n.py update   # what `make translations` runs: templates, catalogs, packs, pins
     python3 tools/i18n.py check    # the checks of the tests, without pytest; exit 1 on a finding
 
 `update` extracts every text marked in the package (docs/development.md, Translations) and
@@ -9,7 +9,8 @@ argparse's own words into src/meshcore_home_gateway/locale/meshcore-home-gateway
 running Python's argparse texts to tools/argparse_messages.json (it never removes one: the list
 serves every Python of the matrix) and merges each catalog with the template. The installer's
 texts go into deploy/proxmox/locale/installer.pot the same way; each of its catalogs also gives
-the language pack the installer loads (<language>.messages). The files are written in one
+the language pack the installer loads (<language>.messages), whose SHA-256 the installer carries
+in its block of language packs, with the languages of i18n.LANGUAGES. The files are written in one
 canonical form, without dates or names, so the tests can compare them with what the code says.
 Standard library only; it puts src/ on the path itself.
 """
@@ -891,6 +892,9 @@ PINS_START: Final = (
     "do not edit"
 )
 PINS_END: Final = "# --- end of language packs"
+_PINS: Final = re.compile(
+    rf"^{re.escape(PINS_START)}\n.*?^{re.escape(PINS_END)}\n", re.MULTILINE | re.DOTALL
+)
 
 
 def pack(language: str, entries: Iterable[Entry]) -> str:
@@ -948,6 +952,34 @@ def pin_block(languages: Mapping[str, str], packs: Mapping[str, str]) -> str:
     ])  # fmt: skip
 
 
+def with_pins(script: str, block: str) -> str:
+    """The installer's text with its block of language packs replaced by `block`."""
+    if len(_PINS.findall(script)) != 1:
+        raise ValueError(
+            f"the script needs one block of language packs, between {PINS_START!r} and {PINS_END!r}"
+        )
+    return _PINS.sub(lambda _: block, script)
+
+
+def _packs(project: Project) -> dict[str, str]:
+    """Each installer catalog's language pack, as update() writes it; a catalog that cannot be
+    read or packed has none (canonical() and stale_packs() name it)."""
+    packs = {}
+    for path in project.installer_catalogs():
+        try:
+            _, entries = read_po(path.read_text(encoding="utf-8"), label(project, path))
+            packs[path.stem] = pack(path.stem, entries)
+        except ValueError:  # PoError too
+            continue
+    return packs
+
+
+def _pinned(project: Project, languages: Mapping[str, str], packs: Mapping[str, str]) -> str:
+    """The installer's text with the block that offers `languages` and pins their packs."""
+    script = project.installer.read_text(encoding="utf-8")
+    return with_pins(script, pin_block(languages, packs))
+
+
 def _write(path: Path, text: str) -> bool:
     if path.exists() and path.read_text(encoding="utf-8") == text:
         return False
@@ -956,9 +988,10 @@ def _write(path: Path, text: str) -> bool:
     return True
 
 
-def update(project: Project) -> list[Path]:
-    """Write what changed: argparse's texts of this Python, the templates, the catalogs and the
-    installer's language packs."""
+def update(project: Project, languages: Mapping[str, str] | None = None) -> list[Path]:
+    """Write what changed: argparse's texts of this Python, the templates, the catalogs, the
+    installer's language packs and its block that offers the languages (i18n.LANGUAGES) and pins
+    their packs."""
     written = []
     listed = _read_list(project.argparse_list) | argparse_messages()
     if _write(project.argparse_list, _list_text(listed)):
@@ -971,10 +1004,15 @@ def update(project: Project) -> list[Path]:
             header, old = read_po(catalog.read_text(encoding="utf-8"), label(project, catalog))
             if _write(catalog, write_po(*merge(entries, header, old, catalog.stem))):
                 written.append(catalog)
+    packs = {}
     for catalog in project.installer_catalogs():
         _, entries = read_po(catalog.read_text(encoding="utf-8"), label(project, catalog))
-        if _write(project.pack(catalog.stem), pack(catalog.stem, entries)):
+        packs[catalog.stem] = pack(catalog.stem, entries)
+        if _write(project.pack(catalog.stem), packs[catalog.stem]):
             written.append(project.pack(catalog.stem))
+    offered = i18n.LANGUAGES if languages is None else languages
+    if _write(project.installer, _pinned(project, offered, packs)):
+        written.append(project.installer)
     return written
 
 
@@ -1045,6 +1083,18 @@ def stale_packs(project: Project) -> list[str]:
         if target.stem not in catalogs
     )
     return findings
+
+
+def stale_pins(project: Project, languages: Mapping[str, str]) -> list[str]:
+    """The installer's block of language packs as `make translations` writes it."""
+    name = label(project, project.installer)
+    try:
+        expected = _pinned(project, languages, _packs(project))
+    except ValueError as exc:
+        return [f"{name}: {exc}"]
+    if project.installer.read_text(encoding="utf-8") != expected:
+        return [f"{name}: the block of language packs is not current: run make translations"]
+    return []
 
 
 def languages_agree(project: Project, languages: Mapping[str, str]) -> list[str]:
@@ -1241,7 +1291,7 @@ def check(project: Project, languages: Mapping[str, str] | None = None) -> list[
     offered = i18n.LANGUAGES if languages is None else languages
     findings = [
         *outdated_template(project), *unmerged(project), *stale_packs(project),
-        *languages_agree(project, offered),
+        *stale_pins(project, offered), *languages_agree(project, offered),
     ]  # fmt: skip
     files = [
         project.template, *project.catalogs(),
@@ -1266,7 +1316,7 @@ def check(project: Project, languages: Mapping[str, str] | None = None) -> list[
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     commands = parser.add_subparsers(dest="command", required=True, metavar="command")
-    commands.add_parser("update", help="write the template and merge the catalogs")
+    commands.add_parser("update", help="write the templates, the catalogs, the packs and pins")
     commands.add_parser("check", help="the checks of the tests; exit 1 on a finding")
     args = parser.parse_args(argv)
     project = Project(ROOT)
