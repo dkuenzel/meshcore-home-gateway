@@ -46,14 +46,68 @@ home-assistant.md.
 | CLI | `tests/test_cli.py`, `test_cli_contacts.py` | `mosquitto` for the tests marked `broker` |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
-| Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py` | nothing |
+| Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
 | Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py` (above) | `make ha-test`: Python 3.14.2 or newer |
+| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice), `test_air.py` (the air with stand-in nodes: time on air, collisions, one-way links, radio settings) | `make firmware-test`: git, `g++`, `libssl-dev` |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
 installed they **fail** with a hint; set `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them on
 purpose. One transport test is skipped when running as root, because root bypasses the exclusive
 lock it checks; CI runs it as a normal user.
+
+## Tests against the real firmware
+
+```sh
+make firmware-test   # fetch and build MeshCore's firmware, then run the gateway against it
+```
+
+The tests above talk to an emulated radio, which answers as the firmware's source says. These
+tests run the firmware itself: MeshCore's companion and repeater firmware of the release that
+`tests/firmware/sources.toml` pins, compiled for Linux, each node a process. A simulated LoRa air
+connects them, and the gateway talks to a companion through its own serial transport on a pseudo
+terminal ([ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)).
+They need git, `g++` and OpenSSL's headers (`apt install g++ libssl-dev`). `make test` and
+`make check` leave them out, so those need neither a compiler nor network; CI runs them in a job
+of their own.
+
+- `make firmware-fetch` puts the pinned sources into `build/firmware/src`: the firmware by its
+  tags `companion-vX.Y.Z` and `repeater-vX.Y.Z`, and CayenneLPP in the version the firmware's
+  `platformio.ini` names. `tools/fetch_firmware.py` refuses a tag that points to another commit
+  than the pinned one. A second run needs no network. `MESHCORE_SOURCE` and `CAYENNELPP_SOURCE`
+  name local git repositories to fetch from instead of GitHub, for example a clone of MeshCore.
+- `make firmware` builds `build/firmware/bin/companion` and `build/firmware/bin/repeater`. The
+  firmware is compiled unchanged: `tests/firmware/shim` stands in for the Arduino core and the
+  libraries, `tests/firmware/board` for the board (the radio on the simulated air, the USB serial
+  on a pseudo terminal, the flash in a directory). `make firmware V=1` shows the compiler's
+  command lines.
+- `make firmware-test` runs `tests/firmware` with pytest. `tests/firmware/air.py` is the air, in
+  the test's process; `tests/firmware/node.py` starts a node; the fixtures in
+  `tests/firmware/conftest.py` give a test the air and its nodes.
+
+Every node runs the EU/UK Narrow preset with CR 4/8 (869.618 MHz, 62.5 kHz, SF 8), the settings
+the hardware checklist assumes. Each node writes its packet log, debug output and, on the
+repeater, its command line's replies to `node.log` in its directory under the test's temporary
+directory; the air writes `air.log` there. A failed test shows the last lines of each. A node
+without GPS takes about 5 s to start, because the firmware looks that long for a GPS module.
+
+The simulation does not show radio propagation, the noise floor and the capture of a stronger
+packet, the time on air of a real chip, GPS, USB, the code paths of ESP32 and nRF52 boards (it
+builds the RP2040 ones), the phone app or Home Assistant. Those stay on the hardware checklist.
+The nodes run in real time, so a scenario of an hour takes an hour.
+
+### Testing another firmware release
+
+1. Put the release's tags and the commit they point to into `tests/firmware/sources.toml`.
+   `git ls-remote https://github.com/meshcore-dev/MeshCore.git 'refs/tags/*-vX.Y.Z*'` lists them;
+   for an annotated tag the line ending in `^{}` names the commit. Keep CayenneLPP at the version
+   the release's `platformio.ini` names.
+2. Run `make firmware-test`. A release that needs more of the Arduino core or of a library fails
+   to build or to link: extend the stand-in in `tests/firmware/shim` or `tests/firmware/board`.
+3. The smoke test expects the gateway to count the release as tested. Adding its firmware code to
+   `TESTED_FIRMWARE` in `src/meshcore_home_gateway/core/profile.py` follows the hardware checklist
+   with the release and is an addition to the public interface
+   ([development.md](development.md#compatibility)).
 
 ## Installer dialogs with the real whiptail
 
@@ -73,8 +127,8 @@ locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
 
 ## Hardware checklist
 
-The automated tests emulate the radio. This checklist covers what an emulator cannot: real radio
-links, acknowledgements over the air, a USB cable pulled out, the watchdog of a real systemd. It is
+The automated tests emulate the radio or run its firmware on a simulated air. This checklist covers
+what they cannot: real radio links, acknowledgements over the air, a USB cable pulled out, the watchdog of a real systemd. It is
 the same for every installation and needs no particular hardware: any two MeshCore radios with
 companion firmware will do. Run it before every release and after raising the supported firmware
 version, and record the firmware versions, radio models and results in the pull request. The

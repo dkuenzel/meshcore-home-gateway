@@ -17,6 +17,9 @@ import pytest
 from meshcore_home_gateway import telemetry_poller
 
 SKIP_BROKER = os.environ.get("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS") == "1"
+# The firmware tests need the firmware built with a C++ compiler: `make firmware-test` runs them by
+# naming the directory, which pytest then collects; `make test` leaves them out.
+collect_ignore = ["firmware"]
 
 
 @dataclass(frozen=True)

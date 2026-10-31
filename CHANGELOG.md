@@ -8,6 +8,15 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Added
+
+- Tests against the real firmware (`make firmware-test`, a CI job;
+  [ADR 0026](docs/decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)):
+  MeshCore's companion and repeater firmware of the pinned release (1.18.0), fetched by tag and
+  checked against its commit, built for Linux unchanged and run on a simulated LoRa air with the
+  EU/UK Narrow preset; the gateway's probe reads a companion through its serial transport.
+  `make check` still needs neither a compiler nor network.
+
 ## [1.1.0a2] - 2026-10-30
 
 A pre-release of 1.1.0, the second of the three telemetry slices: the household's handhelds

@@ -1,0 +1,17 @@
+# The firmware the firmware tests build (docs/testing.md#tests-against-the-real-firmware).
+# tools/fetch_firmware.py fetches every tag, refuses one that points to another commit, and checks
+# out the paths of the commit. To test another release, change the tags and the commit together.
+
+# MeshCore tags the companion and the repeater firmware of a release on the same commit.
+[meshcore]
+url = "https://github.com/meshcore-dev/MeshCore.git"
+tags = ["companion-v1.18.0", "repeater-v1.18.0"]
+commit = "81dbae592ffad40b4212bc0b37e82b38da08f4bc"
+paths = ["license.txt", "src", "lib/ed25519", "examples/companion_radio", "examples/simple_repeater"]
+
+# The version that MeshCore's platformio.ini pins (electroniccats/CayenneLPP @ 1.6.1).
+[cayennelpp]
+url = "https://github.com/ElectronicCats/CayenneLPP.git"
+tags = ["1.6.1"]
+commit = "8ac5a60863c396fd412e68a64f7f935b7422ddd7"
+paths = ["LICENSE.md", "src"]

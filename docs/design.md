@@ -1018,12 +1018,14 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Component | session and bridge | an in-memory radio that emulates the firmware's responses and pushes |
 | Integration | MQTT adapter and bridge end to end | a private `mosquitto` per test on a free port; the system test runs the service as a process (its coverage is measured too) |
 | Contract | discovery, payloads and the documented automations in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`) |
+| Firmware | the gateway against MeshCore's own companion and repeater firmware | the pinned release built natively on stand-ins, nodes as processes on a simulated LoRa air, the gateway on a pseudo terminal (`make firmware-test`, [ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)) |
 | Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a manual check drives the real whiptail |
 | Static | style, types, shell, workflows, unit file | ruff, mypy --strict, shellcheck, zizmor, systemd-analyze (verify, exposure score) |
 | Hardware | real radios | checklist in [`testing.md`](testing.md), with each release candidate before its release (not for the pre-releases of increments) |
 
-`make check` runs everything except the hardware checklist, locally and in CI; `make matrix` runs
-the tests with every supported Python version, like the CI matrix, and fails if one is missing.
+`make check` runs everything except the contract and firmware tests, which have their own targets
+and CI jobs, and the hardware checklist; `make matrix` runs the tests with every supported Python
+version, like the CI matrix, and fails if one is missing.
 
 ## 11 Alternatives considered
 

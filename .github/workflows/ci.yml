@@ -53,6 +53,25 @@ jobs:
       - name: Discovery, payloads and the documented automations against Home Assistant
         run: make ha-test HA_PYTHON=python
 
+  # docs/testing.md#tests-against-the-real-firmware: MeshCore's firmware at the pinned release,
+  # fetched from GitHub by tag and checked against its commit, built natively; the gateway talks
+  # to it through its serial transport on a pseudo terminal.
+  firmware:
+    name: real firmware on a simulated air
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install the compiler and OpenSSL's headers for the native build
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends g++ libssl-dev
+      - name: Fetch and build the firmware, then the tests against it
+        run: make --jobs="$(nproc)" firmware-test
+
   check:
     name: lint, shellcheck, workflow audit, build, unit check
     runs-on: ubuntu-24.04
@@ -91,7 +110,7 @@ jobs:
   # or deleted (the tag ruleset).
   release:
     name: tag and release
-    needs: [test, homeassistant, check, release-plan]
+    needs: [test, homeassistant, firmware, check, release-plan]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

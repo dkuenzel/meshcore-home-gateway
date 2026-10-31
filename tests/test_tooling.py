@@ -53,6 +53,24 @@ def test_check_builds_the_zipapp_once() -> None:
     assert dry_run.stdout.count("tools/build_pyz.py") == 1, dry_run.stdout
 
 
+def test_check_leaves_the_firmware_tests_out() -> None:
+    """`make check` needs no compiler and no network: the firmware tests run with
+    `make firmware-test` (docs/testing.md), and `pytest` alone does not collect them."""
+    dry_run = make("--dry-run", "check")
+    assert dry_run.returncode == 0, dry_run.stderr
+    assert "firmware" not in dry_run.stdout
+    collected = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "--quiet", "-p", "no:cacheprovider"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert collected.returncode == 0, collected.stdout
+    assert "tests/test_tooling.py::" in collected.stdout
+    assert "tests/firmware/" not in collected.stdout
+
+
 def test_matrix_fails_when_a_python_is_missing() -> None:
     """A Python that is not installed is not a pass: CI tests every one of them."""
     # MAKE=true stands in for the `make test` of each installed Python.
