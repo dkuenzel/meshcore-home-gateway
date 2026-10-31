@@ -1122,6 +1122,7 @@ version, like the CI matrix, and fails if one is missing.
 | Internationalisation with gettext | [0019](decisions/0019-internationalisation-with-gettext.md) |
 | Managed radio profile for the observer | [0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | Generated dashboards for desktop and mobile | [0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) |
+| The gateway tested against the real firmware, built natively | [0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md) |
 
 ## 12 Open questions and future work
 
