@@ -140,8 +140,9 @@ pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
 # The release workflow runs this on the tagged commit after `make check`; locally it is a dry run.
 # Wheel and sdist get the commit time as their timestamps, so a rebuild gives the same bytes.
 # The installer is published with the release's version written in: run from the release's URL,
-# it installs that release's zipapp and unit, checked against SHA256SUMS inside the container.
-release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
+# it installs that release's zipapp and unit, checked against SHA256SUMS inside the container, and
+# fetches the language pack it shows its dialogs in from beside it (each checked against its pin).
+release: venv ## Release files in dist/release: zipapp, unit, installer and its language packs, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
 	version=$$($(BIN)/python -c 'import meshcore_home_gateway; print(meshcore_home_gateway.__version__)'); \
 	  if [ -n "$(RELEASE_TAG)" ] && [ "$(RELEASE_TAG)" != "v$$version" ]; then \
 	    echo "release: tag $(RELEASE_TAG) does not match version $$version" >&2; exit 1; fi; \
@@ -158,6 +159,7 @@ release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, 
 	  grep -q "^RELEASE=\"$$version\" " dist/release/meshcore-home-gateway-lxc.sh \
 	    || { echo "release: the installer names no release" >&2; exit 1; }; \
 	  chmod 0755 dist/release/meshcore-home-gateway-lxc.sh; \
+	  $(BIN)/python tools/i18n.py release-packs dist/release >/dev/null; \
 	  if ! $(BIN)/python tools/release_notes.py "$$version" >dist/release-notes.md; then \
 	    if [ -n "$(RELEASE_TAG)" ]; then exit 1; fi; \
 	    echo "release: dry run; with RELEASE_TAG=v$$version this stops here (see above)" >&2; fi; \

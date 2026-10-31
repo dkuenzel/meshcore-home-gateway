@@ -690,13 +690,15 @@ sequence:
   - action: notify.send_message
     target:
       entity_id: "{{ to }}"
-    data:
-      message: "{{ message }}"
+    data: "{{ {'message': message} }}"
 ```
 
 *To* offers every notify entity of MQTT: the targets (*Send to <alias>*) and the companion
 contacts, by name. A household user who is no administrator sends with it, as with
-`notify.send_message` itself.
+`notify.send_message` itself. The script hands on the whole `data` as one template, so the text
+stays a text: written as `message: "{{ message }}"`, Home Assistant would read `+493023125000` and
+`1.10` as numbers (sending `493023125000` and `1.1`), strip spaces around a text, and refuse
+`None`.
 
 **Make it again** after an update of the gateway (the overview then shows a warning with both
 versions) and when the map's hint names a contact: one that got a position after the dashboard
@@ -713,8 +715,10 @@ map is right. For two nodes of one name, the map shows the other gateway's node,
 keeps naming the contact: put the tracker's ID ending in `_2` (as *Settings → Entities* shows it)
 into the map card, which the next paste undoes.
 
-Only an administrator can remove a contact or exclude it from telemetry: those controls are on
-the contact's device page, which Home Assistant opens for administrators only.
+The dashboard has no control to remove a contact or exclude it from telemetry: those are on the
+contact's device page, which Home Assistant opens for administrators only. That does not keep
+other users from them: any user of Home Assistant can open a contact's *Remove from radio* button
+or its *Telemetry* switch from the entity search (press `e`) and use it, or call its action.
 
 The dashboard shows messages, names and the contacts' positions to every user of Home Assistant,
 as the entities do. The file holds the names of the contacts on the map: do not post it.

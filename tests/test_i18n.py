@@ -67,9 +67,11 @@ def test_the_tests_run_in_an_english_environment() -> None:
     assert i18n.requested(os.environ) == []
 
 
-def test_english_is_the_only_language_before_the_catalogs() -> None:
-    assert dict(i18n.LANGUAGES) == {"en": "English"}
-    assert i18n.choose({"LANG": "de_DE.UTF-8"}) == "en"
+def test_english_comes_first_and_stands_in_for_any_other_language() -> None:
+    """Whatever this version ships (docs/translations.md, Adding a language)."""
+    assert next(iter(i18n.LANGUAGES.items())) == ("en", "English")
+    assert "zz" not in i18n.LANGUAGES  # no language has this code
+    assert i18n.choose({"LANG": "zz_ZZ.UTF-8"}) == "en"
     assert i18n.translator("en") is i18n.ENGLISH
 
 

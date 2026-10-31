@@ -512,6 +512,8 @@ HOSTILE = (
         (MessageKind.CONTACT, HOSTILE, Contact(SENDER, "<i>Mallory</i> [y](https://example.org)")),
         (MessageKind.CHANNEL, f"<b>Mallory</b>: {HOSTILE}", None),  # the claimed name, too
         (MessageKind.CONTACT, HOSTILE, Contact(SENDER, "x\n\n![](https://example.org/p.png)")),
+        (MessageKind.CONTACT, HOSTILE, Contact(SENDER, "e\r\r![](//e.x/q.png)")),  # CR alone
+        (MessageKind.CONTACT, HOSTILE.replace("\n", "\r"), Contact(SENDER, "Alice")),
     ],
 )
 async def test_the_markdown_card_keeps_a_hostile_text_inert(
@@ -529,6 +531,7 @@ async def test_the_markdown_card_keeps_a_hostile_text_inert(
     await fire(hass, TOPICS.received, received_payload(message, sender, "alerts"))
     output = card.async_render(parse_result=False)
     assert not re.search(r"\n[ \t]*\n.*!\[", output, re.DOTALL)  # no image after a blank line
+    assert "\r" not in output  # CR alone also ends a line, and two a block
     lines = [line for line in output.splitlines() if line.strip()]
     assert len(lines) == 1
     (line,) = lines

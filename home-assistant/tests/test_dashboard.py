@@ -658,6 +658,9 @@ async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others
     assert second_map["entities"] == ["device_tracker.mesh_alice"]  # radio1's tracker of her
     assert "device_tracker.mesh_alice_2" in trackers  # radio-2's own
     assert render(hass, card(loaded["mesh-radio-2"], HINT)) == ""
+    assert hass.states.get("sensor.mesh_alice_telemetry_state_2").state == "answering"
+    answering = f"<td>{said(other, 'answering')}</td></tr>"
+    assert answering in render(hass, card(loaded["mesh-radio-2"], TABLE))  # her IDs end in _2
     assert problems(caplog) == []
 
 
@@ -722,8 +725,10 @@ async def test_the_guides_script_is_a_form_that_sends_for_a_household_user(
     assert (fields["message"]["required"], set(fields["message"]["selector"])) == (True, {"text"})
     assert script["alias"] == "Mesh message"
 
-    for to, text in (("notify.mesh_alice", "Dinner <b>now</b>"),
-                     ("notify.meshcore_home_gateway_radio1_send_alerts", "Gate open")):  # fmt: skip
+    alice, alerts = "notify.mesh_alice", "notify.meshcore_home_gateway_radio1_send_alerts"
+    # also texts Home Assistant would read as numbers or None, and spaces it would strip
+    for to, text in ((alice, "Dinner <b>now</b>"), (alerts, "Gate open"), (alice, "+493023125000"),
+                     (alice, "1.10"), (alerts, "None"), (alice, "  spaced  ")):  # fmt: skip
         mqtt.async_publish.reset_mock()
         await client.send_json_auto_id({
             "type": "call_service", "domain": "script", "service": "mesh_message",

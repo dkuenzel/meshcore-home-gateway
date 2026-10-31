@@ -969,8 +969,9 @@ Where the MVP departs from ADR 0021:
 
 Deferred: release files per node and language, `--language` and `--output`, a second variant,
 more languages, a message history, the gateway's own compose entities, remove and telemetry
-controls per contact on the dashboard (today only on the device page, which only administrators
-open), settings and help views, heard repeaters on the map, reason codes as texts, a colour
+controls per contact on the dashboard (today on the device page, which only administrators open,
+and through the entity search or the actions, which every user of Home Assistant can use),
+settings and help views, heard repeaters on the map, reason codes as texts, a colour
 legend, a list of the gateways on the broker, and the right tracker IDs when the contacts of two
 gateways share a name.
 

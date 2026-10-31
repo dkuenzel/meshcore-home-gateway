@@ -212,7 +212,7 @@ views:
               {%- for e in integration_entities('mqtt') | select('match', 'sensor\\.mesh_.+_last_heard(_\\d+)?$') if gw and device_attr(e, 'via_device_id') == gw -%}
               {%- set device = device_id(e) -%}
               {%- set tn = namespace(state='') -%}
-              {%- for s in device_entities(device) if s.endswith('_telemetry_state') -%}{%- set tn.state = states(s) -%}{%- endfor -%}
+              {%- for s in device_entities(device) | select('match', 'sensor\\.mesh_.+_telemetry_state(_\\d+)?$') -%}{%- set tn.state = states(s) -%}{%- endfor -%}
               {%- set ns.rows = ns.rows + [[states(e) if states(e) not in ['unknown', 'unavailable'] else '', device_attr(device, 'name_by_user') or device_attr(device, 'name') or '?', device_attr(device, 'model') or '', tn.state]] -%}
               {%- endfor -%}
               {%- if not ns.rows -%}

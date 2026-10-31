@@ -282,8 +282,8 @@ MAIN_PACK = MAIN_INSTALLER.rpartition("/")[0] + "/locale/xx.messages"  # main's 
 
 
 def release_pack(version: str) -> str:
-    """Where a release publishes the pseudo-language's pack."""
-    return f"{DOWNLOADS}v{version}/meshcore-home-gateway-lxc.xx.messages"
+    """Where a release publishes the pseudo-language's pack: `make release` names it so."""
+    return f"{DOWNLOADS}v{version}/{tool.RELEASE_PACK.format(language='xx')}"
 
 
 def pseudo_pack() -> str:
@@ -756,7 +756,8 @@ def test_language_default_follows_the_environment(
 def test_the_language_menu_comes_first(host: Host, tmp_path: Path, case: str) -> None:
     """The first dialog of an installation and a reconfiguration, while more than English is
     offered; none without dialogs. --help and errors before it stay English."""
-    script = SCRIPT if case == "only English" else offering(host, tmp_path)
+    english = {"en": "English"}
+    script = offering(host, tmp_path, languages=english if case == "only English" else PSEUDO)
     args: tuple[str, ...] = ()
     if case in {"reconfigure", "--update"}:
         existing_container(host)

@@ -1342,6 +1342,26 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   name is kept, and the dashboard's tile opens its form;
   `test_the_guides_script_is_a_form_that_sends_for_a_household_user` checks its description and
   that a household user sends with it. *Check:* `make ha-test`.
+* **A script's `data` written as a mapping of templates reads each value as Python would:
+  `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text
+  without the spaces around it, and refuses `None`. One template for the whole mapping, `data:
+  "{{ {'message': message} }}"`, keeps the text as it was.** *Verified:* 2026.10.0, a probe of the
+  guide's script and `test_the_guides_script_is_a_form_that_sends_for_a_household_user`; source
+  `helpers/template/__init__.py` lines 244-302 (`_parse_result`: `literal_eval`, a text that looks
+  like a number becomes one) and 474 (the render stripped). *Here:* the guide's script hands on its
+  whole `data` as one template. *Check:* `make ha-test`.
+* **Every user can open any entity from the entity search (`e`) and use its controls: a button's
+  dialog has *Press*, a switch's dialog its toggle; only the device and command searches, and the
+  *Settings* panel with the device pages, are for administrators.** The actions behind them
+  (`button.press`, `switch.turn_off`) check no role. *Verified:* read only, frontend `20260930.2`,
+  `src/state/quick-bar-mixin.ts` lines 104-138 (`e` for every user, `c` and `d` for
+  administrators), `src/dialogs/quick-bar/ha-quick-bar.ts` lines 562-597 (entities without a role
+  check, devices with one) and 796 (more-info), `src/state-summary/state-card-button.ts` lines
+  33-50 (*Press*); Home Assistant 2026.10.0, `components/config/__init__.py` lines 49-51
+  (`require_admin=True`); `test_a_user_who_is_no_administrator_can_press_the_remove_button`.
+  *Here:* the guide says that the device page keeps no user from removing a contact or from its
+  *Telemetry* switch. *Check:* `make ha-test`, and `sed -n 104,138p src/state/quick-bar-mixin.ts`
+  at `20260930.2`.
 
 ## MeshCore companion firmware
 

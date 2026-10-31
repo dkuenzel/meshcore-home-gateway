@@ -3,6 +3,7 @@ language packs and their checks.
 
     python3 tools/i18n.py update   # what `make translations` runs: templates, catalogs, packs, pins
     python3 tools/i18n.py check    # the checks of the tests, without pytest; exit 1 on a finding
+    python3 tools/i18n.py release-packs dist/release   # make release: the packs of the installer
 
 `update` extracts every text marked in the package (docs/development.md, Translations), the
 texts of the dashboard's template and argparse's own words into
@@ -940,6 +941,9 @@ PINS_END: Final = "# --- end of language packs"
 _PINS: Final = re.compile(
     rf"^{re.escape(PINS_START)}\n.*?^{re.escape(PINS_END)}\n", re.MULTILINE | re.DOTALL
 )
+ONE_BLOCK: Final = (
+    f"the script needs one block of language packs, between {PINS_START!r} and {PINS_END!r}"
+)
 
 
 def pack(language: str, entries: Iterable[Entry]) -> str:
@@ -1000,10 +1004,55 @@ def pin_block(languages: Mapping[str, str], packs: Mapping[str, str]) -> str:
 def with_pins(script: str, block: str) -> str:
     """The installer's text with its block of language packs replaced by `block`."""
     if len(_PINS.findall(script)) != 1:
-        raise ValueError(
-            f"the script needs one block of language packs, between {PINS_START!r} and {PINS_END!r}"
-        )
+        raise ValueError(ONE_BLOCK)
     return _PINS.sub(lambda _: block, script)
+
+
+RELEASE_PACK: Final = "meshcore-home-gateway-lxc.{language}.messages"  # lxc.sh pack_text
+_PIN: Final = re.compile(r"\[([a-z]{2})\]=([0-9a-f]{64})")
+
+
+def pinned(script: str) -> dict[str, str]:
+    """Each language the installer's block of language packs offers but English, with the
+    SHA-256 it pins."""
+    blocks = _PINS.findall(script)
+    if len(blocks) != 1:
+        raise ValueError(ONE_BLOCK)
+    (block,) = blocks
+    order = re.search(r"^L10N_ORDER=\((.*)\)$", block, re.MULTILINE)
+    digests = re.search(r"^declare -A L10N_SHA256=\((.*)\)$", block, re.MULTILINE)
+    if order is None or digests is None:
+        raise ValueError("no L10N_ORDER or no L10N_SHA256 in the block of language packs")
+    offered = order.group(1).split()[1:]
+    pins = dict(_PIN.findall(digests.group(1)))
+    for code in offered:
+        if code not in pins:
+            raise ValueError(f"the installer offers {code} without a pin")
+    for code in pins:
+        if code not in offered:
+            raise ValueError(f"the installer pins {code}, not offered")
+    return {code: pins[code] for code in offered}
+
+
+def release_packs(project: Project, folder: Path) -> list[Path]:
+    """Copy the pack of each language that the installer published in `folder` offers into
+    `folder`, by the name the installer fetches from its release (make release). A pack that is
+    missing, or not the one whose digest the installer carries, is refused: the installer would
+    refuse it."""
+    script = (folder / project.installer.name).read_text(encoding="utf-8")
+    written = []
+    for language, digest in pinned(script).items():
+        source = project.pack(language)
+        name = label(project, source)
+        if not source.exists():
+            raise ValueError(f"{name}: missing: run make translations")
+        text = source.read_bytes()
+        if hashlib.sha256(text).hexdigest() != digest:
+            raise ValueError(f"{name}: not the pack the installer pins: run make translations")
+        target = folder / RELEASE_PACK.format(language=language)
+        target.write_bytes(text)
+        written.append(target)
+    return written
 
 
 def _packs(project: Project) -> dict[str, str]:
@@ -1326,6 +1375,21 @@ def control_characters(name: str, header: Mapping[str, str], entries: Sequence[E
     return findings
 
 
+BUTTON_LABEL: Final = 12  # characters at most: whiptail draws its buttons for its own labels
+
+
+def buttons(name: str, header: Mapping[str, str], entries: Sequence[Entry]) -> list[str]:
+    """An installer button's label (msgctxt "button") fits its button."""
+    return [
+        f"{name}: {_label(entry)}: {form!r} has {len(form)} characters, a button at most "
+        f"{BUTTON_LABEL}"
+        for entry in entries
+        if entry.msgctxt == "button"
+        for form in entry.msgstr
+        if len(form) > BUTTON_LABEL
+    ]
+
+
 def dashboard_texts(name: str, header: Mapping[str, str], entries: Sequence[Entry]) -> list[str]:
     """A text of the dashboard holds nothing a card reads as code, as the command checks it
     (dashboard.unsafe): no Jinja, HTML, Markdown link or address, marker or line break."""
@@ -1340,7 +1404,7 @@ def dashboard_texts(name: str, header: Mapping[str, str], entries: Sequence[Entr
 
 CATALOG_CHECKS: Final = (
     untranslated, fuzzy, placeholders, percent, plural_forms, tokens, control_characters,
-    dashboard_texts,
+    buttons, dashboard_texts,
 )  # fmt: skip
 
 
@@ -1376,8 +1440,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True, metavar="command")
     commands.add_parser("update", help="write the templates, the catalogs, the packs and pins")
     commands.add_parser("check", help="the checks of the tests; exit 1 on a finding")
+    packs = commands.add_parser(
+        "release-packs", help="copy the packs the installer in FOLDER pins into FOLDER"
+    )
+    packs.add_argument("folder", type=Path, metavar="FOLDER")
     args = parser.parse_args(argv)
     project = Project(ROOT)
+    if args.command == "release-packs":
+        try:
+            published = release_packs(project, args.folder)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        for path in published:
+            print(f"wrote {path}")
+        return 0
     if args.command == "update":
         try:
             written = update(project)

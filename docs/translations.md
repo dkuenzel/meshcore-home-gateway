@@ -94,7 +94,8 @@ delivery steps, telemetry states and contact events it shows.
 The installer's texts are in its own catalog, because it runs on the Proxmox host from its
 address, without the program. `make translations` turns each catalog into a plain-text pack and
 writes the pack's SHA-256 into the script; the installer fetches the pack from where the script
-comes from and uses it only when the digest matches. Its buttons (`msgctxt "button"`) have at most
+comes from (a release publishes each pack beside its installer, a checkout has it next to the
+script) and uses it only when the digest matches. Its buttons (`msgctxt "button"`) have at most
 12 characters. Its own log lines stay English.
 
 ## Adding a language
@@ -111,13 +112,19 @@ For a language `ll` (its ISO 639-1 code, two lower-case letters):
    itself: `"ll": "Name"`.
 4. Run `make translations`: it merges both catalogs, writes the installer's pack
    `deploy/proxmox/locale/ll.messages` and pins it in the script.
-5. Run `make check` and `make ha-test`; they check every listed language.
-6. In the pull request, add the language to the *Added* entries of `CHANGELOG.md` and to the
+5. Run `make interface`: the language is a new choice of `[homeassistant] language`, which the
+   snapshot of the public interface records (`tests/public_interface.json`; its diff adds `ll`
+   and removes nothing).
+6. Run `make check` and `make ha-test`; they check every listed language.
+7. In the pull request, add the language to the *Added* entries of `CHANGELOG.md` and to the
    choices of `language` in [configuration.md](configuration.md#homeassistant).
 
-Nothing else in the code changes for a language. The first language besides English also shows
-the installer's language menu, which the installer's tests then answer. A language listed in
-`LANGUAGES` is a choice of `[homeassistant] language`, which a later version keeps
+Nothing else changes for a language: `tests/test_adding_a_language.py` adds a pseudo-language to a
+copy of the checkout through exactly these steps and runs the checks that read the languages in
+it. The first language besides English also shows the installer's language menu; the tests of
+the English dialogs run a copy of the script that offers English only. `make release` publishes
+each pack beside the installer. A language listed in `LANGUAGES` is a choice of
+`[homeassistant] language`, which a later version keeps
 ([compatibility](development.md#compatibility)): remove one only in a major version.
 
 A new text in a later change needs its translation in every listed language before `make check`

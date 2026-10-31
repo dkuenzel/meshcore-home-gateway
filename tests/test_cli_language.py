@@ -449,15 +449,16 @@ def test_language_setting_is_strict(
     assert parse_config(english).homeassistant.language == "en"
     speaking(monkeypatch)  # offers xx as a shipped language: read when the file is read
     assert parse_config(english.replace('"en"', '"xx"')).homeassistant.language == "xx"
-    for value in ("xx_XX", "XX", "it", "en_GB"):
+    choices = ", ".join(i18n.LANGUAGES)  # en, the languages this version ships, xx
+    for value in ("xx_XX", "XX", "zz", "en_GB"):  # no language has the code zz
         with pytest.raises(ConfigError) as caught:
             parse_config(english.replace('"en"', f'"{value}"'))
         _english_everywhere(
-            caught.value.text, f"homeassistant.language: one of en, xx, got {value!r}"
+            caught.value.text, f"homeassistant.language: one of {choices}, got {value!r}"
         )
     path = tmp_path / "config.toml"
     for value, detail in (
-        ("it", "one of en, xx, got 'it'"),
+        ("zz", f"one of {choices}, got 'zz'"),
         ("", "expected a non-empty string"),
     ):
         path.write_text(english.replace('"en"', f'"{value}"'), encoding="utf-8")

@@ -11,6 +11,7 @@ container's file system.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import grp
 import hashlib
@@ -237,6 +238,7 @@ target.alice=contact:{ALICE}
 class Host:
     root: Path
     serial: Path
+    installer: Path = SCRIPT  # the script the tests run
 
     def calls(self, tool: str | None = None) -> list[list[str]]:
         log = self.root / "calls.log"
@@ -303,9 +305,44 @@ def install_stubs(root: Path, real: frozenset[str] = frozenset()) -> Host:
     return Host(root, serial)
 
 
+# the installer's block of language packs, between its marker lines (tools/i18n.py)
+LANGUAGE_PACKS = re.compile(
+    r"^# --- language packs: .*?\n(.*?)^# --- end of language packs$", re.MULTILINE | re.DOTALL
+)
+ENGLISH_ONLY = "L10N_ORDER=(en)\ndeclare -A L10N_NAME=([en]=English)\ndeclare -A L10N_SHA256=()\n"
+
+
+@pytest.fixture(scope="session")
+def english_only(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The installer as it runs while it offers English only, whatever languages this version
+    ships: these tests answer its English dialogs, test_installer_language.py the language menu.
+    In a checkout of its own, with the checkout's src, tools and unit linked."""
+    root = tmp_path_factory.mktemp("english-only")
+    (root / "deploy" / "proxmox").mkdir(parents=True)
+    for part in ("src", "tools", "deploy/systemd"):
+        (root / part).symlink_to(ROOT / part)
+    text = SCRIPT.read_text(encoding="utf-8")
+    (block,) = LANGUAGE_PACKS.finditer(text)
+    script = root / SCRIPT.relative_to(ROOT)
+    script.write_text(text[: block.start(1)] + ENGLISH_ONLY + text[block.end(1) :], "utf-8")
+    return script
+
+
 @pytest.fixture
-def host(tmp_path: Path) -> Host:
-    return install_stubs(tmp_path)
+def host(tmp_path: Path, english_only: Path) -> Host:
+    return dataclasses.replace(install_stubs(tmp_path), installer=english_only)
+
+
+def test_the_tests_run_the_script_with_english_only(host: Host) -> None:
+    """Only its block of language packs differs from the script's (docs/translations.md, Adding
+    a language)."""
+    assert host.installer != SCRIPT
+    ours, real = host.installer.read_text(encoding="utf-8"), SCRIPT.read_text(encoding="utf-8")
+    (block,) = LANGUAGE_PACKS.finditer(ours)
+    (original,) = LANGUAGE_PACKS.finditer(real)
+    assert block.group(1) == ENGLISH_ONLY
+    assert ours[: block.start(1)] == real[: original.start(1)]
+    assert ours[block.end(1) :] == real[original.end(1) :]
 
 
 def installer_env(host: Host, env: dict[str, str] | None = None) -> dict[str, str]:
@@ -325,12 +362,13 @@ def run_installer(
     *args: str,
     dialog: list[str] | None = None,
     env: dict[str, str] | None = None,
-    script: Path = SCRIPT,
+    script: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     if dialog is not None:
         (host.root / "dialog").write_text("\n".join(dialog) + "\n", encoding="utf-8")
+    path = host.installer if script is None else script
     return subprocess.run(  # noqa: S603 - our script with fixed arguments
-        [BASH, str(script), *args], env=installer_env(host, env), capture_output=True, text=True,
+        [BASH, str(path), *args], env=installer_env(host, env), capture_output=True, text=True,
         stdin=subprocess.DEVNULL, timeout=60, check=False,
     )  # fmt: skip
 
@@ -343,7 +381,7 @@ def interrupt_installer(
     Like Ctrl-C or a closed SSH session, which signal the whole foreground process group.
     """
     process = subprocess.Popen(  # noqa: S603 - our script with fixed arguments
-        [BASH, str(SCRIPT), *args], env=installer_env(host, {"SLEEP_AT": during}),
+        [BASH, str(host.installer), *args], env=installer_env(host, {"SLEEP_AT": during}),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
     )  # fmt: skip
     try:
@@ -1255,7 +1293,7 @@ def test_failed_reconfigure_starts_the_service_again_when_messages_cannot_be_wri
     answers = answers_file(host, "mqtt.host=new.example.org\n")
     with Path("/dev/full").open("w") as full:  # every write fails
         result = subprocess.run(  # noqa: S603 - our script with fixed arguments
-            [BASH, str(SCRIPT), "--reconfigure", "105", "--answers", str(answers)],
+            [BASH, str(host.installer), "--reconfigure", "105", "--answers", str(answers)],
             env=installer_env(host, {"PROBE_FAILS": "1"}), stdout=subprocess.DEVNULL,
             stderr=full, timeout=60, check=False,
         )  # fmt: skip
@@ -1321,7 +1359,7 @@ def test_reconfigure_starts_the_service_again_when_its_output_pipe_is_gone(host:
     os.close(read)  # nobody reads what the installer writes
     try:
         result = subprocess.run(  # noqa: S603 - our script with fixed arguments
-            [BASH, str(SCRIPT), "--reconfigure", "105", "--answers", str(answers)],
+            [BASH, str(host.installer), "--reconfigure", "105", "--answers", str(answers)],
             env=installer_env(host, {"PROBE_FAILS": "1"}), stdout=write, stderr=write,
             timeout=60, check=False,
         )  # fmt: skip
@@ -1360,7 +1398,7 @@ def run_from_url(
 ) -> subprocess.CompletedProcess[str]:
     """Like `bash -c "$(wget -qO- URL)" -- ARGS`: the script is no file, so there is no checkout.
     `release` is the version that `make release` writes into the published copy."""
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = host.installer.read_text(encoding="utf-8")
     if release:
         text = text.replace('\nRELEASE=""', f'\nRELEASE="{release}"', 1)
     temporary = host.root / "tmp"
@@ -1755,7 +1793,7 @@ def test_the_source_of_a_ref_is_built_in_the_container(host: Host, container: Co
 def test_dialogs_refuse_a_script_piped_into_bash(host: Host) -> None:
     """`wget -qO- URL | bash`: the dialogs would read the rest of the script as answers."""
     result = subprocess.run(  # noqa: S603 - our script, fed like `wget -qO- URL | bash`
-        [BASH, "-s"], input=SCRIPT.read_text(encoding="utf-8"), env=installer_env(host),
+        [BASH, "-s"], input=host.installer.read_text(encoding="utf-8"), env=installer_env(host),
         capture_output=True, text=True, timeout=60, check=False,
     )  # fmt: skip
     assert result.returncode == 1
@@ -1844,7 +1882,7 @@ def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:
     ]  # fmt: skip
     second = host.root.parent / "second"
     second.mkdir()
-    other = install_stubs(second)
+    other = dataclasses.replace(install_stubs(second), installer=host.installer)
     result = run_installer(other, dialog=dialog, env={"PROBE_PROFILE": cut})
     assert result.returncode == 0, result.stderr
 

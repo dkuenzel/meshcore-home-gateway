@@ -16,12 +16,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
+from pytest_homeassistant_custom_component.common import CLIENT_ID
 from test_contract import (
     CONFIG,
     PREFIX,
@@ -285,6 +287,27 @@ async def test_the_remove_button_is_available_while_a_request_would_be_taken(
     await fire(hass, TOPICS.availability, "offline")  # the gateway's last will: the rest is old
     assert hass.states.get(button).state == "unavailable"
     assert problems(caplog) == []
+
+
+async def test_a_user_who_is_no_administrator_can_press_the_remove_button(
+    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, tmp_path: Path
+) -> None:
+    """Only administrators open the device page, but the action of its button has no check of its
+    own, and the entity search opens the button for every user (docs/home-assistant.md)."""
+    await with_bob(hass, tmp_path)
+    user = await hass.auth.async_create_user("Carol", group_ids=[GROUP_ID_USER])
+    assert not user.is_admin
+    refresh = await hass.auth.async_create_refresh_token(user, CLIENT_ID)
+    client = await hass_ws_client(hass, hass.auth.async_create_access_token(refresh))
+    mqtt.async_publish.reset_mock()
+    await client.send_json_auto_id({
+        "type": "call_service", "domain": "button", "service": "press",
+        "target": {"entity_id": "button.mesh_bob_remove"},
+    })  # fmt: skip
+    answer = await client.receive_json()
+    assert answer["success"], answer
+    await hass.async_block_till_done()
+    assert publishes(mqtt) == [(f"meshcore/radio1/contacts/{BOB}/remove", "remove", 1, False)]
 
 
 # --- the look-alike sensor and the contact link -----------------------------------------------

@@ -12,7 +12,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from types import ModuleType
+from types import MappingProxyType, ModuleType
 from typing import Any
 
 import pytest
@@ -796,6 +796,30 @@ def test_a_dashboard_translation_without_them_passes() -> None:
     assert tool.dashboard_texts("de.po", *catalog(*entries)) == []
 
 
+def test_a_button_label_has_at_most_twelve_characters() -> None:
+    """whiptail draws its buttons for its own labels (docs/translations.md)."""
+    entries = [
+        Entry("Cancel", ("Abbrechen",), "button"),
+        Entry("Ok", ("x" * tool.BUTTON_LABEL,), "button"),
+        Entry("Removed", ("Entfernt, und noch viel mehr",)),  # not a button
+    ]
+    assert tool.buttons("de.po", *catalog(*entries)) == []
+    longer = Entry("Cancel", ("Abbrechen und zurück",), "button")
+    assert tool.buttons("de.po", *catalog(longer, Entry("No", ("x" * 13,), "button"))) == [
+        "de.po: 'Cancel' (button): 'Abbrechen und zurück' has 20 characters, a button at most 12",
+        "de.po: 'No' (button): 'xxxxxxxxxxxxx' has 13 characters, a button at most 12",
+    ]
+    assert tool.buttons in tool.CATALOG_CHECKS
+
+
+def test_the_installer_tells_translators_how_long_a_button_may_be() -> None:
+    _, entries = read_po((ROOT / "deploy/proxmox/locale/installer.pot").read_text(encoding="utf-8"))
+    buttons = [entry for entry in entries if entry.msgctxt == "button"]
+    assert {entry.msgid for entry in buttons} == {"Yes", "No", "Ok", "Cancel"}
+    for entry in buttons:
+        assert any(f"at most {tool.BUTTON_LABEL} characters" in c for c in entry.comments), entry
+
+
 def test_home_assistant_names_may_hold_narrow_spaces() -> None:
     entries = [
         Entry("Duty cycle", ("Rapport cyclique\u202f%",), "home assistant"),
@@ -926,9 +950,10 @@ die 'cannot read {{file}}' file "$1"
 
 
 @pytest.fixture
-def project(tmp_path: Path) -> Any:
+def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """A checkout with one module, a dashboard, a short argparse list, an installer and no
-    catalog."""
+    catalog, of a version that offers English only (whatever this one ships)."""
+    monkeypatch.setattr(tool.i18n, "LANGUAGES", MappingProxyType({"en": "English"}))
     package = tmp_path / "src" / "meshcore_home_gateway"
     (package / "locale").mkdir(parents=True)
     (package / "cli.py").write_text('tr("Removed")\n', encoding="utf-8")
@@ -1110,6 +1135,58 @@ def test_update_pins_each_pack_in_the_installer(project: Any) -> None:
     ]
 
 
+def test_a_release_publishes_each_pack_its_installer_pins(project: Any, tmp_path: Path) -> None:
+    """make release: beside the installer, by the name the installer fetches from its release,
+    and only the pack whose digest the installer carries."""
+    release = tmp_path / "release"
+    release.mkdir()
+    published = release / project.installer.name
+    tool.update(project)
+    shutil.copy(project.installer, published)
+    assert tool.release_packs(project, release) == []  # English needs none
+    german = project.installer_locale / "de.po"
+    german.write_text(
+        tool.write_po(tool.catalog_header("de", GERMANIC),
+                      [Entry("cannot read {file}", ("{file} unlesbar",))]),
+        encoding="utf-8",
+    )  # fmt: skip
+    tool.update(project, GERMAN)
+    shutil.copy(project.installer, published)
+    (pack,) = tool.release_packs(project, release)
+    assert pack == release / "meshcore-home-gateway-lxc.de.messages"
+    assert pack.read_bytes() == project.pack("de").read_bytes()
+    assert tool.RELEASE_PACK.format(language="de") == pack.name
+
+    project.pack("de").write_text("# another\n", encoding="utf-8")
+    with pytest.raises(
+        ValueError, match=r"de\.messages: not the pack the installer pins: run make"
+    ):
+        tool.release_packs(project, release)
+    project.pack("de").unlink()
+    with pytest.raises(ValueError, match=r"de\.messages: missing: run make translations"):
+        tool.release_packs(project, release)
+
+
+@pytest.mark.parametrize(
+    ("block", "reason"),
+    [
+        ("L10N_ORDER=(en de)\ndeclare -A L10N_SHA256=()\n", "offers de without a pin"),
+        (f"L10N_ORDER=(en)\ndeclare -A L10N_SHA256=([de]={'0' * 64})\n", "pins de, not offered"),
+        ("L10N_ORDER=(en de)\n", "no L10N_SHA256"),
+    ],
+)
+def test_a_release_refuses_an_installer_whose_pins_do_not_hold(
+    project: Any, tmp_path: Path, block: str, reason: str
+) -> None:
+    text = project.installer.read_text(encoding="utf-8")
+    old = tool.pin_block({"en": "English"}, {})
+    (tmp_path / project.installer.name).write_text(
+        text.replace(old, f"{tool.PINS_START}\n{block}{tool.PINS_END}\n"), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match=reason):
+        tool.release_packs(project, tmp_path)
+
+
 @pytest.mark.parametrize("blocks", [0, 2])
 def test_the_installer_needs_one_block_of_language_packs(project: Any, blocks: int) -> None:
     text = project.installer.read_text(encoding="utf-8")
@@ -1140,3 +1217,32 @@ def test_main_runs_the_commands(
     assert "src/meshcore_home_gateway/cli.py:1: " in capsys.readouterr().out
     assert tool.main(["update"]) == 1
     assert "src/meshcore_home_gateway/cli.py:1: " in capsys.readouterr().err
+
+
+def test_main_publishes_the_packs_of_a_release(
+    project: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:  # fmt: skip
+    monkeypatch.setattr(tool, "ROOT", project.root)
+    release = tmp_path / "release"
+    release.mkdir()
+    (release / project.installer.name).write_text(
+        f"{tool.PINS_START}\nL10N_ORDER=(en de)\ndeclare -A L10N_SHA256=([de]={'0' * 64})\n"
+        f"{tool.PINS_END}\n",
+        encoding="utf-8",
+    )
+    assert tool.main(["release-packs", str(release)]) == 1
+    assert (
+        capsys.readouterr().err
+        == "deploy/proxmox/locale/de.messages: missing: run make translations\n"
+    )
+    pack = "#\n"
+    project.pack("de").write_text(pack, encoding="utf-8")
+    digest = hashlib.sha256(pack.encode()).hexdigest()
+    (release / project.installer.name).write_text(
+        f"{tool.PINS_START}\nL10N_ORDER=(en de)\ndeclare -A L10N_SHA256=([de]={digest})\n"
+        f"{tool.PINS_END}\n",
+        encoding="utf-8",
+    )
+    assert tool.main(["release-packs", str(release)]) == 0
+    assert capsys.readouterr().out == f"wrote {release / 'meshcore-home-gateway-lxc.de.messages'}\n"

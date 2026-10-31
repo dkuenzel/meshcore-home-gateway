@@ -370,7 +370,9 @@ passes. `releases/latest` and the installer's default never pick a pre-release
 4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
    zipapp, wheel and sdist reproducibly, adds the systemd unit and the Proxmox installer with the
    version written in (`RELEASE="X.Y.Z"`: run from the release's address, it installs this
-   release), writes `SHA256SUMS`, attests every file (Sigstore-signed build provenance) and
+   release) and, beside it, the language pack of each language it offers
+   (`meshcore-home-gateway-lxc.<language>.messages`, refused unless it is the pack the installer
+   pins), writes `SHA256SUMS`, attests every file (Sigstore-signed build provenance) and
    publishes the GitHub release with the changelog section as notes (its relative links point at
    the files of the tag).
 5. Check the result like a user: download a file and run
