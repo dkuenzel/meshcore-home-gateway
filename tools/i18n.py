@@ -1,24 +1,31 @@
-"""Translations (ADR 0019, ADR 0027): the template of the texts, the catalogs and their checks.
+"""Translations (ADR 0019, ADR 0027): the templates of the texts, the catalogs, the installer's
+language packs and their checks.
 
-    python3 tools/i18n.py update   # what `make translations` runs: the template, the catalogs
+    python3 tools/i18n.py update   # what `make translations` runs: templates, catalogs, packs
     python3 tools/i18n.py check    # the checks of the tests, without pytest; exit 1 on a finding
 
 `update` extracts every text marked in the package (docs/development.md, Translations) and
 argparse's own words into src/meshcore_home_gateway/locale/meshcore-home-gateway.pot, adds the
 running Python's argparse texts to tools/argparse_messages.json (it never removes one: the list
-serves every Python of the matrix) and merges each catalog with the template. The files are
-written in one canonical form, without dates or names, so the tests can compare them with what
-the code says. Standard library only; it puts src/ on the path itself.
+serves every Python of the matrix) and merges each catalog with the template. The installer's
+texts go into deploy/proxmox/locale/installer.pot the same way; each of its catalogs also gives
+the language pack the installer loads (<language>.messages). The files are written in one
+canonical form, without dates or names, so the tests can compare them with what the code says.
+Standard library only; it puts src/ on the path itself.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
+import bisect
+import dataclasses
+import hashlib
 import inspect
 import io
 import json
 import re
+import shlex
 import string
 import sys
 import tokenize
@@ -88,6 +95,25 @@ class Project:
 
     def catalogs(self) -> list[Path]:
         return sorted(self.locale.glob("*.po"))
+
+    @property
+    def installer(self) -> Path:
+        return self.root / "deploy" / "proxmox" / "meshcore-home-gateway-lxc.sh"
+
+    @property
+    def installer_locale(self) -> Path:
+        return self.installer.parent / "locale"
+
+    @property
+    def installer_template(self) -> Path:
+        return self.installer_locale / "installer.pot"
+
+    def installer_catalogs(self) -> list[Path]:
+        return sorted(self.installer_locale.glob("*.po"))
+
+    def pack(self, language: str) -> Path:
+        """The installer's language pack of a catalog."""
+        return self.installer_locale / f"{language}.messages"
 
 
 def label(project: Project, path: Path) -> str:
@@ -249,12 +275,17 @@ def _check_values(call: ast.Call, fields: set[str], plural: bool, where: str) ->
 
 
 def _translator_comments(source: str) -> dict[int, tuple[str, ...]]:
-    """`# Translators:` comments, and the comment lines after them, by the line below them."""
-    lines = {
+    """`# Translators:` comments of a module, by the line below them."""
+    return _comment_blocks({
         token.start[0]: token.string[1:].strip()
         for token in tokenize.generate_tokens(io.StringIO(source).readline)
         if token.type == tokenize.COMMENT and token.line.lstrip().startswith("#")
-    }
+    })  # fmt: skip
+
+
+def _comment_blocks(lines: Mapping[int, str]) -> dict[int, tuple[str, ...]]:
+    """`# Translators:` comments, and the comment lines after them, by the line below them; from
+    the comment lines (their text after the #) by their numbers."""
     runs: list[list[int]] = []
     for number in sorted(lines):
         if runs and runs[-1][-1] == number - 1:
@@ -322,6 +353,421 @@ def argparse_messages() -> set[tuple[str, str | None]]:
     return found
 
 
+# --- the installer's texts: t, tp, die and $say with a literal (docs/development.md, Translations)
+
+SHELL_KEYWORDS: Final = frozenset({"t", "tp", "die", "$say"})
+SHELL_PASSING: Final = frozenset({"die"})  # passes its own text on: t "$@"
+# the blocks whose texts are no calls: the message functions themselves, and the pins
+SHELL_BLOCKS: Final = (
+    ("# --- messages ", "# --- end of messages"),
+    ("# --- language packs", "# --- end of language packs"),
+)
+_PLAIN: Final = re.compile(r"[A-Za-z0-9_.,:/@%+=-]+")  # a word that is a literal unquoted
+_SHELL_FIELD: Final = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")  # what _fill fills in
+_ASSIGNMENT: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
+_FUNCTION: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+# words before a command's name
+_PREFIXES: Final = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}"})
+_OPERATORS: Final = (";;&", ";;", ";&", "&&", "||", "|&", ";", "&", "|", "(", ")", "\n")
+_ENDS_STATEMENT: Final = frozenset({";;&", ";;", ";&", ";", "&", "(", ")", "\n"})
+_EMPTY_PARENTHESES: Final = re.compile(r"[ \t]*\)")
+_NAME: Final = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*|[0-9#?@*!$-]?)")  # $NAME, $1, $#, …
+
+
+@dataclass(frozen=True)
+class _Word:
+    text: str  # as written
+    line: int
+    literal: str | None  # what it stands for: one quoted string, or plain characters
+
+
+@dataclass
+class _Scope:
+    """What a scan keeps between its words."""
+
+    statement: int  # the first line of the outermost command
+    nested: bool  # in a $( or <(
+    words: list[_Word] = dataclasses.field(default_factory=list)  # the command so far
+    depth: int = 0  # ( open
+    cases: int = 0  # case statements open
+    patterns: bool = False  # in a case statement, before a pattern's )
+    fresh: bool = True  # the next word starts a statement
+
+
+@dataclass(frozen=True)
+class _Command:
+    words: tuple[_Word, ...]
+    statement: int  # the first line of the outermost command around it
+    function: str  # the function whose body holds it; "" outside one
+
+    def head(self) -> int | None:
+        """Where its name is: after assignments and words such as if, then, !."""
+        for index, word in enumerate(self.words):
+            if word.text not in _PREFIXES and not _ASSIGNMENT.match(word.text):
+                return index
+        return None
+
+
+class _Shell:
+    """As much of bash's grammar as finding the commands takes: their words, quotes, $(…), ${…},
+    here-documents, case patterns and functions; and the comment lines. A case statement inside
+    $(…) is beyond it, and it refuses `…` (the installer has neither)."""
+
+    def __init__(self, text: str, name: str) -> None:
+        self.text = text
+        self.name = name
+        self.at = 0
+        self.starts = [0] + [match.end() for match in re.finditer("\n", text)]
+        self.commands: list[_Command] = []
+        self.comments: dict[int, str] = {}  # the comment lines, by their numbers
+        self.translated: list[int] = []  # lines with bash's own $"…"
+        self.here_documents: list[tuple[str, bool]] = []  # delimiters, and if tabs go first
+        self.function = ""
+        self.defining = ""  # a function's name, before its body
+        self.braces = 0  # { … } open in the function's body
+        self._scan(statement=0, nested=False)
+
+    def line(self, at: int) -> int:
+        return bisect.bisect_right(self.starts, at)
+
+    def _error(self, at: int, what: str) -> ExtractError:
+        return ExtractError(f"{self.name}:{self.line(at)}: {what} is not closed")
+
+    def _scan(self, statement: int, nested: bool) -> None:
+        """Commands up to the end, or (nested) up to the ) that closes a $( or <(."""
+        text = self.text
+        opened = self.at
+        scope = _Scope(statement, nested)
+        while self.at < len(text):
+            char = text[self.at]
+            if char in " \t":
+                self.at += 1
+            elif text.startswith("\\\n", self.at):
+                self.at += 2
+            elif char == "#":  # at a word's start: a comment
+                self._comment()
+            elif char in "\n;|()" or (char == "&" and not text.startswith("&>", self.at)):
+                if self._operator(scope):
+                    return
+            else:
+                self._add_word(scope)
+        if nested:
+            raise self._error(opened, "$(")
+        self._end(scope, "")
+
+    def _operator(self, scope: _Scope) -> bool:
+        """An operator ends the command so far; True when it closes the scan's $(."""
+        operator = next(o for o in _OPERATORS if self.text.startswith(o, self.at))
+        self.at += len(operator)
+        if operator == "\n":
+            self._skip_here_documents()
+        if scope.patterns:  # a pattern's |, ( and line breaks; its ) ends it
+            scope.patterns = operator != ")"
+            return False
+        closing = operator == ")" and scope.nested and scope.depth == 0
+        scope.depth = max(scope.depth + {"(": 1, ")": -1}.get(operator, 0), 0)
+        self._end(scope, operator)
+        scope.patterns = scope.cases > 0 and operator in {";;", ";&", ";;&"}
+        scope.fresh = operator in _ENDS_STATEMENT
+        return closing
+
+    def _add_word(self, scope: _Scope) -> None:
+        if scope.fresh and not scope.nested:
+            scope.statement, scope.fresh = self.line(self.at), False
+        word = self._word(scope.statement)
+        if scope.patterns and word.text != "esac":
+            return
+        if word.text == "esac":
+            scope.patterns, scope.cases = False, max(scope.cases - 1, 0)
+        if not scope.nested and all(known.text in _PREFIXES for known in scope.words):
+            self._braces_of_functions(word.text)
+        scope.words.append(word)
+        self._here_document(scope.words)
+        if len(scope.words) == 3 and scope.words[0].text == "case" and word.text == "in":
+            self._end(scope, "")
+            scope.patterns, scope.cases = True, scope.cases + 1
+
+    def _end(self, scope: _Scope, operator: str) -> None:
+        """The command so far is complete, or it names a function whose definition starts."""
+        words, scope.words = scope.words, []
+        if (
+            len(words) == 1
+            and operator == "("
+            and _FUNCTION.fullmatch(words[0].text)
+            and _EMPTY_PARENTHESES.match(self.text, self.at)
+        ):  # NAME() { …: a definition, not a call
+            if not scope.nested:
+                self.defining = words[0].text
+            return
+        if words:
+            self.commands.append(_Command(tuple(words), scope.statement, self.function))
+
+    def _braces_of_functions(self, first: str) -> None:
+        if first == "{":
+            self.braces += 1
+            if self.defining:
+                self.function, self.defining = self.defining, ""
+        elif first == "}":
+            self.braces = max(self.braces - 1, 0)
+            if not self.braces:
+                self.function = ""
+
+    def _comment(self) -> None:
+        end = self.text.find("\n", self.at)
+        end = len(self.text) if end < 0 else end
+        start = self.starts[self.line(self.at) - 1]
+        if not self.text[start : self.at].strip():
+            self.comments[self.line(self.at)] = self.text[self.at + 1 : end].strip()
+        self.at = end
+
+    def _here_document(self, words: list[_Word]) -> None:
+        """<<WORD, << WORD: the lines after this one up to WORD are text, not commands."""
+        word = words[-1].text
+        before = words[-2].text if len(words) > 1 else ""
+        if word.startswith("<<") and not word.startswith("<<<") and word not in {"<<", "<<-"}:
+            delimiter, tabs = word[2:], False
+        elif before in {"<<", "<<-"}:
+            delimiter, tabs = word, before == "<<-"
+        else:
+            return
+        if delimiter.startswith("-"):
+            delimiter, tabs = delimiter[1:], True
+        self.here_documents.append((re.sub(r"[\"'\\]", "", delimiter), tabs))
+
+    def _skip_here_documents(self) -> None:
+        for delimiter, tabs in self.here_documents:
+            opened = self.at
+            while True:
+                if self.at >= len(self.text):
+                    raise self._error(opened, f"the here-document {delimiter}")
+                end = self.text.find("\n", self.at)
+                end = len(self.text) if end < 0 else end
+                line = self.text[self.at : end]
+                self.at = end + 1
+                if (line.lstrip("\t") if tabs else line) == delimiter:
+                    break
+        self.here_documents = []
+
+    def _word(self, statement: int) -> _Word:
+        text = self.text
+        start = self.at
+        parts: list[str | None] = []  # each part's literal text, None where it is none
+        plain = ""
+        while self.at < len(text):
+            char = text[self.at]
+            if text.startswith(("<(", ">("), self.at):
+                self.at += 2
+                self._scan(statement, nested=True)
+                parts.append(None)
+                continue
+            if char in " \t\n;|()" or (
+                char == "&" and text[self.at - 1] not in "<>" and not text.startswith("&>", self.at)
+            ):  # &> and >& redirect: they are words
+                break
+            if char not in "'\"$`\\":
+                plain += char
+                self.at += 1
+                continue
+            if plain:
+                parts.append(plain if _PLAIN.fullmatch(plain) else None)
+                plain = ""
+            if char == "'":
+                end = text.find("'", self.at + 1)
+                if end < 0:
+                    raise self._error(self.at, "a quote")
+                parts.append(text[self.at + 1 : end])
+                self.at = end + 1
+            elif char == '"':
+                parts.append(self._double(statement))
+            elif char == "$":
+                self._expansion(statement)
+                parts.append(None)
+            elif char == "`":
+                self._backticks()
+                parts.append(None)
+            else:  # a backslash and the character it escapes
+                self.at += 2
+                parts.append(None)
+        if plain:
+            parts.append(plain if _PLAIN.fullmatch(plain) else None)
+        literal = parts[0] if len(parts) == 1 else None
+        return _Word(text[start : self.at], self.line(start), literal)
+
+    def _double(self, statement: int) -> str | None:
+        """A double-quoted string from its quote: its text, None if it holds $, ` or \\."""
+        text = self.text
+        opened = self.at
+        self.at += 1
+        literal = True
+        while self.at < len(text) and text[self.at] != '"':
+            char = text[self.at]
+            if char in "$`\\":
+                literal = False
+            if char == "$":
+                self._expansion(statement)
+            elif char == "`":
+                self._backticks()
+            else:
+                self.at += 2 if char == "\\" else 1
+        if self.at >= len(text):
+            raise self._error(opened, "a quote")
+        self.at += 1
+        return text[opened + 1 : self.at - 1] if literal else None
+
+    def _expansion(self, statement: int) -> None:
+        """$(…), $((…)), ${…}, $'…', $"…" or $NAME from its $."""
+        text = self.text
+        following = text[self.at + 1 : self.at + 2]
+        if following == "(":
+            self.at += 2
+            self._scan(statement, nested=True)
+        elif following == "{":
+            self._parameter(statement)
+        elif following == "'":
+            opened = self.at
+            self.at += 2
+            while self.at < len(text) and text[self.at] != "'":
+                self.at += 2 if text[self.at] == "\\" else 1
+            if self.at >= len(text):
+                raise self._error(opened, "a quote")
+            self.at += 1
+        elif following == '"':
+            self.translated.append(self.line(self.at))
+            self.at += 1
+            self._double(statement)
+        else:
+            name = _NAME.match(text, self.at)
+            self.at = name.end() if name else self.at + 1
+
+    def _parameter(self, statement: int) -> None:
+        """${…} from its $, with what it holds: quotes, $(…) and further ${…}."""
+        text = self.text
+        opened = self.at
+        self.at += 2
+        depth = 1
+        while depth:
+            if self.at >= len(text):
+                raise self._error(opened, "${")
+            char = text[self.at]
+            if char == "'":
+                end = text.find("'", self.at + 1)
+                if end < 0:
+                    raise self._error(self.at, "a quote")
+                self.at = end + 1
+            elif char == '"':
+                self._double(statement)
+            elif char == "$" and text[self.at + 1 : self.at + 2] in {"(", "'"}:
+                self._expansion(statement)
+            elif text.startswith("${", self.at):
+                self.at += 2
+                depth += 1
+            else:
+                if char == "}":
+                    depth -= 1
+                self.at += 2 if char == "\\" else 1
+
+    def _backticks(self) -> None:
+        """`…`: a message call inside would escape the extraction, so the script uses $(…)."""
+        raise ExtractError(f"{self.name}:{self.line(self.at)}: a `…` substitution: write $(…)")
+
+
+def _without_blocks(text: str) -> str:
+    """The script without the message functions' block and the pins' block: their texts are no
+    calls. The line numbers stay."""
+    lines = text.split("\n")
+    end = ""
+    for number, line in enumerate(lines):
+        if not end:
+            end = next((last for first, last in SHELL_BLOCKS if line.startswith(first)), "")
+        if end:
+            lines[number] = ""
+            end = "" if line == end else end
+    return "\n".join(lines)
+
+
+def extract_shell(path: Path, top: Path) -> list[Entry]:
+    """The installer's texts: what t, die and $say take first, and tp's context and text. A
+    literal is single-quoted, double-quoted without $, ` and \\, or plain characters; its fields
+    are {name}s with their values. Only die passes its own text on (t "$@"). No references: the
+    template has one file."""
+    name = path.relative_to(top).as_posix()
+    shell = _Shell(_without_blocks(path.read_text(encoding="utf-8")), name)
+    comments = _comment_blocks(shell.comments)
+    found: dict[str, Entry] = {}
+    for command in shell.commands:
+        head = command.head()
+        if head is None or command.words[head].text not in SHELL_KEYWORDS:
+            continue
+        keyword, arguments = command.words[head], command.words[head + 1 :]
+        entry = _shell_message(keyword, arguments, command.function, name)
+        if entry is None:
+            continue
+        lines = (arguments[_texts(keyword) - 1].line, keyword.line, command.statement)
+        notes = next((comments[line] for line in lines if line in comments), ())
+        _add(found, replace(entry, comments=notes), f"{name}:{keyword.line}")
+    return list(found.values())
+
+
+def _texts(keyword: _Word) -> int:
+    """How many literals a message call takes: tp CONTEXT MSGID, the others MSGID."""
+    return 2 if keyword.text == "tp" else 1
+
+
+def _shell_message(
+    keyword: _Word, arguments: Sequence[_Word], function: str, name: str
+) -> Entry | None:
+    where = f"{name}:{keyword.line}"
+    count = _texts(keyword)
+    if len(arguments) < count:
+        raise ExtractError(f"{where}: {keyword.text} has no text")
+    texts = [word.literal for word in arguments[:count]]
+    if None in texts:
+        if function in SHELL_PASSING:
+            return None
+        bad = next(word.text for word in arguments[:count] if word.literal is None)
+        raise ExtractError(
+            f"{where}: {keyword.text} takes a literal here, not {bad}: single-quoted, or "
+            "double-quoted without $, ` and \\; put the values in as {name} fields"
+        )
+    *context, msgid = [text for text in texts if text is not None]
+    if not msgid:
+        raise ExtractError(f"{where}: an empty msgid")
+    if msgid.startswith(PREFIX):
+        raise ExtractError(f"{where}: the prefix {PREFIX!r} is printed before a text")
+    if set(_SHELL_FIELD.sub("", msgid)) & {"{", "}"}:
+        raise ExtractError(f"{where}: {msgid!r}: the fields of a text are plain {{name}}s")
+    fields = {field[1:-1] for field in _SHELL_FIELD.findall(msgid)}
+    values = arguments[count:]
+    if keyword.text == "tp" and (fields or values):
+        raise ExtractError(f"{where}: tp fills no values: {msgid!r}")
+    missing = sorted(fields - {word.literal for word in values[::2]})
+    if missing:
+        raise ExtractError(f"{where}: no value for {', '.join(missing)}")
+    flags = ("python-brace-format",) if fields else ()
+    return Entry(msgid, ("",), context[0] if context else None, None, flags)
+
+
+def shell_hazards(path: Path, top: Path) -> list[str]:
+    """What the installer must not do: run a text as code (eval, source, .: a language pack is
+    data), or translate with bash's own $"…", which reads catalogs the installer does not ship."""
+    name = path.relative_to(top).as_posix()
+    shell = _Shell(path.read_text(encoding="utf-8"), name)
+    found = [(line, f"{name}:{line}: $\"…\" translates with bash's catalogs: use t") for line in
+             shell.translated]  # fmt: skip
+    for command in shell.commands:
+        head = command.head()
+        if head is None:
+            continue
+        names = [word.text for word in command.words[head : head + 2]]
+        if names[0] not in {"command", "builtin", "exec"}:
+            names = names[:1]
+        for word in names:
+            if word in {"eval", "source", "."}:
+                line = command.words[head].line
+                found.append((line, f"{name}:{line}: {word} runs a text as code"))
+    return [finding for _, finding in sorted(found, key=lambda item: item[0])]
+
+
 def sources(project: Project) -> list[tuple[Callable[[Path, Path], list[Entry]], Path]]:
     """What the template is made of; the dashboards' template will join it (ADR 0021)."""
     return [(extract_python, project.package), (extract_argparse, project.argparse_list)]
@@ -333,10 +779,27 @@ def template(project: Project) -> list[Entry]:
     for extract, path in sources(project):
         for entry in extract(path, project.root):
             _add(found, entry, entry.references[0])
+    return _sorted(found.values())
+
+
+def installer_template(project: Project) -> list[Entry]:
+    """The installer template's entries: one file, so sorted by context, then msgid."""
+    return _sorted(extract_shell(project.installer, project.root))
+
+
+def _sorted(entries: Iterable[Entry]) -> list[Entry]:
     return sorted(
-        found.values(),
-        key=lambda e: (e.references[0], e.msgctxt is not None, e.msgctxt or "", e.msgid),
+        entries, key=lambda e: (e.references[:1], e.msgctxt is not None, e.msgctxt or "", e.msgid)
     )
+
+
+def templates(project: Project) -> list[tuple[Path, list[Path], Callable[[Project], list[Entry]]]]:
+    """Each template, its catalogs and what makes its entries: the program's texts and the
+    installer's."""
+    return [
+        (project.template, project.catalogs(), template),
+        (project.installer_template, project.installer_catalogs(), installer_template),
+    ]
 
 
 # --- files -----------------------------------------------------------------------------------
@@ -421,26 +884,97 @@ def _list_text(pairs: Iterable[tuple[str, str | None]]) -> str:
     return "[\n" + ",\n".join(f"  {line}" for line in lines) + "\n]\n"
 
 
+# --- the installer's language packs ---------------------------------------------------------
+
+PINS_START: Final = (
+    "# --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; "
+    "do not edit"
+)
+PINS_END: Final = "# --- end of language packs"
+
+
+def pack(language: str, entries: Iterable[Entry]) -> str:
+    """The installer's language pack: a comment line, then `msg<TAB>KEY<TAB>TEXT` for each
+    translated text, sorted by key; KEY is the msgid, or the context, \\x04 and the msgid. The
+    escapes \\\\, \\t, \\n and \\x04 are printf %b's; no other control character fits a line."""
+    lines = []
+    for entry in entries:
+        if entry.msgid_plural is not None:
+            raise ValueError(f"{_label(entry)}: a plural, but no installer text counts anything")
+        if "fuzzy" in entry.flags or not entry.msgstr or not entry.msgstr[0]:
+            continue
+        key = _packed(entry.msgid, entry)
+        if entry.msgctxt is not None:
+            key = _packed(entry.msgctxt, entry) + "\\x04" + key
+        lines.append((entry.key, f"msg\t{key}\t{_packed(entry.msgstr[0], entry)}"))
+    head = (
+        f"# meshcore-home-gateway installer messages, {language}: written by make translations "
+        f"from {language}.po; do not edit"
+    )
+    return "\n".join([head, *(line for _, line in sorted(lines))]) + "\n"
+
+
+def _packed(text: str, entry: Entry) -> str:
+    bad = sorted({char for char in text if unicodedata.category(char) == "Cc"} - {"\t", "\n"})
+    if bad:
+        raise ValueError(f"{_label(entry)}: U+{ord(bad[0]):04X} cannot be in a language pack")
+    return text.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
+
+
+def pin_block(languages: Mapping[str, str], packs: Mapping[str, str]) -> str:
+    """The installer's block of language packs: the languages in their order, their names, and
+    each pack's SHA-256, which the installer checks before it reads the pack. English comes
+    first and has no pack; a code is two letters, as the installer checks it."""
+    codes = list(languages)
+    if codes[:1] != ["en"]:
+        raise ValueError(f"the installer offers English first, not {', '.join(codes)}")
+    for code in codes:
+        if not re.fullmatch("[a-z]{2}", code):
+            raise ValueError(f"{code}: the installer takes two lower-case letters as a language")
+    missing = [code for code in codes[1:] if code not in packs]
+    if missing:
+        raise ValueError(f"no pack for {', '.join(missing)}")
+    names = " ".join(f"[{code}]={shlex.quote(name)}" for code, name in languages.items())
+    digests = " ".join(
+        f"[{code}]={hashlib.sha256(packs[code].encode('utf-8')).hexdigest()}" for code in codes[1:]
+    )
+    return "\n".join([
+        PINS_START,
+        f"L10N_ORDER=({' '.join(codes)})",
+        f"declare -A L10N_NAME=({names})",
+        f"declare -A L10N_SHA256=({digests})",
+        PINS_END,
+        "",
+    ])  # fmt: skip
+
+
 def _write(path: Path, text: str) -> bool:
     if path.exists() and path.read_text(encoding="utf-8") == text:
         return False
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return True
 
 
 def update(project: Project) -> list[Path]:
-    """Write what changed: argparse's texts of this Python, the template, the catalogs."""
+    """Write what changed: argparse's texts of this Python, the templates, the catalogs and the
+    installer's language packs."""
     written = []
     listed = _read_list(project.argparse_list) | argparse_messages()
     if _write(project.argparse_list, _list_text(listed)):
         written.append(project.argparse_list)
-    entries = template(project)
-    if _write(project.template, write_po(TEMPLATE_HEADER, entries)):
-        written.append(project.template)
-    for path in project.catalogs():
-        header, old = read_po(path.read_text(encoding="utf-8"), label(project, path))
-        if _write(path, write_po(*merge(entries, header, old, path.stem))):
+    for path, catalogs, make in templates(project):
+        entries = make(project)
+        if _write(path, write_po(TEMPLATE_HEADER, entries)):
             written.append(path)
+        for catalog in catalogs:
+            header, old = read_po(catalog.read_text(encoding="utf-8"), label(project, catalog))
+            if _write(catalog, write_po(*merge(entries, header, old, catalog.stem))):
+                written.append(catalog)
+    for catalog in project.installer_catalogs():
+        _, entries = read_po(catalog.read_text(encoding="utf-8"), label(project, catalog))
+        if _write(project.pack(catalog.stem), pack(catalog.stem, entries)):
+            written.append(project.pack(catalog.stem))
     return written
 
 
@@ -448,36 +982,68 @@ def update(project: Project) -> list[Path]:
 
 
 def outdated_template(project: Project) -> list[str]:
-    name = label(project, project.template)
-    try:
-        expected = write_po(TEMPLATE_HEADER, template(project))
-    except ExtractError as exc:
-        return [str(exc)]
-    if not project.template.exists():
-        return [f"{name}: missing: run make translations"]
-    if project.template.read_text(encoding="utf-8") != expected:
-        return [f"{name}: not current: run make translations"]
-    return []
+    """Templates that `make translations` would change."""
+    findings = []
+    for path, _, make in templates(project):
+        name = label(project, path)
+        try:
+            expected = write_po(TEMPLATE_HEADER, make(project))
+        except ExtractError as exc:
+            findings.append(str(exc))
+            continue
+        if not path.exists():
+            findings.append(f"{name}: missing: run make translations")
+        elif path.read_text(encoding="utf-8") != expected:
+            findings.append(f"{name}: not current: run make translations")
+    return findings
 
 
 def unmerged(project: Project) -> list[str]:
     """Catalogs that `make translations` would change."""
-    try:
-        entries = template(project)
-    except ExtractError:
-        return []  # outdated_template() names it
     findings = []
-    for path in project.catalogs():
-        name = label(project, path)
-        text = path.read_text(encoding="utf-8")
+    for _, catalogs, make in templates(project):
         try:
-            header, old = read_po(text, name)
-            merged = write_po(*merge(entries, header, old, path.stem))
-        except PoError as exc:
-            findings.append(str(exc))
+            entries = make(project)
+        except ExtractError:
+            continue  # outdated_template() names it
+        for path in catalogs:
+            name = label(project, path)
+            text = path.read_text(encoding="utf-8")
+            try:
+                header, old = read_po(text, name)
+                merged = write_po(*merge(entries, header, old, path.stem))
+            except PoError as exc:
+                findings.append(str(exc))
+                continue
+            if merged != text:
+                findings.append(f"{name}: does not follow the template: run make translations")
+    return findings
+
+
+def stale_packs(project: Project) -> list[str]:
+    """Each installer catalog's language pack as `make translations` writes it, and no other."""
+    findings = []
+    catalogs = {path.stem: path for path in project.installer_catalogs()}
+    for language, path in catalogs.items():
+        try:
+            _, entries = read_po(path.read_text(encoding="utf-8"), label(project, path))
+        except PoError:
+            continue  # canonical() names it
+        try:
+            expected = pack(language, entries)
+        except ValueError as exc:
+            findings.append(f"{label(project, path)}: {exc}")
             continue
-        if merged != text:
-            findings.append(f"{name}: does not follow the template: run make translations")
+        target = project.pack(language)
+        if not target.exists():
+            findings.append(f"{label(project, target)}: missing: run make translations")
+        elif target.read_bytes() != expected.encode("utf-8"):
+            findings.append(f"{label(project, target)}: not current: run make translations")
+    findings.extend(
+        f"{label(project, target)}: no catalog {target.stem}.po: remove it"
+        for target in sorted(project.installer_locale.glob("*.messages"))
+        if target.stem not in catalogs
+    )
     return findings
 
 
@@ -674,9 +1240,14 @@ def check(project: Project, languages: Mapping[str, str] | None = None) -> list[
     """Every finding of the checks above on the project's files."""
     offered = i18n.LANGUAGES if languages is None else languages
     findings = [
-        *outdated_template(project), *unmerged(project), *languages_agree(project, offered),
+        *outdated_template(project), *unmerged(project), *stale_packs(project),
+        *languages_agree(project, offered),
     ]  # fmt: skip
-    for path in [project.template, *project.catalogs()]:
+    files = [
+        project.template, *project.catalogs(),
+        project.installer_template, *project.installer_catalogs(),
+    ]  # fmt: skip
+    for path in files:
         if not path.exists():
             continue
         name = label(project, path)
@@ -702,7 +1273,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "update":
         try:
             written = update(project)
-        except (ExtractError, PoError) as exc:
+        except ValueError as exc:  # ExtractError, PoError, a text no pack can hold
             print(exc, file=sys.stderr)
             return 1
         for path in written:

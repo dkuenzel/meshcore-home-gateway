@@ -34,7 +34,12 @@ def test_catalogs_follow_their_templates() -> None:
 
 
 def test_catalogs_are_canonical() -> None:
-    files = [PROJECT.template, *PROJECT.catalogs()]
+    files = [
+        PROJECT.template,
+        *PROJECT.catalogs(),
+        PROJECT.installer_template,
+        *PROJECT.installer_catalogs(),
+    ]
     findings = [
         finding
         for path in files
@@ -43,7 +48,19 @@ def test_catalogs_are_canonical() -> None:
     assert findings == []
 
 
+def test_packs_follow_their_catalogs() -> None:
+    """The installer's language packs are written from its catalogs."""
+    assert tool.stale_packs(PROJECT) == []
+
+
 def test_the_template_holds_argparses_texts() -> None:
     """The template exists before any catalog: argparse's own words are its first texts."""
     _, entries = tool.read_po(PROJECT.template.read_text(encoding="utf-8"))
     assert ("usage: ", None) in {(entry.msgid, entry.msgid_plural) for entry in entries}
+
+
+def test_the_installer_template_holds_its_dialogs_and_errors() -> None:
+    _, entries = tool.read_po(PROJECT.installer_template.read_text(encoding="utf-8"))
+    msgids = {entry.msgid for entry in entries}
+    assert {"Error: {message}", "Container ID", "invalid settings: {reason}"} <= msgids
+    assert all(not entry.references for entry in entries)  # one file: none

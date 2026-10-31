@@ -87,7 +87,9 @@ STUBS = {
                 exit "$code" ;;
               *'--output $dir/config.toml'*)  # the settings check
                 [[ -z ${CHECK_FAILS-} ]] || { echo "bad" >&2; exit 78; } ;;
-              *"daemon-reload"*) echo "${STUB_VERSION:-0.0.0}" ;;  # the installation step
+              *"daemon-reload"*)  # the installation step
+                [[ -z ${INSTALL_FAILS-} ]] || exit 1
+                echo "${STUB_VERSION:-0.0.0}" ;;
               "meshcore-home-gateway --version")
                 echo "meshcore-home-gateway ${STUB_VERSION:-0.0.0}" ;;
               *"--list channels"*)
@@ -1503,6 +1505,24 @@ def test_a_release_or_a_ref_can_be_chosen_also_from_a_checkout(
 
 
 @pytest.mark.parametrize(
+    ("from_url", "what"),
+    [(False, f"meshcore-home-gateway {__version__}"), (True, "meshcore-home-gateway from main")],
+)
+def test_a_failed_installation_names_what_it_installed(
+    host: Host, from_url: bool, what: str
+) -> None:
+    """The version when it is known before the installation (a checkout, a release), else the
+    branch, tag or commit built in the container."""
+    answers, env = str(answers_file(host)), {"INSTALL_FAILS": "1"}
+    if from_url:
+        result = run_from_url(host, "--answers", answers, env=env)
+    else:
+        result = run_installer(host, "--answers", answers, env=env)
+    assert result.returncode == 1
+    assert f"error: {what} was not installed in container 105 (see above)" in result.stderr
+
+
+@pytest.mark.parametrize(
     "args",
     [["--release", "1.0;rm"], ["--release"], ["--ref", "-x"], ["--ref", "a b"],
      ["--release", "1.0.0", "--ref", "main"]],
@@ -1781,6 +1801,17 @@ def test_the_plan_is_shown_in_a_dialog(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     boxes = [c for c in host.calls("whiptail") if "--msgbox" in c]
     assert any("service sets the radio" in " ".join(c) for c in boxes)
+
+
+def test_the_plan_is_logged_and_shown_line_by_line(host: Host) -> None:
+    """Every line of the plan ends in a line break, in the log (indented) and in the box."""
+    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "1", "", ""]
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    plan = "At its next connect the service sets the radio:\n  manual_add: false -> true\n"
+    assert "meshcore-home-gateway: " + plan.replace("\n", "\n  ") + "\n" in result.stderr
+    boxes = [c[-3] for c in host.calls("whiptail") if "--msgbox" in c and c[-2:] == ["20", "78"]]
+    assert boxes == [plan]
 
 
 def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:

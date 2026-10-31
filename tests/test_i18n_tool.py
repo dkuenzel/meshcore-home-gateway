@@ -1,10 +1,14 @@
-"""The translation tool (tools/i18n.py): extraction, the canonical files, merging and the checks.
-Runs on temporary copies, never on the checkout's files."""
+"""The translation tool (tools/i18n.py): extraction, the canonical files, merging, the installer's
+language packs and the checks. Runs on temporary copies, never on the checkout's files."""
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import re
+import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -16,7 +20,9 @@ import pytest
 from meshcore_home_gateway.catalog import Entry, PoError, read_po
 
 ROOT = Path(__file__).resolve().parent.parent
+BASH = shutil.which("bash") or "/bin/bash"
 MODULE = "src/pkg/module.py"
+INSTALLER = "deploy/proxmox/meshcore-home-gateway-lxc.sh"
 GERMANIC = "nplurals=2; plural=(n != 1);"
 FRENCH = "nplurals=2; plural=(n > 1);"
 POLISH = "nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);"
@@ -266,6 +272,206 @@ def test_this_pythons_argparse_texts_are_found() -> None:
     assert ("usage: ", None) in found
     assert ("expected %s argument", "expected %s arguments") in found
     assert all(msgid for msgid, _ in found)
+
+
+def extract_sh(tmp_path: Path, source: str) -> dict[str, Entry]:
+    script = tmp_path / INSTALLER
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(source, encoding="utf-8")
+    return {entry.key: entry for entry in tool.extract_shell(script, tmp_path)}
+
+
+SHELL = r"""#!/usr/bin/env bash
+# --- messages (docs/development.md, Translations): tests cut this block out and run it on its own
+t() { local msgid=$1; shift; _fill "${L10N[$msgid]-$msgid}" "$@"; }
+tp() { local key=$1$'\x04'$2; printf '%s' "${L10N[$key]-$2}"; }
+# --- end of messages
+# --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
+L10N_ORDER=(en)
+t 'not a call: the generated block'
+# --- end of language packs
+
+die() {  # die MSGID [NAME VALUE]...: its own text is passed on
+  log "error: $(_fill "$@")"
+  whiptail --msgbox -- "$(t 'Error: {message}' message "$(t "$@")")" 12 72 >&2 || true
+}
+
+ask_container() {
+  # die 'a commented call'
+  value=$(show_dialog input "$(t 'Container ID')" "${CT[id]:-$(echo 100)}")
+  # Translators: the user's name on the broker
+  # is a value.
+  show_dialog password "$(t "Password of MQTT user '{user}' (empty: none)" user "$user")"
+  [[ -n $x ]] || { die 'container {ctid} has no network' ctid "$ctid"; }
+  # Translators: one statement over two lines.
+  CT[ip]=$(ask_advanced ct.ip input \
+    "$(t 'IPv4 address with prefix, or dhcp')" "dhcp")
+  # Translators: the second command of a list.
+  pvesh get /cluster/nextid --vmid "$id" >/dev/null \
+    || die 'ID {id} is already used' id "$id"
+  BUTTONS=(--yes-button "$(tp button Yes)" --no-button "$(tp button 'No')")
+  cat <<EOF
+t 'not a call: the text of a here-document'
+EOF
+  x='die "not a call either"' y="t 'nor this' $(printf '%s' "#") ${x#t 'no'}"
+  case $x in  # patterns are no calls
+    t|tp) die cancelled ;;
+    (die)
+      x=$(case $y in t) echo ;; esac) ;;
+  esac
+}
+
+plan_text() {
+  local say=$1
+  sets+="  $($say 'The service leaves alone:')"$'\n'
+  $say "The radio's firmware is not tested:
+(radio.profile.manage = always sets it anyway):"
+  $say 'At its next connect
+the service sets the radio:'
+}
+"""
+
+
+def test_the_installers_texts_are_extracted(tmp_path: Path) -> None:
+    """Single-, double-quoted and multi-line literals after t, die and $say; tp's context; no
+    references (one file)."""
+    brace = ("python-brace-format",)
+    assert extract_sh(tmp_path, SHELL) == {
+        "Error: {message}": Entry("Error: {message}", ("",), flags=brace),
+        "Container ID": Entry("Container ID", ("",)),
+        "Password of MQTT user '{user}' (empty: none)": Entry(
+            "Password of MQTT user '{user}' (empty: none)",
+            ("",),
+            flags=brace,
+            comments=("the user's name on the broker", "is a value."),
+        ),
+        "container {ctid} has no network": Entry(
+            "container {ctid} has no network", ("",), flags=brace
+        ),
+        "IPv4 address with prefix, or dhcp": Entry(
+            "IPv4 address with prefix, or dhcp", ("",), comments=("one statement over two lines.",)
+        ),
+        "ID {id} is already used": Entry(
+            "ID {id} is already used",
+            ("",),
+            flags=brace,
+            comments=("the second command of a list.",),
+        ),
+        "button\x04Yes": Entry("Yes", ("",), "button"),
+        "button\x04No": Entry("No", ("",), "button"),
+        "cancelled": Entry("cancelled", ("",)),
+        "The service leaves alone:": Entry("The service leaves alone:", ("",)),
+        "The radio's firmware is not tested:\n(radio.profile.manage = always sets it anyway):": (
+            Entry(
+                "The radio's firmware is not tested:\n"
+                "(radio.profile.manage = always sets it anyway):",
+                ("",),
+            )
+        ),
+        "At its next connect\nthe service sets the radio:": Entry(
+            "At its next connect\nthe service sets the radio:", ("",)
+        ),
+    }
+
+
+def test_the_installer_template_is_sorted_by_context_and_text(tmp_path: Path) -> None:
+    extract_sh(tmp_path, SHELL)
+    entries = tool.installer_template(tool.Project(tmp_path))
+    plain = sorted(entry.key for entry in entries if entry.msgctxt is None)
+    assert [entry.key for entry in entries] == [*plain, "button\x04No", "button\x04Yes"]
+
+
+@pytest.mark.parametrize(
+    ("call", "reason"),
+    [
+        ('t "Container $id"', "literal"),
+        ('t "Container `id`"', "substitution"),
+        (r't "Container \"x\""', "literal"),
+        ('t "Container $(id)"', "literal"),
+        (r"t $'Container\nID'", "literal"),
+        ("t 'Container '\"ID\"", "literal"),
+        ('t "$msgid"', "literal"),
+        ('die "$@"', "literal"),
+        ('$say "$text"', "literal"),
+        ('tp button "$label"', "literal"),
+        ('tp "$context" Yes', "literal"),
+        ("die", "no text"),
+        ("tp button", "no text"),
+        ("t ''", "empty"),
+        ("t 'meshcore-home-gateway: cannot read'", "prefix"),
+        ("t 'container {ctid} has no network'", "no value for ctid"),
+        ("die 'container {ctid} has no network' ctdi 105", "no value for ctid"),
+        ("t 'got {value!r}' value 1", "{name}"),
+        ("t 'a lone { brace'", "{name}"),
+        ("t 'a {{brace}}' brace 1", "{name}"),
+        ("tp button 'Yes {x}' x 1", "no values"),
+        ("echo `t 'Container ID'`", "substitution"),
+        ("echo \"`t 'Container ID'`\"", "substitution"),
+    ],
+)
+def test_what_the_installer_cannot_extract_is_refused(
+    tmp_path: Path, call: str, reason: str
+) -> None:
+    """A message call takes a literal: single-quoted, double-quoted without $, ` and \\, or plain
+    letters; its fields are plain {name}s with their values. Only die passes its own on."""
+    with pytest.raises(tool.ExtractError, match=f"^{INSTALLER}:3: .*{reason}"):
+        extract_sh(tmp_path, f"#!/usr/bin/env bash\nask() {{\n  x=$({call}) || true\n}}\n")
+
+
+@pytest.mark.parametrize(
+    ("source", "what"),
+    [
+        ("echo 'open", "a quote"),
+        ('echo "open', "a quote"),
+        ("echo $'open", "a quote"),
+        ("x=$(echo", "$("),
+        ("x=${y", "${"),
+        ('x="${y:-\'open}"', "a quote"),
+        ("cat <<EOF\nt 'not a call'", "the here-document EOF"),
+    ],
+)
+def test_what_is_not_closed_is_named(tmp_path: Path, source: str, what: str) -> None:
+    with pytest.raises(
+        tool.ExtractError, match=f"^{INSTALLER}:[23]: {re.escape(what)} is not closed"
+    ):
+        extract_sh(tmp_path, f"#!/usr/bin/env bash\n{source}\n")
+
+
+def test_here_documents_hold_no_calls(tmp_path: Path) -> None:
+    """<<WORD, << WORD, <<-WORD (its lines may start with tabs) and a quoted WORD."""
+    source = (
+        "#!/usr/bin/env bash\n"
+        "cat << EOF\nt 'one'\nEOF\n"
+        "cat <<-'END'\n\tt 'two'\n\tEND\n"
+        "cat <<\"EOF\" | t 'three'\nt 'four'\nEOF\n"
+        "t 'five'\n"
+    )
+    assert set(extract_sh(tmp_path, source)) == {"three", "five"}
+
+
+def test_hazards_in_the_installer_are_found(tmp_path: Path) -> None:
+    """A language pack is data: nothing may run text as code, and bash's own $"…" translation
+    would read catalogs the installer does not control."""
+    script = tmp_path / INSTALLER
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        'eval "$x"\n'
+        "source ./messages\n"
+        "if true; then . ./messages; fi\n"
+        'echo $"Hello"\n'
+        "x=$(command eval y) || builtin source z\n"
+        "# eval in a comment, 'eval' in quotes, a word: echo eval source .\n"
+        "x=eval y='source z' z=\"$(echo eval)\"\n",
+        encoding="utf-8",
+    )
+    findings = tool.shell_hazards(script, tmp_path)
+    assert [finding.split(": ", 1)[0] for finding in findings] == [
+        f"{INSTALLER}:{line}" for line in (2, 3, 4, 5, 6, 6)
+    ]
+    assert "eval" in findings[0]
+    assert "source" in findings[1]
+    assert '$"' in findings[3]
 
 
 CANONICAL = r"""msgid ""
@@ -536,21 +742,113 @@ def test_headers_have_exactly_the_fixed_fields() -> None:
     ]  # fmt: skip
 
 
+PACK_HEAD = (
+    "# meshcore-home-gateway installer messages, de: written by make translations from de.po; "
+    "do not edit\n"
+)
+
+
+def test_a_pack_holds_the_translated_texts_escaped() -> None:
+    """One line per translated text, sorted by key, a context joined to its text with an
+    escaped EOT; backslash, tab and line break escaped as printf %b reads them."""
+    entries = [
+        Entry("Yes", ("Ja",), "button"),
+        Entry("b {x}\tc", ("B\t{x}\nzwei \\c",), flags=("python-brace-format",)),
+        Entry("a", ("A",)),
+        Entry("untranslated", ("",)),
+        Entry("unsure", ("unsicher",), flags=("fuzzy",)),
+    ]
+    assert tool.pack("de", entries) == (
+        PACK_HEAD
+        + "msg\ta\tA\n"
+        + "msg\tb {x}\\tc\tB\\t{x}\\nzwei \\\\c\n"
+        + "msg\tbutton\\x04Yes\tJa\n"
+    )
+    assert tool.pack("de", []) == PACK_HEAD
+
+
+@pytest.mark.parametrize(
+    ("entry", "reason"),
+    [
+        (Entry("a", ("x\x1fy",)), "U+001F"),
+        (Entry("a", ("x\x00y",)), "U+0000"),
+        (Entry("a", ("x\ry",)), "U+000D"),
+        (Entry("a\x04b", ("x",)), "U+0004"),
+        (Entry("{count} file", ("{count} Datei", "{count} Dateien"), None, "{count} files"),
+         "plural"),
+    ],
+)  # fmt: skip
+def test_a_pack_refuses_what_it_cannot_hold(entry: Entry, reason: str) -> None:
+    """No installer text counts anything; a control character would end or split a line."""
+    with pytest.raises(ValueError, match=re.escape(reason)):
+        tool.pack("de", [entry])
+
+
+def test_the_pin_block_reads_back_in_bash(tmp_path: Path) -> None:
+    """What `make translations` writes into the script is what bash reads: the languages in
+    order, their names, the digest of each pack; a name runs nothing."""
+    languages = {"en": "English", "de": "Deutsch", "fr": "Français", "xx": "$(touch ran) 'x'"}
+    packs = {"de": PACK_HEAD, "fr": "# fr\n", "xx": "# xx\nmsg\ta\tb\n"}
+    block = tool.pin_block(languages, packs)
+    assert block.startswith(tool.PINS_START + "\n")
+    assert block.endswith(tool.PINS_END + "\n")
+    program = (
+        block
+        + 'for code in "${L10N_ORDER[@]}"; do\n'
+        + '  printf "%s\\0%s\\0%s\\0" "$code" "${L10N_NAME[$code]}" "${L10N_SHA256[$code]-}"\n'
+        + "done\n"
+    )
+    shown = subprocess.run(  # noqa: S603 - the block just written
+        [BASH, "-c", program], cwd=tmp_path, capture_output=True, text=True, check=True
+    )
+    fields = shown.stdout.split("\0")[:-1]
+    digest = {code: hashlib.sha256(text.encode()).hexdigest() for code, text in packs.items()}
+    assert fields == [
+        part for code, name in languages.items() for part in (code, name, digest.get(code, ""))
+    ]
+    assert not (tmp_path / "ran").exists()
+
+
+@pytest.mark.parametrize(
+    ("languages", "packs", "reason"),
+    [
+        ({"en": "English", "de": "Deutsch"}, {}, "no pack for de"),
+        ({"en": "English", "pt_BR": "Português"}, {"pt_BR": "#\n"}, "pt_BR"),
+        ({"de": "Deutsch"}, {"de": "#\n"}, "English first"),
+    ],
+)
+def test_the_pin_block_refuses_what_the_installer_cannot_offer(
+    languages: dict[str, str], packs: dict[str, str], reason: str
+) -> None:
+    """The installer offers English first and checks a code against ^[a-z]{2}$ before it uses
+    one (docs/development.md, Translations)."""
+    with pytest.raises(ValueError, match=reason):
+        tool.pin_block(languages, packs)
+
+
+INSTALLER_SCRIPT = """#!/usr/bin/env bash
+die 'cannot read {file}' file "$1"
+"""
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Any:
-    """A checkout with one module, a short argparse list and no catalog."""
+    """A checkout with one module, a short argparse list, an installer and no catalog."""
     package = tmp_path / "src" / "meshcore_home_gateway"
     (package / "locale").mkdir(parents=True)
     (package / "cli.py").write_text('tr("Removed")\n', encoding="utf-8")
     (tmp_path / "tools").mkdir()
     listed = [["usage: ", None], ["an argparse text of an older Python", None]]
     (tmp_path / "tools" / "argparse_messages.json").write_text(json.dumps(listed), encoding="utf-8")
+    installer = tmp_path / INSTALLER
+    (installer.parent / "locale").mkdir(parents=True)
+    installer.write_text(INSTALLER_SCRIPT, encoding="utf-8")
     return tool.Project(tmp_path)
 
 
 def test_update_writes_the_template_and_merges_the_catalogs(project: Any) -> None:
     written = tool.update(project)
-    assert written == [project.argparse_list, project.template]
+    assert written == [project.argparse_list, project.template, project.installer_template]
     listed = json.loads(project.argparse_list.read_text(encoding="utf-8"))
     assert ["an argparse text of an older Python", None] in listed  # never removed
     assert ["show this help message and exit", None] in listed  # this Python's
@@ -584,6 +882,79 @@ def test_check_finds_a_template_behind_the_code(project: Any) -> None:
     assert tool.check(project) == [f"{name}: not current: run make translations"]
     project.template.unlink()
     assert tool.check(project) == [f"{name}: missing: run make translations"]
+
+
+def test_the_installer_has_its_own_template_catalogs_and_packs(project: Any) -> None:
+    """deploy/proxmox/locale: the installer's template, a catalog per language merged with it, and
+    the language pack the installer loads, written from the catalog."""
+    tool.update(project)
+    template = "deploy/proxmox/locale/installer.pot"
+    _, entries = read_po(project.installer_template.read_text(encoding="utf-8"))
+    assert entries == [Entry("cannot read {file}", ("",), flags=("python-brace-format",))]
+
+    german = project.installer_locale / "de.po"
+    german.write_text(
+        tool.write_po({"Language": "de"}, [Entry("cannot read {file}", ("{file} unlesbar",))]),
+        encoding="utf-8",
+    )
+    findings = tool.check(project)
+    assert "deploy/proxmox/locale/de.po: does not follow the template: run make translations" in (
+        findings
+    )
+    assert "deploy/proxmox/locale/de.messages: missing: run make translations" in findings
+    assert tool.update(project) == [german, project.pack("de")]
+    assert project.pack("de").read_text(encoding="utf-8") == (
+        PACK_HEAD + "msg\tcannot read {file}\t{file} unlesbar\n"
+    )
+    assert tool.check(project) == []
+    assert tool.update(project) == []
+
+    project.pack("de").write_text(PACK_HEAD, encoding="utf-8")
+    (project.installer_locale / "fr.messages").write_text("# fr\n", encoding="utf-8")
+    assert tool.check(project) == [
+        "deploy/proxmox/locale/de.messages: not current: run make translations",
+        "deploy/proxmox/locale/fr.messages: no catalog fr.po: remove it",
+    ]
+    (project.installer_locale / "fr.messages").unlink()
+    tool.update(project)
+
+    project.installer.write_text(INSTALLER_SCRIPT + "die 'gone'\n", encoding="utf-8")
+    assert tool.check(project) == [
+        f"{template}: not current: run make translations",
+        "deploy/proxmox/locale/de.po: does not follow the template: run make translations",
+    ]
+    project.installer.write_text(INSTALLER_SCRIPT + 'die "gone $x"\n', encoding="utf-8")
+    (finding,) = tool.check(project)
+    assert finding.startswith(f"{INSTALLER}:3: ")
+    with pytest.raises(tool.ExtractError):
+        tool.update(project)
+
+
+def test_an_installer_catalog_that_no_pack_can_hold_is_found(project: Any) -> None:
+    """A catalog with a plural, as a translation tool may write one: the pack check names it."""
+    tool.update(project)
+    german = project.installer_locale / "de.po"
+    counted = Entry("{count} file", ("{count} Datei", "{count} Dateien"), None, "{count} files")
+    german.write_text(
+        tool.write_po(tool.catalog_header("de", GERMANIC), [counted]), encoding="utf-8"
+    )
+    (finding,) = tool.stale_packs(project)
+    assert finding.startswith("deploy/proxmox/locale/de.po: '{count} file': a plural")
+    german.write_text('msgid "a"\nmsgstr "\\q"\n', encoding="utf-8")
+    assert tool.stale_packs(project) == []  # canonical() names a catalog it cannot read
+    assert any(f.startswith("deploy/proxmox/locale/de.po:2: ") for f in tool.check(project))
+
+
+def test_a_wrong_installer_translation_is_found(project: Any) -> None:
+    """The catalog checks hold for the installer's catalogs too."""
+    tool.update(project)
+    german = project.installer_locale / "de.po"
+    entry = Entry("cannot read {file}", ("{datei} unlesbar",), flags=("python-brace-format",))
+    german.write_text(tool.write_po(tool.catalog_header("de", GERMANIC), [entry]), encoding="utf-8")
+    tool.update(project)
+    (finding,) = tool.check(project)
+    assert finding.startswith("deploy/proxmox/locale/de.po: 'cannot read {file}': ")
+    assert "{datei}" in finding
 
 
 def test_main_runs_the_commands(

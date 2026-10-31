@@ -109,10 +109,11 @@ firmware-test: venv firmware ## The gateway against the real firmware on a simul
 interface: venv ## Write tests/public_interface.json from the code, after a deliberate interface change
 	$(BIN)/python -m tests.public_interface --write
 
-# The translation tests fail until this runs (tools/i18n.py): it writes the
-# template from the marked texts and argparse's own words (adding this Python's), and merges the
-# catalogs with it. Every new text then needs its translations in each catalog.
-translations: venv ## Write the translation template and merge the catalogs, after changing a text
+# The translation tests fail until this runs (tools/i18n.py): it writes the templates from the
+# marked texts, argparse's own words (adding this Python's) and the installer's texts, merges the
+# catalogs with them and writes the installer's language packs. Every new text then needs its
+# translations in each catalog.
+translations: venv ## Write the translation templates, merge the catalogs, write the installer's packs
 	$(BIN)/python tools/i18n.py update
 
 unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
