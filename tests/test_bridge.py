@@ -30,7 +30,7 @@ from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.profile import RadioProfile
 from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
-from meshcore_home_gateway.radio.transport import Transport
+from meshcore_home_gateway.radio.transport import TcpTransport, Transport
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
     AnnouncedComponents,
@@ -41,7 +41,13 @@ from meshcore_home_gateway.state import (
     TelemetryRecords,
 )
 from meshcore_home_gateway.telemetry_poller import TelemetryPoller
-from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
+from tests.radio_emulator import (
+    SELF_KEY,
+    START_TIME,
+    EmulatedContact,
+    EmulatedRadio,
+    TcpRadioServer,
+)
 
 NOW = START_TIME + 100
 GATEWAY_DOCUMENT = "/meshcore_home_gateway_radio1/config"  # its main discovery document
@@ -1218,6 +1224,42 @@ def test_commands_over_tcp_are_warned_about(
 
     scenario(main)
     assert ("commands over TCP" in caplog.text) is warned
+
+
+def test_adverts_over_tcp_are_checked_as_over_usb(tmp_path: Path) -> None:
+    """Over TCP the radio queues an advert's log and its push in one pass of its loop
+    (SerialWifiInterface.cpp:21-40, MyMesh.cpp:2388-2421): a companion's advert, and the advert
+    of a node heard and then added, are checked as over USB, and command 17 is never sent
+    (design 6c §8.3)."""
+    position = (50_123_456, 8_654_321)
+    dave = EmulatedContact(bytes.fromhex("d4" * 32), "Dave", last_advert=int(NOW) - 30)
+    alice, dave_key = ALICE.public_key.hex(), dave.public_key.hex()
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    def shares(key: str) -> Callable[[dict[str, Any]], bool]:
+        return lambda e: (e["event_type"], e["key"]) == ("position_in_advert", key)
+
+    async def main(server: TcpRadioServer) -> None:
+        def transport() -> Transport:
+            return TcpTransport("127.0.0.1", server.port)
+
+        async with running(make_config(), radio, tmp_path, transport) as (_, bus, _notes):
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+            server.call(lambda: radio.send_advert(ALICE, position=position))
+            await bus.wait_for("/contact", shares(alice))
+            server.call(lambda: radio.send_advert(dave, position=position))
+            await bus.wait_for("/nodes", lambda d: [n["key"] for n in d["nodes"]] == [dave_key])
+            request = json.dumps({"contact": dave_key, "id": "t1"}).encode()
+            bus.contact_requests.put_nowait(ContactRequest("add", request, False))
+            await bus.wait_for("/contact", shares(dave_key))
+            for key in (alice, dave_key):
+                document = bus.payloads(f"/contacts/{key}")[-1]
+                assert document["advert_carries_position"] is True
+                assert document["advert_checked_at"] is not None
+
+    with TcpRadioServer(radio) as server:
+        scenario(lambda: main(server))
+    assert 17 not in radio.commands()  # EXPORT_CONTACT (design 6c D1)
 
 
 def test_contact_reads_are_spent_only_where_they_can_change_the_verdict(tmp_path: Path) -> None:

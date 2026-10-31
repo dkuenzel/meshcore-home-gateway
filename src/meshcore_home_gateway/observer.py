@@ -7,6 +7,11 @@ companions' states. Documents are published retained, and only when they changed
 contact that left the table is cleared, also when that happened while the gateway was stopped (the
 published keys are remembered in the state file). It holds the contacts the household excluded
 from telemetry, for the contact manager and the poller (ADR 0018).
+
+It checks whether a companion's newest advert carries its position (ADR 0018, `core.adverts`):
+from the advert in the radio's packet log, once the radio's push and the next table read show
+that the radio took it. A logged position is held only to compare it, for at most about three
+minutes; the last check of each companion is kept in the state file.
 """
 
 from __future__ import annotations
@@ -17,10 +22,11 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
-from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core import adverts, lpp
 from meshcore_home_gateway.core.budget import RateLimit
 from meshcore_home_gateway.core.contacts import Contact
 from meshcore_home_gateway.core.mesh import (
+    COMPANION,
     AirtimeMeter,
     Fix,
     Heard,
@@ -55,7 +61,12 @@ from meshcore_home_gateway.radio.session import (
     RadioEvent,
     StatsRead,
 )
-from meshcore_home_gateway.state import CurrentDocuments, RetainedKeys, TelemetryExclusions
+from meshcore_home_gateway.state import (
+    AdvertChecks,
+    CurrentDocuments,
+    RetainedKeys,
+    TelemetryExclusions,
+)
 from meshcore_home_gateway.views import (
     SETTING_NAMES,
     HistoryEntry,
@@ -101,11 +112,13 @@ class Observer:
         wall_clock: Callable[[], float] = time.time,
         exclusions: TelemetryExclusions | None = None,
         current: CurrentDocuments | None = None,
+        advert_checks: AdvertChecks | None = None,
     ) -> None:
         """`manage`: contact add and remove requests are taken (ADR 0017). `exclusions`: the
         contacts excluded from telemetry; the contact manager and the poller read these.
         `current`: the documents of the companions whose answers are current, kept across a
-        restart."""
+        restart. `advert_checks`: the last checked advert of each companion, kept across a
+        restart (ADR 0018)."""
         self.mesh = Mesh()
         # the one holder: an empty set is falsy, so `or` would replace one that was given
         self.exclusions = exclusions if exclusions is not None else TelemetryExclusions(None)
@@ -147,13 +160,22 @@ class Observer:
         # contact requests whose write went out: (event type, key) -> (request, id); the table
         # read that shows the change reports it as the request's result
         self._expected: dict[tuple[str, str], tuple[str, str]] = {}
+        self._advert_checks = advert_checks
+        # the adverts the radio logged, and per companion the advert its push reported, until a
+        # table read shows it: their positions are held only to compare them (design 6c §3.1)
+        self._logged_adverts: deque[adverts.Logged] = deque(maxlen=adverts.MAX_LOGGED)
+        self._pending: dict[str, adverts.Pushed] = {}  # companion key -> its accepted advert
         self._restore()
 
     def _restore(self) -> None:
-        """What the history knows from earlier runs: recent messages, positions, last heard, the
-        readings of each contact's newest answer. An excluded contact gets back neither its
-        readings nor a position from telemetry, and while the exclusions cannot be read no
-        contact does (they may exclude anyone)."""
+        """What earlier runs left: the last checked advert of each companion (the state file),
+        and what the history knows: recent messages, positions, last heard, the readings of each
+        contact's newest answer. An excluded contact gets back neither its readings nor a position
+        from telemetry, and while the exclusions cannot be read no contact does (they may exclude
+        anyone)."""
+        if self._advert_checks is not None:  # also without a history: the first read needs them
+            for key, check in self._advert_checks.checks.items():
+                self.mesh.restore_advert(key, check)
         if self._history is None:
             return
         self._recent.extend(reversed(self._history.recent_messages(RECENT_MESSAGES)))
@@ -226,11 +248,11 @@ class Observer:
         if isinstance(event, ContactsRead):
             self._contacts_read(event.records, event.read_at)
         elif isinstance(event, AdvertHeard):
-            self._advert(event.advert, event.received_at)
+            self._advert(event.advert, event.received_at, (event.session_serial, event.seq))
         elif isinstance(event, StatsRead):
             self._stats(event)
         elif isinstance(event, PacketLogged):
-            self._packet(event.rx, event.received_at)
+            self._packet(event.rx, event.received_at, (event.session_serial, event.seq))
         elif isinstance(event, PathReset):  # the documents say so before the next table read
             key = event.public_key.hex()
             if self.mesh.path_reset(key):
@@ -299,6 +321,9 @@ class Observer:
                 log.exception("telemetry exclusion listener failed")
         self._publish_contact(key)
         self._publish_index()
+        tracked = self.mesh.contacts.get(key)
+        if not excluded and tracked is not None and _carries(tracked):
+            self._advert_events([key])  # a household companion again, whose adverts carry it
         return forgotten
 
     def _forget_history(self, key: str) -> bool:
@@ -379,9 +404,10 @@ class Observer:
         self._publish(self._topics.history, history_document(self._recent), force=True)
 
     def tick(self) -> None:
-        """Called about once a minute: forget stale heard nodes, purge the history hourly, expire
-        the documents of the last run and store the current ones."""
+        """Called about once a minute: forget stale heard nodes and logged adverts, purge the
+        history hourly, expire the documents of the last run and store the current ones."""
         now = self._wall()
+        self._prune_adverts(now)  # also on a quiet mesh
         if self.mesh.forget_nodes(now):
             self._publish_nodes()
         if self._history is not None and now >= self._next_purge:
@@ -400,6 +426,8 @@ class Observer:
 
     def _contacts_read(self, records: Mapping[str, codec.ContactRecord], at: float) -> None:
         before = {key: tracked.node for key, tracked in self.mesh.contacts.items()}
+        # the heard nodes the radio holds now, with the time of the newest advert it reported
+        heard = {k: t.node.last_advert for k, t in self.mesh.nodes.items() if k in records}
         change = self.mesh.contacts_read((_node(r) for r in records.values()), at)
         joined_or_left = bool(change.added or change.removed)  # the heard nodes change with it
         left = [key for key in self._current if key not in self.mesh.contacts]
@@ -415,6 +443,10 @@ class Observer:
             known = self._retained.keys if self._retained else frozenset(records)
             gone = tuple(sorted(known - set(records)))
             change = TableChange(tuple(k for k in change.added if k not in known), gone)
+        # before the listeners, the devices and the documents of this read, which show the check
+        started = self._check_adverts(before, heard, at)
+        # added with a check that carries: heard before the add (design 6c D9, D27)
+        started += [k for k in change.added if k not in started and _carries(self.mesh.contacts[k])]
         for key in change.added:  # its document carries what the listeners change
             for added in self.on_contact_added:
                 try:
@@ -431,6 +463,8 @@ class Observer:
         self._publish_nodes(read=joined_or_left)  # an added node left them, a removed one is back
         # last: whoever acts on the event finds the device, the documents and the recipient
         self._contact_events(change, before)
+        self._advert_events(started)
+        self._store_advert_checks()
         if self._retained is not None:
             self._retained.replace(set(self.mesh.contacts))
 
@@ -475,6 +509,83 @@ class Observer:
                 event = contact_event(kind, key, node, request=request, request_id=request_id)
                 self._event(self._topics.contact_event, event)
 
+    # --- positions in adverts (ADR 0018, design 6c) --------------------------------------------
+
+    def _check_adverts(
+        self, before: Mapping[str, Node], heard: Mapping[str, int], at: float
+    ) -> list[str]:
+        """The newest advert of each companion as this table read shows it (design 6c §3);
+        `heard`: the advert time of each heard node it adds. Returns the keys whose check turned
+        to carrying from not carrying or none."""
+        self._prune_adverts(at)
+        for key in [k for k in self._pending if k not in self.mesh.contacts]:
+            del self._pending[key]
+        started = []
+        for key, tracked in self.mesh.contacts.items():
+            if tracked.node.node_type != COMPANION:
+                self._pending.pop(key, None)
+                continue
+            pending, previous = self._pending.get(key), before.get(key)
+            result = adverts.outcome(pending, tracked.node, previous, at)
+            if not result.wait:
+                self._pending.pop(key, None)
+            if result.problem in ("copies_differ", "record_differs"):
+                log.warning("contact %s: a logged copy of its advert differs from the one the "
+                            "radio took", key[:12])  # fmt: skip
+            # for hardware row 44: every advert the radio took that the gateway could not check.
+            # The radio reported a heard node's newest advert in its NEW_ADVERT (its line then).
+            held = tracked.advert
+            since = previous.last_advert if previous else heard.get(key, held.at if held else None)
+            if result.check is None and not result.wait and (
+                result.problem == "not_logged"
+                or (pending is None and since is not None and tracked.node.last_advert > since)
+            ):  # fmt: skip
+                reason = "not logged" if pending is not None else "no report from the radio"
+                log.debug("contact %s: its advert at %s was not checked (%s)", key[:12],
+                          iso(tracked.node.last_advert), reason)  # fmt: skip
+            check = result.check
+            if check is None or check == held or (held is not None and check.at < held.at):
+                continue
+            self.mesh.advert_checked(key, check, at, previous)  # the documents and devices follow
+            kept = "" if check.carries or tracked.node.position is None else (
+                " (the radio's record keeps an older one)")  # fmt: skip
+            log.info("contact %s: its advert carries %s%s", key[:12],
+                     "its position" if check.carries else "no position", kept)  # fmt: skip
+            if check.carries and not (held is not None and held.carries):
+                started.append(key)
+        return started
+
+    def _advert_events(self, started: list[str]) -> None:
+        """`position_in_advert` for each companion that started to send its position in its
+        adverts, after its document and the index; none for one excluded from telemetry (not the
+        household's, docs/companions.md)."""
+        for key in started:
+            tracked = self.mesh.contacts.get(key)
+            if tracked is None or key in self.exclusions:
+                continue
+            event = contact_event("position_in_advert", key, tracked.node)
+            self._event(self._topics.contact_event, event)
+
+    def _store_advert_checks(self) -> None:
+        if self._advert_checks is not None:
+            self._advert_checks.replace(
+                {k: t.advert for k, t in self.mesh.contacts.items() if t.advert is not None}
+            )
+
+    def _no_rx_delay(self) -> bool:
+        """The radio handles each received packet in the pass that logs it: its receive delay,
+        read at connect, is 0 (src/Dispatcher.cpp:138-145, 238-256; design 6c D2)."""
+        return self._tuning is not None and self._tuning.rx_delay_base_milli == 0
+
+    def _prune_adverts(self, now: float) -> None:
+        """A logged position is held only while it can still decide (design 6c §3.1)."""
+        kept = [e for e in self._logged_adverts if adverts.fresh(e.at, now, adverts.LOGGED_S)]
+        if len(kept) < len(self._logged_adverts):
+            self._logged_adverts = deque(kept, maxlen=adverts.MAX_LOGGED)
+        limit = adverts.LOGGED_S + adverts.WAIT_S
+        for key in [k for k, p in self._pending.items() if not adverts.fresh(p.at, now, limit)]:
+            del self._pending[key]
+
     # --- contact requests (ADR 0017) -----------------------------------------------------------
 
     def expect(self, kind: str, key: str, request: str, request_id: str) -> None:
@@ -491,13 +602,25 @@ class Observer:
         """A request's result that no table read reports (refused, failed)."""
         self._event(self._topics.contact_event, result)
 
-    def _advert(self, advert: codec.Advert, at: float) -> None:
+    def _advert(self, advert: codec.Advert, at: float, frame: adverts.FrameId) -> None:
         key = advert.public_key.hex()
+        self._prune_adverts(at)
         logged_at, signal = self._logged.pop(key, (0.0, Signal()))
         if at - logged_at > LOGGED_ADVERT_S:
             signal = Signal()
+        near = None
+        if self._no_rx_delay():  # the radio handles each packet in the pass that logs it (D2)
+            last = self._logged_adverts[-1] if self._logged_adverts else None
+            near = adverts.adjacent(last, key, frame)
+            # it writes an advert's log directly before its push: any other log is another
+            # packet, a late copy of an older advert or a forged one (design 6c D13). Without
+            # its own log the advert has no signal, as one that was not logged at all.
+            signal = near.signal if near is not None and self._own_log(near, advert) else Signal()
+        # the advert the radio took, for the next table read; later logs do not count for it
+        pushed = adverts.Pushed(at, near, adverts.candidates(self._logged_adverts, key, at))
         heard = Heard(at, "advert", signal)
         if advert.record is None:  # a contact: its record follows with the next table read
+            self._pending[key] = pushed
             if self.mesh.contact_heard(key, heard):
                 tracked = self.mesh.contacts[key]
                 self._store_heard(key, tracked.node, heard)
@@ -505,10 +628,21 @@ class Observer:
             return
         node = _node(advert.record)
         new = self.mesh.node_heard(node, heard)
-        if key in self.mesh.contacts:
+        if key in self.mesh.contacts:  # firmware 1.11: a contact it has just added
+            self._pending[key] = pushed
             self._store_heard(key, node, heard)
             self._publish_contact(key)
             return
+        if node.node_type == COMPANION:  # checked at once: its record came with it (D27)
+            found = adverts.heard(pushed, node)
+            if found.check is not None:
+                self.mesh.advert_heard(key, found.check)
+            if found.problem in ("copies_differ", "record_differs"):  # no household matter
+                log.debug("node %s: a logged copy of its advert differs from the one the radio "
+                          "took", key[:12])  # fmt: skip
+            elif found.problem == "not_logged":  # the read that adds it logs no second line
+                log.debug("node %s: its advert at %s was not checked (not logged)", key[:12],
+                          iso(node.last_advert))  # fmt: skip
         # the newest advert's record: a replayed older one does not replace it, also not in the
         # history (its advert time comes back with it after a restart)
         self._store_heard(key, self.mesh.nodes[key].node, heard)
@@ -521,15 +655,35 @@ class Observer:
                 "look_alike": key in look_alike_nodes(self.mesh, self._protected),
             })  # fmt: skip
 
-    def _packet(self, rx: codec.RxLog, at: float) -> None:
-        """An advert in the packet log: its signal, for the radio's push that follows."""
+    def _own_log(self, near: adverts.Logged, advert: codec.Advert) -> bool:
+        """Whether the log directly before a push can be its advert's own (design 6c D13). For a
+        NEW_ADVERT it has the time of the record the radio made from that advert. The radio pushes
+        a contact's advert only when it is newer than its record (BaseChatMesh.cpp:133-136), which
+        is no older than the one the gateway read (a client's write aside): a log no newer than
+        that is a late copy of an older advert. Until the gateway reads the newer record, a copy
+        of an advert between the two passes. A contact the gateway does not hold yet has no record
+        here, and the signal of its push is not kept (`Mesh.contact_heard`)."""
+        if advert.record is not None:
+            return near.timestamp == advert.record.last_advert
+        tracked = self.mesh.contacts.get(near.key)
+        return tracked is None or near.timestamp > tracked.node.last_advert
+
+    def _packet(self, rx: codec.RxLog, at: float, frame: adverts.FrameId) -> None:
+        """An advert in the packet log: its signal, for the radio's push that follows, and what it
+        carries, for the check of the advert the radio takes (unverified until then)."""
         packet = parse_packet(rx.raw)
         advert = parse_advert(packet) if packet else None
         if packet is None or advert is None:
             return
+        key = advert.public_key.hex()
         hops = len(packet.path_hashes) if packet.flood else None
+        signal = Signal(hops, rx.snr_db, rx.rssi_dbm)
         self._logged = {k: v for k, v in self._logged.items() if at - v[0] <= LOGGED_ADVERT_S}
-        self._logged[advert.public_key.hex()] = (at, Signal(hops, rx.snr_db, rx.rssi_dbm))
+        self._logged[key] = (at, signal)
+        self._prune_adverts(at)
+        self._logged_adverts.append(adverts.Logged(
+            key, at, frame, advert.timestamp, advert.shares_position, advert.position, signal,
+        ))  # fmt: skip
 
     def _store_heard(self, key: str, node: Node, heard: Heard) -> None:
         if self._history is not None:
@@ -580,13 +734,18 @@ class Observer:
 
     def _keep(self, key: str, document: dict[str, Any]) -> None:
         """The document of a contact whose answers count as current, for a restart. Stored at once
-        when one turns current or no longer (an expiry, an exclusion), else at the next tick."""
-        had = key in self._current
+        when one turns current or no longer (an expiry, an exclusion), or loses a position from
+        adverts (to a check without one, or to telemetry: a crash must not bring it back, design
+        6c D12), else at the next tick."""
+        had = self._current.get(key)
         if document["telemetry_current"]:
             self._current[key] = document
         else:
             self._current.pop(key, None)
-        if had != (key in self._current):
+        from_adverts = had is not None and had.get("position_source") == "advert"
+        if (had is not None) != (key in self._current) or (
+            from_adverts and document["position_source"] != "advert"
+        ):
             self.flush()
 
     def _state_of(self, tracked: Tracked) -> TelemetryState | None:
@@ -646,6 +805,12 @@ class Observer:
 
     def _event(self, topic: str, payload: dict[str, Any]) -> None:
         self._bus.publish(topic, encode(payload))
+
+
+def _carries(tracked: Tracked) -> bool:
+    """The contact's last checked advert carried its position: not the record's value while its
+    newest advert is unchecked (design 6c D4, D5), which raises no event."""
+    return tracked.advert is not None and tracked.advert.carries
 
 
 def _published(reading: lpp.Reading) -> bool:

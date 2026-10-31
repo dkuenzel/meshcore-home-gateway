@@ -22,7 +22,7 @@ import pytest
 
 from meshcore_home_gateway import bridge, cli, views
 from meshcore_home_gateway import config as configuration
-from meshcore_home_gateway.core import lpp, telemetry
+from meshcore_home_gateway.core import adverts, lpp, telemetry
 from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt import contact_devices
@@ -235,6 +235,24 @@ def test_a_value_that_no_path_emits_any_more_is_refused(monkeypatch: pytest.Monk
     monkeypatch.setattr(views, "settings_document", never_drift)
     with pytest.raises(
         AssertionError, match="settings:status: Home Assistant declares values no path emits"
+    ):
+        interface.surface()
+
+
+def test_the_event_of_the_advert_check_comes_from_the_scenarios_advert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`position_in_advert` is raised by the check of Alice's advert in _published(): its log,
+    the radio's push and the table read that shows it (design 6c §5.12). If the check learns
+    nothing from it, no path emits the event type, and the snapshot is refused."""
+    monkeypatch.setattr(adverts, "outcome", lambda *_: adverts.Outcome())
+    emitted = ["added", "excluded", "failed", "hidden", "included", "refused", "removed", "shown"]
+    with pytest.raises(
+        AssertionError,
+        match=re.escape(
+            "contact:event_type: Home Assistant declares values no path emits: emitted"
+            f" {emitted}, declared {sorted([*emitted, 'position_in_advert'])}"
+        ),
     ):
         interface.surface()
 

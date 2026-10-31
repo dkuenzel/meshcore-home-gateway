@@ -25,9 +25,12 @@ from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import cli as cli_module
 from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
 from meshcore_home_gateway.config import MqttConfig, load_config, parse_config
+from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.mqtt import client as client_module
+from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command
+from meshcore_home_gateway.radio.session import ContactsRead
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, JsonStateFile
 from tests.conftest import Broker
@@ -649,6 +652,31 @@ def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file
     (bridge,) = bridges
     bridge.observer.publish_all()  # the broker connected: telemetry is off now
     assert store.load()["current_contacts"]["a1" * 32]["telemetry_state"] == "off"
+
+
+def test_the_service_keeps_the_advert_checks_in_its_state_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """So that a restart neither raises nor clears a check (design 6c D14)."""
+    bridges: list[bridge_module.Bridge] = []
+
+    async def stopped(bridge: bridge_module.Bridge, _stop: asyncio.Event) -> None:
+        bridges.append(bridge)
+
+    monkeypatch.setattr(bridge_module.Bridge, "run", stopped)
+    key, at = "a1" * 32, 1_768_464_000
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"advert_checks": {key: {"advert_at": at, "carries": True}}})
+    config = parse_config(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        "[history]\nenabled = false\n[telemetry]\nenabled = false\n"
+    )
+    assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
+    (bridge,) = bridges
+    record = codec.decode(EmulatedContact(bytes.fromhex(key), "Alice", last_advert=at).record())
+    assert isinstance(record, codec.ContactRecord)
+    bridge.observer.radio_event(ContactsRead({key: record}, at + 60.0))
+    assert bridge.observer.mesh.contacts[key].advert == AdvertCheck(at, True)
 
 
 @pytest.mark.broker

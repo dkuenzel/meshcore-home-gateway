@@ -33,10 +33,11 @@ flowchart LR
   with replay protection; channel messages never command.
 - **Telemetry of the household's companions:** battery, sensor readings and position asked of
   each in turn, within an airtime budget of its own, only from those who allow the gateway; on
-  each handheld's device in Home Assistant and on its map, unavailable once a handheld stops
-  answering, with an event when it stops or answers again. A contact is excluded with one switch
-  or one command, also before it is added; the first time telemetry runs, it waits an hour for
-  that ([`docs/companions.md`](docs/companions.md)).
+  each handheld's device in Home Assistant and on its map with its trace, unavailable once a
+  handheld stops answering, with an event when it stops or answers again; a warning when a
+  handheld's advert carries its position, which everyone in range can read. A contact is excluded
+  with one switch or one command, also before it is added; the first time telemetry runs, it waits
+  an hour for that ([`docs/companions.md`](docs/companions.md)).
 - **Home Assistant:** nothing to install there; MQTT discovery creates one device with radio
   link, battery, airtime and queue sensors, event entities for messages, deliveries and commands,
   and a notify entity per target.

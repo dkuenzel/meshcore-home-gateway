@@ -2,7 +2,8 @@
 
 It parses the bridge's frames like the firmware does (an idle parser that ignores everything
 but '<') and answers the command subset with the layouts of MeshCore companion-v1.18.0. Tests
-steer it: queue messages, push acknowledgements, inject errors or silence, drop the connection.
+steer it: queue messages, push acknowledgements and adverts, inject errors or silence, drop the
+connection.
 """
 
 from __future__ import annotations
@@ -15,7 +16,12 @@ from dataclasses import dataclass, field, replace
 
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push, Response
-from meshcore_home_gateway.protocol.framing import TO_RADIO, encode_frame
+from meshcore_home_gateway.protocol.framing import MAX_FRAME_SIZE, TO_RADIO, encode_frame
+from meshcore_home_gateway.protocol.packet import (
+    MAX_ADVERT_DATA_BYTES,
+    PAYLOAD_TYPE_ADVERT,
+    SIGNATURE_BYTES,
+)
 
 SELF_KEY = bytes(range(0x10, 0x30))
 START_TIME = 1_800_000_000
@@ -205,6 +211,10 @@ class EmulatedRadio:
     # --- test controls -------------------------------------------------------------------------
 
     def emit(self, payload: bytes) -> None:
+        """One frame to the bridge. The firmware never writes a longer one than MAX_FRAME_SIZE
+        (ArduinoSerialInterface.cpp:24-28, SerialWifiInterface.cpp:21-25): nor does a test."""
+        if len(payload) > MAX_FRAME_SIZE:
+            raise ValueError(f"no radio writes a frame of {len(payload)} bytes")
         self._out.put_nowait(frame(payload))
 
     def emit_raw(self, data: bytes) -> None:
@@ -235,12 +245,81 @@ class EmulatedRadio:
 
     def advertise(self, contact: EmulatedContact) -> None:
         """A checked advert: ADVERT with the key for a contact, else NEW_ADVERT with the record
-        (MyMesh.cpp:356-367)."""
+        (MyMesh.cpp:356-367). Only the push: `send_advert` is the advert as the radio handles it."""
         known = any(c.public_key == contact.public_key for c in self.contacts)
         if known:
             self.emit(bytes([Push.ADVERT]) + contact.public_key)
         else:
             self.emit(contact.record(Push.NEW_ADVERT))
+
+    def send_advert(
+        self, contact: bytes | EmulatedContact, *, timestamp: int | None = None,
+        position: tuple[int, int] | None = None, hops: int = 0, hash_bytes: int = 1,
+        transport: bool = False, zero_hop: bool = False, logged: bool = True, pushed: bool = True,
+        between: bytes | None = None,
+    ) -> int:  # fmt: skip
+        """An advert as companion firmware 1.18 handles it: LOG_RX_DATA first, only if the frame
+        fits (raw + 3 <= 176, MyMesh.cpp:292: no log when path > 71 - app data, 67 - app data with
+        transport codes); `between`, a frame the radio writes between log and push (a receive
+        delay above 0). For a contact: if newer than the record (BaseChatMesh.cpp:133), the record
+        takes lat/lon only with the flag and the timestamp (:193-197), and ADVERT with the key
+        follows (MyMesh.cpp:358-366); an older timestamp is logged only (a replay). For a node the
+        radio does not hold: NEW_ADVERT with a record made from this advert alone (lat/lon only
+        with the flag, BaseChatMesh.cpp:108-120, 156-179), also for an older timestamp; the
+        emulated radio adds no node by itself (manual add, as the managed profile sets it).
+        `logged=False` drops the log (too long), `pushed=False` the push (a full TCP queue).
+        `position` (int32 x 10^-6; (0, 0) allowed) sets flag 0x10. `zero_hop`: the device
+        button's form, route direct with path 0 and no hops (MyMesh.cpp:2436-2448,
+        Mesh.cpp:717-726). `contact`: a key names a contact the radio holds. Returns the
+        timestamp (default: the record's + 60)."""
+        sender, held = self._sender(contact)
+        if timestamp is None:
+            timestamp = (held or sender).last_advert + 60
+        raw = advert_packet(
+            sender, timestamp, position, hops=hops, hash_bytes=hash_bytes, transport=transport,
+            zero_hop=zero_hop,
+        )  # fmt: skip
+        if logged:
+            self._log(raw)
+        if between is not None:
+            self.emit(between)
+        name = advert_name(sender.name, position)
+        if held is None:  # the record it made from this advert alone
+            node = EmulatedContact(sender.public_key, name, sender.node_type, last_advert=timestamp)
+            node.latitude_e6, node.longitude_e6 = position or (0, 0)
+            if pushed:
+                self.emit(node.record(Push.NEW_ADVERT))
+        elif timestamp > held.last_advert:  # else a replay: the radio drops it
+            held.name, held.node_type, held.last_advert = name, sender.node_type, timestamp
+            if position is not None:  # without the flag the record keeps its position
+                held.latitude_e6, held.longitude_e6 = position
+            if pushed:
+                self.emit(bytes([Push.ADVERT]) + held.public_key)
+        return timestamp
+
+    def log_advert(
+        self, contact: bytes | EmulatedContact, *, timestamp: int,
+        position: tuple[int, int] | None = None, hops: int = 0,
+    ) -> None:  # fmt: skip
+        """Only the log: a copy the radio does not take (forged, a replay, a later flood copy)."""
+        self._log(advert_packet(self._sender(contact)[0], timestamp, position, hops=hops))
+
+    def _sender(
+        self, contact: bytes | EmulatedContact
+    ) -> tuple[EmulatedContact, EmulatedContact | None]:
+        """An advert's sender and the radio's record of it, if it holds one."""
+        key = contact if isinstance(contact, bytes) else contact.public_key
+        held = next((c for c in self.contacts if c.public_key == key), None)
+        sender = held if isinstance(contact, bytes) else contact
+        if sender is None:
+            raise ValueError("a node the radio does not hold needs its EmulatedContact")
+        return sender, held
+
+    def _log(self, raw: bytes) -> None:
+        """LOG_RX_DATA with SNR 6 dB and RSSI -96 dBm, written before the radio parses the
+        packet, only if the frame fits (MyMesh.cpp:291-302)."""
+        if len(raw) + 3 <= MAX_FRAME_SIZE:
+            self.emit(bytes([Push.LOG_RX_DATA, 24, 0xA0]) + raw)
 
     def overwrite(self, contact: EmulatedContact) -> None:
         """A full table with AUTO_ADD_OVERWRITE_OLDEST drops this contact (MyMesh.cpp:342-349)."""
@@ -498,6 +577,37 @@ def telemetry_push(key: bytes, data: bytes) -> bytes:
     return bytes([Push.TELEMETRY_RESPONSE, 0]) + key[:6] + data
 
 
+def advert_packet(
+    contact: EmulatedContact, timestamp: int, position: tuple[int, int] | None = None, *,
+    hops: int = 0, hash_bytes: int = 1, transport: bool = False, zero_hop: bool = False,
+) -> bytes:  # fmt: skip
+    """An advert of `contact` as the radio receives it (Mesh.cpp:404-438, Packet.cpp:52-63):
+    route flood with `hops` zero hashes of `hash_bytes` each, or direct without a path
+    (`zero_hop`); two zero transport codes with `transport`; the key, the timestamp, 64 zero
+    bytes of signature (the gateway never checks it) and the app data
+    (AdvertDataHelpers.cpp:4-29): the type with flag 0x80, flag 0x10 and the int32 pair with
+    `position`, the name. Every emulated node has a name: the radio drops an advert without one
+    (BaseChatMesh.cpp:123-127)."""
+    if zero_hop and hops:
+        raise ValueError("an advert sent zero hop has no path")
+    route = (3 if transport else 2) if zero_hop else (0 if transport else 1)  # Packet.h:13-16
+    flags = contact.node_type | 0x80 | (0x10 if position is not None else 0)
+    location = b"" if position is None else struct.pack("<ii", *position)
+    return (
+        bytes([PAYLOAD_TYPE_ADVERT << 2 | route]) + bytes(4 * transport)
+        + bytes([hops | (hash_bytes - 1) << 6]) + bytes(hops * hash_bytes)
+        + contact.public_key + struct.pack("<I", timestamp) + bytes(SIGNATURE_BYTES)
+        + bytes([flags]) + location + advert_name(contact.name, position).encode()
+    )  # fmt: skip
+
+
+def advert_name(name: str, position: tuple[int, int] | None) -> str:
+    """The name as an advert carries it: as far as it fits into the app data beside the flags
+    and the position, cut to valid UTF-8 (AdvertDataHelpers.cpp:20-27)."""
+    room = MAX_ADVERT_DATA_BYTES - 1 - (8 if position is not None else 0)
+    return name.encode()[:room].decode(errors="ignore")
+
+
 _SETTERS = frozenset({
     Command.SET_OTHER_PARAMS, Command.SET_AUTOADD_CONFIG, Command.SET_TUNING_PARAMS,
     Command.SET_ADVERT_NAME,
@@ -564,7 +674,7 @@ class TcpRadioServer:
             self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(5)
 
-    def call(self, function: Callable[[], None]) -> None:
+    def call(self, function: Callable[[], object]) -> None:
         """Run a test control (e.g. queue a message) inside the server loop."""
         assert self._loop is not None
         self._loop.call_soon_threadsafe(function)

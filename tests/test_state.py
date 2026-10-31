@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
+    AdvertChecks,
     AnnouncedComponents,
     CommandLedger,
     ContactDeviceRecords,
@@ -197,6 +199,106 @@ def test_current_documents_of_another_shape_read_as_empty(tmp_path: Path) -> Non
     assert CurrentDocuments(store).documents == {"bb" * 32: good}
     store.path.write_bytes(b'{"current_contacts": {')  # unreadable: moved aside
     assert CurrentDocuments(store).documents == {}
+
+
+# --- advert checks (ADR 0018) -------------------------------------------------------------------
+
+CHECKED = {"aa" * 32: AdvertCheck(1_768_464_000, True), "bb" * 32: AdvertCheck(0, False)}
+
+
+def test_advert_checks_round_trip_with_a_time_and_a_flag_only(tmp_path: Path) -> None:
+    """The last checked advert of each companion survives a restart. The file holds its time and
+    flag, never a coordinate, and the other keys of state.json stay as they are."""
+    store = JsonStateFile(tmp_path / "state.json")
+    store.save({"other": 1, "current_contacts": {"cc" * 32: {"key": "cc" * 32}}})
+    others = store.load()
+    checks = AdvertChecks(store)
+    assert checks.checks == {}
+    checks.replace(CHECKED)
+    assert AdvertChecks(store).checks == CHECKED
+    data = store.load()
+    assert data.pop("advert_checks") == {
+        "aa" * 32: {"advert_at": 1_768_464_000, "carries": True},
+        "bb" * 32: {"advert_at": 0, "carries": False},
+    }  # fmt: skip
+    assert data == others
+    checks.checks["cc" * 32] = AdvertCheck(1, True)  # a copy: what is stored stays
+    assert checks.checks == CHECKED
+    checks.replace({"bb" * 32: CHECKED["bb" * 32]})  # one left the table
+    assert AdvertChecks(store).checks == {"bb" * 32: AdvertCheck(0, False)}
+
+
+def test_unchanged_advert_checks_write_nothing(tmp_path: Path) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    AdvertChecks(store).replace({})  # none checked yet: nothing to store
+    assert not store.path.exists()
+    AdvertChecks(store).replace(CHECKED)
+    os.utime(store.path, ns=(0, 0))
+    checks = AdvertChecks(store)  # what the file holds counts as stored
+    checks.replace(dict(CHECKED))
+    assert store.path.stat().st_mtime_ns == 0
+    checks.replace({**CHECKED, "aa" * 32: AdvertCheck(1_768_464_060, True)})
+    assert store.path.stat().st_mtime_ns != 0
+
+
+def test_invalid_advert_checks_are_skipped_with_one_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = JsonStateFile(tmp_path / "state.json")
+    good = {"advert_at": 1_768_464_000, "carries": True}
+    store.save({"advert_checks": {
+        "aa" * 32: good, "aa" * 6: good, "AA" * 32: good,
+        "b1" * 32: {"advert_at": -1, "carries": True},
+        "b2" * 32: {"advert_at": 1.5, "carries": True},
+        "b3" * 32: {"advert_at": True, "carries": True},
+        "b4" * 32: {"advert_at": 2**32, "carries": True},  # the sender's clock is 32 bits
+        "b5" * 32: {"advert_at": "5", "carries": True},
+        "c1" * 32: {"advert_at": 5, "carries": 1},
+        "c2" * 32: {"advert_at": 5, "carries": None},
+        "c3" * 32: {"advert_at": 5},
+        "d1" * 32: [5, True],
+        "d2" * 32: None,
+        "e1" * 32: {"advert_at": 0xFFFFFFFF, "carries": False, "later": "ignored"},
+    }})  # fmt: skip
+    with caplog.at_level(logging.WARNING):
+        checks = AdvertChecks(store)
+    assert checks.checks == {
+        "aa" * 32: AdvertCheck(1_768_464_000, True), "e1" * 32: AdvertCheck(0xFFFFFFFF, False),
+    }  # fmt: skip
+    assert caplog.text.count("invalid advert checks skipped, 2 kept") == 1
+    assert len(caplog.records) == 1
+    sections: list[object] = [[], "x", 7, None]
+    for section in sections:
+        store.save({"advert_checks": section})
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            assert AdvertChecks(store).checks == {}
+        assert caplog.text.count("invalid advert checks skipped, 0 kept") == 1
+    store.save({"other": 1})
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert AdvertChecks(store).checks == {}
+    assert caplog.text == ""  # none stored: nothing to say
+
+
+def test_advert_checks_survive_an_unwritable_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The observer keeps its checks in memory; what is stored stays until a write succeeds."""
+    store = JsonStateFile(tmp_path / "state.json")
+    checks = AdvertChecks(store)
+    checks.replace(CHECKED)
+
+    def fail(_data: object) -> None:
+        raise OSError("read-only file system")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "save", fail)
+        checks.replace({})
+    assert checks.checks == CHECKED  # unchanged: the next call tries again
+    assert "cannot store the advert checks: read-only file system" in caplog.text
+    checks.replace({})
+    assert AdvertChecks(store).checks == {}
 
 
 def test_contact_device_records_survive_and_skip_foreign_entries(

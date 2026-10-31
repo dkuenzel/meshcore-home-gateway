@@ -13,6 +13,7 @@ from meshcore_home_gateway.core.model import MessageKind, Position
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push, Response
 from meshcore_home_gateway.protocol.framing import encode_frame
+from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import (
     AckReceived,
@@ -954,6 +955,296 @@ def test_adverts_are_reported_with_the_record_of_a_node_not_added() -> None:
         assert node.advert.record.position == Position(53.55, 9.99)
 
     run(radio, scenario)
+
+
+AdvertFrame = PacketLogged | AdvertHeard | PathChanged
+
+
+async def adverts_so_far(
+    radio: EmulatedRadio, events: asyncio.Queue[RadioEvent]
+) -> list[AdvertFrame]:
+    """The logs, advert pushes and path updates the radio wrote so far, in frame order: an
+    acknowledgement pushed now marks the end."""
+    radio.acknowledge(b"\xee" * 4)
+    found: list[AdvertFrame] = []
+    while not isinstance(event := await asyncio.wait_for(events.get(), 2), AckReceived):
+        if isinstance(event, PacketLogged | AdvertHeard | PathChanged):
+            found.append(event)
+    return found
+
+
+def shown(event: AdvertFrame) -> tuple[object, ...]:
+    """A log as the advert in it (key, timestamp, lat/lon: None without the flag), a push as its
+    kind and key."""
+    if isinstance(event, PacketLogged):
+        packet = parse_packet(event.rx.raw)
+        advert = parse_advert(packet) if packet else None
+        assert advert is not None
+        key, lat, lon = advert.public_key[:2].hex(), advert.latitude_e6, advert.longitude_e6
+        return "log", key, advert.timestamp, lat, lon
+    if isinstance(event, AdvertHeard):
+        return "new" if event.advert.new else "push", event.advert.public_key[:2].hex()
+    return "path", event.public_key[:2].hex()
+
+
+def records(frames: list[AdvertFrame]) -> list[codec.ContactRecord]:
+    """The records that NEW_ADVERT pushes carry."""
+    return [e.advert.record for e in frames if isinstance(e, AdvertHeard) and e.advert.record]
+
+
+def test_logs_and_pushes_carry_their_frame_numbers() -> None:
+    """An advert's log and the radio's push for it come as consecutive frames of one session: a
+    contact's ADVERT, a node's NEW_ADVERT, the button's zero-hop form. A frame the radio writes
+    between them (a receive delay above 0, Dispatcher.cpp:138-145) breaks the sequence."""
+    carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol")
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.send_advert(ALICE)
+        radio.send_advert(carol)
+        radio.send_advert(ALICE, zero_hop=True)
+        radio.send_advert(ALICE, between=bytes([Push.PATH_UPDATED]) + BOB.public_key)
+        frames = await adverts_so_far(radio, events)
+        logs = [event for event in frames if isinstance(event, PacketLogged)]
+        pushes = [event for event in frames if isinstance(event, AdvertHeard)]
+        assert [push.advert.new for push in pushes] == [False, True, False, False]
+        assert [push.seq - log.seq for log, push in zip(logs, pushes, strict=True)] == [1, 1, 1, 2]
+        assert logs[0].seq > 0
+        assert {log.session_serial for log in logs} | {p.session_serial for p in pushes} == {
+            session.serial
+        }
+
+    run(radio, scenario)
+
+
+def test_an_emulated_advert_of_a_contact_updates_its_record_as_the_firmware_does() -> None:
+    """The log, then the record: the advert's name and type, lat/lon only with the flag (also 0,
+    0), its time; then ADVERT with the key. An advert that is not newer is a replay: logged, not
+    taken (BaseChatMesh.cpp:133-136, 190-200)."""
+    radio = EmulatedRadio(contacts=[ALICE])
+    record, alice = radio.contacts[0], "a1a1"
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        shared = radio.send_advert(ALICE, position=(50_123_456, 8_654_321))
+        assert shared == ALICE.last_advert + 60  # by default a minute after the record's
+        assert (record.latitude_e6, record.longitude_e6, record.last_advert) == (
+            50_123_456, 8_654_321, shared,
+        )  # fmt: skip
+        stopped = radio.send_advert(ALICE)  # sharing off: the record keeps the old position
+        assert (record.latitude_e6, record.longitude_e6, record.last_advert) == (
+            50_123_456, 8_654_321, stopped,
+        )  # fmt: skip
+        never = radio.send_advert(ALICE, position=(0, 0))  # sharing on, never had a position
+        assert (record.latitude_e6, record.longitude_e6, record.last_advert) == (0, 0, never)
+        radio.send_advert(ALICE, timestamp=never, position=(1, 2))  # not newer: a replay
+        assert (record.latitude_e6, record.longitude_e6, record.last_advert) == (0, 0, never)
+        renamed = radio.send_advert(replace(ALICE, name="Alice B", node_type=3))
+        assert (record.name, record.node_type, record.last_advert) == ("Alice B", 3, renamed)
+        assert [shown(event) for event in await adverts_so_far(radio, events)] == [
+            ("log", alice, shared, 50_123_456, 8_654_321), ("push", alice),
+            ("log", alice, stopped, None, None), ("push", alice),
+            ("log", alice, never, 0, 0), ("push", alice),
+            ("log", alice, never, 1, 2),
+            ("log", alice, renamed, None, None), ("push", alice),
+        ]  # fmt: skip
+        await session.refresh_contacts()
+        taken = session.contact_records[ALICE.public_key.hex()]
+        assert (taken.last_advert, taken.position, taken.name) == (renamed, None, "Alice B")
+
+    run(radio, scenario)
+
+
+def test_an_emulated_advert_of_a_node_not_added_comes_with_the_record_it_made() -> None:
+    """NEW_ADVERT carries a record made from this advert alone: lat/lon only with the flag, its
+    time, no path, no flags; also for an older advert. The radio does not add the node
+    (BaseChatMesh.cpp:108-120, 156-179)."""
+    carol = EmulatedContact(
+        bytes.fromhex("c3" * 32), "Carol", out_path_len=2, flags=1, latitude_e6=53_550_000,
+        longitude_e6=9_990_000,
+    )  # fmt: skip
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        plain = radio.send_advert(carol)  # without the flag: her record holds no position
+        located = radio.send_advert(carol, timestamp=plain + 60, position=(53_550_000, 9_990_000))
+        older = radio.send_advert(carol, timestamp=plain - 600)
+        frames = await adverts_so_far(radio, events)
+        assert [shown(event) for event in frames] == [
+            ("log", "c3c3", plain, None, None), ("new", "c3c3"),
+            ("log", "c3c3", located, 53_550_000, 9_990_000), ("new", "c3c3"),
+            ("log", "c3c3", older, None, None), ("new", "c3c3"),
+        ]  # fmt: skip
+        made = records(frames)
+        assert [(r.last_advert, r.position, r.name, r.out_path_len, r.flags) for r in made] == [
+            (plain, None, "Carol", 0xFF, 0),
+            (located, Position(53.55, 9.99), "Carol", 0xFF, 0),
+            (older, None, "Carol", 0xFF, 0),
+        ]
+        assert plain == carol.last_advert + 60
+        assert [contact.public_key for contact in radio.contacts] == [ALICE.public_key]
+        with pytest.raises(ValueError, match="EmulatedContact"):
+            radio.send_advert(carol.public_key)  # a key alone names no node it does not hold
+
+    run(radio, scenario)
+
+
+def test_an_emulated_advert_can_lose_its_log_or_its_push_or_have_a_frame_between() -> None:
+    carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol")
+    radio = EmulatedRadio(contacts=[ALICE])
+    record, alice = radio.contacts[0], "a1a1"
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        unlogged = radio.send_advert(ALICE, logged=False)  # too long for a log frame
+        assert record.last_advert == unlogged
+        unpushed = radio.send_advert(ALICE, pushed=False)  # over TCP: a full queue drops it
+        assert record.last_advert == unpushed  # the radio took it all the same
+        heard = radio.send_advert(carol, pushed=False)
+        late = radio.send_advert(ALICE, between=bytes([Push.PATH_UPDATED]) + BOB.public_key)
+        assert [shown(event) for event in await adverts_so_far(radio, events)] == [
+            ("push", alice),
+            ("log", alice, unpushed, None, None),
+            ("log", "c3c3", heard, None, None),
+            ("log", alice, late, None, None), ("path", "b2b2"), ("push", alice),
+        ]  # fmt: skip
+
+    run(radio, scenario)
+
+
+@pytest.mark.parametrize(
+    ("hops", "hash_bytes", "transport", "logged"),
+    [
+        (57, 1, False, True), (58, 1, False, False), (28, 2, False, True), (29, 2, False, False),
+        (53, 1, True, True), (54, 1, True, False),
+    ],
+)  # fmt: skip
+def test_an_emulated_advert_too_long_for_a_log_frame_is_not_logged(
+    hops: int, hash_bytes: int, transport: bool, logged: bool
+) -> None:
+    """A log frame holds at most 176 bytes (MyMesh.cpp:292): 3 + 2 + path + 100 + app data, 4
+    more with transport codes. "Alice" with a position has 14 bytes of app data: no log beyond a
+    path of 57 bytes, 53 with transport codes. The radio takes the advert all the same."""
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.send_advert(
+            ALICE, position=(50_123_456, 8_654_321), hops=hops, hash_bytes=hash_bytes,
+            transport=transport,
+        )  # fmt: skip
+        frames = await adverts_so_far(radio, events)
+        assert [type(event) for event in frames] == [PacketLogged] * logged + [AdvertHeard]
+        if isinstance(log := frames[0], PacketLogged):
+            packet = parse_packet(log.rx.raw)
+            assert packet is not None
+            assert packet.path_hashes == (bytes(hash_bytes),) * hops
+
+    run(radio, scenario)
+    with pytest.raises(ValueError, match="177 bytes"):  # nor does the emulator write one
+        radio.emit(bytes([Push.LOG_RX_DATA]) + bytes(176))
+
+
+def test_an_emulated_advert_in_its_flood_transport_and_zero_hop_forms() -> None:
+    """The advert as Mesh.cpp:404-438 and Packet.cpp:52-63 write it: flood with a hash per
+    repeater passed, transport flood with two zero codes, the button's zero-hop form (route
+    direct, no path, MyMesh.cpp:2436-2448). App data as AdvertDataHelpers.cpp:4-29: the type, the
+    flags, the name as far as it fits into 32 bytes, cut to valid UTF-8."""
+    sensor = EmulatedContact(bytes.fromhex("e5" * 32), "Greenhouse sensor at 2°C", node_type=4)
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.send_advert(ALICE, hops=2)
+        radio.send_advert(ALICE, hops=1, hash_bytes=3, transport=True)
+        radio.send_advert(ALICE, zero_hop=True)
+        radio.send_advert(ALICE, zero_hop=True, transport=True)
+        radio.send_advert(sensor)
+        radio.send_advert(sensor, position=(1, 2))  # 23 bytes left for the name
+        frames = await adverts_so_far(radio, events)
+        logs = [event for event in frames if isinstance(event, PacketLogged)]
+        packets = [parse_packet(log.rx.raw) for log in logs]
+        assert [(p.route, p.flood, p.path_hashes) for p in packets if p] == [
+            (1, True, (b"\x00", b"\x00")), (0, True, (bytes(3),)), (2, False, ()), (3, False, ()),
+            (1, True, ()), (1, True, ()),
+        ]  # fmt: skip
+        assert (logs[1].rx.raw[1:5], logs[3].rx.raw[1:5]) == (bytes(4), bytes(4))  # the codes
+        adverts = [parse_advert(packet) for packet in packets if packet]
+        assert [(a.node_type, a.name, a.position) for a in adverts if a] == [
+            (1, "Alice", None), (1, "Alice", None), (1, "Alice", None), (1, "Alice", None),
+            (4, "Greenhouse sensor at 2°C", None),
+            (4, "Greenhouse sensor at 2", Position(0.000001, 0.000002)),
+        ]  # fmt: skip
+        assert len(logs[-1].rx.raw) == 2 + 100 + 1 + 8 + 22  # not the first byte of the °
+        made = records(frames)
+        assert [(r.node_type, r.name) for r in made] == [
+            (4, "Greenhouse sensor at 2°C"), (4, "Greenhouse sensor at 2"),
+        ]  # fmt: skip
+        with pytest.raises(ValueError, match="zero hop"):
+            radio.send_advert(ALICE, zero_hop=True, hops=1)
+
+    run(radio, scenario)
+
+
+def test_an_emulated_copy_is_only_logged() -> None:
+    """`log_advert`: a copy the radio does not take (forged, a replay, a later flood copy), also
+    of a node it does not hold. The log alone; the record stays."""
+    dave = EmulatedContact(bytes.fromhex("d4" * 32), "Dave")
+    radio = EmulatedRadio(contacts=[ALICE])
+    record = radio.contacts[0]
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.log_advert(ALICE, timestamp=START_TIME, position=(50_123_456, 8_654_321), hops=3)
+        radio.log_advert(dave, timestamp=START_TIME)
+        frames = await adverts_so_far(radio, events)
+        assert [shown(event) for event in frames] == [
+            ("log", "a1a1", START_TIME, 50_123_456, 8_654_321),
+            ("log", "d4d4", START_TIME, None, None),
+        ]
+        assert isinstance(frames[0], PacketLogged)
+        packet = parse_packet(frames[0].rx.raw)
+        assert packet is not None
+        assert len(packet.path_hashes) == 3
+        assert (record.last_advert, record.latitude_e6) == (ALICE.last_advert, 0)
+
+    run(radio, scenario)
+
+
+def test_emulated_adverts_over_tcp_keep_their_frame_order() -> None:
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> list[AdvertFrame]:
+        events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        found: list[AdvertFrame] = []
+        with TcpRadioServer(radio) as server:
+            transport = TcpTransport("127.0.0.1", server.port)
+            session = CompanionSession(transport, events, command_timeout_s=1, set_clock=False)
+            try:
+                await asyncio.wait_for(session.start(fetch_messages=False), 5)
+                server.call(lambda: radio.log_advert(ALICE, timestamp=START_TIME))
+                server.call(lambda: radio.send_advert(ALICE, position=(50_123_456, 8_654_321)))
+                while len(found) < 3:
+                    event = await asyncio.wait_for(events.get(), 2)
+                    if isinstance(event, PacketLogged | AdvertHeard):
+                        found.append(event)
+            finally:
+                await session.close()
+        return found
+
+    found = asyncio.run(main())
+    assert [shown(event) for event in found] == [
+        ("log", "a1a1", START_TIME, None, None),
+        ("log", "a1a1", ALICE.last_advert + 60, 50_123_456, 8_654_321),
+        ("push", "a1a1"),
+    ]
+    copy, log, push = found
+    assert isinstance(copy, PacketLogged)
+    assert isinstance(log, PacketLogged)
+    assert isinstance(push, AdvertHeard)
+    assert push.seq - log.seq == log.seq - copy.seq == 1
 
 
 class ConfusedRadio(EmulatedRadio):
