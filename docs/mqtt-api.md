@@ -298,7 +298,7 @@ all ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 | `verified` | the radio holds the time of a signed advert of this key, so name and type are the key holder's own: a node the gateway heard advertising is `true` at once; one it had not heard (added from a link, a card or a bare key) is `false` until its first advert |
 | `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods. After a path reset (a message's flood fallback) `false` at once |
 | `last_advert_at` | the contact's clock at its newest advert |
-| `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`, `telemetry`): its telemetry answers move `heard_at` at most once an hour; `hops`, `snr_db` and `rssi_dbm` are those of its last advert or message (an answer reports none), `hops` `null` for a direct route, `rssi_dbm` only from adverts |
+| `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`, `telemetry`): its telemetry answers move `heard_at` at most once an hour; `hops`, `snr_db` and `rssi_dbm` are those of its last advert or message (an answer reports none), `hops` `null` for a direct route, `rssi_dbm` only from adverts; all three `null` for an advert whose own log the gateway did not get ([design §6.6](design.md#66-observer-documents-and-history)) |
 | `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) while its newest checked advert carries one (`null` after one that does not, unless telemetry gives one), or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; for an advert read at start, the time of the newest advert; when a carrying advert brings a position back, that advert's time), never when the companion took it: a position in an advert or an answer can be one the companion saved long ago, and neither carries the fix's age. A position from telemetry expires (`position_current`); the document keeps it |
 | `position_accuracy_m` | 15 for a position from telemetry (the 0.0001° cell it is sent in, and the receiver's own error), else `null` |
 | `position_received_at` | the newest telemetry answer that carried a position (also when it did not move); after a restart from the saved schedule (`null` if the clock went back meanwhile) |
@@ -395,8 +395,8 @@ node's own screen before adding a flagged one. The top-level list names up to 16
 `look_alike_total` counts them all. An older advert of a heard node does not replace the record
 of its newest one, also not after a restart.
 
-`hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert; that log is not
-authenticated, so treat them as a hint.
+`hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert, `null` without
+its own log; that log is not authenticated, so treat them as a hint.
 
 ## History: `history`
 

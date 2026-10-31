@@ -540,7 +540,7 @@ class Observer:
             check = result.check
             if check is None or check == held or (held is not None and check.at < held.at):
                 continue
-            self.mesh.advert_checked(key, check, at)  # the documents and the devices follow
+            self.mesh.advert_checked(key, check, at, previous)  # the documents and devices follow
             kept = "" if check.carries or tracked.node.position is None else (
                 " (the radio's record keeps an older one)")  # fmt: skip
             log.info("contact %s: its advert carries %s%s", key[:12],
@@ -602,11 +602,16 @@ class Observer:
         logged_at, signal = self._logged.pop(key, (0.0, Signal()))
         if at - logged_at > LOGGED_ADVERT_S:
             signal = Signal()
-        last = self._logged_adverts[-1] if self._logged_adverts else None
-        # its own log only while the radio handles each packet in the pass that logs it (D2)
-        near = adverts.adjacent(last, key, frame) if self._no_rx_delay() else None
-        if near is not None:  # its own log (design 6c D13): not a later copy of an older advert
-            signal = near.signal
+        near = None
+        if self._no_rx_delay():  # the radio handles each packet in the pass that logs it (D2)
+            last = self._logged_adverts[-1] if self._logged_adverts else None
+            near = adverts.adjacent(last, key, frame)
+            # it writes an advert's log directly before its push: any other log is another
+            # packet, a late copy of an older advert or a forged one (design 6c D13). Without
+            # its own log the advert has no signal, as one that was not logged at all.
+            record = advert.record
+            own = near is not None and (record is None or near.timestamp == record.last_advert)
+            signal = near.signal if near is not None and own else Signal()
         # the advert the radio took, for the next table read; later logs do not count for it
         pushed = adverts.Pushed(at, near, adverts.candidates(self._logged_adverts, key, at))
         heard = Heard(at, "advert", signal)

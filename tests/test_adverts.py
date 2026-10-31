@@ -169,6 +169,27 @@ def test_a_read_older_than_the_push_waits_then_gives_up() -> None:
     assert outcome(back, stale, None, T + 1) == Outcome(wait=True)
 
 
+def test_a_read_older_than_the_push_waits_also_with_a_log_of_its_own_time() -> None:
+    """The radio writes one record per pass and handles the mesh between them (MyMesh.cpp:
+    2388-2410): a read can show Alice's record from before the pushed advert while the log of
+    that older advert is still in the window. A contact's push means the radio took an advert
+    newer than the record it held (BaseChatMesh.cpp:133-136): the read waits for the next one."""
+    shown = log(5, TA - 60, at=T - 10)  # the advert the stale read shows, logged 10 s before
+    newest = log(10, carries=False)  # she stopped sharing
+    stale = record(TA - 60)
+    pushed = push([shown, newest], 11)
+    assert outcome(pushed, stale, None, T + 1) == Outcome(wait=True)  # its own log is newer
+    assert outcome(pushed, stale, stale, T + 1) == Outcome(wait=True)
+    delayed = push([shown, newest], 11, no_delay=False)  # no adjacent log
+    assert outcome(delayed, stale, stale, T + WAIT_S) == Outcome(wait=True)  # the record is old
+    assert outcome(delayed, stale, record(TA - 120), T + 1) == Outcome(AdvertCheck(TA - 60, True))
+    # the next read shows the pushed advert and decides
+    assert outcome(pushed, record(), stale, T + 3) == Outcome(AdvertCheck(TA, False))
+    assert outcome(delayed, record(), stale, T + 3) == Outcome(AdvertCheck(TA, False))
+    # no read showed it in time: the log of the record's time decides, as without the wait
+    assert outcome(pushed, stale, stale, T + WAIT_S + 1) == Outcome(AdvertCheck(TA - 60, True))
+
+
 def test_no_log_decides_nothing_but_a_new_record_position_does() -> None:
     lost = push([], 11)  # too long for a log frame
     assert outcome(lost, record(), record(TA - 60), T + 2) == Outcome(problem="not_logged")

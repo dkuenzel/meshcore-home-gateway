@@ -16,6 +16,7 @@ import pytest
 
 from meshcore_home_gateway.bridge import protected_keys
 from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core.adverts import MAX_LOGGED
 from meshcore_home_gateway.core.mesh import AdvertCheck, Fix, Heard
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.telemetry import Answer, TelemetryState
@@ -49,7 +50,16 @@ from tests.radio_emulator import (
     EmulatedRadio,
     advert_packet,
 )
-from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
+from tests.test_bridge import (
+    ALICE,
+    BOB,
+    NOW,
+    FakeBus,
+    fast_timers,  # noqa: F401 - autouse: an advert's read in 50 ms
+    make_config,
+    running,
+    scenario,
+)
 
 ROOT = "meshcore/radio1"
 TOPICS = Topics("meshcore", "radio1")
@@ -1484,6 +1494,107 @@ def test_a_table_read_older_than_the_advert_waits_for_the_next_one(tmp_path: Pat
     assert checked(bus, key)[:2] == (False, iso(stopped))
 
 
+@pytest.mark.parametrize(
+    ("positions", "expected"),
+    [
+        ((None, SHARED, None), (False, None, None)),  # she stops sharing
+        ((SHARED, None, SHARED), (True, 50.123456, "advert")),  # she shares again from that place
+        ((None, None, (0, 0)), (True, None, None)),  # she shares, never having had a position
+    ],
+    ids=["stop", "start", "0,0"],
+)
+def test_a_read_that_sent_her_record_before_her_next_advert_waits_for_the_next_one(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    positions: tuple[tuple[int, int] | None, ...], expected: tuple[Any, ...],
+) -> None:  # fmt: skip
+    """The radio writes one record per pass and handles the mesh between them (MyMesh.cpp:
+    2388-2410): a read can show her record from before the advert whose push came during it,
+    while the log of her advert before is still in the window. The read waits, the next read
+    decides, with no "not checked" line: her newest advert's log is newer than the record, or,
+    with a receive delay, the record is no newer than at the read before (design 6c D2, §3.3)."""
+    held, before, after = positions  # her record's, her advert's before, her newest advert's
+    alice = replace(ALICE, latitude_e6=held[0], longitude_e6=held[1]) if held else ALICE
+    key = alice.public_key.hex()
+    caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway.observer")
+    for tuning in (NO_DELAY, DELAYED):
+        state = tmp_path / str(tuning.rx_delay_base_milli)
+        state.mkdir()
+        _observer, bus, air = checking(state, alice, tuning=tuning)
+        air.advert(alice, before)
+        air.read()
+        first = checked(bus, key)
+        air.clock.now += 10
+        sent = table(*air.records.values())  # the read had sent her record when the radio took it
+        newest = air.advert(alice, after)
+        air.observer.radio_event(ContactsRead(sent, air.clock.now))
+        assert checked(bus, key) == first
+        air.clock.now += 2
+        air.read()
+        assert checked(bus, key) == (expected[0], iso(newest), *expected[1:])
+        assert contact_events(bus) == [key]  # when her check turned to carrying
+    assert "was not checked" not in caplog.text
+
+
+def test_a_check_that_turns_to_carrying_raises_the_event(tmp_path: Path) -> None:
+    """She was added after an advert without her position, or stopped sharing; then she shares
+    it: `position_in_advert` (design 6c D9, the guide's automation)."""
+    _observer, bus, air = checking(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    stopped = air.advert(ALICE)
+    air.read()
+    assert checked(bus, key)[:2] == (False, iso(stopped))
+    assert contact_events(bus) == []
+    shared = air.advert(ALICE, SHARED)
+    air.read()
+    assert checked(bus, key)[:2] == (True, iso(shared))
+    assert contact_events(bus) == [key]
+
+
+def test_sharing_again_from_another_place_replaces_a_telemetry_position(tmp_path: Path) -> None:
+    """She stopped sharing and telemetry gave her position. She shares again from another place:
+    the changed position in her adverts replaces the telemetry one, as when her last check
+    carried one (design 6c D12, G26); the same place again does not."""
+    observer, bus, air = checking(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    air.advert(ALICE, SHARED)
+    air.read()
+    stopped = air.advert(ALICE)
+    air.read()
+    observer.telemetry(key, answer(NOW + 10))
+    assert checked(bus, key) == (False, iso(stopped), 50.12345, "telemetry")
+    moved = air.advert(ALICE, MOVED)
+    air.read()
+    assert checked(bus, key) == (True, iso(moved), 50.124, "advert")
+    assert last(bus, f"{ROOT}/contacts/{key}")["position_current"] is None  # does not expire
+    observer.telemetry(key, answer(NOW + 20))
+    air.advert(ALICE)
+    air.read()
+    again = air.advert(ALICE, MOVED)  # the record's position did not change
+    air.read()
+    assert checked(bus, key) == (True, iso(again), 50.12345, "telemetry")
+
+
+def test_a_logged_position_that_is_not_the_records_decides_nothing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The radio copies the position of the advert it took into the record (BaseChatMesh.cpp:
+    193-196): a flagged log with another one, directly before the push, is not that advert.
+    Nothing is learned, with a warning (design 6c §3.3)."""
+    _observer, bus, air = checking(tmp_path, ALICE)
+    key = ALICE.public_key.hex()
+    caplog.set_level(logging.WARNING, logger="meshcore_home_gateway.observer")
+    shared = air.advert(ALICE, SHARED)
+    air.read()
+    record = air.records[ALICE.public_key]
+    record.last_advert += 60
+    air.log(record, record.last_advert, MOVED)  # the record keeps SHARED
+    air.push(record)
+    air.read()
+    assert checked(bus, key)[:2] == (True, iso(shared))
+    warning = f"contact {key[:12]}: a logged copy of its advert differs from the one the radio took"
+    assert caplog.text.count(warning) == 1
+
+
 def test_a_logged_advert_without_its_push_decides_nothing(tmp_path: Path) -> None:
     """Anyone can transmit a log (unverified, Dispatcher.cpp:199): without the radio's push it is
     never trusted, also when a read shows its time; a new position in the record is (D3)."""
@@ -1507,9 +1618,11 @@ def test_the_radios_own_advert_heard_back_is_not_checked(tmp_path: Path) -> None
 
 
 def test_the_signal_of_an_advert_comes_from_its_own_log(tmp_path: Path) -> None:
-    """While the receive delay is 0 the frame directly before the push is its own log, also when
-    the push is read late: its hops and SNR. Without that log, or with a delay, a log of the key
-    within 10 s, as before (design 6c D13)."""
+    """While the receive delay is 0 the radio writes an advert's log directly before its push,
+    also when the push is read late: its hops and SNR. Any other log is another packet (a late
+    copy of an older advert, a forged one): without its own log a push takes no signal, as an
+    advert without any log; a NEW_ADVERT's log only with the record's time. With a delay, or one
+    not known, a log of the key within 10 s, as before (design 6c D13)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     first = ALICE.last_advert + 60
@@ -1522,23 +1635,49 @@ def test_the_signal_of_an_advert_comes_from_its_own_log(tmp_path: Path) -> None:
 
     def signal() -> tuple[Any, ...]:
         document = last(bus, f"{ROOT}/contacts/{key}")
-        return document["hops"], document["snr_db"]
+        return document["hops"], document["snr_db"], document["heard_at"]
 
-    assert signal() == (2, 4.5)
-    air.log(ALICE, first + 120, hops=4, snr_db=1.0)
-    air.frame()  # another frame between: the window
+    assert signal() == (2, 4.5, iso(air.clock.now))
+    air.log(ALICE, first + 60, hops=4, snr_db=1.0)  # a late copy of her advert before
+    air.log(BOB, BOB.last_advert + 60)  # a stranger's advert: hers was too long for a frame
     air.push(ALICE)
-    assert signal() == (4, 1.0)
+    assert signal() == (None, None, iso(air.clock.now))  # heard, without a signal
     air.log(ALICE, first + 180, hops=5)
-    air.frame()
-    air.clock.now += 11
+    air.frame()  # another frame between
     air.push(ALICE)
+    assert signal() == (None, None, iso(air.clock.now))
+    for tuning in (DELAYED, None):  # the window, as before
+        _observer, bus, air = checking(tmp_path, ALICE, tuning=tuning)
+        air.log(ALICE, first, hops=4, snr_db=1.0)
+        air.log(BOB, BOB.last_advert + 60)
+        air.clock.now += 10
+        air.push(ALICE)
+        assert signal()[:2] == (4, 1.0)
+        air.log(ALICE, first + 60, hops=1)
+        air.clock.now += 11
+        air.push(ALICE)  # the frame before it, but no longer in the window
+        assert signal()[:2] == (None, None)
+
+
+def test_a_heard_nodes_signal_comes_from_its_own_log(tmp_path: Path) -> None:
+    """A NEW_ADVERT carries the record made from its advert: while the receive delay is 0 the
+    log directly before it is its own only with the record's time. A late copy of an older
+    advert there gives no signal (design 6c D13)."""
+    _observer, bus, air = checking(tmp_path, ALICE)
+    key = DAVE.public_key.hex()
+    older = DAVE.last_advert + 60
+    air.log(DAVE, older, hops=3, snr_db=-2.0)  # a late copy of his advert before
+    air.heard(DAVE, timestamp=older + 60, logged=False)  # too long for a frame
+
+    def signal() -> tuple[Any, ...]:
+        node = next(n for n in last(bus, f"{ROOT}/nodes")["nodes"] if n["key"] == key)
+        return node["hops"], node["snr_db"]
+
     assert signal() == (None, None)
-    _observer, bus, air = checking(tmp_path, ALICE, tuning=DELAYED)
-    air.log(ALICE, first, hops=1)
-    air.clock.now += 11
-    air.push(ALICE)  # the frame before it, but no longer in the window
-    assert signal() == (None, None)
+    event = bus.payloads(f"{ROOT}/node")[0]
+    assert (event["key"], event["hops"], event["snr_db"]) == (key, None, None)
+    air.heard(DAVE, timestamp=older + 120)  # logged directly before
+    assert signal() == (0, 6.0)
 
 
 def test_with_a_receive_delay_a_log_up_to_40_s_before_the_push_counts(tmp_path: Path) -> None:
@@ -1594,8 +1733,9 @@ def test_a_companion_heard_before_it_is_added_starts_checked(
 ) -> None:
     """The gateway adds a heard node without a position and with its advert's time, which the
     radio then refuses as not newer (F12): the advert its NEW_ADVERT carried is the check, and
-    the event follows `added` (design 6c D27, D9). A heard node keeps no position, a heard
-    repeater no check; a stranger's differing copy is only a debug line."""
+    the event follows `added` (design 6c D27, D9). A position in the record it made tells also
+    without a log. A heard node keeps no position, a heard repeater no check; a stranger's
+    differing copy is only a debug line."""
     observer, bus, air = checking(tmp_path, ALICE)
     caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway.observer")
     erin = EmulatedContact(bytes.fromhex("e1" * 32), "Erin", last_advert=int(NOW) - 40)
@@ -1607,21 +1747,26 @@ def test_a_companion_heard_before_it_is_added_starts_checked(
     air.heard(erin, timestamp=times[1])
     air.log(hill, times[2], SHARED)  # and of the repeater's
     air.heard(hill, timestamp=times[2])
-    air.heard(gail, timestamp=times[3], logged=False)  # too long for a frame
+    air.heard(gail, SHARED, timestamp=times[3], logged=False)  # too long for a frame
     nodes = [observer.mesh.nodes[node.public_key.hex()] for node in (DAVE, erin, hill, gail)]
     assert [tracked.advert for tracked in nodes] == [
-        AdvertCheck(times[0], True), AdvertCheck(times[1], False), None, None,
+        AdvertCheck(times[0], True), AdvertCheck(times[1], False), None,
+        AdvertCheck(times[3], True),  # the position in her record tells, without a log
     ]  # fmt: skip
     assert [tracked.node.position for tracked in nodes] == [None, None, None, None]
     assert caplog.text.count("node ") == 1  # Erin's copy only
-    for node, at in ((DAVE, times[0]), (erin, times[1])):  # added through the gateway
+    for node, at in ((DAVE, times[0]), (erin, times[1]), (gail, times[3])):  # added by the gateway
         air.records[node.public_key] = replace(node, last_advert=at)
     air.read()
-    dave, erin_key = DAVE.public_key.hex(), erin.public_key.hex()
+    dave, erin_key, gail_key = (node.public_key.hex() for node in (DAVE, erin, gail))
     assert checked(bus, dave) == (True, iso(times[0]), None, None)
     assert checked(bus, erin_key)[:2] == (False, iso(times[1]))
+    assert checked(bus, gail_key) == (True, iso(times[3]), None, None)
     events = [(e["event_type"], e["key"]) for e in bus.payloads(f"{ROOT}/contact")]
-    assert events == [("added", dave), ("added", erin_key), ("position_in_advert", dave)]
+    assert events == [
+        ("added", dave), ("added", erin_key), ("added", gail_key),
+        ("position_in_advert", dave), ("position_in_advert", gail_key),
+    ]  # fmt: skip
     copy = f"node {erin_key[:12]}: a logged copy of its advert differs from the one the radio took"
     assert copy in caplog.text
     assert "WARNING" not in caplog.text
@@ -1669,8 +1814,12 @@ def test_a_contact_the_radio_added_by_itself_is_checked_from_its_push(tmp_path: 
 def test_a_logged_position_is_held_only_while_it_can_decide(tmp_path: Path) -> None:
     """A log goes after 40 s, a pushed advert without a read after 70 s: at the next log, push
     or read, and on a quiet mesh at the tick. No position from a log is held for longer than
-    about two minutes (design 6c §3.1)."""
+    about two minutes, and no more than 64 logs (design 6c §3.1)."""
     observer, bus, air = checking(tmp_path, ALICE, BOB)
+    for timestamp in range(int(NOW), int(NOW) + MAX_LOGGED + 5):  # a burst, forged ones perhaps
+        air.log(ALICE, timestamp, SHARED)
+    assert len(observer._logged_adverts) == MAX_LOGGED
+    air.clock.now += 41
     air.log(ALICE, int(NOW), SHARED)
     air.clock.now += 41
     air.push(BOB)
@@ -1691,6 +1840,9 @@ def test_a_logged_position_is_held_only_while_it_can_decide(tmp_path: Path) -> N
     air.clock.now += 71
     air.read()  # the next session's: too late for the pushed advert
     assert checked(bus, BOB.public_key.hex())[:2] == (False, None)
+    for timestamp in range(int(NOW), int(NOW) + MAX_LOGGED + 5):  # also once some were dropped
+        air.log(ALICE, timestamp, SHARED)
+    assert len(observer._logged_adverts) == MAX_LOGGED
 
 
 def test_after_an_advert_the_gateway_missed_the_value_errs_to_warn(tmp_path: Path) -> None:

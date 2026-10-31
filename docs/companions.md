@@ -160,8 +160,11 @@ and the event *Contact* `position_in_advert` comes when such a companion starts 
 Until the gateway has checked a companion's newest advert (after the update, an advert it missed,
 or one made while it was stopped), it goes by the radio's record: the sensor is on while the last
 check carried a position or the record holds one from an earlier advert. The radio keeps that
-position after the companion stops sharing, so press *Advert* once on each companion within range
-of the gateway's radio, or send a flood advert from its app, after the update and after switching
+position after the companion stops sharing, so the sensor can be on although it no longer shares.
+It can also be off although it shares, while the record holds no position: the companion never
+had one, or it was added (by the gateway before 1.1.0a3, or from a key or a link) and has not
+adverted since. So press *Advert* once on each companion within range of the gateway's radio, or
+send a flood advert from its app, after the update whatever its sensor shows, and after switching
 sharing off.
 
 ## Privacy
@@ -169,7 +172,8 @@ sharing off.
 "Allow All" instead of "From Specific Contacts" gives the position to every contact of the
 companion: anyone it has as a contact can ask. "Share Position in Advert" gives it to everyone in
 range. The radio's record of a companion keeps the last position its adverts carried; the gateway
-shows a position from adverts only while the companion shares it. The gateway itself reveals
+shows a position from adverts only while the last advert it checked carried it (press *Advert*
+near the gateway after switching sharing off). The gateway itself reveals
 nothing it learns on the mesh; positions and readings reach the MQTT broker and Home Assistant,
 and the history keeps them for `[history] positions_days` and `readings_days`. Excluding a
 companion stops the requests and forgets its current values;

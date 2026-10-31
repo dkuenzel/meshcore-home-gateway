@@ -465,6 +465,32 @@ def test_a_check_with_a_position_brings_the_record_position_back_at_the_adverts_
     assert tracked.fix == Fix(HOME, T + 12, "advert")
 
 
+def test_a_check_that_carries_a_changed_position_replaces_a_telemetry_fix() -> None:
+    """The table read takes the record before its advert is checked: under the check before
+    (none carried) the changed position was not shared. The check that carries it replaces a
+    telemetry fix as a changed advert position does (design 6c G26); an unchanged one does not."""
+    mesh = Mesh()
+    key = ALICE.public_key
+    mesh.contacts_read([SHARED], T)
+    mesh.advert_checked(key, AdvertCheck(int(T) - 600, False), T)
+    mesh.contact_answered(key, T + 10, FIELD, None)
+    elsewhere = Position(53.57, 10.02)
+    moved = replace(SHARED, last_advert=int(T) + 60, position=elsewhere)
+    mesh.contacts_read([moved], T + 120)
+    tracked = mesh.contacts[key]
+    assert tracked.fix == Fix(FIELD, T + 10, "telemetry")  # the check before carried none
+    assert mesh.advert_checked(key, AdvertCheck(int(T) + 60, True), T + 120, SHARED)
+    assert tracked.fix == Fix(elsewhere, T + 120, "advert")
+    mesh.contact_answered(key, T + 130, FIELD, None)
+    stopped = replace(moved, last_advert=int(T) + 90)
+    mesh.contacts_read([stopped], T + 140)
+    mesh.advert_checked(key, AdvertCheck(int(T) + 90, False), T + 140)
+    again = replace(moved, last_advert=int(T) + 150)
+    mesh.contacts_read([again], T + 160)
+    assert not mesh.advert_checked(key, AdvertCheck(int(T) + 150, True), T + 160, stopped)
+    assert tracked.fix == Fix(FIELD, T + 130, "telemetry")
+
+
 def test_an_older_check_is_ignored() -> None:
     mesh = Mesh()
     key = ALICE.public_key

@@ -478,9 +478,12 @@ flowchart LR
   file, so contacts removed while the gateway was stopped are cleared at its first table read.
 * **Signals of adverts**: the radio logs every packet before it handles it, and pushes `ADVERT` or
   `NEW_ADVERT` only for adverts whose signature it accepted. The observer takes hops, SNR and RSSI
-  from the push's own log: while the radio's receive delay is 0 (its default, read at connect),
-  the logged advert of the same key that is the frame directly before the push; else from a logged
-  advert of the key within 10 s before it. The logged content itself is never trusted on its own
+  from the push's own log. While the radio's receive delay is 0 (its default, read at connect),
+  that is the logged advert of the same key that is the frame directly before the push, for a
+  `NEW_ADVERT` only with its record's time. Any other log is another packet (a late copy of an
+  older advert, or a forged one), so a push without its own log gets no signal, as an advert that
+  was not logged. With a receive delay above 0, or one not known, a logged advert of the key within
+  10 s before the push gives them. The logged content itself is never trusted on its own
   (protocol.md, section 4).
 * **Positions** come from contact records (the radio keeps the position of a contact's newest
   advert that carried one, also after the contact stopped sharing it) and from the contacts' own
@@ -491,7 +494,8 @@ flowchart LR
   time is when it changed, so a companion at rest writes nothing per answer, neither in the
   history nor in Home Assistant's recorder. It carries an accuracy of 15 m (the cell of 0.0001°
   the encoder truncates to, and the receiver's own error). A changed advert position replaces a
-  telemetry fix, an unchanged one does not. A position from telemetry expires (§6.11):
+  telemetry fix, also at the check that shows a companion shares it again; an unchanged one does
+  not. A position from telemetry expires (§6.11):
   `position_current` says whether it is current, and the document keeps it. Nodes that are not
   contacts keep none.
 * **Positions in adverts** ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md),
@@ -500,17 +504,19 @@ flowchart LR
   shows the logged timestamp as `last_advert` decides: while the receive delay is 0, the log that
   is the frame directly before the push; otherwise every log of the key with that timestamp must
   agree. A flagged log must hold the record's position; a new position in the record since the
-  read before, with a newer `last_advert`, is evidence on its own. A read older than the log waits
-  for the next one (at most 30 s). A heard companion's `NEW_ADVERT` carries the record made from
-  that advert alone and is checked at once; its heard node keeps only the time and flag, and the
-  table read that adds it takes them. When nothing is learned the last check stays and one debug
-  line says "not checked". While a companion's newest advert is not checked,
-  `advert_carries_position` is the last check's flag, or `true` when the record holds a position:
-  it errs to warn. The index lists the companions not excluded from telemetry whose value is
-  `true`; the event `position_in_advert` comes when such a companion's check turns to carrying, at
-  an add with a check that carries, and at an inclusion while it carries. The last check of each
-  companion is kept in the state file (`advert_checks`, no position); a logged position is held at
-  most about two minutes and never stored or published.
+  read before, with a newer `last_advert`, is evidence on its own. The radio pushes a contact's
+  advert only when it is newer than its record, so a read whose record is no newer than the push's
+  own log, or than at the read before, was sent before the radio took it: it waits for the next
+  read (at most 30 s), also while a log of the record's time is in the window. A heard companion's
+  `NEW_ADVERT` carries the record made from that advert alone and is checked at once; its heard
+  node keeps only the time and flag, and the table read that adds it takes them. When nothing is
+  learned the last check stays and one debug line says "not checked". While a companion's newest
+  advert is not checked, `advert_carries_position` is the last check's flag, or `true` when the
+  record holds a position: it errs to warn. The index lists the companions not excluded from
+  telemetry whose value is `true`; the event `position_in_advert` comes when such a companion's
+  check turns to carrying, at an add with a check that carries, and at an inclusion while it
+  carries. The last check of each companion is kept in the state file (`advert_checks`, no
+  position); a logged position is held at most about two minutes and never stored or published.
 * **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
   `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
   history's table `reading`, one row per value, in one transaction. The table was added to the
@@ -953,8 +959,12 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   stopped, a companion added from a key or a link before the gateway heard it. Until the newest
   advert is checked the radio's record decides: a companion that stopped sharing warns again after
   an unchecked advert, until its next checked advert; one that starts sharing while unchecked is
-  missed only if its record holds no position (it never had one, or it was added before the
-  gateway heard it), until its next advert. Two adverts between two table reads, sharing switched
+  missed only if its record holds no position, until its next advert: it never had one (0, 0); the
+  gateway added it before 1.1.0a3, or after a restart between hearing and adding it; or it was
+  added from a key or a link before the gateway heard it. A second advert during the table read
+  that the first one started goes unchecked when no log of its own is directly before its push (a
+  receive delay above 0 or not known, or a log too long for a frame): the read shows the first,
+  and the gateway cannot tell that it is old. Two adverts between two table reads, sharing switched
   off in between, read as sharing when the first one changed the record's position; another
   client of the radio that writes a contact with a newer advert time and another position does
   the same.
@@ -1005,8 +1015,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | A bug while the states are evaluated | exception | logged at most once a minute; the step goes on | log error |
 | Radio away | no session | telemetry paused at once; states turn `away` after `current_s`; no event | `state.telemetry = paused`, `telemetry_reason = no_radio` |
 | The clock set back while stopped | negative age | ages unknown: last answers count as more than a day old, no located time, the first-start hour kept whole | – |
-| An advert the radio took but did not report (over TCP its push dropped), or one made while the gateway was stopped | `last_advert` grew without a push | not checked: a new position in the record at the next table read counts; else the last check stays, and the value errs to warn | log debug "not checked"; `advert_checked_at` older than `last_advert_at` |
-| An advert without its log (too long for a frame), or a read that never shows the logged advert | no log with the record's time | as above; a read older than the log waits for the next one, at most 30 s | log debug "not checked" |
+| An advert the radio took but did not report (over TCP its push dropped) | `last_advert` grew without a push | not checked: a new position in the record at the next table read counts; else the last check stays, and the value errs to warn | log debug "not checked"; `advert_checked_at` older than `last_advert_at` |
+| An advert made while the gateway was stopped | at the first table read, `last_advert` is newer than the stored check | not checked: the first read compares nothing, so the last check stays and the value errs to warn; no event, and no advert position comes back | log debug "not checked" at the first read; `advert_checked_at` older than `last_advert_at` |
+| An advert without its log (too long for a frame), or a read that never shows the logged advert | no log with the record's time | not checked: a new position in the record counts; else the last check stays, and the value errs to warn | log debug "not checked" |
+| A table read that started before the radio took the advert (its push came during the read) | the push's own log is newer than the record, or the record is no newer than at the read before | the read waits for the next one, at most 30 s, which decides | – |
 | Logged copies of one advert that differ, or a log against the record | comparison | nothing learned; the last check stays | log warning |
 | A receive delay above 0, or firmware that reports no tuning | the tuning read at connect | the frame before the push does not decide; all logs of the key with the advert's time must agree | – |
 | Advert checks in the state file invalid or not writable | validation, error on save | invalid entries skipped; the checks are kept in memory, and the next change writes them again | log warning |

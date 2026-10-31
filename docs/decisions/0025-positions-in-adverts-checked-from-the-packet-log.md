@@ -51,7 +51,8 @@ sends nothing to the radio and does not turn the warning off for a companion tha
   directly before the push decides: the radio logs and handles a packet in one pass, so a forged
   copy is never there. Otherwise every log of the key with that timestamp within 40 s before the
   push must agree. A flagged log must hold the position the record took. A new position in the
-  record since the read before, with a newer `last_advert`, is evidence on its own. A chat node
+  record since the read before, with a newer `last_advert`, is evidence on its own. A table read
+  that shows the record from before the pushed advert waits for the next one. A chat node
   the radio did not add is checked from its `NEW_ADVERT`, whose record the radio made from that
   advert alone; the gateway keeps the time and flag with the heard node and the table read that
   adds it takes them. The flag with 0, 0 (a companion that never had a position) counts as
@@ -63,8 +64,9 @@ sends nothing to the radio and does not turn the warning off for a companion tha
   the gateway was stopped), the last check's flag, or `true` when the record holds a position.
   `advert_checked_at` tells the cases apart. No event comes for the record's value.
 * **A position from adverts follows the check.** It is shown only while the record holds one and
-  the contact's last checked advert, if any, carried one; a telemetry position is never touched.
-  An advert that could not be checked changes nothing.
+  the contact's last checked advert, if any, carried one. A check never drops a telemetry
+  position; a changed advert position replaces it, as before, also at the check that shows the
+  companion shares again. An advert that could not be checked changes nothing.
 * The last check of each companion is kept in the state file, without a position. A logged
   position is held only to compare it, for at most about two minutes, and never stored,
   published or logged.
@@ -78,15 +80,17 @@ position), and `advert_carries_position`, `advert_checked_at`, the index keys, t
 
 * Good, because the gateway sends no command for the check; the radio's buffer and the session
   stay as they were.
-* Good, because the warning is not missed at the update or after an advert the gateway could not
-  check: the record errs to warn, and its values at the update equal those of 1.0.0's
-  `advert_position` for the companions, so nothing flips and no event comes.
+* Good, because no warning that 1.0.0's `advert_position` gave turns off at the update: the
+  values at the update equal it for the companions, so nothing flips and no event comes. After an
+  advert the gateway could not check, the record errs to warn.
 * Good, because a companion that stopped sharing leaves the map once a checked advert shows it,
   instead of keeping its last shared place for ever.
 * Bad, because a companion that stopped sharing warns again after an advert the gateway could not
   check, until its next checked advert.
-* Bad, because a companion added from a key or a link before the gateway heard it, whose record
-  holds no position, reads `false` until its next advert, also if it shares.
+* Bad, because a companion whose record holds no position reads `false` until its next advert,
+  also if it shares: one that never had a position (0, 0), one the gateway added before 1.1.0a3
+  or after a restart between hearing and adding it, and one added from a key or a link before the
+  gateway heard it.
 * Bad, because a position in an advert can be one the companion saved long ago: the advert does
   not say when the fix was taken.
 * Neutral, because a forged copy without the flag can still decide when the real advert's log was

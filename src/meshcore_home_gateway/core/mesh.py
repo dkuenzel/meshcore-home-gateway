@@ -246,12 +246,16 @@ class Mesh:
             advert = tracked.node.last_advert
             tracked.fix = Fix(position, advert if 0 < advert <= at else at, "advert")
 
-    def advert_checked(self, key: str, check: AdvertCheck, at: float) -> bool:
+    def advert_checked(
+        self, key: str, check: AdvertCheck, at: float, previous: Node | None = None
+    ) -> bool:
         """A companion's advert was checked (`core.adverts`): the check replaces the one held,
         unless it is older, and the advert fix follows `_shared` (design 6c D12): dropped when the
         check carries none, the record's position when it carries one and the contact has no fix
-        or an advert fix elsewhere. A telemetry fix is never touched. True when the fix changed;
-        nothing for a key that is no companion."""
+        or an advert fix elsewhere. A position that changed since `previous`, the record of the
+        read before, replaces a telemetry fix too, as in `_advert_fix`, which ran under the check
+        before; else a telemetry fix is never touched. True when the fix changed; nothing for a
+        key that is no companion."""
         tracked = self.contacts.get(key)
         if tracked is None or tracked.node.node_type != COMPANION:
             return False
@@ -262,6 +266,8 @@ class Mesh:
         if position is None or not _shared(tracked):
             if _from_advert(before):
                 tracked.fix = None
+        elif previous is not None and previous.position != position:
+            tracked.fix = Fix(position, at, "advert")
         elif before is None or (_from_advert(before) and before.position != position):
             advert = tracked.node.last_advert  # the newest advert carried it: its own time
             tracked.fix = Fix(position, advert if 0 < advert <= at else at, "advert")

@@ -53,7 +53,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_noise_floor` | signal strength (dBm), diagnostic | the radio's noise floor |
 | `sensor.meshcore_home_gateway_radio1_radio_airtime` | duration (s), diagnostic | what the radio itself counted as sent in the last hour, adverts and acknowledgements included; attributes `window_s`, `airtime_factor`, `duty_cycle_percent` |
 | `binary_sensor.meshcore_home_gateway_radio1_remote_cli` | problem, diagnostic | a contact may use the radio's command line over the air; attribute `contacts` ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)) |
-| `binary_sensor.meshcore_home_gateway_radio1_advert_position` | problem, diagnostic | *Companion position in adverts*: a companion not excluded from telemetry sends its position in its newest advert, which everyone in range can read (until the gateway has checked that advert, as the radio's record says); attributes `contacts` (at most 16 keys) and `total` |
+| `binary_sensor.meshcore_home_gateway_radio1_advert_position` | problem, diagnostic | *Companion position in adverts*: a companion not excluded from telemetry sends its position in its newest advert, which everyone in range can read (until the gateway has checked that advert: on while its last check carried one or the radio's record holds one); attributes `contacts` (at most 16 keys) and `total` |
 | `button.meshcore_home_gateway_radio1_show_hidden` | configuration | shows the contacts deleted in Home Assistant again (next section) |
 | `select.meshcore_home_gateway_radio1_add_node` | select, configuration | *Add heard node*: adds the heard node picked to the radio ([below](#adding-and-removing-contacts)) |
 | `text.meshcore_home_gateway_radio1_add_contact` | text, configuration | *Add contact (key or link)*: adds the contact of a public key or contact link |
@@ -119,7 +119,8 @@ changed position, and when the position switches between adverts and telemetry, 
 rest adds no state per answer. With `gps_accuracy` Home Assistant counts a companion up to 15 m
 outside a zone's radius as inside it. A position from telemetry expires when the companion stops
 answering ([below](#telemetry-of-the-households-companions)); one from adverts stays while the
-companion shares it in its adverts.
+last advert the gateway checked carried it (press *Advert* near the gateway after switching
+sharing off, [companions.md](companions.md#positions-in-adverts)).
 
 * **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
@@ -760,9 +761,10 @@ mode: queued
 ```
 
 Everyone in range can read an advert. The event comes when a handheld starts sharing (also with
-0, 0, from one that never had a position), when one that shares is added, and when one that
-shares is included in telemetry again; *Position in adverts* on its device stays on while it
-shares. Machine values only: a name from the mesh would be Markdown in a notification.
+0, 0, from one that never had a position), when one that shares is added after the gateway heard
+its advert (*Add heard node*; one added from a key or a link is reported at its next advert), and
+when one that shares is included in telemetry again; *Position in adverts* on its device stays on
+while it shares. Machine values only: a name from the mesh would be Markdown in a notification.
 
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.

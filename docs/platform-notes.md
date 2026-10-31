@@ -1355,8 +1355,8 @@ The entries below are what that page does not cover.
   `src/Dispatcher.cpp:11, 138-145, 191-256`, `MyMesh.cpp:273-276, 934, 985, 1470-1477`,
   `examples/companion_radio/NodePrefs.h:29`. *Here:* the gateway reads the receive delay at
   connect; only while it is 0 does the log right before the push decide, and give the advert's
-  signal ([design.md](design.md#66-observer-documents-and-history)). *Check:* `sed -n
-  '138,145p;236,256p' src/Dispatcher.cpp`.
+  signal, which no other log gives then ([design.md](design.md#66-observer-documents-and-history)).
+  *Check:* `sed -n '138,145p;236,256p' src/Dispatcher.cpp`.
 * **`EXPORT_CONTACT` (17) with a key reads the radio's stored copy of the contact's advert into
   its 177-byte frame buffer; an ESP32 or RP2040 radio reads up to 255 bytes there, and a frame
   over 176 bytes is never sent.** On nRF52 and STM32 the store keeps a limited number of copies

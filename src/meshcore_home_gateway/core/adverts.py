@@ -59,7 +59,7 @@ class Pushed:
 @dataclass(frozen=True, slots=True)
 class Outcome:
     check: AdvertCheck | None = None  # None: nothing learned, the last check stays
-    wait: bool = False  # the read is older than the logged advert: keep it for the next read
+    wait: bool = False  # the read shows the record before the pushed advert: keep it for the next
     problem: str | None = None  # "not_logged", "copies_differ", "record_differs" (log lines)
 
 
@@ -105,6 +105,14 @@ def outcome(  # noqa: PLR0911 - one return per row of design 6c §3.3
     if pushed is None:
         return Outcome(record)
     t = node.last_advert
+    # the radio pushes a contact's advert only when it is newer than the record it held
+    # (BaseChatMesh.cpp:133-136): a record no newer than its own log, or than the read before,
+    # was sent before the radio took it, also while a log of the record's time is in the window
+    older = (pushed.adjacent is not None and pushed.adjacent.timestamp > t) or (
+        previous is not None and t <= previous.last_advert
+    )
+    if older and now - pushed.at <= WAIT_S:  # the read started before the radio took it
+        return Outcome(record, wait=True)
     same = [entry for entry in pushed.logged if entry.timestamp == t]
     problem = None
     if pushed.adjacent is not None and pushed.adjacent.timestamp == t:

@@ -528,7 +528,8 @@ async def _published(tmp: Path) -> _Paho:
     observer = bridge.observer
     alice, bob = _record(KEY, "Alice", NodeType.CHAT), _record(KEY_B, "Bob", NodeType.CHAT)
     observer.radio_connected(350, codec.TuningParams(0, 9000))
-    observer.radio_event(ContactsRead({KEY: alice}, T))
+    before = dataclasses.replace(alice, last_advert=TA - 60, last_modified=TA - 60)
+    observer.radio_event(ContactsRead({KEY: before}, T))  # her record before her newest advert
     # Alice's advert: its log, the radio's push directly after it, and the read that shows it
     observer.radio_event(PacketLogged(codec.RxLog(5.0, -90, ADVERT_RAW), T, 10, 1))
     observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY), False), T, 11, 1))

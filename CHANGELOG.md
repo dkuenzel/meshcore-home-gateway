@@ -60,10 +60,13 @@ gateway can check it. The hardware checklist was not run for it.
 
 ### Fixed
 
-- Hops, SNR and RSSI of an advert come from that advert's own log, the frame directly before the
-  radio's report of it, while the radio's receive delay is 0 (its default), also when the gateway
-  reads the report more than 10 s after the log. Otherwise a log of its key within 10 s gives
-  them, as before.
+- While the radio's receive delay is 0 (its default), hops, SNR and RSSI of an advert come only
+  from the log directly before the radio's report of it, also when the gateway reads the report
+  more than 10 s after the log; for a node the radio does not hold, only when that log has the
+  advert's time. An advert without such a log has none (`null`), as one that was not logged:
+  before, any log of its key within 10 s gave them, such as a later copy of an older advert or a
+  forged one. With a receive delay above 0, or one the radio does not report, a log of its key
+  within 10 s gives them, as before.
 
 ## [1.1.0a2] - 2026-10-30
 
