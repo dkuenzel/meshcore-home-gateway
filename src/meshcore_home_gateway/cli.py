@@ -249,6 +249,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.radio.profile import RadioProfile  # noqa: PLC0415
     from meshcore_home_gateway.state import (  # noqa: PLC0415
         EXCLUSIONS_FILE,
+        AdvertChecks,
         AnnouncedComponents,
         CommandLedger,
         ContactDeviceRecords,
@@ -281,6 +282,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     observer = Observer(
         bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
         protected=protected, exclusions=exclusions, current=CurrentDocuments(store),
+        advert_checks=AdvertChecks(store),
     )  # fmt: skip
     profile = RadioProfile(
         config.radio.profile, ProfileRecords(store), protected=protected_names(config)
