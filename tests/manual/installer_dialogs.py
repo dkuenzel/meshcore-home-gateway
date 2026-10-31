@@ -39,6 +39,7 @@ KEYS = [  # one entry per dialog, in the order of the default setup
     b" \x1b[B \r",  # channels: tick the first two
     b" \r",  # contacts: tick the first
     b"\r",  # command senders: none
+    b"\r",  # what the managed profile changes on the radio
     b"\r",  # summary box
 ]
 QUIET_S = 0.7  # a dialog is waiting when the screen has not changed for this long

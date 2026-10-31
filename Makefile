@@ -24,7 +24,7 @@ FIRMWARE_BUILD ?= build/firmware
 FIRMWARE_TESTS ?= tests/firmware
 
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
-  firmware-fetch firmware firmware-test dist pyz release release-plan check hooks clean
+  translations firmware-fetch firmware firmware-test dist pyz release release-plan check hooks clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -109,6 +109,13 @@ firmware-test: venv firmware ## The gateway against the real firmware on a simul
 interface: venv ## Write tests/public_interface.json from the code, after a deliberate interface change
 	$(BIN)/python -m tests.public_interface --write
 
+# The translation tests fail until this runs (tools/i18n.py): it writes the templates from the
+# marked texts, argparse's own words (adding this Python's) and the installer's texts, merges the
+# catalogs with them, writes the installer's language packs and pins them in the installer. Every
+# new text then needs its translations in each catalog.
+translations: venv ## Write the translation templates, merge the catalogs, write the installer's packs and pins
+	$(BIN)/python tools/i18n.py update
+
 unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
 	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
 	  sed 's|^ExecStart=/usr/local/bin/meshcore-home-gateway |ExecStart=$(CURDIR)/dist/$(PYZ) |' \
@@ -116,7 +123,12 @@ unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
 	  systemd-analyze verify "$$tmp/$(UNIT)" && \
 	  systemd-analyze security --offline=true --threshold=20 "$$tmp/$(UNIT)" | tail -n 1
 
+# flit packs every file of the package, untracked ones too: a catalog compiled by Poedit next to
+# its PO file would reach the wheel and the sdist (the program compiles them itself, ADR 0027).
 dist: venv ## Wheel, sdist and the single-file zipapp in dist/
+	@compiled=$$(find src -name '*.mo'); if [ -n "$$compiled" ]; then \
+	  printf 'dist: remove %s: Poedit wrote it, and flit would pack it into the wheel and sdist\n' \
+	    $$compiled >&2; exit 1; fi
 	rm -rf dist
 	$(BIN)/python -m build --no-isolation --outdir dist .
 	$(MAKE) --no-print-directory pyz
@@ -128,8 +140,9 @@ pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
 # The release workflow runs this on the tagged commit after `make check`; locally it is a dry run.
 # Wheel and sdist get the commit time as their timestamps, so a rebuild gives the same bytes.
 # The installer is published with the release's version written in: run from the release's URL,
-# it installs that release's zipapp and unit, checked against SHA256SUMS inside the container.
-release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
+# it installs that release's zipapp and unit, checked against SHA256SUMS inside the container, and
+# fetches the language pack it shows its dialogs in from beside it (each checked against its pin).
+release: venv ## Release files in dist/release: zipapp, unit, installer and its language packs, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
 	version=$$($(BIN)/python -c 'import meshcore_home_gateway; print(meshcore_home_gateway.__version__)'); \
 	  if [ -n "$(RELEASE_TAG)" ] && [ "$(RELEASE_TAG)" != "v$$version" ]; then \
 	    echo "release: tag $(RELEASE_TAG) does not match version $$version" >&2; exit 1; fi; \
@@ -146,6 +159,7 @@ release: venv ## Release files in dist/release: zipapp, unit, installer, wheel, 
 	  grep -q "^RELEASE=\"$$version\" " dist/release/meshcore-home-gateway-lxc.sh \
 	    || { echo "release: the installer names no release" >&2; exit 1; }; \
 	  chmod 0755 dist/release/meshcore-home-gateway-lxc.sh; \
+	  $(BIN)/python tools/i18n.py release-packs dist/release >/dev/null; \
 	  if ! $(BIN)/python tools/release_notes.py "$$version" >dist/release-notes.md; then \
 	    if [ -n "$(RELEASE_TAG)" ]; then exit 1; fi; \
 	    echo "release: dry run; with RELEASE_TAG=v$$version this stops here (see above)" >&2; fi; \

@@ -23,6 +23,7 @@ from enum import StrEnum
 
 from meshcore_home_gateway.core.contacts import ContactBook, normalise_key
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
+from meshcore_home_gateway.texts import TextError
 
 
 class Rejection(StrEnum):
@@ -49,10 +50,10 @@ class CommandRules:
         for word in words:
             value = word.strip().casefold()
             if not value or any(ch.isspace() for ch in value):
-                raise ValueError(f"command word must be a single word, got {word!r}")
+                raise TextError("command word must be a single word, got {word!r}", word=word)
             normalised_words.add(value)
         if max_age_s < 0:
-            raise ValueError(f"max_age_s must not be negative, got {max_age_s}")
+            raise TextError("max_age_s must not be negative, got {value}", value=max_age_s)
         return cls(
             frozenset(normalise_key(k) for k in senders), frozenset(normalised_words), max_age_s
         )

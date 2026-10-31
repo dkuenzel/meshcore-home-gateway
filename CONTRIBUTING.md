@@ -33,8 +33,8 @@ design can be agreed on before the code is written.
 
 Requirements: Linux with systemd, Python 3.11 or newer with `venv` (on Debian and Ubuntu the
 package `python3-venv`, or `python3.X-venv` for each Python that `make matrix` uses), GNU make,
-and `mosquitto` for the integration tests (`apt install mosquitto`; the tests start their own
-broker on a free port).
+`mosquitto` for the integration tests and GNU gettext for the tests of the message catalogs
+(`apt install mosquitto gettext`; the tests start their own broker on a free port).
 
 ```sh
 make venv     # .venv from the hash-pinned lock file requirements/dev.txt (fresh when it changes)
@@ -54,6 +54,8 @@ ignore them) and refs that point to another commit than the checked-out one.
 
 The integration tests need `mosquitto`. If it is missing they fail rather than silently skip; set
 `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them deliberately (the summary shows the skip).
+The same holds for the tests that compare our message catalogs with GNU gettext's `msgfmt`:
+`MESHCORE_HOME_GATEWAY_SKIP_GETTEXT_TESTS=1` skips them deliberately.
 
 ## Dependencies of the tool chain
 
@@ -73,6 +75,17 @@ GitHub Actions are pinned to full commit SHAs with the version as a comment.
 - Small modules with one responsibility; the domain core (`meshcore_home_gateway.core`) does no I/O.
 - Shell: `shellcheck` clean, `set -Eeuo pipefail`, functions over long scripts.
 - Documentation in English, plain and short sentences; Markdown, one sentence per idea.
+
+## Translations
+
+The texts of the command line, the installer, the Home Assistant names and the dashboard are in
+gettext catalogs: `src/meshcore_home_gateway/locale/` and `deploy/proxmox/locale/`. Edit a PO
+file with any editor or with Poedit; switch off line wrapping and compiling on save (git ignores
+the compiled `.mo`, but the wheel would pack it, so `make dist` refuses it). Weblate is not set
+up yet. Run `make translations` before a pull request. A new or changed text needs its
+translation in every shipped language in the same pull request; ask in the pull request if you
+cannot write one. The files hold no names or addresses: the git history credits the translators.
+[`docs/translations.md`](docs/translations.md) has the rules and how to add a language.
 
 ## Commits and pull requests
 

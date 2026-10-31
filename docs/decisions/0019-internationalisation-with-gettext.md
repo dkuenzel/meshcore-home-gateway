@@ -111,6 +111,8 @@ Assistant contract tests, installer packs in sync with their pins and read back 
 
 ## More Information
 
+* Amended on 2026-10-31 by [ADR 0027](0027-message-catalogs-compiled-when-loaded.md): the
+  catalogs are compiled when they are loaded, not when the zipapp is built.
 * Spread of MeshCore by language: public node map `map.meshcore.io/api/v1/nodes` (68,204 nodes,
   fetched 2026-10-23, assigned to countries offline; only aggregates were kept), Home Assistant
   analytics (`analytics.home-assistant.io`, 2026-10-23), translations of the MeshCore app 1.50.0

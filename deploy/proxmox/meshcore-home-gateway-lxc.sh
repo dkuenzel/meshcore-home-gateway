@@ -22,8 +22,9 @@ REPO_DIR=""    # SOURCE=checkout: the checkout
 REF=main       # SOURCE=ref: the branch, tag or commit whose source is built in the container
 PICKED=""      # SOURCE=release: the release to install, this copy's or the one --release names
 VERSION=""     # known in advance for a checkout and a release, else after the installation
+OWN_PROGRAM=0  # 1: the program to configure is this checkout's own (not on --reconfigure)
 TITLE="meshcore-home-gateway"
-BROKER_LOGIN=""   # the result of check_broker, for the final message
+BROKER_LOGIN=""   # check_broker's result for the final message: accepted, unchecked, failed
 SERIAL_DIR=${MESHCORE_HOME_GATEWAY_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
 DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the container
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
@@ -38,6 +39,14 @@ CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # answers that steer the installer; every other key in --answers FILE is a configuration setting
 INSTALLER_KEYS=" setup ct.id ct.hostname ct.storage ct.disk_gb ct.memory_mb ct.bridge ct.ip \
 ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
+# --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
+L10N_ORDER=(en)
+declare -A L10N_NAME=([en]=English)
+declare -A L10N_SHA256=()
+# --- end of language packs
+L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
+for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
+HA_LANGUAGE=""   # the language menu's choice: the default of homeassistant.language
 declare -A ANSWERS=()   # from --answers FILE
 declare -A CURRENT=()   # settings of the installation being reconfigured
 declare -A OUT=()       # answers for `meshcore-home-gateway config render`
@@ -49,14 +58,71 @@ CREATED=""              # container created by this run, named in error messages
 STOPPED=""              # container whose service this run stopped, started again on errors
 WORK=""                 # an empty directory on the host: marks errors already reported
 
+# --- messages (docs/development.md, Translations): tests cut this block out and run it on its own
+# A text is its English words (the msgid) with {name} fields. A language pack is plain text, read
+# without eval: "msg<TAB>KEY<TAB>TEXT" lines, KEY the msgid or CONTEXT<EOT>msgid, with printf %b's
+# escapes. Without a pack, every text is English.
+declare -A L10N=()      # msgid, or CONTEXT<EOT>msgid -> translation, from the loaded pack
+L10N_LANG=en            # the dialogs' language; never exported (host tools keep the caller's)
+declare -a BUTTONS=()   # whiptail's button labels, only while a pack is loaded
+
+load_messages() {  # load_messages TEXT SHA256: check the digest, then read "msg<TAB>KEY<TAB>TEXT"
+  local text=$1 want=$2 got kind key message
+  L10N=()   # first: a refused pack leaves no entries behind
+  [[ $want =~ ^[0-9a-f]{64}$ ]] || return 1
+  got=$(printf '%s\n' "$text" | sha256sum) || return 1   # $(...) dropped the final newline
+  [[ ${got%% *} == "$want" ]] || return 1
+  while IFS=$'\t' read -r kind key message; do
+    case $kind in
+      msg)
+        if [[ -z $key || -z $message ]]; then L10N=(); return 1; fi
+        printf -v key '%b' "$key"
+        printf -v message '%b' "$message"
+        L10N[$key]=$message ;;
+      '#'*) ;;
+      *) L10N=(); return 1 ;;   # an empty or unknown line refuses the whole pack
+    esac
+  done < <(printf '%s\n' "$text")   # not a here-string: bash writes a long one to a file
+}
+
+_fill() {  # _fill TEXT [NAME VALUE]...: {NAME} replaced in one pass; values are never read again
+  local text=$1 out='' name
+  shift
+  local -A values=()
+  while (( $# >= 2 )); do values[$1]=$2; shift 2; done
+  while [[ $text == *'{'* ]]; do
+    out+=${text%%'{'*}
+    text=${text#*'{'}
+    name=${text%%'}'*}
+    if [[ $text == *'}'* && -v "values[$name]" ]]; then
+      out+=${values[$name]}
+      text=${text#*'}'}
+    else
+      out+='{'
+    fi
+  done
+  printf '%s' "$out$text"
+}
+
+t() {  # t MSGID [NAME VALUE]...: the text in the dialogs' language, the values filled in
+  local msgid=$1
+  shift
+  _fill "${L10N[$msgid]-$msgid}" "$@"
+}
+
+tp() { local key=$1$'\x04'$2; printf '%s' "${L10N[$key]-$2}"; }  # tp CONTEXT MSGID: a label
+# --- end of messages
+
 # --- output and errors ----------------------------------------------------------------------
 
 # after a hangup the terminal refuses writes: die must still restart the service
 log() { printf '%s\n' "meshcore-home-gateway: $*" >&2 || true; }
 
-die() {
+die() {  # die MSGID [NAME VALUE]...: the English text in the log, the dialogs' language in a box
+  local english
+  english=$(_fill "$@")
   if [[ -n $WORK ]]; then : >"$WORK/failed"; fi   # a parent shell's ERR trap stays quiet
-  log "error: $*"
+  log "error: $english"
   if [[ -n $STOPPED ]]; then
     in_ct "$STOPPED" systemctl start meshcore-home-gateway >&2 \
       && log "the service in container $STOPPED runs again with its previous configuration"
@@ -65,15 +131,17 @@ die() {
     log "container $CREATED was created but is not finished; remove it with" \
       "'pct stop $CREATED; pct destroy $CREATED' and run the installer again"
   fi
-  if (( INTERACTIVE )) && [[ $* != cancelled* ]] && type -P whiptail >/dev/null; then
-    whiptail --title "$TITLE" --msgbox -- "Error: $*" 12 72 >&2 || true
+  if (( INTERACTIVE )) && [[ $1 != cancelled* ]] && type -P whiptail >/dev/null; then
+    # Translators: {message} is one of the errors, translated too.
+    whiptail --title "$TITLE" --msgbox -- "$(t 'Error: {message}' message "$(t "$@")")" 12 72 \
+      >&2 || true
   fi
   exit 1
 }
 
 on_error() {  # ERR trap: a command failed; errors die() reported in a subshell are not repeated
   if [[ -n $WORK && -e $WORK/failed ]]; then exit 1; fi
-  die "command failed at line $1"
+  die 'command failed at line {line}' line "$1"
 }
 
 cleanup() {
@@ -93,7 +161,8 @@ trap 'trap "" INT TERM HUP PIPE; die "cancelled (interrupted)"' INT TERM HUP PIP
 # In the caller's locale, one setting the host lacks (LANG=de_DE.UTF-8 passed on by ssh, or
 # LC_CTYPE=UTF-8 from macOS) is enough for the C locale, and whiptail then drops every non-ASCII
 # character typed, passwords included, without a word. C.UTF-8 is built into Debian's C library.
-whiptail() { LC_ALL=C.UTF-8 command whiptail "$@"; }
+# The button labels come from the language pack: in English none are passed (whiptail's own).
+whiptail() { LC_ALL=C.UTF-8 command whiptail "${BUTTONS[@]}" "$@"; }
 
 # ask KEY KIND TEXT DEFAULT [CHOICE DESCRIPTION [on|off] ...]
 #   KIND: input | password | yesno | menu | checklist. The answer comes from --answers, else from
@@ -138,8 +207,8 @@ show_dialog() {  # show_dialog KIND TEXT DEFAULT [CHOICE ...]: a dialog, whateve
     checklist)
       result=$(whiptail --title "$TITLE" --separate-output --checklist -- "$text" 20 78 10 \
         "$@" 3>&1 1>&2 2>&3 | paste -sd, -) ;;
-    *) die "unknown dialog kind $kind" ;;
-  esac || die "cancelled"
+    *) die 'unknown dialog kind {kind}' kind "$kind" ;;
+  esac || die 'cancelled'
   printf '%s' "$result"
 }
 
@@ -158,17 +227,18 @@ ask_required() {  # ask_required KEY TEXT DEFAULT: an input that must not stay e
   while :; do
     value=$(ask "$1" input "$2" "${3-}")
     if [[ -n $value ]]; then break; fi
-    (( INTERACTIVE )) || die "no answer for $1 ($2)"
+    (( INTERACTIVE )) || die 'no answer for {key} ({text})' key "$1" text "$2"
   done
   printf '%s' "$value"
 }
 
 load_answers() {
   local file=$1 line key number=0 invalid
-  [[ -r $file ]] || die "cannot read answers file $file"
+  [[ -r $file ]] || die 'cannot read answers file {file}' file "$file"
   # in a UTF-8 locale '.' matches no invalid byte: such a line does not match as a whole
   invalid=$(LC_ALL=C.UTF-8 grep -naxv '.*' -- "$file" | head -n 1 | cut -d: -f1) || true
-  [[ -z $invalid ]] || die "answers file line $invalid: not valid UTF-8 (save the file as UTF-8)"
+  [[ -z $invalid ]] \
+    || die 'answers file line {line}: not valid UTF-8 (save the file as UTF-8)' line "$invalid"
   while IFS= read -r line || [[ -n $line ]]; do
     number=$(( number + 1 ))
     line=${line%$'\r'}   # files edited on Windows
@@ -177,10 +247,10 @@ load_answers() {
     # the line number only: the line may hold the broker password (also after a ':' or ' '
     # typed instead of '=', when the password itself contains a '=')
     [[ $line == *=* && $key =~ ^[A-Za-z0-9_.-]+$ ]] \
-      || die "answers file line $number: expected key=value"
+      || die 'answers file line {line}: expected key=value' line "$number"
     case $key in
       setup|ct.*|radio.choice|targets.*)
-        [[ $INSTALLER_KEYS == *" $key "* ]] || die "answers file: unknown answer $key" ;;
+        [[ $INSTALLER_KEYS == *" $key "* ]] || die 'answers file: unknown answer {key}' key "$key" ;;
     esac
     ANSWERS[$key]=${line#*=}
   done <"$file"
@@ -192,16 +262,17 @@ check_target_answers() {  # they are used only after the container is created: c
   if [[ -v "ANSWERS[targets.channels]" ]]; then
     ANSWERS[targets.channels]=${ANSWERS[targets.channels]// /}
     [[ ${ANSWERS[targets.channels]} =~ ^($channel(,$channel)*)?$ ]] \
-      || die "answers file: targets.channels: expected channel indices, comma-separated"
+      || die 'answers file: targets.channels: expected channel indices, comma-separated'
     for item in ${ANSWERS[targets.channels]//,/ }; do
-      (( item <= 255 )) || die "answers file: targets.channels: no channel $item (0-255)"
+      (( item <= 255 )) \
+        || die 'answers file: targets.channels: no channel {channel} (0-255)' channel "$item"
     done
   fi
   if [[ -v "ANSWERS[targets.contacts]" ]]; then
     ANSWERS[targets.contacts]=${ANSWERS[targets.contacts]// /}
     ANSWERS[targets.contacts]=${ANSWERS[targets.contacts],,}   # as the radio lists them
     [[ ${ANSWERS[targets.contacts]} =~ ^($key(,$key)*)?$ ]] \
-      || die "answers file: targets.contacts: expected public keys (64 hex digits), comma-separated"
+      || die 'answers file: targets.contacts: expected public keys (64 hex digits), comma-separated'
   fi
 }
 
@@ -214,10 +285,71 @@ pass_settings() {  # configuration settings from --answers go to the configurati
 
 choose_setup() {
   local setup
-  setup=$(ask setup menu "Setup" "default" \
-    default "recommended: asks only for the radio, the broker and the targets" \
-    advanced "all settings: container, network, topics, Home Assistant")
+  setup=$(ask setup menu "$(t 'Setup')" "default" \
+    default "$(t 'recommended: asks only for the radio, the broker and the targets')" \
+    advanced "$(t 'all settings: container, network, topics, Home Assistant')")
   if [[ $setup == advanced ]]; then ADVANCED=1; fi
+}
+
+# --- language -------------------------------------------------------------------------------
+
+env_language() {  # the caller's language as the command line reads it, if offered; else en
+  local name value="" item code
+  local -a items=()
+  for name in LANGUAGE LC_ALL LC_MESSAGES LANG; do  # Python's order: LANGUAGE also under C
+    value=${!name-}
+    if [[ -n $value ]]; then break; fi
+  done
+  IFS=: read -r -a items <<<"$value"   # LANGUAGE may name several: pt_BR:de
+  for item in "${items[@]}"; do
+    code=${item%%[.@]*}   # de_AT.UTF-8@euro: de_AT
+    if [[ $code == C || $code == POSIX ]]; then break; fi
+    code=${code%%_*}
+    code=${code,,}
+    # checked before it becomes a subscript, which some versions of bash expand once more
+    if [[ $code =~ ^[a-z]{2}$ && -v "L10N_NAME[$code]" ]]; then printf '%s' "$code"; return; fi
+  done
+  printf en
+}
+
+pack_text() {  # pack_text LANG: the pack of this script's texts, at most 256 KiB, on stdout: its
+  # release's, else the one next to it in a checkout, else main's; never what --release installs
+  local name=meshcore-home-gateway-lxc.$1.messages here=""
+  if [[ -z $RELEASE && -n $SCRIPT && -f $SCRIPT ]]; then
+    here=$(dirname -- "$SCRIPT")/locale/$1.messages
+  fi
+  if [[ -n $here && -f $here ]]; then head -c 262144 -- "$here"; return; fi
+  command -v wget >/dev/null || return 1
+  if [[ -n $RELEASE ]]; then
+    wget -qO- --timeout=20 "$RELEASES/download/v$RELEASE/$name" | head -c 262144
+  else
+    wget -qO- --timeout=20 \
+      "https://raw.githubusercontent.com/$REPOSITORY/main/deploy/proxmox/locale/$1.messages" \
+      | head -c 262144
+  fi
+}
+
+choose_language() {  # choose_language MODE: the dialogs' language, the first dialog; on a new
+  # installation also the default of homeassistant.language (a reconfiguration keeps its own)
+  local lang text
+  if (( ${#L10N_ORDER[@]} < 2 )); then return 0; fi   # only English is offered
+  lang=$(show_dialog menu "Language / Sprache / Taal / Język / Langue" "$(env_language)" \
+    "${L10N_MENU[@]}")
+  if [[ $1 == install ]]; then HA_LANGUAGE=$lang; fi
+  if [[ $lang == en ]]; then return 0; fi
+  # in memory only, and checked against its digest above before a line of it is read
+  if text=$(pack_text "$lang") && load_messages "$text" "${L10N_SHA256[$lang]-}"; then
+    L10N_LANG=$lang
+    CT_ENV+=("LANGUAGE=$lang")   # the program's messages in the dialogs' language
+    # Translators: a button of every dialog; at most 12 characters.
+    BUTTONS=(--yes-button "$(tp button Yes)" --no-button "$(tp button No)")
+    # Translators: a button of every dialog; at most 12 characters.
+    BUTTONS+=(--ok-button "$(tp button Ok)" --cancel-button "$(tp button Cancel)")
+  else  # in English: the pack's texts are what failed
+    log "the language pack $lang was not loaded: the dialogs stay in English"
+    whiptail --title "$TITLE" --msgbox -- "${L10N_NAME[$lang]}: the language pack could not be \
+loaded; the installer continues in English." 12 72 >&2 || true
+  fi
 }
 
 # --- checks ---------------------------------------------------------------------------------
@@ -246,7 +378,7 @@ detect_source() {  # where meshcore-home-gateway comes from, unless --release or
   if [[ -z $SOURCE && -n $SCRIPT && -f $SCRIPT ]]; then
     dir=$(cd -- "$(dirname -- "$SCRIPT")/../.." && pwd)
     if [[ -f $dir/src/meshcore_home_gateway/__init__.py && -f $dir/tools/build_pyz.py ]]; then
-      SOURCE=checkout REPO_DIR=$dir
+      SOURCE=checkout REPO_DIR=$dir OWN_PROGRAM=1
       VERSION=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' \
         "$dir/src/meshcore_home_gateway/__init__.py")
     fi
@@ -257,6 +389,12 @@ detect_source() {  # where meshcore-home-gateway comes from, unless --release or
 }
 
 prerelease() { [[ $PICKED =~ (a|b|rc|dev)[0-9]+$ ]]; }   # as the release workflow marks them
+
+knows_language() {  # does the program that renders the configuration read homeassistant.language?
+  # a checkout's own does, whatever version it names; else every version but the ones before it,
+  # an unknown one too (--ref before the installation: write_answers drops it if it is older)
+  (( OWN_PROGRAM )) || ! [[ $VERSION =~ ^(0\.|1\.0\.|1\.1\.0a[1-3]$) ]]
+}
 
 invocation() {  # how to run this installer again, for the final message
   local address
@@ -275,57 +413,63 @@ invocation() {  # how to run this installer again, for the final message
 }
 
 preflight() {  # preflight MODE
-  [[ $(id -u) -eq 0 ]] || die "run as root on the Proxmox host"
+  [[ $(id -u) -eq 0 ]] || die 'run as root on the Proxmox host'
   local tool
   local -a tools=(pct pveam pvesm pvesh pveversion dpkg-query)
   if [[ $SOURCE == checkout ]]; then tools+=(python3 tar); fi   # to check and pack the checkout
   for tool in "${tools[@]}"; do
-    command -v "$tool" >/dev/null 2>&1 || die "'$tool' not found: this must run on a Proxmox VE host"
+    command -v "$tool" >/dev/null 2>&1 \
+      || die "'{tool}' not found: this must run on a Proxmox VE host" tool "$tool"
   done
   if (( INTERACTIVE )) && [[ $1 != update ]]; then   # --update shows no dialogs
     type -P whiptail >/dev/null \
-      || die "whiptail not found: install it (apt install whiptail) or use --answers FILE"
+      || die 'whiptail not found: install it ({command}) or use --answers FILE' \
+        command 'apt install whiptail'
     # `wget -qO- URL | bash`: the input is the rest of the script, the dialogs would read it
     if [[ -p /dev/stdin ]]; then
       INTERACTIVE=0   # no message box either
       # shellcheck disable=SC2016 # the $(...) is for the user to run
-      die "the dialogs need the terminal as input: run" \
-        'bash -c "$(wget -qO- URL)" instead of piping into bash, or use --answers FILE'
+      die 'the dialogs need the terminal as input: run {command} instead of piping into bash, or use --answers FILE' \
+        command 'bash -c "$(wget -qO- URL)"'
     fi
   fi
   local version major container
   version=$(pveversion | sed -n 's|^pve-manager/\([^/]*\)/.*|\1|p')   # 8.4.14, or 7.4-3
   major=${version%%.*}
-  [[ $major =~ ^[0-9]+$ ]] || die "cannot read the Proxmox VE version"
-  (( major >= 8 )) || die "Proxmox VE $version is too old: 8 with current updates, or 9, is needed"
+  [[ $major =~ ^[0-9]+$ ]] || die 'cannot read the Proxmox VE version'
+  (( major >= 8 )) \
+    || die 'Proxmox VE {version} is too old: 8 with current updates, or 9, is needed' \
+      version "$version"
   # shellcheck disable=SC2016 # ${Version} is a dpkg-query field, not a shell variable
   container=$(dpkg-query -W -f '${Version}' pve-container 2>/dev/null) \
-    || die "package pve-container not found"
+    || die 'package pve-container not found'
   if [[ $(printf '%s\n' "$MIN_PVE_CONTAINER" "$container" | sort -V | sed -n 1p) \
         != "$MIN_PVE_CONTAINER" ]]; then
-    die "pve-container $container cannot create Debian 13 containers;" \
-      "update the host first (apt update && apt full-upgrade)"
+    die 'pve-container {version} cannot create Debian 13 containers; update the host first ({command})' \
+      version "$container" command 'apt update && apt full-upgrade'
   fi
   if [[ $SOURCE == checkout ]]; then
-    [[ -n $VERSION ]] || die "cannot read the version of the checkout $REPO_DIR"
+    [[ -n $VERSION ]] || die 'cannot read the version of the checkout {path}' path "$REPO_DIR"
   fi
 }
 
-CHECK_SETTINGS_PY='import sys
+# the checkout's settings check, its reason in the language LANGUAGE names (the dialogs')
+CHECK_SETTINGS_PY='import os, sys
 sys.path.insert(0, sys.argv[1])
+from meshcore_home_gateway import i18n
 from meshcore_home_gateway.config import ConfigError, render_config
 try:
     render_config(sys.stdin.buffer.read().decode("utf-8"))
 except ConfigError as exc:
-    sys.exit(str(exc))'
+    sys.exit(i18n.translator(i18n.choose(os.environ)).render(exc.text))'
 
 check_settings() {  # from a checkout: with its configuration code, before anything is created
   [[ $SOURCE == checkout ]] || return 0   # otherwise in the new container (check_settings_in)
   local reason
   # -B: no __pycache__ in the checkout, which may belong to a user who could not remove it; the
-  # answers go through a pipe, not a file
-  reason=$(write_answers | python3 -I -B -c "$CHECK_SETTINGS_PY" "$REPO_DIR/src" 2>&1) \
-    || die "invalid settings: $reason"
+  # answers go through a pipe, not a file; the reason in the dialogs' language, not the caller's
+  reason=$(write_answers | LANGUAGE=$L10N_LANG python3 -I -B -c "$CHECK_SETTINGS_PY" \
+    "$REPO_DIR/src" 2>&1) || die 'invalid settings: {reason}' reason "$reason"
 }
 
 check_settings_in() {  # check_settings_in CTID: with the program installed in the container
@@ -336,7 +480,7 @@ check_settings_in() {  # check_settings_in CTID: with the program installed in t
     cat >\$dir/answers
     meshcore-home-gateway config render --answers \$dir/answers --output \$dir/config.toml \
       >/dev/null" >&2 \
-    || die "invalid settings (see above)"
+    || die 'invalid settings (see above)'
 }
 
 check_broker() {  # check_broker CTID: log in as the service will, before the radio is read
@@ -357,28 +501,31 @@ check_broker() {  # check_broker CTID: log in as the service will, before the ra
       || status=$?
     reason=${reason//meshcore-home-gateway: /}
     case $status in
-      0) BROKER_LOGIN="login accepted"; return 0 ;;
+      0) BROKER_LOGIN=accepted; return 0 ;;
       3)  # --reconfigure keeps the installed version
         log "meshcore-home-gateway $VERSION in container $ctid cannot check the broker login"
-        BROKER_LOGIN="not checked (version $VERSION cannot; check after --update)"
+        BROKER_LOGIN=unchecked
         return 0 ;;
       4)  # a value typed again: no login was tried
-        (( INTERACTIVE )) || die "the broker settings were not accepted: $reason"
-        whiptail --title "$TITLE" --msgbox -- "The broker settings were not accepted:
+        (( INTERACTIVE )) \
+          || die 'the broker settings were not accepted: {reason}' reason "$reason"
+        # Translators: {reason} is the program's message, in this language too.
+        whiptail --title "$TITLE" --msgbox -- "$(t 'The broker settings were not accepted:
 
-$reason" 16 78 >&2 || true
+{reason}' reason "$reason")" 16 78 >&2 || true
         ask_broker_again
         continue ;;
     esac
-    if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "The broker login failed:
+    # Translators: {reason} is the program's message, in this language too.
+    if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "$(t 'The broker login failed:
 
-$reason
+{reason}
 
-Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes \
-the settings later.)" 20 78 >&2; then
+Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)' \
+        reason "$reason")" 20 78 >&2; then
       log "warning: the broker login failed: $reason"
       log "the service keeps trying; change the broker settings with --reconfigure $ctid"
-      BROKER_LOGIN="login failed (see above), the service keeps trying"
+      BROKER_LOGIN=failed
       return 0
     fi
     ask_broker_again
@@ -408,51 +555,69 @@ first_storage() {  # first active storage for a content type (skips the header l
 ask_container() {
   # queried in assignments of their own: a failure inside a dialog's argument would not stop
   local next_id storage template_storage
-  next_id=$(pvesh get /cluster/nextid) || die "cannot get the next free container ID (pvesh)"
-  storage=$(first_storage rootdir) || die "cannot list the storages (pvesm status)"
-  template_storage=$(first_storage vztmpl) || die "cannot list the storages (pvesm status)"
-  CT[id]=$(ask_advanced ct.id input "Container ID" "$next_id")
-  [[ ${CT[id]} =~ ^[1-9][0-9]{2,8}$ ]] || die "container ID must be a number of at least 100"
+  next_id=$(pvesh get /cluster/nextid) || die 'cannot get the next free container ID (pvesh)'
+  storage=$(first_storage rootdir) \
+    || die 'cannot list the storages ({command})' command 'pvesm status'
+  template_storage=$(first_storage vztmpl) \
+    || die 'cannot list the storages ({command})' command 'pvesm status'
+  CT[id]=$(ask_advanced ct.id input "$(t 'Container ID')" "$next_id")
+  [[ ${CT[id]} =~ ^[1-9][0-9]{2,8}$ ]] || die 'container ID must be a number of at least 100'
   pvesh get /cluster/nextid --vmid "${CT[id]}" >/dev/null 2>&1 \
-    || die "ID ${CT[id]} is already used by a container or virtual machine"
-  CT[hostname]=$(ask_advanced ct.hostname input "Container host name" "meshcore-home-gateway")
-  CT[storage]=$(ask_advanced ct.storage input "Storage for the container disk" "$storage")
-  CT[disk]=$(ask_advanced ct.disk_gb input "Disk size in GB" "2")
-  CT[memory]=$(ask_advanced ct.memory_mb input "Memory in MB" "256")
-  CT[bridge]=$(ask_advanced ct.bridge input "Network bridge" "vmbr0")
-  CT[ip]=$(ask_advanced ct.ip input "IPv4 address with prefix (e.g. 192.0.2.20/24), or dhcp" "dhcp")
+    || die 'ID {id} is already used by a container or virtual machine' id "${CT[id]}"
+  CT[hostname]=$(ask_advanced ct.hostname input "$(t 'Container host name')" \
+    "meshcore-home-gateway")
+  CT[storage]=$(ask_advanced ct.storage input "$(t 'Storage for the container disk')" "$storage")
+  CT[disk]=$(ask_advanced ct.disk_gb input "$(t 'Disk size in GB')" "2")
+  CT[memory]=$(ask_advanced ct.memory_mb input "$(t 'Memory in MB')" "256")
+  CT[bridge]=$(ask_advanced ct.bridge input "$(t 'Network bridge')" "vmbr0")
+  CT[ip]=$(ask_advanced ct.ip input \
+    "$(t 'IPv4 address with prefix (e.g. 192.0.2.20/24), or dhcp')" "dhcp")
   CT[gateway]=""
   if [[ ${CT[ip]} != dhcp ]]; then
-    CT[gateway]=$(ask_required ct.gateway "IPv4 gateway" "")
+    CT[gateway]=$(ask_required ct.gateway "$(t 'IPv4 gateway')" "")
   fi
-  CT[template_storage]=$(ask_advanced ct.template_storage input "Storage for templates" \
+  CT[template_storage]=$(ask_advanced ct.template_storage input "$(t 'Storage for templates')" \
     "$template_storage")
   [[ ${CT[disk]} =~ ^[1-9][0-9]*$ && ${CT[memory]} =~ ^[1-9][0-9]*$ ]] \
-    || die "disk size and memory must be whole numbers"
-  [[ -n ${CT[storage]} ]] || die "no active storage for container disks"
-  [[ -n ${CT[template_storage]} ]] || die "no active storage for templates"
+    || die 'disk size and memory must be whole numbers'
+  [[ -n ${CT[storage]} ]] || die 'no active storage for container disks'
+  [[ -n ${CT[template_storage]} ]] || die 'no active storage for templates'
 }
 
-login_text() {  # the broker login, for messages; never the password
-  if [[ -z ${OUT[mqtt.username]-} ]]; then printf 'none (no user name)'; return; fi
-  printf "user '%s' %s" "${OUT[mqtt.username]}" \
-    "$(if [[ -n ${OUT[mqtt.password]-} ]]; then echo with; else echo without; fi) a password"
+login_text() {  # the broker login, for the confirmation; never the password
+  local user=${OUT[mqtt.username]-}
+  if [[ -z $user ]]; then
+    t 'none (no user name)'
+  elif [[ -n ${OUT[mqtt.password]-} ]]; then
+    t "user '{user}' with a password" user "$user"
+  else
+    t "user '{user}' without a password" user "$user"
+  fi
 }
 
 confirm_install() {
   if (( ! INTERACTIVE )); then return 0; fi
-  local radio=${OUT[radio.device]:-${OUT[radio.host]-}:${OUT[radio.port]-}}
-  local network="${CT[bridge]}, ${CT[ip]}${CT[gateway]:+, gateway ${CT[gateway]}}"
-  whiptail --title "$TITLE" --yesno -- "Create container ${CT[id]} (${CT[hostname]}) now?
+  local radio=${OUT[radio.device]:-${OUT[radio.host]-}:${OUT[radio.port]-}} text
+  local network="${CT[bridge]}, ${CT[ip]}"   # no words: not a text to translate
+  if [[ -n ${CT[gateway]} ]]; then
+    network=$(t '{bridge}, {ip}, gateway {gateway}' bridge "${CT[bridge]}" ip "${CT[ip]}" \
+      gateway "${CT[gateway]}")
+  fi
+  # Translators: the values start in one column; {tls} is true or false.
+  text=$(t 'Create container {id} ({hostname}) now?
 
-Disk:     ${CT[storage]}, ${CT[disk]} GB
-Memory:   ${CT[memory]} MB
-Network:  $network
-Radio:    $radio
-Broker:   ${OUT[mqtt.host]}:${OUT[mqtt.port]}, TLS ${OUT[mqtt.tls]}
-Login:    $(login_text)
+Disk:     {storage}, {disk} GB
+Memory:   {memory} MB
+Network:  {network}
+Radio:    {radio}
+Broker:   {host}:{port}, TLS {tls}
+Login:    {login}
 
-Afterwards the channels and contacts are read from the radio." 18 78 >&2 || die "cancelled"
+Afterwards the channels and contacts are read from the radio.' \
+    id "${CT[id]}" hostname "${CT[hostname]}" storage "${CT[storage]}" disk "${CT[disk]}" \
+    memory "${CT[memory]}" network "$network" radio "$radio" host "${OUT[mqtt.host]}" \
+    port "${OUT[mqtt.port]}" tls "${OUT[mqtt.tls]}" login "$(login_text)")
+  whiptail --title "$TITLE" --yesno -- "$text" 18 78 >&2 || die 'cancelled'
 }
 
 choose_template() {  # newest Debian 13 template, downloaded if needed; prints its volume ID
@@ -463,11 +628,13 @@ choose_template() {  # newest Debian 13 template, downloaded if needed; prints i
   fi
   template=$(pveam available --section system \
     | awk '$2 ~ /^debian-13-standard_.*_amd64\.tar\.(zst|xz|gz)$/ {print $2}' | sort -V | tail -n 1)
-  [[ -n $template ]] || die "pveam offers no Debian 13 template (check the host's internet access)"
+  [[ -n $template ]] \
+    || die "pveam offers no Debian 13 template (check the host's internet access)"
   if ! has_template "$storage" "$template"; then
     log "downloading $template to $storage"
     pveam download "$storage" "$template" >&2 || true   # the exit status is not reliable either
-    has_template "$storage" "$template" || die "could not download $template to $storage"
+    has_template "$storage" "$template" \
+      || die 'could not download {template} to {storage}' template "$template" storage "$storage"
   fi
   printf '%s:vztmpl/%s' "$storage" "$template"
 }
@@ -490,16 +657,17 @@ create_container() {
     --tags meshcore-home-gateway \
     --description "meshcore-home-gateway ${VERSION:-$REF}: MeshCore radio to MQTT and Home Assistant" \
     >&2 \
-    || die "creating container ${CT[id]} failed (see above)"
+    || die 'creating container {ctid} failed (see above)' ctid "${CT[id]}"
   CREATED=${CT[id]}
   if [[ ${OUT[radio.transport]} == serial ]]; then
     pct set "${CT[id]}" --dev0 "path=${OUT[radio.device]},gid=$DIALOUT_GID,mode=0660" >&2 \
-      || die "passing ${OUT[radio.device]} to container ${CT[id]} failed (see above)"
+      || die 'passing {device} to container {ctid} failed (see above)' \
+        device "${OUT[radio.device]}" ctid "${CT[id]}"
   fi
 }
 
 start_container() {
-  pct start "$1" >&2 || die "container $1 did not start (see above)"
+  pct start "$1" >&2 || die 'container {ctid} did not start (see above)' ctid "$1"
   wait_ready "$1"
 }
 
@@ -510,13 +678,14 @@ wait_ready() {  # until systemd has booted and DNS works
     if in_ct "$ctid" getent hosts deb.debian.org >/dev/null 2>&1; then return 0; fi
     sleep 1
   done
-  die "container $ctid has no network (DNS lookup of deb.debian.org failed)"
+  die 'container {ctid} has no network (DNS lookup of {host} failed)' ctid "$ctid" \
+    host deb.debian.org
 }
 
 check_device_group() {  # dev0 used Debian's dialout GID; pass the device again if it differs
   local ctid=$1 gid
   gid=$(in_ct "$ctid" getent group dialout | cut -d: -f3) || gid=""
-  [[ $gid =~ ^[0-9]+$ ]] || die "container $ctid has no dialout group"
+  [[ $gid =~ ^[0-9]+$ ]] || die 'container {ctid} has no dialout group' ctid "$ctid"
   if [[ $gid != "$DIALOUT_GID" ]]; then
     log "dialout has GID $gid in container $ctid; passing the radio through again"
     pct set "$ctid" --dev0 "path=${OUT[radio.device]},gid=$gid,mode=0660" >&2
@@ -587,15 +756,18 @@ stage_program() {  # stage_program CTID: the program to install, in $STAGE in th
       tar -C "$REPO_DIR" -cz --exclude=__pycache__ src/meshcore_home_gateway tools/build_pyz.py \
         deploy/systemd/meshcore-home-gateway.service \
         | in_ct_input "$ctid" bash -c "umask 077 && cat >$STAGE.tar.gz" \
-        || die "copying meshcore-home-gateway into container $ctid failed (see above)" ;;
+        || die 'copying meshcore-home-gateway into container {ctid} failed (see above)' \
+          ctid "$ctid" ;;
     release)
       base=$RELEASES/download/v$PICKED/
       in_ct "$ctid" python3 -I -c "$FETCH_PY" release "$base" "$PICKED" "$STAGE" >&2 \
-        || die "cannot download release $PICKED into container $ctid (see above)" ;;
+        || die 'cannot download release {version} into container {ctid} (see above)' \
+          version "$PICKED" ctid "$ctid" ;;
     ref)
       in_ct "$ctid" python3 -I -c "$FETCH_PY" source \
         "https://github.com/$REPOSITORY/archive/$REF.tar.gz" "$STAGE" >&2 \
-        || die "cannot download the source of $REF into container $ctid (see above)" ;;
+        || die 'cannot download the source of {ref} into container {ctid} (see above)' \
+          ref "$REF" ctid "$ctid" ;;
   esac
 }
 
@@ -605,10 +777,10 @@ install_service() {  # packages, user, zipapp and unit; the version switches onl
     "in container $ctid"
   in_ct "$ctid" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y -qq --no-install-recommends python3 python3-paho-mqtt ca-certificates' \
-    >&2 || die "installing packages in container $ctid failed (see above)"
+    >&2 || die 'installing packages in container {ctid} failed (see above)' ctid "$ctid"
   in_ct "$ctid" bash -c 'id meshcore-home-gateway >/dev/null 2>&1 || useradd --system \
     --user-group --groups dialout --no-create-home --home-dir /nonexistent \
-    --shell /usr/sbin/nologin meshcore-home-gateway' >&2 || die "creating the service user failed"
+    --shell /usr/sbin/nologin meshcore-home-gateway' >&2 || die 'creating the service user failed'
   stage_program "$ctid"
   # prints the installed version on stdout, everything else goes to stderr
   version=$(in_ct "$ctid" bash -c "set -e
@@ -635,9 +807,14 @@ install_service() {  # packages, user, zipapp and unit; the version switches onl
     ln -sfn $LIB/current.pyz /usr/local/bin/meshcore-home-gateway
     install -m 0644 \$src/deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
     systemctl daemon-reload
-    echo \$version >&3") \
-    || die "meshcore-home-gateway ${VERSION:-from $REF} was not installed in container $ctid" \
-      "(see above)"
+    echo \$version >&3") || {
+      if [[ -n $VERSION ]]; then
+        die 'meshcore-home-gateway {version} was not installed in container {ctid} (see above)' \
+          version "$VERSION" ctid "$ctid"
+      fi
+      die 'meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)' \
+        ref "$REF" ctid "$ctid"
+    }
   VERSION=$version TITLE="meshcore-home-gateway $version"
 }
 
@@ -651,17 +828,17 @@ ask_radio() {
     choices+=("$path" "$(basename -- "$path")")
   done
   shopt -u nullglob
-  choices+=("tcp" "radio with WiFi firmware (TCP, no authentication)")
+  choices+=("tcp" "$(t 'radio with WiFi firmware (TCP, no authentication)')")
   if (( ! INTERACTIVE )) && [[ ! -v "ANSWERS[radio.choice]" ]]; then
     die "no answer for radio.choice: name the radio's device path, or tcp"  # never guess one
   fi
-  radio=$(ask radio.choice menu "Radio connection" "${choices[0]}" "${choices[@]}")
+  radio=$(ask radio.choice menu "$(t 'Radio connection')" "${choices[0]}" "${choices[@]}")
   if [[ $radio == tcp ]]; then
     OUT[radio.transport]=tcp
-    OUT[radio.host]=$(ask_required radio.host "Radio address (host name or IP address)" "")
-    OUT[radio.port]=$(ask radio.port input "Radio TCP port" "5000")
+    OUT[radio.host]=$(ask_required radio.host "$(t 'Radio address (host name or IP address)')" "")
+    OUT[radio.port]=$(ask radio.port input "$(t 'Radio TCP port')" "5000")
   else
-    [[ -e $radio ]] || die "serial device $radio not found"
+    [[ -e $radio ]] || die 'serial device {device} not found' device "$radio"
     OUT[radio.transport]=serial
     OUT[radio.device]=$radio
   fi
@@ -669,14 +846,15 @@ ask_radio() {
 
 ask_broker() {  # address and login
   local tls password user
-  OUT[mqtt.host]=$(ask_required mqtt.host "MQTT broker: host name or IP address (no mqtt://)" "")
-  tls=$(ask_advanced mqtt.tls yesno "Use TLS for the broker connection?" "false")
+  OUT[mqtt.host]=$(ask_required mqtt.host \
+    "$(t 'MQTT broker: host name or IP address (no mqtt://)')" "")
+  tls=$(ask_advanced mqtt.tls yesno "$(t 'Use TLS for the broker connection?')" "false")
   OUT[mqtt.tls]=$tls
-  OUT[mqtt.port]=$(ask_advanced mqtt.port input "MQTT broker port" \
+  OUT[mqtt.port]=$(ask_advanced mqtt.port input "$(t 'MQTT broker port')" \
     "$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)")
   # no suggested name in the field: whiptail adds what is typed to it instead of replacing it
   user=$(ask mqtt.username input \
-    "MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)" "")
+    "$(t 'MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)')" "")
   OUT[mqtt.username]=$user
   if [[ -z $user ]]; then
     # a password needs a user name: no dialog, and the current one goes (the settings check
@@ -684,12 +862,13 @@ ask_broker() {  # address and login
     [[ -v "ANSWERS[mqtt.password]" ]] || unset 'OUT[mqtt.password]'
   elif [[ -v "CURRENT[mqtt.password]" && $user == "${CURRENT[mqtt.username]-}" ]]; then
     password=$(ask mqtt.password password \
-      "Password of MQTT user '$user' (empty: keep the current one)" "")
+      "$(t "Password of MQTT user '{user}' (empty: keep the current one)" user "$user")" "")
     if [[ -n $password ]]; then OUT[mqtt.password]=$password; fi
   else  # a new user name: a current password belongs to the old one
     password=""
     if (( INTERACTIVE )) || [[ -v "ANSWERS[mqtt.password]" ]]; then
-      password=$(ask mqtt.password password "Password of MQTT user '$user' (empty: none)" "")
+      password=$(ask mqtt.password password \
+        "$(t "Password of MQTT user '{user}' (empty: none)" user "$user")" "")
     fi
     if [[ -n $password ]]; then OUT[mqtt.password]=$password; else unset 'OUT[mqtt.password]'; fi
   fi
@@ -697,47 +876,64 @@ ask_broker() {  # address and login
 
 ask_broker_again() {  # after a refused login, with dialogs: every broker setting
   local host=${OUT[mqtt.host]-} previous=${OUT[mqtt.tls]-false} was=${OUT[mqtt.username]-}
-  local tls port user password before=""
-  if [[ -n $was ]]; then before=" (it was '$was')"; fi
+  local tls port user password prompt
   OUT[mqtt.host]=""
   while [[ -z ${OUT[mqtt.host]} ]]; do
-    OUT[mqtt.host]=$(show_dialog input "MQTT broker: host name or IP address (no mqtt://)" "$host")
+    OUT[mqtt.host]=$(show_dialog input \
+      "$(t 'MQTT broker: host name or IP address (no mqtt://)')" "$host")
   done
-  tls=$(show_dialog yesno "Use TLS for the broker connection?" "$previous")
+  tls=$(show_dialog yesno "$(t 'Use TLS for the broker connection?')" "$previous")
   OUT[mqtt.tls]=$tls
   port=${OUT[mqtt.port]-}
   if [[ $tls != "$previous" && ( -z $port || $port == 1883 || $port == 8883 ) ]]; then
     port=$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)   # the other default
   fi
-  OUT[mqtt.port]=$(show_dialog input "MQTT broker port" "$port")
+  OUT[mqtt.port]=$(show_dialog input "$(t 'MQTT broker port')" "$port")
   # empty, not the refused name: whiptail adds what is typed to a field's content
-  user=$(show_dialog input "MQTT user name as set up on the broker$before; empty: none" "")
+  if [[ -n $was ]]; then
+    prompt=$(t "MQTT user name as set up on the broker (it was '{was}'); empty: none" was "$was")
+  else
+    prompt=$(t 'MQTT user name as set up on the broker; empty: none')
+  fi
+  user=$(show_dialog input "$prompt" "")
   OUT[mqtt.username]=$user
   if [[ -z $user ]]; then
     unset 'OUT[mqtt.password]'
   elif [[ -v "CURRENT[mqtt.password]" && $user == "${CURRENT[mqtt.username]-}" ]]; then
     password=$(show_dialog password \
-      "Password of MQTT user '$user' (empty: keep the installed one)" "")
+      "$(t "Password of MQTT user '{user}' (empty: keep the installed one)" user "$user")" "")
     OUT[mqtt.password]=${password:-${CURRENT[mqtt.password]}}
   else
-    password=$(show_dialog password "Password of MQTT user '$user' (empty: none)" "")
+    password=$(show_dialog password \
+      "$(t "Password of MQTT user '{user}' (empty: none)" user "$user")" "")
     if [[ -n $password ]]; then OUT[mqtt.password]=$password; else unset 'OUT[mqtt.password]'; fi
   fi
 }
 
 ask_bridge() {  # broker, topics, Home Assistant and message settings
   ask_broker
-  OUT[mqtt.base_topic]=$(ask_advanced mqtt.base_topic input "Base topic" "meshcore")
-  OUT[mqtt.node_id]=$(ask_advanced mqtt.node_id input "Node id (in topics and entity IDs)" \
-    "radio1")
+  OUT[mqtt.base_topic]=$(ask_advanced mqtt.base_topic input "$(t 'Base topic')" "meshcore")
+  OUT[mqtt.node_id]=$(ask_advanced mqtt.node_id input \
+    "$(t 'Node id (in topics and entity IDs)')" "radio1")
   OUT[homeassistant.discovery]=$(ask_advanced homeassistant.discovery yesno \
-    "Announce the radio to Home Assistant (MQTT discovery)?" "true")
+    "$(t 'Announce the radio to Home Assistant (MQTT discovery)?')" "true")
   if [[ ${OUT[homeassistant.discovery]} == true ]]; then
     OUT[homeassistant.device_name]=$(ask_advanced homeassistant.device_name input \
-      "Device name in Home Assistant" "MeshCore radio")
+      "$(t 'Device name in Home Assistant')" "MeshCore radio")
+    if knows_language; then ask_names_language; fi   # unknown version: asked, maybe dropped
   fi
   OUT[messages.ascii_only]=$(ask_advanced messages.ascii_only yesno \
-    "Send ASCII only (for handhelds without Unicode fonts)?" "false")
+    "$(t 'Send ASCII only (for handhelds without Unicode fonts)?')" "false")
+}
+
+ask_names_language() {  # homeassistant.language: on a new installation the language menu's
+  # choice, on a reconfiguration the configured one; a menu in the advanced setup
+  if (( ${#L10N_ORDER[@]} > 1 )); then
+    OUT[homeassistant.language]=$(ask_advanced homeassistant.language menu \
+      "$(t 'Language of the names in Home Assistant')" "${HA_LANGUAGE:-en}" "${L10N_MENU[@]}")
+  else  # only English is offered: nothing to ask; the answers' or the configured one stays
+    OUT[homeassistant.language]=${OUT[homeassistant.language]-en}
+  fi
 }
 
 slug() {  # alias from a name: lower case, a-z 0-9 - _, starts with a letter or digit, max 32
@@ -779,7 +975,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
   local -A channel_name=() contact_name=() alias_of=()
   probe_args
   channels=$(in_ct "$ctid" meshcore-home-gateway probe "${PROBE[@]}" --list channels) \
-    || die "cannot read the radio (is it connected and not used by another program?)"
+    || die 'cannot read the radio (is it connected and not used by another program?)'
   contacts=$(in_ct "$ctid" meshcore-home-gateway probe "${PROBE[@]}" --list contacts) \
     || die "cannot read the radio's contacts"
 
@@ -805,8 +1001,8 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
 
   # answered targets count also when the radio offers none (a new radio, only repeaters)
   if (( ${#channel_items[@]} )) || [[ -v "ANSWERS[targets.channels]" ]]; then
-    selected=$(ask targets.channels checklist "Channels to send to" "${current_channels#,}" \
-      "${channel_items[@]}")
+    selected=$(ask targets.channels checklist "$(t 'Channels to send to')" \
+      "${current_channels#,}" "${channel_items[@]}")
     drop_offered channel channel_name
     for item in ${selected//,/ }; do
       if [[ -v "alias_of[channel:$item]" ]]; then
@@ -820,8 +1016,8 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
     done
   fi
   if (( ${#contact_items[@]} )) || [[ -v "ANSWERS[targets.contacts]" ]]; then
-    selected=$(ask targets.contacts checklist "Contacts to send to" "${current_contacts#,}" \
-      "${contact_items[@]}")
+    selected=$(ask targets.contacts checklist "$(t 'Contacts to send to')" \
+      "${current_contacts#,}" "${contact_items[@]}")
     drop_offered contact contact_name
     for item in ${selected//,/ }; do
       if [[ -v "alias_of[contact:$item]" ]]; then
@@ -834,7 +1030,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
         || log "warning: contact $item is not a chat contact on the radio (target $alias)"
     done
     selected=$(ask commands.senders checklist \
-      "Contacts allowed to send commands (direct messages only)" "$current_senders" \
+      "$(t 'Contacts allowed to send commands (direct messages only)')" "$current_senders" \
       "${sender_items[@]}")
     for key in ${current_senders//,/ }; do  # senders the radio does not offer stay
       if [[ ! -v "contact_name[$key]" ]]; then
@@ -845,7 +1041,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
     if [[ -n $selected ]]; then
       OUT[commands.senders]=$selected
       OUT[commands.words]=$(ask commands.words input \
-        "Command words, comma-separated (e.g. status,arm,disarm)" "status")
+        "$(t 'Command words, comma-separated (e.g. status,arm,disarm)')" "status")
     else
       unset 'OUT[commands.senders]' 'OUT[commands.words]'
     fi
@@ -853,9 +1049,8 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
 }
 
 choose_profile() {  # the radio's name, and what the managed profile changes (ADR 0020)
-  local ctid=$1 lines kind setting live wanted action current="" name contact status=0
-  local sets="" reported="" left="" plan=""
-  local prompt="Name of the radio in the mesh (1-31 bytes; empty: keep the radio's)"
+  local ctid=$1 lines kind setting current="" name prompt plan status=0
+  prompt=$(t "Name of the radio in the mesh (1-31 bytes; empty: keep the radio's)")
   probe_args
   lines=$(in_ct "$ctid" meshcore-home-gateway probe "${PROBE[@]}" --list profile) || status=$?
   case $status in
@@ -874,7 +1069,7 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   fi
   while [[ -n $name ]] && (( $(printf '%s' "$name" | wc -c) > 31 )); do
     (( INTERACTIVE )) && [[ ! -v "ANSWERS[radio.profile.name]" ]] \
-      || die "radio.profile.name: 1 to 31 bytes, got '$name'"
+      || die "radio.profile.name: 1 to 31 bytes, got '{name}'" name "$name"
     name=$(show_dialog input "$prompt" "$name")
   done
   if [[ -n $name ]]; then
@@ -884,40 +1079,63 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   fi
   # the service's own plan: the answers as its configuration, with what it stored for the radio
   lines=$(profile_plan "$ctid") || die "cannot read the radio's settings"
-  while IFS=$'\t' read -r kind setting live wanted action; do
-    case $kind/$action in
-      change/set) sets+="  $setting: $live -> $wanted"$'\n' ;;
-      change/reported) reported+="  $setting: $live -> $wanted"$'\n' ;;
-      change/kept) left+="  $setting: $live (changed on the radio; kept)"$'\n' ;;
-      change/given_up)
-        left+="  $setting: $live, not $wanted (did not take effect; no longer set)"$'\n' ;;
-      change/unsupported)
-        left+="  $setting: $live, not $wanted (the firmware does not support it)"$'\n' ;;
-      contact/*)  # contact KEY ACTION NAME: a contact target or command sender
-        contact="  contact ${setting:0:12}${wanted:+ $wanted}"
-        case $live in
-          add) sets+="$contact: added as a favourite"$'\n' ;;
-          favourite) sets+="$contact: made a favourite"$'\n' ;;
-          missing) reported+="$contact: not on the radio"$'\n' ;;
-          not_favourite) reported+="$contact: no favourite"$'\n' ;;
-        esac ;;
-    esac
-  done <<<"$lines"
-  if [[ -n $sets ]]; then plan+="At its next connect the service sets the radio:"$'\n'$sets; fi
-  if [[ -n $reported && ${OUT[radio.profile.manage]:-auto} == observe ]]; then
-    plan+="With radio.profile.manage = observe the service only reports what differs:"$'\n'$reported
-  elif [[ -n $reported ]]; then
-    plan+="The radio's firmware is not tested: the service only reports what differs"$'\n'"(radio.profile.manage = always sets it anyway):"$'\n'$reported
-  fi
-  if [[ -n $left ]]; then plan+="The service leaves alone:"$'\n'$left; fi
+  plan=$(plan_text _fill "$lines")
   if [[ -z $plan ]]; then
     log "the radio already has the managed profile"
     return
   fi
-  log "${plan//$'\n'/$'\n'  }"
+  # each line of the plan ends in a line break, which $(...) dropped
+  log "${plan//$'\n'/$'\n'  }"$'\n  '
   if (( INTERACTIVE )); then
-    whiptail --title "$TITLE" --msgbox -- "$plan" 20 78 >&2 || true
+    whiptail --title "$TITLE" --msgbox -- "$(plan_text t "$lines")"$'\n' 20 78 >&2 || true
   fi
+}
+
+plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or nothing to do; in
+  # English (SAY _fill, the log) or in the dialogs' language (SAY t, the box): one set of texts
+  local say=$1 kind setting live wanted action contact sets="" reported="" left="" plan=""
+  while IFS=$'\t' read -r kind setting live wanted action; do
+    case $kind/$action in
+      change/set) sets+="  $setting: $live -> $wanted"$'\n' ;;
+      change/reported) reported+="  $setting: $live -> $wanted"$'\n' ;;
+      change/kept)
+        # Translators: a setting of the radio and its value, as the radio names them.
+        left+="  $($say '{setting}: {live} (changed on the radio; kept)' \
+          setting "$setting" live "$live")"$'\n' ;;
+      change/given_up)
+        # Translators: a setting of the radio, its value and the one the service had set.
+        left+="  $($say '{setting}: {live}, not {wanted} (did not take effect; no longer set)' \
+          setting "$setting" live "$live" wanted "$wanted")"$'\n' ;;
+      change/unsupported)
+        left+="  $($say '{setting}: {live}, not {wanted} (the firmware does not support it)' \
+          setting "$setting" live "$live" wanted "$wanted")"$'\n' ;;
+      contact/*)  # contact KEY ACTION NAME: a contact target or command sender
+        contact="${setting:0:12}${wanted:+ $wanted}"   # the start of its key, and its name
+        case $live in
+          add)
+            # Translators: {contact} is the start of a contact's key and its name.
+            sets+="  $($say 'contact {contact}: added as a favourite' contact "$contact")"$'\n' ;;
+          favourite)
+            sets+="  $($say 'contact {contact}: made a favourite' contact "$contact")"$'\n' ;;
+          missing)
+            reported+="  $($say 'contact {contact}: not on the radio' contact "$contact")"$'\n' ;;
+          not_favourite)
+            reported+="  $($say 'contact {contact}: no favourite' contact "$contact")"$'\n' ;;
+        esac ;;
+    esac
+  done <<<"$2"
+  if [[ -n $sets ]]; then
+    plan+="$($say 'At its next connect the service sets the radio:')"$'\n'$sets
+  fi
+  if [[ -n $reported && ${OUT[radio.profile.manage]:-auto} == observe ]]; then
+    plan+="$($say 'With radio.profile.manage = observe the service only reports what differs:')"
+    plan+=$'\n'$reported
+  elif [[ -n $reported ]]; then
+    plan+="$($say "The radio's firmware is not tested: the service only reports what differs
+(radio.profile.manage = always sets it anyway):")"$'\n'$reported
+  fi
+  if [[ -n $left ]]; then plan+="$($say 'The service leaves alone:')"$'\n'$left; fi
+  printf '%s' "$plan"
 }
 
 profile_plan() {  # profile_plan CTID: `probe --list profile` with the answers as configuration
@@ -950,10 +1168,17 @@ drop_offered() {  # drop_offered KIND OFFERED: forget the targets the dialog ask
 }
 
 write_answers() {  # the answers for `meshcore-home-gateway config render`, one key=value per line
-  local key
+  local key left=""
+  if language_dropped; then left=homeassistant.language; fi
   for key in "${!OUT[@]}"; do
-    printf '%s=%s\n' "$key" "${OUT[$key]}"
+    if [[ $key != "$left" ]]; then printf '%s=%s\n' "$key" "${OUT[$key]}"; fi
   done | LC_ALL=C sort
+}
+
+language_dropped() {  # the installer's own homeassistant.language, which the version lacks
+  # (learned after the installation); an answer goes as given, for the program to judge
+  [[ -v "OUT[homeassistant.language]" && ! -v "ANSWERS[homeassistant.language]" ]] \
+    && ! knows_language
 }
 
 configure() {  # write the configuration into the container
@@ -965,17 +1190,18 @@ configure() {  # write the configuration into the container
     (umask 077 && cat >$ANSWERS_FILE)
     meshcore-home-gateway config render --answers $ANSWERS_FILE \
       --output $CONFIG --group meshcore-home-gateway" >&2 \
-    || die "the configuration was not accepted (see above)"
+    || die 'the configuration was not accepted (see above)'
 }
 
 load_current() {  # the settings of an existing installation, as answers
   local ctid=$1 text line
   text=$(in_ct "$ctid" meshcore-home-gateway config answers --config "$CONFIG") \
-    || die "cannot read the configuration in container $ctid"
+    || die 'cannot read the configuration in container {ctid}' ctid "$ctid"
   while IFS= read -r line; do
     if [[ $line == *=* ]]; then CURRENT[${line%%=*}]=${line#*=}; fi
   done <<<"$text"
-  [[ -v "CURRENT[radio.transport]" ]] || die "container $ctid has no radio configured"
+  [[ -v "CURRENT[radio.transport]" ]] \
+    || die 'container {ctid} has no radio configured' ctid "$ctid"
   # settings missing from the file run with the program's defaults; without these two, ask_bridge
   # would offer the installer's defaults (a user name, port 8883 with TLS) and write them
   [[ -v "CURRENT[mqtt.username]" ]] || CURRENT[mqtt.username]=""
@@ -986,37 +1212,58 @@ load_current() {  # the settings of an existing installation, as answers
 start_service() {  # Type=notify: "active" means the service has reported readiness
   local ctid=$1 attempt
   in_ct "$ctid" systemctl enable --now meshcore-home-gateway >&2 \
-    || die "the service did not start; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
+    || die 'the service did not start; see: {command}' \
+      command "pct exec $ctid -- journalctl -u meshcore-home-gateway"
   for (( attempt = 0; attempt < 15; attempt++ )); do
     if in_ct "$ctid" systemctl is-active --quiet meshcore-home-gateway; then return 0; fi
     sleep 1
   done
-  die "the service did not start; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
+  die 'the service did not start; see: {command}' \
+    command "pct exec $ctid -- journalctl -u meshcore-home-gateway"
 }
 
-summary() {  # commands for the user: pct exec takes the host's PATH, which may lack /usr/local/bin
-  local ctid=$1 text update
+summary() {  # summary CTID: the final message, in the log and in a box
+  log "$(summary_text _fill "$1")"
+  # 22 rows hold it with the wrapped commands; with --scrolltext, Enter would not close the box
+  if (( INTERACTIVE )); then
+    whiptail --title "$TITLE" --msgbox -- "$(summary_text t "$1")" 22 78 >&2 || true
+  fi
+}
+
+summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _fill, the log) or
+  # in the dialogs' language (SAY t, the box): one set of texts. Commands for the user: pct exec
+  # takes the host's PATH, which may lack /usr/local/bin
+  local say=$1 ctid=$2 login update text
+  case $BROKER_LOGIN in  # check_broker's result
+    accepted) login=$($say 'login accepted') ;;
+    unchecked)
+      login=$($say 'not checked (version {version} cannot; check after --update)' \
+        version "$VERSION") ;;
+    failed) login=$($say 'login failed (see above), the service keeps trying') ;;
+    *) login=$($say 'login not checked') ;;
+  esac
   update="$(invocation) --update $ctid"
   if [[ $SOURCE == release ]] && prerelease; then   # its own installer would install it again
-    update="the installer of a newer release ($RELEASES) with -- --update $ctid"
+    update=$($say 'the installer of a newer release ({releases}) with -- --update {ctid}' \
+      releases "$RELEASES" ctid "$ctid")
   fi
-  text="meshcore-home-gateway $VERSION runs in container $ctid.
+  # Translators: the values start in one column; they are commands to copy, but {login}.
+  text=$($say 'meshcore-home-gateway {version} runs in container {ctid}.
 
-Broker:       ${BROKER_LOGIN:-login not checked}
-Logs:         pct exec $ctid -- journalctl -u meshcore-home-gateway -f
-Check:        pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config
-Reconfigure:  $(invocation) --reconfigure $ctid
-Update:       $update"
+Broker:       {login}
+Logs:         {logs}
+Check:        {check}
+Reconfigure:  {reconfigure}
+Update:       {update}' \
+    version "$VERSION" ctid "$ctid" login "$login" \
+    logs "pct exec $ctid -- journalctl -u meshcore-home-gateway -f" \
+    check "pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config" \
+    reconfigure "$(invocation) --reconfigure $ctid" update "$update")
   if [[ ${OUT[radio.transport]} == serial ]]; then
-    text+="
-
-The container starts only while the radio is plugged in.
-After re-plugging the radio: pct reboot $ctid"
+    text+=$'\n\n'$($say 'The container starts only while the radio is plugged in.
+After re-plugging the radio: {command}' command "pct reboot $ctid")
   fi
-  log "$text"
-  if (( INTERACTIVE )); then  # 22 rows hold it with the wrapped commands; with --scrolltext, Enter
-    whiptail --title "$TITLE" --msgbox -- "$text" 22 78 >&2 || true   # would not close the box
-  fi
+  printf '%s' "$text"
 }
 
 # --- modes ----------------------------------------------------------------------------------
@@ -1035,6 +1282,10 @@ install() {
   start_container "${CT[id]}"
   if [[ ${OUT[radio.transport]} == serial ]]; then check_device_group "${CT[id]}"; fi
   install_service "${CT[id]}"
+  if language_dropped; then
+    log "meshcore-home-gateway $VERSION in container ${CT[id]} has no setting" \
+      "homeassistant.language: the names in Home Assistant stay English"
+  fi
   if [[ $SOURCE != checkout ]]; then check_settings_in "${CT[id]}"; fi
   check_broker "${CT[id]}"
   choose_targets "${CT[id]}"
@@ -1047,12 +1298,14 @@ install() {
 
 update() {
   local ctid=$1
-  ct_running "$ctid" || die "container $ctid is not running"
+  ct_running "$ctid" || die 'container {ctid} is not running' ctid "$ctid"
   in_ct "$ctid" test -f "$CONFIG" \
-    || die "container $ctid has no meshcore-home-gateway installation ($CONFIG is missing)"
+    || die 'container {ctid} has no meshcore-home-gateway installation ({path} is missing)' \
+      ctid "$ctid" path "$CONFIG"
   install_service "$ctid"
   in_ct "$ctid" systemctl restart meshcore-home-gateway >&2 \
-    || die "the service did not restart; see: pct exec $ctid -- journalctl -u meshcore-home-gateway"
+    || die 'the service did not restart; see: {command}' \
+      command "pct exec $ctid -- journalctl -u meshcore-home-gateway"
   log "container $ctid runs meshcore-home-gateway $VERSION"
 }
 
@@ -1060,15 +1313,17 @@ reconfigure() {
   local ctid=$1 key version
   for key in "${!ANSWERS[@]}"; do  # the container and the radio connection stay as installed
     case $key in
-      radio.choice|ct.*) die "--reconfigure cannot apply the answer $key (see docs/deployment.md)" ;;
+      radio.choice|ct.*)
+        die '--reconfigure cannot apply the answer {key} (see docs/deployment.md)' key "$key" ;;
     esac
   done
-  ct_running "$ctid" || die "container $ctid is not running"
+  ct_running "$ctid" || die 'container {ctid} is not running' ctid "$ctid"
   load_current "$ctid"
   version=$(in_ct "$ctid" meshcore-home-gateway --version) && version=${version##* }
   [[ $version =~ ^[0-9][0-9A-Za-z.+-]*$ ]] \
-    || die "cannot read the version of meshcore-home-gateway in container $ctid"
-  VERSION=$version TITLE="meshcore-home-gateway $version"   # what runs there, not this installer
+    || die 'cannot read the version of meshcore-home-gateway in container {ctid}' ctid "$ctid"
+  # what runs there, not this installer; it also renders the configuration, not a checkout's own
+  VERSION=$version TITLE="meshcore-home-gateway $version" OWN_PROGRAM=0
   pass_settings
   choose_setup
   ask_bridge
@@ -1088,25 +1343,26 @@ main() {
   local mode=install ctid=""
   while (( $# )); do
     case $1 in
-      --answers) [[ $# -ge 2 ]] || die "--answers needs a file"; INTERACTIVE=0; load_answers "$2"; shift 2 ;;
-      --update) [[ $# -ge 2 ]] || die "--update needs a container ID"; mode=update; ctid=$2; shift 2 ;;
-      --reconfigure) [[ $# -ge 2 ]] || die "--reconfigure needs a container ID"; mode=reconfigure; ctid=$2; shift 2 ;;
+      --answers) [[ $# -ge 2 ]] || die '--answers needs a file'; INTERACTIVE=0; load_answers "$2"; shift 2 ;;
+      --update) [[ $# -ge 2 ]] || die '--update needs a container ID'; mode=update; ctid=$2; shift 2 ;;
+      --reconfigure) [[ $# -ge 2 ]] || die '--reconfigure needs a container ID'; mode=reconfigure; ctid=$2; shift 2 ;;
       --release)
-        [[ $# -ge 2 && $2 =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || die "--release needs a version, e.g. 0.1.0"
-        [[ $SOURCE != ref ]] || die "--release and --ref exclude each other"
+        [[ $# -ge 2 && $2 =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || die '--release needs a version, e.g. 0.1.0'
+        [[ $SOURCE != ref ]] || die '--release and --ref exclude each other'
         SOURCE=release PICKED=$2 VERSION=$2; shift 2 ;;
       --ref)
         [[ $# -ge 2 && $2 =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
-          || die "--ref needs a branch, tag or commit, e.g. main"
-        [[ $SOURCE != release ]] || die "--release and --ref exclude each other"
+          || die '--ref needs a branch, tag or commit, e.g. main'
+        [[ $SOURCE != release ]] || die '--release and --ref exclude each other'
         SOURCE=ref REF=$2; shift 2 ;;
       -h|--help) usage; exit 0 ;;
-      *) die "unknown option $1 (see --help)" ;;
+      *) die 'unknown option {option} (see --help)' option "$1" ;;
     esac
   done
   detect_source
   preflight "$mode"
   WORK=$(mktemp -d)
+  if (( INTERACTIVE )) && [[ $mode != update ]]; then choose_language "$mode"; fi
   case $mode in
     install) install ;;
     update) update "$ctid" ;;

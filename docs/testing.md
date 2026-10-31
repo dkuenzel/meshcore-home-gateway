@@ -25,15 +25,22 @@ event payloads, `test_contact_devices.py` the contacts' devices, `test_manage_co
 controls that add and remove contacts, `test_telemetry.py` the companions' telemetry (their
 readings, states, switch and expiry, a `person` and its presence triggers, the telemetry examples),
 `test_adverts.py` the check for positions in adverts (*Position in adverts*, the gateway's sensor,
-the event and its example) and `test_traces.py` the traces on the map (the map card's own request
-against the real recorder) into the MQTT integration of the Home Assistant release that
+the event and its example), `test_traces.py` the traces on the map (the map card's own request
+against the real recorder), `test_languages.py` the names in another language (the same entity
+IDs, unique IDs and attributes in English and in a pseudo-language, a change of language that
+renames only display names, a device name the user chose kept) and `test_dashboard.py` the
+generated dashboard (loaded as a YAML-mode
+dashboard, its Markdown cards rendered as the frontend asks for them, also with hostile names and
+texts in every place, the visibility of its cards, the map's trackers and hint, the guide's script
+run by a household user, in English and in a pseudo-language) into the MQTT integration of the
+Home Assistant release that
 `pytest-homeassistant-custom-component` pins (`home-assistant/requirements.in`; the environment is
 installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-homeassistant`, about
 900 MB). It checks what [home-assistant.md](home-assistant.md) promises, including the example
 automations taken from that page, and that Home Assistant logs no warning. It is a separate CI job
 and not part of `make check`, because Home Assistant needs a newer Python than the gateway and
-is a large download. Run it after changing discovery, payloads, the state document or
-home-assistant.md.
+is a large download. Run it after changing discovery, payloads, the state document, the
+dashboard's template or home-assistant.md.
 
 | Suite | Files | Needs |
 | --- | --- | --- |
@@ -44,19 +51,53 @@ home-assistant.md.
 | MQTT | `tests/test_mqtt_client.py` | `mosquitto` for the tests marked `broker` |
 | Documents, Home Assistant discovery, payloads | `tests/test_views.py`, `test_discovery.py`, `test_payloads.py`, `test_contact_devices.py`, `test_manage_entities.py` | nothing |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
-| Configuration, state, history, packaging | `tests/test_config.py`, `test_state.py`, `test_history.py`, `test_build_pyz.py`, `test_release_notes.py` | nothing |
-| CLI | `tests/test_cli.py`, `test_cli_contacts.py` | `mosquitto` for the tests marked `broker` |
+| Configuration, state, history, packaging | `tests/test_config.py`, `test_state.py`, `test_history.py`, `test_build_pyz.py` (the zipapp holds the catalogs and the dashboard's template, no compiled catalog), `test_release_notes.py` | nothing |
+| Translations | `tests/test_texts.py`, `test_catalog.py` (the PO reader and the MO writer, against a golden catalog and GNU `msgfmt`), `test_i18n.py` (the language asked for, the catalogs, the guard against a translation that would break a text), `test_i18n_tool.py` (extraction, merge, checks, the installer's packs, their pins and the packs of a release), `test_translations.py` (the committed templates, catalogs and packs as `make translations` writes them), `test_adding_a_language.py` (a copy of the checkout gains a pseudo-language through the steps of [Adding a language](translations.md#adding-a-language) alone, and the suites that read the languages pass in it) | GNU gettext (`msgfmt`) for the tests that compare with it; git |
+| CLI | `tests/test_cli.py`, `test_cli_contacts.py`, `test_cli_language.py` (every command in a pseudo-language and with catalogs that would break it; machine output the same in every language; `run` English), `test_cli_dashboard.py` | `mosquitto` for the tests marked `broker` |
+| Dashboard | `tests/test_dashboard.py` (the generator, and the template's rules on the shipped template: markers, the macro `m`, quoting, translator notes, the mapping macros against the gateway's value lists) | nothing |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
-| Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py` (above) | `make ha-test`: Python 3.14.2 or newer |
+| Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_dashboard.py` (above) | `make ha-test`: Python 3.14.2 or newer |
 | Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)) | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
-| Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`) | bash |
+| Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`; a copy of the script that offers English only), `test_installer_language.py` (the messages block cut out and run alone, packs and their pins, the language menu with a pseudo-language, where a pack comes from, the program's messages in the dialogs' language, the size of the published script) | bash |
+
+### The dashboard in the frontend's Markdown pipeline
+
+The contract tests check the form of each Markdown card's output: every value from the mesh
+escaped, on a line that is one HTML element, no blank line. What the frontend makes of that form
+is checked once by hand after a frontend update (a new pin of Home Assistant), with a copy of its
+Markdown pipeline in Node: `tests/manual/markdown_pipeline.mjs` (not in CI, which would need Node
+and two npm packages). Take the versions of `marked` and `xss` from the new frontend's
+`package.json`, compare the script's allow list with its `src/resources/markdown-worker.ts`, and
+run:
+
+```sh
+npm install --prefix build/markdown --no-save marked@18.0.14 xss@1.0.15
+mkdir -p build/markdown/out
+MESHCORE_HOME_GATEWAY_MARKDOWN_DIR=build/markdown/out make ha-test
+node tests/manual/markdown_pipeline.mjs build/markdown/node_modules build/markdown/out/*.json
+```
+
+The hostile-name test writes its outputs there, one file per language (110 cards each). The script
+exits non-zero when a card gives an image, a link, or an `ha-alert` its Markdown did not hold as an
+element. With frontend 20260930.2: 0 images, 0 links, 22 `ha-alert` in and out per language.
 
 Tests marked `broker` start a private `mosquitto` on a free local port. When `mosquitto` is not
 installed they **fail** with a hint; set `MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1` to skip them on
-purpose. One transport test and one firmware test are skipped when running as root, because root
-bypasses the exclusive lock they check; CI runs them as a normal user.
+purpose. The same holds for the tests that compare our catalogs with GNU gettext's `msgfmt`
+(`apt install gettext`; `MESHCORE_HOME_GATEWAY_SKIP_GETTEXT_TESTS=1`); CI's test jobs and the
+release workflow install it. One transport test and one firmware test are skipped when running
+as root, because root bypasses the exclusive lock they check; CI runs them as a normal user.
+
+Every test runs with a strict catalog: looking up a text that the template lacks fails the test,
+so a text nobody marked cannot pass ([development.md](development.md#translations)). The helpers
+in `tests/i18n_helpers.py` offer the pseudo-language `xx` (every text marked `‹…›`) and
+catalogs that would break a careless caller (wide letters, stray fields, `%` signs). The
+installer's language tests make a pack of `xx` from the installer's template and serve it from a
+copy of the script whose block of language packs lists it (`offering`): through a `wget` stub, or
+next to a checkout. They keep the published script within 98,304 bytes (96 KiB, three quarters
+of what Linux takes as one argument, `bash -c "$(wget …)"`).
 
 ## Tests against the real firmware
 
@@ -173,6 +214,11 @@ check, not part of `make check`. It caught three bugs the stub could not show: d
 captured output, names starting with `-` taken for options, and non-ASCII characters dropped in a
 locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
 
+While the installer offers English only, it shows no language menu; once it offers another
+language, the menu comes first and the script needs a key for it. Whether whiptail draws a
+no-break space (U+00A0, U+202F) is not checked yet: until it is, the catalog checks refuse one in
+the command line's texts, which the installer's boxes show too.
+
 ## Hardware checklist
 
 The automated tests emulate the radio or run its firmware on a simulated air. This checklist covers
@@ -181,8 +227,8 @@ the same for every installation and needs no particular hardware: any two MeshCo
 companion firmware will do. Run it before every release and after raising the supported firmware
 version, and record the firmware versions, radio models and results in the pull request. The
 core steps 1–4, 10–12, 15, 16 and 18 test the bridge end to end and are run for every release
-(docs/development.md); the others where their feature changed. Steps 15 (the `pct` part), 19 and
-20 apply to the Proxmox installer only.
+(docs/development.md); the others where their feature changed. Steps 15 and 46 (the `pct` parts),
+19 and 20 apply to the Proxmox installer only.
 
 Setup: radio **A** on the gateway (USB), radio **B** as a handheld or phone companion in range,
 both on the same channel settings; B knows A as a contact and the reverse. Steps 21–28 add and
@@ -250,7 +296,23 @@ automated tests.
 | 42 | (a) After step 41 (B saved its fix), reboot B indoors with GPS on and no fix, sharing on, *Advert* beside A. (b) If at hand, the same with a companion that never had a position; then outdoors with a fix, *Advert* | (a) B sends its saved position: `true`, `advert_position` `true`, B's tracker shows the saved place with `position_at` the time of the table read, not the advert's (the position changed while the check already carried); note in [platform-notes.md](platform-notes.md#meshcore-companion-firmware) whether the position repeats bit for bit across adverts. (b) `true` with `advert_position` `false` (0, 0), the event once; an earlier advert position gone from its tracker; with the fix: `advert_position` `true`, no second event |
 | 43 | Restart the service between the two adverts of 41. With sharing off on B (checked `false`): stop the service, switch sharing on B, press *Advert* beside A, start it; then *Advert* again. Separately, start 1.1.0a3 on a state directory of 1.1.0a2 whose radio holds an old advert position of B (sharing off since) | the restart raises and clears nothing; `state.json` `advert_checks` holds B with no position. After the stop: both sensors on (B's record took its position; the advert is unchecked), `advert_checked_at` older than `last_advert_at`, no event, no old position back on the tracker, one debug line "not checked"; the next *Advert* checks it: `advert_checked_at` moves, one `position_in_advert`. First start: B's sensor on (the record), the gateway's sensor keeps its 1.1.0a2 state until the radio connects, then on; `advert_checked_at` `null`, no event; B's *Advert* turns both off |
 | 44 | Radio over TCP (if available): B adverts ten times during a large table read; then an hour behind a busy repeater with B sending a flood advert from the app every 5 minutes; count B's adverts | the debug lines "not checked" (with their reason) and the info lines of checks counted, and compared with B's adverts and with the changes of `advert_checked_at`; an advert whose push was dropped never turns `advert_carries_position` to `false` while B shares; the next advert checks it. Write the counts into [platform-notes.md](platform-notes.md#meshcore-companion-firmware): they decide whether a later release needs the radio's stored copy of the advert, and whether 40 s and 64 logged adverts are enough in a busy mesh |
-| 45 | Browser: the guide's map card ([Traces on the map](home-assistant.md#traces-on-the-map)) with B's tracker. Walk B 200 m away and back; let it expire (step 38) and come back; restart the gateway; then exclude `device_tracker.mesh_*` from the recorder, restart Home Assistant, open the card. For slice 8: a `show_all` card with `conditions` on an attribute only mesh trackers have (`position_source`), `hours_to_show: 24`, with a phone tracker in Home Assistant, and B's tracker `unavailable` when the card loads | a dot per move of 20 m or more, a line between, older ones fainter; none while B rests; the expiry as a straight segment; the restart as a second dot on one spot; a trail of exactly two points drawn with sensible opacity; with the exclusion no trail after the reload, a `person` of B still has one. `show_all`: whether the phone's trail shows although its marker is filtered, and whether a tracker `unavailable` at load gets a trail. Both into [platform-notes.md](platform-notes.md#home-assistant-dashboards); slice 8 decides its map and the tracker attributes on them |
+| 45 | Browser: the guide's map card ([Traces on the map](home-assistant.md#traces-on-the-map)) with B's tracker. Walk B 200 m away and back; let it expire (step 38) and come back; restart the gateway; then exclude `device_tracker.mesh_*` from the recorder, restart Home Assistant, open the card | a dot per move of 20 m or more, a line between, older ones fainter; none while B rests; the expiry as a straight segment; the restart as a second dot on one spot; a trail of exactly two points drawn with sensible opacity; with the exclusion no trail after the reload, a `person` of B still has one |
+
+Steps 46–54 check the generated dashboard ([home-assistant.md](home-assistant.md#dashboard)) in a
+browser, on a phone (about 390 px wide) and on a desktop, with A and B as for steps 29–45 (B with
+GPS, a contact of A); for steps 51 and 52 C, another companion with GPS that A is not holding.
+
+| # | Step | Expected |
+| --- | --- | --- |
+| 46 | In the container: `meshcore-home-gateway dashboard > /tmp/mesh.yaml` as root, then again with `--state-dir /nonexistent` into another file; on the Proxmox host: `pct exec <id> -- /usr/local/bin/meshcore-home-gateway dashboard > mesh.yaml` | YAML that starts with a comment naming the node and the release's version; standard error "The map lists 1 contact with a position." (B), then "The map lists 0 contacts with a position."; the second file has the note instead of the map; the host's file equals the first |
+| 47 | Desktop: add the dashboard through the raw configuration editor, as the guide says; then the same file as a YAML-mode dashboard | four tabs, no red error card; the guide's menu words match the tested release (correct them otherwise) |
+| 48 | Phone and desktop, each view, in the dark and the light theme | the sections stack in order on the phone; the tables fit or scroll inside their card, the page does not scroll sideways; the tiles show the gateway's names |
+| 49 | Unplug A's USB cable; stop the gateway; start both again | within a minute red *Radio disconnected*, then red *Gateway offline*, then green *Gateway ready* |
+| 50 | Add the guide's script *Mesh message*. Tap *Write a message*, send to B, then to a channel target; from B send `![](https://example.org/p.png) [x](https://example.org) <b>b</b>` | before the script a hint instead of the tile; the form shows *To* (the targets and the contacts by name) and *Message*; B receives; *Last sent* shows *confirmed*, then *sent*; *Last message* shows B's text literally; the browser's network log has no request to example.org |
+| 51 | C advertises; *Add heard node* for C; then *Add contact (key or link)* with a wrong key; rename B to `<i>x</i>[y](https://e.x)` in the app and advertise | C in *Nodes heard*, then in the contacts table within a minute, *Last contact event* "added to the radio"; for the wrong key "request refused" with its reason code; B's new name literal in the table (a name with a line break cannot be typed in the app; the contract tests cover it) |
+| 52 | Map: B walks 200 m away and back; C with GPS on; then make the dashboard again and paste it | B's trace; the hint names C until the new dashboard lists it |
+| 53 | Update the gateway, or start a test installation with another version, without making the dashboard again | the amber version card with both versions; gone once the dashboard is made again |
+| 54 | A household user who is no administrator, on the phone; then open `/config/devices` as that user; then press `e`, search *Remove from radio* and open a contact's button (do not press it) | sees every view, sends with the form, cannot edit the dashboard; the device page is refused; the entity search opens the button with *Press*, as the guide says (anyone can remove a contact that way) |
 
 ### Steps 29–45 on the simulated air
 
@@ -271,3 +333,7 @@ on adverts with telemetry off. They do not replace a step: what they cannot show
 | 42 | **not yet**: `test_adverts_and_positions.py` shows the saved position in telemetry after a reboot, not in adverts | all |
 | 43 | **partly**, `test_advert_check.py`: a restart after the check `true` keeps it (`advert_checked_at`, the advert position) and raises no event; after each run `state.json` `advert_checks` holds B's advert time and flag, no position. Checked `false`, stopped, B shares and advertises beside A, started: `advert_checked_at` older than `last_advert_at`, `advert_carries_position` `true` and B in the index, no position on B's document, no event, one debug line "not checked"; the next Advert checks it, `advert_checked_at` moves, one `position_in_advert`; B's document is never cleared | Home Assistant's sensors and the tracker; the first start on a state directory of 1.1.0a2 |
 | 32, 36, 37, 38, 40, 44, 45 | **not yet**: they take hours, Home Assistant, a browser, a TCP interface or a USB cable | all |
+
+Steps 46–54 need Home Assistant in a browser; the dashboard's contract tests
+(`home-assistant/tests/test_dashboard.py`) show what Home Assistant does with the file, not what
+the frontend draws.

@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlencode
 
 from meshcore_home_gateway.core.contacts import NODE_TYPES_ADDED
 from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
+from meshcore_home_gateway.texts import TextError
 
 SCHEME = "meshcore://"
 ADD_PATH = "contact/add"
@@ -23,11 +24,12 @@ _HEX = re.compile(r"(?:[0-9a-fA-F]{2})+")
 _ONCE = ("public_key", "name", "type")
 
 
-class LinkError(ValueError):
-    """The text is no key, link or card the gateway takes; `reason` as in the `contact` event."""
+class LinkError(TextError):
+    """The text is no key, link or card the gateway takes; `reason` as in the `contact` event,
+    the text for people (str() English, `.text` for the command line) after it."""
 
-    def __init__(self, reason: str, message: str) -> None:
-        super().__init__(message)
+    def __init__(self, reason: str, msgid: str, /, **values: object) -> None:
+        super().__init__(msgid, **values)
         self.reason = reason
 
 
@@ -80,7 +82,9 @@ def _link(query: str) -> LinkContact:
     (kind,) = fields.get("type", ["1"])
     node_type = int(kind) if kind.isascii() and kind.isdigit() else -1
     if node_type not in NODE_TYPES_ADDED:
-        raise LinkError("unsupported_type", f"the contact link has type {kind!r}, not 1 to 4")
+        raise LinkError(
+            "unsupported_type", "the contact link has type {kind!r}, not 1 to 4", kind=kind
+        )
     return LinkContact(key.lower(), name or None, node_type, "link")
 
 
@@ -90,5 +94,7 @@ def _card(raw: bytes) -> LinkContact:
     if advert is None:
         raise LinkError("invalid_link", "the contact card holds no advert")
     if advert.node_type not in NODE_TYPES_ADDED:
-        raise LinkError("unsupported_type", f"the contact card has type {advert.node_type}")
+        raise LinkError(
+            "unsupported_type", "the contact card has type {node_type}", node_type=advert.node_type
+        )
     return LinkContact(advert.public_key.hex(), advert.name, advert.node_type, "card")

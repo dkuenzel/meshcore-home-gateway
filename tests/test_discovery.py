@@ -1,18 +1,34 @@
 """Home Assistant discovery document (rules from docs/home-assistant.md)."""
 
+import copy
 import re
 from dataclasses import replace
 from typing import Any
 
-from meshcore_home_gateway import __version__
-from meshcore_home_gateway.config import parse_config
+import pytest
+
+from meshcore_home_gateway import __version__, i18n
+from meshcore_home_gateway.config import DEFAULT_DEVICE_NAME, Config, parse_config
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.lpp import Named
-from meshcore_home_gateway.core.mesh import AirtimeMeter, Fix, Mesh, Node, Readings, Tracked
+from meshcore_home_gateway.core.mesh import (
+    AirtimeMeter,
+    Fix,
+    Mesh,
+    Node,
+    Readings,
+    Tracked,
+    type_name,
+)
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.profile import ProfileReport
-from meshcore_home_gateway.mqtt.contact_devices import contact_payload
-from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic, placeholder
+from meshcore_home_gateway.mqtt.contact_devices import contact_payload, removal_payload
+from meshcore_home_gateway.mqtt.discovery import (
+    device_name,
+    discovery_payload,
+    discovery_topic,
+    placeholder,
+)
 from meshcore_home_gateway.mqtt.manage_entities import manage_payload
 from meshcore_home_gateway.mqtt.payloads import rx_payload
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -25,6 +41,9 @@ from meshcore_home_gateway.views import (
     settings_document,
     stats_document,
 )
+from tests import public_interface as interface
+from tests.i18n_helpers import pseudo, speaking
+from tests.radio_emulator import LPP_ALL_READINGS
 
 KEY = "a1" * 32
 CONFIG = parse_config(
@@ -295,7 +314,7 @@ def test_every_platform_announced_can_be_removed() -> None:
     platforms = {component["p"] for component in found}
     assert {"switch", "device_tracker", "select", "text", "notify", "button"} <= platforms
     for platform in platforms:
-        stand_in = placeholder(f"uid_{platform}", platform, TOPICS)
+        stand_in = placeholder(f"uid_{platform}", platform, TOPICS, i18n.ENGLISH.ha_name)
         assert stand_in is not None, platform
         assert stand_in["p"] == platform
 
@@ -303,11 +322,14 @@ def test_every_platform_announced_can_be_removed() -> None:
 def test_select_and_text_components_can_be_removed() -> None:
     """The controls that add contacts are removed like any component: placeholders bind what
     Home Assistant kept from an earlier run (home-assistant/tests)."""
+    english = i18n.ENGLISH.ha_name
     for platform in ("select", "text"):
-        stand_in = placeholder(f"uid_{platform}", platform, TOPICS)
+        stand_in = placeholder(f"uid_{platform}", platform, TOPICS, english)
         assert stand_in is not None
         assert stand_in["command_topic"] == "meshcore/radio-1/removed"
-    assert placeholder("uid_select", "select", TOPICS)["options"] == ["removed"]  # type: ignore[index]
+    select = placeholder("uid_select", "select", TOPICS, english)
+    assert select is not None
+    assert select["options"] == ["removed"]
 
 
 def test_packet_sensors_only_with_the_rx_log_and_disabled_by_default() -> None:
@@ -331,3 +353,124 @@ def test_removed_components_are_sent_once_as_their_platform() -> None:
     doc = discovery_payload(CONFIG, TOPICS, removed=removed)
     assert doc["cmps"]["send_old"] == {"p": "notify"}
     assert doc["cmps"]["send_alerts"]["command_topic"] == "meshcore/radio-1/send/alerts"
+
+
+# --- the language of the names (ADR 0019) --------------------------------------------------------
+
+SPOKEN = ["xx", *(code for code in i18n.LANGUAGES if code != "en")]  # xx: tests/i18n_helpers.py
+# a name as the pseudo-language shows it: the reading names add their channel and occurrence
+MARKED = re.compile(r"‹[^‹›]+›(?: \d+(?: \(\d+\))?)?")
+UNKNOWN_MODEL = type_name(NodeType.NONE)  # a node type without a model name of its own
+
+
+def speak(language: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Offer the pseudo-language; a shipped language is offered already."""
+    if language == "xx":
+        speaking(monkeypatch, pseudo())
+
+
+def _maximal(language: str, settings: str = "") -> Config:
+    """Every component of the gateway (tests/public_interface.py) with names in `language`."""
+    table = f'[homeassistant]\nlanguage = "{language}"\n{settings}'
+    return parse_config(interface.MAXIMAL_TEXT.replace("[homeassistant]\n", table))
+
+
+def _documents(config: Config) -> list[dict[str, Any]]:
+    """What the gateway sends to Home Assistant: its document with removed components (as
+    placeholders and as removed), the controls, a contact of every node type with every reading
+    (two temperatures on one channel too), and a contact's removal."""
+    topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
+    removed = {"send_old": "notify", "old_switch": "switch"}
+    position = Position(52.1, 9.2)
+    readings = Readings(0.0, Named(4.12, 23.4, LPP_ALL_READINGS))
+    documents = [
+        discovery_payload(config, topics, RADIO, removed, bind=True),
+        discovery_payload(config, topics, RADIO, removed),
+        manage_payload(config, topics, ["a1a1a1a1a1a1…a1a1a1a1 Alice"], removed, bind=True),
+        manage_payload(config, topics, [], removed),
+    ]
+    for node_type in NodeType:
+        node = Node(KEY, "Alice", node_type, position=position)
+        tracked = Tracked(node, fix=Fix(position, 0.0, "telemetry"), readings=readings)
+        documents.append(contact_payload(config, topics, tracked, "alice"))
+    platforms = {"send": "notify", "ch2_temperature_2": "sensor", "position": "device_tracker"}
+    documents.append(removal_payload(config, topics, KEY, platforms))
+    return documents
+
+
+def _named_fields(device: dict[str, Any]) -> list[str]:
+    """The fields of a device that are names: the gateway's name, a contact's model. A
+    contact's name, the radio's model and an unknown node type are data."""
+    if "via_device" not in device:
+        return ["name"]
+    return ["mdl"] if device.get("mdl", UNKNOWN_MODEL) != UNKNOWN_MODEL else []
+
+
+def _names(documents: list[dict[str, Any]]) -> list[str]:
+    """Every name in the documents: of the components, the gateway and the contacts' models."""
+    found = [c["name"] for d in documents for c in d["cmps"].values() if c.get("name")]
+    return found + [d["dev"][field] for d in documents for field in _named_fields(d["dev"])]
+
+
+def _without_names(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The documents with every name replaced; a component without a name keeps its None or
+    its missing name, and data stays as it is."""
+    found = copy.deepcopy(documents)
+    for document in found:
+        for component in document["cmps"].values():
+            if isinstance(component.get("name"), str):
+                component["name"] = "<name>"
+        for field in _named_fields(document["dev"]):
+            document["dev"][field] = "<name>"
+    return found
+
+
+@pytest.mark.parametrize("language", SPOKEN)
+def test_only_names_change_with_the_language(
+    language: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Entity IDs, unique IDs, topics, templates, event types, options, units and classes are
+    the same in every language; every name is translated, models and reading types included,
+    and an entity without a name stays without one (ADR 0019)."""
+    speak(language, monkeypatch)
+    english, spoken = _documents(_maximal("en")), _documents(_maximal(language))
+    assert _without_names(spoken) == _without_names(english)
+    assert len(_names(spoken)) == len(_names(english)) > 60
+    assert _names(spoken) != _names(english)
+    if language == "xx":
+        unmarked = [name for name in _names(spoken) if not MARKED.fullmatch(name)]
+        assert unmarked == []
+
+
+@pytest.mark.parametrize("language", ["en", *SPOKEN])
+def test_default_device_name_follows_the_language(
+    language: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default device name is the translation, also where the file names it (the installer
+    writes it); a name of one's own stays. Both documents of the gateway's device name it alike,
+    else Home Assistant would rename the device at each of them."""
+    speak(language, monkeypatch)
+    ha_name = i18n.translator(language).ha_name
+    for settings, name in (
+        ("", ha_name("MeshCore radio")),
+        (f'device_name = "{DEFAULT_DEVICE_NAME}"\n', ha_name("MeshCore radio")),
+        ('device_name = "Greenhouse"\n', "Greenhouse"),
+    ):
+        config = _maximal(language, settings)
+        topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
+        gateway = discovery_payload(config, topics, RADIO)["dev"]["name"]
+        assert (gateway, manage_payload(config, topics, [])["dev"]["name"]) == (name, name)
+        assert device_name(config, ha_name) == name
+    if language != "en":
+        assert ha_name("MeshCore radio") != DEFAULT_DEVICE_NAME
+
+
+def test_data_in_names_stays_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A target's alias is a value of its name; the default device name in English is the
+    setting's default, so the literal the translators see is that default."""
+    speaking(monkeypatch, pseudo())
+    cmps = discovery_payload(_maximal("xx"), TOPICS)["cmps"]
+    assert cmps[f"send_{interface.ALIAS}"]["name"] == f"‹Send to {interface.ALIAS}›"
+    english = _maximal("en")
+    assert discovery_payload(english, TOPICS)["dev"]["name"] == DEFAULT_DEVICE_NAME
+    assert device_name(english, i18n.ENGLISH.ha_name) == DEFAULT_DEVICE_NAME

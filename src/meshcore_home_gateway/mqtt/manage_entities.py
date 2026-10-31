@@ -14,6 +14,8 @@ checked against Home Assistant 2026.10 (docs/platform-notes.md):
 * Components that a later configuration or version no longer has are removed as in the main
   document: placeholders first, which bind what Home Assistant kept, then the document without
   them.
+* The device name is the main document's, in the language of the names: with another name in
+  one of the two documents, Home Assistant would rename the device at each of them.
 """
 
 from __future__ import annotations
@@ -24,12 +26,13 @@ import time
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Protocol
 
+from meshcore_home_gateway import i18n
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import RateLimit
 from meshcore_home_gateway.core.contacts import LABEL_TYPES, node_label
 from meshcore_home_gateway.core.mesh import Mesh
 from meshcore_home_gateway.mqtt.contact_devices import RADIO_CONNECTED
-from meshcore_home_gateway.mqtt.discovery import device_id, origin, with_removed
+from meshcore_home_gateway.mqtt.discovery import device_id, device_name, origin, with_removed
 from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.views import look_alike_nodes
@@ -85,6 +88,7 @@ def manage_payload(
 ) -> dict[str, Any]:
     """The document; `removed` (key -> platform) as in `discovery_payload`."""
     uid = device_id(config)
+    ha_name = i18n.translator(config.homeassistant.language).ha_name
 
     def component(key: str, platform: str, name: str, **options: Any) -> dict[str, Any]:
         return {
@@ -96,17 +100,22 @@ def manage_payload(
 
     components = {
         "add_node": component(
-            "add_node", "select", "Add heard node", command_topic=topics.add_node,
+            # Translators: select of the gateway: choosing one of the nodes its radio heard adds
+            # that node as a contact
+            "add_node", "select", ha_name("Add heard node"), command_topic=topics.add_node,
             options=options, value_template="None",
         ),
         "add_contact": component(
-            "add_contact", "text", "Add contact (key or link)", command_topic=topics.add_contact,
+            # Translators: text entity of the gateway: a node's public key or a contact link
+            # typed or pasted here adds that node as a contact
+            "add_contact", "text", ha_name("Add contact (key or link)"),
+            command_topic=topics.add_contact,
             value_template="{{ '' }}", min=0, max=255, pattern=TEXT_PATTERN,
         ),
     }  # fmt: skip
-    with_removed(components, uid, topics, removed, bind=bind)
+    with_removed(components, uid, topics, removed, ha_name, bind=bind)
     return {
-        "dev": {"ids": [uid], "name": config.homeassistant.device_name},
+        "dev": {"ids": [uid], "name": device_name(config, ha_name)},
         "o": origin(),
         "availability": [
             {"topic": topics.availability},

@@ -17,6 +17,7 @@
     "homeassistant.contact_devices",
     "homeassistant.device_name",
     "homeassistant.discovery",
+    "homeassistant.language",
     "homeassistant.prefix",
     "homeassistant.status_topic",
     "messages.ascii_only",
@@ -280,6 +281,26 @@
       "takes_value": true
      }
     }
+   },
+   "dashboard": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
    },
    "listen": {
     "options": {
@@ -680,6 +701,14 @@
    "answer": "bool",
    "default": true,
    "type": "boolean"
+  },
+  "homeassistant.language": {
+   "answer": "str",
+   "choices": [
+    "en"
+   ],
+   "default": "en",
+   "type": "string"
   },
   "homeassistant.prefix": {
    "answer": "str",

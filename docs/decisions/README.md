@@ -32,3 +32,4 @@ New records start from [`template.md`](template.md).
 | [0024](0024-telemetry-values-in-home-assistant-expire.md) | Telemetry values in Home Assistant expire when the companion stops answering | accepted |
 | [0025](0025-positions-in-adverts-checked-from-the-packet-log.md) | Positions in adverts: checked from the packet log; the radio's record decides until then | accepted |
 | [0026](0026-gateway-tested-against-the-real-firmware-built-natively.md) | The gateway is tested against the real firmware, built natively | accepted |
+| [0027](0027-message-catalogs-compiled-when-loaded.md) | Message catalogs compiled when they are loaded | accepted |

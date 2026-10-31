@@ -11,6 +11,7 @@ container's file system.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import grp
 import hashlib
@@ -64,7 +65,15 @@ STUBS = {
             shift 3
             if [[ ${1-} != env || ${2-} != -i ]]; then echo "stub: no env -i" >&2; exit 97; fi
             shift 2
-            while [[ ${1-} == *=* ]]; do shift; done
+            language=""
+            while [[ ${1-} == *=* ]]; do
+              if [[ $1 == LANGUAGE=* ]]; then language=${1#LANGUAGE=}; fi
+              shift
+            done
+            say() {  # a line of the program, in the pseudo-language when LANGUAGE names it
+              printf 'meshcore-home-gateway: '
+              if [[ $language == xx ]]; then printf '‹%s›\n' "$1"; else printf '%s\n' "$1"; fi
+            }
             if [[ -p /dev/stdin ]]; then  # files sent into the container through the input
               mkdir -p "$STUB/pushed"
               cat >"$STUB/input"
@@ -81,13 +90,15 @@ STUBS = {
                 read -ra codes <<<"${BROKER_ANSWERS:-0}"
                 code=${codes[n]:-${codes[-1]}}  # the last one repeats
                 case $code in  # 3: a version without the check, 4: the settings refused
-                  1) echo "meshcore-home-gateway: broker refused the connection: Not authorized" ;;
-                  4) echo "meshcore-home-gateway: configuration error: mqtt.port: not a number" ;;
+                  1) say 'broker refused the connection: Not authorized' ;;
+                  4) say 'configuration error: mqtt.port: not a number' ;;
                 esac
                 exit "$code" ;;
               *'--output $dir/config.toml'*)  # the settings check
-                [[ -z ${CHECK_FAILS-} ]] || { echo "bad" >&2; exit 78; } ;;
-              *"daemon-reload"*) echo "${STUB_VERSION:-0.0.0}" ;;  # the installation step
+                [[ -z ${CHECK_FAILS-} ]] || { say bad >&2; exit 78; } ;;
+              *"daemon-reload"*)  # the installation step
+                [[ -z ${INSTALL_FAILS-} ]] || exit 1
+                echo "${STUB_VERSION:-0.0.0}" ;;
               "meshcore-home-gateway --version")
                 echo "meshcore-home-gateway ${STUB_VERSION:-0.0.0}" ;;
               *"--list channels"*)
@@ -175,6 +186,14 @@ STUBS = {
             done ;;
         esac
     """,
+    "wget": r"""
+        log wget "$@"
+        [[ -z ${WGET_FAILS-} ]] || exit 4  # a network failure
+        address=${!#}
+        file=$STUB/www/${address#https://}  # what the test serves at that address
+        [[ -f $file ]] || exit 8  # the server answered with an error
+        cat -- "$file"
+    """,
     "pveversion": 'echo "pve-manager/${PVE_VERSION:-9.0.10}/0123abcd (running kernel: 6.14)"',
     "dpkg-query": 'printf "%s" "${PVE_CONTAINER:-6.1.14}"',
     "id": 'echo "${STUB_UID:-0}"',
@@ -194,6 +213,7 @@ STUBS = {
         printf '\033[H[screen]'  # the real one draws on stdout; captured, it would corrupt answers
         [[ $* == *--msgbox* ]] && exit 0
         answer=$(head -n 1 "$STUB/dialog"); sed -i 1d "$STUB/dialog"
+        [[ $answer != '<cancel>' ]] || exit 1  # the Cancel button
         if [[ $* == *--yesno* ]]; then [[ $answer == yes ]]; exit; fi
         printf '%s' "$answer" | tr '|' '\n' >&2
     """,
@@ -218,6 +238,7 @@ target.alice=contact:{ALICE}
 class Host:
     root: Path
     serial: Path
+    installer: Path = SCRIPT  # the script the tests run
 
     def calls(self, tool: str | None = None) -> list[list[str]]:
         log = self.root / "calls.log"
@@ -284,9 +305,44 @@ def install_stubs(root: Path, real: frozenset[str] = frozenset()) -> Host:
     return Host(root, serial)
 
 
+# the installer's block of language packs, between its marker lines (tools/i18n.py)
+LANGUAGE_PACKS = re.compile(
+    r"^# --- language packs: .*?\n(.*?)^# --- end of language packs$", re.MULTILINE | re.DOTALL
+)
+ENGLISH_ONLY = "L10N_ORDER=(en)\ndeclare -A L10N_NAME=([en]=English)\ndeclare -A L10N_SHA256=()\n"
+
+
+@pytest.fixture(scope="session")
+def english_only(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The installer as it runs while it offers English only, whatever languages this version
+    ships: these tests answer its English dialogs, test_installer_language.py the language menu.
+    In a checkout of its own, with the checkout's src, tools and unit linked."""
+    root = tmp_path_factory.mktemp("english-only")
+    (root / "deploy" / "proxmox").mkdir(parents=True)
+    for part in ("src", "tools", "deploy/systemd"):
+        (root / part).symlink_to(ROOT / part)
+    text = SCRIPT.read_text(encoding="utf-8")
+    (block,) = LANGUAGE_PACKS.finditer(text)
+    script = root / SCRIPT.relative_to(ROOT)
+    script.write_text(text[: block.start(1)] + ENGLISH_ONLY + text[block.end(1) :], "utf-8")
+    return script
+
+
 @pytest.fixture
-def host(tmp_path: Path) -> Host:
-    return install_stubs(tmp_path)
+def host(tmp_path: Path, english_only: Path) -> Host:
+    return dataclasses.replace(install_stubs(tmp_path), installer=english_only)
+
+
+def test_the_tests_run_the_script_with_english_only(host: Host) -> None:
+    """Only its block of language packs differs from the script's (docs/translations.md, Adding
+    a language)."""
+    assert host.installer != SCRIPT
+    ours, real = host.installer.read_text(encoding="utf-8"), SCRIPT.read_text(encoding="utf-8")
+    (block,) = LANGUAGE_PACKS.finditer(ours)
+    (original,) = LANGUAGE_PACKS.finditer(real)
+    assert block.group(1) == ENGLISH_ONLY
+    assert ours[: block.start(1)] == real[: original.start(1)]
+    assert ours[block.end(1) :] == real[original.end(1) :]
 
 
 def installer_env(host: Host, env: dict[str, str] | None = None) -> dict[str, str]:
@@ -306,12 +362,13 @@ def run_installer(
     *args: str,
     dialog: list[str] | None = None,
     env: dict[str, str] | None = None,
-    script: Path = SCRIPT,
+    script: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     if dialog is not None:
         (host.root / "dialog").write_text("\n".join(dialog) + "\n", encoding="utf-8")
+    path = host.installer if script is None else script
     return subprocess.run(  # noqa: S603 - our script with fixed arguments
-        [BASH, str(script), *args], env=installer_env(host, env), capture_output=True, text=True,
+        [BASH, str(path), *args], env=installer_env(host, env), capture_output=True, text=True,
         stdin=subprocess.DEVNULL, timeout=60, check=False,
     )  # fmt: skip
 
@@ -324,7 +381,7 @@ def interrupt_installer(
     Like Ctrl-C or a closed SSH session, which signal the whole foreground process group.
     """
     process = subprocess.Popen(  # noqa: S603 - our script with fixed arguments
-        [BASH, str(SCRIPT), *args], env=installer_env(host, {"SLEEP_AT": during}),
+        [BASH, str(host.installer), *args], env=installer_env(host, {"SLEEP_AT": during}),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
     )  # fmt: skip
     try:
@@ -1236,7 +1293,7 @@ def test_failed_reconfigure_starts_the_service_again_when_messages_cannot_be_wri
     answers = answers_file(host, "mqtt.host=new.example.org\n")
     with Path("/dev/full").open("w") as full:  # every write fails
         result = subprocess.run(  # noqa: S603 - our script with fixed arguments
-            [BASH, str(SCRIPT), "--reconfigure", "105", "--answers", str(answers)],
+            [BASH, str(host.installer), "--reconfigure", "105", "--answers", str(answers)],
             env=installer_env(host, {"PROBE_FAILS": "1"}), stdout=subprocess.DEVNULL,
             stderr=full, timeout=60, check=False,
         )  # fmt: skip
@@ -1302,7 +1359,7 @@ def test_reconfigure_starts_the_service_again_when_its_output_pipe_is_gone(host:
     os.close(read)  # nobody reads what the installer writes
     try:
         result = subprocess.run(  # noqa: S603 - our script with fixed arguments
-            [BASH, str(SCRIPT), "--reconfigure", "105", "--answers", str(answers)],
+            [BASH, str(host.installer), "--reconfigure", "105", "--answers", str(answers)],
             env=installer_env(host, {"PROBE_FAILS": "1"}), stdout=write, stderr=write,
             timeout=60, check=False,
         )  # fmt: skip
@@ -1341,7 +1398,7 @@ def run_from_url(
 ) -> subprocess.CompletedProcess[str]:
     """Like `bash -c "$(wget -qO- URL)" -- ARGS`: the script is no file, so there is no checkout.
     `release` is the version that `make release` writes into the published copy."""
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = host.installer.read_text(encoding="utf-8")
     if release:
         text = text.replace('\nRELEASE=""', f'\nRELEASE="{release}"', 1)
     temporary = host.root / "tmp"
@@ -1500,6 +1557,24 @@ def test_a_release_or_a_ref_can_be_chosen_also_from_a_checkout(
     result = run_installer(host, *args, "--update", "105")
     assert result.returncode == 0, result.stderr
     assert fetches(host) == [expected]
+
+
+@pytest.mark.parametrize(
+    ("from_url", "what"),
+    [(False, f"meshcore-home-gateway {__version__}"), (True, "meshcore-home-gateway from main")],
+)
+def test_a_failed_installation_names_what_it_installed(
+    host: Host, from_url: bool, what: str
+) -> None:
+    """The version when it is known before the installation (a checkout, a release), else the
+    branch, tag or commit built in the container."""
+    answers, env = str(answers_file(host)), {"INSTALL_FAILS": "1"}
+    if from_url:
+        result = run_from_url(host, "--answers", answers, env=env)
+    else:
+        result = run_installer(host, "--answers", answers, env=env)
+    assert result.returncode == 1
+    assert f"error: {what} was not installed in container 105 (see above)" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -1718,7 +1793,7 @@ def test_the_source_of_a_ref_is_built_in_the_container(host: Host, container: Co
 def test_dialogs_refuse_a_script_piped_into_bash(host: Host) -> None:
     """`wget -qO- URL | bash`: the dialogs would read the rest of the script as answers."""
     result = subprocess.run(  # noqa: S603 - our script, fed like `wget -qO- URL | bash`
-        [BASH, "-s"], input=SCRIPT.read_text(encoding="utf-8"), env=installer_env(host),
+        [BASH, "-s"], input=host.installer.read_text(encoding="utf-8"), env=installer_env(host),
         capture_output=True, text=True, timeout=60, check=False,
     )  # fmt: skip
     assert result.returncode == 1
@@ -1783,6 +1858,17 @@ def test_the_plan_is_shown_in_a_dialog(host: Host) -> None:
     assert any("service sets the radio" in " ".join(c) for c in boxes)
 
 
+def test_the_plan_is_logged_and_shown_line_by_line(host: Host) -> None:
+    """Every line of the plan ends in a line break, in the log (indented) and in the box."""
+    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "1", "", ""]
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    plan = "At its next connect the service sets the radio:\n  manual_add: false -> true\n"
+    assert "meshcore-home-gateway: " + plan.replace("\n", "\n  ") + "\n" in result.stderr
+    boxes = [c[-3] for c in host.calls("whiptail") if "--msgbox" in c and c[-2:] == ["20", "78"]]
+    assert boxes == [plan]
+
+
 def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:
     """A name cut by the firmware inside a character decodes longer than 31 bytes: it is not
     managed, so it is not checked, and nothing loops."""
@@ -1796,7 +1882,7 @@ def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:
     ]  # fmt: skip
     second = host.root.parent / "second"
     second.mkdir()
-    other = install_stubs(second)
+    other = dataclasses.replace(install_stubs(second), installer=host.installer)
     result = run_installer(other, dialog=dialog, env={"PROBE_PROFILE": cut})
     assert result.returncode == 0, result.stderr
 

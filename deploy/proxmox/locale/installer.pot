@@ -1,0 +1,513 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: meshcore-home-gateway\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#, python-brace-format
+msgid "'{tool}' not found: this must run on a Proxmox VE host"
+msgstr ""
+
+msgid "--answers needs a file"
+msgstr ""
+
+#, python-brace-format
+msgid "--reconfigure cannot apply the answer {key} (see docs/deployment.md)"
+msgstr ""
+
+msgid "--reconfigure needs a container ID"
+msgstr ""
+
+msgid "--ref needs a branch, tag or commit, e.g. main"
+msgstr ""
+
+msgid "--release and --ref exclude each other"
+msgstr ""
+
+msgid "--release needs a version, e.g. 0.1.0"
+msgstr ""
+
+msgid "--update needs a container ID"
+msgstr ""
+
+msgid "Announce the radio to Home Assistant (MQTT discovery)?"
+msgstr ""
+
+msgid "At its next connect the service sets the radio:"
+msgstr ""
+
+msgid "Base topic"
+msgstr ""
+
+msgid "Channels to send to"
+msgstr ""
+
+msgid "Command words, comma-separated (e.g. status,arm,disarm)"
+msgstr ""
+
+msgid "Contacts allowed to send commands (direct messages only)"
+msgstr ""
+
+msgid "Contacts to send to"
+msgstr ""
+
+msgid "Container ID"
+msgstr ""
+
+msgid "Container host name"
+msgstr ""
+
+#. the values start in one column; {tls} is true or false.
+#, python-brace-format
+msgid ""
+"Create container {id} ({hostname}) now?\n"
+"\n"
+"Disk:     {storage}, {disk} GB\n"
+"Memory:   {memory} MB\n"
+"Network:  {network}\n"
+"Radio:    {radio}\n"
+"Broker:   {host}:{port}, TLS {tls}\n"
+"Login:    {login}\n"
+"\n"
+"Afterwards the channels and contacts are read from the radio."
+msgstr ""
+
+msgid "Device name in Home Assistant"
+msgstr ""
+
+msgid "Disk size in GB"
+msgstr ""
+
+#. {message} is one of the errors, translated too.
+#, python-brace-format
+msgid "Error: {message}"
+msgstr ""
+
+#, python-brace-format
+msgid "ID {id} is already used by a container or virtual machine"
+msgstr ""
+
+msgid "IPv4 address with prefix (e.g. 192.0.2.20/24), or dhcp"
+msgstr ""
+
+msgid "IPv4 gateway"
+msgstr ""
+
+msgid "Language of the names in Home Assistant"
+msgstr ""
+
+msgid "MQTT broker port"
+msgstr ""
+
+msgid "MQTT broker: host name or IP address (no mqtt://)"
+msgstr ""
+
+#, python-brace-format
+msgid "MQTT user name as set up on the broker (it was '{was}'); empty: none"
+msgstr ""
+
+msgid "MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)"
+msgstr ""
+
+msgid "MQTT user name as set up on the broker; empty: none"
+msgstr ""
+
+msgid "Memory in MB"
+msgstr ""
+
+msgid "Name of the radio in the mesh (1-31 bytes; empty: keep the radio's)"
+msgstr ""
+
+msgid "Network bridge"
+msgstr ""
+
+msgid "Node id (in topics and entity IDs)"
+msgstr ""
+
+#, python-brace-format
+msgid "Password of MQTT user '{user}' (empty: keep the current one)"
+msgstr ""
+
+#, python-brace-format
+msgid "Password of MQTT user '{user}' (empty: keep the installed one)"
+msgstr ""
+
+#, python-brace-format
+msgid "Password of MQTT user '{user}' (empty: none)"
+msgstr ""
+
+#, python-brace-format
+msgid "Proxmox VE {version} is too old: 8 with current updates, or 9, is needed"
+msgstr ""
+
+msgid "Radio TCP port"
+msgstr ""
+
+msgid "Radio address (host name or IP address)"
+msgstr ""
+
+msgid "Radio connection"
+msgstr ""
+
+msgid "Send ASCII only (for handhelds without Unicode fonts)?"
+msgstr ""
+
+msgid "Setup"
+msgstr ""
+
+msgid "Storage for templates"
+msgstr ""
+
+msgid "Storage for the container disk"
+msgstr ""
+
+#. {reason} is the program's message, in this language too.
+#, python-brace-format
+msgid ""
+"The broker login failed:\n"
+"\n"
+"{reason}\n"
+"\n"
+"Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)"
+msgstr ""
+
+#. {reason} is the program's message, in this language too.
+#, python-brace-format
+msgid ""
+"The broker settings were not accepted:\n"
+"\n"
+"{reason}"
+msgstr ""
+
+#, python-brace-format
+msgid ""
+"The container starts only while the radio is plugged in.\n"
+"After re-plugging the radio: {command}"
+msgstr ""
+
+msgid ""
+"The radio's firmware is not tested: the service only reports what differs\n"
+"(radio.profile.manage = always sets it anyway):"
+msgstr ""
+
+msgid "The service leaves alone:"
+msgstr ""
+
+msgid "Use TLS for the broker connection?"
+msgstr ""
+
+msgid "With radio.profile.manage = observe the service only reports what differs:"
+msgstr ""
+
+msgid "all settings: container, network, topics, Home Assistant"
+msgstr ""
+
+#, python-brace-format
+msgid "answers file line {line}: expected key=value"
+msgstr ""
+
+#, python-brace-format
+msgid "answers file line {line}: not valid UTF-8 (save the file as UTF-8)"
+msgstr ""
+
+msgid "answers file: targets.channels: expected channel indices, comma-separated"
+msgstr ""
+
+#, python-brace-format
+msgid "answers file: targets.channels: no channel {channel} (0-255)"
+msgstr ""
+
+msgid "answers file: targets.contacts: expected public keys (64 hex digits), comma-separated"
+msgstr ""
+
+#, python-brace-format
+msgid "answers file: unknown answer {key}"
+msgstr ""
+
+msgid "cancelled"
+msgstr ""
+
+#, python-brace-format
+msgid "cannot download release {version} into container {ctid} (see above)"
+msgstr ""
+
+#, python-brace-format
+msgid "cannot download the source of {ref} into container {ctid} (see above)"
+msgstr ""
+
+msgid "cannot get the next free container ID (pvesh)"
+msgstr ""
+
+#, python-brace-format
+msgid "cannot list the storages ({command})"
+msgstr ""
+
+#, python-brace-format
+msgid "cannot read answers file {file}"
+msgstr ""
+
+msgid "cannot read the Proxmox VE version"
+msgstr ""
+
+#, python-brace-format
+msgid "cannot read the configuration in container {ctid}"
+msgstr ""
+
+msgid "cannot read the radio (is it connected and not used by another program?)"
+msgstr ""
+
+msgid "cannot read the radio's contacts"
+msgstr ""
+
+msgid "cannot read the radio's settings"
+msgstr ""
+
+msgid "cannot read the radio's settings (is it connected and not used by another program?)"
+msgstr ""
+
+#, python-brace-format
+msgid "cannot read the version of meshcore-home-gateway in container {ctid}"
+msgstr ""
+
+#, python-brace-format
+msgid "cannot read the version of the checkout {path}"
+msgstr ""
+
+#, python-brace-format
+msgid "command failed at line {line}"
+msgstr ""
+
+#. {contact} is the start of a contact's key and its name.
+#, python-brace-format
+msgid "contact {contact}: added as a favourite"
+msgstr ""
+
+#, python-brace-format
+msgid "contact {contact}: made a favourite"
+msgstr ""
+
+#, python-brace-format
+msgid "contact {contact}: no favourite"
+msgstr ""
+
+#, python-brace-format
+msgid "contact {contact}: not on the radio"
+msgstr ""
+
+msgid "container ID must be a number of at least 100"
+msgstr ""
+
+#, python-brace-format
+msgid "container {ctid} did not start (see above)"
+msgstr ""
+
+#, python-brace-format
+msgid "container {ctid} has no dialout group"
+msgstr ""
+
+#, python-brace-format
+msgid "container {ctid} has no meshcore-home-gateway installation ({path} is missing)"
+msgstr ""
+
+#, python-brace-format
+msgid "container {ctid} has no network (DNS lookup of {host} failed)"
+msgstr ""
+
+#, python-brace-format
+msgid "container {ctid} has no radio configured"
+msgstr ""
+
+#, python-brace-format
+msgid "container {ctid} is not running"
+msgstr ""
+
+#, python-brace-format
+msgid "copying meshcore-home-gateway into container {ctid} failed (see above)"
+msgstr ""
+
+#, python-brace-format
+msgid "could not download {template} to {storage}"
+msgstr ""
+
+#, python-brace-format
+msgid "creating container {ctid} failed (see above)"
+msgstr ""
+
+msgid "creating the service user failed"
+msgstr ""
+
+msgid "disk size and memory must be whole numbers"
+msgstr ""
+
+#, python-brace-format
+msgid "installing packages in container {ctid} failed (see above)"
+msgstr ""
+
+msgid "invalid settings (see above)"
+msgstr ""
+
+#, python-brace-format
+msgid "invalid settings: {reason}"
+msgstr ""
+
+msgid "login accepted"
+msgstr ""
+
+msgid "login failed (see above), the service keeps trying"
+msgstr ""
+
+msgid "login not checked"
+msgstr ""
+
+#, python-brace-format
+msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)"
+msgstr ""
+
+#. the values start in one column; they are commands to copy, but {login}.
+#, python-brace-format
+msgid ""
+"meshcore-home-gateway {version} runs in container {ctid}.\n"
+"\n"
+"Broker:       {login}\n"
+"Logs:         {logs}\n"
+"Check:        {check}\n"
+"Reconfigure:  {reconfigure}\n"
+"Update:       {update}"
+msgstr ""
+
+#, python-brace-format
+msgid "meshcore-home-gateway {version} was not installed in container {ctid} (see above)"
+msgstr ""
+
+msgid "no active storage for container disks"
+msgstr ""
+
+msgid "no active storage for templates"
+msgstr ""
+
+msgid "no answer for radio.choice: name the radio's device path, or tcp"
+msgstr ""
+
+#, python-brace-format
+msgid "no answer for {key} ({text})"
+msgstr ""
+
+msgid "none (no user name)"
+msgstr ""
+
+#, python-brace-format
+msgid "not checked (version {version} cannot; check after --update)"
+msgstr ""
+
+msgid "package pve-container not found"
+msgstr ""
+
+#, python-brace-format
+msgid "passing {device} to container {ctid} failed (see above)"
+msgstr ""
+
+#, python-brace-format
+msgid "pve-container {version} cannot create Debian 13 containers; update the host first ({command})"
+msgstr ""
+
+msgid "pveam offers no Debian 13 template (check the host's internet access)"
+msgstr ""
+
+msgid "radio with WiFi firmware (TCP, no authentication)"
+msgstr ""
+
+#, python-brace-format
+msgid "radio.profile.name: 1 to 31 bytes, got '{name}'"
+msgstr ""
+
+msgid "recommended: asks only for the radio, the broker and the targets"
+msgstr ""
+
+msgid "run as root on the Proxmox host"
+msgstr ""
+
+#, python-brace-format
+msgid "serial device {device} not found"
+msgstr ""
+
+#, python-brace-format
+msgid "the broker settings were not accepted: {reason}"
+msgstr ""
+
+msgid "the configuration was not accepted (see above)"
+msgstr ""
+
+#, python-brace-format
+msgid "the dialogs need the terminal as input: run {command} instead of piping into bash, or use --answers FILE"
+msgstr ""
+
+#, python-brace-format
+msgid "the installer of a newer release ({releases}) with -- --update {ctid}"
+msgstr ""
+
+#, python-brace-format
+msgid "the service did not restart; see: {command}"
+msgstr ""
+
+#, python-brace-format
+msgid "the service did not start; see: {command}"
+msgstr ""
+
+#, python-brace-format
+msgid "unknown dialog kind {kind}"
+msgstr ""
+
+#, python-brace-format
+msgid "unknown option {option} (see --help)"
+msgstr ""
+
+#, python-brace-format
+msgid "user '{user}' with a password"
+msgstr ""
+
+#, python-brace-format
+msgid "user '{user}' without a password"
+msgstr ""
+
+#, python-brace-format
+msgid "whiptail not found: install it ({command}) or use --answers FILE"
+msgstr ""
+
+#, python-brace-format
+msgid "{bridge}, {ip}, gateway {gateway}"
+msgstr ""
+
+#. a setting of the radio and its value, as the radio names them.
+#, python-brace-format
+msgid "{setting}: {live} (changed on the radio; kept)"
+msgstr ""
+
+#. a setting of the radio, its value and the one the service had set.
+#, python-brace-format
+msgid "{setting}: {live}, not {wanted} (did not take effect; no longer set)"
+msgstr ""
+
+#, python-brace-format
+msgid "{setting}: {live}, not {wanted} (the firmware does not support it)"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Cancel"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "No"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Ok"
+msgstr ""
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Yes"
+msgstr ""

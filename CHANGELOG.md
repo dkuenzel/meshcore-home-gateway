@@ -8,6 +8,17 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [1.1.0a4] - 2026-10-31
+
+A pre-release of 1.1.0, with two slices: the texts of the command line, the Proxmox installer
+and the names in Home Assistant come from translation catalogs, and `meshcore-home-gateway
+dashboard` writes a first Home Assistant dashboard for the gateway, its texts in the same
+catalogs. No language but English ships yet: a language comes as a contribution of its catalog
+files ([translations.md](docs/translations.md#adding-a-language)), German first. Machine
+interfaces stay the same in every language. Also new: tests against MeshCore's real firmware. If
+you use the guide's *Last mesh message* card, paste it again (*Fixed*). The hardware checklist
+was not run for it.
+
 ### Added
 
 - Tests against the real firmware (`make firmware-test`, a CI job;
@@ -20,6 +31,53 @@ format, the command line and Home Assistant discovery are public interfaces
   companion's phone app played on the gateway's own codec
   ([testing.md](docs/testing.md#steps-2945-on-the-simulated-air) lists what they show).
   `make check` still needs neither a compiler nor network.
+- `[homeassistant] language` (default `en`, so far the only choice): the language of the entity,
+  device and model names the gateway sends to Home Assistant, also of the default device name
+  `MeshCore radio` and of the dashboard
+  ([configuration.md](docs/configuration.md#homeassistant)). Entity IDs, event types, options,
+  attributes and units stay the same in every language; a change renames only the display names
+  at the next start, and names you changed stay
+  ([home-assistant.md](docs/home-assistant.md#language-of-the-names)).
+- The command line follows the language of its environment (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`,
+  `LANG`; [configuration.md](docs/configuration.md#language-of-the-command-line)): help, errors,
+  warnings, `check-config` and the `probe` report. Machine output (`--list`, `--json`, `listen`,
+  `send --wait`, the results of `contacts add`, `remove` and `telemetry` with `--wait`,
+  `contacts list`, `contacts link`, `config answers`, `--version`), `run` and the service's log
+  stay English.
+- The Proxmox installer writes `[homeassistant] language` for a new installation: `en`, or the
+  value of the answers file; a reconfiguration keeps the configured one, and a version before
+  1.1.0a4, which lacks the setting, gets it only from the answers file. Once the gateway offers
+  languages besides English, the installer asks for its own language first (the default from
+  your session), shows its dialogs, buttons and error boxes in it, passes it to the program,
+  whose messages its log then quotes in that language, and makes it the default of
+  `[homeassistant] language` for a new installation, which the advanced setup also asks. It reads
+  the language's pack from where the script comes from (its release, the checkout next to it,
+  else `main`) into memory, checks it against a digest the script carries, and continues in
+  English when the pack cannot be loaded.
+- `meshcore-home-gateway dashboard`: writes a Home Assistant dashboard for this gateway as YAML
+  (for the raw configuration editor or a YAML-mode dashboard): the gateway's status and its
+  radio's health, the last message and delivery with a form to write one, the contacts, the last
+  contact event and the heard nodes, and a map with the contacts' traces. English; its texts are
+  in the translation catalog. `--state-dir` names the service's state, from which it takes the
+  contacts on the map.
+- docs/home-assistant.md *Dashboard*: installing it, the script *Mesh message* for the form, and
+  when to make it again.
+- [docs/translations.md](docs/translations.md): the rules for translators and how to add a
+  language. [ADR 0027](docs/decisions/0027-message-catalogs-compiled-when-loaded.md): the
+  message catalogs are compiled when they are loaded, in the zipapp, the wheel and a checkout
+  alike; it amends ADR 0019.
+
+### Changed
+
+- `check-config` writes "1 sender" or "2 senders" instead of "sender(s)", and names the language
+  of the names in Home Assistant.
+
+### Fixed
+
+- The *Last mesh message* card in docs/home-assistant.md (*First steps*) now also replaces line
+  breaks in the sender's name: a contact's name is chosen by its owner, and with a blank line in
+  it the card's text after that line could load an image from the internet. Paste the card
+  again if you use it.
 
 ## [1.1.0a3] - 2026-10-31
 

@@ -77,6 +77,28 @@ the controls that change the radio's contacts also while the radio is not connec
 management is off (also on untested firmware). The state values come from retained documents, so they are back right after a
 restart of either side.
 
+### Language of the names
+
+The names the gateway sends follow `homeassistant.language`
+([configuration.md](configuration.md#homeassistant)): the entity names, the models of the
+contacts' devices (*Companion*, *Repeater*, *Room server*, *Sensor*), the reading types
+(*Temperature 2*) and the default device name `MeshCore radio`. This guide gives them in English.
+The same in every language:
+
+* the entity IDs and unique IDs, so automations, dashboards, statistics and recorder settings
+  keep working when the language changes;
+* the event types, the options of the select and of the enum sensors, which Home Assistant shows
+  as they are (MQTT entities have no translations), attribute keys, units and classes;
+* data: a contact's name, a target's alias in *Send to …*, a device name you set, and the type of
+  a node this version does not know.
+
+A contact's SNR sensor has no name of its own: Home Assistant names it after its class, in its own
+language. A contact's notify entity has the contact's name.
+
+A change of language renames the display names at the next start of the gateway. Home Assistant
+takes the new names of the entities it knows and keeps their IDs, their history and the names you
+gave them; no entity is added or removed.
+
 ## Contacts
 
 Every contact in the radio's table gets a device of its own, listed under *Connected devices* on the
@@ -468,14 +490,16 @@ title: Last mesh message
 content: |-
   {% set e = 'event.meshcore_home_gateway_radio1_message' %}
   {% set text = state_attr(e, 'text') %}
-  {% if text is none %}none yet{% else %}<div><b>{{ (state_attr(e, 'sender_name') or '?') | e }}</b>: {{ text | e | replace('\r', ' ') | replace('\n', ' ') }}</div>{% endif %}
+  {% if text is none %}none yet{% else %}<div><b>{{ (state_attr(e, 'sender_name') or '?') | replace('\r', ' ') | replace('\n', ' ') | e }}</b>: {{ text | e | replace('\r', ' ') | replace('\n', ' ') }}</div>{% endif %}
 ```
 
-Anyone in radio range chooses a message's text and a channel sender's name, so the card escapes
-them and keeps them in an HTML block on one line: in Markdown, even an escaped text such as
+Anyone in radio range chooses a message's text and a sender's name (a contact's own, or a channel
+sender's claimed one), so the card escapes them, replaces their line breaks with spaces and keeps
+them in an HTML block on one line: in Markdown, even an escaped text such as
 `![](https://example.org/pixel.png)` or `[here](https://example.org)` becomes an image that the
 browser loads or a link, and a blank line would end the block
-([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
+([platform-notes.md](platform-notes.md#home-assistant-dashboards)). The card of 1.1.0a3 and
+earlier kept the line breaks of the sender's name: paste it again.
 
 **Send a message.** Each target is a notify entity, *Send to <alias>*; it shows *unknown* until it
 sends for the first time. It has no input field of its own: it sends with the action
@@ -569,8 +593,135 @@ device pages, sensors and attributes, availability, the removal of components an
 devices (also after a restart of Home Assistant), a device deleted by the user, the map, the
 controls that add and remove contacts, the telemetry entities and their expiry, a `person` and
 the triggers of [Positions and presence](#positions-and-presence), the Markdown cards, the actions
-of the first steps, the dashboard cards, the battery template, and the examples below, exactly as
-written here (`make ha-test`, [testing.md](testing.md)).
+of the first steps, the dashboard cards, the battery template, the names in another language
+(the same entities, a rename that keeps the user's names), the [dashboard](#dashboard) and its
+script, and the examples below, exactly as written here (`make ha-test`,
+[testing.md](testing.md)).
+
+## Dashboard
+
+`meshcore-home-gateway dashboard` writes a dashboard for the gateway it runs beside, as YAML for
+Home Assistant. It has four views:
+
+* *Overview*: the gateway's status in one line (not found, offline, radio disconnected, no value
+  yet, a problem, messages waiting, ready), a warning while the gateway runs another version than
+  the one the dashboard was made for, the radio link, airtime, queue and battery, each problem
+  sensor while it is on, and the radio's health: noise floor, transmit time, telemetry status,
+  radio profile and a day of airtime.
+* *Messages*: the form to write a message (the script below), the last message received and the
+  last delivery step, with its reason as a code.
+* *Contacts*: the contacts on the radio with their type, when they were heard and their telemetry
+  state, newest first; *Add heard node* and *Add contact (key or link)*; the last contact event,
+  also a refused or failed request with its reason; the nodes heard; and the QR code of the
+  gateway ([above](#adding-and-removing-contacts)).
+* *Map*: the contacts with a position and their traces of the last 24 hours
+  ([Traces on the map](#traces-on-the-map)).
+
+It uses only the gateway's entities and the cards of Home Assistant, no custom card. Its texts
+follow `homeassistant.language`; entity IDs, reason codes and names from the mesh stay as they
+are. Every name and text from the mesh shows as text: no name or message can add a link or load
+an image ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
+
+**Make it** in the gateway's container, as root (it reads the service's state, read only, for the
+contacts on the map; `--state-dir` names another directory):
+
+```sh
+meshcore-home-gateway dashboard > mesh.yaml
+```
+
+From the Proxmox host, with the full path (`pct exec` passes the host's `PATH`,
+[platform-notes.md](platform-notes.md#proxmox-ve)); the file lands on the host:
+
+```sh
+pct exec <id> -- /usr/local/bin/meshcore-home-gateway dashboard > mesh.yaml
+```
+
+It says on standard error how many contacts the map lists, such as "The map lists 1 contact with
+a position."
+
+**Add it** in one of two ways:
+
+* In the browser, as an administrator: *Settings → Dashboards → Add dashboard → New dashboard
+  from scratch*, open it, *Edit* → ⋮ → *Raw configuration editor*, replace everything with the
+  file and *Save*. The editor drops the file's comments.
+* As a YAML-mode dashboard: put the file into Home Assistant's configuration directory, here as
+  `dashboards/mesh-radio1.yaml`, and add to `configuration.yaml`:
+
+```yaml
+lovelace:
+  dashboards:
+    mesh-radio1:
+      mode: yaml
+      filename: dashboards/mesh-radio1.yaml
+      title: Mesh
+      icon: mdi:radio-tower
+      show_in_sidebar: true
+```
+
+The dashboard's path (`mesh-radio1`) needs a hyphen. Home Assistant reads a replaced file at the
+next page load.
+
+**The form.** The tile *Write a message* opens the form of the script *Mesh message*, which is
+added once and serves every gateway: *Settings → Automations & scenes → Scripts → Create script*,
+⋮ → *Edit in YAML*, paste the block and *Save*. Keep its name: its ID comes from it
+(`script.mesh_message`), and the dashboard shows a hint instead of the tile while that script is
+missing.
+
+```yaml
+alias: Mesh message
+description: Send a message over the mesh to a target or a contact.
+icon: mdi:message-arrow-right
+mode: queued
+fields:
+  to:
+    name: To
+    required: true
+    selector:
+      entity:
+        filter:
+          - integration: mqtt
+            domain: notify
+  message:
+    name: Message
+    required: true
+    selector:
+      text:
+sequence:
+  - action: notify.send_message
+    target:
+      entity_id: "{{ to }}"
+    data: "{{ {'message': message} }}"
+```
+
+*To* offers every notify entity of MQTT: the targets (*Send to <alias>*) and the companion
+contacts, by name. A household user who is no administrator sends with it, as with
+`notify.send_message` itself. The script hands on the whole `data` as one template, so the text
+stays a text: written as `message: "{{ message }}"`, Home Assistant would read `+493023125000` and
+`1.10` as numbers (sending `493023125000` and `1.1`), strip spaces around a text, and refuse
+`None`.
+
+**Make it again** after an update of the gateway (the overview then shows a warning with both
+versions) and when the map's hint names a contact: one that got a position after the dashboard
+was made. The contacts table, the last contact event and the nodes heard follow by themselves.
+The dashboard names the entity IDs the gateway gives: a gateway entity whose ID was renamed shows
+as missing, and a contact whose IDs were renamed drops out of the table and off the map, also in
+a dashboard made again. A dashboard pasted again loses the edits made to it: to change it, copy
+it under another name.
+
+With two gateways on one broker whose contacts share a name, Home Assistant gives the second
+gateway's contact entity IDs ending in `_2`, while the second gateway's dashboard lists the first
+one's tracker of that name. For the same contact (the same key) that is the same node, and the
+map is right. For two nodes of one name, the map shows the other gateway's node, and its hint
+keeps naming the contact: put the tracker's ID ending in `_2` (as *Settings → Entities* shows it)
+into the map card, which the next paste undoes.
+
+The dashboard has no control to remove a contact or exclude it from telemetry: those are on the
+contact's device page, which Home Assistant opens for administrators only. That does not keep
+other users from them: any user of Home Assistant can open a contact's *Remove from radio* button
+or its *Telemetry* switch from the entity search (press `e`) and use it, or call its action.
+
+The dashboard shows messages, names and the contacts' positions to every user of Home Assistant,
+as the entities do. The file holds the names of the contacts on the map: do not post it.
 
 ## Examples
 

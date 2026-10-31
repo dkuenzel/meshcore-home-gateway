@@ -41,6 +41,14 @@ flowchart LR
 - **Home Assistant:** nothing to install there; MQTT discovery creates one device with radio
   link, battery, airtime and queue sensors, event entities for messages, deliveries and commands,
   and a notify entity per target.
+- **A dashboard for Home Assistant:** `meshcore-home-gateway dashboard` writes one for the
+  gateway: its status and the radio's health, the last message and a form to write one, the
+  contacts and the nodes heard, and a map with the contacts' traces
+  ([`docs/home-assistant.md`](docs/home-assistant.md#dashboard)).
+- **Translatable:** the command line, the installer, the names in Home Assistant and the
+  dashboard come from gettext catalogs; English for now, more languages by contribution
+  ([`docs/translations.md`](docs/translations.md)). Machine output never changes with the
+  language.
 - **Small supply chain:** Python standard library plus `paho-mqtt` from the Linux distribution; no
   other runtime dependency.
 - **One-step installation on Proxmox VE** in an unprivileged container, configured through dialogs

@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway import i18n
 from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.lpp import Named
@@ -43,7 +44,7 @@ from meshcore_home_gateway.protocol.codes import ContactFlag, NodeType
 from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
 from meshcore_home_gateway.views import contact_document
 from tests.radio_emulator import LPP_ALL_READINGS
-from tests.test_discovery import STATE_KEYS, template_keys
+from tests.test_discovery import SPOKEN, STATE_KEYS, speak, template_keys
 
 ALICE, BOB, HILL, CAROL = "a1" * 32, "b2" * 32, "c3" * 32, "d4" * 32
 NOW = 1_800_000_000.0
@@ -396,6 +397,28 @@ def test_each_value_gets_its_sensor_only_with_its_data() -> None:
     assert {"battery", "mcu_temperature"} & set(
         contact_payload(CONFIG, TOPICS, battery_only, "alice")["cmps"]
     ) == {"battery"}
+
+
+@pytest.mark.parametrize("language", SPOKEN)
+def test_data_stays_data_in_every_language(language: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A contact's name, the start of its key and the type of a node this version does not know
+    are data; the models and reading types are names (ADR 0019)."""
+    speak(language, monkeypatch)
+    config = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, language=language))
+    ha_name = i18n.translator(language).ha_name
+    for node_type, model in (
+        (NodeType.CHAT, ha_name("Companion")), (NodeType.SENSOR, ha_name("Sensor")),
+        (NodeType.NONE, "type_0"), (7, "type_7"),
+    ):  # fmt: skip
+        tracked = Tracked(node(ALICE, "Jürgen's Handy", node_type))
+        device = contact_payload(config, TOPICS, tracked, "alice")["dev"]
+        assert (device["name"], device["mdl"]) == ("Jürgen's Handy", model)
+    unnamed = contact_payload(config, TOPICS, Tracked(node(ALICE, "")), "alice")["dev"]
+    assert unnamed["name"] == ALICE[:12]
+    assert removal_payload(config, TOPICS, ALICE, {"send": "notify"})["dev"]["name"] == ALICE[:12]
+    cmps = contact_payload(config, TOPICS, answered(ALICE, "Alice"), "alice")["cmps"]
+    assert cmps["ch2_temperature_2"]["name"] == f"{ha_name('Temperature')} 2 (2)"
+    assert cmps["ch1_luminosity"]["name"] == f"{ha_name('Luminosity')} 1"
 
 
 def test_the_reading_entities_are_those_of_the_published_types() -> None:

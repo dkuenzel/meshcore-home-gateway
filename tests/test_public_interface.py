@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
-from meshcore_home_gateway import bridge, cli, views
+from meshcore_home_gateway import bridge, cli, i18n, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway.core import adverts, lpp, telemetry
 from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
@@ -31,6 +31,7 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import NodeType, TelemetryMode
 from meshcore_home_gateway.radio.session import AUTO_ADD_TYPES
 from tests import public_interface as interface
+from tests.i18n_helpers import hostile, pseudo, speaking
 from tests.radio_emulator import LPP_ALL_READINGS
 
 if TYPE_CHECKING:
@@ -474,6 +475,42 @@ def test_the_command_line_compares_and_writes(
     assert path.read_text(encoding="utf-8") == tool.render(current)
     assert interface.main([]) == 0
     assert capsys.readouterr().out == f"{path} is the public interface of the code\n"
+
+
+def test_the_command_line_takes_the_snapshot_in_english(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, current: dict[str, Any]
+) -> None:
+    """The command line follows the environment's language (ADR 0019): the snapshot must not
+    follow the shell that runs `make interface`, so main() takes it as the tests do."""
+    _with_snapshot(monkeypatch, tmp_path, current, tool.render(current))
+    names = ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")
+    for name in names:
+        monkeypatch.setenv(name, "de_DE.UTF-8")
+    seen = []
+
+    def surface() -> dict[str, Any]:
+        seen.append({name: os.environ.get(name) for name in names})
+        return copy.deepcopy(current)
+
+    monkeypatch.setattr(interface, "surface", surface)
+    assert interface.main([]) == 0
+    assert seen == [{"LANGUAGE": None, "LC_ALL": "C.UTF-8", "LC_MESSAGES": None, "LANG": None}]
+    assert os.environ["LANGUAGE"] == "de_DE.UTF-8"  # the caller's environment again
+
+
+@pytest.mark.parametrize(
+    "catalog", ["xx", "hostile", *(code for code in i18n.LANGUAGES if code != "en")]
+)
+def test_the_snapshot_is_the_same_in_every_language(
+    catalog: str, current: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Names and texts for people follow the language, the interface never does (ADR 0019,
+    ADR 0023): the pseudo-language marks every text, the hostile catalog breaks every one."""
+    translator = {"xx": pseudo, "hostile": hostile}.get(catalog, i18n.translator)(catalog)
+    language = speaking(monkeypatch, translator).language
+    assert interface._sorted(interface.command_line(tmp_path, language)) == current["cli"]
+    names = interface.homeassistant(language)
+    assert interface._sorted(names) == current["homeassistant"]
 
 
 def test_the_command_line_without_a_snapshot(

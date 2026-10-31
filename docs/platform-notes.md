@@ -7,7 +7,8 @@ project does about it, and how to check it yourself. Behaviour changes between v
 release changes one of these, the entry gets the new version or goes.
 
 Sections: [Proxmox VE](#proxmox-ve), [Shell](#shell), [Debian, systemd and
-Linux](#debian-systemd-and-linux), [Python](#python), [GitHub](#github), [whiptail](#whiptail),
+Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext),
+[GitHub](#github), [whiptail](#whiptail),
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
 [paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
 dashboards](#home-assistant-dashboards), [MeshCore companion
@@ -157,6 +158,15 @@ firmware](#meshcore-companion-firmware).
   run when `/dev/stdin` is a pipe and names `bash -c "$(wget -qO- URL)"` or `--answers FILE`
   instead; `in_ct()` runs container commands with `</dev/null`. *Check:*
   `printf 'read -r x\necho never runs\necho after\n' | bash` prints only `after`.
+* **A long here-string goes through a temporary file; process substitution never does.** bash
+  writes a here-string or here-document longer than the pipe holds into a file `sh-thd.*` in
+  `$TMPDIR` (else `/tmp`), so it fails where no temporary file can be made; a short one goes
+  through a pipe. `< <(printf …)` is a pipe at any length. *Verified:* GNU bash 5.2.21 under
+  `strace -e trace=openat`: `cat <<<"$x"` opened `/tmp/sh-thd.*` twice for 70,000 bytes and never
+  for 1,000; `cat < <(printf '%s\n' "$x")` opened none. *Here:* the installer reads a language
+  pack with `done < <(printf '%s\n' "$text")`, so a pack is never written to the host's disk.
+  *Check:* `strace -f -e trace=openat bash -c 'x=$(head -c 70000 /dev/zero | tr "\0" a); cat
+  <<<"$x" >/dev/null' 2>&1 | grep -c sh-thd` prints a number above 0, and 0 with 1000.
 * **In `bash -c SCRIPT ARG...`, the first argument becomes `$0`, not `$1`.**
   `bash -c "$(wget -qO- URL)" --answers FILE` gives the script `$0=--answers` and `$1=FILE`.
   *Verified:* GNU bash 5.2.21. *Here:* options follow a `--`, which becomes `$0`;
@@ -260,6 +270,48 @@ firmware](#meshcore-companion-firmware).
   `wait_for()` is built on `asyncio.timeout()` (gh-96764,
   <https://docs.python.org/3.12/whatsnew/changelog.html>). *Here:* waits with a time limit use
   `asyncio.timeout()`. *Check:* `grep -rn 'wait_for(' src/` finds nothing.
+* **Python's `gettext` reads `LANGUAGE` also under the `C` locale; the C library ignores it
+  there.** With `LANGUAGE=de` and `LC_ALL`, `LC_MESSAGES` or `LANG` set to `C` or `C.UTF-8`,
+  `gettext.translation()` finds the German catalog, while glibc's `dgettext()` after
+  `setlocale(LC_ALL, "")` returns the English text. *Verified:* Python 3.12.3 and glibc
+  2.39-0ubuntu8.9, with a one-entry catalog compiled by GNU `msgfmt` 0.21, for
+  `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`, `LC_ALL=C` and `LANG=C`. *Here:* the command line follows
+  Python's order, `LANGUAGE` first ([configuration.md](configuration.md#language-of-the-command-line)
+  says so, and that `LC_ALL=C` alone does not give English then). The installer runs the
+  container's commands with `LANG=C.UTF-8` and adds `LANGUAGE` for a loaded pack: the program
+  speaks its language, `apt` and `systemctl` stay English. *Check:* compile a catalog
+  `loc/de/LC_MESSAGES/x.mo`, then `LC_ALL=C.UTF-8 LANGUAGE=de python3 -c "import gettext;
+  print(gettext.translation('x', 'loc').gettext('Hello'))"` prints the German text.
+* **argparse %-formats help texts, and a description that contains `%(prog)`: a lone `%` there
+  stops the program.** A `help=` text with `10 %` raises `TypeError` at `--help` on 3.11–3.13
+  and `ValueError: badly formed help string` in `add_argument` on 3.14; a description with
+  `%(prog)s` and a lone `%` raises `TypeError` in `format_help()` on all four; a description
+  without `%(prog)` is not formatted. argparse looks its own words up through the module's `_`
+  and `ngettext` when a parser is built and used, so `vars(argparse).update(_=…, ngettext=…)`
+  translates them (titles, `usage: `, `-h`'s help, its errors). *Verified:* Python 3.11.17,
+  3.12.3, 3.13.16 and 3.14.6, a script that builds a parser each way and formats its help.
+  *Here:* `tr_help` marks our help and description texts; a translation of one, and of
+  argparse's own words, is used only with the `%` directives of the English text
+  ([design §6.12](design.md#612-translations)); `cli._speaking()` sets argparse's words for one
+  command and restores them. *Check:* `python3 -c "import argparse; p =
+  argparse.ArgumentParser(); p.add_argument('--x', help='10 % of it'); p.print_help()"` raises.
+
+## GNU gettext
+
+* **`msgfmt -c` warns about a header without translator fields but exits 0, does not compare
+  `{x!r}` fields, and keeps a plural entry with an empty form.** A header with only `Language`,
+  `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding` and `Plural-Forms` gives four
+  warnings (`Project-Id-Version`, `PO-Revision-Date`, `Last-Translator`, `Language-Team`
+  missing) and status 0. In a `python-brace-format` entry, `{value}` translated as `{wert}` is a
+  fatal error (status 1), but `{value!r}` as `{wert!r}` passes. `--no-hash` compiles a plural
+  entry whose second form is empty, and Python's gettext then returns `""` for a count of 2.
+  *Verified:* GNU gettext-tools 0.21 and Python 3.12.3, with one-entry catalogs. *Here:* the
+  catalogs carry exactly those five header fields (no dates or names); `tools/i18n.py`'s own
+  checks compare every field, `!r` included; our MO writer leaves a plural entry with an empty
+  form out, so the text stays English, and equals GNU's bytes for every other catalog
+  ([ADR 0027](decisions/0027-message-catalogs-compiled-when-loaded.md)); `make check` judges a
+  catalog by the tests, not by `msgfmt`'s status. *Check:* `msgfmt -c -o /dev/null x.po; echo $?`
+  on such files.
 
 ## GitHub
 
@@ -366,6 +418,16 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   (port, topics, container settings), and with `--reconfigure` the input boxes hold the current
   settings, the user name included, which have to be cleared before typing new ones. *Check:*
   `whiptail --inputbox User 10 50 example 2>u; cat u`, type `bob` and Enter: `examplebob`.
+* **`--yes-button`, `--no-button`, `--ok-button` and `--cancel-button` set the labels of every box
+  kind and keep the exit status.** *Verified:* experiment, 0.52.24-2ubuntu2, in a pseudo
+  terminal under `LC_ALL=C.UTF-8`: `Ja`/`Nein` on a yes/no box (Enter 0, Tab and Enter 1),
+  `Weiter`/`Abbrechen` on an input box (0 with the text, 1 on the second button), and a
+  13-character label on a message box, each shown. The slice's research also ran 0.52.23 and
+  0.52.25 with the labels of five languages, every box kind with all four options at once, and
+  saw a 31-character label run over the right border of a 40-column box. *Here:* the installer
+  passes the four labels only while a language pack is loaded (English keeps whiptail's own), and
+  the translator notes ask for at most 12 characters. *Check:*
+  `whiptail --yes-button Ja --no-button Nein --yesno -- Text 10 40; echo $?`.
 * **In a password or input box, Tab moves the focus to the buttons instead of being typed, and
   what is typed after it is lost.** Typing or pasting `ab`, Tab, `cd` and pressing Enter returns
   `ab` with exit status 0, so a password that contains a Tab is cut without a warning. A second
@@ -826,6 +888,15 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `src/meshcore_home_gateway/bridge.py`;
   [home-assistant.md, How discovery behaves](home-assistant.md#how-discovery-behaves)). *Check:*
   `make ha-test`.
+* **A known entity that comes with another name keeps its entity ID and the name a user gave it:
+  Home Assistant updates only its original name.** *Verified:* 2026.10.0,
+  `helpers/entity_registry.py` lines 1520-1577 (`async_get_or_create` of a known unique ID calls
+  `_async_update_entity` with `original_name`, never the entity ID or `name`);
+  `test_a_language_change_renames_only_display_names` in `home-assistant/tests/test_languages.py`
+  announces a gateway again in another language, after a user renamed an entity and the device.
+  *Here:* a change of `[homeassistant] language` renames the
+  display names at the next start ([home-assistant.md](home-assistant.md#language-of-the-names)).
+  *Check:* `make ha-test`.
 * **`default_entity_id` sets the entity ID only when Home Assistant registers the unique ID for the
   first time, or again after the entity was deleted; a changed value does not rename an existing
   entity, and an entity ID set by the user stays.** Home Assistant keeps the part after the first
@@ -1168,7 +1239,9 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `www.example.org` intact; in a paragraph they become an `<img>` (a tracking pixel), an `<a>` and
   an autolink. A line that starts with `<div>` opens a CommonMark HTML block, which marked passes on
   as HTML, so the escaped text stays literal; a blank line ends the block, so line breaks in the
-  text must go. Anyone in radio range chooses a message's text and a channel sender's claimed name.
+  text must go: only LF and CR end it, while VT, FF, NEL, NUL, U+2028 and U+2029 inside a `<div>`
+  line keep it one HTML token. Anyone in radio range chooses a message's text, a channel sender's
+  claimed name and a contact's own name (an advert renames the contact), line breaks included.
   *Verified:* frontend `20260930.2`, the release Home Assistant 2026.10.0 pins:
   `src/resources/markdown-worker.ts:19-36` (whitelist) and `:71-74` (each token filtered),
   `src/components/ha-markdown-element.ts:92-93` (`gfm: true`), with marked 18.0.14 and xss 1.0.15
@@ -1176,9 +1249,16 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   steps](home-assistant.md#first-steps), rendered by Home Assistant 2026.10.0's template engine with
   a hostile text and sender name and then by a replica of that pipeline with the same library
   versions (not in a browser): the earlier card gave two `<img>` and three `<a>`, the current one a
-  single HTML token with everything literal. *Here:* the card escapes the text and the sender name
-  and keeps them in a `<div>` on one line; `test_the_markdown_card_keeps_a_hostile_text_inert` in
-  the contract tests checks the form of its output. *Check:* `printf
+  single HTML token with everything literal; a `<div>` line with two of each line ending in it
+  before the Markdown of an image: LF, CR and CRLF gave an `<img>`, the six others one HTML token. A
+  contact named `x`, a blank line and `![](https://example.org/p.png)` put the image after a blank
+  line in the card of 1.1.0a3, which escaped the sender's name but kept its line breaks. *Here:*
+  the card escapes the text and the sender name, replaces their line breaks with spaces, and keeps
+  them in a `<div>` on one line; each card of the generated dashboard prints every value it reads
+  from Home Assistant through one macro that does the same, on a line that is one `<div>`,
+  `<table>` or `<ha-qr-code>` element. `test_the_markdown_card_keeps_a_hostile_text_inert` and
+  `home-assistant/tests/test_dashboard.py` (hostile names, three with line breaks, in every place
+  a name reaches) check the form of their output. *Check:* `printf
   '![](https://example.org/p.png)' | npx marked@18.0.14` prints an `<img>`; `printf
   '<div>![](https://example.org/p.png)</div>' | npx marked@18.0.14` prints the input unchanged.
 
@@ -1223,13 +1303,65 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   from the database, the open subscription gets the next point, the person records its rows).
   *Here:* the guide says how expiry, restarts and the recorder exclusion look on a trace.
   *Check:* `make ha-test`.
-* **A map card's `conditions` filter the markers; the trails come from the configured entities,
-  with `show_all` from every entity with a location.** *Verified:* read only, frontend
-  `20260930.2`, `hui-map-card.ts` lines 451-456 (the markers filtered) and 609-633 (the trails'
-  request); whether a filtered entity still draws a trail is step 45 of the
-  [hardware checklist](testing.md#hardware-checklist). *Here:* the guide lists one tracker per
-  companion instead of `show_all`. *Check:* `sed -n 451,456p
-  src/panels/lovelace/cards/hui-map-card.ts` in the frontend's source at `20260930.2`.
+* **A map card's `conditions` filter only the markers: with `show_all`, every entity with a
+  location draws its trail, a phone's and a person's too, also when its marker is filtered out.
+  `show_all` takes the entities that have a location when the card gets its configuration; one
+  without a location then (an `unavailable` tracker) gets neither marker nor trail until the page
+  loads again.** *Verified:* read only, frontend `20260930.2`, `hui-map-card.ts` lines 160-178
+  (`show_all`: the entities with a location, persons' sources left out), 205-211 and 425-434 (taken
+  once), 451-458 (the markers filtered), 609-633 (the history of every configured entity) and
+  934-960 (a trail for each entity of that history); not run in a browser. *Here:* the guide's card
+  and the generated dashboard list one tracker per contact instead of `show_all`. *Check:* `sed -n
+  451,458p src/panels/lovelace/cards/hui-map-card.ts` in the frontend's source at `20260930.2`.
+* **A Markdown card's `entity_id` option does nothing: Home Assistant renders the template again
+  when what it read changes, and a template that calls `now()` also each minute.** The frontend
+  sends the option as `entity_ids` with the `render_template` subscription; Home Assistant accepts
+  the key and does not read it. *Verified:* 2026.10.0, source
+  `components/websocket_api/commands.py` lines 759 (the schema) and 767-850 (the handler); frontend
+  `20260930.2`, `hui-markdown-card.ts` lines 220-242. *Here:* the generated dashboard's contacts
+  table calls `now()` once, so a new contact shows within a minute also when no row has a time,
+  and reads its contacts from the registry, which sets up no listener; `test_dashboard.py` checks
+  `has_time` and that no card listens to a whole domain. *Check:* `make ha-test`.
+* **A card's visibility condition `state` reads a missing entity, and a missing attribute, as
+  `unknown`, and compares the values as they are: an unquoted `on` in YAML is the boolean true,
+  which matches no state.** *Verified:* read only, frontend `20260930.2`,
+  `src/panels/lovelace/common/validate-condition.ts` lines 161-207; Home Assistant 2026.10.0 loads
+  a YAML-mode dashboard with PyYAML, which reads YAML 1.1, where `on` is a boolean. *Here:* the
+  dashboard's hint for the script shows while `script.mesh_message` is missing
+  (`state_not: ["on", "off"]`), the version card hides while the gateway is unavailable (its
+  attributes go then), and every `on`, `off` and version is quoted;
+  `test_cards_show_only_while_their_state_says_so` evaluates the conditions as that code does.
+  *Check:* `sed -n 161,207p src/panels/lovelace/common/validate-condition.ts` at `20260930.2`.
+* **A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and
+  its more-info dialog shows a form for its `fields`.** *Verified:* read only, frontend
+  `20260930.2`, `src/panels/config/script/ha-script-editor.ts` lines 714-722 and 959-980,
+  `src/dialogs/more-info/controls/more-info-script.ts` lines 63-131 (the fields from the services'
+  descriptions); Home Assistant 2026.10.0 registers them as the script's description
+  (`components/script/__init__.py` lines 759-765), and its service takes any data, so `fields`
+  only make the form. *Here:* the guide's script *Mesh message* is `script.mesh_message` when its
+  name is kept, and the dashboard's tile opens its form;
+  `test_the_guides_script_is_a_form_that_sends_for_a_household_user` checks its description and
+  that a household user sends with it. *Check:* `make ha-test`.
+* **A script's `data` written as a mapping of templates reads each value as Python would:
+  `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text
+  without the spaces around it, and refuses `None`. One template for the whole mapping, `data:
+  "{{ {'message': message} }}"`, keeps the text as it was.** *Verified:* 2026.10.0, a probe of the
+  guide's script and `test_the_guides_script_is_a_form_that_sends_for_a_household_user`; source
+  `helpers/template/__init__.py` lines 244-302 (`_parse_result`: `literal_eval`, a text that looks
+  like a number becomes one) and 474 (the render stripped). *Here:* the guide's script hands on its
+  whole `data` as one template. *Check:* `make ha-test`.
+* **Every user can open any entity from the entity search (`e`) and use its controls: a button's
+  dialog has *Press*, a switch's dialog its toggle; only the device and command searches, and the
+  *Settings* panel with the device pages, are for administrators.** The actions behind them
+  (`button.press`, `switch.turn_off`) check no role. *Verified:* read only, frontend `20260930.2`,
+  `src/state/quick-bar-mixin.ts` lines 104-138 (`e` for every user, `c` and `d` for
+  administrators), `src/dialogs/quick-bar/ha-quick-bar.ts` lines 562-597 (entities without a role
+  check, devices with one) and 796 (more-info), `src/state-summary/state-card-button.ts` lines
+  33-50 (*Press*); Home Assistant 2026.10.0, `components/config/__init__.py` lines 49-51
+  (`require_admin=True`); `test_a_user_who_is_no_administrator_can_press_the_remove_button`.
+  *Here:* the guide says that the device page keeps no user from removing a contact or from its
+  *Telemetry* switch. *Check:* `make ha-test`, and `sed -n 104,138p src/state/quick-bar-mixin.ts`
+  at `20260930.2`.
 
 ## MeshCore companion firmware
 

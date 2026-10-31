@@ -47,7 +47,7 @@ from unittest import mock
 
 import paho.mqtt.client as paho
 
-from meshcore_home_gateway import __version__, cli, views
+from meshcore_home_gateway import __version__, cli, i18n, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
@@ -227,6 +227,7 @@ prefix = "{PREFIX}"
 device_name = "Gateway"
 status_topic = "{STATUS}"
 contact_devices = 10
+language = "en"
 [messages]
 ascii_only = true
 truncate = false
@@ -748,6 +749,7 @@ def _choice_keys() -> dict[str, tuple[Sequence[str], Callable[[str], dict[str, s
         "radio.transport": (_literal(configuration.RadioConfig, "transport"), _transport),
         "radio.profile.manage": (_literal(ProfileConfig, "manage"), lambda _: {}),
         "diagnostics.log_level": (configuration.LOG_LEVELS, lambda _: {}),
+        "homeassistant.language": (tuple(i18n.LANGUAGES), lambda _: {}),
     }
 
 
@@ -982,9 +984,18 @@ _FAR = 10**9  # beyond every bound: a number type without a bound takes it
 _FEWEST: dict[Any, int] = {None: 1, "?": 0, "*": 0, "+": 1, argparse.REMAINDER: 0}
 
 
-def command_line(tmp: Path) -> dict[str, Any]:
+def command_line(tmp: Path, language: str = "en") -> dict[str, Any]:
+    """The command line's interface; with another language, the same (ADR 0019): its parser is
+    built in that language, where a name translated by mistake would show, and its commands run in
+    an environment that asks for it (tests/test_public_interface.py)."""
     commands: dict[str, Any] = {}
-    _commands(cli._parser(), "", commands)
+    with cli._speaking(i18n.translator(language)):
+        _commands(cli._parser(), "", commands)
+    with mock.patch.dict(os.environ, {"LANGUAGE": language}):
+        return _command_line(tmp, commands)
+
+
+def _command_line(tmp: Path, commands: dict[str, Any]) -> dict[str, Any]:
     report = _probe_report(tmp)
     probe = ["probe", "--tcp", "192.0.2.10", "--state-dir", str(tmp)]
     with _probing(report):
@@ -1364,8 +1375,13 @@ def _columns(listings: dict[str, str]) -> dict[str, int]:
 # --- Home Assistant -------------------------------------------------------------------------------
 
 
-def homeassistant() -> dict[str, Any]:
+def homeassistant(language: str = "en") -> dict[str, Any]:
+    """Home Assistant's side of the interface; with names in another language, the same (ADR
+    0019): names are not recorded, and nothing recorded may follow them
+    (tests/test_public_interface.py)."""
     config, device, topics = maximal(), gateway_device(), Topics(BASE, NODE)
+    names = dataclasses.replace(config.homeassistant, language=language)
+    config = dataclasses.replace(config, homeassistant=names)
     contact = contact_device_id(config, KEY)
     contacts: dict[str, dict[str, Any]] = {}
     for node_type in NodeType:  # the components of a contact depend on its type
@@ -1393,7 +1409,7 @@ def homeassistant() -> dict[str, Any]:
             "manage_contacts": _components(manage_payload(config, topics, [])["cmps"], device),
             "contact": contacts,
         },
-        "slugs": _slugs(),
+        "slugs": _slugs(config),
     }
 
 
@@ -1408,7 +1424,7 @@ def _named_key(index: int) -> str:
     return f"{index:02}{'0123456789' * 7}"[:64]
 
 
-def _slugs() -> dict[str, str]:
+def _slugs(config: Config) -> dict[str, str]:
     """The slug the code gives each example contact, which its entity IDs
     `<platform>.mesh_<slug>_<component>` keep (docs/home-assistant.md): the contacts come in a
     table read, then a second contact named like the first in another."""
@@ -1417,7 +1433,7 @@ def _slugs() -> dict[str, str]:
     bus = cast("Publisher", SimpleNamespace(publish=lambda *_, **__: None))
     with tempfile.TemporaryDirectory() as tmp:
         records = ContactDeviceRecords(JsonStateFile(Path(tmp) / "state.json"))
-        devices = ContactDevices(maximal(), Topics(BASE, NODE), bus, records, wall_clock=lambda: T)
+        devices = ContactDevices(config, Topics(BASE, NODE), bus, records, wall_clock=lambda: T)
         mesh = Mesh()
         for table in (nodes, [*nodes, second]):
             mesh.contacts_read(table, T)
@@ -1578,11 +1594,23 @@ def _report(committed: str, current: dict[str, Any], *, written: bool) -> str:
     return "\n".join(_findings(findings)) or f"{_shown(SNAPSHOT)}: only its form changes"
 
 
+@contextlib.contextmanager
+def english() -> Iterator[None]:
+    """The environment of an English command line, as tests/conftest.py gives every test: the
+    command line follows the environment's language (ADR 0019), the snapshot never does."""
+    with mock.patch.dict(os.environ):
+        for name in ("LANGUAGE", "LC_MESSAGES", "LANG"):
+            os.environ.pop(name, None)
+        os.environ["LC_ALL"] = "C.UTF-8"
+        yield
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="the public interface of the code (snapshot)")
     parser.add_argument("--write", action="store_true", help="write the snapshot (make interface)")
     args = parser.parse_args(argv)
-    current = surface()
+    with english():
+        current = surface()
     text = tool.render(current)
     committed = SNAPSHOT.read_text(encoding="utf-8") if SNAPSHOT.exists() else None
     if args.write:
