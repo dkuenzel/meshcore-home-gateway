@@ -271,8 +271,10 @@ does not enable, hence the subselect form above.
    signal: with 50 nodes it is at its bound. The experiment measured 15.1 KB per advert on the
    bus (755 MB for 50,000 adverts). Home Assistant subscribes to `nodes` for the *Nodes heard*
    sensor and the *Look-alike node heard* binary sensor (with `json_attributes_template`): each
-   publish is parsed, the attributes (`nodes`, `total`) change, so the recorder writes a row.
-   The `node` *events* are rate-limited (`NODE_EVENTS_PER_S`), the document is not.
+   publish is parsed and both templates rendered; the sensors' states change only while the
+   count rises to 50 (and the look-alike attributes only if the attacker's prefixes collide), so
+   the recorder is not the main cost; the bus, the broker's retained store and Home Assistant's
+   parsing are. The `node` *events* are rate-limited (`NODE_EVENTS_PER_S`), the document is not.
 2. **Eviction.** `Mesh.nodes` keeps 50 entries, the least recently heard evicted. A flood of 50
    invented keys removes every real heard node from the list, from the `nodes` document and from
    the *Add heard node* select (which offers the 20 most recently heard). A household that wants
@@ -301,9 +303,8 @@ table.
 **Impact.**
 
 * Bus and Home Assistant: 15 KiB per advert of retained traffic; the broker's retained store is
-  rewritten; Home Assistant parses and records each; the recorder grows (one row per change of
-  the `nodes` sensor's attributes). At one advert every 3 s that is 430 MB/day of MQTT traffic
-  and about 29,000 recorder rows a day.
+  rewritten; Home Assistant parses each and renders two templates. At one advert every 3 s that
+  is about 430 MB a day of MQTT traffic to every subscriber of `nodes`.
 * The household cannot add real nodes while the flood lasts (A6 usability); the *Look-alike*
   sensor flaps if the attacker chooses prefixes that collide with contacts (the attacker can
   choose any 6-byte prefix that is *not* a key's prefix; colliding with a real contact's prefix
@@ -1215,9 +1216,10 @@ its own payload does nothing; a foreign retained document for an unknown key is 
    `publish_all` (every retained document again). The gateway uses `clean_session=True`, so a
    stable id buys nothing from the broker (no persistent session to resume); it is only a label.
 2. **Announcement starvation and amplification.** `_schedule_announcements` is called for every
-   `online` on `homeassistant/status` and for every empty, non-retained message on the gateway's
-   own discovery topics. It cancels the pending timer and starts a new one of 0.5–2 s. A writer
-   that sends `online` every 0.4 s keeps cancelling the timer: **the announcement never fires**,
+   `online` on `homeassistant/status` (and, coalesced while one is pending, for an empty
+   non-retained message on the gateway's own discovery topics). For a birth it cancels the
+   pending timer and starts a new one of 0.5–2 s. A writer that sends `online` every 0.4 s keeps
+   cancelling the timer: **the announcement never fires**,
    and after a real Home Assistant restart the entities do not appear until the writer stops. A
    writer that sends one every 3 s makes the gateway announce every 3 s: the gateway's discovery
    document (tens of KiB), the controls, and up to 50 contact documents (2–3 KiB each), about
