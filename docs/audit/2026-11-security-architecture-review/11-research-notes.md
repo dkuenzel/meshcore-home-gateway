@@ -93,8 +93,8 @@ About 290 bytes of database per node and 15 KB on the bus per advert (the `nodes
 its bound plus the index). Runtime 43 s for 50,000 on the sandbox's CPU (0.9 ms per advert, the
 SQLite upsert included).
 
-**How it was verified.** The script (kept here so the team can rerun it; it uses only the
-project's modules):
+**How it was verified.** The script (`experiments/advert_flood.py`, kept here too so the team
+can rerun it; it uses only the project's modules):
 
 ```python
 import os, sqlite3, sys, tempfile, time
@@ -189,7 +189,7 @@ resumes: the I/O callback and the due timer run in one iteration; the reader tas
 queue's getter task need two more iterations; the waiter resumes in between and finds the getter
 not done.
 
-**How it was verified.** `/tmp/stall_experiment5.py` (in CODE-001; it uses `tests/radio_emulator.py`'s
+**How it was verified.** `experiments/loop_stall_session.py` (CODE-001; it uses `tests/radio_emulator.py`'s
 `EmulatedRadio` in a thread and a `SocketTransport` over `socket.socketpair()`); Python 3.11.17.
 A pure-asyncio variant with `asyncio.wait({reader.read()}, timeout=5)` and the same stall
 *does* see the data, because the read task completes in the iteration before the waiter resumes;

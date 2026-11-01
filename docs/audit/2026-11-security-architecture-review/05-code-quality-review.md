@@ -40,7 +40,7 @@ answer from the radio", ending the session. The answer is then discarded with th
 bridge reconnects (1 s back-off, flush, handshake, table read: several seconds), and whatever was
 in flight (a send, a telemetry request) is retried or lost.
 
-**Evidence.** Experiment (`/tmp/stall_experiment5.py`, recorded in `11-research-notes.md`
+**Evidence.** Experiment (`experiments/loop_stall_session.py`, recorded in `11-research-notes.md`
 RES-009): a `CompanionSession` over a socket pair to a thread that answers 1 s after each
 command; `loop.call_later(0.2, time.sleep, stall_s)` stalls the loop while `get_battery` waits:
 

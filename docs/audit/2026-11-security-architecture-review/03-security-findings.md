@@ -192,7 +192,7 @@ microseconds; an advert packet at the EU/UK Narrow preset is about 1.3 s of airt
 A single board can therefore announce a new identity every 2–3 s indefinitely, and a few boards
 or a faster preset proportionally more.
 
-**Evidence.** Experiment (`/tmp/advert_flood_experiment.py`, reproduced in `11-research-notes.md`
+**Evidence.** Experiment (`experiments/advert_flood.py`, reproduced in `11-research-notes.md`
 RES-005): 50,000 `NEW_ADVERT` records with distinct keys fed to an `Observer` with a real
 `History` on a temporary file gave 50,000 rows in `node` and 14.4 MB of database (about 290 bytes
 per node); the in-memory heard nodes stayed at 50. At one advert every 3 s that is 28,800 rows and

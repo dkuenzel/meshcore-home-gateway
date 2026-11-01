@@ -30,7 +30,8 @@ that the gateway is degraded.
 
 **Description.** ADR 0005's main argument for taking `paho-mqtt` from Debian rather than PyPI is
 that Debian ships security updates. Updates reach a Debian system only if something installs
-them: `unattended-upgrades` (not part of Proxmox's Debian container templates by default) or an
+them: `unattended-upgrades` (not part of Proxmox's Debian container templates as far as the reviewer
+could establish without a host: check with `dpkg -l unattended-upgrades` in a container) or an
 operator running `apt upgrade`. The installer installs neither and the documentation never
 mentions updates of the container's packages (only of the gateway, `--update`). A container
 installed today will run the same `python3`, `openssl`, `libsqlite3` and `paho` for years, and
