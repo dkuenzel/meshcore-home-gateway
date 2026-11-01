@@ -726,3 +726,278 @@ team can keep when adding consumers.
 setting; a bound on the alias echoed in a rejected `delivery` event (truncate to 64 characters).
 
 **References.** none.
+
+---
+
+## B2 The radio link and the operator's clock
+
+### SEC-002 `set_clock` moves the radio's clock forward irreversibly from a wrong host clock
+
+| | |
+| --- | --- |
+| Category | security (integrity and availability of the radio's identity; operator safety) |
+| Component | `src/meshcore_home_gateway/radio/session.py:587-597` (`_sync_clock`), `config.py:67` (`set_clock = True` default); firmware `examples/companion_radio/MyMesh.cpp` (`CMD_SET_DEVICE_TIME`: `if (secs >= curr) setCurrentTime(secs) else ERR 6`), `src/helpers/BaseChatMesh.cpp:60-70` (`bootstrapRTCfromContacts`), `src/helpers/AutoDiscoverRTCClock.cpp:85-101` (hardware RTC chips), `src/Mesh.cpp:404-420` (`createAdvert` stamps the radio's clock), `BaseChatMesh.cpp:131-136` (adverts not newer than the stored timestamp are dropped) |
+| Related | design §6.1 "Clock", `docs/deployment.md` troubleshooting rows `too_old` / `from_the_future`, DOC-002, IMP-006, RES-007 |
+
+**Description.** At every connect, with the default `set_clock = true`, the session reads the
+radio's clock and, if the host is more than 2 s ahead, writes the host's time to the radio
+(`_sync_clock`). The firmware accepts only a time that is not earlier than its current time
+(`CMD_SET_DEVICE_TIME`: `secs >= curr`, else `ERR_CODE_ILLEGAL_ARG`); nothing in the companion
+protocol moves the clock back. The gateway applies no plausibility bound: whatever the host says,
+if it is later than the radio's time, is written.
+
+A wrong-forward time on the radio is **sticky**:
+
+* On every board the radio writes `lastmod` of a contact with its clock whenever a message or
+  advert from that contact arrives (`BaseChatMesh.cpp:119,198,240,294,357`), the contacts file is
+  saved, and at the next boot `bootstrapRTCfromContacts()` sets the clock to the newest `lastmod`
+  it finds (`BaseChatMesh.cpp:60-70`, called from `MyMesh.cpp:1001` at start). So the wrong time
+  survives a reboot even on a board whose clock is a RAM counter.
+* On boards with a hardware RTC (DS3231, RV3028, PCF8563, RX8130: `AutoDiscoverRTCClock.cpp`)
+  the time is written to the chip and survives power loss.
+* The only ways back are a factory reset (which gives the radio a new identity), re-flashing with
+  the file system erased, or waiting for real time to catch up.
+
+What a wrong-forward radio clock does:
+
+1. **Adverts.** Every advert the radio sends is stamped with its clock (`Mesh.cpp:404-420`). Every
+   node that holds the gateway's radio as a contact stores that timestamp and **drops every later
+   advert of the gateway whose timestamp is not newer** (`BaseChatMesh.cpp:131-136`, the replay
+   protection). The gateway never sends adverts itself, but the radio's button, the app on it
+   before the gateway took over, or a future version sends one; once one advert with a far-future
+   time has gone out, the gateway's radio cannot update its name, position or path hints in any
+   contact's table until the real clock passes that time. For a radio set to 2099 that is for ever.
+2. **Contact ordering.** `lastmod` decides which contact a full table overwrites (the oldest
+   non-favourite, `protocol.md` §5). Contacts touched under the wrong clock are "newest" for
+   years.
+3. **Message timestamps on the radio side are not affected** (the gateway stamps outgoing
+   messages with its own clock, `bridge.py:602`) but the gateway's own clock is the one that is
+   wrong in this scenario, so every message it sends carries the wrong time, which the recipient's
+   app shows, and every incoming command is judged against the wrong clock (`too_old` or
+   `from_the_future`, depending on the direction): the troubleshooting table attributes this to
+   the radio's clock, which is not involved (DOC-002).
+
+How a host clock goes wrong-forward: a manual `date` with a typo (2062 for 2026); an NTP server
+that answers wrongly or is spoofed on the LAN (NTP is unauthenticated; `chrony`'s default
+`makestep 1 3` steps the clock in the first three updates after boot by any amount); a Proxmox
+host whose CMOS battery died and which boots without network starts at its BIOS default, which on
+some boards is in the future. A restored VM or container snapshot and a Raspberry-Pi-class host
+without RTC go the other way (past), which is harmless here. None of these is likely on a
+well-kept Proxmox host; the point is that one occurrence is unrecoverable and silent: the log says
+"radio clock moved forward by N s" at info level and nothing else.
+
+**Evidence.** `session.py:587-597`:
+
+```python
+async def _sync_clock(self) -> None:
+    radio_time = await self.get_time()
+    now = int(self._wall())
+    if now - radio_time > CLOCK_SET_THRESHOLD_S:
+        await self.set_time(now)
+        log.info("radio clock moved forward by %d s", now - radio_time)
+    elif radio_time - now > CLOCK_AHEAD_WARNING_S:
+        log.warning("radio clock is %d s ahead and cannot be set back; command age checks may fail", ...)
+```
+
+Firmware citations above, read at commit `81dbae5`.
+
+**Preconditions and attacker model.** T12 (the operator, by mistake) for the typical case; T5-like
+(a host on the LAN that spoofs NTP answers to the Proxmox host at boot) for an adversarial one.
+No access to the gateway or the radio is needed; the gateway does the write.
+
+**Impact.** The radio's identity becomes partly unusable on the mesh (its adverts are rejected by
+everyone who holds it) for as long as the wrong time is ahead of real time; recovery destroys the
+identity (factory reset) or needs a re-flash. Until the host clock is fixed, every command is
+rejected and every outgoing message carries a wrong time. The failure is silent at the default log
+level and invisible in Home Assistant (no entity shows the radio's clock or the offset).
+
+**Existing mitigations.** The 2 s threshold; the warning when the radio is *ahead*; the
+`set_clock = false` setting; the forward-only rule of the firmware (which prevents a wrong-*past*
+host from harming the radio).
+
+**Suggested mitigation or implementation.**
+
+1. **Plausibility bounds before writing.** Write only if (a) the host's time is at or after the
+   gateway's own release date (a constant written at release, for example `BUILT_AFTER`; the
+   release date is in the changelog) and before that date plus, say, 10 years; and (b) the jump
+   the write would cause is either from an obviously unset radio clock (the radio's time is before
+   the release date, as after a cold boot of a RAM-clock board) or smaller than a bound (an hour).
+   A jump larger than the bound from a set clock is logged as a warning and **not written**; the
+   operator can force it with `set_clock = "always"` (a new choice; `true` keeps the bounded
+   behaviour, `false` as now). Sketch:
+
+   ```python
+   if now < BUILT_AFTER or now > BUILT_AFTER + 10 * 365 * 86_400:
+       log.warning("host clock %s is implausible: the radio's clock is left alone", iso(now))
+       return
+   unset = radio_time < BUILT_AFTER
+   ahead = now - radio_time
+   if ahead > CLOCK_SET_THRESHOLD_S and (unset or ahead <= MAX_JUMP_S or self._set_clock == "always"):
+       await self.set_time(now)
+   elif ahead > MAX_JUMP_S:
+       log.warning("host clock is %d s ahead of the radio's: not written "
+                   "(set_clock = \"always\" forces it)", ahead)
+   ```
+
+2. **Show the clocks.** Add `radio_clock_offset_s` (radio minus host, at the last read) to the
+   `state` document and a diagnostic sensor; read the radio's time at every heartbeat or every
+   few minutes, not only at connect. An offset that grows or a large one is then visible.
+3. **Document the recovery** in `docs/deployment.md` troubleshooting: how to tell (the offset,
+   contacts not seeing the gateway's adverts), that only a factory reset or waiting helps, and
+   that the host's clock must be right before the service starts (`After=time-sync.target` in the
+   unit is cheap; with `systemd-timesyncd` or `chrony` the target is reached after the first
+   synchronisation. In an LXC container the clock is the host's, so the unit's dependency helps
+   only on other systems; the documentation should name the host's NTP).
+4. **Correct DOC-002**: the troubleshooting rows and design §6.1 that attribute command
+   rejections to the radio's clock.
+
+Tests: `tests/test_session.py` — a host time of 2062 does not write the radio's clock and logs a
+warning; a radio at 1970 with a host at 2026 is written; a radio 2 days behind a host is written
+only with `always`; `tests/test_bridge.py` — `state.radio_clock_offset_s` follows the emulator.
+
+**References.** MeshCore `examples/companion_radio/MyMesh.cpp` (`CMD_SET_DEVICE_TIME`),
+`src/helpers/BaseChatMesh.cpp:60-70`; `systemd.special(7)` `time-sync.target`; `chrony.conf(5)`
+`makestep`.
+
+---
+
+### SEC-003 Over TCP the radio's private key is exportable and importable by anyone on the network (default build), and the gateway cannot tell a second client
+
+| | |
+| --- | --- |
+| Category | security (confidentiality of the identity, integrity of the radio, availability) |
+| Component | `src/meshcore_home_gateway/radio/transport.py:139-181` (`TcpTransport`), `config.py:63-66`, `bridge.py:419-426` (the warning for commands over TCP); firmware `examples/companion_radio/MyMesh.cpp:1528-1556` (`CMD_EXPORT_PRIVATE_KEY`, `CMD_IMPORT_PRIVATE_KEY`), `platformio.ini:33-34` at `companion-v1.18.0` (`ENABLE_PRIVATE_KEY_IMPORT=1`, `ENABLE_PRIVATE_KEY_EXPORT=1` in the common build flags, "NOTE: comment these out for more secure firmware"), `src/helpers/wifi/SerialWifiInterface.cpp:57-70` (a new connection replaces the old) |
+| Related | design §7.2 "Unauthenticated TCP companion interface", §7.4; SEC-001; RES-008; OPS-00x; DOC-00x |
+
+**Description.** The project documents the TCP companion interface as unauthenticated and says
+"any client controls the radio, and can for example create temporary contacts that the contact
+list never shows". The reviewer verified the stronger consequences in the pinned firmware and its
+build configuration:
+
+1. **The private key is exportable.** `CMD_EXPORT_PRIVATE_KEY` (23) returns the 64-byte secret
+   when the firmware was built with `ENABLE_PRIVATE_KEY_EXPORT`; the common `build_flags` of
+   `platformio.ini` at the pinned release set it for every environment unless a variant removes
+   it (the reviewer found none that does; two variants set it again explicitly). The official
+   release binaries are built from this file. So any host that can open TCP port 5000 of a WiFi
+   companion obtains the radio's Ed25519 private key with one 1-byte frame.
+2. **The private key is importable** (`CMD_IMPORT_PRIVATE_KEY`, 24, same flag family): the
+   attacker can replace the radio's identity, or install an identity they hold elsewhere.
+3. **Destructive and dangerous commands** need no more: factory reset (51), radio parameters (11:
+   frequency, bandwidth, spreading factor, coding rate — move the radio off the mesh's channel),
+   raw packet transmission (25, 65: use the radio to transmit anything, including SEC-001's
+   forged acknowledgements and adverts under the exported key), `ADD_UPDATE_CONTACT` with the
+   remote-CLI flag (then control the radio over the air later), `SYNC_NEXT_MESSAGE` (steal
+   inbound messages, commands included, before the gateway sees them: the firmware hands a message
+   to whichever client asks first).
+4. **No forward secrecy.** MeshCore direct messages are encrypted with a static shared secret
+   derived from the two parties' long-term keys (X25519 of the identity keys, `src/Identity.cpp`,
+   `ContactInfo::getSharedSecret`). With the exported key, every direct message ever recorded from
+   the air between the gateway's radio and any contact can be decrypted afterwards, and every
+   future one. The commands the household sends (A1), the alerts the gateway sends (A2), the
+   telemetry answers (A3: positions) are all direct messages.
+5. **The gateway cannot see a second client.** Over TCP the firmware serves one connection and
+   replaces it with a new one (`SerialWifiInterface.cpp:57-70`); the gateway's connection drops
+   with "closed by the radio" and it reconnects after a second, replacing the attacker, who
+   reconnects in turn. The gateway logs reconnects as link trouble. The firmware's `uptime_s`
+   (in `stats`) does not reset, which could distinguish a reconnect caused by another client
+   from a radio reboot, but the gateway does not look.
+
+**Evidence.** Firmware source at commit `81dbae5`: `MyMesh.cpp:1528-1536` (export under
+`#if ENABLE_PRIVATE_KEY_EXPORT`, else `writeDisabledFrame()`); `platformio.ini:33-34` fetched from
+the tag `companion-v1.18.0` (sparse checkout; `grep -n ENABLE_PRIVATE_KEY platformio.ini` →
+lines 33–34 in `[env]`'s `build_flags`). Gateway: `TcpTransport` opens a plain TCP stream
+(`asyncio.open_connection`), no TLS, no shared secret; `docs/protocol.md` §1 "TCP … no
+authentication".
+
+**Preconditions and attacker model.** T5: any host on the network the radio joins (the home
+WiFi, typically, where phones, TVs and IoT devices live), or any host that can route to it. No
+credential, no physical access, one TCP connection. The gateway's own `radio.host` setting tells
+the operator which address that is; an attacker finds it with a port scan (5000/tcp, a plain
+protocol with a distinctive `>` framing).
+
+**Impact.** Complete compromise of the radio's identity (A5) and settings (A6), decryption of all
+past and future direct traffic of the gateway (A1–A4), the ability to transmit anything under the
+gateway's identity, and theft of inbound messages (commands never reach the gateway). The project
+recommends USB and documents the risk; the specific facts (key export in the default build, no
+forward secrecy) make the difference between "an attacker on the WiFi can confuse the gateway"
+and "an attacker on the WiFi owns the gateway's identity for good and reads its past".
+
+**Existing mitigations.** `docs/design.md` §7.2 and §7.4, `SECURITY.md`, `docs/configuration.md`
+(`host`: "the TCP interface has no authentication"), the warning at connect when commands are
+configured over TCP (`bridge._check_radio`), the recommendation of an isolated network, the
+telemetry poller's TCP allowances. The gateway itself never sends commands 23, 24, 51, 11, 25, 65
+(a codec test fails if an encoder appears, ADR 0020).
+
+**Suggested mitigation or implementation.**
+
+1. **Say it exactly** (`docs/design.md` §7.2 row "Unauthenticated TCP companion interface",
+   `SECURITY.md`, `docs/configuration.md` `[radio] host`): the release firmware exports and
+   imports the private key over this interface; there is no forward secrecy; recommend a custom
+   build without `ENABLE_PRIVATE_KEY_EXPORT`/`IMPORT` for a TCP radio (the firmware's own
+   comment suggests it), a dedicated VLAN or a point-to-point WiFi that only the gateway's host
+   reaches, and never the household's WiFi.
+2. **Refuse the risky combination unless acknowledged**: with `transport = "tcp"` and
+   `commands.senders` non-empty (or telemetry on, which sends the household's positions over the
+   same link), require `[radio] tcp_insecure_acknowledged = true` in the configuration, with the
+   error text explaining why (a configuration error, exit 78). A changed rule between settings is
+   breaking under the compatibility policy, so this would be a 2.0 item or a warning until then;
+   the warning already exists for commands and could be extended to telemetry and made louder
+   (also in `check-config`'s summary, which today prints `radio tcp host:port` without a word).
+3. **Detect the second client.** Over TCP, after a reconnect, compare the radio's `uptime_s` with
+   the value before the disconnect plus the elapsed time: a continuous uptime with a dropped
+   connection means another client (or a network blip, so count repeats). Log a warning naming the
+   possibility, and publish it in `state` (a `radio_link_contested` boolean) so that Home
+   Assistant can alert. Cheap and useful.
+4. **Make the attack visible after the fact**: the radio's `GET_STATS` and its contact table
+   show nothing about key export. There is nothing the gateway can do about an exported key; the
+   documentation should tell the operator what to do on suspicion (factory reset, re-add the
+   gateway on every companion).
+5. **Longer term**: an encrypted and authenticated companion transport (a pre-shared key over
+   TCP, or TLS with the radio's identity) is a firmware feature to request upstream; until it
+   exists the gateway's recommendation of USB is the right one, and the installer's TCP option
+   could carry the same warning box as the documentation.
+
+Tests: `tests/test_config.py` — the acknowledged-flag rule; `tests/test_bridge.py` — a reconnect
+with continuous uptime sets the contested flag and warns.
+
+**References.** MeshCore `platformio.ini` at `companion-v1.18.0`; `docs/companion_protocol.md` of
+the firmware (commands 23 and 24); `src/helpers/ContactInfo.h` (`getSharedSecret`);
+`src/Identity.cpp` (the ECDH); the project's `docs/protocol.md` §1.
+
+---
+
+### SEC-014 Malformed frames over TCP produce one warning each, without a limit
+
+| | |
+| --- | --- |
+| Category | security (denial of service of the journal; low) |
+| Component | `radio/session.py:666-671` (`_push`: `log.warning("radio: malformed push ignored: %s", exc)`), `session.py:663-664` (`unexpected frame … dropped` at debug), `session.py:759-768` (`_decode`: a malformed *answer* ends the session) |
+| Related | SEC-003, CODE-00x, `bridge._report_unpublished` (the pattern to reuse) |
+
+**Description.** A push frame that fails to decode is logged with a warning and ignored; the
+session continues. Over TCP an impostor (SEC-003) or a misbehaving radio can send such frames at
+the link's rate: thousands per second, each a journal line. `journald` rate-limits a unit to
+10,000 lines per 30 s by default (`RateLimitBurst`), after which it drops lines and logs that it
+did, so the journal does not grow without bound, but 10,000 lines per 30 s is about 1 MB per 30 s
+of disk and CPU for `journald`, and the gateway's own useful lines are among the dropped ones.
+Over USB the serial rate bounds it to a few hundred frames per second at most.
+
+**Evidence.** `session._push`, lines 666–671.
+
+**Preconditions and attacker model.** T5 (an impostor over TCP), or a faulty radio.
+
+**Impact.** Journal noise and disk use; loss of the gateway's real log lines during the flood.
+Nothing else: the frames are dropped.
+
+**Existing mitigations.** `journald`'s own limit; the `debug` level of the "unexpected frame"
+line.
+
+**Suggested mitigation or implementation.** Count malformed pushes and log at most one warning a
+minute with the count, as `bridge._report_unpublished` and `contact_manager.report_unpublished`
+already do for refusal events; the first occurrence can stay immediate. Also consider ending the
+session after N malformed pushes in a row (the radio is out of step or not a radio), which the
+reconnect then resynchronises, as `_decode` does for answers.
+
+Test: `tests/test_session.py` — 100 malformed pushes in a second log one warning with the count.
+
+**References.** `journald.conf(5)` `RateLimitIntervalSec`, `RateLimitBurst`.
