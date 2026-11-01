@@ -1283,3 +1283,251 @@ as given, an unset one gets a suffix of 8 hex digits.
 
 **References.** MQTT 3.1.1 §3.1.4; Home Assistant MQTT discovery documentation (birth message);
 `docs/platform-notes.md` Mosquitto section.
+
+---
+
+## B4/B5 Home Assistant and its users
+
+### SEC-007 Names from the mesh reach the Home Assistant UI unflagged: a stranger can look like a contact or like the gateway
+
+| | |
+| --- | --- |
+| Category | security (impersonation, social engineering) |
+| Component | `mqtt/contact_devices.py:305-314` (device `name: node.name or key[:12]`), `core/contacts.node_label` (`<12 digits>…<8 digits> <name>`), `views.nodes_document` (`name`), `observer._advert` (the `node` event with `name`), `mqtt/discovery.py:249-255` (the gateway's device name), the dashboard's contacts and heard-nodes tables |
+| Related | SEC-017, ADR 0017, `docs/home-assistant.md` "Add a node that advertised", IMP-010 |
+
+**Description.** A node's name is chosen by whoever holds its key and reaches the gateway through
+its advert. The gateway shows names in: the *Add heard node* select (after the key digits), the
+*New node* event, the `nodes` document and the dashboard's heard-nodes table, and, once a node is
+a contact, as the **device name** in Home Assistant, which prefixes every entity name of that
+device ("Alice Battery", "Alice Position"), the map marker, the notify entity ("Alice"), and the
+logbook. Nothing compares names:
+
+* A stranger can advertise as `Alice` while Alice is a contact. The household sees a *New node*
+  "Alice" and a select entry `c3d4…e5f6 Alice` next to nothing (Alice is already a contact, so she
+  is not in the select). A member who reads the name and not the digits adds the stranger; the
+  stranger's device is now "Alice" too, with `notify.mesh_alice_c3d4` (the slug gets the key's
+  first four digits when taken) but the display name identical. Messages the household sends "to
+  Alice" from the dashboard's form (which lists notify entities by name) may go to the stranger.
+* A stranger can advertise as `MeshCore radio` (the gateway's default device name) or as the
+  household's chosen gateway name; once added, Home Assistant lists two devices of that name.
+* Names can use confusable characters (Cyrillic `а` for Latin `a`): the slug differs, the display
+  does not.
+
+The project's defence is correct in principle: the label shows 20 key digits and the guide says
+"compare the digits with his screen". It relies on a person doing that every time.
+
+**Evidence.** The code cited; `node_label` deliberately puts the digits first so that a name
+cannot push them aside (good); nothing in `views`, `contact_devices` or `manage_entities` compares
+a name with other names.
+
+**Preconditions and attacker model.** T1 (any node in range chooses its name) plus a household
+member who adds nodes by name, or who picks the wrong notify entity in a form.
+
+**Impact.** Messages meant for a household member go to a stranger (confidentiality of A4);
+a stranger's device sits in Home Assistant under a trusted name (its telemetry, if it answers,
+is tracked as a household member's — SEC-016); confusion in automations that select notify
+entities by name.
+
+**Existing mitigations.** The 20-digit label; the slug suffix for a taken slug (entity IDs stay
+distinct); the guide's instruction; the look-alike flag for *key prefix* collisions (which is a
+different, far more expensive attack).
+
+**Suggested mitigation or implementation.**
+
+1. **Flag name collisions** in the `nodes` document and the `node` event: `name_taken: true`
+   when the node's name, NFKC-normalised and case-folded, equals that of a contact, of the
+   gateway's radio, of the Home Assistant device name, or of another heard node; list them in
+   `name_taken_total`. Add ` (name of a contact)` or ` (name taken)` to the select's label after
+   the name, and show it in the dashboard's heard-nodes table.
+2. **Disambiguate device names in Home Assistant**: when a contact's name equals another
+   contact's or the gateway's, name the device `Alice (c3d4…)` with the key's first digits (the
+   later one; the first keeps the plain name). Home Assistant keeps a user-set `name_by_user`, so
+   a rename by the gateway does not override a name the user gave.
+3. **Confusables**: a light check with `unicodedata.normalize("NFKC")` plus a small table of
+   common homoglyphs (Cyrillic/Greek letters that look Latin) flagging `name_confusable: true` is
+   cheap; full Unicode confusable detection (UTS #39) is not in the standard library and not
+   needed.
+4. **The dashboard's form** (`script.mesh_message`) lists notify entities by *name*; a note in
+   the guide that two contacts can share a name, and the `(key)` suffix of 2, cover it.
+
+Tests: `tests/test_views.py` — a heard node named like a contact is flagged; `tests/test_contact_devices.py` —
+the second contact named "Alice" gets the suffix in `dev.name`; `tests/test_contacts.py` — the
+label carries the mark.
+
+**References.** Unicode UTS #39 (confusables); Home Assistant device registry (`name_by_user`).
+
+---
+
+### SEC-008 Every Home Assistant user can send, add and remove contacts, toggle anyone's telemetry and read every position
+
+| | |
+| --- | --- |
+| Category | security (authorisation within the household; privacy) |
+| Component | `mqtt/discovery.py` (notify per target, `show_hidden` button), `mqtt/manage_entities.py` (the select and the text), `mqtt/contact_devices.py` (`remove` button, `telemetry` switch, `send` notify, the tracker, the readings), `config.py:133` (`[contacts] manage = true`), `config.py:140` (`[telemetry] enabled = true`) |
+| Related | SEC-016, SEC-013, ADR 0017 ("Who may manage: … on by default … because a contact grants no rights"), `docs/home-assistant.md` "Who may", "The dashboard has no control to remove a contact …: that does not keep other users from them", IMP-011 |
+
+**Description.** Home Assistant has two kinds of users, administrators and others; it has no
+per-entity permissions in its user interface (a policy framework exists in the auth system but
+is not exposed). Every user can call every entity's actions: press buttons, flip switches, pick
+select options, type into text entities, and call `notify.send_message`; the entity search and
+the actions UI reach entities that no dashboard shows. The project knows and documents this
+(`docs/home-assistant.md`: "In Home Assistant every user can press a button and set a select or
+text", "any user of Home Assistant can open a contact's *Remove from radio* button or its
+*Telemetry* switch from the entity search and use it").
+
+So with the defaults, a household member, a child with an account, a guest account, or a
+compromised companion-app session can: send messages over the mesh to every target and every
+companion (as the household; A7 airtime; social engineering of the recipients); add any heard
+node as a contact and remove any non-protected contact (A6: the radio's table; SEC-013's
+precondition; and removing a companion ends its presence tracking); exclude a household member
+from telemetry (their presence disappears) or include a stranger (SEC-016); hide and show
+devices; read every position, message text and reading (A3, A4) in the UI, the map, the logbook
+and the history.
+
+ADR 0017's reasoning "a contact grants no rights" is true for the *command* path and not for the
+rest: being a contact means the radio decrypts and acknowledges the contact's messages
+(SEC-013), the gateway polls the contact (SEC-016), and the contact's messages and telemetry land
+in the home's databases (SEC-012, SEC-015).
+
+**Evidence.** The components cited; the guide's own statements; Home Assistant's authorisation
+model (the `system-users` group has `entities: all`).
+
+**Preconditions and attacker model.** T7: any Home Assistant account, or any device with a
+long-lived access token or a logged-in companion app.
+
+**Impact.** Within the household, no separation between who may operate the mesh gateway and who
+may use Home Assistant; for a shared Home Assistant (flatmates, a holiday home, a club) the
+gateway's controls and data are available to everyone who can switch a light.
+
+**Existing mitigations.** The documentation; `[contacts] manage = false` (which also disables
+MQTT and CLI management); protected contacts cannot be removed; the broker ACL limits which
+*broker* clients may write the request topics, but Home Assistant's own user needs all of them
+for the controls to work.
+
+**Suggested mitigation or implementation.** Separate the Home Assistant exposure from the
+function, so that an operator can keep the function (MQTT, CLI) and not expose it to every
+Home Assistant user:
+
+1. `[homeassistant] controls = "all" | "none" | <list>` (or three booleans
+   `manage_controls`, `telemetry_switch`, `contact_notify`): with `none`, the select, the text, the
+   remove buttons, the telemetry switches and the show-hidden button are not announced (their
+   components are removed through the placeholder mechanism the project already has); the MQTT
+   requests and the CLI keep working, so an administrator uses `meshcore-home-gateway contacts
+   …` or an automation with a condition on the user. Default: `all` (today's behaviour), with the
+   guide recommending `none` for shared installations.
+2. **Per-target notify exposure**: `[targets.<alias>] expose = false` hides a target's notify
+   entity (an alarm channel that only automations should use) while keeping it reachable on MQTT.
+3. **The positions**: Home Assistant shows trackers to everyone; the gateway cannot change that.
+   The guide could recommend the `person` entity's own visibility settings and dashboards per
+   user, and say plainly that the map is visible to every user.
+4. **Document the Home Assistant policy file** for administrators who want more: a custom group
+   with an entity policy (`.storage/auth`, `permissions`) can deny entities to a user group; it is
+   unsupported in the UI but documented in the Home Assistant developer docs. A paragraph with a
+   pointer suffices.
+
+Tests: `tests/test_discovery.py` / `test_contact_devices.py` — with `controls = "none"` the
+documents carry no select, text, button or switch components, and an earlier run's are removed.
+
+**References.** Home Assistant developer documentation, "Permissions" (`auth/permissions`);
+ADR 0017.
+
+---
+
+## B6 The host
+
+### SEC-009 The broker password is a group-readable file, printed by `config answers`, never a systemd credential
+
+| | |
+| --- | --- |
+| Category | security (credential handling) |
+| Component | `config.py:466-468,475-488` (`password` in `MqttConfig`), `config.config_answers` (prints it), `cli._render` (`--group`, mode 0640), `deploy/systemd/meshcore-home-gateway.service` (no `LoadCredential=`), the installer's `configure` and `load_current` (the password through `pct exec` pipes), `docs/configuration.md` ("The output includes the broker password") |
+| Related | SEC-004, OPS-00x, IMP-012 |
+
+**Description.** The broker password lives in `config.toml` (0640, `root:meshcore-home-gateway`),
+which is right for the service to read. Consequences the project accepts and documents:
+
+* `meshcore-home-gateway config answers` prints the password to standard output; the installer's
+  `--reconfigure` relies on it (`load_current`), so the password travels host ↔ container through
+  `pct exec`'s pipes and sits in the host's bash variables for the run.
+* `pct exec <id> -- cat /etc/meshcore-home-gateway/config.toml`, a backup of `/etc`, a support
+  bundle, a screenshot of the file all carry it.
+* Every process running as the service user (the gateway, and `send`/`listen`/`check-config` when
+  run as that user) reads the whole configuration; a bug that lets an attacker read files as the
+  service user (none found) would read the password.
+* The CLI's `send`, `listen` and `contacts` commands run as root in the container (the documented
+  way) and read the same file.
+
+systemd offers `LoadCredential=` / `SetCredentialEncrypted=` so that a secret is handed to the
+service in `$CREDENTIALS_DIRECTORY` as a file readable only by that process, kept out of the
+configuration file, out of `config answers`, and (with `SetCredentialEncrypted`) encrypted at
+rest with the host's TPM or a host key. Debian 13's systemd (257) supports all of it; in an
+unprivileged LXC container `LoadCredential` works (it is a file copy into a private tmpfs);
+encrypted credentials need the host's key, which a container does not have, so the plain
+`LoadCredential` is the applicable form.
+
+**Evidence.** `config.py` lines cited; `docs/configuration.md` "Installer answers": "The output
+includes the broker password"; the unit file (no credential directives).
+
+**Preconditions and attacker model.** T9/T10 (a process as the service user, root in the
+container), the host's administrators, whoever receives a backup or a support bundle; T6 for the
+plain-text transport when TLS is off (SEC-004).
+
+**Impact.** The credential that may write every document and event of the gateway (A8), and with
+it the command path (A1) and the presence path (A3), is in more places than it needs to be.
+
+**Existing mitigations.** 0640 and the group; the state directory 0700; `UMask=0077`; the
+installer's temporary answers file with `umask 077` and deletion; no logging of the password
+anywhere (`_login` prints only whether one is set).
+
+**Suggested mitigation or implementation.**
+
+1. **`[mqtt] password_file = "/path"`** as an alternative to `password` (exactly one of the two):
+   the file is read at start; `config answers` prints the path. With the unit's
+   `LoadCredential=mqtt-password:/etc/meshcore-home-gateway/mqtt-password` and
+   `password_file = "$CREDENTIALS_DIRECTORY/mqtt-password"` (or a fixed convention: if
+   `password_file` is a bare name, look in `$CREDENTIALS_DIRECTORY`), the service reads it from
+   systemd's private copy; the CLI commands, which run outside the unit, read the path directly
+   (as root or with the group). The installer writes the password into the credential file (mode
+   0640 `root:meshcore-home-gateway`, or 0600 root if only the service and root need it) and
+   `password_file` into the configuration. Compatible: a new optional setting.
+2. **Stop printing the secret**: `config answers` prints `mqtt.password_file=…` when that form is
+   used; with the old form it has to print the password for `--reconfigure` to keep it, or
+   `--reconfigure` could keep the password when the answer is empty *and* the file is unchanged
+   (it already keeps it "while the user name stays the same", so the print is only needed to
+   seed the dialog: a sentinel `(unchanged)` would do).
+3. **Document the exposure** in `docs/deployment.md` §4 (backups: "the configuration holds the
+   password; store backups encrypted") — it says to back up the file and not that.
+
+Tests: `tests/test_config.py` — `password_file` loads, `password` and `password_file` together
+is an error, a missing file is a configuration error; `tests/test_cli.py` — `config answers`
+prints the path.
+
+**References.** `systemd.exec(5)` `LoadCredential=`, `SetCredentialEncrypted=`; `systemd-creds(1)`.
+
+---
+
+## 9 What was looked for and not found
+
+For the record, the reviewer looked for these classes of defect and found none; the team can
+treat the list as the baseline the current code meets:
+
+| Looked for | Where | Result |
+| --- | --- | --- |
+| Shell or command injection | the service (never spawns a process), the installer (arguments, regular expressions, `env -i`), the tools | none |
+| SQL injection | `history.py` | parameters throughout |
+| Template injection into Home Assistant | discovery documents (constants), the dashboard (`m()` macro, tested with hostile input) | none |
+| Path traversal | `config.py` (absolute paths required), the state directory (fixed names), the installer's `FETCH_PY` (`filter="data"`, member names checked against a fixed list) | none |
+| Deserialisation of untrusted data | `json.loads` on bounded input with type checks per key; `tomllib` on root's file; no `pickle`, no `yaml.load` | none |
+| Unbounded buffers from the radio | `FrameDecoder` (≤ 179 bytes pending), decoders total and bounded by the frame | none |
+| Unbounded buffers from the bus | request payloads checked at 1 KiB (after paho read them, documented), queues drained synchronously | none beyond the documented paho limit |
+| Timing side channels in the command check | the 4-byte prefix resolution and the allowlist compare strings; nothing secret is compared | not applicable |
+| Weak randomness where it matters | `secrets` for identifiers; `random` only for jitter (annotated) | fine |
+| TLS misuse | `ssl.create_default_context` with hostname verification; no way to disable it; client certificates supported | fine |
+| Secrets in logs | `_login` never prints the password; the installer strips the program's prefix only | none |
+| Terminal escape injection | `_safe_text`, `_json_text` in every CLI output of mesh text | none |
+| Race conditions between threads | paho's thread hands everything to the loop with `call_soon_threadsafe`; nothing else is threaded | none |
+| Replay of commands | the ledger before publish, the exact-repeat memory sized to the age window | none |
+| Look-alike acceptance | the memory, the fresh read, the connect-time rejection, the refusal at add | none |
+| Setting the remote-CLI or telemetry flags on contacts | `codec.new_contact`, `add_update_contact` refuse any flag but favourite | none |
+| Dangerous commands to the radio | no encoder exists; a test guards it | none |
