@@ -78,7 +78,7 @@ plausible bug report with a confusing cause.
 
    ```python
    if frame not in done:
-       for _ in range(2):          # a stalled loop: the reader and the getter run first
+       for _ in range(2):  # a stalled loop: the reader and the getter run first
            await asyncio.sleep(0)
        if frame.done():
            return frame.result()

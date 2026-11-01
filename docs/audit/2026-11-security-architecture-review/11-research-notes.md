@@ -98,6 +98,7 @@ can rerun it; it uses only the project's modules):
 
 ```python
 import os, sqlite3, sys, tempfile, time
+
 sys.path.insert(0, "src")
 from pathlib import Path
 from meshcore_home_gateway.history import History, Retention
@@ -106,9 +107,16 @@ from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.radio.session import AdvertHeard
 
+
 class Bus:
-    def __init__(self): self.n = 0; self.bytes = 0
-    def publish(self, topic, payload, retain=False, qos=1): self.n += 1; self.bytes += len(payload)
+    def __init__(self):
+        self.n = 0
+        self.bytes = 0
+
+    def publish(self, topic, payload, retain=False, qos=1):
+        self.n += 1
+        self.bytes += len(payload)
+
 
 tmp = Path(tempfile.mkdtemp())
 history = History.open(tmp / "history.sqlite3", Retention())
@@ -119,8 +127,15 @@ N = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
 for i in range(N):
     key = i.to_bytes(4, "big") + os.urandom(28)
     name = f"Node{i}".encode().ljust(32, b"\0")
-    raw = (key + bytes([1, 0, 0xFF]) + bytes(64) + name
-           + (1_800_000_000 + i).to_bytes(4, "little") + bytes(8) + bytes(4))
+    raw = (
+        key
+        + bytes([1, 0, 0xFF])
+        + bytes(64)
+        + name
+        + (1_800_000_000 + i).to_bytes(4, "little")
+        + bytes(8)
+        + bytes(4)
+    )
     rec = codec._contact(bytes([0x8A]) + raw)
     ob.radio_event(AdvertHeard(codec.Advert(key, True, rec), time.time() + i * 3, i + 1, 1))
 db = sqlite3.connect(tmp / "history.sqlite3")

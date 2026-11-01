@@ -6,8 +6,8 @@ tests and `pytest` does not collect them).
 
 | Script | Backs | Run |
 | --- | --- | --- |
-| `advert_flood.py` | SEC-010, SEC-011, RES-005: `node` rows and bytes published per advert with invented keys | `python3 docs/audit/2026-11-security-architecture-review/experiments/advert_flood.py 5000` |
-| `loop_stall_session.py` | CODE-001, RES-009: a loop stall longer than the command timeout ends the session although the answer arrived | `python3 docs/audit/2026-11-security-architecture-review/experiments/loop_stall_session.py` |
+| `advert_flood.py` | SEC-010, SEC-011, RES-005: `node` rows and bytes published per advert with invented keys | `PYTHONPATH=src python3 docs/audit/2026-11-security-architecture-review/experiments/advert_flood.py 5000` |
+| `loop_stall_session.py` | CODE-001, RES-009: a loop stall longer than the command timeout ends the session although the answer arrived | `PYTHONPATH=src:tests python3 docs/audit/2026-11-security-architecture-review/experiments/loop_stall_session.py` |
 | `loop_stall_asyncio.py` | RES-009: the pure-asyncio variant, which does *not* lose the data (one hop fewer) | `python3 docs/audit/2026-11-security-architecture-review/experiments/loop_stall_asyncio.py` |
 
 Observed on 2026-11-01 with Python 3.11.17 and `paho-mqtt` 2.1.0:

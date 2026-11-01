@@ -223,8 +223,8 @@ hourly purge.
 
    ```python
    self._write(
-       "DELETE FROM node WHERE key IN (SELECT key FROM node ORDER BY heard_at DESC "
-       "LIMIT -1 OFFSET ?)", (MAX_NODES_ROWS,),
+       "DELETE FROM node WHERE key IN (SELECT key FROM node ORDER BY heard_at DESC LIMIT -1 OFFSET ?)",
+       (MAX_NODES_ROWS,),
    )
    ```
 
@@ -797,7 +797,9 @@ async def _sync_clock(self) -> None:
         await self.set_time(now)
         log.info("radio clock moved forward by %d s", now - radio_time)
     elif radio_time - now > CLOCK_AHEAD_WARNING_S:
-        log.warning("radio clock is %d s ahead and cannot be set back; command age checks may fail", ...)
+        log.warning(
+            "radio clock is %d s ahead and cannot be set back; command age checks may fail", ...
+        )
 ```
 
 Firmware citations above, read at commit `81dbae5`.
@@ -836,8 +838,10 @@ host from harming the radio).
    if ahead > CLOCK_SET_THRESHOLD_S and (unset or ahead <= MAX_JUMP_S or self._set_clock == "always"):
        await self.set_time(now)
    elif ahead > MAX_JUMP_S:
-       log.warning("host clock is %d s ahead of the radio's: not written "
-                   "(set_clock = \"always\" forces it)", ahead)
+       log.warning(
+           'host clock is %d s ahead of the radio\'s: not written (set_clock = "always" forces it)',
+           ahead,
+       )
    ```
 
 2. **Show the clocks.** Add `radio_clock_offset_s` (radio minus host, at the last read) to the
