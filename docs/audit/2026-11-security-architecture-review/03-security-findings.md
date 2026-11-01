@@ -175,7 +175,7 @@ would need; the project's `docs/protocol.md` §5.
 | --- | --- |
 | Category | security (denial of service, disk) |
 | Component | `src/meshcore_home_gateway/history.py:170-184` (`node_heard`), `history.py:186-212` (`purge`), `observer.py:605-656` (`_advert`), `observer.py:688-690` (`_store_heard`) |
-| Related | SEC-011; ADR 0016; DOC-004 (7 vs 30 days); CODE-00x |
+| Related | SEC-011; ADR 0016; DOC-004 (7 vs 30 days); CODE-013; IMP-019 |
 
 **Description.** Every `NEW_ADVERT` push (an advert the radio heard from a node it does not hold)
 makes the observer write a row into the history's `node` table with the node's key, name, type,
@@ -362,7 +362,7 @@ once-heard strangers.
 | --- | --- |
 | Category | security (privacy of third parties; denial of service of the recorder) |
 | Component | `config.py:110,531` (`ignore_channels` default empty), `bridge.py:808-813,815-860` (`_ignored`, `_on_message`), `observer.py:359-378` (`message` → history), `mqtt/discovery.py:137-142` (the *Message* event entity on `received`); firmware `MyMesh.cpp:1002` (`addChannel("Public", PUBLIC_GROUP_PSK)`) |
-| Related | SEC-015, DOC-00x, IMP-004, ADR 0017 (every contact a recipient) |
+| Related | SEC-015, DOC-010, IMP-004, IMP-018, ADR 0017 (every contact a recipient) |
 
 **Description.** Every companion radio has the channel "Public" in slot 0 with a key that is
 public (`PUBLIC_GROUP_PSK`, in the firmware source). Whatever anyone within the mesh's reach
@@ -520,7 +520,7 @@ sub-band the profile assumes).
 | --- | --- |
 | Category | security (privacy of third parties; data protection) |
 | Component | `views.nodes_document` (`nodes`, retained), `observer._advert` (`node` events, the `node` table), `bridge._event_loop` (`rx` when `publish_rx_log`), `mqtt/discovery.py` (*Nodes heard*, *Look-alike node heard*, *New node* in Home Assistant), `history.py` (the `node` table, 30 days) |
-| Related | SEC-010, SEC-012, SEC-016, ARC-00x, RES-006 |
+| Related | SEC-010, SEC-012, SEC-016, ARC-002, DOC-010, RES-006 |
 
 **Description.** The observer's purpose (ADR 0014) includes "nodes heard but not added". Every
 advert in range yields the node's public key, its self-chosen name, its type, when and how often it
@@ -584,7 +584,7 @@ not covered).
 | --- | --- |
 | Category | security (privacy; design) |
 | Component | `telemetry_poller.py` (candidates = every chat contact not excluded), `observer.on_contact_added` → `poller.contact_added` (due at once), `config.py:140` (`telemetry.enabled = True`), `state.TelemetryExclusions` (the opt-out list), ADR 0018, CHANGELOG 1.1.0a2 ("on by default") |
-| Related | SEC-008, SEC-015, ARC-00x, IMP-005 |
+| Related | SEC-008, SEC-015, ARC-002, IMP-005 |
 
 **Description.** The gateway asks every chat contact of the radio for its telemetry unless the
 household excluded it. A companion answers only if its owner allowed telemetry requests from the
@@ -660,7 +660,7 @@ applies to a household.
 | --- | --- |
 | Category | security (input validation; low) |
 | Component | `protocol/codec._cstring` (names: 32 bytes), `codec.decode_message` (texts ≤ 176 bytes), `core/lpp.decode` (total), `protocol/links.parse_contact_text` (links ≤ 1 KiB), `core/text.contact_name` (31 bytes, cleaned), `core/contacts.node_label` (cleaned) |
-| Related | SEC-007, CODE-00x |
+| Related | SEC-007, CODE-015, IMP-038, IMP-039 |
 
 **Description.** The reviewer looked for places where mesh- or broker-controlled strings reach a
 parser, a template, a file name, a shell, SQL, a log line or a terminal without a bound or an
@@ -867,7 +867,7 @@ only with `always`; `tests/test_bridge.py` — `state.radio_clock_offset_s` foll
 | --- | --- |
 | Category | security (confidentiality of the identity, integrity of the radio, availability) |
 | Component | `src/meshcore_home_gateway/radio/transport.py:139-181` (`TcpTransport`), `config.py:63-66`, `bridge.py:419-426` (the warning for commands over TCP); firmware `examples/companion_radio/MyMesh.cpp:1528-1556` (`CMD_EXPORT_PRIVATE_KEY`, `CMD_IMPORT_PRIVATE_KEY`), `platformio.ini:33-34` at `companion-v1.18.0` (`ENABLE_PRIVATE_KEY_IMPORT=1`, `ENABLE_PRIVATE_KEY_EXPORT=1` in the common build flags, "NOTE: comment these out for more secure firmware"), `src/helpers/wifi/SerialWifiInterface.cpp:57-70` (a new connection replaces the old) |
-| Related | design §7.2 "Unauthenticated TCP companion interface", §7.4; SEC-001; RES-008; OPS-00x; DOC-00x |
+| Related | design §7.2 "Unauthenticated TCP companion interface", §7.4; SEC-001; RES-008, RES-017, RES-018; OPS-010; DOC-009; IMP-041, IMP-042 |
 
 **Description.** The project documents the TCP companion interface as unauthenticated and says
 "any client controls the radio, and can for example create temporary contacts that the contact
@@ -972,7 +972,7 @@ the firmware (commands 23 and 24); `src/helpers/ContactInfo.h` (`getSharedSecret
 | --- | --- |
 | Category | security (denial of service of the journal; low) |
 | Component | `radio/session.py:666-671` (`_push`: `log.warning("radio: malformed push ignored: %s", exc)`), `session.py:663-664` (`unexpected frame … dropped` at debug), `session.py:759-768` (`_decode`: a malformed *answer* ends the session) |
-| Related | SEC-003, CODE-00x, `bridge._report_unpublished` (the pattern to reuse) |
+| Related | SEC-003, IMP-040, `bridge._report_unpublished` (the pattern to reuse) |
 
 **Description.** A push frame that fails to decode is logged with a warning and ignored; the
 session continues. Over TCP an impostor (SEC-003) or a misbehaving radio can send such frames at
@@ -1442,7 +1442,7 @@ ADR 0017.
 | --- | --- |
 | Category | security (credential handling) |
 | Component | `config.py:466-468,475-488` (`password` in `MqttConfig`), `config.config_answers` (prints it), `cli._render` (`--group`, mode 0640), `deploy/systemd/meshcore-home-gateway.service` (no `LoadCredential=`), the installer's `configure` and `load_current` (the password through `pct exec` pipes), `docs/configuration.md` ("The output includes the broker password") |
-| Related | SEC-004, OPS-00x, IMP-012 |
+| Related | SEC-004, OPS-008, IMP-012 |
 
 **Description.** The broker password lives in `config.toml` (0640, `root:meshcore-home-gateway`),
 which is right for the service to read. Consequences the project accepts and documents:

@@ -27,7 +27,7 @@ into a larger program.
 | --- | --- |
 | Category | code (robustness) |
 | Component | `radio/session.py:738-757` (`_next`: `asyncio.wait({closed, frame}, timeout=self._timeout)`), `session.py:44` (`COMMAND_TIMEOUT_S = 5.0`), everything that blocks the loop (CODE-002) |
-| Related | CODE-002, ARC-004, OPS-00x (CPU starvation in a container) |
+| Related | CODE-002, ARC-004, OPS-011 (CPU starvation in a container is an operational cause), IMP-020, RES-009 |
 
 **Description.** `_next` waits for the answer frame with `asyncio.wait(..., timeout=5)`. If the
 loop is blocked for longer than the timeout while the answer sits in the socket or the serial
@@ -188,7 +188,7 @@ two. A test that 2,000 contacts passing through leave the map bounded.
 | --- | --- |
 | Category | code (persistence edge case) |
 | Component | `state.JsonStateFile.load` (a corrupt file is moved aside, `{}` returned), every section's `save`/`replace` (loads from disk, writes its key, writes the file), `ContactDeviceRecords.save` and `CurrentDocuments.replace` (skip when unchanged) |
-| Related | ARC-004, OPS-00x (restore from backup while running) |
+| Related | ARC-004, OPS-008 (restore from backup while running), IMP-021 |
 
 **Description.** Each section keeps its own in-memory copy and re-reads the file from disk when
 it saves. If the file on disk is replaced by something without the other sections (a corrupt
@@ -243,7 +243,7 @@ three largest test files by scenario group. None changes behaviour.
 | --- | --- |
 | Category | code (documentation in code) |
 | Component | 34 comments and docstrings in `observer.py`, `core/adverts.py`, `core/mesh.py`, `views.py`, `telemetry_poller.py`, `state.py` of the form "design 6c §3.1", "design 6c D4, D5", "D13", "D27", "D9"; `docs/design.md` contains no "6c", no "D13" |
-| Related | DOC-00x |
+| Related | DOC-011, IMP-030 |
 
 **Description.** The telemetry and advert-check code references decisions of a design sprint
 ("6c" is the third telemetry slice in the roadmap, design §13; "D1…D27" are numbered decisions
@@ -310,7 +310,7 @@ observer's listeners like the poller's `STATE_ERROR_LOG_S`.
 | --- | --- |
 | Category | code (tests) |
 | Component | `tests/` (1,470 test functions in the main suite, 90 % branch coverage gate), `home-assistant/tests/` (contract), `tests/firmware/` (real firmware), `tests/manual/` |
-| Related | ADR 0026, SUP-00x |
+| Related | ADR 0026, IMP-017 |
 
 **Description.** Strengths: every rule has a test named after it; the clock is injected everywhere
 so timing tests are deterministic; the emulator covers the session and bridge against the

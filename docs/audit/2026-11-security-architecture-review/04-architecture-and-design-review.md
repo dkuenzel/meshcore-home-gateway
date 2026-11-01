@@ -129,7 +129,7 @@ cover it.
 | --- | --- |
 | Category | architecture (persistence) |
 | Component | `state.py` (`JsonStateFile` and nine classes that each `load()`, change one key, `save()`), `observer.py`, `bridge.py`, `contact_devices.py`, `telemetry_poller.py` |
-| Related | CODE-00x (blocking `fsync` on the loop), SEC-010 (disk full), `01-system-understanding.md` §7 |
+| Related | CODE-002 (blocking `fsync` on the loop), CODE-003, CODE-004, SEC-010 (disk full), IMP-021, `01-system-understanding.md` §7 |
 
 **Description.** `state.json` holds nine kinds of state, each owned by a class that reads the
 whole file, replaces its key and writes the whole file atomically with two `fsync`s. All run on
@@ -260,7 +260,7 @@ the records are a reliable history.
 | --- | --- |
 | Category | architecture (composition) |
 | Component | `bridge.Bridge.__init__` (wires observer, devices, profile, contact manager, telemetry poller, manage entities; 19 constructor parameters), `observer.Observer` (five callback lists: `on_contacts`, `on_nodes`, `on_contact_added`, `on_telemetry_exclusion`, plus `telemetry_state` as a pluggable function), `mqtt.client.MqttBus` (five callback lists), `cli._serve` (the composition root) |
-| Related | ARC-003, CODE-00x |
+| Related | ARC-003, CODE-005, IMP-022 |
 
 **Description.** Subsystems talk through lists of callables that other subsystems append to in
 constructors (`self.observer.on_contacts.append(devices.update)`,
@@ -286,7 +286,7 @@ lines with no behaviour change; the emulator tests would carry over.
 | --- | --- |
 | Category | architecture (robustness of a design to firmware change) |
 | Component | ADR 0025, `core/adverts.py`, `observer._advert`, `observer._own_log`, `observer._check_adverts`, `session._dispatch` (frame numbering) |
-| Related | RES-00x |
+| Related | ADR 0026, RES-002, `docs/protocol.md` §4 |
 
 **Description.** The check decides what a companion's newest advert carried by matching the
 radio's `ADVERT` push with the `LOG_RX_DATA` frame directly before it (when the receive delay is
@@ -319,7 +319,7 @@ and observer logic; the reviewer thinks it is, given the privacy goal, but notes
 | --- | --- |
 | Category | architecture (investment versus use) |
 | Component | ADR 0019, ADR 0027, `i18n.py` (≈400 lines), `catalog.py`, `texts.py`, `tools/i18n.py` (1,474 lines), `tests/test_i18n*.py`, `test_translations.py`, `test_adding_a_language.py`, `test_cli_language.py`, `test_installer_language.py` (≈5,000 lines of tests), the installer's language packs and pins |
-| Related | DOC-00x, SUP-00x (contributor-supplied catalogs) |
+| Related | SUP-006 (contributor-supplied catalogs), EXT-015 |
 
 **Description.** About 7,000 lines (a sixth of the repository) implement, check and test
 gettext for the command line, Home Assistant names, the dashboard and the installer, with a PO
@@ -352,7 +352,7 @@ parser of third-party input in the service).
 | --- | --- |
 | Category | architecture (resilience versus observability) |
 | Component | `bridge._observe` (`except Exception: log.exception("observer failed")`), `observer.py` listeners (`except Exception` around every callback), `contact_manager.run` (nested `except Exception`), `telemetry_poller` (`STATE_ERROR_LOG_S`: errors at most once a minute), `session._apply_profile` (a profile bug is logged and the connection goes on), `history._broke` (switches the history off until restart) |
-| Related | OPS-00x, IMP-013 |
+| Related | OPS-011, CODE-008, IMP-013 |
 
 **Description.** The design states it (§6.6 "Failures stay local") and the code applies it
 consistently: a bug in a subsystem is logged and the rest continues. This is the right priority
@@ -375,7 +375,7 @@ knows its state; the status loop publishes every 60 s anyway.
 | --- | --- |
 | Category | architecture (operations) |
 | Component | `cli._serve` (SIGTERM/SIGINT → stop), design §3 non-goal "Persisting the outgoing queue across restarts", `bridge.run` (the stop sequence) |
-| Related | OPS-00x, IMP-014 |
+| Related | OPS-006, IMP-014 |
 
 **Description.** The configuration is read once; a change (a new target, a new sender, a
 changed budget) needs a restart, and a restart drops queued messages without a final `delivery`
@@ -428,7 +428,7 @@ protocol) and the gateway would say so.
 | --- | --- |
 | Category | architecture (scaling, naming) |
 | Component | design §3 non-goal "Several radios in one process"; `mqtt/discovery.device_id` (`meshcore_home_gateway_<node_id>`), the contact devices' `via_device`, the dashboard's trackers ("the right tracker IDs when the contacts of two gateways share a name" is deferred) |
-| Related | EXT-00x |
+| Related | EXT-014 |
 
 **Description.** One process per radio is a sound choice (isolation, simplicity). Two gateways on
 one broker work, but Home Assistant's entity IDs of *contacts* are `mesh_<slug>` without the
@@ -451,7 +451,7 @@ could describe: assign both trackers to one `person`).
 | --- | --- |
 | Category | architecture (platform coupling) |
 | Component | `docs/home-assistant.md` Requirements (2026.8; `default_entity_id` since 2025.10, QoS at device level since 2026.5.2, `event.received` since 2026.7, per-event state changes since 2026.8), `home-assistant/requirements.in` (one pinned `pytest-homeassistant-custom-component`) |
-| Related | SUP-00x |
+| Related | DOC-018, SUP-004 |
 
 **Description.** "Nothing to install in Home Assistant" is bought with a floor three months old
 at release and features that Home Assistant added in four consecutive releases. The contract

@@ -132,7 +132,7 @@ Items in `09-…` and `10-…` (opportunities) replace the two attacker-oriented
 | `09-improvement-opportunities.md` | IMP items | written |
 | `10-extension-opportunities.md` | EXT items | written |
 | `11-research-notes.md` | RES items | written |
-| `12-findings-index.md`, `findings.csv` | The index of every item | written |
+| `12-findings-index.md`, `findings.csv` | The index of every item (208 items) | written |
 
 (The state column is updated as the documents are committed.)
 

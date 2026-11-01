@@ -80,7 +80,7 @@ What the firmware guarantees, as read in the pinned source (`11-research-notes.m
 ### B7 Project → users (I14–I16, I19, I20)
 
 * The installer is fetched and executed as root in one step; releases are attested; `main` is not.
-* The code is mostly written by an AI agent and merged by the maintainer's account within minutes; releases are tagged automatically on merge. → **SUP-00x** in `08-…`.
+* The code is mostly written by an AI agent and merged by the maintainer's account within minutes; releases are tagged automatically on merge. → **SUP-001** in `08-…`.
 
 ## 4 STRIDE by boundary
 

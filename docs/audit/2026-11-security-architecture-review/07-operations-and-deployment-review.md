@@ -26,7 +26,7 @@ that the gateway is degraded.
 | --- | --- |
 | Category | operations (patching) |
 | Component | `install_service` (installs `python3 python3-paho-mqtt ca-certificates`, nothing else), `docs/deployment.md` (no mention of `apt upgrade` or `unattended-upgrades`), ADR 0005 (Decision Drivers: "Security updates without our involvement"; Consequences: "receive Debian security updates") |
-| Related | SUP-00x, ARC-007 |
+| Related | SUP-005, ARC-007, IMP-023 |
 
 **Description.** ADR 0005's main argument for taking `paho-mqtt` from Debian rather than PyPI is
 that Debian ships security updates. Updates reach a Debian system only if something installs
@@ -75,7 +75,7 @@ Test: `tests/test_installer.py` — the package list of the `apt-get install` ca
 | --- | --- |
 | Category | operations (integrity of what is installed) |
 | Component | `stage_program` and `FETCH_PY` (download `SHA256SUMS` and the files from the release, compare), `pack_text` (the language pack from the release or `main`, checked against a digest in the script), `detect_source` (`ref`: `https://github.com/$REPOSITORY/archive/$REF.tar.gz`, "HTTPS is the only check"), `docs/deployment.md` §2 (the `gh attestation verify` path for the installer itself), `make release` (writes `RELEASE="X.Y.Z"` into the installer) |
-| Related | SUP-00x, ADR 0013, ADR 0022 |
+| Related | SUP-003, ADR 0013, ADR 0022, IMP-023 |
 
 **Description.** Three levels of assurance exist and the documentation names them; the review
 adds what each proves:
