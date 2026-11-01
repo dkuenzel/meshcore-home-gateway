@@ -1001,3 +1001,285 @@ reconnect then resynchronises, as `_decode` does for answers.
 Test: `tests/test_session.py` — 100 malformed pushes in a second log one warning with the count.
 
 **References.** `journald.conf(5)` `RateLimitIntervalSec`, `RateLimitBurst`.
+
+---
+
+## B3 The broker
+
+### SEC-004 An insecure broker configuration (no credentials, no TLS) is accepted without a word
+
+| | |
+| --- | --- |
+| Category | security (authentication of the bus; confidentiality on the wire) |
+| Component | `config.py:450-488` (`_mqtt`: `username`, `password`, `tls` all optional), `cli.py:447-486` (`_check_config`, `_login`: "no user name" printed as a fact), `mqtt/client.py:156-174` (`start`), `deploy/proxmox/meshcore-home-gateway-lxc.sh` `ask_broker` (user and password optional; TLS only in the advanced setup) |
+| Related | design §7.2 rows "Abuse of the send topic", "Forged events"; `docs/mqtt-api.md` "Securing the broker"; SEC-005, SEC-006, SEC-009; IMP-007 |
+
+**Description.** The gateway's security model places the authentication of everything on the
+bus with the broker: "Topic ACLs … Required when commands are configured" (design §7.2), "When
+commands are configured, the ACL is not optional: any client that can write `command` can
+trigger the automations" (`docs/mqtt-api.md`). The gateway itself does not check, warn or refuse
+when the configuration implies that no such protection exists:
+
+* `[mqtt]` with neither `username` nor `password` connects anonymously. `check-config` prints
+  "no user name" in its summary, as a fact among others.
+* `tls = false` (the default) sends the password, every message text, every position and every
+  command event in the clear on the network between the gateway and the broker.
+* Nothing verifies that the broker enforces an ACL, or even that it refuses anonymous clients.
+  A broker that accepts the gateway's credentials may accept anyone's.
+
+The installer's default setup asks for a user name "none (suggested: meshcore-home-gateway)" and
+asks for a password only when a user name was given; TLS is in the advanced setup. A user who
+presses Enter twice has an anonymous, plain-text gateway, and the final summary says "login
+accepted".
+
+**Evidence.** `config._mqtt` (both optional; the only cross-rule is "password needs username");
+`cli._summary` line `broker {host}:{port}, {login}`; the installer's `ask_broker` (lines
+847–876).
+
+**Preconditions and attacker model.** T6 without any credential: any device on the network that
+reaches the broker (a guest's phone on the WiFi, a compromised IoT device, a laptop on a shared
+LAN). With a broker that allows anonymous clients and has no ACL (Mosquitto's `allow_anonymous
+true`, which was the default before 2.0 and is what many "quick" setups use), such a device can
+publish a `command` event with any word and any `sender_key` (A1), publish `contacts/<key>`
+documents with any position (SEC-005, A3), send to every target and contact (A7), read every
+message and position (A3, A4), and disconnect the gateway (SEC-006). Without TLS, a device that
+can see the traffic (a shared WiFi, a mirrored port) reads it all and learns the password.
+
+**Impact.** The whole trust model of the bus collapses to "whoever is on the network". The gateway
+is the component that knows that its topics are dangerous and is the only one that knows which
+settings it was given; today it says nothing.
+
+**Existing mitigations.** The documentation, in several places, and an ACL example;
+`check-config --broker` tests the configured login; the password-needs-username rule.
+
+**Suggested mitigation or implementation.**
+
+1. **Warn at start and in `check-config`** when (a) no credentials are configured, (b) `tls` is
+   off, and especially (c) commands are configured with either. One line each, at warning level,
+   naming the consequence ("any client of the broker can publish command events"). This costs
+   nothing and is not a changed interface.
+2. **An explicit acknowledgement for the dangerous combinations**: `[mqtt] insecure = true`
+   required when `commands.senders` is set without credentials, or without TLS when the broker is
+   not on the loopback or a link-local address. As with SEC-003 option 2, a new rule between
+   settings is breaking for the configuration interface; the team can introduce it as a warning
+   now and a rule in the next major version.
+3. **Probe the broker for anonymous access** in `check-config --broker` (and once at start, at
+   info level): open a second connection without credentials; if the broker accepts it, warn
+   "the broker accepts anonymous clients". Mosquitto refuses with CONNACK 5 when
+   `allow_anonymous false` (platform notes); an accepted anonymous connection is a certain sign.
+   Optionally subscribe anonymously to `<root>/command` and publish a retained empty message to a
+   scratch topic under `<root>/` to see whether an anonymous client can read and write the
+   gateway's tree; then say so. The gateway needs no new dependency for this.
+4. **The installer**: in the default setup, ask for TLS (yes/no with a one-line explanation) and
+   make an empty user name a deliberate choice ("no credentials: anyone on the network can control
+   the gateway; continue?"). When the broker is Home Assistant's Mosquitto add-on, credentials are
+   always required and the add-on's default ACL is permissive (`docs/platform-notes.md` describes
+   it); the installer could say which ACL lines to add.
+5. **Documentation**: the README's *Security* paragraph says "Secure the broker (authentication,
+   topic ACLs)"; it could say what happens otherwise in one sentence, and `docs/deployment.md`
+   §1 could make the ACL a numbered step with the example file to install.
+
+Tests: `tests/test_cli.py` — `check-config` prints the warnings for the three cases;
+`tests/test_mqtt_client.py` (broker) — the anonymous probe reports an accepting and a refusing
+broker correctly.
+
+**References.** Mosquitto `allow_anonymous` (mosquitto.conf(5)); Home Assistant Mosquitto add-on
+documentation (ACL file, `customize`); OWASP IoT Top 10 (I1 weak or no authentication).
+
+---
+
+### SEC-005 A forged or stale retained document is neither detected nor healed; a presence automation follows it
+
+| | |
+| --- | --- |
+| Category | security (integrity of the documents; the presence path) |
+| Component | `observer.py:795-800` (`_publish`: compares with the last payload *sent*, never with the broker), `observer.py:396-404` (`publish_all` on reconnect), `mqtt/client.py:221-231` (no subscription to the gateway's own document topics), `mqtt/contact_devices.py:86-98,293-304` (the tracker reads `position_current` from the document) |
+| Related | SEC-004, ADR 0015 ("every front end reads the same documents"), ADR 0024, design §7.2 row "Forged events"; IMP-008 |
+
+**Description.** The gateway's documents (`state`, `stats`, `contacts`, `contacts/<key>`, `nodes`,
+`history`, `settings`) are retained messages. Home Assistant's entities read them with templates;
+a `device_tracker.mesh_<name>` takes `latitude`, `longitude` and `position_current` from
+`contacts/<key>`, a `person` follows the tracker, and presence automations follow the person
+(ADR 0024's whole purpose). Any broker client that may write below `<root>/` can publish its own
+retained `contacts/<key>` and the broker keeps it until someone overwrites it. The gateway
+overwrites a topic only when **its own** document for that topic changes (`_publish` skips a
+payload equal to the last one it sent) and at a reconnect (`publish_all`). It never reads what
+the broker holds. So:
+
+* For a companion that answers every 15 minutes, a forged position stands for up to 15 minutes
+  (the next answer changes `readings_at`, so the document changes and is republished).
+* For a companion that is `away`, `no_answer`, excluded, or whose answers do not change the
+  document, a forged document stands **until the state changes**, which can be hours or days.
+* A forged `state` document with `"radio": "connected"` and `telemetry: "on"` stands until the
+  next 60 s state publish (the state is published every 60 s regardless: good); a forged
+  `contacts` index stands until the next table read changes it.
+* An **empty** retained message on `contacts/<key>` (a "clear") makes Home Assistant's entities
+  of that contact read `unknown`/unavailable until the gateway republishes; the gateway does not
+  notice.
+
+The same applies to a *stale* document: after a broker restore from backup, or a broker that lost
+and regained its persistence, the broker may hold old documents until the gateway reconnects (it
+does republish on reconnect, which covers the broker-restart case but not a broker whose retained
+store was replaced while the gateway stayed connected).
+
+**Evidence.** `observer._publish`:
+
+```python
+payload = encode(document)
+if not force and self._published.get(topic) == payload:
+    return
+```
+
+`mqtt/client._paho_connected` subscribes to the request topics, the status topic and the
+discovery topics, not to `<root>/contacts/+`, `<root>/state` or the others.
+
+**Preconditions and attacker model.** T6 with write access to the gateway's tree below
+`<root>/`. With the documented ACL that is only the gateway's own user; without an ACL (SEC-004)
+it is everyone; with Home Assistant's user as documented (`topic read meshcore/radio1/#`, write
+only on request topics) Home Assistant cannot. A compromised device that shares the gateway's
+credential, or an operator who gave a dashboard client `readwrite meshcore/#`, can.
+
+**Impact.** A presence automation ("unlock when Alice comes home", "disarm when someone is home",
+"alert when nobody is home and a door opens") acts on a position the attacker chose, for as long
+as the forgery stands. Readings (battery, temperature) can be forged the same way. The `history`
+document can show messages never sent. Nothing in the data lets Home Assistant or a person tell a
+forged document from the gateway's: the documents carry no origin, time of publication by the
+gateway, or signature (`published_at` does not exist; `heard_at` and `readings_at` are data the
+forger writes too).
+
+**Existing mitigations.** The ACL, documented as required; the 60 s state publish; the republish
+on reconnect; the 15-minute rhythm of an answering companion.
+
+**Suggested mitigation or implementation.**
+
+1. **Subscribe to the gateway's own document topics and heal.** The adapter subscribes to
+   `<root>/state`, `<root>/stats`, `<root>/contacts`, `<root>/contacts/+`, `<root>/nodes`,
+   `<root>/history`, `<root>/settings` (seven filters; `contacts/+/send` is already a filter, so
+   `contacts/+` adds the document level). On a message whose payload differs from
+   `observer._published[topic]` (including an unexpected empty one, and a topic the gateway never
+   published), the observer republishes its own payload (or clears a topic it does not own) and
+   logs a warning "another client wrote `<topic>`: restored". The gateway's own publishes echo back
+   equal to `_published` and cost one comparison each. Subtleties: at connect the retained
+   documents arrive before the gateway has published (the `_published` dict is from this run and
+   starts empty): treat the first retained message per topic as "the broker's copy", compare it
+   with what the gateway *would* publish, and republish only if the gateway has a document for it
+   (it publishes all of them at connect anyway); for `contacts/<key>` topics the gateway does not
+   know, clear them only if the key is not in `retained_contacts` (the state file's memory). A
+   retained document that is *older* than the gateway's (a stale broker) is overwritten the same
+   way. A rate limit on heals (one per topic per 10 s) prevents a fight with a persistent writer
+   from flooding the bus; the warning names it.
+2. **Stamp the documents.** Add `published_at` (the gateway's clock, ISO) and `gateway` (the
+   `origin` of discovery: name and version) to every document. Consumers can show a stale
+   document; a forger can copy the stamp, so this is not integrity, but it makes "stale" visible
+   and gives a tamper-evidence hook for 3.
+3. **Sign the documents** (optional, for consumers that can verify): an HMAC-SHA256 over the
+   canonical payload with a key from the configuration (`[mqtt] document_key_file`), carried in a
+   `signature` field or on a sibling topic `contacts/<key>/signature`. Home Assistant's templates
+   cannot verify HMACs, so this is for scripts and future dashboards (ADR 0021's web dashboard);
+   for Home Assistant, 1 is the measure.
+4. **Make the tracker's availability depend on the gateway's liveness** in Home Assistant: the
+   tracker's `availability` list already includes `<root>/availability`; a forged document cannot
+   make a tracker available while the gateway is offline. That holds today.
+5. **Document** in `docs/mqtt-api.md` "Securing the broker" and design §7.2 that documents are
+   data with no origin check, which is why the write ACL is required also for the *document*
+   topics (the example ACL covers it with `readwrite meshcore/radio1/#` for the gateway only).
+
+Tests: `tests/test_observer.py` / `tests/test_bridge.py` with a fake bus — a message on
+`contacts/<key>` with a foreign payload makes the gateway republish its own and warn; an echo of
+its own payload does nothing; a foreign retained document for an unknown key is cleared;
+`tests/test_mqtt_client.py` (broker) — the subscriptions exist.
+
+**References.** MQTT 3.1.1 §3.3.1.3 (retained messages); ADR 0015; `docs/mqtt-api.md`
+"Securing the broker".
+
+---
+
+### SEC-006 The MQTT client id is predictable; birth messages and discovery clears trigger unbounded re-announcements
+
+| | |
+| --- | --- |
+| Category | security (availability) |
+| Component | `mqtt/client.py:77-83` (`make_paho_client`: `client_id = … or f"meshcore-home-gateway-{node_id}"`, `clean_session=True`), `bridge.py:1062-1072` (`_schedule_announcements`: cancels and reschedules on every call), `bridge.py:1018-1036` (`_connected`, `_ha_device_message`), `mqtt/contact_devices.py:474-489` (`announce_all`) |
+| Related | SEC-004, SEC-005, design §6.5, `docs/platform-notes.md` Mosquitto ("The broker's log names the client id"), IMP-009 |
+
+**Description.** Two availability issues on the bus:
+
+1. **Client id squatting.** MQTT brokers disconnect an existing session when a new client
+   connects with the same client id (MQTT 3.1.1 §3.1.4, "the Server MUST disconnect the existing
+   Client"). The gateway's id is `meshcore-home-gateway-<node_id>`, documented and visible in the
+   broker's log and in `$SYS`. Any client that may connect (with a credential if the broker
+   requires one, SEC-004) and uses that id kicks the gateway off; paho reconnects after 1–60 s and
+   kicks the squatter, who reconnects, and so on. Each of the gateway's reconnects runs
+   `_connected`: it republishes the discovery document (with placeholders for removals), the
+   `manage_contacts` document, every contact device document (up to 50), the state, and
+   `publish_all` (every retained document again). The gateway uses `clean_session=True`, so a
+   stable id buys nothing from the broker (no persistent session to resume); it is only a label.
+2. **Announcement starvation and amplification.** `_schedule_announcements` is called for every
+   `online` on `homeassistant/status` and for every empty, non-retained message on the gateway's
+   own discovery topics. It cancels the pending timer and starts a new one of 0.5–2 s. A writer
+   that sends `online` every 0.4 s keeps cancelling the timer: **the announcement never fires**,
+   and after a real Home Assistant restart the entities do not appear until the writer stops. A
+   writer that sends one every 3 s makes the gateway announce every 3 s: the gateway's discovery
+   document (tens of KiB), the controls, and up to 50 contact documents (2–3 KiB each), about
+   100–200 KiB per announcement, plus the pending removals each time. Home Assistant processes
+   every announcement (discovery is not cheap for it: entity registry writes).
+
+**Evidence.** `bridge.py:1062-1068`: the pending handle is cancelled and replaced
+unconditionally:
+
+```python
+if self._reannounce is not None:
+    birth = birth or self._reannounce_birth
+    self._reannounce.cancel()
+self._reannounce_birth = birth
+delay = random.uniform(*DISCOVERY_DELAY_S)
+self._reannounce = asyncio.get_running_loop().call_later(delay, self._announce_due)
+```
+
+`make_paho_client`, lines 77–83.
+
+**Preconditions and attacker model.** For 1: T6 with a credential (or none, SEC-004) and the
+node id (in the topics). For 2: T6 with write access to `homeassistant/status` or the gateway's
+discovery topics: with the documented ACL that is Home Assistant's own user (`readwrite
+homeassistant/#`), so the attacker is a device that holds Home Assistant's broker credential (a
+compromised add-on or integration client), or anyone when there is no ACL.
+
+**Impact.** 1: the gateway is offline for a share of the time the attacker chooses; every alert
+queued meanwhile waits (the outbox keeps working while the broker is away, but `delivery` events
+queue and commands are refused with `broker_unavailable`); the reconnect storm loads the broker
+and Home Assistant. 2: entities missing after a Home Assistant restart for as long as the writer
+persists, or a continuous discovery load on Home Assistant. Neither crosses into the home's
+controls; both deny the gateway's function.
+
+**Existing mitigations.** Credentials and the ACL (if configured); the random 0.5–2 s delay
+(meant to spread load); the `manage_contacts` document's change budget (70 per hour) limits the
+select's option churn but not the announcements themselves.
+
+**Suggested mitigation or implementation.**
+
+1. **Client id with a per-start random suffix by default**: `meshcore-home-gateway-<node_id>-<8
+   hex>` (`secrets.token_hex(4)`), keeping `[mqtt] client_id` for operators who want a fixed one.
+   Update `docs/platform-notes.md` and `docs/deployment.md` where the log line is quoted ("names
+   the client (`meshcore-home-gateway-radio1`)" → "starts with"). The CLI's commands already use
+   `-<pid>` suffixes. A changed default of `client_id` is listed as breaking in the compatibility
+   policy ("a changed default of `mqtt.base_topic`, `mqtt.client_id`, … because brokers, ACLs …
+   refer to these names"): a Mosquitto ACL can use `%c` patterns, so an operator may have bound
+   the id. The team can weigh a *Changed* entry with a prefix that stays, or wait for 2.0, or
+   add the suffix only when `client_id` is unset and document that pattern ACLs should use the
+   prefix.
+2. **A floor and a ceiling for announcements**: never cancel a pending announcement that is
+   already due within the window; instead keep the earliest due time (`min`) so a storm of births
+   makes it fire *sooner*, not never; and rate-limit announcements to one per 30 s after the
+   first, with the latest request coalesced (a token bucket like `ManageEntities._changes`).
+   Sketch in `_schedule_announcements`: if a timer is pending, only extend `birth` and return;
+   in `_announce_due`, if the last announcement was less than `ANNOUNCE_MIN_INTERVAL_S` ago,
+   reschedule for the remaining time once.
+3. **Count and log** repeated births (more than N per minute) as a warning naming the status
+   topic, so an operator sees a misbehaving client.
+
+Tests: `tests/test_bridge.py` — 20 births 0.1 s apart produce exactly one announcement within
+2.5 s; 100 births over 5 minutes produce at most 11 announcements; a fixed `client_id` is used
+as given, an unset one gets a suffix of 8 hex digits.
+
+**References.** MQTT 3.1.1 §3.1.4; Home Assistant MQTT discovery documentation (birth message);
+`docs/platform-notes.md` Mosquitto section.
