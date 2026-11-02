@@ -106,3 +106,9 @@ Evaluated at commit `bbc8584` (2025-11-16).
   every file of `meshcore` 2.3.17 and `meshcore-cli` 1.6.6 on 2026-10-18.
 * Revisit when the MeshCore project publishes a signed, minimal client library, or when the scope
   grows to repeater administration.
+* Note of 2026-11-02 (security and architecture review, ARC-007): with the observer
+  ([ADR 0014](0014-the-gateway-as-the-households-mesh-observer.md)) the gateway grew to about
+  15,100 lines of Python (`wc -l` over `src/`), of which 1,175 are the protocol layer; still about
+  half of the 29,000 lines of the rejected alternative, with one runtime dependency. The
+  argument stays; the size it compares is no longer "small", so reviews rely on the design, the
+  records and the tests rather than on reading everything.

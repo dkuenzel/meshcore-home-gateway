@@ -13,7 +13,7 @@ body:
     attributes:
       label: meshcore-home-gateway version
       description: Output of `meshcore-home-gateway --version`, or the commit you run.
-      placeholder: meshcore-home-gateway 0.1.0
+      placeholder: meshcore-home-gateway 1.0.0
     validations:
       required: true
   - type: dropdown
@@ -30,8 +30,26 @@ body:
     id: radio
     attributes:
       label: Radio
-      description: Model, companion firmware version and connection (USB or TCP); `meshcore-home-gateway probe` shows the first two.
-      placeholder: Example board, firmware v1.18.0, USB
+      description: Model and companion firmware version; `meshcore-home-gateway probe` shows both.
+      placeholder: Example board, firmware v1.18.0
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Radio connection
+      options:
+        - USB serial
+        - TCP (WiFi firmware)
+    validations:
+      required: true
+  - type: checkboxes
+    id: broker
+    attributes:
+      label: Broker
+      description: How the broker is secured (docs/mqtt-api.md, "Securing the broker"); tick what applies.
+      options:
+        - label: The gateway logs in to the broker with a user name and password.
+        - label: The broker has a topic ACL that limits who may write the gateway's topics.
+        - label: The connection to the broker uses TLS.
   - type: textarea
     id: what-happened
     attributes:

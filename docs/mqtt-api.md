@@ -7,31 +7,31 @@ API is a public interface under semantic versioning
 
 | Topic | Direction | Retained | Payload |
 | --- | --- | --- | --- |
-| `availability` | bridge → | yes | `online` / `offline`; last will `offline` |
-| `state` | bridge → | yes | JSON state document |
-| `send/<alias>` | → bridge | must not be | UTF-8 text |
-| `delivery` | bridge → | no | JSON, `event_type` = delivery state |
-| `received` | bridge → | no | JSON, `event_type` = `contact` or `channel` |
-| `command` | bridge → | no | JSON, `event_type` = command word |
-| `rx` | bridge → | no | JSON per received packet, only with `publish_rx_log` |
-| `stats` | bridge → | yes | JSON: the radio's own measurements |
-| `contacts` | bridge → | yes | JSON index of the radio's contact table |
-| `contacts/<key>` | bridge → | yes | JSON per contact, `<key>` its full public key in lower-case hex; cleared (empty retained message) when the contact leaves the table |
-| `contacts/<key>/send` | → bridge | must not be | UTF-8 text for a companion in the contact table |
-| `contacts/<key>/remove` | → bridge | must not be | any payload, or JSON `{"id": "…"}`: remove that contact from the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
-| `add_contact` | → bridge | must not be | a public key, contact link or contact card, or JSON `{"contact": "…", "id": "…"}`: add a contact to the radio |
-| `contacts/<key>/telemetry` | → bridge | must not be | `on` or `off`, or JSON `{"telemetry": "off", "id": "…", "forget": true}`: ask a companion for its telemetry, or exclude it ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)) |
-| `contacts/<key>/received` | bridge → | no | the `received` events of messages from that contact |
-| `nodes` | bridge → | yes | JSON: nodes heard but not added |
-| `history` | bridge → | yes | JSON: the latest messages in and out |
-| `settings` | bridge → | yes | JSON: the managed radio profile at the last connect |
-| `contact` | bridge → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
-| `telemetry` | bridge → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
-| `node` | bridge → | no | JSON, `event_type` = `new`: a node heard for the first time |
-| `setting` | bridge → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
-| `homeassistant/show_hidden` | → bridge | must not be | any payload: show the contacts deleted in Home Assistant again |
-| `homeassistant/add_node` | → bridge | must not be | the label of a heard node, as Home Assistant's select offers it: add it to the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
-| `<prefix>/device/meshcore_home_gateway_<node_id>/config` | bridge → | no | Home Assistant discovery; `<node_id>` as configured, `-` included |
+| `availability` | gateway → | yes | `online` / `offline`; last will `offline` |
+| `state` | gateway → | yes | JSON state document |
+| `send/<alias>` | → gateway | must not be | UTF-8 text |
+| `delivery` | gateway → | no | JSON, `event_type` = delivery state |
+| `received` | gateway → | no | JSON, `event_type` = `contact` or `channel` |
+| `command` | gateway → | no | JSON, `event_type` = command word |
+| `rx` | gateway → | no | JSON per received packet, only with `publish_rx_log` |
+| `stats` | gateway → | yes | JSON: the radio's own measurements |
+| `contacts` | gateway → | yes | JSON index of the radio's contact table |
+| `contacts/<key>` | gateway → | yes | JSON per contact, `<key>` its full public key in lower-case hex; cleared (empty retained message) when the contact leaves the table |
+| `contacts/<key>/send` | → gateway | must not be | UTF-8 text for a companion in the contact table |
+| `contacts/<key>/remove` | → gateway | must not be | any payload, or JSON `{"id": "…"}`: remove that contact from the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
+| `add_contact` | → gateway | must not be | a public key, contact link or contact card, or JSON `{"contact": "…", "id": "…"}`: add a contact to the radio |
+| `contacts/<key>/telemetry` | → gateway | must not be | `on` or `off`, or JSON `{"telemetry": "off", "id": "…", "forget": true}`: ask a companion for its telemetry, or exclude it ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)) |
+| `contacts/<key>/received` | gateway → | no | the `received` events of messages from that contact |
+| `nodes` | gateway → | yes | JSON: nodes heard but not added |
+| `history` | gateway → | yes | JSON: the latest messages in and out |
+| `settings` | gateway → | yes | JSON: the managed radio profile at the last connect |
+| `contact` | gateway → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
+| `telemetry` | gateway → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
+| `node` | gateway → | no | JSON, `event_type` = `new`: a node heard for the first time |
+| `setting` | gateway → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
+| `homeassistant/show_hidden` | → gateway | must not be | any payload: show the contacts deleted in Home Assistant again |
+| `homeassistant/add_node` | → gateway | must not be | the label of a heard node, as Home Assistant's select offers it: add it to the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
+| `<prefix>/device/meshcore_home_gateway_<node_id>/config` | both | no | Home Assistant discovery; `<node_id>` as configured, `-` included; the gateway reads it to notice when Home Assistant clears it ([home-assistant.md](home-assistant.md#how-discovery-behaves)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/manage_contacts/config` | both | no | discovery of the controls that add contacts, on the gateway's device ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/contact_<key>/config` | both | no | discovery of each contact's device ([home-assistant.md](home-assistant.md#contacts)); the gateway reads it to notice a device deleted in Home Assistant |
 
@@ -56,7 +56,7 @@ is breaking.
 ## Sending: `send/<alias>`
 
 The payload is the text, UTF-8, at most 1 KiB. Only aliases from `[targets.*]` in the
-configuration exist. The bridge cleans the text (control characters, direction overrides, repeated spaces), optionally
+configuration exist. The gateway cleans the text (control characters, direction overrides, repeated spaces), optionally
 transliterates it to ASCII, and truncates or rejects texts above the radio's limit: 160 bytes for a
 direct message, `160 − (radio name length + 2)` for a channel message. Before the radio has
 connected once, its name is unknown: a channel text is then accepted up to 158 bytes and limited
@@ -78,9 +78,9 @@ reached through targets only: a channel reaches everyone who has its secret. A b
 who may write `contacts/+/send`.
 
 Publish requests without the retain flag. The broker forwards a request published with it to the
-running bridge like any other, so it is sent once; the copy the broker keeps would be delivered
+running gateway like any other, so it is sent once; the copy the broker keeps would be delivered
 again after every reconnect, so retained messages on these topics are rejected there
-(`reason: retained`). Requests published while the bridge is offline are lost (clean session);
+(`reason: retained`). Requests published while the gateway is offline are lost (clean session);
 check `availability` first if it matters.
 
 ## Delivery: `delivery`
@@ -134,20 +134,20 @@ which is how retries arrive). Channels listed in `ignore_channels` are skipped.
 | `event_type` | `contact` (direct message) or `channel` |
 | `text` | message text; for channels without the `"name: "` prefix |
 | `text_type` | `plain`, `cli_data`, `signed_plain` (room server post), `cli_command` |
-| `sender_key` | full public key if the 6-byte prefix matches exactly one contact in the radio's contact table as the bridge last read it, else `null` |
+| `sender_key` | full public key if the 6-byte prefix matches exactly one contact in the radio's contact table as the gateway last read it, else `null` |
 | `sender_prefix` | first 6 bytes of the sender's key, hex (direct messages) |
 | `sender_name` | contact name from the same table; for channels the **claimed** name from the text, not authenticated |
 | `target` | alias of a configured target matching the sender or channel, else `null` |
 | `channel_index` | channel messages only |
-| `sent_at` | sender's clock; `received_at` the bridge's clock |
+| `sent_at` | sender's clock; `received_at` the gateway's clock |
 | `snr_db` | signal-to-noise ratio of the last hop, 0.25 dB steps; `null` for legacy frames |
 | `hops` | repeaters a flooded message passed; `null` if it arrived by direct route |
 | `command` | `null` unless the first word is a command word; then `accepted` and `reason` |
 
 A message frame names its sender only by the 6-byte prefix, so `sender_key`, `sender_name` and
 `target` are informational: a contact with the same prefix that the radio added or dropped since
-the bridge last read the table is not reflected there. Base decisions on the `command` topic,
-whose sender the bridge verifies.
+the gateway last read the table is not reflected there. Base decisions on the `command` topic,
+whose sender the gateway verifies.
 
 ## Commands: `command`
 
@@ -155,7 +155,7 @@ Only accepted commands ([ADR 0009](decisions/0009-inbound-commands-from-allowlis
 a plain direct message whose first word (ended by any whitespace, also a line break) is in
 `commands.words`, from a contact whose full key is
 in `commands.senders`, newer than the last accepted command of that sender and within
-`max_age_s` of the bridge clock.
+`max_age_s` of the gateway clock.
 
 ```json
 {"event_type": "arm", "args": "now", "sender_key": "a1b2…", "sender_name": "Alice",
@@ -170,17 +170,17 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `sender_unknown` | the sender prefix matches no contact on the radio |
 | `sender_ambiguous` | it matches several contacts, or another key with this prefix was a contact on the radio in the last 24 hours |
 | `sender_not_allowed` | the contact's full key is not in `commands.senders` |
-| `sender_unverified` | the bridge fetched the command while connecting (it waited in the radio, or arrived during the connection setup), or the contact table could not be read (also when the radio connection ended first); the sender can send it again |
+| `sender_unverified` | the gateway fetched the command while connecting (it waited in the radio, or arrived during the connection setup), or the contact table could not be read (also when the radio connection ended first); the sender can send it again |
 | `state_unwritable` | the state file could not be written, so the replay protection could not be kept; the sender can send it again |
 | `broker_unavailable` | the gateway knew the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
-| `too_old`, `from_the_future` | outside `max_age_s` of the bridge clock; with `max_age_s = 0`, more than a day ahead |
+| `too_old`, `from_the_future` | outside `max_age_s` of the gateway clock; with `max_age_s = 0`, more than a day ahead |
 
 An identical copy of a command's packet, also of a rejected one, is dropped as a repeat: it is
 the sender's retry after a lost acknowledgement or a replay, which cannot be told apart. To have
 a rejected command judged again, the sender sends it anew, with a newer timestamp. The repeat
 memory lasts an hour, or twice `max_age_s` and a minute if that is longer; after
-`broker_unavailable` the bridge has also stored the timestamp, so a later copy is a `replay`.
+`broker_unavailable` the gateway has also stored the timestamp, so a later copy is a `replay`.
 After `sender_unverified` (the sender was not verified) and `state_unwritable` it has not: a copy
 that arrives after a restart of the gateway is judged afresh and accepted if it is still within
 `max_age_s`, and with `max_age_s = 0` also one after the hour
@@ -668,7 +668,7 @@ decides whether the packet is for it — useful to compare antennas or locations
 
 ## Securing the broker
 
-Give the bridge its own user. With Mosquitto, an ACL along these lines keeps clients apart:
+Give the gateway its own user. With Mosquitto, an ACL along these lines keeps clients apart:
 
 ```text
 user meshcore-home-gateway
@@ -700,6 +700,11 @@ the gateway may write the event topics (`received`, `command`, `delivery`, `cont
 `telemetry`) and
 the documents, because automations and dashboards trust them. When commands are configured, the ACL is not optional: any client that can write
 `command` can trigger the automations.
+
+Without an ACL every client of the broker can do what the gateway does: publish `command`
+events, write a contact's document with any position, send to every target and read every
+message and position. The gateway cannot tell: it sees neither the broker's ACL nor who else
+writes below its topics.
 
 paho reads every message completely before the gateway can check its size (1 KiB for a send
 request), so a client could exhaust the gateway's memory with one huge request. If no other

@@ -18,7 +18,7 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | `device` | – | serial device, an absolute path; use the stable `/dev/serial/by-id/...` path. Required for `serial`, an error with `tcp` |
 | `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial`. The TCP interface has no authentication |
 | `port` | `5000` | TCP port; only with `tcp` |
-| `set_clock` | `true` | move the radio clock forward to the bridge clock at connect (it cannot be moved back) |
+| `set_clock` | `true` | move the radio clock forward to the gateway clock at connect (it cannot be moved back) |
 
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it
 would put nRF52 radios into their bootloader.
@@ -76,7 +76,7 @@ connect.
 | `client_id` | `meshcore-home-gateway-<node_id>` | MQTT client identifier |
 | `keepalive_s` | `60` | keep-alive interval, 10–3600 |
 | `base_topic` | `meshcore` | first topic levels; segments of `A-Z a-z 0-9 - _` separated by `/` |
-| `node_id` | required | this bridge's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`, starting with a letter or digit, not ending with `-` or `_`, no two of them in a row (Home Assistant would merge those). Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
+| `node_id` | required | this gateway's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`, starting with a letter or digit, not ending with `-` or `_`, no two of them in a row (Home Assistant would merge those). Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
 
 A TLS file that cannot be loaded (missing, unreadable, not a certificate or key) is a
 configuration error: `check-config` and `config render` load the files, and the service exits with
@@ -104,7 +104,7 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | Key | Meaning |
 | --- | --- |
 | `channel` | channel index on the radio (0–255). The channel must be configured on the radio; `meshcore-home-gateway probe` lists them |
-| `contact` | the contact's full public key, 64 hex digits. The radio addresses contacts by the first 6 bytes; the bridge refuses to send if those match another contact too |
+| `contact` | the contact's full public key, 64 hex digits. The radio addresses contacts by the first 6 bytes; the gateway refuses to send if those match another contact too |
 
 ## `[messages]`
 
@@ -123,10 +123,10 @@ companions in the radio's contact table also through `contacts/<key>/send`
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `budget_s_per_hour` | `36` | seconds of transmission per hour for the bridge's messages (1 % of the hour), 0.001–3600; telemetry has its own lanes (`[telemetry]`) |
+| `budget_s_per_hour` | `36` | seconds of transmission per hour for the gateway's messages (1 % of the hour), 0.001–3600; telemetry has its own lanes (`[telemetry]`) |
 | `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
 
-Within one run of the service, the airtime the bridge counts over any interval *T* stays below
+Within one run of the service, the airtime the gateway counts over any interval *T* stays below
 `burst_s + budget_s_per_hour × T / 3600`. The count is exact for direct sends and for flooded
 sends to recipients up to 4 path bytes away; a flooded attempt to a more distant recipient takes
 up to about 1 s more at EU/UK Narrow ([protocol.md §6](protocol.md#6-on-air-sizes)). The budget is
@@ -143,13 +143,13 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | --- | --- | --- |
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
-| `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the bridge clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
+| `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
 
-Commands also need a sender timestamp newer than that sender's last accepted command; the bridge
+Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
 
-Commands that the bridge fetches while it connects are rejected: those that waited in the radio
-while the bridge was not running (restart, update, unplugged radio), and those that arrive during
+Commands that the gateway fetches while it connects are rejected: those that waited in the radio
+while the gateway was not running (restart, update, unplugged radio), and those that arrive during
 the few seconds of the connection setup. The sender sends them again
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 
@@ -158,9 +158,9 @@ type switched off in the auto-add settings. In manual mode the radio still adds 
 there, and a contact of any type can send direct messages. A node that the radio adds with the
 6-byte key prefix of an allowed sender blocks that sender's commands until 24 hours after it was
 last seen; a node that only advertises is not added and does not count. When the profile only
-observes, the bridge logs a warning at connect if the radio adds contacts on its own, and
+observes, the gateway logs a warning at connect if the radio adds contacts on its own, and
 `meshcore-home-gateway probe` shows the settings. Connect a radio that takes commands by USB: over
-TCP it drops push frames while its send queue is full (the bridge warns about that too), and a
+TCP it drops push frames while its send queue is full (the gateway warns about that too), and a
 host that takes the radio's network address can pose as the radio and forge commands
 ([design §7.2](design.md#72-threats-and-mitigations)).
 

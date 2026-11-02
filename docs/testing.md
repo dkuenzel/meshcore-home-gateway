@@ -42,6 +42,14 @@ and not part of `make check`, because Home Assistant needs a newer Python than t
 is a large download. Run it after changing discovery, payloads, the state document, the
 dashboard's template or home-assistant.md.
 
+Before a release, run them once more against the newest Home Assistant as an early warning:
+`make ha-lock COOLDOWN_DAYS=0 && make ha-test`, then discard the lock (`git checkout
+home-assistant/requirements.txt`): a release inside the cooldown does not enter the pinned
+environment ([CONTRIBUTING.md](../CONTRIBUTING.md#dependencies-of-the-tool-chain)). A failure
+there is a Home Assistant change the next update of the pin has to meet; note it in the pull
+request. The Home Assistant releases tested with are listed in
+[home-assistant.md](home-assistant.md#requirements).
+
 | Suite | Files | Needs |
 | --- | --- | --- |
 | Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py`, `test_lpp.py` (CayenneLPP frames and the names of their readings), `test_telemetry.py` (the telemetry schedule and each companion's state on a set clock), `test_adverts.py` (the check for positions in adverts: logged adverts, the radio's push and the record) | nothing |
@@ -226,9 +234,11 @@ what they cannot: real radio links, acknowledgements over the air, a USB cable p
 the same for every installation and needs no particular hardware: any two MeshCore radios with
 companion firmware will do. Run it before every release and after raising the supported firmware
 version, and record the firmware versions, radio models and results in the pull request. The
-core steps 1–4, 10–12, 15, 16 and 18 test the bridge end to end and are run for every release
+core steps 1–4, 10–12, 15, 16 and 18 test the gateway end to end and are run for every release
 (docs/development.md); the others where their feature changed. Steps 15 and 46 (the `pct` parts),
-19 and 20 apply to the Proxmox installer only.
+19 and 20 apply to the Proxmox installer only. Pre-releases (`X.Y.0aN`) are not checked on
+hardware; their changelog sections say so, and the release that follows them runs the checklist
+for every feature they added.
 
 Setup: radio **A** on the gateway (USB), radio **B** as a handheld or phone companion in range,
 both on the same channel settings; B knows A as a contact and the reverse. Steps 21–28 add and
@@ -253,7 +263,7 @@ adds it back).
 | 13 | `systemctl stop meshcore-home-gateway`; B sends `status`; start the service | `received` shows `sender_unverified`, the log says why; B sends again and gets a `command` event |
 | 14 | Switch on automatic adding, telemetry for all and the position in adverts in the app, start the service, read `journalctl -u meshcore-home-gateway` and the `settings` document | the log names each setting set back; `settings.status` is `written`; `probe` afterwards shows manual adding, telemetry denied, no position in adverts, and 10 % in 869.40–869.65 MHz; a restart writes nothing (`status` `ok`). With `radio.profile.manage = "observe"`: nothing written, a warning that the radio adds contacts on its own (ADR 0009, ADR 0020) |
 | 15 | Unplug A's USB cable for 30 s, plug it in; in a Proxmox container also `pct reboot <id>` | `radio` = `disconnected`, then `connected`; queued messages go out (deployment.md: the container keeps the old device until it restarts) |
-| 16 | Stop and start the broker | bridge reconnects; `availability` back to `online` |
+| 16 | Stop and start the broker | the gateway reconnects; `availability` back to `online` |
 | 17 | `kill -STOP` the service process | systemd watchdog restarts it within the watchdog interval |
 | 18 | Home Assistant | device with all entities; notify entity sends; event entities fire |
 | 19 | Proxmox installer from its address (`bash -c "$(wget -qO- URL)"`), default setup, then `--reconfigure` and `--update` | container runs the service; nothing new on the host but the template; reconfigure keeps unasked settings; update keeps the configuration |

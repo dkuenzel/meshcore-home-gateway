@@ -7,14 +7,14 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 ## 1 Before you start
 
 * **Radio:** a MeshCore companion radio with USB firmware (or WiFi firmware for TCP), set up with
-  the official app: name, radio preset, channels, contacts. Then disconnect the app; the bridge
+  the official app: name, radio preset, channels, contacts. Then disconnect the app; the gateway
   must be the radio's only client (protocol.md, section 1).
 * **Radio settings:** the gateway sets the radio up as an observer at its first connect: contacts
   added manually only, no telemetry for anyone, no position in adverts, and the 10 % duty cycle in
   the EU band 869.40–869.65 MHz (configuration.md, `[radio.profile]`; ADR 0020). The installer
   shows what changes; in the advanced setup it also asks for the radio's name. With firmware other than companion 1.18 it
   only reports; check the settings in the app then, or set `radio.profile.manage = "always"`.
-* **Broker:** an MQTT user for the bridge, with an ACL (mqtt-api.md, last section); the ACL is
+* **Broker:** an MQTT user for the gateway, with an ACL (mqtt-api.md, last section); the ACL is
   required when commands are configured. A standalone Mosquitto reads a user added with
   `mosquitto_passwd` only after `systemctl reload mosquitto`.
 * **Home Assistant:** MQTT integration with discovery enabled (the default).
@@ -41,11 +41,10 @@ On the Proxmox VE host, as root:
 bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
 ```
 
-Before the first release there is nothing at that address; install the source of `main`:
-
-```sh
-bash -c "$(wget -qO- https://raw.githubusercontent.com/dkuenzel/meshcore-home-gateway/main/deploy/proxmox/meshcore-home-gateway-lxc.sh)"
-```
+A pre-release has an installer of its own (`releases/download/vX.Y.Zrc1/meshcore-home-gateway-lxc.sh`,
+see Update below); `main`'s copy
+(`https://raw.githubusercontent.com/dkuenzel/meshcore-home-gateway/main/deploy/proxmox/meshcore-home-gateway-lxc.sh`)
+installs the source of `main`, which no release attests.
 
 The script runs from memory and stores nothing on the host besides the Debian template, which
 lands in the template storage as for any container. It downloads the program inside the new
@@ -164,7 +163,7 @@ the keys of the next section), which gives the same file with the same mode.
 * **Unprivileged and with nesting, both set explicitly:** on Proxmox VE 8, `pct create` makes a
   privileged container unless `--unprivileged 1` is given, and on both versions only the web
   wizard ticks *nesting* by default. Debian 13's systemd needs nesting for its own services
-  (credentials, namespaces) and for the bridge's sandboxing; without it, units fail with
+  (credentials, namespaces) and for the gateway's sandboxing; without it, units fail with
   `243/CREDENTIALS` or `226/NAMESPACE`
   ([pct.conf(5)](https://pve.proxmox.com/pve-docs/pct.conf.5.html), *nesting*;
   [Proxmox forum](https://forum.proxmox.com/threads/lxc-debian-13-with-nesting-disabled-no-console.173418/)).
@@ -175,7 +174,7 @@ the keys of the next section), which gives the same file with the same mode.
   * the container does not start while the radio is unplugged, also not at host boot;
   * if the radio comes back with a different device number after re-plugging (for example
     `ttyACM1` instead of `ttyACM0`), the container keeps the old one until it restarts. The
-    simple rule: after re-plugging the radio, `pct reboot 105`. Until then the bridge reports the
+    simple rule: after re-plugging the radio, `pct reboot 105`. Until then the gateway reports the
     radio as disconnected and keeps retrying.
 
   The script writes `path=` explicitly because device names may contain `=`.
@@ -221,12 +220,12 @@ ca.pem /etc/meshcore-home-gateway/ca.pem`) and set them with
 
 ```sh
 installer=https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh
-# new version, same configuration (before the first release: main's address, as for the install)
+# new version, same configuration
 bash -c "$(wget -qO- $installer)" -- --update 105
 # dialogs again
 bash -c "$(wget -qO- $installer)" -- --reconfigure 105
-# an earlier release again
-bash -c "$(wget -qO- $installer)" -- --release 0.1.0 --update 105
+# an earlier release again (X.Y.Z is its version)
+bash -c "$(wget -qO- $installer)" -- --release X.Y.Z --update 105
 # roll back to an earlier version that is still installed
 pct exec 105 -- ls /usr/local/lib/meshcore-home-gateway/
 pct exec 105 -- ln -sfn meshcore-home-gateway-<old version>.pyz \
@@ -275,7 +274,8 @@ pct stop 105 && pct destroy 105
   senders that the radio does not offer (a contact that is not a chat contact, a channel slot
   without a name) are kept as well, and the log names them. The service is stopped while the script
   reads the radio and started again afterwards, also when a step fails or the script is interrupted
-  (Ctrl-C, a closed SSH session). The container and the radio connection stay as installed:
+  (Ctrl-C, a closed SSH session). Meanwhile the radio keeps up to 16 received messages for the
+  gateway; more are lost, so do not leave the dialogs open for long on a busy mesh. The container and the radio connection stay as installed:
   answers for them (`radio.choice`, `ct.*`) stop the script. A TCP radio's address changes with
   the settings `radio.host` and `radio.port` in an answers file; a serial radio under a new name is
   passed through again by hand (see Troubleshooting).
@@ -348,23 +348,37 @@ English. The service's log is always English.
 * **Service:** `Type=notify` with a 60 s watchdog; restart after 5 s on failure, not on
   configuration errors (exit code 78). `systemd-analyze security meshcore-home-gateway` rates the
   unit's exposure at 1.6 (lower is better).
-* **State and backup:** back up `/etc/meshcore-home-gateway/config.toml`,
-  `/var/lib/meshcore-home-gateway/state.json` (the newest accepted command time per sender; without
-  it a restored system accepts older recorded commands again until a sender sends a new one, within
-  `max_age_s`; the Home Assistant components last announced; the contacts whose documents are
-  published; the last document of each companion whose answers are current, with its position and
-  readings, so that they still expire after a restart without the radio (kept in its latest state,
-  also once expired, until the radio's table is read again); the last checked advert of each
-  companion (its time and whether it carried a position, no position); the radio profile's
-  memory; the telemetry schedule: per companion when it is next due, its unanswered requests, when
-  it last answered, was asked and flooded, how long its answers count and when one last carried a
-  position, and whether it was last moving, no positions; and what is left of the first-start
-  hour) and `telemetry-excluded.json` next to it (the companions the household excluded from
-  telemetry: without it a restored system asks them again). An exclusions file that cannot be
-  parsed is left as it is and pauses telemetry: fix it (`{"excluded": [keys]}`) or delete it, then
-  restart the service. `history.sqlite3` holds the history: messages, positions and the
-  companions' readings ([configuration](configuration.md#history)); copy it only with the service
-  stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
+* **State and backup:** back up `/etc/meshcore-home-gateway/config.toml` and the three files of
+  `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop
+  meshcore-home-gateway`), or use a Proxmox backup of the whole container (`vzdump`): a backup of
+  the running container holds the files as a power cut would leave them, which both survive
+  (`state.json` is replaced atomically, the history uses SQLite's write-ahead log). Keep backups
+  private and encrypted: the configuration
+  holds the broker password, and `state.json` and `history.sqlite3` hold positions of the
+  household's companions and message texts. Restore the three state files together and with the
+  service stopped: the service rewrites `state.json` while it runs, an older `state.json` beside
+  a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
+  older `telemetry-excluded.json` asks companions excluded since.
+  * `state.json` holds the newest accepted command time per sender (without it a restored system
+    accepts older recorded commands again until a sender sends a new one, within `max_age_s`);
+    the Home Assistant components last announced; the contacts whose documents are published;
+    the last document of each companion whose answers are current, with its position and
+    readings, so that they still expire after a restart without the radio (kept in its latest
+    state, also once expired, until the radio's table is read again); the last checked advert of
+    each companion (its time and whether it carried a position, no position); the radio
+    profile's memory; the telemetry schedule: per companion when it is next due, its unanswered
+    requests, when it last answered, was asked and flooded, how long its answers count and when
+    one last carried a position, and whether it was last moving, no positions; and what is left
+    of the first-start hour.
+  * `telemetry-excluded.json` holds the companions the household excluded from telemetry:
+    without it a restored system asks them again. An exclusions file that cannot be parsed is
+    left as it is and pauses telemetry: fix it (`{"excluded": [keys]}`) or delete it, then
+    restart the service.
+  * `history.sqlite3` holds the history: messages, positions, the companions' readings and the
+    nodes heard ([configuration](configuration.md#history)); copy it only with the service
+    stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
+* **Times:** the gateway's documents and events give times in UTC; the journal shows the
+  container's local time, which the installer takes from the host (`--timezone host`).
 * **Retained documents** stay on the broker after the gateway is removed. Clear them with, for
   example, `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
   2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
@@ -384,10 +398,10 @@ English. The service's log is always English.
 | `delivery: failed`, reason `channel_not_configured` | The channel index has no name on the radio |
 | `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the legal limit |
 | `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets); shorten messages or raise `burst_s` |
-| Commands rejected with `too_old` / `from_the_future` | Sender or bridge clock wrong; the phone apps set the radio clock, or set `max_age_s = 0` |
+| Commands rejected with `too_old` / `from_the_future` | The sender's clock or the gateway host's clock is wrong: the check compares the time the sender's device stamped on the message (the phone app sets a companion's clock) with the host's clock; the clock of the gateway's own radio does not enter it. Set the wrong clock right, or set `max_age_s = 0` |
 | Commands rejected with `replay` although they are new | The sender's clock went backwards (reset, battery change): its timestamps are older than its last accepted command. Set the clock right; or, with the service stopped, remove the sender's key from `command_timestamps` in `/var/lib/meshcore-home-gateway/state.json` |
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
-| Commands rejected with `sender_unverified` | The bridge fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
+| Commands rejected with `sender_unverified` | The gateway fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
 | `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto` (and add further users without `-c`, which replaces the file). `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on takes a Home Assistant user by its login name, not the display name (the Supervisor log names the user it refused: `Unauthorized login for '…'`), or a `logins` entry (read when the add-on starts); it remembers a refused login for about 5 minutes, so restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1`), not the user |
 | `MQTT: cannot reach …` | No broker answered at that name or address and port: check `mqtt.host` (a host name or IP address, no `mqtt://`) and `mqtt.port`, the network and the firewall |
 | `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
