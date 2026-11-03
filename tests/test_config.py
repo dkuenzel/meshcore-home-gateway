@@ -70,6 +70,7 @@ queue_ttl_s = 60
 max_attempts = 4
 flood_after = 3
 ignore_channels = [0]
+clean_received = true
 
 [airtime]
 budget_s_per_hour = 72
@@ -129,6 +130,7 @@ def test_full_configuration_is_read_completely() -> None:
     assert config.mqtt.base_topic == "mesh/home"
     assert config.homeassistant.prefix == "ha"
     assert config.messages.ignore_channels == frozenset({0})
+    assert config.messages.clean_received is True
     assert config.commands.senders == frozenset({KEY})
     assert config.commands.words == frozenset({"status", "arm"})
     alerts, alice = sorted(config.targets, key=lambda t: t.alias)
@@ -415,11 +417,12 @@ def test_every_setting_can_be_answered() -> None:
             "messages.dedup_window_s=60", "messages.queue_size=5", "messages.queue_ttl_s=120",
             "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
             "airtime.burst_s=6.5", "commands.max_age_s=0", "diagnostics.publish_rx_log=true",
-            "contacts.manage=false", "history.readings_days=7.5",
+            "contacts.manage=false", "history.readings_days=7.5", "messages.clean_received=true",
         ]
     )  # fmt: skip
     config = parse_config(render_config(answers))
     assert config.radio.set_clock is False
+    assert config.messages.clean_received is True
     assert (config.mqtt.tls, config.mqtt.cert_file, config.mqtt.key_file) == (
         True, "/etc/c.pem", "/etc/k.pem",
     )  # fmt: skip

@@ -2189,6 +2189,77 @@ def test_a_link_that_cannot_be_taken_or_told_is_not_contested(
     scenario(main)
 
 
+def test_a_flooding_sender_or_channel_is_not_published_beyond_its_rate(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC-012, SEC-013: a contact or a channel cannot fill the bus, the history and Home
+    Assistant's recorder; the log counts what was left out. An accepted command still goes out,
+    and other senders have their own rate."""
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(bridge_module, "RECEIVED_PER_SENDER_PER_S", 1e-6)  # no refill meanwhile
+    monkeypatch.setattr(bridge_module, "RECEIVED_PER_CHANNEL_PER_S", 1e-6)
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    burst = int(bridge_module.RECEIVED_PER_SENDER_BURST)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
+            for n in range(burst + 5):
+                radio.queue_direct_message(BOB.public_key[:6], f"spam {n}", NOW - 100 + n)
+            radio.queue_direct_message(ALICE.public_key[:6], "status", NOW - 50)  # a command
+            radio.queue_direct_message(ALICE.public_key[:6], "hello", NOW - 49)
+            for n in range(25):
+                radio.queue_channel_message(0, f"Carol: chatter {n}", NOW - 40 + n)
+            await bus.wait_for("/command", lambda c: c["event_type"] == "status")
+            await bus.wait_for("/received", lambda e: e["text"] == "chatter 19")
+            await asyncio.sleep(0.1)
+            texts = [e["text"] for e in bus.payloads("radio1/received")]
+            assert texts == [
+                *(f"spam {n}" for n in range(burst)), "status", "hello",
+                *(f"chatter {n}" for n in range(20)),
+            ]  # fmt: skip
+            history = [m["text"] for m in bus.payloads("radio1/history")[-1]["messages"]]
+            assert "spam 10" not in history
+            assert "chatter 20" not in history
+            assert "chatter 19" in history
+            # the first one left out is logged at once, the others at most a minute later
+            assert "not published nor recorded (limit" in caplog.text
+            assert ": 1 direct, 0 channel" in caplog.text
+            bridge._received.report(time.monotonic() + 120)
+            assert ": 4 direct, 5 channel" in caplog.text
+
+    scenario(main)
+
+
+def test_received_texts_are_published_cleaned_only_when_asked(tmp_path: Path) -> None:
+    """SEC-017: texts from the mesh are data and stay as they came; `clean_received` drops
+    control and direction characters, which a terminal or a file could take for instructions."""
+    for clean in (False, True):
+        radio = EmulatedRadio(contacts=[ALICE])
+        config = make_config(messages=f"clean_received = {str(clean).lower()}")
+
+        async def main() -> None:
+            async with running(config, radio, tmp_path) as (_, bus, _notes):  # noqa: B023
+                radio.queue_direct_message(ALICE.public_key[:6], "hi\x1b[2J\u202ethere", NOW - 5)  # noqa: B023
+                event = await bus.wait_for("/received", lambda e: e["event_type"] == "contact")
+                # the escape character goes, what followed it stays as text
+                assert event["text"] == ("hi[2Jthere" if clean else "hi\x1b[2J\u202ethere")  # noqa: B023
+
+        scenario(main)
+
+
+def test_the_alias_of_a_refused_request_is_echoed_up_to_64_characters(tmp_path: Path) -> None:
+    """SEC-017: the topic level can be any length; the sender controls it."""
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("x" * 300, "hello")
+            event = await bus.wait_for("/delivery", lambda d: d["reason"] == "unknown_target")
+            assert event["target"] == "x" * 64
+
+    scenario(main)
+
+
 def test_contacts_get_their_devices_in_home_assistant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -124,6 +124,7 @@ class MessagesConfig:
     max_attempts: int = 3
     flood_after: int = 2
     ignore_channels: frozenset[int] = frozenset()
+    clean_received: bool = False  # control and direction characters out of received texts
 
 
 @dataclass(frozen=True, slots=True)
@@ -586,6 +587,7 @@ def _messages(s: _Section) -> MessagesConfig:
         max_attempts=max_attempts,
         flood_after=s.integer("flood_after", 2, 1, max(1, max_attempts)),
         ignore_channels=frozenset(s.integers("ignore_channels", 0, CHANNEL_INDEX_MAX)),
+        clean_received=s.boolean("clean_received", False),
     )
 
 
@@ -671,6 +673,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,
+    "messages.clean_received": bool,
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,

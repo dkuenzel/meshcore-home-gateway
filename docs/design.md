@@ -1041,6 +1041,7 @@ gateways share a name.
 | A household companion shares its position in adverts, which everyone in range can read | The gateway checks each companion's newest advert ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)): *Position in adverts* on its device, the gateway's *Companion position in adverts* and the event `position_in_advert` warn the household. Until the newest advert is checked, the radio's record decides, erring to warn. The gateway reads only what the radio logged and accepted; it sends no command for it and never writes a companion. |
 | A forged advert in the packet log (the radio logs every packet before it checks the signature) | A log counts only for an advert the radio pushed and whose timestamp the next table read shows as `last_advert`. While the receive delay is 0, the log that is the frame directly before the push decides, and a forged copy is never there; otherwise all logs of the key with that time must agree, and differing copies decide nothing. A flagged log must hold the position the record took. A forged position is never shown: positions come from the record. |
 | A flood of adverts with invented keys (a new key costs microseconds; any board in range) | Memory, documents and history stay bounded: 50 heard nodes, of which those heard again stay longest; the `nodes` document at most every 30 seconds while only heard nodes change; `node` events at most one every 5 seconds on average; the history keeps only the nodes the gateway keeps. A stranger's advert reads no contact table (firmware 1.12 and newer). The airtime the flood takes is the mesh's problem, not the gateway's (§8). |
+| A flood of messages from a contact, or on a channel (anyone who knows its key: the *Public* channel's is in the firmware) | What messages produce is rate-limited per sender and per channel: beyond a burst of 10 direct messages one every 2 s, beyond a burst of 20 channel messages one a second, are published and kept in the history; the others are judged as commands (an accepted command always goes out) and counted in the log, at most once a minute. The radio acknowledges each direct message of a contact before the bridge sees it (§7.4). Keep the contact table to the household; `ignore_channels` keeps a busy channel out. |
 
 ### 7.3 Command authorisation in detail
 
@@ -1089,6 +1090,12 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 
 ### 7.4 Residual risks
 
+* A contact can keep the radio busy with direct messages: the firmware acknowledges each before
+  the bridge sees it, and its own transmit limit (the airtime factor) then delays everything
+  else the radio sends, the household's alerts included, which the bridge's budget does not see
+  (ADR 0008). The bridge bounds only what such messages produce (§7.2); remove a contact that
+  floods. The radio's statistics, read once a minute, come too late to extend the
+  acknowledgement wait by the radio's queue.
 * Whoever controls an allowlisted handheld (or its key) can send commands. Keep the word list
   small and make automations confirm critical actions.
 * A look-alike needs a 48-bit prefix collision with an allowlisted key, which takes considerable
@@ -1165,6 +1172,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | --- | --- | --- | --- |
 | Radio unplugged or rebooted | read error, command timeout | session closed, reconnect with back-off; queue waits; an interrupted attempt is repeated | `state.radio = disconnected`; connectivity entity off |
 | Malformed or unexpected answer | decoding | session closed, resynchronised on reconnect | log warning |
+| Malformed pushes (a radio out of step, or a client posing as one over TCP) | decoding | each dropped; 20 in a row end the session, which the reconnect resynchronises | a log warning at most once a minute with the count |
 | Radio clock wrong | `CURR_TIME` vs host clock, at connect and every heartbeat | with `set_clock`: set forward from a plausible host clock; warn if ahead | `radio_clock_offset_s`; log warning; its adverts carry the later time, and are dropped by every node that holds it if the clock comes back with the identity kept |
 | Host clock wrong | sender timestamps vs host clock; the release date and the step from the radio's clock | commands outside `max_age_s` rejected; a host clock before the release, more than ten years after it or more than `set_clock_max_days` ahead of the radio's is not written to the radio | command rejections `too_old` / `from_the_future`; log warning `radio clock left ... behind` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
@@ -1174,6 +1182,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Recipient out of range | no acknowledgement | retries, flood, then give up | `delivery: failed` |
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects; the events of refused requests are limited to 20 per second (bursts of 100), so they cannot push other events out of a subscriber's queue on the broker | `delivery: duplicate` / `rejected`; a log warning counts the events left out |
 | A flood of adverts from strangers (invented keys, or a busy mesh) | none: each advert is valid | bounded (§7.2): heard nodes heard once make room first; the `nodes` document at most every 30 s; `node` events rate-limited; no table read per advert on firmware 1.12 and newer; the history keeps only the nodes the gateway keeps | *Nodes heard* at 50 with unknown names; the *Add heard node* select offers them |
+| A flood of messages from a contact or on a channel | rate limit per sender and per channel | judged as commands, then published and kept in the history up to a burst of 10 per sender (then one every 2 s) and of 20 per channel (then one a second); an accepted command always goes out | fewer `received` events; a log warning counts those left out, at most once a minute |
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
 | State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
 | Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |

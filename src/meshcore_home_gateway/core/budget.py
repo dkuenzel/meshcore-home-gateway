@@ -169,3 +169,24 @@ class RateLimit:
         if self.ready(now):
             return 0.0
         return (1.0 - self._tokens) / self._rate
+
+
+class KeyedRateLimit:
+    """A token bucket per key (a sender, a channel). At most `max_keys` buckets are kept, the
+    least recently used goes first: its key starts again with a full burst."""
+
+    def __init__(self, per_s: float, burst: float, max_keys: int = 1024) -> None:
+        RateLimit(per_s, burst, now=0.0)  # the same checks of the rate and the burst
+        self._rate, self._burst, self._max = per_s, burst, max_keys
+        self._buckets: OrderedDict[Hashable, RateLimit] = OrderedDict()
+
+    def __len__(self) -> int:
+        return len(self._buckets)
+
+    def allow(self, key: Hashable, now: float) -> bool:
+        """Take one of the key's tokens if it has one."""
+        bucket = self._buckets.pop(key, None) or RateLimit(self._rate, self._burst, now=now)
+        self._buckets[key] = bucket  # the most recent at the end
+        while len(self._buckets) > self._max:
+            self._buckets.popitem(last=False)
+        return bucket.allow(now)

@@ -4,7 +4,12 @@ import math
 
 import pytest
 
-from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator, RateLimit
+from meshcore_home_gateway.core.budget import (
+    AirtimeBudget,
+    Deduplicator,
+    KeyedRateLimit,
+    RateLimit,
+)
 
 
 def test_budget_starts_full_and_consumes() -> None:
@@ -187,3 +192,31 @@ def test_a_budget_can_start_empty_and_charge_beyond_its_level() -> None:
     assert budget.wait_s(1.0, 100.0) == pytest.approx(250.0)
     assert budget.used_s(100.0) == pytest.approx(2.5)
     assert AirtimeBudget(36.0, 2.0, now=0.0, tokens=9.0).available_s(0.0) == 2.0
+
+
+def test_each_key_has_its_own_bucket() -> None:
+    """A flooding sender spends only its own tokens (SEC-012, SEC-013)."""
+    limit = KeyedRateLimit(per_s=0.5, burst=3.0)
+    assert [limit.allow("bob", 0.0) for _ in range(4)] == [True, True, True, False]
+    assert limit.allow("alice", 0.0)
+    assert not limit.allow("bob", 1.0)  # half a token back
+    assert limit.allow("bob", 2.0)
+    assert len(limit) == 2
+
+
+def test_the_least_recently_used_key_goes_first() -> None:
+    """Memory stays bounded; a key that comes back starts with a full burst."""
+    limit = KeyedRateLimit(per_s=0.001, burst=1.0, max_keys=2)
+    assert limit.allow("a", 0.0)
+    assert limit.allow("b", 0.0)
+    assert not limit.allow("a", 0.0)  # "a" is now the most recent
+    assert limit.allow("c", 0.0)  # "b" goes
+    assert len(limit) == 2
+    assert limit.allow("b", 0.0)  # again with a full bucket; "a" goes
+    assert limit.allow("a", 0.0)
+
+
+@pytest.mark.parametrize(("per_s", "burst"), [(0.0, 1.0), (1.0, 0.5)])
+def test_a_keyed_limit_checks_like_a_single_one(per_s: float, burst: float) -> None:
+    with pytest.raises(ValueError, match="rate limit needs"):
+        KeyedRateLimit(per_s, burst)

@@ -5,6 +5,7 @@ import pytest
 from meshcore_home_gateway.core.text import (
     TextPolicy,
     TextRejectedError,
+    clean_received,
     contact_name,
     cut_utf8,
     prepare_text,
@@ -12,6 +13,14 @@ from meshcore_home_gateway.core.text import (
 
 UTF8 = TextPolicy(max_bytes=20)
 ASCII = TextPolicy(max_bytes=40, ascii_only=True)
+
+
+def test_a_received_text_is_cleaned_like_an_outgoing_one() -> None:
+    """`[messages] clean_received` (SEC-017): what a terminal could take for instructions goes,
+    the rest stays, also joiners and the length."""
+    hostile = "\x1b[2Jalarm\u202eoff\u2066 \x07ok\r\nnext\u200dline \U0001f468\u200d\U0001f469"
+    assert clean_received(hostile) == "[2Jalarmoff ok\nnext\u200dline \U0001f468\u200d\U0001f469"
+    assert clean_received("x" * 500) == "x" * 500
 
 
 def test_plain_ascii_passes_unchanged() -> None:

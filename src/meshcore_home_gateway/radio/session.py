@@ -58,6 +58,10 @@ DAY_S = 86_400
 SYNC_INTERVAL_S = 300.0  # safety net in case a MSG_WAITING push was lost
 HEARTBEAT_INTERVAL_S = 60.0
 CONTACTS_REFRESH_DELAY_S = 2.0
+# malformed pushes: a warning at most this often, with the count; a run of this many ends the
+# session, which the reconnect resynchronises (the radio is out of step, or no radio) (SEC-014)
+MALFORMED_REPORT_S = 60.0
+MALFORMED_RUN = 20
 
 ResponseCodes = frozenset[int]
 _SIMPLE = frozenset({Response.OK, Response.ERR, Response.DISABLED})
@@ -255,6 +259,9 @@ class CompanionSession:
         self._contacts_changed_at = -1  # command count at the last contact push
         self._commands_sent = 0
         self._frames_read = 0
+        self._malformed_run = 0  # malformed pushes since the last good frame
+        self._malformed_unreported = 0
+        self._malformed_reported_at: float | None = None  # the event loop's clock
         self.serial = next(_SERIALS)  # tells this session's frame numbers from another's
         self.contact_records: dict[str, codec.ContactRecord] = {}
         self.channels: dict[int, str] = {}
@@ -679,6 +686,7 @@ class CompanionSession:
                     next_sync = loop.time() + SYNC_INTERVAL_S
                 if loop.time() >= next_beat:
                     await self.read_status()
+                    self._report_malformed()  # the end of a run of malformed pushes
                     next_beat = loop.time() + HEARTBEAT_INTERVAL_S
         except RadioError as exc:
             self._end(exc)
@@ -713,7 +721,9 @@ class CompanionSession:
         seq, code = self._frames_read, frame[0]
         if code >= PUSH_MIN:
             await self._push(frame, seq)
-        elif self._pending is not None and code in self._pending.expected:
+            return
+        self._malformed_run = 0  # an answer: the stream is in step
+        if self._pending is not None and code in self._pending.expected:
             if self._pending.seq < 0:
                 self._pending.seq = seq
             self._pending.frames.put_nowait(frame)
@@ -724,8 +734,9 @@ class CompanionSession:
         try:
             decoded = codec.decode(frame)
         except codec.ProtocolError as exc:
-            log.warning("radio: malformed push ignored: %s", exc)
+            self._malformed(exc)
             return
+        self._malformed_run = 0
         if isinstance(decoded, codec.MessageWaiting):
             self._sync_wanted.set()
         elif isinstance(decoded, codec.SendConfirmed):
@@ -757,6 +768,27 @@ class CompanionSession:
     def _contacts_changed(self) -> None:
         self._contacts_changed_at = self._commands_sent
         self._contacts_dirty.set()
+
+    def _malformed(self, exc: codec.ProtocolError) -> None:
+        """A push that does not decode is dropped. A radio out of step, or a client posing as
+        one over TCP, can send them at the link's rate: the log counts them (SEC-014)."""
+        self._malformed_run += 1
+        self._malformed_unreported += 1
+        self._report_malformed(str(exc))
+        if self._malformed_run >= MALFORMED_RUN:
+            self._end(RadioError(f"{MALFORMED_RUN} malformed pushes in a row"))
+
+    def _report_malformed(self, last: str | None = None) -> None:
+        """The malformed pushes since the last warning, at most every MALFORMED_REPORT_S."""
+        now = asyncio.get_running_loop().time()
+        reported = self._malformed_reported_at
+        if not self._malformed_unreported or (
+            reported is not None and now - reported < MALFORMED_REPORT_S
+        ):
+            return
+        log.warning("radio: malformed pushes ignored: %d%s", self._malformed_unreported,
+                    f" (the last: {last})" if last else "")  # fmt: skip
+        self._malformed_reported_at, self._malformed_unreported = now, 0
 
     def _report_key(self, public_key: bytes, *, held: bool = True) -> None:
         if self.on_contact_key is not None:

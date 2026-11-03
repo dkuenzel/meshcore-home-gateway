@@ -906,6 +906,77 @@ def test_malformed_frame_during_maintenance_ends_the_session(
     run(radio, scenario)
 
 
+MALFORMED_PUSH = bytes([Push.SEND_CONFIRMED])  # too short to decode
+
+
+def malformed_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "malformed pushes" in r.getMessage()]
+
+
+def test_malformed_pushes_are_counted_not_each_logged(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC-014: a radio out of step, or a client posing as one over TCP, can send them at the
+    link's rate. A good push between them keeps the session."""
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(session_module, "MALFORMED_REPORT_S", 0.2)
+    radio = EmulatedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        for _n in range(50):
+            radio.emit(MALFORMED_PUSH)
+            radio.emit(bytes([Push.MSG_WAITING]))
+        await asyncio.sleep(0.05)
+        assert malformed_warnings(caplog) == [
+            "radio: malformed pushes ignored: 1 (the last: frame 0x82 too short (1 bytes))"
+        ]
+        await asyncio.sleep(0.2)
+        radio.emit(MALFORMED_PUSH)
+        await asyncio.sleep(0.05)
+        assert malformed_warnings(caplog)[1:] == [
+            "radio: malformed pushes ignored: 50 (the last: frame 0x82 too short (1 bytes))"
+        ]
+        assert not session.closed
+
+    run(radio, scenario)
+
+
+def test_the_heartbeat_reports_the_malformed_pushes_left(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(session_module, "MALFORMED_REPORT_S", 0.1)
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.2)
+    radio = EmulatedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        for _n in range(3):
+            radio.emit(MALFORMED_PUSH)
+        await asyncio.sleep(0.5)
+        assert malformed_warnings(caplog)[-1] == "radio: malformed pushes ignored: 2"
+
+    run(radio, scenario)
+
+
+def test_a_run_of_malformed_pushes_ends_the_session() -> None:
+    """Out of step with the radio, or no radio: the reconnect resynchronises."""
+    radio = EmulatedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        for _n in range(session_module.MALFORMED_RUN - 1):
+            radio.emit(MALFORMED_PUSH)
+        await asyncio.sleep(0.05)
+        assert not session.closed
+        radio.emit(MALFORMED_PUSH)
+        with pytest.raises(RadioError, match=r"20 malformed pushes in a row"):
+            await asyncio.wait_for(session.wait_closed(), 2)
+
+    run(radio, scenario)
+
+
 def test_a_bug_in_the_maintenance_ends_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
     """Else the session would look alive but never fetch a message again."""
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.0)

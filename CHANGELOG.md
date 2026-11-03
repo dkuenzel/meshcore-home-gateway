@@ -34,6 +34,9 @@ format, the command line and Home Assistant discovery are public interfaces
   link while it kept running, as it does when another client connects; that client can control
   the radio and read its private key ([mqtt-api.md](docs/mqtt-api.md#state-state), what to do:
   [deployment.md](docs/deployment.md#5-troubleshooting)).
+- `[messages] clean_received` (default `false`): received texts lose their control and direction
+  characters before they are published and kept in the history, as outgoing texts do
+  ([configuration.md](docs/configuration.md#messages)). Off, texts stay as they came.
 
 ### Changed
 
@@ -72,6 +75,17 @@ format, the command line and Home Assistant discovery are public interfaces
   off the mesh's frequency; with how to isolate such a radio and what to do after a takeover
   ([configuration.md](docs/configuration.md#radio),
   [design §7.2](docs/design.md#72-threats-and-mitigations), [protocol.md](docs/protocol.md)).
+- A contact or a channel that floods messages no longer fills the bus, the history and Home
+  Assistant's recorder: beyond a burst of 10 direct messages of one sender, one every 2 seconds
+  is published, beyond 20 on one channel, one a second; the others are still judged as commands
+  (an accepted command always goes out), and the log counts them at most once a minute
+  ([mqtt-api.md](docs/mqtt-api.md#received-messages-received)). The radio's own duty cycle, which
+  acknowledging such messages spends, stays out of the gateway's reach
+  ([design §7.4](docs/design.md#74-residual-risks)).
+- Malformed pushes from the radio are logged at most once a minute, with their count, instead of
+  one warning each; 20 in a row end the session, which the reconnect resynchronises.
+- The `delivery` event of a refused send request echoes at most 64 characters of the alias, which
+  the sender chose with the topic.
 - A flood of adverts with invented keys, which any board in range can send (a key costs
   microseconds), stays bounded
   ([design §7.2](docs/design.md#72-threats-and-mitigations)). The heard nodes keep those heard
