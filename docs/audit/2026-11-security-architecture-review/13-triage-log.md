@@ -142,7 +142,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
 | OPS-001 | fix | The installer installs `unattended-upgrades`; the guide says that the container is a Debian system that needs updates | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
-| OPS-002 | fix | The published installer pins the digests of the zipapp and the unit; the verified path comes first in the README; examples pin `--ref` by commit | pending: installer-integrity |
+| OPS-002 | fix | The published installer pins the digests of the zipapp and the unit; the verified path comes first in the README; examples pin `--ref` by commit | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
 | OPS-003 | fix | A Home Assistant example that notifies when the gateway is unavailable (IMP-025). The host-side udev rule is deferred: it cannot be verified without a Proxmox host, and ADR 0006 keeps the host free of the gateway's files | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | OPS-004 | fix | The unit restarts with a growing delay instead of giving up after 20 failures; the guide's example detects the outage. An `OnFailure=` unit is rejected: the gateway itself is the channel it would need | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-005 | fix | `After=time-sync.target`, `MemoryMax=`, `@obsolete` in the system call filter; `IPAddressAllow=` documented as an option | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
@@ -170,7 +170,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | --- | --- | --- | --- |
 | SUP-001 | fix | `CODEOWNERS`, a reviewer's checklist in the pull request template and a note on the agent's inputs. A separate GitHub identity for the agent and required reviews are deferred to the maintainer (an account and a ruleset only the maintainer can create); a release cooldown is deferred with them | pending: supply-chain |
 | SUP-002 | fix | The release workflow builds in a job with a minimal, hash-pinned environment, a rebuild on another runner image must give the same `SHA256SUMS`, and only then is it attested | pending: supply-chain |
-| SUP-003 | fix | The installer's pinned digests (OPS-002); immutable releases switched on for the repository | pending: installer-integrity, github |
+| SUP-003 | fix | The installer's pinned digests (OPS-002); immutable releases switched on for the repository | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53); immutable releases: repository settings, 2026-11-02 |
 | SUP-004 | fix | `make lock` and Dependabot write the same form | pending: supply-chain |
 | SUP-005 | fix | `pip-audit` against both lock files in CI (the Home Assistant lock warns); code scanning switched on; the 43 open alerts of the Home Assistant lock resolved | pending: supply-chain, github |
 | SUP-006 | fix | Translations reviewed by a second speaker; security-relevant texts carry a translators' note | pending: supply-chain |
@@ -202,7 +202,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-020 | fix | Through CODE-001 and CODE-002 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-021 | fix | Through ARC-004 | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | IMP-022 | fix | Through ARC-003, ARC-009 and CODE-005 | pending: structure |
-| IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52), pending: installer-integrity |
+| IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52), [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
 | IMP-024 | fix | Through OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-026 | fix | Through ARC-001 | pending: threat-model |
@@ -271,7 +271,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-009 | accept | Acknowledged; turned into a test (CODE-001) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
-| RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | pending: installer-integrity |
+| RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
 | RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | pending: mqtt5 |
 | RES-015 | accept | Acknowledged; moves to `docs/protocol.md` §2 (IMP-003 deferred) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
