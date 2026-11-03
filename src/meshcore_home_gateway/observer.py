@@ -177,7 +177,7 @@ class Observer:
         self._expected: dict[tuple[str, str], tuple[str, str]] = {}
         self._advert_checks = advert_checks
         # the adverts the radio logged, and per companion the advert its push reported, until a
-        # table read shows it: their positions are held only to compare them (design 6c §3.1)
+        # table read shows it: their positions are held only to compare them (ADR 0025)
         self._logged_adverts: deque[adverts.Logged] = deque(maxlen=adverts.MAX_LOGGED)
         self._pending: dict[str, adverts.Pushed] = {}  # companion key -> its accepted advert
         self._restore()
@@ -474,7 +474,7 @@ class Observer:
             change = TableChange(tuple(k for k in change.added if k not in known), gone)
         # before the listeners, the devices and the documents of this read, which show the check
         started = self._check_adverts(before, heard, at)
-        # added with a check that carries: heard before the add (design 6c D9, D27)
+        # added with a check that carries: heard before the add (ADR 0025)
         started += [k for k in change.added if k not in started and _carries(self.mesh.contacts[k])]
         for key in change.added:  # its document carries what the listeners change
             for added in self.on_contact_added:
@@ -544,12 +544,12 @@ class Observer:
                 event = contact_event(kind, key, node, request=request, request_id=request_id)
                 self._event(self._topics.contact_event, event)
 
-    # --- positions in adverts (ADR 0018, design 6c) --------------------------------------------
+    # --- positions in adverts (ADR 0018, ADR 0025) --------------------------------------------
 
     def _check_adverts(
         self, before: Mapping[str, Node], heard: Mapping[str, int], at: float
     ) -> list[str]:
-        """The newest advert of each companion as this table read shows it (design 6c §3);
+        """The newest advert of each companion as this table read shows it (ADR 0025);
         `heard`: the advert time of each heard node it adds. Returns the keys whose check turned
         to carrying from not carrying or none."""
         self._prune_adverts(at)
@@ -609,11 +609,11 @@ class Observer:
 
     def _no_rx_delay(self) -> bool:
         """The radio handles each received packet in the pass that logs it: its receive delay,
-        read at connect, is 0 (src/Dispatcher.cpp:138-145, 238-256; design 6c D2)."""
+        read at connect, is 0 (src/Dispatcher.cpp:138-145, 238-256; ADR 0025)."""
         return self._tuning is not None and self._tuning.rx_delay_base_milli == 0
 
     def _prune_adverts(self, now: float) -> None:
-        """A logged position is held only while it can still decide (design 6c §3.1)."""
+        """A logged position is held only while it can still decide (ADR 0025)."""
         kept = [e for e in self._logged_adverts if adverts.fresh(e.at, now, adverts.LOGGED_S)]
         if len(kept) < len(self._logged_adverts):
             self._logged_adverts = deque(kept, maxlen=adverts.MAX_LOGGED)
@@ -644,11 +644,11 @@ class Observer:
         if at - logged_at > LOGGED_ADVERT_S:
             signal = Signal()
         near = None
-        if self._no_rx_delay():  # the radio handles each packet in the pass that logs it (D2)
+        if self._no_rx_delay():  # the radio handles each packet in the pass that logs it (ADR 0025)
             last = self._logged_adverts[-1] if self._logged_adverts else None
             near = adverts.adjacent(last, key, frame)
             # it writes an advert's log directly before its push: any other log is another
-            # packet, a late copy of an older advert or a forged one (design 6c D13). Without
+            # packet, a late copy of an older advert or a forged one (ADR 0025). Without
             # its own log the advert has no signal, as one that was not logged at all.
             signal = near.signal if near is not None and self._own_log(near, advert) else Signal()
         # the advert the radio took, for the next table read; later logs do not count for it
@@ -668,7 +668,7 @@ class Observer:
             self._store_heard(key, node, heard)
             self._publish_contact(key)
             return
-        if node.node_type == COMPANION:  # checked at once: its record came with it (D27)
+        if node.node_type == COMPANION:  # checked at once: its record came with it (ADR 0025)
             found = adverts.heard(pushed, node)
             if found.check is not None:
                 self.mesh.advert_heard(key, found.check)
@@ -695,7 +695,7 @@ class Observer:
             })  # fmt: skip
 
     def _own_log(self, near: adverts.Logged, advert: codec.Advert) -> bool:
-        """Whether the log directly before a push can be its advert's own (design 6c D13). For a
+        """Whether the log directly before a push can be its advert's own (ADR 0025). For a
         NEW_ADVERT it has the time of the record the radio made from that advert. The radio pushes
         a contact's advert only when it is newer than its record (BaseChatMesh.cpp:133-136), which
         is no older than the one the gateway read (a client's write aside): a log no newer than
@@ -781,8 +781,8 @@ class Observer:
     def _keep(self, key: str, document: dict[str, Any]) -> None:
         """The document of a contact whose answers count as current, for a restart. Stored at once
         when one turns current or no longer (an expiry, an exclusion), or loses a position from
-        adverts (to a check without one, or to telemetry: a crash must not bring it back, design
-        6c D12), else at the next tick."""
+        adverts (to a check without one, or to telemetry: a crash must not bring it back,
+        ADR 0025), else at the next tick."""
         had = self._current.get(key)
         if document["telemetry_current"]:
             self._current[key] = document
@@ -878,7 +878,7 @@ class Observer:
 
 def _carries(tracked: Tracked) -> bool:
     """The contact's last checked advert carried its position: not the record's value while its
-    newest advert is unchecked (design 6c D4, D5), which raises no event."""
+    newest advert is unchecked (ADR 0025), which raises no event."""
     return tracked.advert is not None and tracked.advert.carries
 
 

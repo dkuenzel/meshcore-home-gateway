@@ -123,7 +123,7 @@ def test_the_index_is_sorted_by_last_heard_and_bounded() -> None:
     assert document["max"] == 510
     # companions whose record holds a position from their adverts: counted, the first keys listed
     assert (document["advert_position_total"], len(document["advert_position"])) == (510, 16)
-    # none checked yet: the record says their adverts may carry it (design 6c D5)
+    # none checked yet: the record says their adverts may carry it (ADR 0025)
     assert document["advert_carries_position"] == sorted(n.public_key for n in nodes)[:16]
     assert document["advert_carries_position_total"] == 510
 
@@ -410,7 +410,7 @@ def test_the_largest_contact_document_stays_within_the_attribute_bound() -> None
     assert 2048 < len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
 
 
-# --- positions in adverts (ADR 0018, design 6c) -------------------------------------------------
+# --- positions in adverts (ADR 0018, ADR 0025) -------------------------------------------------
 
 LAST = int(T) - 60  # the contact's clock at its newest advert, as the radio's record has it
 HERE = Position(53.55, 9.99)
@@ -431,7 +431,7 @@ def _check_keys(
 
 def test_a_checked_newest_advert_says_whether_it_carries_the_position() -> None:
     """`advert_position` stays the record's: it keeps a position after sharing stops, and 0, 0
-    clears it (design 6c D6, D8)."""
+    clears it (ADR 0025)."""
     assert _check_keys(AdvertCheck(LAST, True)) == (True, True, iso(LAST))
     assert _check_keys(AdvertCheck(LAST, False)) == (True, False, iso(LAST))  # an older one kept
     assert _check_keys(AdvertCheck(LAST, True), None) == (False, True, iso(LAST))  # 0, 0
@@ -442,15 +442,15 @@ def test_a_checked_newest_advert_says_whether_it_carries_the_position() -> None:
 
 def test_before_its_first_check_the_record_decides() -> None:
     """A position in the record came from an earlier advert, which may still carry it: it errs
-    to warn (design 6c D5)."""
+    to warn (ADR 0025)."""
     assert _check_keys(None) == (True, True, None)
     assert _check_keys(None, None) == (False, False, None)
 
 
 def test_while_its_newest_advert_is_not_checked_the_value_errs_to_warn() -> None:
     """A newer advert than the check (one the gateway missed, or made while it was stopped): the
-    last check's flag, or True when the record holds a position (design 6c D4; the scenarios S1
-    and S2 of the policy check: she started sharing, or her push was dropped)."""
+    last check's flag, or True when the record holds a position (ADR 0025: she
+    started sharing, or her push was dropped)."""
     older = LAST - 600
     assert _check_keys(AdvertCheck(older, False)) == (True, True, iso(older))
     assert _check_keys(AdvertCheck(older, False), None) == (False, False, iso(older))
@@ -460,7 +460,7 @@ def test_while_its_newest_advert_is_not_checked_the_value_errs_to_warn() -> None
 
 def test_a_check_newer_than_the_record_decides() -> None:
     """A companion the gateway heard and then added: the record the add wrote has no position and
-    a protected contact's the time 0 (design 6c F12, D27); the heard check decides."""
+    a protected contact's the time 0 (ADR 0025); the heard check decides."""
     assert _check_keys(AdvertCheck(LAST, False), last_advert=0) == (True, False, iso(LAST))
     mesh = Mesh()
     mesh.node_heard(Node(KEY, "Bob", 1, last_advert=LAST, position=HERE), Heard(T, "advert"))
@@ -472,15 +472,15 @@ def test_a_check_newer_than_the_record_decides() -> None:
 
 @pytest.mark.parametrize("node_type", [2, 3, 4])
 def test_other_node_types_are_not_checked(node_type: int) -> None:
-    """Repeaters, room servers and sensors share their position by design (design 6c D15)."""
+    """Repeaters, room servers and sensors share their position by design (ADR 0025)."""
     expected = (True, None, None)
     assert _check_keys(AdvertCheck(LAST, True), node_type=node_type) == expected
     assert _check_keys(None, node_type=node_type) == expected
 
 
 def test_the_index_lists_the_households_companions_whose_adverts_carry_the_position() -> None:
-    """Companions not excluded from telemetry (design 6c D7): a neighbour that shares on purpose
-    does not count. `advert_position` stays the records' (D6)."""
+    """Companions not excluded from telemetry (ADR 0025): a neighbour that shares on purpose
+    does not count. `advert_position` stays the records' (ADR 0025)."""
     mesh = Mesh()
     carrying = [f"{i:064x}" for i in range(20)]
     excluded, stopped, unchecked = "e1" * 32, "d1" * 32, "c1" * 32
@@ -505,7 +505,7 @@ def test_a_document_stored_by_1_1_0a2_is_restated_with_the_keys_of_the_check(
     node_type: int, position: Position | None
 ) -> None:
     """Before the first table read the stored document is all there is, and 1.1.0a2 stored it
-    without these keys: what the gateway says without a check (design 6c D5, D6)."""
+    without these keys: what the gateway says without a check (ADR 0025)."""
     state: TelemetryState | None = "answering" if node_type == 1 else None
     tracked = Tracked(Node(KEY, "Alice", node_type, last_advert=LAST, position=position))
     built = contact_document(tracked, telemetry_state=state)

@@ -78,3 +78,8 @@ imports no I/O modules (ADR 0007).
   `unattended-upgrades`, which installs them every day; a running service takes an updated
   Python or paho-mqtt at its next restart
   ([deployment.md](../deployment.md#4-operations), *Updates of the container*).
+* Amended on 2026-11-03 (security and architecture review, SUP-002, SUP-005, CODE-009): the
+  development tools from PyPI include Hypothesis (`requirements/dev.txt`); the release is built
+  with the build tools alone (`requirements/release.txt`), and pip-audit checks every lock file
+  (`requirements/audit.txt`). All are pinned by hash with the same cooldown, and none runs in
+  production.

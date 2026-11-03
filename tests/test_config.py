@@ -386,6 +386,38 @@ def test_rendering_rejects_lines_without_an_equals_sign() -> None:
         render_config("no equals sign")
 
 
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [("nan", "nan"), ("NaN", "nan"), ("inf", "inf"), ("Infinity", "inf"), ("-inf", "-inf")],
+)
+def test_a_number_that_is_no_number_is_refused_with_its_range(value: str, shown: str) -> None:
+    """CODE-014: `float()` reads "nan" and "inf", and so does TOML; the range check refuses them
+    (a comparison with NaN is false, every range has an upper end) and says what it takes."""
+    message = rf"airtime\.burst_s: must be between \S+ and 3600\.0, got {re.escape(shown)}$"
+    with pytest.raises(ConfigError, match=message):
+        render_config(ANSWERS + f"airtime.burst_s={value}\n")
+    rendered = render_config(ANSWERS)
+    assert "[airtime]" not in rendered
+    with pytest.raises(ConfigError, match=message):
+        parse_config(rendered + f"\n[airtime]\nburst_s = {shown}\n")
+
+
+@pytest.mark.parametrize(
+    "invisible",
+    ["\u2028", "\u2029", "\u200b", "\u200e", "\u202e", "\u2066", "\ufeff", "\u0085", "\U000e0001"],
+)
+def test_written_strings_show_invisible_characters_escaped(invisible: str) -> None:
+    """CODE-015: a line or paragraph separator, a bidirectional control, a zero-width or other
+    format character, which TOML would take as they are, is written as an escape that an editor
+    shows; the value reads back the same."""
+    answers = ANSWERS.replace("mqtt.username=bridge", f"mqtt.username=bri{invisible}dge")
+    text = render_config(answers)
+    line = next(line for line in text.split("\n") if line.startswith("username = "))
+    assert invisible not in line
+    assert line.isascii()
+    assert tomllib.loads(text)["mqtt"]["username"] == f"bri{invisible}dge"
+
+
 def test_a_tcp_radio_is_answered_with_its_acknowledgement() -> None:
     """The installer writes `radio.tcp_unauthenticated` once the user accepted the risk."""
     serial = "radio.transport=serial\nradio.device=/dev/serial/by-id/usb-Example_Radio-if00\n"

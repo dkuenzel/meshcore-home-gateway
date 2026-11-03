@@ -294,7 +294,7 @@ def test_a_look_alike_node_is_a_problem() -> None:
 
 def test_the_companion_position_sensor_follows_the_households_companions() -> None:
     """On while a companion not excluded from telemetry sends its position in its newest advert,
-    as the gateway checked it (design 6c D11). An index of 1.1.0a2 lacks the keys: `is number`
+    as the gateway checked it (ADR 0025). An index of 1.1.0a2 lacks the keys: `is number`
     and `.get` log nothing in Home Assistant (home-assistant/tests/test_adverts.py)."""
     sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["advert_position"]
     assert (sensor["p"], sensor["name"], sensor["device_class"], sensor["entity_category"]) == (

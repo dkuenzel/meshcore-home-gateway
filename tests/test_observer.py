@@ -931,8 +931,9 @@ def test_an_excluded_contact_gets_back_neither_its_readings_nor_its_telemetry_po
 def test_with_an_unreadable_exclusions_file_no_contact_gets_back_its_readings_or_telemetry_position(
     tmp_path: Path,
 ) -> None:
-    """The file may exclude anyone: as telemetry asks nobody then (D12), the history gives back
-    when contacts were heard and their advert positions only, while their records hold one."""
+    """The file may exclude anyone: as telemetry asks nobody then (design §6.11), the history
+    gives back when contacts were heard and their advert positions only, while their records
+    hold one."""
     history = History.open(tmp_path / "history.sqlite3")
     assert history is not None
     greenhouse, alice = GREENHOUSE.public_key.hex(), ALICE.public_key.hex()
@@ -960,7 +961,7 @@ def test_with_an_unreadable_exclusions_file_no_contact_gets_back_its_readings_or
     document = last(bus, f"{ROOT}/contacts/{greenhouse}")
     assert (document["position_source"], document["latitude"]) == ("advert", 53.56)  # its record
     document = last(bus, f"{ROOT}/contacts/{alice}")
-    # her record holds none: not where she is (design 6c D12)
+    # her record holds none: not where she is (ADR 0025)
     assert (document["position_source"], document["latitude"]) == (None, None)
     assert (document["heard_via"], document["heard_at"]) == ("message", iso(NOW - 5))
     history.close()
@@ -970,7 +971,7 @@ def test_an_excluded_contact_whose_record_holds_no_position_gets_no_advert_posit
     tmp_path: Path,
 ) -> None:
     """The record holds none (after an advert with 0, 0, or the gateway's own add): the history's
-    advert position is not known to be where the contact is (design 6c D12)."""
+    advert position is not known to be where the contact is (ADR 0025)."""
     history = History.open(tmp_path / "history.sqlite3")
     assert history is not None
     key = ALICE.public_key.hex()
@@ -1324,14 +1325,14 @@ def test_a_document_is_stored_at_once_when_it_turns_current_or_not_else_at_the_t
     assert on_disk(store) == {}
 
 
-# --- the check for positions in adverts (ADR 0018, design 6c) ----------------------------------
+# --- the check for positions in adverts (ADR 0018, ADR 0025) ----------------------------------
 
 SHARED = (50_123_456, 8_654_321)  # a position as an advert carries it, int32 x 10^-6
 MOVED = (50_124_000, 8_655_000)
 NO_DELAY = codec.TuningParams(0, 1000)  # the radio handles a packet in the pass that logs it
 DELAYED = codec.TuningParams(10_000, 1000)  # a receive delay: a flood waits up to 32 s
 DAVE = EmulatedContact(bytes.fromhex("d4" * 32), "Dave", last_advert=int(NOW) - 30)
-EXPORT_CONTACT = 17  # the stored copy of an advert: never asked for (design 6c D1)
+EXPORT_CONTACT = 17  # the stored copy of an advert: never asked for (ADR 0025)
 
 
 class Air:
@@ -1465,7 +1466,7 @@ def test_an_advert_that_carries_the_position_is_checked_then_announced(
 ) -> None:
     """Its log, the radio's push in the next frame, the table read with its time and position:
     the documents show the check, then one `position_in_advert` follows; a further advert that
-    carries one raises none. The check is kept in the state file (design 6c D2, D9, D14)."""
+    carries one raises none. The check is kept in the state file (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     caplog.set_level(logging.INFO, logger="meshcore_home_gateway.observer")
@@ -1492,7 +1493,7 @@ def test_an_advert_without_the_position_turns_the_check_off(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The radio's record keeps the old position (BaseChatMesh.cpp:193-196), the gateway no
-    longer shows it: an advert position goes, a telemetry position stays (design 6c D12). The
+    longer shows it: an advert position goes, a telemetry position stays (ADR 0025). The
     index drops them; no event when they stop."""
     observer, bus, air = checking(tmp_path, ALICE, GREENHOUSE)
     alice, greenhouse = ALICE.public_key.hex(), GREENHOUSE.public_key.hex()
@@ -1516,7 +1517,7 @@ def test_an_advert_without_the_position_turns_the_check_off(
 
 def test_an_advert_that_shares_0_0_carries_the_position(tmp_path: Path) -> None:
     """A companion that never had a position shares 0, 0: the record turns to none and an advert
-    position goes (design 6c D8, D12); its first located advert raises no second event."""
+    position goes (ADR 0025); its first located advert raises no second event."""
     _observer, bus, air = checking(tmp_path, GREENHOUSE)
     key = GREENHOUSE.public_key.hex()
     never = air.advert(GREENHOUSE, (0, 0))
@@ -1533,7 +1534,7 @@ def test_an_advert_that_shares_0_0_carries_the_position(tmp_path: Path) -> None:
 def test_an_excluded_companion_is_checked_and_announced_once_included(tmp_path: Path) -> None:
     """Not the household's (docs/companions.md): its document shows the check, the index and the
     event leave it out. Included again while its check carries, the event follows its document
-    and the index; one whose check carries none raises none (design 6c D7, D9). A repeater is
+    and the index; one whose check carries none raises none (ADR 0025). A repeater is
     not checked."""
     alice, bob, carol = (contact.public_key.hex() for contact in (ALICE, BOB, CAROL))
     exclusions = TelemetryExclusions(None)
@@ -1564,7 +1565,7 @@ def test_an_excluded_companion_is_checked_and_announced_once_included(tmp_path: 
 def test_a_restart_neither_raises_nor_clears_a_check(tmp_path: Path) -> None:
     """The checks come back from the state file before the first table read, which compares
     nothing: no event, the same documents. An advert position the history kept stays away while
-    the last check carried none (design 6c D12, D14)."""
+    the last check carried none (ADR 0025)."""
     history = History.open(tmp_path / "history.sqlite3")
     assert history is not None
     _observer, bus, air = checking(tmp_path, ALICE, GREENHOUSE, history=history)
@@ -1617,7 +1618,7 @@ def test_with_no_receive_delay_the_log_directly_before_the_push_decides(
 ) -> None:
     """A forged copy with her key and time, logged first, is not the frame before the push: her
     own log decides, with a warning. With a frame between log and push every copy must agree;
-    differing ones decide nothing (design 6c D2)."""
+    differing ones decide nothing (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     caplog.set_level(logging.WARNING, logger="meshcore_home_gateway.observer")
@@ -1643,7 +1644,7 @@ def test_with_a_receive_delay_the_frame_before_the_push_is_not_its_own_log(
     """A delayed advert is handled in a later pass, after whatever that pass logged
     (Dispatcher.cpp:138-145): a forged copy can be the frame before the push. So also while the
     radio did not report its delay, the copies must agree; they differ: nothing is learned and
-    the record decides (design 6c D2, D5)."""
+    the record decides (ADR 0025)."""
     alice = replace(ALICE, latitude_e6=SHARED[0], longitude_e6=SHARED[1])  # an earlier advert's
     _observer, bus, air = checking(tmp_path, alice, tuning=tuning)
     caplog.set_level(logging.WARNING, logger="meshcore_home_gateway.observer")
@@ -1662,7 +1663,7 @@ def test_an_advert_the_gateway_cannot_check_is_logged_as_not_checked(
     """One debug line for each advert the radio took that the gateway could not check, with the
     reason (hardware row 44): a push without its log; a newer advert in a read without a push;
     at a start, an advert made while the gateway was stopped. A new position in the record still
-    counts, and an unchecked advert keeps the last check (design 6c D3, D4)."""
+    counts, and an unchecked advert keeps the last check (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway.observer")
@@ -1737,7 +1738,7 @@ def test_an_advert_the_radio_took_before_the_read_that_adds_a_heard_companion_is
 
 def test_a_table_read_older_than_the_advert_waits_for_the_next_one(tmp_path: Path) -> None:
     """A read that started before the radio took the advert (radio/session.py:491-515) does not
-    show it yet: the advert waits for the next read, which decides (design 6c D2)."""
+    show it yet: the advert waits for the next read, which decides (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     older = table(*air.records.values())
@@ -1766,7 +1767,7 @@ def test_a_read_that_sent_her_record_before_her_next_advert_waits_for_the_next_o
     2388-2410): a read can show her record from before the advert whose push came during it,
     while the log of her advert before is still in the window. The read waits, the next read
     decides, with no "not checked" line: her newest advert's log is newer than the record, or,
-    with a receive delay, the record is no newer than at the read before (design 6c D2, §3.3)."""
+    with a receive delay, the record is no newer than at the read before (ADR 0025)."""
     held, before, after = positions  # her record's, her advert's before, her newest advert's
     alice = replace(ALICE, latitude_e6=held[0], longitude_e6=held[1]) if held else ALICE
     key = alice.public_key.hex()
@@ -1796,7 +1797,7 @@ def test_the_first_read_after_a_restart_waits_for_an_advert_pushed_during_it(
 ) -> None:
     """With a receive delay, or none reported, no log is tied to the push, and a run's first read
     has no read before. A read that shows her record from before the push, while her newer log is
-    in the window, still waits for the next one, which decides (design 6c §3.3)."""
+    in the window, still waits for the next one, which decides (ADR 0025)."""
     alice = replace(ALICE, latitude_e6=SHARED[0], longitude_e6=SHARED[1])
     key = alice.public_key.hex()
     _observer, bus, air = checking(tmp_path, alice, tuning=tuning)
@@ -1815,7 +1816,7 @@ def test_the_first_read_after_a_restart_waits_for_an_advert_pushed_during_it(
 
 def test_a_check_that_turns_to_carrying_raises_the_event(tmp_path: Path) -> None:
     """She was added after an advert without her position, or stopped sharing; then she shares
-    it: `position_in_advert` (design 6c D9, the guide's automation)."""
+    it: `position_in_advert` (ADR 0025, the guide's automation)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     stopped = air.advert(ALICE)
@@ -1831,7 +1832,7 @@ def test_a_check_that_turns_to_carrying_raises_the_event(tmp_path: Path) -> None
 def test_sharing_again_from_another_place_replaces_a_telemetry_position(tmp_path: Path) -> None:
     """She stopped sharing and telemetry gave her position. She shares again from another place:
     the changed position in her adverts replaces the telemetry one, as when her last check
-    carried one (design 6c D12, G26); the same place again does not."""
+    carried one (ADR 0025); the same place again does not."""
     observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     air.advert(ALICE, SHARED)
@@ -1877,7 +1878,7 @@ def test_a_logged_position_that_is_not_the_records_decides_nothing(
 ) -> None:
     """The radio copies the position of the advert it took into the record (BaseChatMesh.cpp:
     193-196): a flagged log with another one, directly before the push, is not that advert.
-    Nothing is learned, with a warning (design 6c §3.3)."""
+    Nothing is learned, with a warning (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     caplog.set_level(logging.WARNING, logger="meshcore_home_gateway.observer")
@@ -1895,7 +1896,7 @@ def test_a_logged_position_that_is_not_the_records_decides_nothing(
 
 def test_a_logged_advert_without_its_push_decides_nothing(tmp_path: Path) -> None:
     """Anyone can transmit a log (unverified, Dispatcher.cpp:199): without the radio's push it is
-    never trusted, also when a read shows its time; a new position in the record is (D3)."""
+    never trusted, also when a read shows its time; a new position in the record is (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     air.advert(ALICE, pushed=False)
@@ -1920,7 +1921,7 @@ def test_the_signal_of_an_advert_comes_from_its_own_log(tmp_path: Path) -> None:
     also when the push is read late: its hops and SNR. Any other log is another packet (a late
     copy of an older advert, a forged one): without its own log a push takes no signal, as an
     advert without any log; a NEW_ADVERT's log only with the record's time. With a delay, or one
-    not known, a log of the key within 10 s, as before (design 6c D13)."""
+    not known, a log of the key within 10 s, as before (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     first = ALICE.last_advert + 60
@@ -1962,7 +1963,7 @@ def test_a_log_no_newer_than_the_record_read_gives_a_push_no_signal(tmp_path: Pa
     (BaseChatMesh.cpp:133-136), which is at least the one the gateway read. Her newest advert is
     too long for a frame, and a late copy of the advert the gateway read is the frame directly
     before its push: that copy gives no signal. Her next advert's own log gives its signal, also
-    before the gateway read the record of the one before (design 6c D13)."""
+    before the gateway read the record of the one before (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = ALICE.public_key.hex()
     read = air.advert(ALICE)
@@ -1985,7 +1986,7 @@ def test_a_log_no_newer_than_the_record_read_gives_a_push_no_signal(tmp_path: Pa
 def test_a_heard_nodes_signal_comes_from_its_own_log(tmp_path: Path) -> None:
     """A NEW_ADVERT carries the record made from its advert: while the receive delay is 0 the
     log directly before it is its own only with the record's time. A late copy of an older
-    advert there gives no signal (design 6c D13)."""
+    advert there gives no signal (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     key = DAVE.public_key.hex()
     older = DAVE.last_advert + 60
@@ -2005,7 +2006,7 @@ def test_a_heard_nodes_signal_comes_from_its_own_log(tmp_path: Path) -> None:
 
 def test_with_a_receive_delay_a_log_up_to_40_s_before_the_push_counts(tmp_path: Path) -> None:
     """A flood waits at most 32 s in the radio's queue (Dispatcher.cpp:11): a log 35 s before the
-    push decides, one 45 s before does not (design 6c D2)."""
+    push decides, one 45 s before does not (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE, BOB, tuning=DELAYED)
     alice = air.advert(ALICE, delay_s=35)
     air.advert(BOB, delay_s=45)
@@ -2016,7 +2017,7 @@ def test_with_a_receive_delay_a_log_up_to_40_s_before_the_push_counts(tmp_path: 
 
 def test_a_contact_that_leaves_keeps_its_check_only_as_a_heard_node(tmp_path: Path) -> None:
     """Its stored check and its pending advert go; the heard node it becomes keeps the time and
-    flag of its check, never a position, and the add takes it back (design 6c D14, D27)."""
+    flag of its check, never a position, and the add takes it back (ADR 0025)."""
     observer, bus, air = checking(tmp_path, ALICE, BOB)
     key = ALICE.public_key.hex()
     shared = air.advert(ALICE, SHARED)
@@ -2038,7 +2039,7 @@ def test_a_contact_that_leaves_keeps_its_check_only_as_a_heard_node(tmp_path: Pa
 
 def test_an_exclusion_brings_back_no_position_the_adverts_no_longer_carry(tmp_path: Path) -> None:
     """Excluded, a companion's telemetry position goes, and its record's takes the place only
-    while its adverts carry it (6b's open point n5, design 6c D12)."""
+    while its adverts carry it (ADR 0025)."""
     observer, bus, air = checking(tmp_path, GREENHOUSE)
     key = GREENHOUSE.public_key.hex()
     stopped = air.advert(GREENHOUSE)  # its record keeps the position of an earlier advert
@@ -2069,7 +2070,7 @@ def test_a_kept_document_that_loses_its_advert_position_is_stored_at_once(
     her adverts. When that goes (a check that carries none, an advert that shares 0, 0, or a
     position from telemetry), the document is stored at once, not at the tick: after a stop
     without a tick (a crash), the next start brings back no place she stopped sharing, also while
-    the radio stays away (design 6c D12, ADR 0024)."""
+    the radio stays away (ADR 0025, ADR 0024)."""
     key = ALICE.public_key.hex()
     _observer, bus, air = checking(tmp_path, ALICE, current=True)
     air.observer.telemetry_state = lambda _key: state
@@ -2120,8 +2121,8 @@ def test_a_companion_heard_before_it_is_added_starts_checked(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The gateway adds a heard node without a position and with its advert's time, which the
-    radio then refuses as not newer (F12): the advert its NEW_ADVERT carried is the check, and
-    the event follows `added` (design 6c D27, D9). A position in the record it made tells also
+    radio then refuses as not newer: the advert its NEW_ADVERT carried is the check, and
+    the event follows `added` (ADR 0025). A position in the record it made tells also
     without a log. A heard node keeps no position, a heard repeater no check; a stranger's
     differing copy is only a debug line."""
     observer, bus, air = checking(tmp_path, ALICE)
@@ -2161,9 +2162,9 @@ def test_a_companion_heard_before_it_is_added_starts_checked(
 
 
 def test_the_check_of_an_older_advert_does_not_replace_a_newer_one(tmp_path: Path) -> None:
-    """Bob was heard, then added with no advert time (a protected contact the profile adds,
-    F12); his next advert is older than the one checked (his clock went back): the check of the
-    newer advert stays, without an event (design 6c §3.2, D27)."""
+    """Bob was heard, then added with no advert time (a protected contact the profile adds); his
+    next advert is older than the one checked (his clock went back): the check of the newer
+    advert stays, without an event (ADR 0025)."""
     _observer, bus, air = checking(tmp_path, ALICE)
     heard = DAVE.last_advert + 60
     air.heard(DAVE, timestamp=heard)
@@ -2180,7 +2181,7 @@ def test_the_check_of_an_older_advert_does_not_replace_a_newer_one(tmp_path: Pat
 def test_a_contact_the_radio_added_by_itself_is_checked_from_its_push(tmp_path: Path) -> None:
     """A radio that adds a node by itself pushes ADVERT before the gateway's table has the
     contact (BaseChatMesh.cpp:156, 200), and firmware 1.11 sends NEW_ADVERT for a contact it has
-    just added: either push is checked at the next table read, with one event (design 6c D9)."""
+    just added: either push is checked at the next table read, with one event (ADR 0025)."""
     observer, bus, air = checking(tmp_path, ALICE)
     frank = EmulatedContact(bytes.fromhex("f6" * 32), "Frank", last_advert=int(NOW) - 20)
     air.records[frank.public_key] = replace(frank)  # the radio added him
@@ -2202,7 +2203,7 @@ def test_a_contact_the_radio_added_by_itself_is_checked_from_its_push(tmp_path: 
 def test_a_logged_position_is_held_only_while_it_can_decide(tmp_path: Path) -> None:
     """A log goes after 40 s, a pushed advert without a read after 70 s: at the next log, push
     or read, and on a quiet mesh at the tick. No position from a log is held for longer than
-    about two minutes, and no more than 64 logs (design 6c §3.1)."""
+    about two minutes, and no more than 64 logs (ADR 0025)."""
     observer, bus, air = checking(tmp_path, ALICE, BOB)
     for timestamp in range(int(NOW), int(NOW) + MAX_LOGGED + 5):  # a burst, forged ones perhaps
         air.log(ALICE, timestamp, SHARED)
@@ -2236,7 +2237,7 @@ def test_a_logged_position_is_held_only_while_it_can_decide(tmp_path: Path) -> N
 def test_after_an_advert_the_gateway_missed_the_value_errs_to_warn(tmp_path: Path) -> None:
     """The last check carried none; while the gateway was stopped the companion adverted, and
     its record holds a position: true from the record, the check's time stays, no event, no
-    advert position (design 6c D4, D12)."""
+    advert position (ADR 0025)."""
     key = ALICE.public_key.hex()
     stopped = ALICE.last_advert
     AdvertChecks(JsonStateFile(tmp_path / "state.json")).replace({key: AdvertCheck(stopped, False)})
@@ -2246,7 +2247,7 @@ def test_after_an_advert_the_gateway_missed_the_value_errs_to_warn(tmp_path: Pat
     assert bus.payloads(f"{ROOT}/contact") == []
 
 
-# --- the check end to end, with the radio's frames (design 6c §8.3) ----------------------------
+# --- the check end to end, with the radio's frames (ADR 0025) ----------------------------
 
 
 def with_checks(
@@ -2279,7 +2280,7 @@ def test_a_companion_shares_its_position_in_adverts_then_stops(
 ) -> None:
     """The event and the index, then both cleared once an advert carries none; the radio's
     record keeps the old position, and so does `advert_position`. The check runs with telemetry
-    on or off (design 6c D16), also with a receive delay (its one log decides, D2), and sends no
+    on or off (ADR 0025), also with a receive delay (its one log decides), and sends no
     command."""
     radio = EmulatedRadio(contacts=[ALICE], tuning=(delay, 1000))
     key = ALICE.public_key.hex()
@@ -2311,7 +2312,7 @@ def test_a_companion_shares_its_position_in_adverts_then_stops(
 
 def test_the_buttons_advert_of_a_companion_that_never_had_a_position(tmp_path: Path) -> None:
     """The device's button sends zero hop (no path: `hops` null), and sharing without ever having
-    had a position, 0, 0: the advert carries it, the record turns to none (design 6c D8)."""
+    had a position, 0, 0: the advert carries it, the record turns to none (ADR 0025)."""
     radio = EmulatedRadio(contacts=[GREENHOUSE])  # its record holds an earlier advert's position
     key = GREENHOUSE.public_key.hex()
 
@@ -2335,7 +2336,7 @@ def test_the_buttons_advert_of_a_companion_that_never_had_a_position(tmp_path: P
 def test_a_forged_copy_logged_before_the_real_advert(tmp_path: Path, delay: int) -> None:
     """Her key and time without the position, logged first. With no receive delay her own log is
     the frame before the push and decides; with a delay the copies differ and only a new
-    position in her record tells (design 6c D2, D3)."""
+    position in her record tells (ADR 0025)."""
     alice = replace(ALICE, latitude_e6=SHARED[0], longitude_e6=SHARED[1])  # an earlier advert's
     radio = EmulatedRadio(contacts=[alice], tuning=(delay, 1000))
     key = alice.public_key.hex()
@@ -2365,7 +2366,7 @@ def test_a_forged_copy_logged_before_the_real_advert(tmp_path: Path, delay: int)
 
 def test_with_a_frame_between_log_and_push_the_logs_of_the_advert_decide(tmp_path: Path) -> None:
     """A frame the radio writes between an advert's log and its push (a receive delay above 0):
-    the logs with the record's time agree and decide (design 6c D2)."""
+    the logs with the record's time agree and decide (ADR 0025)."""
     radio = EmulatedRadio(contacts=[ALICE, BOB])
     key = ALICE.public_key.hex()
 
@@ -2389,7 +2390,7 @@ def test_with_a_frame_between_log_and_push_the_logs_of_the_advert_decide(tmp_pat
 def test_an_advert_whose_push_was_dropped_counts_only_by_a_new_position(tmp_path: Path) -> None:
     """Over TCP the radio drops a frame while its queue is full (SerialWifiInterface.cpp:21-40):
     the next table read for another reason shows her newer advert, which only a new position in
-    her record can confirm (design 6c D3, D4)."""
+    her record can confirm (ADR 0025)."""
     radio = EmulatedRadio(contacts=[ALICE, BOB])
     key = ALICE.public_key.hex()
 
@@ -2416,8 +2417,8 @@ def test_an_advert_whose_push_was_dropped_counts_only_by_a_new_position(tmp_path
 
 def test_an_advert_too_long_for_the_packet_log_is_checked_by_the_record(tmp_path: Path) -> None:
     """58 one-byte hashes leave no room in a log frame for Alice's advert with a position
-    (MyMesh.cpp:291-302): no log, no signal; the new position in her record tells (design 6c F1,
-    D3)."""
+    (MyMesh.cpp:291-302): no log, no signal; the new position in her record tells
+    (ADR 0025)."""
     radio = EmulatedRadio(contacts=[ALICE])
     key = ALICE.public_key.hex()
 
@@ -2438,8 +2439,8 @@ def test_an_advert_too_long_for_the_packet_log_is_checked_by_the_record(tmp_path
 def test_restarts_raise_nothing_and_an_advert_while_stopped_errs_to_warn(tmp_path: Path) -> None:
     """A restart between two adverts changes nothing. An advert with a position made while the
     gateway was stopped is not checked: `advert_checked_at` stays older than `last_advert_at`,
-    the value is the record's (true), no event, and the old advert position stays away (design
-    6c D4, D12, D14)."""
+    the value is the record's (true), no event, and the old advert position stays away
+    (ADR 0025)."""
     histories: list[History] = []
     key = ALICE.public_key.hex()
     radios = [EmulatedRadio(contacts=[ALICE])]
@@ -2481,9 +2482,9 @@ def test_restarts_raise_nothing_and_an_advert_while_stopped_errs_to_warn(tmp_pat
 
 
 def test_a_companion_heard_and_then_added_is_checked_at_the_add(tmp_path: Path) -> None:
-    """Its NEW_ADVERT and log are checked at once; the gateway's add writes no position (F12): at
+    """Its NEW_ADVERT and log are checked at once; the gateway's add writes no position: at
     the table read that adds it, it carries from that advert, and one event follows `added`
-    (design 6c D27)."""
+    (ADR 0025)."""
     radio = EmulatedRadio(contacts=[ALICE])
     key = DAVE.public_key.hex()
 

@@ -8,7 +8,7 @@ heard keeps none (privacy, ADR 0016).
 Each companion keeps the last check of its adverts (ADR 0018, `core.adverts`): whether the newest
 advert the gateway checked carried its position. A position from adverts is shown only while the
 radio's record holds one and that check, if any, carried one: the record keeps a position after
-the companion stops sharing it (design 6c D12). A heard node keeps the time and flag of its
+the companion stops sharing it (ADR 0025). A heard node keeps the time and flag of its
 checked advert, never a position.
 """
 
@@ -217,7 +217,7 @@ class Mesh:
         """A contact that left the table is a heard node again while it counts as recently heard
         (so it can be added back), without what only a contact has: flags, path, position. It
         keeps the time and flag of its checked advert, so that it is checked when added back
-        (design 6c D27). In its place by the time it was heard; then the limits apply."""
+        (ADR 0025). In its place by the time it was heard; then the limits apply."""
         if tracked.heard is None or at - tracked.heard.at > self._node_ttl_s:
             return
         node = replace(tracked.node, flags=0, path_hops=None, position=None)
@@ -234,7 +234,7 @@ class Mesh:
         adverts while the record holds none or the contact no longer shares it (`_shared`): an
         advert fix goes then, a telemetry fix stays."""
         position = tracked.node.position
-        if position is None or not _shared(tracked):  # design 6c D12: no position from adverts
+        if position is None or not _shared(tracked):  # ADR 0025: no position from adverts
             if _from_advert(tracked.fix):
                 tracked.fix = None
             return
@@ -253,7 +253,7 @@ class Mesh:
         self, key: str, check: AdvertCheck, at: float, previous: Node | None = None
     ) -> bool:
         """A companion's advert was checked (`core.adverts`): the check replaces the one held,
-        unless it is older, and the advert fix follows `_shared` (design 6c D12): dropped when the
+        unless it is older, and the advert fix follows `_shared` (ADR 0025): dropped when the
         check carries none, the record's position when it carries one and the contact has no fix
         or an advert fix elsewhere, at its advert's time. A position that changed since
         `previous`, the record of the read before, replaces a telemetry fix too, at the read's
@@ -328,7 +328,7 @@ class Mesh:
         """The contact was excluded from telemetry: its readings, `position_received_at` and a
         position from telemetry are forgotten, on the contact or in what is kept for its first
         table read. The position its record carries takes the place, as at a first table read,
-        while the contact still shares it (design 6c D12). `heard` stays. True if anything
+        while the contact still shares it (ADR 0025). `heard` stays. True if anything
         changed."""
         changed = False
         if (kept := self._restored.get(key)) is not None:
@@ -379,8 +379,8 @@ class Mesh:
 
     def advert_heard(self, key: str, check: AdvertCheck) -> None:
         """A heard chat node's advert was checked from its NEW_ADVERT (`core.adverts.heard`):
-        kept with the heard node, unless older, for the table read that adds it (design 6c
-        D27)."""
+        kept with the heard node, unless older, for the table read that adds it
+        (ADR 0025)."""
         tracked = self.nodes.get(key)
         if tracked is not None and tracked.node.node_type == COMPANION:
             tracked.advert = newer_check(tracked.advert, check)
@@ -415,7 +415,7 @@ def _from_advert(fix: Fix | None) -> bool:
 def _shared(tracked: Tracked) -> bool:
     """The record's position is one the contact still shares in its adverts: the record holds
     one, and the last advert the gateway checked, if any, carried one. A newer advert that could
-    not be checked changes nothing (design 6c D4)."""
+    not be checked changes nothing (ADR 0025)."""
     check = tracked.advert
     return tracked.node.position is not None and (check is None or check.carries)
 

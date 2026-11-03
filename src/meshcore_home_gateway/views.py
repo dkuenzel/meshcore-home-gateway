@@ -91,7 +91,7 @@ def advert_carries_position(tracked: Tracked) -> bool | None:
     flag of its newest advert, as the gateway checked it. While its newest advert is not checked
     (none yet, or a newer one the gateway missed), the last check's flag, or True when the
     radio's record holds a position from an earlier advert, which it may still send: it errs to
-    warn (design 6c D4, D5; ADR 0025). None for other node types, which share theirs by design and
+    warn (ADR 0025). None for other node types, which share theirs by design and
     are not checked."""
     node, check = tracked.node, tracked.advert
     if node.node_type != NodeType.CHAT:

@@ -543,6 +543,9 @@ class CompanionSession:
         await self._events.put(ContactsRead(records, self._wall()))
 
     async def refresh_channels(self, max_channels: int) -> None:
+        """The names of the radio's channels: every slot it reports (`max_channels` of
+        DEVICE_INFO), one command each. A round trip per slot at every connect, paid because
+        connects are rare and a channel may have changed while the gateway was away (CODE-011)."""
         channels: dict[int, str] = {}
         for index in range(max_channels):
             frame = await self._expect(

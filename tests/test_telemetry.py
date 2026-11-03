@@ -758,7 +758,7 @@ def test_a_debt_carried_over_is_paid_back_also_before_the_first_decision() -> No
     assert first - 1000.0 == pytest.approx((exported.mesh_debt_s + 0.887) / (90.0 / 3600), abs=0.5)
 
 
-# --- states and expiry (slice 6b, ADR 0024) ------------------------------------------------------
+# --- states and expiry (ADR 0024) ------------------------------------------------------
 
 
 def current_s(s: Scheduler, key: str, now: float) -> float:

@@ -217,7 +217,7 @@ BROKEN = [
 
 @pytest.mark.real_catalogs
 def test_a_broken_translation_gives_english() -> None:
-    """Nothing a translator writes can break a command (D7)."""
+    """Nothing a translator writes can break a command (design §6.12)."""
     broken = compiled("de", BROKEN)
     assert broken.text("no host in {text!r}", text="gate") == "no host in 'gate'"
     assert broken.plural("{count} sender", "{count} senders", 1) == "1 sender"
@@ -332,7 +332,8 @@ def test_the_hostile_catalog_shows_english(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_a_text_missing_from_the_template_fails_the_test() -> None:
-    """tests/conftest.py's strict catalog: a text nobody marked cannot pass the tests (D13)."""
+    """tests/conftest.py's strict catalog: a text nobody marked cannot pass the tests
+    (design §6.12)."""
     with pytest.raises(pytest.fail.Exception, match="not in the template"):
         i18n.ENGLISH.text("a text nobody marked")
     with pytest.raises(pytest.fail.Exception, match=r"home assistant.*not in the template"):

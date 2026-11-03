@@ -77,7 +77,7 @@ def test_a_log_whose_time_the_record_does_not_show_is_not_trusted() -> None:
 def test_a_forged_copy_before_the_real_log_does_not_decide() -> None:
     """While the receive delay is 0 the radio logs and handles a packet in one pass
     (Dispatcher.cpp:191-256): a forged copy with the same time is logged in another one and is
-    never the frame directly before the push (design D2)."""
+    never the frame directly before the push (ADR 0025)."""
     forged, real = log(10, carries=False), log(11)
     assert outcome(push([forged, real], 12), record(), None, T + 2) == Outcome(
         AdvertCheck(TA, True), problem="copies_differ"
@@ -91,7 +91,7 @@ def test_a_forged_copy_before_the_real_log_does_not_decide() -> None:
 def test_a_late_copy_of_an_older_advert_is_never_adjacent() -> None:
     """Each flood copy is logged and only the first is handled: a late copy of Alice's advert
     comes after its push. At her next advert its own log is the frame before the push and gives
-    the signal (design D13), not the late copy."""
+    the signal (ADR 0025), not the late copy."""
     first = log(10, TA - 60, at=T - 30, hops=1)
     late = log(12, TA - 60, at=T - 29, hops=3)  # frame 11 was the push of the first
     newest = log(13, carries=False, hops=0)
@@ -223,7 +223,7 @@ def test_a_new_record_position_needs_a_newer_advert() -> None:
 
 def test_a_new_record_position_wins_over_a_log_without_the_flag() -> None:
     """Two adverts between two reads, the first with the flag: the record took its position, the
-    newest log has none. It errs to warn (design D3)."""
+    newest log has none. It errs to warn (ADR 0025)."""
     pushed = push([log(10, carries=False)], 11)
     assert outcome(pushed, record(), record(TA - 60, FIELD), T + 2) == Outcome(
         AdvertCheck(TA, True)
@@ -286,7 +286,7 @@ def test_outcome_is_total() -> None:
 
 def test_a_heard_record_with_a_position_is_a_check_that_carries() -> None:
     """NEW_ADVERT carries the record the radio made from this advert alone, lat/lon only with the
-    flag (BaseChatMesh.cpp:108-120): a position in it is evidence on its own (design D27)."""
+    flag (BaseChatMesh.cpp:108-120): a position in it is evidence on its own (ADR 0025)."""
     assert heard(push([], 11), record()) == Outcome(AdvertCheck(TA, True))
     unflagged = push([log(10, carries=False)], 11)  # a forged log: the radio took the flag
     assert heard(unflagged, record()) == Outcome(AdvertCheck(TA, True))
@@ -305,7 +305,7 @@ def test_a_heard_advert_is_checked_by_its_adjacent_log() -> None:
 
 
 def test_fresh_drops_old_and_future_entries() -> None:
-    """A logged position is held only while it can still decide (design §3.1)."""
+    """A logged position is held only while it can still decide (ADR 0025)."""
     pending = LOGGED_S + WAIT_S
     assert fresh(T, T, LOGGED_S)
     assert fresh(T, T + 40, LOGGED_S)

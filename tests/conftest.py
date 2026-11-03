@@ -74,8 +74,8 @@ def _template_keys() -> frozenset[str]:
 def strict_catalogs(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """A text looked up in a catalog that the committed template lacks fails the test, in every
     language, English included: a text shown later must be marked (N_, N_ha) where it is written,
-    and `make translations` must have seen it (D13). Tests marked `real_catalogs` look up texts
-    of their own."""
+    and `make translations` must have seen it (design §6.12). Tests marked `real_catalogs` look
+    up texts of their own."""
     if request.node.get_closest_marker("real_catalogs") is not None:
         return
     lookup = i18n.Translator._lookup
@@ -96,7 +96,7 @@ def strict_catalogs(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPa
 
 @pytest.fixture
 def msgfmt() -> str:
-    """GNU msgfmt, for the tests that compare our catalogs with GNU gettext's (D22)."""
+    """GNU msgfmt, for the tests that compare our catalogs with GNU gettext's (design §6.12)."""
     if SKIP_GETTEXT:
         pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_GETTEXT_TESTS=1")
     found = shutil.which("msgfmt")

@@ -16,7 +16,7 @@ LOCALE = Path(__file__).resolve().parent.parent / "src" / "meshcore_home_gateway
 POLISH = "nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);"
 
 # A context, Polish plurals, an empty and a fuzzy entry; no partly translated plural entry, where
-# GNU's output differs from ours on purpose (D5).
+# GNU's output differs from ours on purpose (ADR 0027).
 GOLDEN_PO = r"""msgid ""
 msgstr ""
 "Project-Id-Version: meshcore-home-gateway\n"
@@ -230,7 +230,7 @@ def test_fuzzy_and_untranslated_are_left_out() -> None:
 
 
 def test_compiler_matches_gnu_msgfmt(msgfmt: str, tmp_path: Path) -> None:
-    """Every shipped catalog and the golden fixture's source, byte for byte (D5, D22)."""
+    """Every shipped catalog and the golden fixture's source, byte for byte (ADR 0027)."""
     golden = tmp_path / "golden.po"
     golden.write_text(GOLDEN_PO, encoding="utf-8")
     for path in [golden, *sorted(LOCALE.glob("*.po"))]:

@@ -699,7 +699,7 @@ def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file
 def test_the_service_keeps_the_advert_checks_in_its_state_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """So that a restart neither raises nor clears a check (design 6c D14)."""
+    """So that a restart neither raises nor clears a check (ADR 0025)."""
     bridges: list[bridge_module.Bridge] = []
 
     async def stopped(bridge: bridge_module.Bridge, _stop: asyncio.Event) -> None:

@@ -244,7 +244,7 @@ def test_the_event_of_the_advert_check_comes_from_the_scenarios_advert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`position_in_advert` is raised by the check of Alice's advert in _published(): its log,
-    the radio's push and the table read that shows it (design 6c §5.12). If the check learns
+    the radio's push and the table read that shows it (ADR 0025). If the check learns
     nothing from it, no path emits the event type, and the snapshot is refused."""
     monkeypatch.setattr(adverts, "outcome", lambda *_: adverts.Outcome())
     emitted = ["added", "excluded", "failed", "hidden", "included", "refused", "removed", "shown"]
@@ -313,7 +313,7 @@ def test_contacts_have_the_node_types_of_the_wire(current: dict[str, Any]) -> No
 
 
 def test_the_classes_of_home_assistant_components_are_recorded(current: dict[str, Any]) -> None:
-    """A class removed or changed ends statistics and unit conversions (D30 of slice 6b): every
+    """A class removed or changed ends statistics and unit conversions (design §6.7): every
     numeric telemetry sensor measures, an enum has no state class."""
     gateway, contact = (current["homeassistant"]["components"][n] for n in ("gateway", "contact"))
     readings = {name: c for name, c in contact.items() if lpp.parse_component(name)}

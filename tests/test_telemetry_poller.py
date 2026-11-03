@@ -1763,7 +1763,7 @@ def test_the_first_table_read_after_a_restart_forgets_no_schedule(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The contacts of the last run are not added: her state, her due time and her last answer
-    stay (D9)."""
+    stay (design §6.11)."""
     store = JsonStateFile(tmp_path / "state.json")
 
     async def main() -> None:

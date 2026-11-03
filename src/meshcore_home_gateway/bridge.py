@@ -276,6 +276,10 @@ class AckWaiter:
         if future is not None and not future.done():
             future.set_result(round_trip_ms)
             return
+        # No count bound, and none needed (CODE-012): the radio pushes SEND_CONFIRMED only for a
+        # code in its table of the 8 latest expected acknowledgements (docs/protocol.md,
+        # MyMesh.cpp:424-434), all of them codes of this gateway's own attempts; the keys are
+        # those of the attempts within RECENT_ACK_S, which the airtime budget limits.
         self._recent[ack] = (self._now(), round_trip_ms)
         cutoff = self._now() - RECENT_ACK_S
         self._recent = {k: v for k, v in self._recent.items() if v[0] >= cutoff}
@@ -372,7 +376,8 @@ class Bridge:
         self._activity = OutboxActivity(monotonic, self._queue.qsize)  # telemetry yields to it
         self._telemetry = self._telemetry_poller(telemetry_records, telemetry_lanes)
         if self._telemetry is None and (records := telemetry_records) is not None:
-            # D13 holds when telemetry is on again: the saved schedule forgets the answers
+            # so when telemetry is on again, the saved schedule has forgotten the answers
+            # (design §6.11)
             self.observer.on_telemetry_exclusion.append(lambda key, _: records.forget(key))
             self.observer.on_contact_added.append(records.forget)
         self._budget, self._airtime = self._message_budget(ledger)
@@ -857,6 +862,8 @@ class Bridge:
             except RadioError as exc:
                 log.info("delivery %s: attempt %d interrupted (%s)", item.id, item.sent + 1, exc)
                 item.acks.shortest_ms = 0.0  # its repeat has the same code: which copy is answered?
+                # no attempt is counted, and the loop still ends (CODE-017): once `deadline` has
+                # passed, _radio_until returns None, and _attempt refuses to send after it
                 continue
             if outcome is not None:
                 self._deliver_event(outcome)

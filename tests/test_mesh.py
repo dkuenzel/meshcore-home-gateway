@@ -433,7 +433,7 @@ def test_a_contact_that_leaves_the_table_loses_its_readings() -> None:
     assert (tracked.readings, tracked.position_received_at, tracked.fix) == (None, None, None)
 
 
-# --- the check for positions in adverts (design 6c) -----------------------------------------------
+# --- the check for positions in adverts (ADR 0025) -----------------------------------------------
 
 SHARED = Node(ALICE.public_key, "Alice", 1, last_advert=int(T) - 600, position=HOME)
 
@@ -451,7 +451,7 @@ def test_the_newer_check_is_the_one_of_the_newer_advert() -> None:
 
 def test_a_check_without_a_position_drops_an_advert_fix_and_keeps_a_telemetry_fix() -> None:
     """The radio's record keeps a position after sharing stops (BaseChatMesh.cpp:193-196): it is
-    shown only while the last checked advert carried one (design D12)."""
+    shown only while the last checked advert carried one (ADR 0025)."""
     mesh = Mesh()
     key = ALICE.public_key
     mesh.contacts_read([SHARED], T)
@@ -497,7 +497,7 @@ def test_a_check_with_a_position_brings_the_record_position_back_at_the_adverts_
 def test_a_check_that_carries_a_changed_position_replaces_a_telemetry_fix() -> None:
     """The table read takes the record before its advert is checked: under the check before
     (none carried) the changed position was not shared. The check that carries it replaces a
-    telemetry fix as a changed advert position does (design 6c G26); an unchanged one does not."""
+    telemetry fix as a changed advert position does (ADR 0025); an unchanged one does not."""
     mesh = Mesh()
     key = ALICE.public_key
     mesh.contacts_read([SHARED], T)
@@ -562,7 +562,7 @@ def test_only_companions_are_checked() -> None:
 
 def test_an_unchecked_newer_advert_does_not_bring_an_old_position_back() -> None:
     """The last check decides, whatever advert it was of: a newer advert the gateway could not
-    check (its report dropped, the gateway stopped) says nothing (design D4, D12)."""
+    check (its report dropped, the gateway stopped) says nothing (ADR 0025)."""
     mesh = Mesh()
     key = ALICE.public_key
     mesh.contacts_read([SHARED], T)
@@ -585,7 +585,7 @@ def test_an_unchecked_newer_advert_does_not_bring_an_old_position_back() -> None
 def test_a_record_without_a_position_drops_an_advert_fix() -> None:
     """After an advert that shares 0, 0 (a companion that never had a position) or the gateway's
     own add, the record holds none: the old place is not known to be current, also for a contact
-    never checked (design D12)."""
+    never checked (ADR 0025)."""
     mesh = Mesh()
     key = ALICE.public_key
     repeater = Node(BOB.public_key, "Bob", 2, last_advert=int(T) - 600, position=FIELD)
@@ -602,7 +602,7 @@ def test_a_record_without_a_position_drops_an_advert_fix() -> None:
 
 def test_an_exclusion_falls_back_to_the_record_only_while_it_is_shared() -> None:
     """A contact excluded from telemetry gets its record's position back only while its adverts
-    carry it (6b's open point n5)."""
+    carry it (ADR 0025)."""
     mesh = Mesh()
     key = ALICE.public_key
     mesh.contacts_read([SHARED], T)
@@ -640,7 +640,7 @@ def test_a_stored_check_applies_at_the_first_read() -> None:
 
 def test_a_contact_that_leaves_keeps_its_check_as_a_heard_node() -> None:
     """A time and a flag, never a position: a contact removed and added again through the
-    gateway keeps its check (design D27)."""
+    gateway keeps its check (ADR 0025)."""
     mesh = Mesh()
     key = ALICE.public_key
     check = AdvertCheck(int(T) - 600, True)
@@ -671,7 +671,7 @@ def test_a_contact_that_is_no_longer_a_companion_drops_it() -> None:
 
 def test_a_heard_check_is_kept_without_a_position_and_taken_at_the_add() -> None:
     """A chat node's NEW_ADVERT is checked at once; the table read that adds it takes the newer
-    of that check and the one an earlier run stored (design D27)."""
+    of that check and the one an earlier run stored (ADR 0025)."""
     mesh = Mesh()
     carol = Node("c3" * 32, "Carol", 1, last_advert=int(T) - 60, position=HOME)
     heard = AdvertCheck(int(T) - 60, True)

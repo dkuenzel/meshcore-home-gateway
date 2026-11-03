@@ -337,7 +337,7 @@ def test_a_companion_gets_the_telemetry_switch_and_state_at_once(config: Config)
 @pytest.mark.parametrize("config", [TELEMETRY_ON, TELEMETRY_OFF], ids=["on", "off"])
 def test_every_companion_shows_whether_its_adverts_carry_its_position(config: Config) -> None:
     """At once: its document has a value from the first table read, also before the gateway
-    checked an advert, and the check runs with telemetry off too (design 6c D5, D10, D16). No
+    checked an advert, and the check runs with telemetry off too (ADR 0025). No
     entity category: a trigger aimed at the device skips entities that have one."""
     cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
     assert cmps["advert_position"] == {

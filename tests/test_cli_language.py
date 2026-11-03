@@ -68,7 +68,7 @@ def argparse_texts() -> set[tuple[str, str | None]]:
 
 
 def test_every_argparse_message_is_listed() -> None:
-    """A new Python may bring new words: `make translations` under it adds them (D10)."""
+    """A new Python may bring new words: `make translations` under it adds them (design §6.12)."""
     listed = {(msgid, plural) for msgid, plural in json.loads(LISTED.read_text(encoding="utf-8"))}
     assert argparse_texts() <= listed, "run make translations with this Python"
     _, template = read_po(TEMPLATE.read_text(encoding="utf-8"), TEMPLATE.name)
@@ -395,7 +395,7 @@ def test_look_alike_warnings_keep_english_in_str() -> None:
 
 
 def test_a_bad_sender_key_names_senders() -> None:
-    """config._commands tells the setting by the English text of the core's error (D11)."""
+    """config._commands tells the setting by the English text of the core's error (design §6.12)."""
     for setting, value in (("senders", "xyz"), ("words", "two words"), ("senders", "a b")):
         with pytest.raises(ConfigError) as caught:
             parse_config(MINIMAL + f'[commands]\n{setting} = ["{value}"]\n')
@@ -439,7 +439,7 @@ def test_a_text_inside_an_error_is_translated_inside_it(
     call: Callable[[], object], marked: str
 ) -> None:
     """The core's errors, the host's problem and the rule of IDs are texts of their own, which
-    the command line translates inside the configuration error (D11)."""
+    the command line translates inside the configuration error (design §6.12)."""
     with pytest.raises(ConfigError) as caught:
         call()
     assert _pseudo().render(caught.value.text) == marked
@@ -448,7 +448,7 @@ def test_a_text_inside_an_error_is_translated_inside_it(
 def test_language_setting_is_strict(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One of the languages this version ships, like log_level (D9); en by default."""
+    """One of the languages this version ships, like log_level (design §6.12); en by default."""
     assert parse_config(MINIMAL).homeassistant.language == "en"
     english = MINIMAL + '[homeassistant]\nlanguage = "en"\n'
     assert parse_config(english).homeassistant.language == "en"
@@ -482,7 +482,7 @@ def test_language_setting_is_strict(
 
 
 def test_the_default_device_name_is_one_constant() -> None:
-    """The names sent to Home Assistant translate the default device name (D18)."""
+    """The names sent to Home Assistant translate the default device name (design §6.12)."""
     assert configuration.DEFAULT_DEVICE_NAME == "MeshCore radio"
     assert HomeAssistantConfig().device_name == configuration.DEFAULT_DEVICE_NAME
     assert parse_config(MINIMAL).homeassistant.device_name == configuration.DEFAULT_DEVICE_NAME
@@ -932,7 +932,7 @@ def test_every_text_for_people_goes_through_the_catalog(
 ) -> None:
     """In the pseudo-language with wide letters every text the command line prints for people,
     also one shown inside another, has them: what is left in plain letters is the values the test
-    put in; and no text is shown with a field it did not fill (D13, D14)."""
+    put in; and no text is shown with a field it did not fill (design §6.12)."""
     _speak(monkeypatch, wide())
     lines = [
         line for text in SCENARIOS[scenario](tmp_path, monkeypatch) for line in text.splitlines()
@@ -979,7 +979,7 @@ def test_argparse_words_are_translated_and_restored(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """argparse's own words follow the language while main() runs, and are its own again after
-    it, also when argparse ends it with SystemExit (D10)."""
+    it, also when argparse ends it with SystemExit (design §6.12)."""
     words = vars(argparse)["_"], vars(argparse)["ngettext"]
     _speak(monkeypatch)
     helped = _main(["--help"])
@@ -1008,7 +1008,8 @@ def test_argparse_words_are_translated_and_restored(
 def test_argparse_stays_english_without_its_module_attributes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A Python whose argparse lacks `_` or `ngettext`: its words stay English, ours not (D10)."""
+    """A Python whose argparse lacks `_` or `ngettext`: its words stay English, ours not
+    (design §6.12)."""
     monkeypatch.delattr(argparse, "ngettext")
     with cli._speaking(pseudo()):
         text = cli._parser().format_help()
@@ -1031,7 +1032,7 @@ TEST_CATALOGS = {"xx": pseudo, "hostile": hostile, "percents": percents}
 @pytest.mark.parametrize("language", [*SHIPPED, *TEST_CATALOGS])
 def test_every_command_builds_and_helps_in_every_language(language: str) -> None:
     """argparse %-formats help texts, on 3.14 already when an argument is added: a translation
-    with a % its English text lacks must not break a command (D7, P6)."""
+    with a % its English text lacks must not break a command (design §6.12)."""
     catalog = TEST_CATALOGS.get(language)
     translator = i18n.translator(language) if catalog is None else catalog()
     with cli._speaking(translator):
@@ -1047,7 +1048,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
 
 def test_help_texts_are_marked_for_argparse() -> None:
     """Help and description texts reach argparse, which %-formats them: tr_help marks them so,
-    and its translations are held to their English %-directives (D7)."""
+    and its translations are held to their English %-directives (design §6.12)."""
     _, entries = read_po(TEMPLATE.read_text(encoding="utf-8"), TEMPLATE.name)
     flags = {entry.msgid: entry.flags for entry in entries if entry.msgctxt is None}
     texts = {
@@ -1097,7 +1098,7 @@ def _machine_outputs(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[R
 def test_machine_outputs_ignore_the_language(
     language: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Programs read them: the installer, scripts, Home Assistant (ADR 0019, D12)."""
+    """Programs read them: the installer, scripts, Home Assistant (ADR 0019, design §6.12)."""
     english, notes = _machine_outputs(tmp_path, monkeypatch)
     assert all(ran.out for ran in english)
     assert "‹" not in notes
@@ -1113,7 +1114,7 @@ def test_run_speaks_english_in_any_language(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The service's output goes to the journal: English, whatever the environment asks for, also
-    argparse's errors, decided before parsing (D8)."""
+    argparse's errors, decided before parsing (design §6.12)."""
     bad = _written(tmp_path, "bad.toml", RADIO)
     commands = [["run", "--config", bad], ["run", "--bogus"]]
     english = [_main(argv) for argv in commands]
@@ -1136,7 +1137,7 @@ def test_run_speaks_english_in_any_language(
 def test_check_config_names_the_language_of_the_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The discovery line says in which language Home Assistant gets the names (D14)."""
+    """The discovery line says in which language Home Assistant gets the names (design §6.12)."""
     english = _main(["check-config", "--config", _written(tmp_path, "en.toml", MINIMAL)])
     assert "\n  discovery  on, prefix homeassistant, names in English\n" in english.out
     speaking(monkeypatch)  # offered; the command line stays English
@@ -1151,7 +1152,7 @@ def test_check_config_names_the_language_of_the_names(
 
 
 def test_check_config_counts_the_senders(tmp_path: Path) -> None:
-    """A real plural instead of "sender(s)" (D14)."""
+    """A real plural instead of "sender(s)" (design §6.12)."""
     for senders, line in (
         ([KEY], "  commands   open from 1 sender\n"),
         ([KEY, OTHER], "  commands   open, status from 2 senders\n"),
@@ -1190,7 +1191,7 @@ UNTESTED = "only reported: the firmware is untested; radio.profile.manage = alwa
 
 
 def test_probe_keeps_its_english_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each case of the report in the English it had before translations (D14)."""
+    """Each case of the report in the English it had before translations (design §6.12)."""
     printed = []
     for report in REPORTS:
         _probed(monkeypatch, report)
@@ -1276,8 +1277,8 @@ CONTACTS_NOTES = [
 
 
 def test_contacts_keep_their_english_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every note and error of the contacts commands in the English it had before (D14); the
-    program's name before the errors, not before the notes on the contact."""
+    """Every note and error of the contacts commands in the English it had before
+    (design §6.12); the program's name before the errors, not before the notes on the contact."""
     by_id = re.compile(r"cli-[0-9a-f]{8}")
     lines = [by_id.sub("cli-<id>", line) for text in _contacts(tmp_path, monkeypatch)
              for line in text.splitlines()]  # fmt: skip
@@ -1289,8 +1290,8 @@ def test_contacts_keep_their_english_notes(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_check_config_keeps_its_english_summary(tmp_path: Path) -> None:
-    """The summary's English is the one before translations, but for the two lines of D14: the
-    values in one column."""
+    """The summary's English is the one before translations, but for its two lines
+    (design §6.12): the values in one column."""
     ran = _main(["check-config", "--config", _written(tmp_path, "c.toml", SUMMARIES["tcp"])])
     path = tmp_path / "c.toml"
     assert ran.out == (

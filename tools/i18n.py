@@ -1310,7 +1310,7 @@ def placeholders(name: str, header: Mapping[str, str], entries: Sequence[Entry])
 
 
 def percent(name: str, header: Mapping[str, str], entries: Sequence[Entry]) -> list[str]:
-    """Where argparse %-formats a text, its %-directives are its English text's (D7)."""
+    """Where argparse %-formats a text, its %-directives are its English text's (design §6.12)."""
     findings = []
     selected = _selected(header)
     for entry in entries:

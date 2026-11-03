@@ -187,6 +187,11 @@ format, the command line and Home Assistant discovery are public interfaces
 - A translation is read by a second speaker of the language before it is merged, and the texts
   that warn of a risk, say how a connection is secured or ask for a secret tell their translators
   so ([translations.md](docs/translations.md#review-of-a-translation)).
+- Property tests (Hypothesis, a new development tool) feed made-up frames, packets, links,
+  catalogs and configurations to the parsers that read them; a test that hangs prints where it
+  stands after 5 minutes. The code names the records and design sections that hold its rules
+  instead of the numbers of working documents that are not in the repository, and a test keeps
+  each such reference resolving.
 
 ### Fixed
 
@@ -197,6 +202,9 @@ format, the command line and Home Assistant discovery are public interfaces
   written only when they change (the contact devices and their slugs, the components, the kept
   documents) until they changed again, days later; a restart meanwhile announced the devices
   afresh. Every write now carries every section.
+- A configuration that `config render` writes, as the installer does, shows a line or paragraph
+  separator, a bidirectional control or a zero-width character in a value as an escape
+  (`\u2028`), which TOML reads as before but an editor no longer hides.
 
 ### Security
 

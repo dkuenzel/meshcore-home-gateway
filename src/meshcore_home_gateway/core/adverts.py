@@ -51,7 +51,7 @@ class Pushed:
 
     at: float
     # the frame directly before the push in the same session; None also while the radio's
-    # receive delay is not known to be 0 (design 6c D2)
+    # receive delay is not known to be 0 (ADR 0025)
     adjacent: Logged | None
     logged: tuple[Logged, ...]  # the key's logs within LOGGED_S before the push
 
@@ -97,10 +97,10 @@ def _content(entry: Logged) -> tuple[bool, Position | None]:
     return entry.carries, entry.position
 
 
-def outcome(  # noqa: PLR0911 - one return per row of design 6c §3.3
+def outcome(  # noqa: PLR0911 - one return per case of the check (ADR 0025)
     pushed: Pushed | None, node: Node, previous: Node | None, now: float
 ) -> Outcome:
-    """What this table read shows about the companion's newest advert (design 6c §3.3). Total."""
+    """What this table read shows about the companion's newest advert (ADR 0025). Total."""
     record = from_record(node, previous)
     if pushed is None:
         return Outcome(record)
@@ -116,7 +116,7 @@ def outcome(  # noqa: PLR0911 - one return per row of design 6c §3.3
     same = [entry for entry in pushed.logged if entry.timestamp == t]
     problem = None
     if pushed.adjacent is not None and pushed.adjacent.timestamp == t:
-        chosen = pushed.adjacent  # receive delay 0: a forged copy is never adjacent (D2)
+        chosen = pushed.adjacent  # receive delay 0: a forged copy is never adjacent (ADR 0025)
         if any(_content(entry) != _content(chosen) for entry in same):
             problem = "copies_differ"  # a warning; the adjacent log decides
     elif not same:
@@ -130,7 +130,7 @@ def outcome(  # noqa: PLR0911 - one return per row of design 6c §3.3
         chosen = same[0]
     if chosen.carries and chosen.position != node.position:  # the radio copies its values
         return Outcome(record, problem="record_differs")
-    if record is not None and not chosen.carries:  # a new position in the record wins (D3)
+    if record is not None and not chosen.carries:  # a new position in the record wins (ADR 0025)
         return Outcome(record, problem=problem)
     return Outcome(AdvertCheck(t, chosen.carries), problem=problem)
 
@@ -138,7 +138,7 @@ def outcome(  # noqa: PLR0911 - one return per row of design 6c §3.3
 def heard(pushed: Pushed, node: Node) -> Outcome:
     """A chat node the radio did not add: its NEW_ADVERT carries the record the radio made from
     this advert alone (lat/lon only with the flag), so T is exact and nothing waits. A position
-    in that record is evidence on its own; else the log rules of `outcome` (design 6c D27)."""
+    in that record is evidence on its own; else the log rules of `outcome` (ADR 0025)."""
     if node.position is not None:  # only a flagged advert sets it (BaseChatMesh.cpp:114-117)
         return Outcome(AdvertCheck(node.last_advert, True))
     return outcome(pushed, node, None, pushed.at + WAIT_S + 1)  # no wait: the record is this one

@@ -1612,7 +1612,7 @@ def test_adverts_over_tcp_are_checked_as_over_usb(tmp_path: Path) -> None:
     """Over TCP the radio queues an advert's log and its push in one pass of its loop
     (SerialWifiInterface.cpp:21-40, MyMesh.cpp:2388-2421): a companion's advert, and the advert
     of a node heard and then added, are checked as over USB, and command 17 is never sent
-    (design 6c §8.3)."""
+    (ADR 0025)."""
     position = (50_123_456, 8_654_321)
     dave = EmulatedContact(bytes.fromhex("d4" * 32), "Dave", last_advert=int(NOW) - 30)
     alice, dave_key = ALICE.public_key.hex(), dave.public_key.hex()
@@ -1641,7 +1641,7 @@ def test_adverts_over_tcp_are_checked_as_over_usb(tmp_path: Path) -> None:
 
     with TcpRadioServer(radio) as server:
         scenario(lambda: main(server))
-    assert 17 not in radio.commands()  # EXPORT_CONTACT (design 6c D1)
+    assert 17 not in radio.commands()  # EXPORT_CONTACT (ADR 0025)
 
 
 def test_contact_reads_are_spent_only_where_they_can_change_the_verdict(tmp_path: Path) -> None:
@@ -1941,7 +1941,7 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
 def test_with_telemetry_off_an_exclusion_or_inclusion_forgets_the_saved_answers(
     tmp_path: Path,
 ) -> None:
-    """D13 also when telemetry is switched on again later: the saved schedule no longer knows
+    """Also when telemetry is switched on again later: the saved schedule no longer knows
     the answers of a contact excluded, included or added again while telemetry was off."""
     store = JsonStateFile(tmp_path / "state.json")
     records = TelemetryRecords(store)

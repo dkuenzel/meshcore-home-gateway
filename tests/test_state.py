@@ -504,8 +504,8 @@ def test_the_telemetry_schedule_round_trips_relative_to_its_save(tmp_path: Path)
 def test_a_saved_schedule_forgets_the_answers_of_a_contact_excluded_meanwhile(
     tmp_path: Path,
 ) -> None:
-    """Excluded or included while telemetry is off (D13): as Scheduler.forget, its answers are
-    gone and it is due at once; when it was asked and flooded stays."""
+    """Excluded or included while telemetry is off (design §6.11): as Scheduler.forget, its
+    answers are gone and it is due at once; when it was asked and flooded stays."""
     store = JsonStateFile(tmp_path / "state.json")
     records = TelemetryRecords(store)
     asked = SavedContact(812.5, 1, 95.0, 96.0, 4000.0, 1, True, 0, 19, None, 8373.0, 95.0)

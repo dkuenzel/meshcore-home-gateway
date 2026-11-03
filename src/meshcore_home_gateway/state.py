@@ -746,9 +746,9 @@ class TelemetryRecords:
             self._store.flush()
 
     def forget(self, key: str) -> None:
-        """The contact was excluded, included or added again while telemetry was off (D13): as
-        Scheduler.forget, its saved answers are gone and it is due at once; when it was asked
-        and flooded stays. Never raises: a file that cannot be read is logged."""
+        """The contact was excluded, included or added again while telemetry was off
+        (design §6.11): as Scheduler.forget, its saved answers are gone and it is due at once;
+        when it was asked and flooded stays. Never raises: a file that cannot be read is logged."""
         try:
             raw = self._store.load().get(self._KEY)
         except OSError as exc:

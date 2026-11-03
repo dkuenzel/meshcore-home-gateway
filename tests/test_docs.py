@@ -57,6 +57,40 @@ def test_relative_links_resolve(document: Path) -> None:
     assert not broken, broken
 
 
+# CODE-006: the code names the document that holds a rule, as `design §6.6` (or
+# `docs/design.md §6.6`) and `ADR 0025`; the numbered decisions of a working document that is
+# not in the repository leave a reader nothing to open.
+CODE = sorted(
+    path
+    for folder in ("src", "tests", "tools")
+    for path in (ROOT / folder).rglob("*.py")
+    if "firmware" not in path.relative_to(ROOT).parts  # the C++ sources' citations are other
+)
+DESIGN_SECTION = re.compile(r"design(?:\.md)? ?§ ?(\d+(?:\.\d+)*)")
+DECISION = re.compile(r"\bADR (\d{4})\b")
+# a working document's own numbering: a design or slice named by a number and a letter, its
+# open points, and its decisions, findings and goals (D, F or G and a number) as a reference
+WORKING_DOCUMENT = re.compile(
+    r"\bdesign \d+[a-z]\b|\bslice \d+[a-z]\b|\b\d+[a-z]'s open point"
+    r"|(?:\(|, |; |design |# |\"\"\")[DFG]\d{1,2}\b(?![ \t][0-9A-F]{2}\b)"
+)
+
+
+@pytest.mark.parametrize("module", CODE, ids=lambda p: p.relative_to(ROOT).as_posix())
+def test_design_references_in_the_code_resolve(module: Path) -> None:
+    text = module.read_text(encoding="utf-8")
+    sections = {
+        heading.split(" ", 1)[0]
+        for heading in HEADING.findall((ROOT / "docs" / "design.md").read_text(encoding="utf-8"))
+    }
+    decisions = {path.name[:4] for path in (ROOT / "docs" / "decisions").glob("[0-9]*.md")}
+    unresolved = [f"design §{number}" for number in DESIGN_SECTION.findall(text)
+                  if number not in sections]  # fmt: skip
+    unresolved += [f"ADR {number}" for number in DECISION.findall(text) if number not in decisions]
+    unresolved += WORKING_DOCUMENT.findall(text)
+    assert not unresolved, unresolved
+
+
 def test_attestation_checks_name_the_release_workflow_and_the_tag() -> None:
     """`--repo` alone accepts an attestation from any workflow and ref of the repository."""
     commands = [

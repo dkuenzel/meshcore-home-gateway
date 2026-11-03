@@ -11,6 +11,7 @@ import math
 import os
 import re
 import tomllib
+import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -929,13 +930,19 @@ def _toml_value(value: Any) -> str:
     raise TypeError(f"cannot write {type(value).__name__} to TOML")
 
 
+# Written as escapes (CODE-015): controls, which TOML refuses raw, and line and paragraph
+# separators and format characters (zero-width, bidirectional), which it takes but an editor may
+# not show. Surrogates (Cs) cannot be escaped in TOML and never come from text a user typed.
+_ESCAPED_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
+
 def _toml_string(value: str) -> str:
     out = []
     for ch in value:
         if ch in ('"', "\\"):
             out.append("\\" + ch)
-        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
-            out.append(f"\\u{ord(ch):04x}")
+        elif unicodedata.category(ch) in _ESCAPED_CATEGORIES:
+            out.append(f"\\u{ord(ch):04x}" if ord(ch) <= 0xFFFF else f"\\U{ord(ch):08x}")
         else:
             out.append(ch)
     return '"' + "".join(out) + '"'
