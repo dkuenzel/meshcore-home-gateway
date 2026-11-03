@@ -59,10 +59,10 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
 | ARC-001 | fix | `docs/threat-model.md` with the seven boundaries and the actors, design §7 as its summary, a boundary paragraph required in the record template | pending: threat-model |
-| ARC-002 | fix | ADR 0028 states what a contact is trusted with; the household mark (SEC-016) and the exposure setting (SEC-008) are its mechanisms | pending: threat-model |
+| ARC-002 | fix | ADR 0029 states what a contact is trusted with; the household mark (SEC-016) and the exposure setting (SEC-008) are its mechanisms | pending: threat-model |
 | ARC-003 | fix | A `ports` module with the radio events and the radio port the application uses; the architecture test forbids the application modules to import the adapters | pending: structure |
 | ARC-004 | fix | One state store for `state.json`, loaded once, every section in memory, written once per change set at the status tick and at once for what a crash must not lose (the ledger, the kept documents and advert checks, the schedule after a flood, the profile's attempts) | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
-| ARC-005 | fix | The message budget's level is kept across restarts, never below what one long message needs, so the first alert after a restart still goes out at once; ADR 0008 names the radio's own limiter as the regulatory backstop | pending: outbox |
+| ARC-005 | fix | The message budget's level is kept across restarts, never below what one long message needs, so the first alert after a restart still goes out at once; ADR 0008 names the radio's own limiter as the regulatory backstop | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | ARC-006 | fix | Through SEC-005; the integrity model in ADR 0015 (dated note) and the threat model | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | ARC-007 | fix | Dated notes with today's sizes in ADR 0002 and ADR 0004; a module size that asks for a split in `CONTRIBUTING.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-008 | fix | The amendment practice stated in ADR 0001 and `CONTRIBUTING.md`: dated amendments may narrow or correct a record, a reversal needs a new one | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -70,7 +70,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ARC-010 | fix | The firmware behaviours the advert check relies on, each with its line, in `docs/protocol.md` §4, as a checklist for a firmware update; the firmware tests stay the guard. A push carrying the advert's flags is for the maintainer to request upstream | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-011 | accept | The machinery stays; the roadmap names the first language as its proof and a review of the installer's packs after it. The parser risk is covered by SUP-006 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-012 | fix | A `health` section in `state` and a *Gateway degraded* problem sensor; observer errors counted and their log rate-limited | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
-| ARC-013 | fix | The outgoing queue is kept across restarts and drained on stop within a longer stop timeout (ADR 0029 supersedes the non-goal) | pending: outbox |
+| ARC-013 | fix | The outgoing queue is kept across restarts (written at the stop, queued again at the start with each message's `id`, attempts and timestamp) and the acknowledgement in flight is awaited for up to 60 s within a stop timeout of 90 s; ADR 0028 supersedes the non-goal (the next free number: the threat model's record became 0029) | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | ARC-014 | fix | `[mqtt] protocol = "5"` as an option: message expiry, correlation data and user properties; 3.1.1 stays the default | pending: mqtt5 |
 | ARC-015 | fix | `[homeassistant] contact_entity_prefix` for a second gateway; the guide shows one `person` for two trackers | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | ARC-016 | fix | A "tested with" table in `docs/home-assistant.md`, kept per release, and a checklist step against the newest Home Assistant. A CI job against an unpinned Home Assistant is rejected: it would install releases inside the cooldown the dependency policy keeps out | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -104,7 +104,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-022 | fix | `docs/development.md` names the release-critical tools and that they are reviewed as such | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | CODE-023 | fix | `tests/firmware/README.md` names each stand-in and why it exists | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | CODE-024 | accept | The reasoning in comments stays; new code refers to the design where the paragraph exists | – |
-| CODE-025 | fix | Through ARC-013: the stop timeout's room is used for the drain | pending: outbox |
+| CODE-025 | fix | Through ARC-013: the stop timeout (now 90 s) leaves room for the acknowledgement in flight | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 
 ## Documentation
 
@@ -146,7 +146,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | OPS-003 | fix | A Home Assistant example that notifies when the gateway is unavailable (IMP-025). The host-side udev rule is deferred: it cannot be verified without a Proxmox host, and ADR 0006 keeps the host free of the gateway's files | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | OPS-004 | fix | The unit restarts with a growing delay instead of giving up after 20 failures; the guide's example detects the outage. An `OnFailure=` unit is rejected: the gateway itself is the channel it would need | pending: ops |
 | OPS-005 | fix | `After=time-sync.target`, `MemoryMax=`, `@obsolete` in the system call filter; `IPAddressAllow=` documented as an option | pending: ops |
-| OPS-006 | fix | Through ARC-013 | pending: outbox |
+| OPS-006 | fix | Through ARC-013 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | OPS-007 | fix | A troubleshooting row, a warning at every connect on untested firmware, `manage_reason` in the `contacts` index, a turnaround target for new firmware (EXT-020) | pending: ops |
 | OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: cli-ops |
 | OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: ops |
@@ -193,7 +193,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-011 | fix | Through SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-012 | fix | Through SEC-009 | [#46](https://github.com/dkuenzel/meshcore-home-gateway/pull/46) |
 | IMP-013 | fix | Through ARC-012 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
-| IMP-014 | fix | Through ARC-013 | pending: outbox |
+| IMP-014 | fix | Through ARC-013 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-015 | fix | Through ARC-014 | pending: mqtt5 |
 | IMP-016 | fix | `status`, `backup` and `retire` commands | pending: cli-ops |
 | IMP-017 | fix | Through CODE-009 | pending: code-quality |
@@ -210,8 +210,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-028 | fix | Through SUP-002 | pending: supply-chain |
 | IMP-029 | fix | Through SUP-005 | pending: supply-chain |
 | IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | pending: threat-model, code-quality |
-| IMP-031 | fix | Through ARC-005 | pending: outbox |
-| IMP-032 | fix | A priority on requests (`alert` overtakes `normal`), per request or per target | pending: outbox |
+| IMP-031 | fix | Through ARC-005 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
+| IMP-032 | fix | `[messages] alert_targets`: alerts overtake the queue and go between two attempts of a message in flight. Per target, not per request: a JSON envelope would change what a text that looks like JSON means, and the installer's answers carry no per-target setting (as for `hidden_targets`, SEC-008); a second target for the same recipient gives a request the choice | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-033 | fix | Through OPS-007 | pending: ops |
 | IMP-034 | fix | Through OPS-007 | pending: ops |
 | IMP-035 | reject | Superseded by IMP-014: an update keeps the queue, waiting for it to empty is no longer needed | – |

@@ -18,7 +18,7 @@ RestartSec=5
 # 78 = configuration error: restarting would not help
 RestartPreventExitStatus=78
 WatchdogSec=60
-TimeoutStopSec=20
+TimeoutStopSec=90
 
 User=meshcore-home-gateway
 Group=meshcore-home-gateway

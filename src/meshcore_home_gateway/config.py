@@ -138,6 +138,8 @@ class MessagesConfig:
     publish_channels: Literal["all", "targets"] = "all"
     clean_received: bool = False  # control and direction characters out of received texts
     confirm_nonce: bool = False  # a random suffix on direct messages: unforgeable acks (SEC-001)
+    # targets whose messages overtake the others in the outgoing queue (IMP-032)
+    alert_targets: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -407,16 +409,18 @@ def _build(root: _Section) -> Config:
     )
     root.check_unknown()
     _check_commands_broker(config)
-    _check_hidden_targets(config)
+    _check_target_lists(config)
     return config
 
 
-def _check_hidden_targets(config: Config) -> None:
+def _check_target_lists(config: Config) -> None:
     aliases = {t.alias for t in config.targets}
-    for alias in sorted(config.homeassistant.hidden_targets - aliases):
-        raise ConfigError(
-            "{key}: {alias!r} is not a target", key="homeassistant.hidden_targets", alias=alias
-        )
+    for key, listed in (
+        ("homeassistant.hidden_targets", config.homeassistant.hidden_targets),
+        ("messages.alert_targets", config.messages.alert_targets),
+    ):
+        for alias in sorted(listed - aliases):
+            raise ConfigError("{key}: {alias!r} is not a target", key=key, alias=alias)
 
 
 def _check_commands_broker(config: Config) -> None:
@@ -686,6 +690,7 @@ def _messages(s: _Section) -> MessagesConfig:
         publish_channels=cast(Literal["all", "targets"], publish_channels),
         clean_received=s.boolean("clean_received", False),
         confirm_nonce=s.boolean("confirm_nonce", False),
+        alert_targets=frozenset(s.strings("alert_targets")),
     )
 
 
@@ -781,7 +786,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,
     "messages.publish_channels": str, "messages.clean_received": bool,
-    "messages.confirm_nonce": bool,
+    "messages.confirm_nonce": bool, "messages.alert_targets": list,
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,

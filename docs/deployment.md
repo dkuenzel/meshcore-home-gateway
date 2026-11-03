@@ -354,7 +354,8 @@ English. The service's log is always English.
 | Inspect the radio | `systemctl stop meshcore-home-gateway && meshcore-home-gateway probe --serial <device>` |
 
 * **Service:** `Type=notify` with a 60 s watchdog; restart after 5 s on failure, not on
-  configuration errors (exit code 78). `systemd-analyze security meshcore-home-gateway` rates the
+  configuration errors (exit code 78). A stop waits up to a minute for the acknowledgement of a
+  message in flight (`TimeoutStopSec=90`) and keeps the queued messages for the next start. `systemd-analyze security meshcore-home-gateway` rates the
   unit's exposure at 1.6 (lower is better).
 * **State and backup:** back up `/etc/meshcore-home-gateway/` (`config.toml`, and
   `mqtt-password` where the installer wrote it) and the three files of
@@ -381,7 +382,8 @@ English. The service's log is always English.
     profile's memory; the telemetry schedule: per companion when it is next due, its unanswered
     requests, when it last answered, was asked and flooded, how long its answers count and when
     one last carried a position, and whether it was last moving, no positions; and what is left
-    of the first-start hour.
+    of the first-start hour; the airtime budget's level; and at a stop, the messages still
+    queued, until the next start takes them.
   * `telemetry-excluded.json` holds the companions the household excluded from telemetry, and
     with `[telemetry] ask = "household"` those it included: without it a restored system asks the
     excluded ones again, or no longer the included ones. An exclusions file that cannot be parsed

@@ -260,6 +260,7 @@ ignore_channels = [0]
 publish_channels = "targets"
 clean_received = true
 confirm_nonce = true
+alert_targets = ["{CHANNEL_ALIAS}"]
 [airtime]
 budget_s_per_hour = 72
 burst_s = 12

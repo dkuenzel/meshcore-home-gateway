@@ -49,8 +49,8 @@ both the volume and the reach of what any client can trigger.
 ### Consequences
 
 * Good, because the worst case is bounded: over any interval *T*, the bridge counts at most
-  `burst_s + budget_s_per_hour × T / 3600` seconds per run of the service (each start begins
-  with a full burst); a flooded attempt to a recipient more than 4 path bytes away takes somewhat
+  `burst_s + budget_s_per_hour × T / 3600` seconds, plus at most one long message per
+  restart (amended below); a flooded attempt to a recipient more than 4 path bytes away takes somewhat
   more than counted (protocol.md §6).
 * Good, because every refusal is reported on the delivery topic with a reason.
 * Bad, because new destinations need a configuration change (on purpose).
@@ -80,5 +80,14 @@ check queue expiry and retries with an emulated radio.
 
 * Semtech SX1261/2 datasheet, section 6.1.4 "LoRa Time-on-Air".
 * ERC Recommendation 70-03, Annex 1 (non-specific short range devices).
+* Amended on 2026-11-03 (security and architecture review, ARC-005): the bucket's level is kept
+  across restarts ([ADR 0028](0028-outgoing-queue-kept-across-restarts.md)), written at once
+  after every transmission; a start takes it back, refilled for the time stopped, but at least
+  what a long direct message needs at the radio's settings, so the first alert after a restart
+  goes out at once. A run therefore no longer begins with a full burst: a crash loop adds at
+  most one long message per start instead of `burst_s`. The regulatory bound is the radio's own
+  limiter, which the managed profile sets to the regional duty cycle
+  ([ADR 0020](0020-managed-radio-profile-for-the-observer.md)); this budget shapes what the
+  gateway asks the radio to send.
 * Revisit if the firmware exposes its own airtime accounting over the companion protocol; the
   bridge could then use measured instead of estimated airtime.

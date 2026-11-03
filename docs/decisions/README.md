@@ -15,7 +15,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0005](0005-runtime-dependencies-from-the-distribution.md) | Runtime dependencies: standard library and the distribution's paho-mqtt | accepted |
 | [0006](0006-deployment-in-an-unprivileged-proxmox-container.md) | Deployment in an unprivileged Proxmox container by a host script with dialogs | accepted; amended 2026-10-23 |
 | [0007](0007-hexagonal-architecture-with-an-asyncio-core.md) | Ports and adapters around a pure domain core, one asyncio event loop | accepted |
-| [0008](0008-outbound-safety-targets-airtime-budget-deduplication.md) | Outbound safety: configured targets, an airtime budget and deduplication | accepted; targets partly superseded by 0017 (every contact a recipient) |
+| [0008](0008-outbound-safety-targets-airtime-budget-deduplication.md) | Outbound safety: configured targets, an airtime budget and deduplication | accepted; targets partly superseded by 0017 (every contact a recipient); amended 2026-11-03 (the budget's level kept, 0028) |
 | [0009](0009-inbound-commands-from-allowlisted-contacts.md) | Inbound commands only from allowlisted contacts, with replay protection | accepted; amended 2026-10-19 and 2026-10-23 |
 | [0010](0010-home-assistant-through-mqtt-device-discovery.md) | Home Assistant integration through MQTT device discovery | accepted |
 | [0011](0011-neutral-english-language-project-under-mit.md) | A neutral, English-language project under the MIT license | accepted |
@@ -35,3 +35,4 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0025](0025-positions-in-adverts-checked-from-the-packet-log.md) | Positions in adverts: checked from the packet log; the radio's record decides until then | accepted |
 | [0026](0026-gateway-tested-against-the-real-firmware-built-natively.md) | The gateway is tested against the real firmware, built natively | accepted |
 | [0027](0027-message-catalogs-compiled-when-loaded.md) | Message catalogs compiled when they are loaded | accepted |
+| [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted |

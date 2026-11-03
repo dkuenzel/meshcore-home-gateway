@@ -90,9 +90,13 @@ check `availability` first if it matters.
 
 One event per step. While the gateway runs, every request ends with exactly one final event:
 `rejected` or `duplicate` at once; otherwise `expired` or `failed`, or `sent` for a channel
-message and `confirmed` for a direct message. A stop or restart drops queued messages without one
-([design §3](design.md#3-goals-and-non-goals)), and so does a broker outage with more than 1000
-events waiting; wait for a final event with a timeout. The `rejected` and `duplicate` events of
+message and `confirmed` for a direct message. A stop keeps the queued messages, and the one
+whose acknowledgement does not come within a minute, for the next start: it publishes `queued`
+again with the same `id` (and `attempt` the transmissions so far), then the rest of the steps, or
+the final event the message would have had meanwhile
+([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A crash drops them without
+a final event, and so does a broker outage with more than 1000 events waiting; wait for a final
+event with a timeout. Messages to `[messages] alert_targets` leave before the others. The `rejected` and `duplicate` events of
 requests refused at once are limited to 20 per second, in bursts of up to 100: a client that floods
 the send topics gets no event for the excess, which the log counts (at most once a minute).
 
@@ -103,10 +107,10 @@ the send topics gets no event for the excess, which the log counts (at most once
 
 | `event_type` | Meaning | `reason` values |
 | --- | --- | --- |
-| `queued` | accepted, waiting for the radio and for airtime | – |
+| `queued` | accepted, waiting for the radio and for airtime; again after a restart that kept it | – |
 | `sent` | handed to the radio; `attempt` numbers this transmission from 1, `airtime_ms` is the estimate | – |
 | `confirmed` | the radio received the acknowledgement of an attempt, which proves less than it sounds ([below](#what-confirmed-proves)); `rtt_ms` is its round trip as the radio measured it, `suspect` `true` when that was shorter than the message's path allows (`null` in other events) | – |
-| `failed` | given up | `no_acknowledgement` (sent, but not acknowledged in time), `unknown_contact`, `ambiguous_target`, `channel_not_configured`, `too_long`, `exceeds_airtime_burst`, `internal_error` (a bug; see the log), the radio's refusals: `disabled` or an error name such as `not_found`, `table_full`, `error_<code>` |
+| `failed` | given up | `no_acknowledgement` (sent, but not acknowledged in time), `unknown_contact`, `unknown_target` (kept by a stop, its target no longer configured), `ambiguous_target`, `channel_not_configured`, `too_long`, `exceeds_airtime_burst`, `internal_error` (a bug; see the log), the radio's refusals: `disabled` or an error name such as `not_found`, `table_full`, `error_<code>` |
 | `expired` | never sent within `queue_ttl_s` | `no_radio`, `queue_ttl` (waited behind other messages), `airtime_budget` |
 | `duplicate` | same target and text within `dedup_window_s` | – |
 | `rejected` | not accepted | `unknown_target`, `unknown_contact`, `not_a_companion`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full` |

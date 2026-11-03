@@ -14,14 +14,17 @@ from meshcore_home_gateway.state import (
     SLUG_KEEP_S,
     SLUGS_LEFT,
     AdvertChecks,
+    AirtimeLevel,
     AnnouncedComponents,
     CommandLedger,
     ContactDeviceRecords,
     CurrentDocuments,
     DeviceRecord,
     JsonStateFile,
+    OutboxRecords,
     RemovedDevice,
     RetainedKeys,
+    SavedMessage,
     TelemetryExclusions,
     TelemetryRecords,
 )
@@ -616,6 +619,82 @@ def test_telemetry_ran_before_with_a_record_of_any_version(tmp_path: Path) -> No
     assert not records.ran_before()  # no record
     (tmp_path / "dir").mkdir()
     assert not TelemetryRecords(JsonStateFile(tmp_path / "dir")).ran_before()  # an OSError
+
+
+# --- the message budget and the queue across a stop (ARC-005, ARC-013) -------------------------
+
+
+def test_the_airtime_level_is_written_at_once_with_the_longest_message(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    level = AirtimeLevel(JsonStateFile(path))
+    assert level.load(1_000.0) is None  # none saved: a full budget
+    level.longest_s = 1.5
+    level.save(2.25, 1_000.0)
+    again = AirtimeLevel(JsonStateFile(path))  # on the disk at once
+    assert again.load(1_060.0) == (2.25, 60.0)
+    assert again.longest_s == 1.5
+    assert again.load(900.0) == (2.25, None)  # the clock went back: unknown
+    invalid_entries: list[object] = [
+        {"level_s": "2", "saved_at": 1.0}, {"level_s": 2.0}, [], {"level_s": 1e999},
+    ]  # fmt: skip
+    for bad in invalid_entries:
+        JsonStateFile(path).save({"airtime": bad})
+        assert AirtimeLevel(JsonStateFile(path)).load(1_000.0) is None
+    JsonStateFile(path).save({"airtime": {"level_s": 1.0, "saved_at": 0.0, "longest_s": -1}})
+    invalid = AirtimeLevel(JsonStateFile(path))
+    assert (invalid.load(10.0), invalid.longest_s) == ((1.0, 10.0), None)
+
+
+KEPT = [
+    SavedMessage("7f3a91c2", "alerts", "Gate open", None, 12.5, None, 0),
+    SavedMessage("0b1c2d3e", "aa" * 32, "Hello #00ff00ff", None, 3.0, 1_800_000_000, 2),
+    SavedMessage("11223344", "alerts", "Pump", "Pump", 0.0, None, 0),
+]
+
+
+def test_the_messages_of_a_stop_are_taken_once(tmp_path: Path) -> None:
+    """Written with the stop, taken at the next start, and gone from the disk at once: a crash
+    after the start does not bring them back a second time."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    OutboxRecords(store).save(KEPT, 1_000.0)
+    assert store.flush()
+    taken = JsonStateFile(path)
+    assert OutboxRecords(taken).take(1_030.0) == (KEPT, 30.0)
+    assert "outbox" not in JsonStateFile(path).load()
+    assert OutboxRecords(taken).take(1_030.0) == ([], None)
+    OutboxRecords(store).save([], 1_100.0)  # nothing kept: no section
+    assert store.flush()
+    assert "outbox" not in JsonStateFile(path).load()
+    OutboxRecords(store).save(KEPT[:1], 2_000.0)
+    assert store.flush()
+    assert OutboxRecords(JsonStateFile(path)).take(1_000.0) == (KEPT[:1], None)  # clock back
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"id": "", "target": "alerts", "text": "x", "age_s": 1.0},
+        {"id": "a" * 65, "target": "alerts", "text": "x", "age_s": 1.0},
+        {"id": "a", "target": 7, "text": "x", "age_s": 1.0},
+        {"id": "a", "target": "alerts", "text": "é" * 513, "age_s": 1.0},
+        {"id": "a", "target": "alerts", "text": "x", "age_s": -1.0},
+        {"id": "a", "target": "alerts", "text": "x", "age_s": 1.0, "sent": 5},
+        {"id": "a", "target": "alerts", "text": "x", "age_s": 1.0, "timestamp": -1},
+        {"id": "a", "target": "alerts", "text": "x", "age_s": 1.0, "raw": 3},
+        ["a", "alerts", "x"],
+    ],
+)
+def test_invalid_kept_messages_are_skipped_with_a_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, entry: object
+) -> None:
+    path = tmp_path / "state.json"
+    good = {"id": "b", "target": "alerts", "text": "y", "age_s": 2.0}
+    JsonStateFile(path).save({"outbox": {"saved_at": 0.0, "messages": [entry, good]}})
+    with caplog.at_level(logging.WARNING):
+        messages, _ = OutboxRecords(JsonStateFile(path)).take(1.0)
+    assert messages == [SavedMessage("b", "alerts", "y", None, 2.0, None, 0)]
+    assert "invalid messages of the last stop skipped, 1 kept" in caplog.text
 
 
 # --- telemetry exclusions -------------------------------------------------------------------------
