@@ -942,6 +942,13 @@ The event's keys are in `trigger.to_state.attributes`, for example `args` of a c
 
 ## Privacy
 
+Messages on a channel come from anyone who knows its key: the *Public* channel's key is in the
+firmware, so in a lively mesh most of them are strangers' texts and claimed names, and they become
+events, history rows and recorder entries like the household's own. `[messages] publish_channels
+= "targets"` publishes and keeps only the channels you chose as targets (the installer sets it on
+a new installation); `ignore_channels` leaves out single channels
+([configuration.md](configuration.md#messages)).
+
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in
 `.storage/core.restore_state` (restored after a restart). To keep them out of the history,

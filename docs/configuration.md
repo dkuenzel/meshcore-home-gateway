@@ -133,6 +133,7 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
+| `publish_channels` | `all` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's. The installer writes `targets` on a new installation |
 | `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones; off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
 
 ## `[airtime]`

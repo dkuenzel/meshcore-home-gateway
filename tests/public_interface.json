@@ -26,6 +26,7 @@
     "messages.flood_after",
     "messages.ignore_channels",
     "messages.max_attempts",
+    "messages.publish_channels",
     "messages.queue_size",
     "messages.queue_ttl_s",
     "messages.truncate",
@@ -765,6 +766,11 @@
    "max": 4,
    "min": 1,
    "type": "integer"
+  },
+  "messages.publish_channels": {
+   "answer": "str",
+   "default": "all",
+   "type": "string"
   },
   "messages.queue_size": {
    "answer": "int",

@@ -37,6 +37,9 @@ format, the command line and Home Assistant discovery are public interfaces
 - `[messages] clean_received` (default `false`): received texts lose their control and direction
   characters before they are published and kept in the history, as outgoing texts do
   ([configuration.md](docs/configuration.md#messages)). Off, texts stay as they came.
+- `[messages] publish_channels` (default `all`): `targets` publishes and keeps only the messages
+  of channels that are a target; on the *Public* channel, whose key is in the firmware, most
+  messages are strangers' ([configuration.md](docs/configuration.md#messages)).
 
 ### Changed
 
@@ -75,6 +78,9 @@ format, the command line and Home Assistant discovery are public interfaces
   off the mesh's frequency; with how to isolate such a radio and what to do after a takeover
   ([configuration.md](docs/configuration.md#radio),
   [design §7.2](docs/design.md#72-threats-and-mitigations), [protocol.md](docs/protocol.md)).
+- A new installation from the installer publishes only the messages of the channels the
+  household chose as targets (`messages.publish_channels = targets`), not the neighbours'
+  chatter on the *Public* channel; installations that run keep their setting.
 - A contact or a channel that floods messages no longer fills the bus, the history and Home
   Assistant's recorder: beyond a burst of 10 direct messages of one sender, one every 2 seconds
   is published, beyond 20 on one channel, one a second; the others are still judged as commands

@@ -385,6 +385,9 @@ class Bridge:
         if self.config.contacts.manage and self.config.radio.transport == "tcp":
             log.warning("contact management over TCP: heard nodes are best effort, the radio "
                         "drops its pushes while no client is connected")  # fmt: skip
+        if self.config.messages.publish_channels == "targets":
+            channels = ", ".join(map(str, sorted(_target_channels(self.config)))) or "none"
+            log.info("channel messages published only from the channels of targets: %s", channels)
         self._bus.on_connected.append(self._connected)
         self._bus.on_connected.append(lambda: self._observe(self.observer.publish_all))
         self._bus.on_ha_online.append(lambda: self._schedule_announcements(birth=True))
@@ -892,10 +895,15 @@ class Bridge:
             self._messages.task_done()
 
     def _ignored(self, message: InboundMessage) -> bool:
-        """A message of a channel the configuration ignores: neither published nor answered."""
-        return (
-            message.kind is MessageKind.CHANNEL
-            and message.channel_index in self.config.messages.ignore_channels
+        """A message of a channel the configuration ignores, or that is no target's while only
+        those are published (SEC-012): neither published nor answered."""
+        if message.kind is not MessageKind.CHANNEL:
+            return False
+        messages = self.config.messages
+        if message.channel_index in messages.ignore_channels:
+            return True
+        return messages.publish_channels == "targets" and (
+            message.channel_index not in _target_channels(self.config)
         )
 
     async def _on_message(self, event: MessageReceived) -> None:
@@ -1304,6 +1312,11 @@ def _uptime(session: CompanionSession) -> tuple[int | None, float | None]:
     if stats is None or stats.core is None:
         return None, None
     return stats.core.uptime_s, stats.read_at
+
+
+def _target_channels(config: Config) -> frozenset[int]:
+    """The channels of `[targets.*]` entries."""
+    return frozenset(t.channel_index for t in config.targets if t.channel_index is not None)
 
 
 def _may_be_asked(advert: codec.Advert) -> bool:

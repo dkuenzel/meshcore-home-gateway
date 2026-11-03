@@ -120,7 +120,9 @@ the next attempt may show the message twice the same way.
 ## Received messages: `received`
 
 Every message the radio receives, after dropping exact repeats (same sender, timestamp and text,
-which is how retries arrive). Channels listed in `ignore_channels` are skipped.
+which is how retries arrive). Channels listed in `ignore_channels` are skipped, and with
+`publish_channels = "targets"` every channel that is no target
+([configuration.md](configuration.md#messages)).
 
 A sender or a channel that floods is cut off (SEC-012, SEC-013): beyond a burst of 10 direct
 messages of one sender, one every 2 seconds is published, and beyond a burst of 20 messages on

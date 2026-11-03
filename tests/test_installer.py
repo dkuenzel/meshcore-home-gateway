@@ -535,7 +535,17 @@ def test_unattended_install_creates_and_configures_the_container(host: Host) -> 
     }
     assert config.commands.senders == frozenset({ALICE})
     assert config.commands.words == frozenset({"status", "arm"})
+    # a new installation publishes only the channels the household chose (SEC-012)
+    assert config.messages.publish_channels == "targets"
     assert "s3cret" not in result.stderr + host.log_text()  # the password is never logged
+
+
+def test_an_answer_keeps_publishing_every_channel(host: Host) -> None:
+    answers = answers_file(host)
+    answers.write_text(answers.read_text(encoding="utf-8") + "messages.publish_channels=all\n")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    assert host.config().messages.publish_channels == "all"
 
 
 def test_device_group_is_corrected_when_dialout_differs(host: Host) -> None:

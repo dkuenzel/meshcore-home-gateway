@@ -243,6 +243,7 @@ queue_ttl_s = 60
 max_attempts = 4
 flood_after = 3
 ignore_channels = [0]
+publish_channels = "targets"
 clean_received = true
 [airtime]
 budget_s_per_hour = 72

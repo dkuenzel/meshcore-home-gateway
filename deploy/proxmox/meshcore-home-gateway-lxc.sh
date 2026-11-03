@@ -1012,6 +1012,11 @@ knows_insecure() {  # does the program that renders the configuration read mqtt.
   (( OWN_PROGRAM )) || ! [[ $VERSION =~ ^(0\.|1\.0\.|1\.1\.0a[1-4]$) ]]
 }
 
+privacy_defaults() {  # a new installation publishes only what the household chose (SEC-012)
+  knows_insecure || return 0   # the settings came with the same release
+  [[ -v "OUT[messages.publish_channels]" ]] || OUT[messages.publish_channels]=targets
+}
+
 accept_insecure() {  # commands over a broker connection without a user name or TLS (SEC-004)
   local what
   knows_insecure || return 0   # an older program has no such rule
@@ -1342,6 +1347,7 @@ install() {
   ask_container
   ask_radio
   ask_bridge
+  privacy_defaults
   check_settings   # from a checkout; otherwise right after the installation in the container
   confirm_install
   template=$(choose_template "${CT[template_storage]}")

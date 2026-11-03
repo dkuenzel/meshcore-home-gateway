@@ -98,7 +98,7 @@ every setting in the table.
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
 | Language of the names in Home Assistant (asked while it offers more than English) | the dialogs' language; on `--reconfigure` the configured one, else `en` | Advanced |
 | ASCII only | no | Advanced |
-| Channels and contacts to send to | read from the radio | both |
+| Channels and contacts to send to (only the messages of these channels are published, `messages.publish_channels = targets`) | read from the radio | both |
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
 | Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 

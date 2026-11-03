@@ -1164,7 +1164,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   `forget`.
 * The radio firmware and its key storage are trusted.
 * Messages on the radio are only as confidential as MeshCore's encryption; channel secrets of
-  public or hashtag channels are known to everyone.
+  public or hashtag channels are known to everyone. With `publish_channels = "all"`, the default
+  of the configuration, strangers' texts on such channels reach the bus, the history and Home
+  Assistant's recorder; `"targets"`, which the installer writes on a new installation, keeps only
+  the channels the household chose.
 
 ## 8 Reliability and failure modes
 

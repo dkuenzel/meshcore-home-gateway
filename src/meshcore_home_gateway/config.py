@@ -124,6 +124,8 @@ class MessagesConfig:
     max_attempts: int = 3
     flood_after: int = 2
     ignore_channels: frozenset[int] = frozenset()
+    # "targets": only the channels of `[targets.*]` entries are published and kept (SEC-012)
+    publish_channels: Literal["all", "targets"] = "all"
     clean_received: bool = False  # control and direction characters out of received texts
 
 
@@ -578,6 +580,9 @@ def _not_segments(key: str, value: str) -> ConfigError:
 
 def _messages(s: _Section) -> MessagesConfig:
     max_attempts = s.integer("max_attempts", 3, 1, 4)  # the radio's attempt counter is 0..3
+    publish_channels = s.string("publish_channels", "all")
+    if publish_channels not in ("all", "targets"):
+        raise _one_of(s.key("publish_channels"), ("all", "targets"), publish_channels)
     return MessagesConfig(
         ascii_only=s.boolean("ascii_only", False),
         truncate=s.boolean("truncate", True),
@@ -587,6 +592,7 @@ def _messages(s: _Section) -> MessagesConfig:
         max_attempts=max_attempts,
         flood_after=s.integer("flood_after", 2, 1, max(1, max_attempts)),
         ignore_channels=frozenset(s.integers("ignore_channels", 0, CHANNEL_INDEX_MAX)),
+        publish_channels=cast(Literal["all", "targets"], publish_channels),
         clean_received=s.boolean("clean_received", False),
     )
 
@@ -673,7 +679,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,
-    "messages.clean_received": bool,
+    "messages.publish_channels": str, "messages.clean_received": bool,
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
