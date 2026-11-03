@@ -949,6 +949,12 @@ events, history rows and recorder entries like the household's own. `[messages] 
 a new installation); `ignore_channels` leaves out single channels
 ([configuration.md](configuration.md#messages)).
 
+The nodes heard are other people's radios: *Nodes heard*, the *New node* event (with the name its
+owner chose, its key and signal) and *Look-alike node heard*. `[contacts] heard_nodes = "keys"`
+keeps their keys and types only, `"off"` nothing but the look-alikes' keys
+([configuration.md](configuration.md#contacts)). What the gateway keeps, of whom and for how long,
+is in [privacy.md](privacy.md).
+
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in
 `.storage/core.restore_state` (restored after a restart). To keep them out of the history,

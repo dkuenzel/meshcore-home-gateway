@@ -303,7 +303,10 @@ class Bridge:
         self.observer = observer or Observer(
             bus, self.topics, protected=protected_keys(config), wall_clock=wall_clock
         )
-        self.observer.manage = config.contacts.manage
+        self.observer.manage, self.observer.heard_nodes = (
+            config.contacts.manage,
+            config.contacts.heard_nodes,
+        )
         self._devices = devices  # the contacts' devices in Home Assistant
         self._profile = profile  # the managed radio profile (ADR 0020)
         if devices is not None:

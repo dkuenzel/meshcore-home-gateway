@@ -17,7 +17,7 @@ from typing import Any, Literal, cast
 
 from meshcore_home_gateway import i18n
 from meshcore_home_gateway.core.commands import CommandRules
-from meshcore_home_gateway.core.contacts import normalise_key
+from meshcore_home_gateway.core.contacts import HEARD_NODES, HeardNodes, normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
 from meshcore_home_gateway.texts import Text, TextError
 
@@ -147,9 +147,11 @@ class HistoryConfig:
 
 @dataclass(frozen=True, slots=True)
 class ContactsConfig:
-    """Managing the radio's contact table on request (ADR 0017)."""
+    """Managing the radio's contact table on request (ADR 0017), and what is published of the
+    nodes heard but not added (SEC-015)."""
 
     manage: bool = True
+    heard_nodes: HeardNodes = "full"
 
 
 @dataclass(frozen=True, slots=True)
@@ -647,7 +649,10 @@ def _history(s: _Section) -> HistoryConfig:
 
 
 def _contacts(s: _Section) -> ContactsConfig:
-    return ContactsConfig(manage=s.boolean("manage", True))
+    heard_nodes = s.string("heard_nodes", "full")
+    if heard_nodes not in HEARD_NODES:
+        raise _one_of(s.key("heard_nodes"), HEARD_NODES, heard_nodes)
+    return ContactsConfig(manage=s.boolean("manage", True), heard_nodes=heard_nodes)
 
 
 def _telemetry(s: _Section) -> TelemetryConfig:
@@ -683,7 +688,8 @@ _ANSWER_TYPES: dict[str, type] = {
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
-    "history.readings_days": float, "contacts.manage": bool, "telemetry.enabled": bool,
+    "history.readings_days": float, "contacts.manage": bool, "contacts.heard_nodes": str,
+    "telemetry.enabled": bool,
     "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
 }  # fmt: skip
 

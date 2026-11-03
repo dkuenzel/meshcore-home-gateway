@@ -18,7 +18,7 @@ from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.bridge import protected_keys
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.adverts import MAX_LOGGED
-from meshcore_home_gateway.core.mesh import AdvertCheck, Fix, Heard
+from meshcore_home_gateway.core.mesh import AdvertCheck, Fix, Heard, Signal
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.telemetry import Answer, TelemetryState
 from meshcore_home_gateway.history import History
@@ -301,6 +301,85 @@ def test_heard_nodes_come_back_after_a_restart_and_expire(tmp_path: Path) -> Non
     observer.tick()
     assert last(bus, f"{ROOT}/nodes")["total"] == 0
     assert history.nodes() == []  # the history keeps them as long as the memory (ADR 0016)
+    history.close()
+
+
+def test_with_heard_nodes_keys_a_stranger_has_no_name_times_or_signal(tmp_path: Path) -> None:
+    """`[contacts] heard_nodes = "keys"` (SEC-015): the `node` event, the `nodes` document and
+    the history carry a stranger's key and type, not its name, times or signal."""
+    radio, path = EmulatedRadio(contacts=[ALICE]), tmp_path / "history.sqlite3"
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        config = make_config('[contacts]\nheard_nodes = "keys"')
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            radio.emit(advert_log(CAROL, hops=3))
+            radio.advertise(CAROL)
+            event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
+            assert (event["key"], event["type"]) == (CAROL.public_key.hex(), "repeater")
+            assert [k for k, v in event.items() if v is None] == [
+                "name", "hops", "snr_db", "rssi_dbm", "heard_at",
+            ]  # fmt: skip
+            nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
+            assert "Carol" not in json.dumps(nodes)
+
+    scenario(main)
+    (row,) = histories[0].nodes()
+    assert (row.key, row.name, row.heard.signal) == (CAROL.public_key.hex(), "", Signal())
+    histories[0].close()
+
+
+def test_with_heard_nodes_keys_the_rows_of_an_earlier_run_lose_name_and_signal(
+    tmp_path: Path,
+) -> None:
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    key = CAROL.public_key.hex()
+    history.node_heard(key, "Carol", 2, Heard(NOW, "advert", Signal(3, 5.5, -95)), int(NOW))
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW + 60)
+    observer.heard_nodes = "keys"
+    observer.radio_event(ContactsRead({}, NOW + 60))
+    (row,) = history.nodes()
+    assert (row.name, row.heard.signal, row.heard.at) == ("", Signal(), NOW)
+    (entry,) = last(bus, f"{ROOT}/nodes")["nodes"]
+    assert (entry["key"], entry["name"]) == (key, None)
+    history.close()
+
+
+def test_with_heard_nodes_off_nothing_of_a_stranger_is_published_or_kept(tmp_path: Path) -> None:
+    """`[contacts] heard_nodes = "off"` (SEC-015): no `node` event, no row, a `nodes` document
+    with the look-alikes' keys only; the rows of an earlier run are not taken back and go with
+    the next purge."""
+    clock = Clock(NOW)
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=clock)
+    observer.radio_event(ContactsRead({}, NOW))
+    carol = contact_record(CAROL)
+    observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW))
+    assert [row.name for row in history.nodes()] == ["Carol"]  # a run with `full`
+
+    bus, alice = FakeBus(), ALICE.public_key.hex()
+    observer = Observer(bus, TOPICS, history=history, protected=frozenset({alice}),
+                        wall_clock=clock)  # fmt: skip
+    observer.heard_nodes = "off"
+    observer.radio_event(ContactsRead({}, NOW))
+    twin = contact_record(EmulatedContact(ALICE.public_key[:6] + b"\xee" * 26, "Alice"))
+    observer.radio_event(AdvertHeard(codec.Advert(twin.public_key, True, twin), NOW))
+    nodes = last(bus, f"{ROOT}/nodes")
+    assert (nodes["total"], nodes["nodes"]) == (0, [])
+    assert nodes["look_alike"] == [twin.public_key.hex()]  # a warning stays one
+    assert bus.payloads(f"{ROOT}/node") == []
+    clock.now = NOW + 60
+    observer.tick()  # the first purge
+    assert history.nodes() == []
     history.close()
 
 

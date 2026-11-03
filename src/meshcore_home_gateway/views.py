@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from meshcore_home_gateway.core import profile
-from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS
+from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, HeardNodes
 from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh, Node, Tracked, type_name
 from meshcore_home_gateway.core.telemetry import CURRENT, TelemetryEvent, TelemetryState
 from meshcore_home_gateway.protocol import codec
@@ -69,6 +69,9 @@ def bounded(
 
 
 # --- contacts -----------------------------------------------------------------------------------
+
+
+_HEARD_FIELDS = ("heard_at", "heard_via", "hops", "snr_db", "rssi_dbm")
 
 
 def _heard(tracked: Tracked) -> dict[str, Any]:
@@ -243,24 +246,30 @@ def look_alike_nodes(mesh: Mesh, protected: Iterable[str] = ()) -> set[str]:
     return {key for key in mesh.nodes if counts[key[:PREFIX_HEX_DIGITS]] > 1}
 
 
-def nodes_document(mesh: Mesh, *, protected: Iterable[str] = ()) -> dict[str, Any]:
-    """`nodes`: nodes the radio heard but did not add, most recently heard first; no positions."""
+def nodes_document(
+    mesh: Mesh, *, protected: Iterable[str] = (), heard: HeardNodes = "full"
+) -> dict[str, Any]:
+    """`nodes`: nodes the radio heard but did not add, most recently heard first; no positions.
+    `heard` (`[contacts] heard_nodes`, SEC-015): with `keys` without their names, times and
+    signal; with `off` none of them, only the look-alikes' keys."""
     flagged = look_alike_nodes(mesh, protected)
+    full = heard == "full"
+    listed = [] if heard == "off" else list(reversed(mesh.nodes.values()))
     entries = (
         {
             "key": t.node.public_key,
             "prefix": t.node.public_key[:PREFIX_HEX_DIGITS],
-            "name": t.node.name,
+            "name": t.node.name if full else None,
             "type": type_name(t.node.node_type),
-            "first_heard_at": iso(t.first_heard),
+            "first_heard_at": iso(t.first_heard) if full else None,
             "look_alike": t.node.public_key in flagged,
-            **_heard(t),
+            **(_heard(t) if full else dict.fromkeys(_HEARD_FIELDS)),
         }
-        for t in reversed(mesh.nodes.values())
+        for t in listed
     )
     warning = sorted(flagged)
     head = {
-        "total": len(mesh.nodes), "truncated": True, "look_alike": warning[:WARNING_KEYS],
+        "total": len(listed), "truncated": True, "look_alike": warning[:WARNING_KEYS],
         "look_alike_total": len(warning), "nodes": [],
     }  # fmt: skip
     kept, total = bounded(entries, ATTRIBUTE_LIMIT_BYTES - len(encode(head)))  # all within it

@@ -20,11 +20,12 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from typing import Any, Protocol
 
 from meshcore_home_gateway.core import adverts, lpp
 from meshcore_home_gateway.core.budget import RateLimit
-from meshcore_home_gateway.core.contacts import Contact
+from meshcore_home_gateway.core.contacts import Contact, HeardNodes
 from meshcore_home_gateway.core.mesh import (
     COMPANION,
     AirtimeMeter,
@@ -133,6 +134,8 @@ class Observer:
         # have), before its document is published: the poller
         self.on_contact_added: list[Callable[[str], None]] = []
         self.manage = manage
+        # what is published and kept of the nodes heard but not added (SEC-015)
+        self.heard_nodes: HeardNodes = "full"
         self._bus = bus
         self._topics = topics
         self._history = history
@@ -419,8 +422,10 @@ class Observer:
             self._send_nodes(now)
         if self._history is not None and now >= self._next_purge:
             # the history keeps the nodes the gateway keeps; before the first table read of the
-            # run its heard nodes are not taken from the history yet
-            kept = None if self._first_read else [*self.mesh.contacts, *self.mesh.nodes]
+            # run its heard nodes are not taken from the history yet; with `heard_nodes = off`
+            # it keeps none of them
+            strangers = [] if self.heard_nodes == "off" else self.mesh.nodes
+            kept = None if self._first_read else [*self.mesh.contacts, *strangers]
             self._history.purge(now, nodes=kept)
             self._next_purge = now + PURGE_INTERVAL_S
         self._restate_all()
@@ -488,7 +493,9 @@ class Observer:
     def _take_heard_nodes(self) -> None:
         """Nodes from the history that are not contacts become heard nodes again. One already
         heard in this run (before the first table read) keeps when it was heard; of the two
-        records, the one of the newer advert stays, also in the history."""
+        records, the one of the newer advert stays, also in the history. With `heard_nodes = off`
+        the rows of an earlier run go with the next purge; with `keys` their names and signal go
+        at once."""
         for row in self._heard_rows:
             if row.key in self.mesh.contacts:
                 continue
@@ -497,6 +504,8 @@ class Observer:
             if tracked is None:
                 self.mesh.node_heard(node, row.heard)
                 tracked = self.mesh.nodes.get(row.key)
+                if self.heard_nodes == "keys" and (row.name or row.heard.signal != Signal()):
+                    self._store_heard(row.key, node, row.heard)
             elif row.last_advert > tracked.node.last_advert:  # this run heard a replay first
                 tracked.node = node
                 if tracked.heard is not None:
@@ -659,11 +668,14 @@ class Observer:
         # history (its advert time comes back with it after a restart)
         self._store_heard(key, self.mesh.nodes[key].node, heard)
         self._publish_nodes()
-        if new and self._node_events.allow(at):
+        if new and self.heard_nodes != "off" and self._node_events.allow(at):
+            full = self.heard_nodes == "full"  # else the key and the type (SEC-015)
             self._event(self._topics.node_event, {
-                "event_type": "new", "key": key, "prefix": key[:12], "name": node.name,
-                "type": type_name(node.node_type), "hops": signal.hops, "snr_db": signal.snr_db,
-                "rssi_dbm": signal.rssi_dbm, "heard_at": iso(at),
+                "event_type": "new", "key": key, "prefix": key[:12],
+                "name": node.name if full else None, "type": type_name(node.node_type),
+                "hops": signal.hops if full else None, "snr_db": signal.snr_db if full else None,
+                "rssi_dbm": signal.rssi_dbm if full else None,
+                "heard_at": iso(at) if full else None,
                 "look_alike": key in look_alike_nodes(self.mesh, self._protected),
             })  # fmt: skip
 
@@ -698,8 +710,15 @@ class Observer:
         ))  # fmt: skip
 
     def _store_heard(self, key: str, node: Node, heard: Heard) -> None:
-        if self._history is not None:
-            self._history.node_heard(key, node.name, node.node_type, heard, node.last_advert)
+        """Of a node not added, only what `heard_nodes` publishes, and when it was heard (for the
+        retention); with `off` nothing (SEC-015)."""
+        if self._history is None:
+            return
+        if key not in self.mesh.contacts and self.heard_nodes != "full":
+            if self.heard_nodes == "off":
+                return
+            node, heard = replace(node, name=""), Heard(heard.at, heard.how)
+        self._history.node_heard(key, node.name, node.node_type, heard, node.last_advert)
 
     def _store_fix(self, key: str, fix: Fix | None) -> None:
         if fix is None or self._history is None or self._stored_fixes.get(key) == fix:
@@ -800,7 +819,10 @@ class Observer:
     def _send_nodes(self, now: float) -> None:
         self._nodes_waiting = False
         self._nodes_sent_at = now
-        self._publish(self._topics.nodes, nodes_document(self.mesh, protected=self._protected))
+        self._publish(
+            self._topics.nodes,
+            nodes_document(self.mesh, protected=self._protected, heard=self.heard_nodes),
+        )
 
     # --- radio ----------------------------------------------------------------------------------
 

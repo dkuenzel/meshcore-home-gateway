@@ -103,7 +103,7 @@ documents for Home Assistant and later front ends (§13).
 | Q3 | Resource use | Idle CPU near zero, resident memory below 50 MB, container disk below 1 GB. |
 | Q4 | Maintainability | Branch coverage ≥ 90 %, `mypy --strict`, `ruff`; one module, one responsibility. |
 | Q5 | Supply chain | Runtime: standard library and Debian's `python3-paho-mqtt`; tools hash-pinned with a 14-day cooldown; actions pinned to commit SHAs; release files reproducible and attested. |
-| Q6 | Privacy | Message texts are logged only at debug level. |
+| Q6 | Privacy | Message texts are logged only at debug level. What is kept of the household and of other people, where and how long: [privacy.md](privacy.md); settings keep less of other people's. |
 
 ### 4.3 Constraints
 
@@ -571,7 +571,10 @@ flowchart LR
   joins or leaves the table; while only heard nodes change, at most every 30 seconds (with the
   minute tick after that), so a flood of adverts does not republish it (up to 15 KiB) per advert.
   The history keeps the rows of the contacts and of the heard nodes the gateway keeps: the hourly
-  purge removes the others, and every row after 7 days.
+  purge removes the others, and every row after 7 days. Heard nodes are other people's radios:
+  `[contacts] heard_nodes = "keys"` publishes and stores their keys and types only, `"off"`
+  nothing; the memory still holds them, for the look-alike check, whose keys stay published
+  ([privacy.md](privacy.md)).
 * **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
   answers moves it at most once an hour, keeping the signal of its last advert or message (an
   answer reports none).
@@ -1168,6 +1171,11 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   of the configuration, strangers' texts on such channels reach the bus, the history and Home
   Assistant's recorder; `"targets"`, which the installer writes on a new installation, keeps only
   the channels the household chose.
+* Every radio in range is a heard node with its owner's chosen name, its key and its signal on
+  the bus, in the history and in Home Assistant's recorder, unless `[contacts] heard_nodes` is
+  `"keys"` or `"off"`. The opt-in `rx` diagnostics publish every packet as received, other
+  people's positions in their adverts included: redacting them would make the diagnostics wrong
+  ([privacy.md](privacy.md)).
 
 ## 8 Reliability and failure modes
 

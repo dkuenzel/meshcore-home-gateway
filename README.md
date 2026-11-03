@@ -151,6 +151,7 @@ the bus.
 | [`docs/testing.md`](docs/testing.md) | Test suites and the hardware checklist |
 | [`docs/platform-notes.md`](docs/platform-notes.md) | What we verified about Proxmox VE, whiptail, Mosquitto, Home Assistant and the firmware, with the evidence |
 | [`docs/development.md`](docs/development.md) | Development workflow and releases |
+| [`docs/privacy.md`](docs/privacy.md) | What the gateway keeps of the household and of other people, where, how long, how to switch it off |
 
 ## Security
 
@@ -164,6 +165,14 @@ companion interface, which hands the radio's private key to any client that reac
 Radio regulation is your responsibility. In the EU band 869.40–869.65 MHz a device may transmit
 at most 10 % of the time; the gateway's default budget uses 1 %, but the radio's own limit is a
 separate setting on the radio.
+
+## Privacy
+
+The gateway keeps what its radio hears: the household's messages, positions and readings, and
+also other people's: the names and keys of radios in range and the texts on channels such as
+*Public*. [`docs/privacy.md`](docs/privacy.md) lists what is kept where and for how long, and the
+settings that keep less of other people's (`[contacts] heard_nodes`, `[messages]
+publish_channels`). Do not share dashboards or copies of the history beyond the household.
 
 ## Development
 

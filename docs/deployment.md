@@ -102,6 +102,10 @@ every setting in the table.
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
 | Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 
+Without a question, a new installation keeps of other people's radios their keys and types only
+(`contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)); the answer
+`contacts.heard_nodes=full` in an answers file keeps their names and signal too.
+
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
 settings with the program's own configuration code (when it installs a clone: already before the
@@ -355,9 +359,10 @@ English. The service's log is always English.
   meshcore-home-gateway`), or use a Proxmox backup of the whole container (`vzdump`): a backup of
   the running container holds the files as a power cut would leave them, which both survive
   (`state.json` is replaced atomically, the history uses SQLite's write-ahead log). Keep backups
-  private and encrypted: the configuration
-  holds the broker password, and `state.json` and `history.sqlite3` hold positions of the
-  household's companions and message texts. Restore the three state files together and with the
+  private and encrypted: the configuration holds the broker password, `state.json` and
+  `history.sqlite3` hold positions of the household's companions and message texts, and the
+  history also other people's names, keys and channel texts
+  ([what the gateway keeps](privacy.md)). Restore the three state files together and with the
   service stopped: the service rewrites `state.json` while it runs, an older `state.json` beside
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
   older `telemetry-excluded.json` asks companions excluded since.

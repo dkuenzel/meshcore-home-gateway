@@ -63,6 +63,7 @@ max_age_s = 900                                        # 0 disables the clock ch
 # (docs/home-assistant.md); false switches contact management off everywhere.
 [contacts]
 # manage = true                                        # the default
+# heard_nodes = "full"  # the default; "keys" or "off" keep less of other people's radios
 
 # Telemetry: battery, readings and position of the radio's companions, asked of each in turn
 # (docs/companions.md sets them up). Every companion of the radio that is not excluded is asked,

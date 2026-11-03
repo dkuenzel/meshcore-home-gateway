@@ -40,6 +40,12 @@ format, the command line and Home Assistant discovery are public interfaces
 - `[messages] publish_channels` (default `all`): `targets` publishes and keeps only the messages
   of channels that are a target; on the *Public* channel, whose key is in the firmware, most
   messages are strangers' ([configuration.md](docs/configuration.md#messages)).
+- `[contacts] heard_nodes` (default `full`): `keys` publishes and keeps of the nodes heard but not
+  added, other people's radios, only their keys and types, no names, times or signal, also in the
+  history and in the select *Add heard node*; `off` nothing but the keys of look-alikes
+  ([configuration.md](docs/configuration.md#contacts)).
+- [`docs/privacy.md`](docs/privacy.md): what the gateway keeps of the household and of other
+  people, where, for how long and how to switch it off; a *Privacy* section in the README.
 
 ### Changed
 
@@ -81,6 +87,9 @@ format, the command line and Home Assistant discovery are public interfaces
 - A new installation from the installer publishes only the messages of the channels the
   household chose as targets (`messages.publish_channels = targets`), not the neighbours'
   chatter on the *Public* channel; installations that run keep their setting.
+- A new installation from the installer keeps of other people's radios their keys and types
+  only (`contacts.heard_nodes = keys`): no names, times or signal on the bus, in the history or in
+  Home Assistant; installations that run keep their setting.
 - A contact or a channel that floods messages no longer fills the bus, the history and Home
   Assistant's recorder: beyond a burst of 10 direct messages of one sender, one every 2 seconds
   is published, beyond 20 on one channel, one a second; the others are still judged as commands

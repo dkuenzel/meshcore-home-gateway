@@ -421,11 +421,12 @@ def test_every_setting_can_be_answered() -> None:
             "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
             "airtime.burst_s=6.5", "commands.max_age_s=0", "diagnostics.publish_rx_log=true",
             "contacts.manage=false", "history.readings_days=7.5", "messages.clean_received=true",
-            "messages.publish_channels=targets",
+            "messages.publish_channels=targets", "contacts.heard_nodes=off",
         ]
     )  # fmt: skip
     config = parse_config(render_config(answers))
     assert config.radio.set_clock is False
+    assert config.contacts.heard_nodes == "off"
     assert config.messages.clean_received is True
     assert config.messages.publish_channels == "targets"
     assert (config.mqtt.tls, config.mqtt.cert_file, config.mqtt.key_file) == (
@@ -628,6 +629,11 @@ def test_telemetry_is_on_by_default() -> None:
 
 def test_contacts_are_managed_on_request_by_default() -> None:
     assert parse_config(MINIMAL).contacts.manage is True
+    assert parse_config(MINIMAL).contacts.heard_nodes == "full"
+    keys = parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "keys"\n')
+    assert keys.contacts.heard_nodes == "keys"
+    with pytest.raises(ConfigError, match=r"contacts\.heard_nodes: one of full, keys, off"):
+        parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "names"\n')
     assert parse_config(MINIMAL + "\n[contacts]\nmanage = false\n").contacts.manage is False
     with pytest.raises(ConfigError, match=r"contacts\.manage"):
         parse_config(MINIMAL + '\n[contacts]\nmanage = "no"\n')

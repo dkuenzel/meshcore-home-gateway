@@ -433,6 +433,12 @@ delay is 0, only from the advert's own log, `null` without it; with a delay abov
 radio does not report, from a log of its key within 10 s. That log is not authenticated, so treat
 them as a hint.
 
+The nodes are other people's radios ([What the gateway keeps](privacy.md)). With `[contacts]
+heard_nodes = "keys"` each entry has its key, prefix, type and `look_alike` only: `name`,
+`first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`. With
+`"off"`, `total` is 0 and `nodes` empty; `look_alike` and `look_alike_total` still name the
+look-alikes ([configuration](configuration.md#contacts)).
+
 ## History: `history`
 
 The latest messages in and out (up to 50, at most 15 KiB), newest first. They are kept in the
@@ -483,7 +489,8 @@ carries. It comes after the contact's document and the index, with `request`, `i
 while the newest advert is not checked, for a further advert that still carries one, when it
 stops, or at a restart. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
-adverts with invented keys does not flood the bus.
+adverts with invented keys does not flood the bus. With `[contacts] heard_nodes = "keys"` its
+`name`, `hops`, `snr_db`, `rssi_dbm` and `heard_at` are `null`; with `"off"` there is none.
 
 ## Managing contacts: `add_contact` and `contacts/<key>/remove`
 
@@ -500,7 +507,8 @@ gateway is offline is lost (clean session), and a stop drops those still queued.
 * a contact card: `meshcore://` and the hex of an advert packet, as the app exports a contact.
 
 `homeassistant/add_node` takes the label of a heard node, `<first 12 key digits>…<last 8> <name>`
-(room servers and sensors with ` (room)` or ` (sensor)` added), as the select *Add heard node* of
+(room servers and sensors with ` (room)` or ` (sensor)` added; with `heard_nodes = "keys"`
+without the name, with `"off"` none), as the select *Add heard node* of
 Home Assistant offers it; the gateway resolves the digits among
 the nodes it heard and the contacts (the name is not compared), and adds the node with its own
 advert. It is subscribed only with Home Assistant's discovery on.

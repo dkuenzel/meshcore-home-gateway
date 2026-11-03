@@ -263,6 +263,7 @@ positions_days = 90
 readings_days = 14
 [contacts]
 manage = false
+heard_nodes = "keys"
 [diagnostics]
 publish_rx_log = true
 log_level = "debug"

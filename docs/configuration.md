@@ -219,6 +219,7 @@ again.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `manage` | `true` | add and remove contacts on request: from Home Assistant ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), the command line (`meshcore-home-gateway contacts`) and MQTT ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)). A contact grants no rights; contact targets and command senders are never removed. With `false` the controls in Home Assistant are `unavailable` |
+| `heard_nodes` | `"full"` | what the gateway publishes and keeps of the nodes it heard but did not add, other people's radios ([privacy.md](privacy.md)): `"full"` key, type, name, when and how they were heard; `"keys"` key and type only, also in the history and in the labels of *Add heard node*; `"off"` nothing: no `nodes` entries, no `node` events, no history rows, nothing to add from the select, only the keys of look-alikes of contacts and protected keys ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Rows of an earlier setting lose name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"` |
 
 Who may send the requests is the broker's ACL to decide ([mqtt-api.md](mqtt-api.md#securing-the-broker)).
 Contacts are written only on tested firmware, like the managed profile; `radio.profile.manage =

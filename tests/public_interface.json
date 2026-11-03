@@ -7,6 +7,7 @@
     "commands.max_age_s",
     "commands.senders",
     "commands.words",
+    "contacts.heard_nodes",
     "contacts.manage",
     "diagnostics.log_level",
     "diagnostics.publish_rx_log",
@@ -633,6 +634,11 @@
   },
   "contacts": {
    "type": "table"
+  },
+  "contacts.heard_nodes": {
+   "answer": "str",
+   "default": "full",
+   "type": "string"
   },
   "contacts.manage": {
    "answer": "bool",
