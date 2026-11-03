@@ -8,6 +8,7 @@ device = "/dev/serial/by-id/usb-Example_Radio_0001-if00"
 # host = "192.0.2.10"                                  # tcp only; the interface has no password
 # port = 5000                                          # tcp only
 set_clock = true                                       # move the radio clock forward to ours
+# set_clock_max_days = 30                              # never more at once (0: no limit)
 
 [mqtt]
 host = "broker.example.org"

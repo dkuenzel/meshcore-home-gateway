@@ -2,7 +2,9 @@
 # Install to /etc/systemd/system/; see docs/deployment.md.
 [Unit]
 Description=meshcore-home-gateway MeshCore to MQTT bridge
-After=network-online.target
+# time-sync.target: after the first synchronisation of the clock, where a service provides it
+# (systemd-timesyncd, chrony): the radio's clock is set from it and cannot be set back
+After=network-online.target time-sync.target
 Wants=network-online.target
 StartLimitIntervalSec=600
 StartLimitBurst=20

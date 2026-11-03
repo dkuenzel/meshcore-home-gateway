@@ -8,6 +8,23 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Added
+
+- `radio_clock_offset_s` in the `state` document and the diagnostic sensor *Radio clock offset*:
+  how far the radio's clock is ahead of the host's, read at connect and with every heartbeat
+  ([mqtt-api.md](docs/mqtt-api.md#state-state)). The radio's clock cannot be set back, so an
+  offset far above 0 needs attention
+  ([deployment.md](docs/deployment.md#5-troubleshooting)).
+- `[radio] set_clock_max_days` (default 30, 0 for no limit): the largest step by which
+  `set_clock` moves a radio clock that was set
+  ([configuration.md](docs/configuration.md#radio)).
+
+### Changed
+
+- The clock of the radio is read also without `set_clock`, to show its offset.
+- The service starts after `time-sync.target` where a service provides it (`systemd-timesyncd`,
+  `chrony`): the radio's clock is set from the host's.
+
 ### Security
 
 - A flood of adverts with invented keys, which any board in range can send (a key costs
@@ -23,6 +40,12 @@ format, the command line and Home Assistant discovery are public interfaces
   the gateway lists, and for 7 days instead of 30, as
   [ADR 0016](docs/decisions/0016-history-in-a-local-sqlite-database.md) says, instead of a row
   for every key ever heard ([configuration.md](docs/configuration.md#history)).
+- `set_clock` no longer writes a host clock that is not plausible to the radio, which cannot be
+  set back and would keep a wrong time (a typo of the year, a dead clock battery of the host, a
+  forged time server): not one before the gateway's release or more than ten years after it, and
+  not one more than `set_clock_max_days` ahead of a radio clock that was set. A radio clock from
+  before the release was never set and is written as before. A warning says why the clock was
+  left behind ([design §6.1](docs/design.md#61-radio-session)).
 
 ## [1.1.0a4] - 2026-10-31
 

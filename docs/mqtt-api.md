@@ -198,8 +198,14 @@ reason, and every 60 s.
  "bandwidth_khz": 62.5, "spreading_factor": 8, "coding_rate": 8, "tx_power_dbm": 22,
  "contact_link": "meshcore://contact/add?name=Gateway&public_key=…&type=1",
  "version": "0.1.0", "telemetry": "on", "telemetry_reason": null, "telemetry_airtime_1h_s": 4.5,
- "telemetry_mesh_airtime_1h_s": 10.6}
+ "telemetry_mesh_airtime_1h_s": 10.6, "radio_clock_offset_s": 0}
 ```
+
+`radio_clock_offset_s` is how far the radio's clock is ahead of the host's, in seconds (negative:
+behind), as last read: at connect and with every heartbeat (60 s); `null` while the radio is not
+connected. A change of a second or two is the reading's resolution and is not reported. The
+radio's clock cannot be set back ([design §6.1](design.md#61-radio-session)): far above 0 it
+needs attention ([deployment.md](deployment.md#5-troubleshooting)).
 
 `contact_link` adds the gateway in the MeshCore app, for example as a QR code (`null` until the
 radio is known). It carries no position.

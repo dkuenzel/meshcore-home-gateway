@@ -36,6 +36,7 @@ transport = "tcp"
 host = "192.0.2.10"
 port = 5000
 set_clock = false
+set_clock_max_days = 7
 
 [radio.profile]
 manage = "observe"
@@ -120,6 +121,7 @@ def test_full_configuration_is_read_completely() -> None:
         5000,
     )
     assert config.radio.set_clock is False
+    assert config.radio.set_clock_max_days == 7
     assert config.mqtt.password == 's3cret "quoted"'
     assert config.mqtt.tls is True
     assert config.mqtt.base_topic == "mesh/home"
@@ -133,6 +135,20 @@ def test_full_configuration_is_read_completely() -> None:
     assert config.diagnostics.log_level == "debug"
     assert (config.history.enabled, config.history.messages_days) == (False, 7.0)
     assert (config.history.positions_days, config.history.readings_days) == (90.0, 14.5)
+
+
+def test_the_radio_clock_steps_at_most_30_days_by_default() -> None:
+    """SEC-002: a larger step from a set radio clock is not written; 0 lifts the limit."""
+    radio = parse_config(MINIMAL).radio
+    assert (radio.set_clock, radio.set_clock_max_days) == (True, 30)
+    assert MINIMAL.count("[radio]\n") == 1
+    for days in (0, 3650):
+        text = MINIMAL.replace("[radio]\n", f"[radio]\nset_clock_max_days = {days}\n")
+        assert parse_config(text).radio.set_clock_max_days == days
+    for invalid in ("-1", "3651", "1.5", '"30"'):
+        text = MINIMAL.replace("[radio]\n", f"[radio]\nset_clock_max_days = {invalid}\n")
+        with pytest.raises(ConfigError, match=r"radio\.set_clock_max_days"):
+            parse_config(text)
 
 
 def test_the_history_is_on_by_default_and_bounded() -> None:

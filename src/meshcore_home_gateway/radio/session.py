@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import itertools
 import logging
 import time
@@ -46,6 +47,14 @@ FLUSH_BYTES = 256  # completes any partial frame in the serial parser (docs/prot
 FLUSH_SETTLE_S = 0.5
 CLOCK_SET_THRESHOLD_S = 2
 CLOCK_AHEAD_WARNING_S = 60
+# The radio's clock moves only forward (SET_DEVICE_TIME refuses an earlier time, docs/protocol.md
+# section 5), so a wrong host clock written to it stays until real time passes it (SEC-002).
+# No release of the gateway is older than this: a clock before it was never set. A radio without
+# a clock chip starts at 2024-05-15, or at the newest time it wrote to a contact
+# (ArduinoHelpers.h:11, BaseChatMesh.cpp:60-70). Raised at every release (docs/development.md).
+RELEASED_AFTER = 1_793_404_800  # 2026-10-31T00:00:00Z, the release of 1.1.0a4
+HOST_CLOCK_PLAUSIBLE_S = 10 * 365 * 86_400  # a host clock beyond the release by more is wrong
+DAY_S = 86_400
 SYNC_INTERVAL_S = 300.0  # safety net in case a MSG_WAITING push was lost
 HEARTBEAT_INTERVAL_S = 60.0
 CONTACTS_REFRESH_DELAY_S = 2.0
@@ -218,6 +227,7 @@ class CompanionSession:
         command_timeout_s: float = COMMAND_TIMEOUT_S,
         flush_settle_s: float = FLUSH_SETTLE_S,
         set_clock: bool = True,
+        set_clock_max_days: int = 30,
     ) -> None:
         self._transport = transport
         self._events = events
@@ -225,6 +235,8 @@ class CompanionSession:
         self._timeout = command_timeout_s
         self._flush_settle = flush_settle_s
         self._set_clock = set_clock
+        self.set_clock_max_days = set_clock_max_days  # 0: no limit
+        self.clock_offset_s: int | None = None  # the radio's clock minus the host's, last read
         self._decoder = FrameDecoder()
         self._lock = asyncio.Lock()
         self._pending: _Pending | None = None
@@ -285,8 +297,7 @@ class CompanionSession:
         )  # fmt: skip
         await self._apply_profile("before_contacts")  # the policy holds before a message is judged
         _warn_about_contact_adding(self.info.self_info, self.autoadd)
-        if self._set_clock:
-            await self._sync_clock()
+        await self._sync_clock()
         await self.refresh_contacts()
         if await self._apply_profile("after_contacts"):
             await self.refresh_contacts()
@@ -424,12 +435,14 @@ class CompanionSession:
         )
 
     async def read_status(self) -> StatsRead:
-        """Battery and statistics (the heartbeat); reported to the event queue as well.
+        """Battery, the radio's clock and statistics (the heartbeat); reported to the event queue
+        as well.
 
         Firmware without `GET_STATS` answers `ERR`: the statistics are then not asked again in
         this session.
         """
         self.battery = battery = await self.get_battery()
+        await self._read_clock()
         core = radio = packets = None
         if self._stats_supported:
             core = await self._stats(StatsType.CORE, codec.CoreStats)
@@ -584,17 +597,59 @@ class CompanionSession:
         except CommandFailedError:
             return None
 
-    async def _sync_clock(self) -> None:
+    async def _read_clock(self) -> int:
+        """The radio's time; its offset from the host's is kept, unless it moved by no more than
+        the reading's own resolution (whole seconds, read a moment apart)."""
         radio_time = await self.get_time()
+        offset = radio_time - int(self._wall())
+        before = self.clock_offset_s
+        if before is None or abs(offset - before) > CLOCK_SET_THRESHOLD_S:
+            self.clock_offset_s = offset
+        return radio_time
+
+    async def _sync_clock(self) -> None:
+        """Read the radio's clock at connect and, with `set_clock`, move it forward to the host's.
+        The radio cannot be set back, so the host's time is written only when it is plausible:
+        not before the release, at most ten years after it, and at most `set_clock_max_days`
+        ahead of a radio clock that was set (0: no limit, also not the ten years). A radio clock
+        before the release was never set: after a restart without a clock chip and contacts."""
+        radio_time = await self._read_clock()
         now = int(self._wall())
-        if now - radio_time > CLOCK_SET_THRESHOLD_S:
-            await self.set_time(now)
-            log.info("radio clock moved forward by %d s", now - radio_time)
-        elif radio_time - now > CLOCK_AHEAD_WARNING_S:
+        ahead = now - radio_time
+        if ahead > CLOCK_SET_THRESHOLD_S and self._set_clock:
+            refused = self._clock_refused(now, radio_time)
+            if refused is None:
+                await self.set_time(now)
+                self.clock_offset_s = 0
+                log.info("radio clock moved forward by %d s", ahead)
+            else:
+                log.warning("radio clock left %d s behind the host's: %s", ahead, refused)
+        elif -ahead > CLOCK_AHEAD_WARNING_S:
             log.warning(
-                "radio clock is %d s ahead and cannot be set back; command age checks may fail",
-                radio_time - now,
+                "radio clock is %d s ahead of the host's and cannot be set back: its adverts and "
+                "contact times carry that time (docs/deployment.md, Troubleshooting)",
+                -ahead,
             )
+
+    def _clock_refused(self, now: int, radio_time: int) -> str | None:
+        """Why the host's time `now` is not written to the radio, or None."""
+        limit = self.set_clock_max_days
+        if now < RELEASED_AFTER:
+            return f"the host's clock ({_iso(now)}) is before this release: it is wrong"
+        if limit == 0:
+            return None
+        if now > RELEASED_AFTER + HOST_CLOCK_PLAUSIBLE_S:
+            return (
+                f"the host's clock ({_iso(now)}) is more than ten years after this release; "
+                "if it is right, set_clock_max_days = 0 writes it"
+            )
+        if radio_time >= RELEASED_AFTER and now - radio_time > limit * DAY_S:
+            return (
+                f"more than set_clock_max_days = {limit}; the radio cannot be set back, so a "
+                f"wrong host clock would stay on it. If the host's clock ({_iso(now)}) is right, "
+                "raise set_clock_max_days or set it to 0"
+            )
+        return None
 
     async def _maintenance(self) -> None:
         """Refresh contacts after adverts, then sync on MSG_WAITING; the battery is the heartbeat.
@@ -845,3 +900,7 @@ def _warn_about_contact_adding(
             "types off in the auto-add settings (ADR 0009)",
             ", ".join(type_names(types)),
         )
+
+
+def _iso(timestamp: int) -> str:
+    return datetime.datetime.fromtimestamp(timestamp, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -364,7 +364,11 @@ passes. `releases/latest` and the installer's default never pick a pre-release
 1. For a release (not a pre-release): run the [hardware checklist](testing.md#hardware-checklist)
    with the release candidate, the core steps always and the steps of the features that changed
    since the last release. The release ships the program of that candidate: only `__version__`
-   may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`.
+   may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`. So before the
+   candidate, a change raises `RELEASED_AFTER` in `src/meshcore_home_gateway/radio/session.py` to
+   the date of the last release: the gateway takes a host clock before it, or more than ten years
+   after it, as wrong and does not write it to the radio (design §6.1). One left behind only
+   weakens that check; one in the future would refuse every host clock, which a test catches.
 2. The pull request that finishes the increment sets `__version__` in
    `src/meshcore_home_gateway/__init__.py`, adds its row to the table of Home Assistant releases
    tested with ([home-assistant.md](home-assistant.md#requirements)) and moves the *Unreleased*

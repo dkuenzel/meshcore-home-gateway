@@ -1731,6 +1731,13 @@ msgctxt "home assistant"
 msgid "Queue"
 msgstr ""
 
+#. sensor (duration) of the gateway: how far its own radio's clock is
+#. ahead of the gateway's clock (negative: behind)
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Radio clock offset"
+msgstr ""
+
 #. binary sensor (connectivity) of the gateway: its USB or TCP link to
 #. its own radio, not a link over the air. Home Assistant shows the device name first.
 #: src/meshcore_home_gateway/mqtt/discovery.py

@@ -311,6 +311,24 @@ fail when one does not:
 
 ## 5 Semantics
 
+* **The radio's clock moves only forward.** `SET_DEVICE_TIME` takes a time no earlier than the
+  current one, else `ERR 6` (`MyMesh.cpp:1287-1296`); no other command sets it back. A board
+  without a clock chip starts at 2024-05-15 (`ArduinoHelpers.h:11`), and at start the companion
+  sets its clock to the newest last-modified time of its contacts plus a second
+  (`bootstrapRTCfromContacts`, `BaseChatMesh.cpp:60-70`, called from `MyMesh.cpp:1001`), the
+  radio's own clock when a message, advert or path of that contact arrived
+  (`BaseChatMesh.cpp:119,198,240,294,357`): a radio that lay unused restarts as far behind, and a
+  wrong time once written survives restarts. Boards with a DS3231, RV3028, PCF8563 or RX8130 keep
+  the time in the chip (`AutoDiscoverRTCClock.cpp:85-101`). Only a factory reset, which gives the
+  radio a new identity, or real time passing it undoes a time too far ahead. The radio stamps its
+  adverts with its clock (`Mesh.cpp:404-420`), and a node drops a contact's advert that is not
+  newer than the last one it stored (`BaseChatMesh.cpp:131-136`): while the clock stays ahead its
+  adverts are taken, with times in the future; once it comes back with the identity kept (the
+  key exported and imported again after a factory reset, or a board without a clock chip whose
+  contacts were all removed), no node that holds the radio takes its adverts until real time
+  passes the time it advertised last. The contacts' last-modified times, which decide the contact
+  that a full table overwrites, carry the wrong time too. The gateway writes the host's time only
+  when it is plausible (design §6.1).
 * **One command at a time.** The radio reads one frame per main-loop pass and answers it before the
   next (`MyMesh.cpp:2388-2391`). The gateway sends one command, waits up to 5 s for an answer with
   one of the expected codes, routes push frames separately and drops anything else.

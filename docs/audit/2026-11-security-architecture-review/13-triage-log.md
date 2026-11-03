@@ -37,7 +37,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
 | SEC-001 | fix | Document what `confirmed` proves; flag an acknowledgement whose round trip is shorter than the known path allows (`suspect`); an opt-in random suffix (`[messages] confirm_nonce`) makes the text, and so the code, unguessable. The protocol weakness itself is the firmware's (option 5: for the maintainer to raise upstream) | pending: acks |
-| SEC-002 | fix | Host clock plausibility bounds before the write, `set_clock = "always"` to force, the radio's clock offset in `state`, `After=time-sync.target`, recovery documented | pending: clock |
+| SEC-002 | fix | Host clock plausibility bounds before the write (the release date, ten years, and `[radio] set_clock_max_days`, default 30 days, 0 to force, instead of the planned `set_clock = "always"` and an hour: the firmware restarts a radio at its contacts' newest time, so an hour would refuse a radio unplugged for a night), the radio's clock offset in `state`, `After=time-sync.target`, recovery documented | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | SEC-003 | fix | Exact wording of the risk (key export and import, no forward secrecy) everywhere the TCP interface is mentioned; a TCP radio now needs `[radio] tcp_unauthenticated = true` (**Breaking**); detection of a contested link from the radio's uptime; the installer warns | pending: tcp |
 | SEC-004 | fix | Warnings at start and in `check-config` for a broker without credentials or TLS; an anonymous-access probe in `check-config --broker`; commands over such a broker need `[mqtt] insecure = true` (**Breaking**); the installer asks for TLS and confirms an empty user name | pending: broker |
 | SEC-005 | fix | The gateway subscribes to its own documents and restores any it finds changed by another client (rate-limited, with a warning); the integrity model is stated. Stamps (`published_at`) are not added: they would change every document at every publish and a forger copies them | pending: documents |
@@ -111,7 +111,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
 | DOC-001 | fix | The direction of the gateway's own discovery topic is "both" | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| DOC-002 | fix | Design §6.1, §8 and the troubleshooting row name the sender's and the host's clocks; the warning text names the adverts | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: clock |
+| DOC-002 | fix | Design §6.1, §8 and the troubleshooting row name the sender's and the host's clocks; the warning text names the adverts | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | DOC-003 | fix | The "before the first release" paragraphs and the 0.1.0 example go; the repository description follows the README | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37); the description: repository settings, 2026-11-02 |
 | DOC-004 | fix | Heard nodes are kept 7 days in the history too, as ADR 0016 says (SEC-010) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | DOC-005 | fix | Through ARC-001 | pending: threat-model |
@@ -185,7 +185,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-003 | defer | Incremental table reads would touch the full reads ADR 0009's look-alike memory relies on; after SEC-011 strangers' adverts no longer cause reads, so the gain is small. Back when contact re-reads show up as a load | – |
 | IMP-004 | fix | Through SEC-012 | pending: privacy |
 | IMP-005 | fix | Through SEC-016 | pending: privacy |
-| IMP-006 | fix | Through SEC-002 | pending: clock |
+| IMP-006 | fix | Through SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | IMP-007 | fix | Through SEC-004 | pending: broker |
 | IMP-008 | fix | Through SEC-005 (healing); stamps rejected there, an HMAC signature deferred until a consumer can verify it (EXT-012) | pending: documents |
 | IMP-009 | fix | Through SEC-006 | pending: broker |
@@ -261,12 +261,12 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
 | RES-001 | accept | Acknowledged; the consequence moves to `docs/protocol.md` §5 with SEC-001 | pending: acks |
-| RES-002 | accept | Acknowledged; already in `docs/protocol.md` §5, the clock consequence added with SEC-002 | pending: clock |
+| RES-002 | accept | Acknowledged; already in `docs/protocol.md` §5, the clock consequence added with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | RES-003 | accept | Acknowledged; the scale of the cost goes to design §7.4 | pending: threat-model |
 | RES-004 | accept | Acknowledged; the table goes to `docs/protocol.md` §7 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-005 | accept | Acknowledged; turned into flood tests (SEC-010, SEC-011) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | pending: threat-model |
-| RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | pending: clock |
+| RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | pending: tcp |
 | RES-009 | accept | Acknowledged; turned into a test (CODE-001) | pending: robustness |
 | RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | pending: broker |
