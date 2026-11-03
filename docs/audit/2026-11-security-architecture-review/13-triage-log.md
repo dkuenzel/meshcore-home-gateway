@@ -36,7 +36,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| SEC-001 | fix | Document what `confirmed` proves; flag an acknowledgement whose round trip is shorter than the known path allows (`suspect`); an opt-in random suffix (`[messages] confirm_nonce`, 8 hex digits: 32 bits, as many as the code) makes the text, and so the code, unguessable; a firmware test shows the forgery and both mitigations. The protocol weakness itself is the firmware's (option 5: for the maintainer to raise upstream) | pending: acks |
+| SEC-001 | fix | Document what `confirmed` proves; flag an acknowledgement whose round trip is shorter than the known path allows (`suspect`); an opt-in random suffix (`[messages] confirm_nonce`, 8 hex digits: 32 bits, as many as the code) makes the text, and so the code, unguessable; a firmware test shows the forgery and both mitigations. The protocol weakness itself is the firmware's (option 5: for the maintainer to raise upstream) | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
 | SEC-002 | fix | Host clock plausibility bounds before the write (the release date, ten years, and `[radio] set_clock_max_days`, default 30 days, 0 to force, instead of the planned `set_clock = "always"` and an hour: the firmware restarts a radio at its contacts' newest time, so an hour would refuse a radio unplugged for a night), the radio's clock offset in `state`, `After=time-sync.target`, recovery documented | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | SEC-003 | fix | Exact wording of the risk (key export and import, no forward secrecy) everywhere the TCP interface is mentioned; a TCP radio now needs `[radio] tcp_unauthenticated = true` (**Breaking**); detection of a contested link from the radio's uptime; the installer warns | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | SEC-004 | fix | Warnings at start and in `check-config` for a broker without credentials or TLS; an anonymous-access probe in `check-config --broker`; commands over such a broker need `[mqtt] insecure = true` (**Breaking**; a broker on the gateway's host or link needs no TLS, as the review proposed); the installer asks for TLS and confirms an empty user name | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
@@ -117,7 +117,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | DOC-005 | fix | Through ARC-001 | pending: threat-model |
 | DOC-006 | fix | `SECURITY.md` says which versions get fixes, how soon a report is acknowledged and that advisories are published | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-007 | fix | The README says whom the gateway asks, and that a companion answers only if allowed | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| DOC-008 | fix | Through SEC-001: one sentence wherever `confirmed` is explained | pending: acks |
+| DOC-008 | fix | Through SEC-001: one sentence wherever `confirmed` is explained | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
 | DOC-009 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | DOC-010 | fix | A "What the gateway keeps" section (household and bystanders, where, how long, how to switch it off): `docs/privacy.md`, with SEC-015 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
 | DOC-011 | fix | The design document split into a core and one document per subsystem, with state and sequence diagrams and a table of where each section moved | pending: threat-model |
@@ -180,7 +180,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| IMP-001 | fix | Through SEC-001 | pending: acks |
+| IMP-001 | fix | Through SEC-001 | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
 | IMP-002 | fix | Optional per-sender TOTP codes for commands, with an enrolment command | pending: totp |
 | IMP-003 | defer | Incremental table reads would touch the full reads ADR 0009's look-alike memory relies on; after SEC-011 strangers' adverts no longer cause reads, so the gain is small. Back when contact re-reads show up as a load | – |
 | IMP-004 | fix | Through SEC-012 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
@@ -260,7 +260,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| RES-001 | accept | Acknowledged; the consequence moves to `docs/protocol.md` §5 with SEC-001 | pending: acks |
+| RES-001 | accept | Acknowledged; the consequence moves to `docs/protocol.md` §5 with SEC-001 | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
 | RES-002 | accept | Acknowledged; already in `docs/protocol.md` §5, the clock consequence added with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | RES-003 | accept | Acknowledged; the scale of the cost goes to design §7.4 | pending: threat-model |
 | RES-004 | accept | Acknowledged; the table goes to `docs/protocol.md` §7 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
