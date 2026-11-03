@@ -48,7 +48,10 @@ from tests.test_discovery import SPOKEN, STATE_KEYS, speak, template_keys
 
 ALICE, BOB, HILL, CAROL = "a1" * 32, "b2" * 32, "c3" * 32, "d4" * 32
 NOW = 1_800_000_000.0
-BASE_CONFIG = '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "radio1"\n'
+BASE_CONFIG = (
+    '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+    'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "radio1"\n'
+)
 CONFIG = parse_config(BASE_CONFIG)
 TELEMETRY_ON = parse_config(BASE_CONFIG + "[telemetry]\nenabled = true\n")
 TELEMETRY_OFF = parse_config(BASE_CONFIG + "[telemetry]\nenabled = false\n")

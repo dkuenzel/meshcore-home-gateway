@@ -323,7 +323,8 @@ def test_check_config_names_contact_management_and_protected_look_alikes(
 ) -> None:
     config = tmp_path / "config.toml"
     config.write_text(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "insecure = true\n"
         f'[targets.one]\ncontact = "{"b2" * 32}"\n'
         f'[commands]\nsenders = ["{"b2" * 6 + "00" * 26}"]\nwords = ["status"]\n'
@@ -345,7 +346,10 @@ def test_a_contact_that_is_not_valid_text_is_refused_before_connecting(
 ) -> None:
     """Bytes that are not UTF-8 reach argv as lone surrogates (PEP 383)."""
     config = tmp_path / "config.toml"
-    config.write_text('[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n')
+    config.write_text(
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+    )
     link = "meshcore://contact/add?name=B\udce4r&public_key=" + DAVE
     assert main(["contacts", "add", "--config", str(config), link]) == EX_USAGE
     assert "not valid Unicode" in capsys.readouterr().err
@@ -501,7 +505,10 @@ def test_telemetry_usage_errors_publish_nothing(
 ) -> None:
     """Before connecting: no broker is configured that would answer."""
     config = tmp_path / "config.toml"
-    config.write_text('[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n')
+    config.write_text(
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+    )
     assert main(["contacts", "telemetry", "--config", str(config), *args]) == EX_USAGE
     assert "meshcore-home-gateway: " in capsys.readouterr().err
 

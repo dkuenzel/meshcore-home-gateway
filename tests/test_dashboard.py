@@ -58,7 +58,7 @@ def translated(texts: Mapping[str, str]) -> Speaker:
 
 def config(node_id: str = "radio1", more: str = "") -> Config:
     return parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n'
         f'[mqtt]\nhost = "broker.example.org"\nnode_id = "{node_id}"\n{more}'
     )
 

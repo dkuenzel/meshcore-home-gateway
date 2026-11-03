@@ -65,6 +65,7 @@ def make_config(targets: str = TARGETS, node_id: str = "radio1") -> Config:
     return parse_config(f"""
 [radio]
 transport = "tcp"
+tcp_unauthenticated = true
 host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"
@@ -268,6 +269,7 @@ async def test_a_component_is_removed_also_after_a_restart_of_home_assistant(
         f"""
 [radio]
 transport = "tcp"
+tcp_unauthenticated = true
 host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"
@@ -298,6 +300,7 @@ async def test_a_disabled_component_goes_without_losing_the_device_for_long(
     fewer = parse_config(f"""
 [radio]
 transport = "tcp"
+tcp_unauthenticated = true
 host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"

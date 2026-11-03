@@ -113,7 +113,8 @@ CONFIGURATION = [
     ('[radio]\ntransport = ""\n' + MQTT, "radio.transport: expected a non-empty string"),
     (RADIO + "set_clock = 1\n" + MQTT, "radio.set_clock: expected true or false"),
     (
-        '[radio]\ntransport = "tcp"\nhost = "192.0.2.1"\nport = "x"\n' + MQTT,
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "192.0.2.1"\nport = "x"\n' + MQTT,
         "radio.port: expected an integer",
     ),
     (MINIMAL + "port = 0\n", "mqtt.port: must be between 1 and 65535, got 0"),
@@ -135,7 +136,10 @@ CONFIGURATION = [
     ),
     (RADIO + 'host = "192.0.2.1"\n' + MQTT, "radio.host: only used with transport = 'tcp'"),
     ('[radio]\ntransport = "serial"\n' + MQTT, "radio.device: required for the serial transport"),
-    ('[radio]\ntransport = "tcp"\n' + MQTT, "radio.host: required for the tcp transport"),
+    (
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n' + MQTT,
+        "radio.host: required for the tcp transport",
+    ),
     (
         MINIMAL + '[radio.profile]\nmanage = "never"\n',
         "radio.profile.manage: one of auto, observe, always, got 'never'",
@@ -496,7 +500,7 @@ TOPICS = Topics("meshcore", "radio1")
 SHIPPED = [code for code in i18n.LANGUAGES if code != "en"]
 SUMMARIES = {  # between them, every kind of line of check-config's summary
     "tcp": (
-        '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n'
         + MQTT
         + 'username = "gateway"\npassword = "secret"\ninsecure = true\n'
         f'[targets.alerts]\nchannel = 1\n[targets.gate]\ncontact = "{KEY}"\n'
@@ -854,7 +858,7 @@ def _render(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     answers = _written(
         tmp,
         "answers",
-        "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
+        "radio.transport=tcp\nradio.tcp_unauthenticated=true\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
         "mqtt.node_id=radio1\n",
     )
     render = ["config", "render", "--answers", answers, "--output"]
@@ -1291,7 +1295,8 @@ def test_check_config_keeps_its_english_summary(tmp_path: Path) -> None:
     path = tmp_path / "c.toml"
     assert ran.out == (
         f"configuration {path}: valid\n"
-        "  radio      tcp 192.0.2.10:5000\n"
+        "  radio      tcp 192.0.2.10:5000, unauthenticated: anyone who reaches it controls the "
+        "radio\n"
         "  broker     broker.example.org:1883, user 'gateway' with a password, topics "
         "meshcore/radio1/...\n"
         "  discovery  on, prefix homeassistant, names in English\n"

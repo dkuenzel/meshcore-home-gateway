@@ -39,7 +39,10 @@ system. The threat model, the trust boundaries and the mitigations are described
 - Outbound traffic is limited to configured targets and an airtime budget
   ([ADR 0008](docs/decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)).
 - The MeshCore TCP companion interface has no authentication in either direction: any client
-  controls the radio, and a host that takes the radio's network address can pose as the radio and
-  forge commands. It can also lose push frames. Use USB, above all for commands, or else an
-  isolated network that only the gateway and the radio can reach.
+  controls the radio, the release firmware hands it the radio's private key, which decrypts every
+  direct message of the radio (there is no forward secrecy), and a host that takes the radio's
+  network address can pose as the radio and forge commands. It can also lose push frames. Use USB,
+  above all for commands, or else a network that only the gateway and the radio can reach; the
+  configuration says so with `[radio] tcp_unauthenticated = true`
+  ([configuration.md](docs/configuration.md#radio)).
 - Runtime dependencies come from the Linux distribution only; development tools are hash-pinned.

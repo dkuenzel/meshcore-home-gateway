@@ -68,7 +68,8 @@ def test_service_end_to_end(
     with TcpRadioServer(radio) as server:
         config = tmp_path / "config.toml"
         config.write_text(
-            f'[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\nport = {server.port}\n'
+            '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+            f'host = "127.0.0.1"\nport = {server.port}\n'
             f'[mqtt]\nhost = "{broker.host}"\nport = {broker.port}\nnode_id = "radio1"\n'
             "insecure = true\n"  # commands without credentials (SEC-004)
             f'[targets.alerts]\nchannel = 0\n[targets.alice]\ncontact = "{"a1" * 32}"\n'

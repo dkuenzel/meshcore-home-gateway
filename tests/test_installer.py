@@ -547,7 +547,9 @@ def test_device_group_is_corrected_when_dialout_differs(host: Host) -> None:
 
 def test_radio_over_tcp_needs_no_device(host: Host) -> None:
     answers = answers_file(
-        host, "radio.choice=tcp\nradio.host=192.0.2.30\nradio.port=5001\nmqtt.host=broker\n"
+        host,
+        "radio.choice=tcp\nradio.host=192.0.2.30\nradio.port=5001\nmqtt.host=broker\n"
+        "radio.tcp_unauthenticated=true\n",
     )
     result = run_installer(host, "--answers", str(answers))
     assert result.returncode == 0, result.stderr
@@ -557,11 +559,58 @@ def test_radio_over_tcp_needs_no_device(host: Host) -> None:
     assert (config.radio.transport, config.radio.host, config.radio.port) == (
         "tcp", "192.0.2.30", 5001,
     )  # fmt: skip
+    assert config.radio.tcp_unauthenticated is True
+
+
+def test_a_radio_over_tcp_needs_the_acknowledgement(host: Host) -> None:
+    """SEC-003: whoever reaches the TCP interface owns the radio and its key. Without the answer
+    the settings check names the setting, before anything is created."""
+    answers = answers_file(host, "radio.choice=tcp\nradio.host=192.0.2.30\nmqtt.host=broker\n")
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 1
+    assert "radio.tcp_unauthenticated: the radio's TCP interface has no authentication" in (
+        result.stderr
+    )
+    assert not host.pct("create")
+
+
+def test_a_declined_tcp_radio_offers_the_radios_again(host: Host) -> None:
+    """The dialog says what TCP exposes; no: the menu again, here for the USB radio."""
+    dialog = [
+        "default", "tcp", "192.0.2.30", "5000",  # setup, radio, its address and port
+        "no",  # TCP declined
+        str(host.serial),  # the radio again
+        "broker.example.org", "no", "bridge", "pw", "yes", "1", "", "",
+    ]  # fmt: skip
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    assert len(host.dialogs()) == len(dialog)
+    (warning,) = [
+        c for c in host.dialogs() if "--yesno" in c and any("no authentication" in a for a in c)
+    ]
+    assert "--defaultno" in warning
+    assert any("read its private key" in a for a in warning)
+    config = host.config()
+    assert (config.radio.transport, config.radio.device) == ("serial", str(host.serial))
+    assert config.radio.tcp_unauthenticated is False
+
+
+def test_an_accepted_tcp_radio_is_written_with_the_acknowledgement(host: Host) -> None:
+    dialog = [
+        "default", "tcp", "192.0.2.30", "5000", "yes",  # TCP accepted
+        "broker.example.org", "no", "bridge", "pw", "yes", "1", "", "",
+    ]  # fmt: skip
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    config = host.config()
+    assert (config.radio.transport, config.radio.tcp_unauthenticated) == ("tcp", True)
 
 
 def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
     answers = answers_file(
-        host, "radio.choice=tcp\nradio.host=2001:db8::30\nradio.port=5001\nmqtt.host=broker\n"
+        host,
+        "radio.choice=tcp\nradio.host=2001:db8::30\nradio.port=5001\nmqtt.host=broker\n"
+        "radio.tcp_unauthenticated=true\n",
     )
     result = run_installer(host, "--answers", str(answers))
     assert result.returncode == 0, result.stderr
@@ -1200,6 +1249,32 @@ def test_reconfigure_refuses_answers_it_cannot_apply(host: Host, answer: str) ->
     assert result.returncode == 1
     assert answer.partition("=")[0] in result.stderr
     assert "systemctl stop meshcore-home-gateway" not in host.inside()
+
+
+@pytest.mark.parametrize("accepted", [True, False])
+def test_reconfiguring_a_tcp_radio_asks_for_the_acknowledgement(host: Host, accepted: bool) -> None:
+    """The configuration of an earlier version lacks it, and a version with the rule refuses
+    the radio without it (SEC-003): declined, nothing changes."""
+    existing_container(host)
+    current = host.root / "current"
+    serial = f"radio.transport=serial\nradio.device={host.serial}\n"
+    text = current.read_text(encoding="utf-8")
+    current.write_text(text.replace(serial, "radio.transport=tcp\nradio.host=192.0.2.30\n"))
+    dialog = [
+        "default", "old.example.org", "no", "bridge", "",  # setup, broker
+        "yes" if accepted else "no",  # TCP
+        "1|2", ALICE, ALICE, "status",  # channels, contacts, senders, words
+    ]  # fmt: skip
+    result = run_installer(
+        host, "--reconfigure", "105", dialog=dialog, env={"STUB_VERSION": "2.0.0"}
+    )
+    if accepted:
+        assert result.returncode == 0, result.stderr
+        assert host.config().radio.tcp_unauthenticated is True
+    else:
+        assert result.returncode == 1
+        assert "a radio over TCP needs radio.tcp_unauthenticated = true" in result.stderr
+        assert "systemctl stop meshcore-home-gateway" not in host.inside()
 
 
 def test_interactive_reconfigure_offers_the_current_settings(host: Host) -> None:

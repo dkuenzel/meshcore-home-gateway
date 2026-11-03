@@ -27,9 +27,22 @@ format, the command line and Home Assistant discovery are public interfaces
 - The gateway subscribes to its retained topics (`availability`, `state`, `stats`, `contacts`,
   `contacts/<key>`, `nodes`, `history`, `settings`), to undo what other clients write there
   (*Security*); its user needs read access to them, as the documented ACL gives it.
+- `[radio] tcp_unauthenticated` (default `false`, required as `true` with `tcp`): says that you
+  know what the radio's TCP interface exposes ([configuration.md](docs/configuration.md#radio)).
+- `radio_link_contested` in the `state` document and, with a radio over TCP, the diagnostic
+  problem sensor *Radio link taken over*: on for an hour after the radio closed the gateway's TCP
+  link while it kept running, as it does when another client connects; that client can control
+  the radio and read its private key ([mqtt-api.md](docs/mqtt-api.md#state-state), what to do:
+  [deployment.md](docs/deployment.md#5-troubleshooting)).
 
 ### Changed
 
+- **Breaking:** a radio over TCP is a configuration error until `[radio] tcp_unauthenticated =
+  true` accepts it: whoever reaches the TCP interface controls the radio, and the release
+  firmware hands that client the radio's private key, which decrypts every direct message of the
+  radio, also those recorded from the air before. Use USB, or put the radio in a network that
+  only the gateway reaches and add the setting. The version before does not know the setting, so
+  update right after adding it; `--reconfigure` asks for it.
 - **Breaking:** commands (`[commands] senders`) over a broker connection without a user name,
   or without TLS to a broker beyond the gateway's host or link, are a configuration error until
   `[mqtt] insecure = true` accepts it: any client that reaches the broker, or reads the password
@@ -47,9 +60,18 @@ format, the command line and Home Assistant discovery are public interfaces
 - The installer asks for TLS in the default setup too, and an empty user name must be
   confirmed; with commands over a connection without either, it asks to accept that
   (`mqtt.insecure`), or the commands are left out ([deployment.md](docs/deployment.md)).
+- The installer says what a radio over TCP exposes and asks to accept it
+  (`radio.tcp_unauthenticated`), or offers the radios again; `check-config` calls the TCP radio
+  unauthenticated in its summary.
 
 ### Security
 
+- The documentation says what the TCP interface exposes, as verified in the firmware: the
+  release build exports and imports the radio's private key to and from any client, MeshCore's
+  direct messages have no forward secrecy, and a client can send any packet or move the radio
+  off the mesh's frequency; with how to isolate such a radio and what to do after a takeover
+  ([configuration.md](docs/configuration.md#radio),
+  [design §7.2](docs/design.md#72-threats-and-mitigations), [protocol.md](docs/protocol.md)).
 - A flood of adverts with invented keys, which any board in range can send (a key costs
   microseconds), stays bounded
   ([design §7.2](docs/design.md#72-threats-and-mitigations)). The heard nodes keep those heard

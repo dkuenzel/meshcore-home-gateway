@@ -50,6 +50,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `binary_sensor.meshcore_home_gateway_radio1_radio` | connectivity, diagnostic | radio link up; attributes below |
 | `sensor.meshcore_home_gateway_radio1_battery` | voltage (V), diagnostic | radio battery |
 | `sensor.meshcore_home_gateway_radio1_radio_clock_offset` | duration (s), diagnostic | how far the radio's clock is ahead of the gateway's (negative: behind); it cannot be set back ([deployment.md](deployment.md#5-troubleshooting)) |
+| `binary_sensor.meshcore_home_gateway_radio1_radio_link_contested` | problem, diagnostic; only with a radio over TCP | *Radio link taken over*: on for an hour after another client took the TCP link to the radio, which lets it control the radio and read its private key ([deployment.md](deployment.md#5-troubleshooting)); unknown while the radio is away or reports no uptime |
 | `sensor.meshcore_home_gateway_radio1_airtime` | duration (s), diagnostic | airtime of the last hour |
 | `sensor.meshcore_home_gateway_radio1_airtime_available` | duration (s), diagnostic | airtime that may be spent now; attribute `budget_s_per_hour` |
 | `sensor.meshcore_home_gateway_radio1_queue` | diagnostic | messages waiting for the radio |
@@ -459,7 +460,7 @@ and shows a person instead of a tracker that is the person's current source.
 
 | MQTT | In Home Assistant |
 | --- | --- |
-| `state`: `radio`, `battery_v`, `airtime_1h_s`, `airtime_available_s`, `queue` | the sensors above |
+| `state`: `radio`, `battery_v`, `radio_clock_offset_s`, `radio_link_contested` (a radio over TCP), `airtime_1h_s`, `airtime_available_s`, `queue` | the sensors above |
 | `state`: `radio_name`, `public_key`, `model`, `firmware`, `frequency_mhz`, `bandwidth_khz`, `spreading_factor`, `coding_rate`, `tx_power_dbm`, `contact_link`, `version` | attributes of the radio link (`version` as `bridge_version`) |
 | `state`: `radio`; `contacts`: `manage`; `contacts/<key>`: `removable` | whether the controls that change the contacts are available |
 | `state`: `airtime_budget_s_per_hour` | attribute of *Airtime available* |

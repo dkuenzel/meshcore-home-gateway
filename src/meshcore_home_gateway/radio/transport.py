@@ -19,6 +19,11 @@ FORBIDDEN_BAUDRATE = 1200  # "1200 baud touch": nRF52 boards reboot into the boo
 CONNECT_TIMEOUT_S = 10.0
 
 
+class ClosedByRadioError(ConnectionError):
+    """The radio ended the TCP connection: it serves one client and replaces the connection when
+    another one connects (SEC-003), or it restarted."""
+
+
 class Transport(Protocol):
     description: str
     needs_flush: bool  # the radio's parser may hold a partial frame from an earlier client
@@ -165,7 +170,7 @@ class TcpTransport:
             raise ConnectionError(f"{self.description}: not open")
         data = await self._reader.read(4096)
         if not data:
-            raise ConnectionError(f"{self.description}: closed by the radio")
+            raise ClosedByRadioError(f"{self.description}: closed by the radio")
         return data
 
     async def write(self, data: bytes) -> None:

@@ -258,7 +258,7 @@ def test_the_event_of_the_advert_check_comes_from_the_scenarios_advert(
         interface.surface()
 
 
-def _nothing(_: str) -> dict[str, str | None]:
+def _nothing(_: str) -> dict[str, str | bool | None]:
     return {}
 
 

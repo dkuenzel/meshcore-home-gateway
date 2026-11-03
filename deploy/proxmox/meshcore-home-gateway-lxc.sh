@@ -833,15 +833,35 @@ ask_radio() {
     die "no answer for radio.choice: name the radio's device path, or tcp"  # never guess one
   fi
   radio=$(ask radio.choice menu "$(t 'Radio connection')" "${choices[0]}" "${choices[@]}")
-  if [[ $radio == tcp ]]; then
+  while [[ $radio == tcp ]]; do
     OUT[radio.transport]=tcp
     OUT[radio.host]=$(ask_required radio.host "$(t 'Radio address (host name or IP address)')" "")
     OUT[radio.port]=$(ask radio.port input "$(t 'Radio TCP port')" "5000")
-  else
-    [[ -e $radio ]] || die 'serial device {device} not found' device "$radio"
-    OUT[radio.transport]=serial
-    OUT[radio.device]=$radio
+    if accept_tcp; then return; fi
+    unset 'OUT[radio.transport]' 'OUT[radio.host]' 'OUT[radio.port]'   # declined: the menu again
+    radio=$(show_dialog menu "$(t 'Radio connection')" "${choices[0]}" "${choices[@]}")
+  done
+  [[ -e $radio ]] || die 'serial device {device} not found' device "$radio"
+  OUT[radio.transport]=serial
+  OUT[radio.device]=$radio
+}
+
+knows_tcp_unauthenticated() {  # does the program that renders the configuration read it?
+  knows_insecure   # both came with the same release
+}
+
+accept_tcp() {  # a radio over TCP: whoever reaches it owns it (SEC-003). False: declined
+  knows_tcp_unauthenticated || return 0   # an older program has no such setting
+  [[ ${OUT[radio.tcp_unauthenticated]-} != true ]] || return 0
+  if (( ! INTERACTIVE )); then   # the answer as given; without it the settings check names it
+    if [[ -v "ANSWERS[radio.tcp_unauthenticated]" ]]; then
+      OUT[radio.tcp_unauthenticated]=${ANSWERS[radio.tcp_unauthenticated]}
+    fi
+    return 0
   fi
+  [[ $(show_dialog yesno "$(t "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again.")" false) == true ]] \
+    || return 1
+  OUT[radio.tcp_unauthenticated]=true
 }
 
 no_user_confirmed() {  # without a user name the broker is open to everyone it does not refuse
@@ -1374,6 +1394,9 @@ reconfigure() {
   pass_settings
   choose_setup
   ask_bridge
+  if [[ ${OUT[radio.transport]} == tcp ]] && ! accept_tcp; then
+    die 'a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container'
+  fi
   check_settings_in "$ctid"   # with the version installed there, which renders the configuration
   check_broker "$ctid"   # while the service still runs
   STOPPED=$ctid   # first: an interruption during the stop also starts the service again

@@ -61,7 +61,7 @@ def make_config(
     extra: str = "",
     messages: str = "",
     airtime: str = "",
-    radio: str = 'transport = "tcp"\nhost = "192.0.2.10"',
+    radio: str = 'transport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"',
     *,
     telemetry: bool | None = False,
 ) -> Config:
@@ -1225,7 +1225,7 @@ def test_commands_over_tcp_are_warned_about(
 ) -> None:
     """Over TCP the radio drops pushes when its send queue is full (ADR 0009)."""
     radio_section = (
-        'transport = "tcp"\nhost = "192.0.2.10"'
+        'transport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"'
         if transport == "tcp"
         else 'transport = "serial"\ndevice = "/dev/serial/by-id/usb-radio-if00"'
     )
@@ -1496,7 +1496,10 @@ def test_announcements_after_births_come_at_most_every_interval(
 def test_the_broker_connection_is_warned_about_until_accepted() -> None:
     """SEC-004: without credentials or TLS the gateway's topics are open to whoever reaches the
     broker or reads the network; `insecure = true` accepts it."""
-    base = '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n[mqtt]\nnode_id = "radio1"\n'
+    base = (
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "192.0.2.10"\n[mqtt]\nnode_id = "radio1"\n'
+    )
     anonymous = parse_config(base + 'host = "broker.example.org"\n')
     assert [str(w).split(":")[0] for w in broker_warnings(anonymous)] == [
         "MQTT without a user name", "MQTT without TLS",
@@ -1550,7 +1553,8 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
     The poller gives each companion's document its state and hears of every exclusion and every
     contact added."""
     plain = parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "192.0.2.10"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
     )
     assert plain.telemetry.enabled is True
     store = JsonStateFile(tmp_path / "state.json")
@@ -1797,7 +1801,10 @@ def test_receive_log_is_not_published_by_default(tmp_path: Path) -> None:
 @pytest.mark.parametrize("set_clock", [True, False])
 def test_radio_clock_is_set_only_when_configured(tmp_path: Path, set_clock: bool) -> None:
     radio = EmulatedRadio()  # its clock is 100 s behind the bridge's
-    section = f'transport = "tcp"\nhost = "192.0.2.10"\nset_clock = {str(set_clock).lower()}'
+    section = (
+        'transport = "tcp"\ntcp_unauthenticated = true\n'
+        f'host = "192.0.2.10"\nset_clock = {str(set_clock).lower()}'
+    )
 
     async def main() -> None:
         async with running(make_config(radio=section), radio, tmp_path) as (_, bus, _n):
@@ -1811,7 +1818,9 @@ def test_radio_clock_is_set_only_when_configured(tmp_path: Path, set_clock: bool
 
 def test_the_step_limit_of_the_radio_clock_comes_from_the_configuration(tmp_path: Path) -> None:
     radio = EmulatedRadio(clock=int(NOW) - 2 * 86_400)  # two days behind: off for a while
-    section = 'transport = "tcp"\nhost = "192.0.2.10"\nset_clock_max_days = 1'
+    section = (
+        'transport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\nset_clock_max_days = 1'
+    )
 
     async def main() -> None:
         async with running(make_config(radio=section), radio, tmp_path) as (_, bus, _n):
@@ -2123,6 +2132,59 @@ def test_messages_of_a_contact_also_go_to_its_own_topic(tmp_path: Path) -> None:
             radio.queue_channel_message(0, "Bob: hi all", NOW - 4)
             await bus.wait_for("radio1/received", lambda e: e["event_type"] == "channel")
             assert len(bus.payloads(topic)) == 1  # channel messages are no contact's
+
+    scenario(main)
+
+
+def test_a_tcp_link_the_radio_closed_while_running_was_taken_over(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """SEC-003: the radio serves one TCP client and closes the gateway's link when another one
+    connects, while its uptime goes on. The gateway takes the link back, warns, and the state
+    says so for an hour. A radio that restarted closed the link too, but its uptime began anew;
+    a link that broke otherwise (unplugged, the network) was not taken."""
+    caplog.set_level(logging.WARNING)
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def reconnect(bus: FakeBus, end: Callable[[], None]) -> dict[str, Any]:
+        since = len(bus.payloads("/state"))
+        end()
+        await bus.wait_for("/state", lambda s: s["radio"] == "disconnected", since=since)
+        return await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=since)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            assert bus.payloads("/state")[-1]["radio_link_contested"] is False
+            assert (await reconnect(bus, radio.disconnect))["radio_link_contested"] is False
+            assert "another client" not in caplog.text
+
+            assert (await reconnect(bus, radio.close_link))["radio_link_contested"] is True
+            assert "radio: the radio closed the TCP connection and kept running" in caplog.text
+            assert "another client connected to it" in caplog.text
+
+            caplog.clear()
+            radio.uptime_s = 5  # restarted: no takeover, the earlier one counts for the hour
+            assert (await reconnect(bus, radio.close_link))["radio_link_contested"] is True
+            assert "another client" not in caplog.text
+
+    scenario(main)
+
+
+@pytest.mark.parametrize(
+    ("radio", "stats"),
+    [('transport = "serial"\ndevice = "/dev/ttyACM0"', True), (None, False)],
+    ids=["usb", "tcp-without-statistics"],
+)
+def test_a_link_that_cannot_be_taken_or_told_is_not_contested(
+    tmp_path: Path, radio: str | None, stats: bool
+) -> None:
+    """Over USB there is no other client; firmware without statistics reports no uptime."""
+    config = make_config() if radio is None else make_config(radio=radio)
+    emulated = EmulatedRadio(contacts=[ALICE], stats=stats)
+
+    async def main() -> None:
+        async with running(config, emulated, tmp_path) as (_, bus, _notes):
+            assert bus.payloads("/state")[-1]["radio_link_contested"] is None
 
     scenario(main)
 

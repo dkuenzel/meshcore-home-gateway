@@ -86,7 +86,7 @@ def test_check_config_reports_errors_with_ex_config(
 def test_config_render_writes_a_private_valid_file(tmp_path: Path) -> None:
     answers = tmp_path / "answers"
     answers.write_text(
-        "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
+        "radio.transport=tcp\nradio.tcp_unauthenticated=true\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
         "mqtt.node_id=radio1\nmqtt.username=bridge\nmqtt.password=secret\n"
         "target.alerts=channel:1\n",
         encoding="utf-8",
@@ -116,7 +116,7 @@ def test_config_render_writes_a_private_valid_file(tmp_path: Path) -> None:
 
 
 RENDER_ANSWERS = (
-    "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
+    "radio.transport=tcp\nradio.tcp_unauthenticated=true\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
     "mqtt.node_id=radio1\n"
 )
 
@@ -197,13 +197,13 @@ def test_config_answers_prints_the_settings_as_answers(
 ) -> None:
     config = tmp_path / "config.toml"
     config.write_text(
-        '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n\n'
         '[mqtt]\nhost = "broker.example.org"\nnode_id = "radio1"\n',
         encoding="utf-8",
     )
     assert main(["config", "answers", "--config", str(config)]) == EX_OK
     assert capsys.readouterr().out == (
-        "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
+        "radio.transport=tcp\nradio.tcp_unauthenticated=true\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
         "mqtt.node_id=radio1\n"
     )
     assert main(["config", "answers", "--config", str(tmp_path / "missing.toml")]) == EX_CONFIG
@@ -379,7 +379,8 @@ def test_probe_follows_what_the_service_stored(
     radio = EmulatedRadio(manual_add=False, tuning=(0, 1000), name="Renamed")
     config = tmp_path / "config.toml"
     config.write_text(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[radio.profile]\nname = "Gateway"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[radio.profile]\nname = "Gateway"\n'
         '[mqtt]\nhost = "h"\nnode_id = "n"\n'
     )
     stored = {
@@ -456,7 +457,8 @@ def test_the_service_opens_the_configured_radio() -> None:
     assert serial.device == "/dev/serial/by-id/usb-Example_Radio_0001-if00"
     tcp = cli_module.transport_for(
         parse_config(
-            '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\nport = 5001\n'
+            '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+            'host = "192.0.2.10"\nport = 5001\n'
             '[mqtt]\nhost = "h"\nnode_id = "n"\n'
         )
     )
@@ -501,7 +503,7 @@ def test_config_render_reports_an_unknown_group(
 ) -> None:
     answers = tmp_path / "answers"
     answers.write_text(
-        "radio.transport=tcp\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
+        "radio.transport=tcp\nradio.tcp_unauthenticated=true\nradio.host=192.0.2.10\nmqtt.host=broker.example.org\n"
         "mqtt.node_id=radio1\n",
         encoding="utf-8",
     )
@@ -515,7 +517,7 @@ def test_config_render_reports_an_unknown_group(
 def tls_config(tmp_path: Path, files: str) -> Path:
     path = tmp_path / "config.toml"
     path.write_text(
-        '[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "127.0.0.1"\n'
         f'[mqtt]\nhost = "127.0.0.1"\nnode_id = "radio1"\ntls = true\n{files}\n'
         "[targets.alerts]\nchannel = 0\n",
         encoding="utf-8",
@@ -620,7 +622,8 @@ def test_the_service_keeps_exclusions_in_their_file_and_readings_their_days(
     monkeypatch.setattr(bridge_module.Bridge, "run", stopped)
     monkeypatch.setattr(History, "open", staticmethod(open_history))
     config = parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "[history]\nmessages_days = 7\npositions_days = 9\nreadings_days = 3.5\n"
     )
     assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
@@ -645,7 +648,8 @@ def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file
     document = {"key": "a1" * 32, "telemetry_state": "answering", "telemetry_current": True}
     store.save({"current_contacts": {"a1" * 32: document}})
     config = parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "[history]\nenabled = false\n[telemetry]\nenabled = false\n"
     )
     assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
@@ -668,7 +672,8 @@ def test_the_service_keeps_the_advert_checks_in_its_state_file(
     store = JsonStateFile(tmp_path / "state.json")
     store.save({"advert_checks": {key: {"advert_at": at, "carries": True}}})
     config = parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "[history]\nenabled = false\n[telemetry]\nenabled = false\n"
     )
     assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
@@ -755,7 +760,7 @@ def test_listen_prints_a_payload_it_cannot_decode_as_text(tmp_path: Path, broker
 def broker_config(tmp_path: Path, broker: Broker) -> Path:
     path = tmp_path / "config.toml"
     path.write_text(
-        f'[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n'
+        f'[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "127.0.0.1"\n'
         f'[mqtt]\nhost = "{broker.host}"\nport = {broker.port}\nnode_id = "radio1"\n'
         "[targets.alerts]\nchannel = 0\n",
         encoding="utf-8",
@@ -835,7 +840,10 @@ def test_check_config_warns_about_a_broker_connection_without_credentials_or_tls
 ) -> None:
     """SEC-004: the gateway's topics are only as safe as the broker connection."""
     path = tmp_path / "config.toml"
-    path.write_text('[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n')
+    path.write_text(
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+    )
     assert main(["check-config", "--config", str(path)]) == EX_OK
     err = capsys.readouterr().err
     assert "warning: MQTT without a user name" in err
@@ -891,7 +899,8 @@ def test_check_config_tries_the_broker_without_credentials(
     monkeypatch.setattr(cli_module, "_mqtt_client", client)
     path = tmp_path / "config.toml"
     path.write_text(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         'username = "gw"\npassword = "pw"\ntls = true\n'
     )
     assert main(["check-config", "--config", str(path), "--broker"]) == EX_OK
@@ -951,7 +960,7 @@ def test_check_config_reports_an_unreachable_broker(
         port = int(sock.getsockname()[1])
     path = tmp_path / "config.toml"
     path.write_text(
-        f'[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n'
+        f'[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "127.0.0.1"\n'
         f'[mqtt]\nhost = "127.0.0.1"\nport = {port}\nnode_id = "radio1"\n',
         encoding="utf-8",
     )
@@ -1079,7 +1088,8 @@ class ScriptedBroker:
     def config(self, tmp_path: Path) -> str:
         path = tmp_path / "config.toml"
         path.write_text(
-            '[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n[mqtt]\nhost = "127.0.0.1"\n'
+            '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+            'host = "127.0.0.1"\n[mqtt]\nhost = "127.0.0.1"\n'
             f'port = {self.port}\nnode_id = "radio1"\n[targets.alerts]\nchannel = 0\n',
             encoding="utf-8",
         )
@@ -1140,7 +1150,8 @@ def test_unreachable_broker_is_reported_without_a_traceback(
     unused.close()  # nothing listens there now
     config = tmp_path / "config.toml"
     config.write_text(
-        f'[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\n[mqtt]\nhost = "127.0.0.1"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "127.0.0.1"\n[mqtt]\nhost = "127.0.0.1"\n'
         f'port = {port}\nnode_id = "radio1"\n[targets.alerts]\nchannel = 0\n',
         encoding="utf-8",
     )
@@ -1168,7 +1179,8 @@ def test_probe_shows_the_plan_of_a_configuration(
     radio = EmulatedRadio(frequency_khz=868_100, tuning=(0, 1000), name="Bridge")
     config = tmp_path / "config.toml"
     config.write_text(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[radio.profile]\nmanage = "observe"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[radio.profile]\nmanage = "observe"\n'
         'name = "Gateway"\nduty_cycle_percent = 25.0\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
     )
     with TcpRadioServer(radio) as server:
@@ -1195,7 +1207,8 @@ def test_probe_shows_the_protected_contacts_the_service_writes(
     radio = EmulatedRadio(contacts=[ALICE], tuning=(0, 9000))  # the settings match
     config = tmp_path / "config.toml"
     text = (
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "insecure = true\n"
         f'[targets.alice]\ncontact = "{ALICE.public_key.hex()}"\n'
         f'[commands]\nsenders = ["{sender}"]\nwords = ["status"]\n'
@@ -1268,7 +1281,8 @@ def test_probe_shows_the_name_a_contact_gets_on_the_radio(
     key = "e5" * 32
     config = tmp_path / "config.toml"
     config.write_text(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         f'[targets.{"x" * 32}]\ncontact = "{key}"\n'
     )
     with TcpRadioServer(EmulatedRadio()) as server:

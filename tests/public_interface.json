@@ -50,6 +50,7 @@
     "radio.profile.protect_contacts",
     "radio.set_clock",
     "radio.set_clock_max_days",
+    "radio.tcp_unauthenticated",
     "radio.transport",
     "target.<alias>",
     "telemetry.enabled"
@@ -906,6 +907,11 @@
    "min": 0,
    "type": "integer"
   },
+  "radio.tcp_unauthenticated": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
+  },
   "radio.transport": {
    "answer": "str",
    "choices": [
@@ -1421,6 +1427,11 @@
      "state_class": "measurement",
      "unit": "s"
     },
+    "radio_link_contested": {
+     "device_class": "problem",
+     "entity_id": "binary_sensor.<device>_radio_link_contested",
+     "platform": "binary_sensor"
+    },
     "receive_errors": {
      "entity_id": "sensor.<device>_receive_errors",
      "platform": "sensor",
@@ -1816,6 +1827,7 @@
     "queue",
     "radio",
     "radio_clock_offset_s",
+    "radio_link_contested",
     "radio_name",
     "spreading_factor",
     "telemetry",

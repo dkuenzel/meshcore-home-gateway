@@ -1111,7 +1111,11 @@ def test_a_silence_during_a_table_read_counts_only_again_over_tcp(
     caplog.set_level(logging.DEBUG, LOGGER)
     remote = RemoteCompanion()
     radio = EmulatedRadio(contacts=[DANA], remotes={DANA.public_key: remote})
-    where = 'host = "192.0.2.10"' if transport == "tcp" else 'device = "/dev/ttyACM9"'
+    where = (
+        'tcp_unauthenticated = true\nhost = "192.0.2.10"'
+        if transport == "tcp"
+        else 'device = "/dev/ttyACM9"'
+    )
     settings = make_config(radio=f'transport = "{transport}"\n{where}', telemetry=True)
 
     async def main() -> None:

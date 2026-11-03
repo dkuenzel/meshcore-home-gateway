@@ -45,6 +45,7 @@ from meshcore_home_gateway.core.commands import (
     evaluate_command,
 )
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact, is_key
+from meshcore_home_gateway.core.link import LinkWatch
 from meshcore_home_gateway.core.model import (
     DeliveryEvent,
     DeliveryState,
@@ -292,6 +293,7 @@ class Bridge:
         self._acks = AckWaiter(monotonic)
         self._session: CompanionSession | None = None
         self._radio_info: RadioInfo | None = None
+        self._link = LinkWatch()  # over TCP: whether another client took the link (SEC-003)
         self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
         self._removed: dict[str, str] | None = None  # earlier components, removed in this run
         self._announcing = _Announcing()
@@ -400,6 +402,8 @@ class Bridge:
             else:
                 self._session = session
                 self._radio_ready.set()
+                if self.config.radio.transport == "tcp":
+                    self._link_started(session)
                 if self._telemetry is not None:
                     self._observe(self._telemetry.radio_connected)
                 delay = RECONNECT_MIN_S
@@ -424,11 +428,21 @@ class Bridge:
                 finally:
                     self._radio_ready.clear()
                     self._session = None
+                    self._link.ended(*_uptime(session), by_radio=session.closed_by_radio)
                     self._publish_state()
             finally:
                 await session.close()
             await asyncio.sleep(delay * random.uniform(1.0, 1.2))  # noqa: S311 - jitter only
             delay = min(delay * 2, RECONNECT_MAX_S)
+
+    def _link_started(self, session: CompanionSession) -> None:
+        """Over TCP: whether another client took the link before this one (core.link)."""
+        uptime_s, read_at = _uptime(session)
+        if self._link.started(uptime_s, read_at):
+            log.warning("radio: the radio closed the TCP connection and kept running (uptime %s "
+                        "s): another client connected to it, which can control the radio and "
+                        "read its private key; the gateway took the link back "
+                        "(docs/deployment.md, Troubleshooting)", uptime_s)  # fmt: skip
 
     def _check_radio(self, session: CompanionSession) -> None:
         """Warn about targets the radio does not know, a burst that is too small, and commands
@@ -988,6 +1002,8 @@ class Bridge:
             "battery_v": round(battery.millivolts / 1000, 3) if battery else None,
             # the radio's clock minus the host's: it cannot be set back (SEC-002)
             "radio_clock_offset_s": offset,
+            # over TCP: another client took the link in the last hour (SEC-003); null over USB
+            "radio_link_contested": self._link.contested(self._wall()),
             "airtime_1h_s": round(self._budget.used_s(now), 3),
             "airtime_available_s": round(self._budget.available_s(now), 3),
             "airtime_budget_s_per_hour": self._budget.per_hour_s,
@@ -1217,6 +1233,14 @@ def protected_names(config: Config) -> dict[str, str]:
 
 def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
     return (info.device.model, info.device.version, info.public_key) if info else None
+
+
+def _uptime(session: CompanionSession) -> tuple[int | None, float | None]:
+    """The radio's uptime in the session's last statistics, and when they were read."""
+    stats = session.stats
+    if stats is None or stats.core is None:
+        return None, None
+    return stats.core.uptime_s, stats.read_at
 
 
 def _may_be_asked(advert: codec.Advert) -> bool:

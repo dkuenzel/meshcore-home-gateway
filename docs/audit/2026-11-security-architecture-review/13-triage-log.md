@@ -38,7 +38,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | --- | --- | --- | --- |
 | SEC-001 | fix | Document what `confirmed` proves; flag an acknowledgement whose round trip is shorter than the known path allows (`suspect`); an opt-in random suffix (`[messages] confirm_nonce`) makes the text, and so the code, unguessable. The protocol weakness itself is the firmware's (option 5: for the maintainer to raise upstream) | pending: acks |
 | SEC-002 | fix | Host clock plausibility bounds before the write (the release date, ten years, and `[radio] set_clock_max_days`, default 30 days, 0 to force, instead of the planned `set_clock = "always"` and an hour: the firmware restarts a radio at its contacts' newest time, so an hour would refuse a radio unplugged for a night), the radio's clock offset in `state`, `After=time-sync.target`, recovery documented | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
-| SEC-003 | fix | Exact wording of the risk (key export and import, no forward secrecy) everywhere the TCP interface is mentioned; a TCP radio now needs `[radio] tcp_unauthenticated = true` (**Breaking**); detection of a contested link from the radio's uptime; the installer warns | pending: tcp |
+| SEC-003 | fix | Exact wording of the risk (key export and import, no forward secrecy) everywhere the TCP interface is mentioned; a TCP radio now needs `[radio] tcp_unauthenticated = true` (**Breaking**); detection of a contested link from the radio's uptime; the installer warns | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | SEC-004 | fix | Warnings at start and in `check-config` for a broker without credentials or TLS; an anonymous-access probe in `check-config --broker`; commands over such a broker need `[mqtt] insecure = true` (**Breaking**; a broker on the gateway's host or link needs no TLS, as the review proposed); the installer asks for TLS and confirms an empty user name | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | SEC-005 | fix | The gateway subscribes to its own documents and restores any it finds changed by another client (rate-limited, with a warning); the integrity model is stated. Stamps (`published_at`) are not added: they would change every document at every publish and a forger copies them | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | SEC-006 | fix | Announcements after a birth are never postponed past the first due time and come at most every 30 s; repeated births are logged; the default client id gets a random suffix per start (**Breaking**) | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
@@ -118,7 +118,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | DOC-006 | fix | `SECURITY.md` says which versions get fixes, how soon a report is acknowledged and that advisories are published | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-007 | fix | The README says whom the gateway asks, and that a companion answers only if allowed | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-008 | fix | Through SEC-001: one sentence wherever `confirmed` is explained | pending: acks |
-| DOC-009 | fix | Through SEC-003 | pending: tcp |
+| DOC-009 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | DOC-010 | fix | A "What the gateway keeps" section (household and bystanders, where, how long, how to switch it off) | pending: threat-model |
 | DOC-011 | fix | The design document split into a core and one document per subsystem, with state and sequence diagrams and a table of where each section moved | pending: threat-model |
 | DOC-012 | fix | "Gateway" in prose, "bridge" for the module, a one-line glossary | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -132,7 +132,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | DOC-020 | fix | The checklist says that pre-releases are not checked on hardware | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-021 | fix | `[contacts]` in the example configuration | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-022 | fix | Verified in the firmware: the tag is the radio's clock, made unique; stated in `docs/protocol.md` (RES-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| DOC-023 | fix | Through SEC-003 | pending: tcp |
+| DOC-023 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | DOC-024 | fix | A status column with "amended by" in the record index | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-025 | fix | The bug form asks for the transport and whether the broker has an ACL | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-026 | fix | A table of contents of the facts at the top of `docs/platform-notes.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -220,8 +220,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-038 | fix | Through SEC-017 (opt-in, default off: texts stay data) | pending: limits |
 | IMP-039 | fix | Through SEC-017 | pending: limits |
 | IMP-040 | fix | Through SEC-014 | pending: limits |
-| IMP-041 | fix | Through SEC-003 | pending: tcp |
-| IMP-042 | fix | Through SEC-003 | pending: tcp |
+| IMP-041 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
+| IMP-042 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | IMP-043 | fix | Through SUP-007 | pending: supply-chain |
 | IMP-044 | fix | Through CODE-023 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-045 | fix | Through CODE-007 | pending: code-quality |
@@ -267,7 +267,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-005 | accept | Acknowledged; turned into flood tests (SEC-010, SEC-011) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | pending: threat-model |
 | RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
-| RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | pending: tcp |
+| RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-009 | accept | Acknowledged; turned into a test (CODE-001) | pending: robustness |
 | RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | pending: ha-exposure |
@@ -276,8 +276,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | pending: mqtt5 |
 | RES-015 | accept | Acknowledged; moves to `docs/protocol.md` §2 (IMP-003 deferred) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-016 | accept | Acknowledged; verified, moves to `docs/protocol.md` (DOC-022) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| RES-017 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | pending: tcp |
-| RES-018 | accept | Acknowledged; moves to `docs/protocol.md` §3 with IMP-041 | pending: tcp |
+| RES-017 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
+| RES-018 | accept | Acknowledged; moves to `docs/protocol.md` §3 with IMP-041 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-019 | accept | Acknowledged; resolved by SUP-004 | pending: supply-chain |
 | RES-020 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-009 | pending: ops |
 | RES-021 | accept | Acknowledged; `docs/platform-notes.md` covers these | – |

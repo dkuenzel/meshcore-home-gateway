@@ -29,7 +29,8 @@ from meshcore_home_gateway.views import contacts_document
 from tests.test_discovery import STATE_KEYS, template_keys
 
 CONFIG = parse_config(
-    '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n[mqtt]\nhost = "broker.example.org"\n'
+    '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+    'host = "192.0.2.10"\n[mqtt]\nhost = "broker.example.org"\n'
     'node_id = "radio1"\n'
 )
 TOPICS = Topics(CONFIG.mqtt.base_topic, CONFIG.mqtt.node_id)
