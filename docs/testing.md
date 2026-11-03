@@ -59,9 +59,9 @@ request. The Home Assistant releases tested with are listed in
 | Suite | Files | Needs |
 | --- | --- | --- |
 | Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py`, `test_lpp.py` (CayenneLPP frames and the names of their readings), `test_telemetry.py` (the telemetry schedule and each companion's state on a set clock), `test_adverts.py` (the check for positions in adverts: logged adverts, the radio's push and the record) | nothing |
-| Architecture | `tests/test_architecture.py` (the core and the codec import no I/O modules, ADR 0007) | nothing |
+| Architecture | `tests/test_architecture.py` (the core and the codec import no I/O modules, the application no adapter; ADR 0007) | nothing |
 | Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source), `test_packet.py`, `test_links.py` | nothing |
-| Radio session and bridge | `tests/test_session.py`, `test_bridge.py`, `test_observer.py`, `test_contact_manager.py`, `test_profile.py`, `test_telemetry_poller.py` (emulated radio, with remote companions that answer telemetry) | nothing |
+| Radio session and bridge | `tests/test_session.py`, `test_bridge.py` and the tests of its parts (`test_outbox.py`, `test_inbox.py`, `test_announcer.py`, `test_status.py`, `test_config_checks.py`; what they share in `bridge_harness.py`), `test_observer.py`, `test_contact_manager.py`, `test_profile.py`, `test_telemetry_poller.py` (emulated radio, with remote companions that answer telemetry) | nothing |
 | MQTT | `tests/test_mqtt_client.py` | `mosquitto` for the tests marked `broker` |
 | Documents, Home Assistant discovery, payloads | `tests/test_views.py`, `test_discovery.py`, `test_payloads.py`, `test_contact_devices.py`, `test_manage_entities.py` | nothing |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |

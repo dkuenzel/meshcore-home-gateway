@@ -44,16 +44,7 @@ from meshcore_home_gateway.state import (
     TelemetryExclusions,
 )
 from meshcore_home_gateway.views import iso
-from tests.radio_emulator import (
-    LPP_BME280,
-    LPP_FULL,
-    LPP_T1000E,
-    SELF_KEY,
-    EmulatedContact,
-    EmulatedRadio,
-    advert_packet,
-)
-from tests.test_bridge import (
+from tests.bridge_harness import (
     ALICE,
     BOB,
     NOW,
@@ -64,6 +55,15 @@ from tests.test_bridge import (
     run_state,
     running,
     scenario,
+)
+from tests.radio_emulator import (
+    LPP_BME280,
+    LPP_FULL,
+    LPP_T1000E,
+    SELF_KEY,
+    EmulatedContact,
+    EmulatedRadio,
+    advert_packet,
 )
 
 ROOT = "meshcore/radio1"

@@ -32,8 +32,8 @@ from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryExclusions
+from tests.bridge_harness import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
 from tests.radio_emulator import LPP_BME280, SELF_KEY, EmulatedContact, EmulatedRadio
-from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
 from tests.test_session import SlowTable
 from tests.test_state import failing_rename
 

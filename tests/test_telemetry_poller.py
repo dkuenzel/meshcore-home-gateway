@@ -54,17 +54,7 @@ from meshcore_home_gateway.state import (
 )
 from meshcore_home_gateway.telemetry_poller import AnswerWaiter, OutboxActivity, TelemetryPoller
 from meshcore_home_gateway.views import iso
-from tests.radio_emulator import (
-    LPP_BME280,
-    LPP_FULL,
-    SELF_KEY,
-    START_TIME,
-    EmulatedContact,
-    EmulatedRadio,
-    RemoteCompanion,
-    telemetry_push,
-)
-from tests.test_bridge import (
+from tests.bridge_harness import (
     ALICE,
     BOB,
     NOW,
@@ -75,6 +65,16 @@ from tests.test_bridge import (
     run_state,
     running,
     scenario,
+)
+from tests.radio_emulator import (
+    LPP_BME280,
+    LPP_FULL,
+    SELF_KEY,
+    START_TIME,
+    EmulatedContact,
+    EmulatedRadio,
+    RemoteCompanion,
+    telemetry_push,
 )
 
 ROOT = "meshcore/radio1"

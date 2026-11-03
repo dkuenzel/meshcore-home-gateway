@@ -1651,7 +1651,7 @@ The entries below are what that page does not cover.
   (`radio/session.py`) waits for the answer to a sync in flight, for at most the 5 s command
   timeout, and on stop the gateway still handles the messages already handed over, for up to
   `STOP_DRAIN_S` (2 s, `bridge.py`; [design.md](design.md#52-concurrency)). *Check:*
-  `.venv/bin/pytest tests/test_bridge.py -k answer_is_on_its_way`; in the firmware tree,
+  `.venv/bin/pytest tests/test_inbox.py -k answer_is_on_its_way`; in the firmware tree,
   `sed -n '248,260p;1415,1423p' examples/companion_radio/MyMesh.cpp`.
 * **Radios on ESP32 boards with an auto-reset circuit reset when RTS alone is asserted.** The
   USB-UART bridge's RTS line drives the chip's enable pin and DTR its boot pin (GPIO0); both
