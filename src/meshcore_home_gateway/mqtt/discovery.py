@@ -62,6 +62,17 @@ def discovery_topic(config: Config) -> str:
     return f"{config.homeassistant.prefix}/device/{device_id(config)}/config"
 
 
+def controls_off(config: Config, topics: Topics) -> list[dict[str, str]]:
+    """With `[homeassistant] controls = false`, an availability that is always offline, for the
+    controls that change the radio's contacts or the telemetry: Home Assistant shows them
+    unavailable and leaves them out of service calls, while MQTT and the command line keep
+    working (SEC-008). Unavailable rather than removed: a disabled entity that goes takes its
+    whole device away."""
+    if config.homeassistant.controls:
+        return []
+    return [{"topic": topics.availability, "value_template": "{{ 'offline' }}"}]
+
+
 def discovery_payload(
     config: Config,
     topics: Topics,
@@ -203,12 +214,15 @@ def discovery_payload(
         )  # fmt: skip
     components.update(_mesh_components(component, topics, ha_name))
     if config.homeassistant.contact_devices:
+        off = controls_off(config, topics)
         components["show_hidden"] = component(
             # Translators: button of the gateway: brings back the contacts' devices the user
             # deleted in Home Assistant
             "show_hidden", "button", ha_name("Show hidden contacts"),
             command_topic=topics.show_hidden,
             payload_press="show", entity_category="config", icon="mdi:eye",
+            **({"availability": [{"topic": topics.availability}, *off],
+                "availability_mode": "all"} if off else {}),
         )  # fmt: skip
     if config.diagnostics.publish_rx_log:  # one recorder row per packet: off until enabled
         rx = {"entity_category": "diagnostic", "state_topic": topics.rx}
@@ -240,6 +254,8 @@ def discovery_payload(
             **rx,
         )
     for target in config.targets:
+        if target.alias in config.homeassistant.hidden_targets:  # automations use MQTT
+            continue
         key = f"send_{target.alias}"
         # Translators: notify entity of the gateway: sends a message to a target of the
         # configuration; {alias} is the target's name there, as the user wrote it

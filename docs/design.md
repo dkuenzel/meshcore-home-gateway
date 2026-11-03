@@ -1146,6 +1146,10 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   Values count for up to an hour (three of the companion's intervals) after its last answer, and
   coming back takes up to 30 minutes. Any Home Assistant user who may switch entities can include
   an excluded companion again; the broker's ACL decides who may write `contacts/+/telemetry`.
+  `[homeassistant] controls = false` makes that switch, the contact requests and *Show hidden
+  contacts* unavailable in Home Assistant, which then leaves them out of service calls; every
+  Home Assistant user still sees every entity, the map included (home-assistant.md, *Shared
+  households*).
 * The check for positions in adverts cannot read every advert: a report the radio dropped over
   TCP, a log too long for a frame (non-default repeaters), an advert made while the gateway was
   stopped, a companion added from a key or a link before the gateway heard it. Until the newest

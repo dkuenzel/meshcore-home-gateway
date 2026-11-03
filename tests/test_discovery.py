@@ -193,6 +193,30 @@ def test_show_hidden_only_with_contact_devices() -> None:
     button = discovery_payload(CONFIG, TOPICS)["cmps"]["show_hidden"]
     assert button["command_topic"] == "meshcore/radio-1/homeassistant/show_hidden"
     assert button["entity_category"] == "config"
+    assert "availability" not in button  # the device's
+
+
+def test_with_controls_off_the_show_hidden_button_is_unavailable() -> None:
+    """SEC-008: `[homeassistant] controls = false` keeps the button, always unavailable: Home
+    Assistant leaves it out of service calls, and its topic still works."""
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    button = discovery_payload(off, TOPICS)["cmps"]["show_hidden"]
+    assert button["availability_mode"] == "all"
+    assert button["availability"] == [
+        {"topic": TOPICS.availability},
+        {"topic": TOPICS.availability, "value_template": "{{ 'offline' }}"},
+    ]
+
+
+def test_a_hidden_target_has_no_notify_entity() -> None:
+    """SEC-008: a target that only automations should use stays reachable on MQTT."""
+    hidden = replace(
+        CONFIG, homeassistant=replace(CONFIG.homeassistant, hidden_targets=frozenset({"alerts"}))
+    )
+    cmps = discovery_payload(hidden, TOPICS)["cmps"]
+    assert "send_alerts" not in cmps
+    assert "send_alice" in cmps
+    assert "send_alerts" in discovery_payload(CONFIG, TOPICS)["cmps"]
 
 
 def test_command_entity_only_with_command_words() -> None:

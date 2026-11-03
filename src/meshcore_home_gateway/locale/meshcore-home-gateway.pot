@@ -959,6 +959,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
+msgid "{key}: lower-case letters and digits, words joined by single underscores, at most 20 characters, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
 msgid "{key}: must be 'serial' or 'tcp', got {value!r}"
 msgstr ""
 
@@ -1047,6 +1052,11 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: use {rule}, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: {alias!r} is not a target"
 msgstr ""
 
 #. key is a setting; detail is a whole text of its own, such as "a host name

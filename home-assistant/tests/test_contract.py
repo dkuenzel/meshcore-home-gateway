@@ -8,14 +8,17 @@ removal of components, the documented automations, and that Home Assistant logs 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant import const
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
@@ -428,7 +431,7 @@ async def test_the_documented_automations_work(
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
     automations = guide_automations()
-    assert len(automations) == 8  # the contacts' one: tests/test_manage_contacts.py
+    assert len(automations) == 9  # the contacts' one: tests/test_manage_contacts.py
     telemetry = {"Handheld battery low", "Mesh handheld not answering", "Alice left home"}
     assert telemetry <= {a["alias"] for a in automations}  # tests/test_telemetry.py, with Alice
     assert await async_setup_component(hass, "persistent_notification", {})
@@ -455,6 +458,45 @@ async def test_the_documented_automations_work(
     assert messages.count("alerts: failed (no_acknowledgement)") == 2
     automation = hass.states.get("automation.mesh_delivery_failed")
     assert automation.attributes["last_triggered"] is not None
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [("availability", "The gateway is offline"), ("state", "The gateway has lost its radio")],
+    ids=["gateway", "radio"],
+)
+async def test_the_outage_automation_tells_after_five_minutes(
+    hass: HomeAssistant, mqtt: Any, freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture, case: tuple[str, str],
+) -> None:  # fmt: skip
+    """OPS-003: the gateway offline (its last will) or its radio away for five minutes."""
+    topic, message = case
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    await fire(hass, TOPICS.state, state_document(known=True), retain=True)
+    (automation,) = [a for a in guide_automations() if a["alias"] == "Mesh gateway away"]
+    assert await async_setup_component(hass, "persistent_notification", {})
+    assert await async_setup_component(hass, "automation", {"automation": [automation]})
+    await hass.async_block_till_done()
+    if topic == "availability":
+        await fire(hass, TOPICS.availability, "offline")
+    else:
+        await fire(hass, TOPICS.state, state_document(known=False))
+
+    async def elapse(seconds: float) -> None:
+        freezer.tick(timedelta(seconds=seconds))
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+
+    def messages() -> list[str]:
+        notes = persistent_notification._async_get_or_create_notifications(hass)
+        return [n["message"] for n in notes.values()]
+
+    await elapse(4 * 60)
+    assert messages() == []
+    await elapse(60 + 1)
+    assert messages() == [message]
     assert problems(caplog) == []
 
 

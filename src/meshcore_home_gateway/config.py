@@ -31,6 +31,9 @@ ID_RULE = Text(
 # would share the entity IDs of 'radio'
 _MERGED_BY_HOME_ASSISTANT = re.compile(r"[-_]{2}|[-_]$")
 TOPIC_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
+# the start of an entity ID's object part: Home Assistant allows no leading, trailing or double
+# underscore there
+ENTITY_PREFIX = re.compile(r"(?=.{1,20}\Z)[a-z0-9]+(?:_[a-z0-9]+)*")
 # a host name in its ASCII form (also an IPv4 address); a trailing dot names the root
 HOST_NAME = re.compile(r"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*\.?")
 LOG_LEVELS = ("debug", "info", "warning", "error")
@@ -112,6 +115,11 @@ class HomeAssistantConfig:
     status_topic: str = "homeassistant/status"
     contact_devices: int = 50  # contacts with a device of their own (ADR 0017)
     language: str = "en"  # of the names sent to Home Assistant (ADR 0019)
+    # Home Assistant's controls (contact requests, telemetry switches, show hidden) can be used;
+    # without, they are unavailable there, and MQTT and the command line still work (SEC-008)
+    controls: bool = True
+    hidden_targets: frozenset[str] = frozenset()  # targets without a notify entity (SEC-008)
+    contact_entity_prefix: str = "mesh"  # of the contact devices' entity IDs (ARC-015)
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,7 +357,16 @@ def _build(root: _Section) -> Config:
     )
     root.check_unknown()
     _check_commands_broker(config)
+    _check_hidden_targets(config)
     return config
+
+
+def _check_hidden_targets(config: Config) -> None:
+    aliases = {t.alias for t in config.targets}
+    for alias in sorted(config.homeassistant.hidden_targets - aliases):
+        raise ConfigError(
+            "{key}: {alias!r} is not a target", key="homeassistant.hidden_targets", alias=alias
+        )
 
 
 def _check_commands_broker(config: Config) -> None:
@@ -569,6 +586,13 @@ def _homeassistant(s: _Section) -> HomeAssistantConfig:
     language = cast(str, s.string("language", "en"))
     if language not in i18n.LANGUAGES:  # read now: the tests offer a language of their own
         raise _one_of(s.key("language"), i18n.LANGUAGES, language)
+    entity_prefix = cast(str, s.string("contact_entity_prefix", "mesh"))
+    if not ENTITY_PREFIX.fullmatch(entity_prefix):
+        raise ConfigError(
+            "{key}: lower-case letters and digits, words joined by single underscores, at most "
+            "20 characters, got {value!r}",
+            key=s.key("contact_entity_prefix"), value=entity_prefix,
+        )  # fmt: skip
     return HomeAssistantConfig(
         discovery=s.boolean("discovery", True),
         prefix=prefix,
@@ -576,6 +600,9 @@ def _homeassistant(s: _Section) -> HomeAssistantConfig:
         status_topic=status_topic,
         contact_devices=s.integer("contact_devices", 50, 0, MAX_CONTACT_DEVICES),
         language=language,
+        controls=s.boolean("controls", True),
+        hidden_targets=frozenset(s.strings("hidden_targets")),
+        contact_entity_prefix=entity_prefix,
     )
 
 
@@ -691,6 +718,8 @@ _ANSWER_TYPES: dict[str, type] = {
     "homeassistant.discovery": bool, "homeassistant.prefix": str,
     "homeassistant.device_name": str, "homeassistant.status_topic": str,
     "homeassistant.contact_devices": int, "homeassistant.language": str,
+    "homeassistant.controls": bool, "homeassistant.hidden_targets": list,
+    "homeassistant.contact_entity_prefix": str,
     "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,

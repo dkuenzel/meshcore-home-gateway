@@ -188,6 +188,24 @@ def test_the_remove_button_is_available_only_while_a_request_would_be_taken() ->
     for entry in button["availability"][1:]:
         assert entry["value_template"].startswith("{{ 'online' if value_json is defined and ")
     assert "value_json.removable is true" in button["availability"][2]["value_template"]
+    assert "availability" not in cmps["telemetry"]  # the device's
+
+
+def test_with_controls_off_remove_and_telemetry_are_unavailable() -> None:
+    """SEC-008: `[homeassistant] controls = false` adds an availability that is always offline
+    to the remove button and the telemetry switch; ARC-015: `contact_entity_prefix` starts the
+    entity IDs, for a second gateway."""
+    ha = replace(CONFIG.homeassistant, controls=False, contact_entity_prefix="mesh_2")
+    config = replace(CONFIG, homeassistant=ha)
+    cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
+    offline = {"topic": "meshcore/radio1/availability", "value_template": "{{ 'offline' }}"}
+    assert cmps["remove"]["availability"][-1] == offline
+    assert len(cmps["remove"]["availability"]) == 4
+    switch = cmps["telemetry"]
+    assert switch["availability"] == [{"topic": "meshcore/radio1/availability"}, offline]
+    assert switch["availability_mode"] == "all"
+    assert "availability" not in cmps["send"]  # sending stays
+    assert cmps["last_heard"]["default_entity_id"] == "sensor.mesh_2_alice_last_heard"
 
 
 def test_a_repeater_with_a_position_gets_a_tracker_only() -> None:

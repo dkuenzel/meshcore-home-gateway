@@ -108,6 +108,9 @@ directory where `check-config` is started.
 | `status_topic` | `homeassistant/status` | topic of Home Assistant's birth message (MQTT options, *birth message*); it does not follow `prefix`. Segments of `A-Z a-z 0-9 - _` separated by `/` |
 | `contact_devices` | `50` | contacts that get a device of their own, 0–1000; `0` removes them ([home-assistant.md](home-assistant.md#contacts)) |
 | `language` | `en` | language of the names the gateway sends to Home Assistant (entities, devices, models), also of the dashboard (`meshcore-home-gateway dashboard`): `en`, the only one so far ([more by contribution](translations.md#adding-a-language)); any other value is an error that lists the choices. A change renames the display names at the next start; entity IDs, automations and names you changed stay. The default `device_name` (`MeshCore radio`) is shown in this language; a name you set is kept (write another name to keep it English) |
+| `controls` | `true` | with `false`, Home Assistant shows the controls that change the radio or the telemetry unavailable, so no user of it can operate them: *Add heard node*, *Add contact (key or link)*, *Show hidden contacts*, and each contact's *Remove from radio* and *Telemetry*. The requests on MQTT and the command line keep working ([shared households](home-assistant.md#shared-households)) |
+| `hidden_targets` | `[]` | aliases of targets without a notify entity in Home Assistant, such as an alarm channel only automations should use; `send/<alias>` keeps working. Each must be a target |
+| `contact_entity_prefix` | `mesh` | how the entity IDs of the contacts' devices begin (`device_tracker.mesh_alice`); a second gateway takes another, such as `mesh_2`. Lower-case letters and digits, words joined by single underscores, at most 20 characters. A change applies to new entities; Home Assistant keeps the IDs of those it has ([second gateway](home-assistant.md#a-second-gateway)) |
 
 ## `[targets.<alias>]`
 
