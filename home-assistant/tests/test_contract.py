@@ -69,6 +69,7 @@ host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"
 node_id = "{node_id}"
+insecure = true
 [diagnostics]
 publish_rx_log = true
 [commands]
@@ -301,6 +302,7 @@ host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"
 node_id = "radio1"
+insecure = true
 [commands]
 senders = ["{SENDER}"]
 words = ["status", "arm"]

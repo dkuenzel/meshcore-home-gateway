@@ -18,12 +18,32 @@ format, the command line and Home Assistant discovery are public interfaces
 - `[radio] set_clock_max_days` (default 30, 0 for no limit): the largest step by which
   `set_clock` moves a radio clock that was set
   ([configuration.md](docs/configuration.md#radio)).
+- `[mqtt] insecure` (default `false`): accepts a broker connection without a user name, or
+  without TLS to a broker that is not on the gateway's host or link, and silences the warnings
+  about it ([configuration.md](docs/configuration.md#mqtt)).
+- `check-config --broker` logs in once more without credentials and warns when the broker takes
+  such a client: then only its ACL keeps anyone who reaches it off the gateway's topics
+  ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)).
 
 ### Changed
 
+- **Breaking:** commands (`[commands] senders`) over a broker connection without a user name,
+  or without TLS to a broker beyond the gateway's host or link, are a configuration error until
+  `[mqtt] insecure = true` accepts it: any client that reaches the broker, or reads the password
+  on the network, could publish command events. Add credentials and TLS, or the setting, before
+  updating: the version before does not know the setting, so update right after adding it (the
+  installer's `--update` keeps the installed version while the configuration does not pass).
+- **Breaking:** the default MQTT client id gets a random part per start,
+  `meshcore-home-gateway-<node_id>-<8 hex digits>`: a broker drops a client when another
+  connects with its id, and the fixed one could be read off the topics. A broker ACL or
+  `clientid_prefixes` that names the id can use the prefix `meshcore-home-gateway-`; set
+  `[mqtt] client_id` to keep a fixed one.
 - The clock of the radio is read also without `set_clock`, to show its offset.
 - The service starts after `time-sync.target` where a service provides it (`systemd-timesyncd`,
   `chrony`): the radio's clock is set from the host's.
+- The installer asks for TLS in the default setup too, and an empty user name must be
+  confirmed; with commands over a connection without either, it asks to accept that
+  (`mqtt.insecure`), or the commands are left out ([deployment.md](docs/deployment.md)).
 
 ### Security
 
@@ -46,6 +66,12 @@ format, the command line and Home Assistant discovery are public interfaces
   not one more than `set_clock_max_days` ahead of a radio clock that was set. A radio clock from
   before the release was never set and is written as before. A warning says why the clock was
   left behind ([design §6.1](docs/design.md#61-radio-session)).
+- At start and in `check-config` the gateway warns when it logs in to the broker without a user
+  name, or without TLS to a broker beyond its host or link.
+- Birth messages on Home Assistant's status topic no longer postpone the gateway's announcement:
+  one already due is kept, and announcements after births and discovery clears come at most
+  every 30 seconds. More than 5 births in a minute are logged with the topic
+  ([home-assistant.md](docs/home-assistant.md#how-discovery-behaves)).
 
 ## [1.1.0a4] - 2026-10-31
 

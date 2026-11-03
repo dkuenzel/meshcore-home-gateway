@@ -716,6 +716,22 @@ events, write a contact's document with any position, send to every target and r
 message and position. The gateway cannot tell: it sees neither the broker's ACL nor who else
 writes below its topics.
 
+What the gateway can see, it says: at start and in `check-config` it warns when it logs in
+without a user name, or without TLS to a broker that is not on its host or the link (then the
+password, the messages, the positions and the command events cross the network in the clear).
+With commands configured, either is a configuration error until `[mqtt] insecure = true`
+accepts it ([configuration.md](configuration.md#mqtt)). `check-config --broker` also logs in a
+second time without credentials and warns when the broker takes that client: then only its
+ACL keeps anyone who reaches it off the gateway's topics.
+
+The default client id has a random part per start (`meshcore-home-gateway-radio1-1a2b3c4d`): a
+broker drops a client when another one connects with its id, so a fixed id that anyone can read
+off the topics would let any client of the broker take the gateway offline. An ACL that names
+clients matches the prefix `meshcore-home-gateway-`. A client that floods `homeassistant/status`
+with birth messages cannot postpone the gateway's announcement after Home Assistant's own, nor
+make it announce more than every 30 seconds; the log names the topic when more than 5 come in a
+minute.
+
 paho reads every message completely before the gateway can check its size (1 KiB for a send
 request), so a client could exhaust the gateway's memory with one huge request. If no other
 client on the broker needs large messages, cap them in `mosquitto.conf`, for example

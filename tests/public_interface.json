@@ -33,6 +33,7 @@
     "mqtt.cert_file",
     "mqtt.client_id",
     "mqtt.host",
+    "mqtt.insecure",
     "mqtt.keepalive_s",
     "mqtt.key_file",
     "mqtt.node_id",
@@ -796,7 +797,7 @@
   },
   "mqtt.client_id": {
    "answer": "str",
-   "default": "meshcore-home-gateway-<node_id>",
+   "default": "meshcore-home-gateway-<node_id>-<8 random hex digits>",
    "identity": true,
    "type": "string"
   },
@@ -804,6 +805,11 @@
    "answer": "str",
    "required": true,
    "type": "string"
+  },
+  "mqtt.insecure": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
   },
   "mqtt.keepalive_s": {
    "answer": "int",

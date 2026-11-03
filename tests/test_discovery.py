@@ -54,6 +54,7 @@ host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"
 node_id = "radio-1"
+insecure = true
 [homeassistant]
 prefix = "ha"
 device_name = "Mesh radio"

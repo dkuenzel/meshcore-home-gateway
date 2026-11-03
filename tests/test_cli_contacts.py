@@ -324,6 +324,7 @@ def test_check_config_names_contact_management_and_protected_look_alikes(
     config = tmp_path / "config.toml"
     config.write_text(
         '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        "insecure = true\n"
         f'[targets.one]\ncontact = "{"b2" * 32}"\n'
         f'[commands]\nsenders = ["{"b2" * 6 + "00" * 26}"]\nwords = ["status"]\n'
         "[contacts]\nmanage = false\n"

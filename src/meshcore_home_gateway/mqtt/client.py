@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import ssl
 import sys
 from collections.abc import Callable, Sequence
@@ -77,10 +78,18 @@ class PahoLike(Protocol):
 def make_paho_client(config: MqttConfig) -> PahoLike:
     return paho.Client(
         callback_api_version=CallbackAPIVersion.VERSION2,
-        client_id=config.client_id or f"meshcore-home-gateway-{config.node_id}",
+        client_id=config.client_id or default_client_id(config.node_id),
         protocol=MQTTProtocolVersion.MQTTv311,
         clean_session=True,
     )
+
+
+def default_client_id(node_id: str) -> str:
+    """A broker disconnects a client when another connects with its id (MQTT 3.1.1 section
+    3.1.4): one that anyone can read in the topics would let any client of the broker take the
+    gateway offline. With `clean_session` the id names no session, so a random part per start
+    costs nothing (SEC-006)."""
+    return f"meshcore-home-gateway-{node_id}-{secrets.token_hex(4)}"
 
 
 def tls_context(config: MqttConfig) -> ssl.SSLContext:

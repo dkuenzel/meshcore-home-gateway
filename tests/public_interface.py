@@ -182,6 +182,7 @@ duty_cycle_percent = 20
 host = "broker.example.org"
 base_topic = "{BASE}"
 node_id = "{NODE}"
+insecure = true
 [homeassistant]
 prefix = "{PREFIX}"
 status_topic = "{STATUS}"
@@ -223,6 +224,7 @@ client_id = "gateway"
 keepalive_s = 30
 base_topic = "{BASE}"
 node_id = "{NODE}"
+insecure = true
 [homeassistant]
 discovery = true
 prefix = "{PREFIX}"
@@ -952,10 +954,12 @@ def _toml(tables: dict[str, Any], name: str = "") -> str:
 
 
 def _client_id() -> str:
-    """The client ID the broker sees when the file sets none (mqtt/client.py)."""
+    """The client ID the broker sees when the file sets none (mqtt/client.py), its random part
+    per start as a placeholder."""
     with mock.patch.object(paho, "Client") as client:
         mqtt_client.make_paho_client(parse_config(MINIMAL).mqtt)
-    return placeholders(client.call_args.kwargs["client_id"])
+    given = placeholders(client.call_args.kwargs["client_id"])
+    return re.sub(r"-[0-9a-f]{8}$", "-<8 random hex digits>", given)
 
 
 # --- command line ---------------------------------------------------------------------------------

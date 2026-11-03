@@ -24,8 +24,9 @@ import logging
 import random
 import secrets
 import time
+from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from meshcore_home_gateway import __version__
@@ -112,6 +113,8 @@ _FINAL_FROM_CACHE = frozenset(
      Rejection.TOO_OLD, Rejection.FROM_THE_FUTURE}
 )  # fmt: skip
 DISCOVERY_DELAY_S = (0.5, 2.0)  # random delay after Home Assistant's birth message
+ANNOUNCE_MIN_INTERVAL_S = 30  # announcements after births and clears, at most this often
+BIRTHS_PER_MINUTE = 5  # more come from another client than Home Assistant: logged
 
 
 class _FinalError(Exception):
@@ -156,6 +159,17 @@ class Outgoing:
     text: str
     created: float  # monotonic
     raw: str | None = None  # a channel text accepted before the radio's name was known
+
+
+@dataclass
+class _Announcing:
+    """When the gateway announces itself to Home Assistant again (SEC-006)."""
+
+    due: asyncio.TimerHandle | None = None  # a scheduled announcement
+    birth: bool = False  # it follows Home Assistant's birth message
+    last: float | None = None  # monotonic time of the last announcement
+    births: deque[float] = field(default_factory=deque)  # of the last minute, monotonic
+    warned: float | None = None  # monotonic time of the last warning about births
 
 
 class AckWaiter:
@@ -280,8 +294,7 @@ class Bridge:
         self._radio_info: RadioInfo | None = None
         self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
         self._removed: dict[str, str] | None = None  # earlier components, removed in this run
-        self._reannounce: asyncio.TimerHandle | None = None  # a scheduled announcement
-        self._reannounce_birth = False  # it follows Home Assistant's birth message
+        self._announcing = _Announcing()
         self._radio_ready = asyncio.Event()
         self._tasks: list[asyncio.Task[None]] = []
         self._telemetry_task: asyncio.Task[None] | None = None
@@ -309,7 +322,7 @@ class Bridge:
     async def run(self, stop: asyncio.Event) -> None:
         if self._telemetry is not None:  # the states of the first documents come from it
             self._telemetry.restore()
-        for warning in protected_look_alikes(self.config):
+        for warning in protected_look_alikes(self.config) + broker_warnings(self.config):
             log.warning("%s", warning)
         if self.config.contacts.manage and self.config.radio.transport == "tcp":
             log.warning("contact management over TCP: heard nodes are best effort, the radio "
@@ -1034,7 +1047,7 @@ class Bridge:
             if self._devices is not None:
                 self._observe(self._devices.discovery_message, topic, payload, retained)
             return
-        if payload or retained or self._reannounce is not None:
+        if payload or retained or self._announcing.due is not None:
             return
         log.info("Home Assistant cleared the gateway's device; announcing it again")
         self._schedule_announcements()
@@ -1059,21 +1072,50 @@ class Bridge:
             if (manage := self._manage) is not None:
                 self._observe(manage.announce)
             self._announced = _identity(self._radio_info)
+            self._announcing.last = self._mono()
             if (devices := self._devices) is not None:
                 self._observe(lambda: devices.announce_all(birth=birth))
         self._publish_state()
 
     def _schedule_announcements(self, *, birth: bool = False) -> None:
-        if self._reannounce is not None:  # one is due: it counts as after a birth if one was
-            birth = birth or self._reannounce_birth
-            self._reannounce.cancel()
-        self._reannounce_birth = birth
+        """Announce after a random delay. One already due is never postponed (a storm of birth
+        messages would keep it from ever coming); it only learns that a birth came (SEC-006)."""
+        if birth:
+            self._count_birth()
+        state = self._announcing
+        if state.due is not None:
+            state.birth = state.birth or birth
+            return
+        state.birth = birth
         delay = random.uniform(*DISCOVERY_DELAY_S)  # noqa: S311 - spreading load only
-        self._reannounce = asyncio.get_running_loop().call_later(delay, self._announce_due)
+        state.due = asyncio.get_running_loop().call_later(delay, self._announce_due)
 
     def _announce_due(self) -> None:
-        birth, self._reannounce = self._reannounce_birth, None
+        """At most one announcement every ANNOUNCE_MIN_INTERVAL_S: a later one waits for the
+        rest of the interval, with whatever came meanwhile."""
+        state = self._announcing
+        wait = 0.0 if state.last is None else state.last + ANNOUNCE_MIN_INTERVAL_S - self._mono()
+        if wait > 0:
+            state.due = asyncio.get_running_loop().call_later(wait, self._announce_due)
+            return
+        birth, state.due = state.birth, None
         self._publish_announcements(birth=birth)
+
+    def _count_birth(self) -> None:
+        """Home Assistant sends one birth message per start: many in a minute come from another
+        client, which the log names once a minute."""
+        now, state = self._mono(), self._announcing
+        births = state.births
+        births.append(now)
+        while births and now - births[0] > 60:
+            births.popleft()
+        if len(births) > BIRTHS_PER_MINUTE and (state.warned is None or now - state.warned > 60):
+            state.warned = now
+            log.warning(
+                "%d birth messages on %s in a minute: another client writes there; the gateway "
+                "announces itself at most every %d s", len(births),
+                self.config.homeassistant.status_topic, ANNOUNCE_MIN_INTERVAL_S,
+            )  # fmt: skip
 
 
 def ha_device_topics(config: Config) -> list[str]:
@@ -1091,6 +1133,28 @@ def protected_keys(config: Config) -> frozenset[str]:
     (ADR 0017)."""
     targets = {t.public_key for t in config.targets if t.public_key is not None}
     return frozenset(targets | set(config.commands.senders))
+
+
+def broker_warnings(config: Config) -> list[Text]:
+    """What the broker connection lacks (SEC-004): the gateway's topics carry messages,
+    positions and command events, and only the broker guards them. None once `insecure = true`
+    accepts it. Logged in English, shown by `check-config` in the command line's language."""
+    mqtt = config.mqtt
+    warnings: list[Text] = []
+    if mqtt.insecure:
+        return warnings
+    if mqtt.username is None:
+        warnings.append(Text(
+            "MQTT without a user name: unless the broker refuses clients without one, any client "
+            "that reaches it can read and write the gateway's topics (docs/mqtt-api.md, Securing "
+            "the broker; insecure = true accepts it)"
+        ))  # fmt: skip
+    if not mqtt.tls and not mqtt.local:
+        warnings.append(Text(
+            "MQTT without TLS: the password, the messages, the positions and the command events "
+            "cross the network in the clear (insecure = true accepts it)"
+        ))  # fmt: skip
+    return warnings
 
 
 def protected_look_alikes(config: Config) -> list[Text]:

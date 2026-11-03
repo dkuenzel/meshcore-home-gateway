@@ -122,6 +122,9 @@ msgstr ""
 msgid "Network bridge"
 msgstr ""
 
+msgid "No user name: unless the broker refuses clients without one, anyone who reaches it can read the messages and the positions and send commands to the gateway. Continue without a user name?"
+msgstr ""
+
 msgid "Node id (in topics and entity IDs)"
 msgstr ""
 
@@ -162,6 +165,11 @@ msgstr ""
 msgid "Storage for the container disk"
 msgstr ""
 
+#. {what} is "no user name" or "no TLS".
+#, python-brace-format
+msgid "The broker connection has {what}: any client that reaches the broker could publish command events as if an allowed contact had sent them. Accept it (insecure = true)? No: no commands."
+msgstr ""
+
 #. {reason} is the program's message, in this language too.
 #, python-brace-format
 msgid ""
@@ -194,7 +202,7 @@ msgstr ""
 msgid "The service leaves alone:"
 msgstr ""
 
-msgid "Use TLS for the broker connection?"
+msgid "Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear."
 msgstr ""
 
 msgid "With radio.profile.manage = observe the service only reports what differs:"
@@ -380,6 +388,9 @@ msgstr ""
 msgid "meshcore-home-gateway {version} was not installed in container {ctid} (see above)"
 msgstr ""
 
+msgid "no TLS"
+msgstr ""
+
 msgid "no active storage for container disks"
 msgstr ""
 
@@ -391,6 +402,9 @@ msgstr ""
 
 #, python-brace-format
 msgid "no answer for {key} ({text})"
+msgstr ""
+
+msgid "no user name"
 msgstr ""
 
 msgid "none (no user name)"

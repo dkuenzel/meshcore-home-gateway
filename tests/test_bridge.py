@@ -16,7 +16,7 @@ import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import observer as observer_module
-from meshcore_home_gateway.bridge import Bridge, ha_device_topics
+from meshcore_home_gateway.bridge import Bridge, broker_warnings, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
@@ -75,6 +75,7 @@ def make_config(
 [mqtt]
 host = "broker.example.org"
 node_id = "radio1"
+insecure = true
 [targets.alerts]
 channel = 0
 [targets.alice]
@@ -165,6 +166,7 @@ def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 0.15)
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
     monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
+    monkeypatch.setattr(bridge_module, "ANNOUNCE_MIN_INTERVAL_S", 0)  # its own test has it
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
     # the nodes document follows every change: the tests check its content, not its rate
     monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)
@@ -1437,6 +1439,71 @@ def test_ignored_channels_are_not_published(tmp_path: Path) -> None:
             assert all(r["event_type"] != "channel" for r in bus.payloads("/received"))
 
     scenario(main)
+
+
+def births(bus: FakeBus, count: int) -> None:
+    for _ in range(count):
+        for birth in bus.on_ha_online:
+            birth()
+
+
+def gateway_documents(bus: FakeBus) -> int:
+    return sum(t.endswith(GATEWAY_DOCUMENT) for t, _, _ in bus.published)
+
+
+def test_a_storm_of_birth_messages_does_not_postpone_the_announcement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each birth used to restart the delay: births 0.4 s apart kept the entities away for as
+    long as they came (SEC-006). Now the first one's delay holds."""
+    monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.2, 0.2))
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _n):
+            before = gateway_documents(bus)
+            for _ in range(8):  # a birth every 0.05 s, for 0.4 s
+                births(bus, 1)
+                await asyncio.sleep(0.05)
+            assert gateway_documents(bus) > before  # 0.2 s after the first, during the storm
+
+    scenario(main)
+
+
+def test_announcements_after_births_come_at_most_every_interval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """At most one announcement per ANNOUNCE_MIN_INTERVAL_S, also counting the one at start;
+    many births in a minute are logged once, naming the topic."""
+    monkeypatch.setattr(bridge_module, "ANNOUNCE_MIN_INTERVAL_S", 0.3)
+    caplog.set_level(logging.WARNING)
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _n):
+            before = gateway_documents(bus)  # the one at start
+            for _ in range(20):  # 1 s of births
+                births(bus, 1)
+                await asyncio.sleep(0.05)
+            await asyncio.sleep(0.35)  # the last one waits for the rest of its interval
+            announced = gateway_documents(bus) - before
+            assert 2 <= announced <= 4  # 1.35 s at most every 0.3 s, the first after 0.3 s
+
+    scenario(main)
+    warnings = [r.getMessage() for r in caplog.records if "birth messages" in r.getMessage()]
+    assert len(warnings) == 1  # once a minute
+    assert "on homeassistant/status in a minute: another client writes there" in warnings[0]
+
+
+def test_the_broker_connection_is_warned_about_until_accepted() -> None:
+    """SEC-004: without credentials or TLS the gateway's topics are open to whoever reaches the
+    broker or reads the network; `insecure = true` accepts it."""
+    base = '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n[mqtt]\nnode_id = "radio1"\n'
+    anonymous = parse_config(base + 'host = "broker.example.org"\n')
+    assert [str(w).split(":")[0] for w in broker_warnings(anonymous)] == [
+        "MQTT without a user name", "MQTT without TLS",
+    ]  # fmt: skip
+    assert broker_warnings(parse_config(base + 'host = "127.0.0.1"\nusername = "gw"\n')) == []
+    accepted = parse_config(base + 'host = "broker.example.org"\ninsecure = true\n')
+    assert broker_warnings(accepted) == []
 
 
 def test_state_discovery_and_systemd_notifications(tmp_path: Path) -> None:

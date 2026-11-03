@@ -91,14 +91,15 @@ every setting in the table.
 | IPv4 address with prefix, gateway | `dhcp` | Advanced |
 | Storage for templates | first active storage for templates | Advanced |
 | Radio connection | the devices in `/dev/serial/by-id/`, or TCP with address and port (5000) | both |
-| Broker address, user, password | –, none (suggested: `meshcore-home-gateway`), – (asked only with a user name) | both |
-| Broker TLS, port | no, 1883 (8883 with TLS) | Advanced |
+| Broker address, TLS, user, password | –, no, none (suggested: `meshcore-home-gateway`; an empty one is confirmed), – (asked only with a user name) | both |
+| Broker port | 1883 (8883 with TLS) | Advanced |
 | Base topic, node id | `meshcore`, `radio1` | Advanced |
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
 | Language of the names in Home Assistant (asked while it offers more than English) | the dialogs' language; on `--reconfigure` the configured one, else `en` | Advanced |
 | ASCII only | no | Advanced |
 | Channels and contacts to send to | read from the radio | both |
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
+| Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
