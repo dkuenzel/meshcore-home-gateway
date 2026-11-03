@@ -150,7 +150,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | OPS-007 | fix | A troubleshooting row, a warning at every connect on untested firmware, `manage_reason` in the `contacts` index, a turnaround target for new firmware (EXT-020) | pending: ops |
 | OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: cli-ops |
 | OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: ops |
-| OPS-010 | fix | Message boxes before a TCP radio and before a broker without credentials or TLS; the summary names the posture | pending: ops |
+| OPS-010 | fix | A radio over TCP and a broker without a user name need a confirmation, and the TLS question says what crosses the network in the clear (SEC-003, SEC-004); the final message names the posture: TLS or not, the user name or none, a TCP radio without authentication | pending: ops |
 | OPS-011 | fix | The health section (ARC-012) and a `status` command (IMP-016) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: cli-ops |
 | OPS-012 | accept | An installation needs Debian's mirror; an offline installation is a feature nobody asked for | – |
 | OPS-013 | fix | `apt-get clean` after the installation | pending: ops |

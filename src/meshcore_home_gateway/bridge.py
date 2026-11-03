@@ -341,8 +341,9 @@ class Bridge:
         self.observer = observer or Observer(
             bus, self.topics, protected=protected_keys(config), wall_clock=wall_clock
         )
-        self.observer.manage, self.observer.heard_nodes = (
+        self.observer.manage, self.observer.manage_reason, self.observer.heard_nodes = (
             config.contacts.manage,
+            "no_radio" if config.contacts.manage else "management_off",  # until the radio connects
             config.contacts.heard_nodes,
         )
         self._devices = devices  # the contacts' devices in Home Assistant
@@ -584,10 +585,13 @@ class Bridge:
                     self._observe(self._telemetry.radio_connected)
                 delay = RECONNECT_MIN_S
                 max_contacts = self._radio_info.device.max_contacts
-                self._observe(self.observer.radio_connected, max_contacts, session.tuning)
-                # untested firmware takes no request: the documents and the controls say so
+                # untested firmware takes no request: the documents and the controls say so, and
+                # why (OPS-007); before the index the connect publishes
                 takes = self._contacts.takes_requests(self._radio_info)
-                self._observe(self.observer.set_manage, takes)
+                self._observe(
+                    self.observer.set_manage, takes, self._contacts.refusal(self._radio_info)
+                )
+                self._observe(self.observer.radio_connected, max_contacts, session.tuning)
                 for report in self._profile.take_reports() if self._profile else []:
                     self._observe(self.observer.profile_applied, report)
                 self._check_radio(session)
@@ -605,6 +609,10 @@ class Bridge:
                     self._radio_ready.clear()
                     self._session = None
                     self._link.ended(*_uptime(session), by_radio=session.closed_by_radio)
+                    # requests are refused until the radio is back: the index says why
+                    self._observe(
+                        self.observer.set_manage, self.observer.manage, self._contacts.refusal(None)
+                    )
                     self._publish_state()
             finally:
                 await session.close()

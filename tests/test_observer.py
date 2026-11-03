@@ -527,7 +527,7 @@ def test_node_listeners_learn_of_every_change_and_cannot_stop_the_documents(
     assert "node listener failed" in caplog.text
 
 
-def test_the_switch_the_worker_applies_is_published() -> None:
+def test_the_switch_the_worker_applies_is_published(monkeypatch: pytest.MonkeyPatch) -> None:
     """Untested firmware takes no request (ADR 0020's firmware gate): `manage` and
     `removable` say so after the first table read; before it, the last run's documents stay."""
     bus = FakeBus()
@@ -543,6 +543,18 @@ def test_the_switch_the_worker_applies_is_published() -> None:
     count = len(bus.published)
     observer.set_manage(True)
     assert len(bus.published) == count
+    # OPS-007: why requests are refused now; the reason alone changes the index only, and the
+    # contacts' documents are not even made again (what they keep would be written again)
+    made: list[str] = []
+    with monkeypatch.context() as patched:
+        patched.setattr(observer, "_publish_contact", made.append)
+        observer.set_manage(True, "no_radio")
+    assert made == []
+    assert [p[0] for p in bus.published[count:]] == [f"{ROOT}/contacts"]
+    assert last(bus, f"{ROOT}/contacts")["manage_reason"] == "no_radio"
+    observer.set_manage(False, "untested_firmware")
+    assert last(bus, f"{ROOT}/contacts")["manage_reason"] == "untested_firmware"
+    assert last(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")["removable"] is False
 
 
 def test_the_history_keeps_the_record_of_the_newest_advert(tmp_path: Path) -> None:

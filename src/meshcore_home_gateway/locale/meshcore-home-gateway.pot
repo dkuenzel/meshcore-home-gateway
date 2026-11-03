@@ -285,6 +285,12 @@ msgstr ""
 msgid "channels"
 msgstr ""
 
+#. what the gateway does about a setting of the radio that differs from the
+#. managed profile, in brackets after the setting's line
+#: src/meshcore_home_gateway/cli.py
+msgid "compiled out of the radio's firmware"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "configuration error: {detail}"
@@ -730,6 +736,29 @@ msgstr ""
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "the gateway stops asking it and forgets its battery, readings and position; its history keeps them for {readings} and {positions}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "the gateway takes no add or remove requests ({reason})"
+msgstr ""
+
+#. after the lists of `contacts`: why the gateway refuses to add or remove contacts
+#. now (OPS-007); the settings stay as they are
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway takes no add or remove requests while its radio is not connected"
+msgstr ""
+
+#. after the lists of `contacts`: why the gateway refuses to add or remove contacts
+#. now (OPS-007); the settings stay as they are
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway takes no add or remove requests: [contacts] manage = false"
+msgstr ""
+
+#. after the lists of `contacts`: why the gateway refuses to add or remove contacts
+#. now (OPS-007); the settings stay as they are
+#: src/meshcore_home_gateway/cli.py
+msgid "the gateway takes no add or remove requests: it is not tested with the radio's firmware (radio.profile.manage = \"always\" allows them; docs/deployment.md, Troubleshooting)"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli.py

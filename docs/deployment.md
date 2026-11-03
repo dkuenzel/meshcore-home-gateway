@@ -146,7 +146,11 @@ pct enter 105
 Inside the container:
 
 ```sh
-apt-get update && apt-get install -y --no-install-recommends python3 python3-paho-mqtt
+apt-get update && apt-get install -y --no-install-recommends python3 python3-paho-mqtt \
+  ca-certificates unattended-upgrades && apt-get clean
+mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nSystemMaxUse=100M\n' >/etc/systemd/journald.conf.d/meshcore-home-gateway.conf
+systemctl try-restart systemd-journald
 useradd --system --user-group --groups dialout --no-create-home --home-dir /nonexistent \
   --shell /usr/sbin/nologin meshcore-home-gateway
 mkdir -p /root/src /usr/local/lib/meshcore-home-gateway
@@ -185,7 +189,15 @@ the keys of the next section), which gives the same file with the same mode.
     simple rule: after re-plugging the radio, `pct reboot 105`. Until then the gateway reports the
     radio as disconnected and keeps retrying.
 
-  The script writes `path=` explicitly because device names may contain `=`.
+  The script writes `path=` explicitly because device names may contain `=`. It refuses a radio
+  that another container of the host already passes through (a `devN` entry or an
+  `lxc.mount.entry` of `pct config`, compared after following links, so `/dev/ttyACM0` and its
+  `/dev/serial/by-id/` name are the same radio): a radio takes one client at a time, and the
+  container that opens it second could not use it. With dialogs it says so and offers the
+  radios again.
+* **Updates of the container:** the script installs `unattended-upgrades`, which installs
+  Debian's updates every day (see [Operations](#4-operations)), and empties the package cache
+  afterwards (`apt-get clean`). It limits the journal to 100 MB of the container's disk.
 * **Clean environment:** `pct exec` passes the host's environment (locale, `PATH`) into the
   container; the script runs every command with `env -i` and a fixed `PATH`. When the host's
   `PATH` lacks `/usr/local/bin`, `pct exec 105 -- meshcore-home-gateway` fails with "Failed to
@@ -252,7 +264,9 @@ pct stop 105 && pct destroy 105
   never a pre-release (`a`, `b`, `rc`, `dev`): it does not find one, or installs an older release
   over it. Install or update to a pre-release with its own installer
   (`releases/download/vX.Y.Zrc1/meshcore-home-gateway-lxc.sh`) or with `--release X.Y.Zrc1`; the
-  final message of a pre-release names its own installer.
+  final message of a pre-release names its own installer. An update also installs the packages
+  and the journal limit of [What the script does](#what-the-script-does) again, so an older
+  installation gets `unattended-upgrades` with it.
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off: telemetry is on
   from 1.1.0a2 on, and the first time it runs on the state directory it asks nobody for an hour
   after the radio connects (*Telemetry status* `paused`, reason `first_start`; the log names the
@@ -290,7 +304,9 @@ pct stop 105 && pct destroy 105
 * **Roll back** works for versions that are still in `/usr/local/lib/meshcore-home-gateway/`.
   An update keeps the files of other versions, but replaces the file of its own version: after an
   update with an unchanged version string (a checkout of `main` between two releases) there is
-  nothing to roll back to. The unit file is not rolled back: the one the update installed stays.
+  nothing to roll back to. The unit file is not rolled back: the one the update installed stays;
+  a release's unit names its version in its second line
+  (`pct exec 105 -- head -2 /etc/systemd/system/meshcore-home-gateway.service`).
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
@@ -354,9 +370,40 @@ English. The service's log is always English.
 | Inspect the radio | `systemctl stop meshcore-home-gateway && meshcore-home-gateway probe --serial <device>` |
 
 * **Service:** `Type=notify` with a 60 s watchdog; restart after 5 s on failure, not on
-  configuration errors (exit code 78). A stop waits up to a minute for the acknowledgement of a
+  configuration errors (exit code 78). Each further automatic restart waits longer, up to 5
+  minutes from the seventh on, and systemd never gives up: a crash loop does not end in the
+  `failed` state, and Home Assistant shows the gateway unavailable meanwhile
+  ([home-assistant.md](home-assistant.md)). The count begins again only when the service is
+  started by hand (`systemctl restart`, an update); `systemctl show -p NRestarts
+  meshcore-home-gateway` shows it. The service may use 192 MB of memory (`MemoryMax=`): a leak
+  ends with the service restarted, not with another process of the container killed. A stop
+  waits up to a minute for the acknowledgement of a
   message in flight (`TimeoutStopSec=90`) and keeps the queued messages for the next start. `systemd-analyze security meshcore-home-gateway` rates the
   unit's exposure at 1.6 (lower is better).
+* **Updates of the container:** the container is a Debian system and needs Debian's updates;
+  `--update` updates only the gateway. The installer installs `unattended-upgrades`, which
+  installs the updates of Debian's security archive and point releases every day, as its
+  default configuration in `/etc/apt/apt.conf.d/50unattended-upgrades` says, and never reboots
+  (the kernel is the host's). A running service keeps the Python and paho-mqtt it started with:
+  restart it after an update of them (`grep -E 'python3|paho'
+  /var/log/unattended-upgrades/unattended-upgrades.log`). `systemctl list-timers
+  apt-daily-upgrade.timer` shows the next run, and `apt-config dump
+  APT::Periodic::Unattended-Upgrade` must say `"1"` (the package switches itself on when it is
+  installed without dialogs). An installation from before this version gets the package with its
+  next `--update`.
+* **Disk:** the container has 2 GB. The installer limits the journal to 100 MB
+  (`/etc/systemd/journald.conf.d/meshcore-home-gateway.conf`; Debian's default is a tenth of the
+  file system); the history is bounded by its own limits ([configuration](configuration.md#history)),
+  and the `health` section of `state` reports the free space (`disk_free_mb`).
+* **Hardening further:** where the broker has a fixed address, a drop-in can limit the service
+  to it (`systemctl edit meshcore-home-gateway`: `[Service]`, `IPAddressDeny=any`,
+  `IPAddressAllow=<broker address>` and, for a radio over TCP, the radio's address). It needs
+  systemd to load a BPF program, which an unprivileged container cannot where the host forbids
+  unprivileged BPF; systemd then goes on without the filter and says so only at debug level
+  ([platform notes](platform-notes.md#debian-systemd-and-linux)). Check that it holds:
+  `systemd-run --wait -p IPAddressDeny=any python3 -c "import socket;
+  socket.create_connection(('deb.debian.org', 80), 5)"` must fail. It suits a virtual machine
+  or a host of its own better than the container.
 * **State and backup:** back up `/etc/meshcore-home-gateway/` (`config.toml`, and
   `mqtt-password` where the installer wrote it) and the three files of
   `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop
@@ -442,3 +489,6 @@ English. The service's log is always English.
 | *Telemetry status* `paused`, reason `first_start` | Telemetry runs for the first time on this state directory: it asks nobody for an hour after the radio connects. Exclude the companions that are not the household's meanwhile |
 | *Gateway degraded* on, or `degraded` in `systemctl status` | Its attributes (the `health` section of `state`, [mqtt-api.md](mqtt-api.md#state-state)) name the part: `history` `broken` (the journal says why; it is off until the next start: check the disk, `history.sqlite3`), `state_file` `unwritable` (a full or read-only disk: `df -h /var/lib/meshcore-home-gateway`), `exclusions` (as `exclusions_unreadable` above, or `unsaved`: the disk again), `errors_1h` above 0 (a bug: the journal has its traceback, `journalctl -u meshcore-home-gateway -p err`; please report it), `loop_lag_max_s` from 1 s (the host gives the container no CPU or its disk is slow: a backup, swapping; give it more CPU or move the backup), `disk_free_mb` below 100 (free space). It clears an hour after the last error or stall |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |
+| Home Assistant's controls to add and remove contacts unavailable after a firmware update of the radio; log: `radio: firmware … is not tested with this version of the gateway` | The gateway writes nothing to firmware it is not tested with ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)): the radio profile is only observed and add and remove requests are refused. The *Contacts* sensor's attribute `manage_reason` says `untested_firmware`, and so does `meshcore-home-gateway contacts list`. Update the gateway once a version tested with that firmware is out ([testing.md](testing.md#testing-another-firmware-release) says how soon the project aims to test one), or set `manage = "always"` in `[radio.profile]` to write to it anyway, at your own risk |
+| Installer: `… is already passed through to another container (ID …)` | Another container of the host has the same radio: take it out there (`pct set <ID> --delete dev0`, or remove its `lxc.mount.entry`), or choose another radio |
+| `systemctl status` shows `activating (auto-restart)`, with longer pauses each time | A crash loop: the service fails at every start, and systemd waits longer each time, up to 5 minutes. `journalctl -u meshcore-home-gateway -p err` shows why; after the fix, `systemctl restart meshcore-home-gateway` starts it at once |

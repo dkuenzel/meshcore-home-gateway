@@ -208,6 +208,9 @@ def test_contact_management_in_the_documents() -> None:
     assert contact_document(mesh.contacts[KEY], protected=True, manage=True)["removable"] is False
     assert contact_document(mesh.contacts["b2" * 32])["removable"] is False  # not managed
     assert contacts_document(mesh, manage=True)["manage"] is True
+    assert contacts_document(mesh, manage=True)["manage_reason"] is None
+    off = contacts_document(mesh, manage=False, manage_reason="management_off")
+    assert (off["manage"], off["manage_reason"]) == (False, "management_off")
 
 
 def test_look_alike_nodes_are_flagged() -> None:

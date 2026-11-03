@@ -20,7 +20,7 @@ backups private and encrypted ([state and backup](deployment.md#4-operations)).
 | `history.sqlite3` in `/var/lib/meshcore-home-gateway/` | the service, and whoever has the container or a backup | per kind, below ([`[history]`](configuration.md#history)) |
 | `state.json` and `telemetry-excluded.json` beside it | as the history | while the gateway needs them ([what each holds](deployment.md#4-operations)) |
 | Home Assistant's recorder and `.storage/core.restore_state` | Home Assistant's users and backups | the recorder's `purge_keep_days` (10 days by default); the long-term statistics of sensors without end ([Home Assistant](home-assistant.md#privacy)) |
-| The journal of the container | its administrators | journald's limits; message texts only with `log_level = "debug"` |
+| The journal of the container | its administrators | journald's limits (the installer allows it 100 MB, the oldest lines go first); message texts only with `log_level = "debug"` |
 
 ## The household
 

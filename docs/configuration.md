@@ -63,7 +63,8 @@ written. A value that does not read back as written is reported (`not_taken`); a
 connects in a row that sent it, it is no longer written to that firmware version
 (`not_converging`) until the configuration asks for another value, the radio has it, or the
 firmware changes; a setting the firmware does not know is skipped on that firmware
-(`unsupported`). What the radio has, what the profile wants and what
+(`unsupported`), and so is one whose command is compiled out of the firmware the radio runs
+(`disabled`). What the radio has, what the profile wants and what
 happened is in the `settings` document ([mqtt-api.md](mqtt-api.md#radio-profile-settings-and-setting))
 and in Home Assistant (*Radio profile*).
 

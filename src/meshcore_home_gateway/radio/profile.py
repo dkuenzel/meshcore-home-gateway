@@ -26,7 +26,12 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-UNSUPPORTED = ErrorCode.UNSUPPORTED_CMD.name.lower()
+# the radio's refusals after which a setter is not sent to that firmware again: it does not know
+# the command, or the command is compiled out of its build (a DISABLED frame, IMP-050)
+_NOT_AGAIN = {
+    ErrorCode.UNSUPPORTED_CMD.name.lower(): policy.UNSUPPORTED,
+    "disabled": policy.DISABLED,
+}
 MAX_REPORTS = 10  # reports kept for the bridge while connects keep failing
 _WHY = {
     "initial": "the first connect of this radio",
@@ -88,7 +93,7 @@ class RadioProfile:
             applied = self._records.load(radio) if self._records else Applied()
         live = live_values(session)
         plan = policy.plan(want, applied, live, mode=self._mode, firmware_code=firmware)
-        failed: dict[str, bool] = {}
+        failed: dict[str, str | None] = {}
         for key, value in plan.writes.items():
             reason = plan.reasons[key]
             log.log(
@@ -104,7 +109,7 @@ class RadioProfile:
             try:
                 await session.write_setting(", ".join(keys), frame)
             except CommandFailedError as exc:
-                failed.update(dict.fromkeys(keys, exc.reason == UNSUPPORTED))
+                failed.update(dict.fromkeys(keys, _NOT_AGAIN.get(exc.reason)))
                 log.warning("radio profile: %s not written: %s", ", ".join(keys), exc.reason)
         if plan.writes:
             await session.reread_settings()
@@ -126,17 +131,21 @@ class RadioProfile:
             radio, policy.record(applied, want, plan, after, failed, firmware_code=firmware)
         )
         me = session.info.self_info if session.info else info.self_info
-        unsupported = {*plan.unsupported, *(k for k, by_firmware in failed.items() if by_firmware)}
+        refused = {kind: {k for k, why in failed.items() if why == kind}
+                   for kind in (policy.UNSUPPORTED, policy.DISABLED)}  # fmt: skip
+        unsupported = {*plan.unsupported, *refused[policy.UNSUPPORTED]}
+        disabled = {*plan.disabled, *refused[policy.DISABLED]}
+        skipped = unsupported | disabled
         taken = [k for k in plan.writes if k not in failed and k not in not_taken]
         report = ProfileReport(
             mode=self._mode.value, firmware_code=firmware,
             tested=firmware in policy.TESTED_FIRMWARE, observing=plan.observing, live=after,
             desired=dict(want.values), written={k: plan.writes[k] for k in taken},
-            reasons={k: r for k, r in plan.reasons.items() if k not in unsupported},
-            failed=tuple(k for k in failed if k not in unsupported), not_taken=tuple(not_taken),
+            reasons={k: r for k, r in plan.reasons.items() if k not in skipped},
+            failed=tuple(k for k in failed if k not in skipped), not_taken=tuple(not_taken),
             drift=dict(plan.drift), not_converging=plan.not_converging,
-            unsupported=tuple(sorted(unsupported)), own_position=me.position is not None,
-            radio=radio,
+            unsupported=tuple(sorted(unsupported)), disabled=tuple(sorted(disabled)),
+            own_position=me.position is not None, radio=radio,
         )  # fmt: skip
         self._keep(report)
 
@@ -202,15 +211,18 @@ class RadioProfile:
         self.report = report
 
     def _log_observing(self, plan: policy.Plan, version: str, firmware: int) -> None:
-        if not plan.observing:
-            return
-        if self._mode is Mode.OBSERVE:
-            log.info("radio profile: observed only (radio.profile.manage = observe)")
-        else:
+        """At every connect: what untested firmware switches off (OPS-007), which the household
+        meets as Home Assistant controls that turned unavailable after a firmware update."""
+        if firmware not in policy.TESTED_FIRMWARE and self._mode is not Mode.ALWAYS:
             log.warning(
-                "radio profile: firmware %s (code %d) is not tested; observed only "
-                "(radio.profile.manage = always writes anyway)", version, firmware,
+                "radio: firmware %s (code %d) is not tested with this version of the gateway: "
+                "the radio profile is only observed, and contact add and remove requests are "
+                "refused (untested_firmware), until a version tested with it is installed; "
+                "radio.profile.manage = always allows both (docs/deployment.md, "
+                "Troubleshooting)", version, firmware,
             )  # fmt: skip
+        elif plan.observing:
+            log.info("radio profile: observed only (radio.profile.manage = observe)")
 
 
 _OTHER = (policy.MANUAL_ADD, policy.TELEMETRY, policy.ADVERT_LOCATION)  # one command sets them

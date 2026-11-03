@@ -1249,7 +1249,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Host clock wrong | sender timestamps vs host clock; the release date and the step from the radio's clock | commands outside `max_age_s` rejected; a host clock before the release, more than ten years after it or more than `set_clock_max_days` ahead of the radio's is not written to the radio | command rejections `too_old` / `from_the_future`; log warning `radio clock left ... behind` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
-| Bridge crashes or restarts | systemd | restart after 5 s; a stop keeps the queued outgoing messages for the next start, which queues them again (§6.2), a crash loses them; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; `queued` again for a kept message, no delivery state for a lost one |
+| Bridge crashes or restarts | systemd | restart after 5 s, each further automatic restart later, up to 5 min (never given up); a stop keeps the queued outgoing messages for the next start, which queues them again (§6.2), a crash loses them; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; `queued` again for a kept message, no delivery state for a lost one |
 | Airtime budget exhausted | token bucket | messages wait, then expire | `delivery: expired`; airtime entity |
 | Recipient out of range | no acknowledgement | retries, flood, then give up | `delivery: failed` |
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects; the events of refused requests are limited to 20 per second (bursts of 100), so they cannot push other events out of a subscriber's queue on the broker | `delivery: duplicate` / `rejected`; a log warning counts the events left out |
@@ -1294,11 +1294,13 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   (`bash -c "$(wget -qO- URL)"`); the host keeps nothing. A default setup asks only for the radio,
   the broker and the targets, an advanced one for everything. After a confirmation it creates an
   unprivileged Debian 13 container with nesting, passes the USB serial device through (`dev0`,
-  group `dialout` as seen in the container), installs `python3` and `python3-paho-mqtt` from
+  group `dialout` as seen in the container; refused when another container of the host already
+  passes it through), installs `python3` and `python3-paho-mqtt` from
   Debian and the program inside the container (a release's zipapp checked against its
   `SHA256SUMS`, or the source of `main` built there), validates the answers with it, probes the
   radio to offer its channels and contacts as targets, writes the configuration and starts the
-  service. Commands in the container run with a clean environment. Once the gateway offers a
+  service. Commands in the container run with a clean environment. The container gets Debian's
+  updates from `unattended-upgrades`, and its journal is limited to 100 MB. Once the gateway offers a
   language besides English, the first dialog chooses the installer's language and the default of
   `[homeassistant] language`; the language's pack is read into memory and checked against a
   digest the script carries ([§6.12](#612-translations)).
@@ -1306,7 +1308,9 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   `/usr/local/lib/meshcore-home-gateway/`, the unit to `/etc/systemd/system/`, write the
   configuration.
 * **Service:** `deploy/systemd/meshcore-home-gateway.service`: `Type=notify`, watchdog, restart on
-  failure, system user `meshcore-home-gateway` in group `dialout`, sandboxing
+  failure with a growing delay (5 s to 5 min) and no start limit, so a crash loop never ends in
+  the `failed` state, memory capped at 192 MB, system user `meshcore-home-gateway` in group
+  `dialout`, sandboxing
   (`ProtectSystem=strict`, `NoNewPrivileges`, no capabilities, restricted address families and
   system calls, write-execute memory denied). Device access is not restricted by the unit:
   `PrivateDevices=` would hide the serial port, and unprivileged containers do not enforce
@@ -1322,7 +1326,8 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   symlink and restarts; a failed check leaves the old version active, also when
   the version string did not change. Rollback switches the symlink back to a version still
   installed; an update with an unchanged version string replaces that version's file, and the unit
-  file the update installed stays in place (it is not rolled back). `--reconfigure <id>`
+  file the update installed stays in place (it is not rolled back; a release's unit names its
+  version in a comment). `--reconfigure <id>`
   runs the dialogs again with the current settings as defaults (`meshcore-home-gateway config
   answers`) and keeps the settings it does not ask for, and targets or command senders the radio no
   longer offers; `--answers <file>` installs without dialogs.

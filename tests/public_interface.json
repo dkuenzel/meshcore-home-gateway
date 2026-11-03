@@ -1670,6 +1670,7 @@
     "contacts[].protected",
     "contacts[].type",
     "manage",
+    "manage_reason",
     "max",
     "remote_cli",
     "remote_cli_total",

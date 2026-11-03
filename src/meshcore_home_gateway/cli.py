@@ -849,6 +849,8 @@ def _profile_action(key: str, plan: Plan) -> str:
         return "given_up"  # written at the last connects without effect
     if key in plan.unsupported:
         return "unsupported"
+    if key in plan.disabled:
+        return "disabled"  # compiled out of the firmware (IMP-050)
     return "reported"  # observing
 
 
@@ -947,6 +949,7 @@ def _print_plan(profile: dict[str, Any]) -> None:
     what = {
         "set": N_("set at the next connect"), "kept": N_("changed on the radio; kept"),
         "unsupported": N_("the firmware does not support it"),
+        "disabled": N_("compiled out of the radio's firmware"),
     }  # fmt: skip
     for name, change in profile["changes"].items():
         live, wanted = _json_text(change["live"]), _json_text(change["profile"])
@@ -1605,7 +1608,24 @@ def _contacts_list(args: argparse.Namespace) -> int:
         if isinstance(document, dict) and document.get("truncated") is True:
             shown, total = len(_entries(document, name)), document.get("total")
             print(PREFIX + _bounded(name, shown, total), file=sys.stderr)
+    reason = index.get("manage_reason")
+    if isinstance(reason, str):  # an older gateway publishes none
+        text = _REFUSING.get(reason, N_("the gateway takes no add or remove requests ({reason})"))
+        print(PREFIX + tr(text, reason=reason), file=sys.stderr)
     return EX_OK
+
+
+# Translators: after the lists of `contacts`: why the gateway refuses to add or remove contacts
+# now (OPS-007); the settings stay as they are
+_REFUSING = {
+    "management_off": N_("the gateway takes no add or remove requests: [contacts] manage = false"),
+    "no_radio": N_("the gateway takes no add or remove requests while its radio is not connected"),
+    "untested_firmware": N_(
+        "the gateway takes no add or remove requests: it is not tested with the radio's "
+        'firmware (radio.profile.manage = "always" allows them; docs/deployment.md, '
+        "Troubleshooting)"
+    ),
+}
 
 
 def _bounded(name: str, shown: int, total: Any) -> str:

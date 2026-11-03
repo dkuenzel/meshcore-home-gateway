@@ -1,4 +1,5 @@
 # meshcore-home-gateway: MeshCore companion radio <-> MQTT bridge.
+# Version: of a checkout (make release writes the release's version here)
 # Install to /etc/systemd/system/; see docs/deployment.md.
 [Unit]
 Description=meshcore-home-gateway MeshCore to MQTT bridge
@@ -6,19 +7,29 @@ Description=meshcore-home-gateway MeshCore to MQTT bridge
 # (systemd-timesyncd, chrony): the radio's clock is set from it and cannot be set back
 After=network-online.target time-sync.target
 Wants=network-online.target
-StartLimitIntervalSec=600
-StartLimitBurst=20
+# Never given up: a crash loop restarts with a growing delay (below) instead of ending in the
+# failed state, which only systemctl reset-failed would leave. An OnFailure= unit could not tell
+# anyone: the gateway itself is the channel it would need; Home Assistant shows the gateway
+# unavailable (docs/home-assistant.md).
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
 NotifyAccess=main
 ExecStart=/usr/local/bin/meshcore-home-gateway run --config /etc/meshcore-home-gateway/config.toml
 Restart=on-failure
+# 5 s, longer at each automatic restart, 5 min from the 7th on (systemd 254 and later; Debian 13
+# has 257); the count begins again only at a start by hand (systemctl restart, --update)
 RestartSec=5
+RestartSteps=6
+RestartMaxDelaySec=300
 # 78 = configuration error: restarting would not help
 RestartPreventExitStatus=78
 WatchdogSec=60
 TimeoutStopSec=90
+# the container has 256 MB by default: a leak ends with this service restarted, not another
+# process of the container killed
+MemoryMax=192M
 
 User=meshcore-home-gateway
 Group=meshcore-home-gateway
@@ -29,7 +40,9 @@ UMask=0077
 
 # Sandboxing. Needs mount namespaces: in a Proxmox container enable "nesting" (the installer does).
 # Not used: PrivateDevices= (it would hide the radio's serial port) and DeviceAllow= (unprivileged
-# containers do not enforce it); the radio is reached through the dialout group.
+# containers do not enforce it); the radio is reached through the dialout group, which reaches
+# every serial device of the container: the installer passes only the radio through. Not used
+# either: IPAddressDeny=/IPAddressAllow= (docs/deployment.md, Hardening further).
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
@@ -52,7 +65,7 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
-SystemCallFilter=~@privileged @resources
+SystemCallFilter=~@privileged @resources @obsolete
 
 [Install]
 WantedBy=multi-user.target

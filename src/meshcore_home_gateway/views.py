@@ -189,10 +189,12 @@ def restated(
 
 def contacts_document(
     mesh: Mesh, *, protected: Iterable[str] = (), manage: bool = False,
-    excluded: Collection[str] = (),
+    excluded: Collection[str] = (), manage_reason: str | None = None,
 ) -> dict[str, Any]:  # fmt: skip
     """`contacts`: the index of the radio's contact table, most recently heard first.
-    `excluded`: every key excluded from telemetry, also those not on the radio."""
+    `excluded`: every key excluded from telemetry, also those not on the radio.
+    `manage_reason`: why add and remove requests are refused now (management_off, no_radio,
+    untested_firmware), so Home Assistant can say why its controls are unavailable."""
     keep = set(protected)
 
     def heard_at(tracked: Tracked) -> float:
@@ -223,6 +225,7 @@ def contacts_document(
         "total": total,
         "max": mesh.max_contacts,
         "manage": manage,  # add and remove requests are taken
+        "manage_reason": manage_reason,  # why one sent now is refused (OPS-007), or None
         "remote_cli": remote_cli[:WARNING_KEYS],
         "remote_cli_total": len(remote_cli),
         "advert_position": shared[:WARNING_KEYS],
@@ -416,8 +419,8 @@ def settings_document(report: profile.ProfileReport, at: float) -> dict[str, Any
     """`settings`: the radio's managed settings as found at the last connect, what the profile
     wants, and what happened to each (ADR 0020)."""
     problems = (
-        *report.not_converging, *report.unsupported, *report.failed, *report.not_taken,
-        *report.contacts_failed,
+        *report.not_converging, *report.unsupported, *report.disabled, *report.failed,
+        *report.not_taken, *report.contacts_failed,
     )  # fmt: skip
     differs = [
         k for k, v in report.desired.items()
@@ -435,8 +438,8 @@ def settings_document(report: profile.ProfileReport, at: float) -> dict[str, Any
         status = "ok"
 
     def state(key: str) -> str:
-        for name, keys in (("unsupported", report.unsupported), ("failed", report.failed),
-                           ("not_taken", report.not_taken),
+        for name, keys in (("unsupported", report.unsupported), ("disabled", report.disabled),
+                           ("failed", report.failed), ("not_taken", report.not_taken),
                            ("not_converging", report.not_converging),
                            ("written", report.written), ("drift", report.drift)):  # fmt: skip
             if key in keys:

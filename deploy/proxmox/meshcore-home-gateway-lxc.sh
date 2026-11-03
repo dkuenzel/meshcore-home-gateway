@@ -28,12 +28,17 @@ BROKER_LOGIN=""   # check_broker's result for the final message: accepted, unche
 SERIAL_DIR=${MESHCORE_HOME_GATEWAY_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
 DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the container
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
+# Paths in the container. The scripts sent into it (in_ct ... bash -c "...") are built by
+# interpolation: only these constants (no spaces, no shell characters) and values checked first
+# ($SOURCE, a version against ^[0-9][0-9A-Za-z.+-]*$) may be written into them. Everything else,
+# answers, names and passwords above all, reaches a script as an argument or through its input.
 LIB=/usr/local/lib/meshcore-home-gateway
 CONFIG=/etc/meshcore-home-gateway/config.toml
 PASSWORD_FILE=/etc/meshcore-home-gateway/mqtt-password  # the broker password (SEC-009)
 STATE_DIR=/var/lib/meshcore-home-gateway   # the service's state (StateDirectory=)
 STAGE=/root/meshcore-home-gateway-src      # the program before its installation, in the container
 ANSWERS_FILE=/root/meshcore-home-gateway-answers
+JOURNALD_CONF=/etc/systemd/journald.conf.d/meshcore-home-gateway.conf   # the journal's limit
 # pct exec passes the host's environment into the container; commands start from a clean one
 CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 
@@ -774,11 +779,15 @@ stage_program() {  # stage_program CTID: the program to install, in $STAGE in th
 
 install_service() {  # packages, user, zipapp and unit; the version switches only if it is usable
   local ctid=$1 version
-  log "installing python3, python3-paho-mqtt and meshcore-home-gateway ${VERSION:-from $REF}" \
-    "in container $ctid"
+  log "installing python3, python3-paho-mqtt, unattended-upgrades and meshcore-home-gateway" \
+    "${VERSION:-from $REF} in container $ctid"
+  # unattended-upgrades installs Debian's security updates every day: it enables itself (its
+  # debconf default; docs/platform-notes.md). The downloaded packages are not kept (OPS-013)
   in_ct "$ctid" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y -qq --no-install-recommends python3 python3-paho-mqtt ca-certificates' \
+    apt-get install -y -qq --no-install-recommends python3 python3-paho-mqtt ca-certificates \
+    unattended-upgrades && apt-get clean' \
     >&2 || die 'installing packages in container {ctid} failed (see above)' ctid "$ctid"
+  limit_journal "$ctid"
   in_ct "$ctid" bash -c 'id meshcore-home-gateway >/dev/null 2>&1 || useradd --system \
     --user-group --groups dialout --no-create-home --home-dir /nonexistent \
     --shell /usr/sbin/nologin meshcore-home-gateway' >&2 || die 'creating the service user failed'
@@ -819,6 +828,17 @@ install_service() {  # packages, user, zipapp and unit; the version switches onl
   VERSION=$version TITLE="meshcore-home-gateway $version"
 }
 
+limit_journal() {  # limit_journal CTID: the journal keeps at most 100 MB of the disk (OPS-009)
+  # Debian's default is a tenth of the file system; the history and the state file share it
+  in_ct "$1" bash -c "set -e
+    umask 022
+    mkdir -p ${JOURNALD_CONF%/*}
+    printf '%s\n' '# written by the meshcore-home-gateway installer' '[Journal]' \
+      'SystemMaxUse=100M' >$JOURNALD_CONF
+    systemctl try-restart systemd-journald" >&2 \
+    || die 'limiting the journal in container {ctid} failed (see above)' ctid "$1"
+}
+
 # --- configuration --------------------------------------------------------------------------
 
 ask_radio() {
@@ -834,17 +854,51 @@ ask_radio() {
     die "no answer for radio.choice: name the radio's device path, or tcp"  # never guess one
   fi
   radio=$(ask radio.choice menu "$(t 'Radio connection')" "${choices[0]}" "${choices[@]}")
-  while [[ $radio == tcp ]]; do
-    OUT[radio.transport]=tcp
-    OUT[radio.host]=$(ask_required radio.host "$(t 'Radio address (host name or IP address)')" "")
-    OUT[radio.port]=$(ask radio.port input "$(t 'Radio TCP port')" "5000")
-    if accept_tcp; then return; fi
-    unset 'OUT[radio.transport]' 'OUT[radio.host]' 'OUT[radio.port]'   # declined: the menu again
+  while :; do
+    if [[ $radio == tcp ]]; then
+      OUT[radio.transport]=tcp
+      OUT[radio.host]=$(ask_required radio.host "$(t 'Radio address (host name or IP address)')" "")
+      OUT[radio.port]=$(ask radio.port input "$(t 'Radio TCP port')" "5000")
+      if accept_tcp; then return; fi
+      unset 'OUT[radio.transport]' 'OUT[radio.host]' 'OUT[radio.port]'   # declined
+    else
+      [[ -e $radio ]] || die 'serial device {device} not found' device "$radio"
+      if device_free "$radio"; then break; fi
+    fi
     radio=$(show_dialog menu "$(t 'Radio connection')" "${choices[0]}" "${choices[@]}")
   done
-  [[ -e $radio ]] || die 'serial device {device} not found' device "$radio"
   OUT[radio.transport]=serial
   OUT[radio.device]=$radio
+}
+
+device_users() {  # device_users DEVICE: the containers that pass DEVICE through, one ID a line
+  local own id line path
+  own=$(readlink -f -- "$1") || own=$1
+  while read -r id _; do
+    [[ $id =~ ^[0-9]+$ ]] || continue   # the header line
+    while IFS= read -r line; do   # devN: [path=]PATH,... or a bind mount of the device node
+      if [[ $line =~ ^dev[0-9]+:\ (path=)?([^,]+) ]]; then path=${BASH_REMATCH[2]}
+      elif [[ $line =~ ^lxc\.mount\.entry:\ *([^ ]+) ]]; then path=${BASH_REMATCH[1]}
+      else continue; fi
+      if [[ $(readlink -f -- "$path" || printf '%s' "$path") == "$own" ]]; then
+        printf '%s\n' "$id"
+        break
+      fi
+    done < <(pct config "$id" 2>/dev/null || true)
+  done < <(pct list 2>/dev/null || true)
+}
+
+device_free() {  # device_free DEVICE: no other container has it (OPS-021); else said, false
+  local users
+  users=$(device_users "$1")
+  [[ -n $users ]] || return 0
+  users=${users//$'\n'/, }
+  if (( ! INTERACTIVE )); then
+    die '{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time' \
+      ctids "$users" device "$1"
+  fi
+  whiptail --title "$TITLE" --msgbox -- "$(t '{device} is already passed through to another container (ID {ctids}). A radio takes one client at a time: whichever opens it second cannot use it. Choose another radio, or take it out of that container first.' ctids "$users" device "$1")" 12 78 >&2 || true
+  return 1
 }
 
 knows_tcp_unauthenticated() {  # does the program that renders the configuration read it?
@@ -1205,6 +1259,9 @@ plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or
       change/unsupported)
         left+="  $($say '{setting}: {live}, not {wanted} (the firmware does not support it)' \
           setting "$setting" live "$live" wanted "$wanted")"$'\n' ;;
+      change/disabled)  # IMP-050
+        left+="  $($say "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)" \
+          setting "$setting" live "$live" wanted "$wanted")"$'\n' ;;
       contact/*)  # contact KEY ACTION NAME: a contact target or command sender
         contact="${setting:0:12}${wanted:+ $wanted}"   # the start of its key, and its name
         case $live in
@@ -1334,7 +1391,7 @@ summary() {  # summary CTID: the final message, in the log and in a box
 summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _fill, the log) or
   # in the dialogs' language (SAY t, the box): one set of texts. Commands for the user: pct exec
   # takes the host's PATH, which may lack /usr/local/bin
-  local say=$1 ctid=$2 login update text
+  local say=$1 ctid=$2 login posture update text user=${OUT[mqtt.username]-}
   case $BROKER_LOGIN in  # check_broker's result
     accepted) login=$($say 'login accepted') ;;
     unchecked)
@@ -1343,26 +1400,39 @@ summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _f
     failed) login=$($say 'login failed (see above), the service keeps trying') ;;
     *) login=$($say 'login not checked') ;;
   esac
+  # the connection's security as chosen (OPS-010): without TLS everything crosses the network
+  # in the clear, and without a user name the broker may let anyone in
+  case ${OUT[mqtt.tls]-false}/${user:+user} in
+    true/user) posture=$($say "TLS, user '{user}'" user "$user") ;;
+    true/) posture=$($say 'TLS, no user name') ;;
+    */user) posture=$($say "no TLS, user '{user}'" user "$user") ;;
+    *) posture=$($say 'no TLS, no user name') ;;
+  esac
   update="$(invocation) --update $ctid"
   if [[ $SOURCE == release ]] && prerelease; then   # its own installer would install it again
     update=$($say 'the installer of a newer release ({releases}) with -- --update {ctid}' \
       releases "$RELEASES" ctid "$ctid")
   fi
-  # Translators: the values start in one column; they are commands to copy, but {login}.
+  # Translators: the values start in one column; they are commands to copy, but {login} and
+  # {posture} (how the broker connection is secured).
   text=$($say 'meshcore-home-gateway {version} runs in container {ctid}.
 
-Broker:       {login}
+Broker:       {login} ({posture})
 Logs:         {logs}
 Check:        {check}
 Reconfigure:  {reconfigure}
 Update:       {update}' \
-    version "$VERSION" ctid "$ctid" login "$login" \
+    version "$VERSION" ctid "$ctid" login "$login" posture "$posture" \
     logs "pct exec $ctid -- journalctl -u meshcore-home-gateway -f" \
     check "pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config" \
     reconfigure "$(invocation) --reconfigure $ctid" update "$update")
   if [[ ${OUT[radio.transport]} == serial ]]; then
     text+=$'\n\n'$($say 'The container starts only while the radio is plugged in.
 After re-plugging the radio: {command}' command "pct reboot $ctid")
+  else
+    probe_args   # the address as probe takes it: an IPv6 address in brackets
+    text+=$'\n\n'$($say 'The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key.' \
+      address "${PROBE[1]}")
   fi
   printf '%s' "$text"
 }
