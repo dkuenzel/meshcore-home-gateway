@@ -44,6 +44,10 @@ decrypted it, while the answer to command 50 (push 0x8C) carries only a tag
 * **Who is polled**: every chat contact on the radio, without configuration. A contact that never
   answers is asked less and less often (back-off up to 6 h, reset by any sign of life: an advert, a
   message, a path update). A contact can be excluded from Home Assistant or the command line.
+  *Amended 2026-11 (audit SEC-016):* with `[telemetry] ask = "household"`, which the installer
+  writes on a new installation, only the contacts the household included and the contact targets
+  and command senders are polled: a companion's *Allow All* is not its owner's consent to be
+  tracked by every gateway that adds it. `"all"` stays the default for running installations.
 * **One request in flight** for the whole gateway: the firmware keeps a single pending request and
   every new one replaces it (`MyMesh.h:192-194`); it never times out a request itself. The gateway
   waits `max(5 s, 1.25 × est_timeout)` from `SENT`, accepts a 0x8B only when its prefix matches the

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from meshcore_home_gateway import i18n
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import RateLimit
-from meshcore_home_gateway.core.contacts import LABEL_TYPES, node_label
+from meshcore_home_gateway.core.contacts import LABEL_TYPES, HeardNodes, node_label
 from meshcore_home_gateway.core.mesh import Mesh
 from meshcore_home_gateway.mqtt.contact_devices import RADIO_CONNECTED
 from meshcore_home_gateway.mqtt.discovery import device_id, device_name, origin, with_removed
@@ -65,15 +65,22 @@ def manage_topic(config: Config) -> str:
     return f"{config.homeassistant.prefix}/device/{device_id(config)}/{OBJECT_ID}/config"
 
 
-def node_options(mesh: Mesh, protected: Iterable[str] = ()) -> list[str]:
+def node_options(
+    mesh: Mesh, protected: Iterable[str] = (), heard: HeardNodes = "full"
+) -> list[str]:
     """The labels of the heard nodes to offer: companions, room servers and sensors, no
     look-alikes (they would be refused, or block the node they imitate), the most recently heard,
-    ordered by name. A label names one node: look-alikes share their first 12 digits."""
+    ordered by name. A label names one node: look-alikes share their first 12 digits. `heard`
+    (`[contacts] heard_nodes`): with `keys` the labels name no node, with `off` there are none."""
+    if heard == "off":
+        return []
     flagged = look_alike_nodes(mesh, protected)
     offered = [
         t.node for t in reversed(mesh.nodes.values())
         if t.node.node_type in LABEL_TYPES and t.node.public_key not in flagged
     ][:NODE_OPTIONS]  # fmt: skip
+    if heard == "keys":
+        return sorted(node_label(n.public_key, "", n.node_type) for n in offered)
     ordered = sorted(offered, key=lambda n: (n.name.casefold(), n.public_key))
     return [node_label(n.public_key, n.name, n.node_type) for n in ordered]
 
@@ -193,16 +200,19 @@ class ManageEntities:
     def _announced_options(self) -> list[str]:
         """The current options, or those sent last when there is no token for a change: Home
         Assistant counts a change that comes with an announcement too."""
-        options = node_options(self._mesh, self._protected)
+        options = self._current()
         held = self._options is not None and not self._changes.ready(self._mono())
         return self._options if held and self._options is not None else options
+
+    def _current(self) -> list[str]:
+        return node_options(self._mesh, self._protected, self._config.contacts.heard_nodes)
 
     def nodes_changed(self, read: bool) -> None:
         """The heard nodes may have changed. When a contact joined or left the table (`read`),
         as after a request to add or remove one, changed options are sent at once."""
         if self._options is None:
             return  # not announced yet
-        if node_options(self._mesh, self._protected) == self._options:
+        if self._current() == self._options:
             self._urgent = False  # also while the broker is away: nothing waits any more
             return
         if not self._connected():
@@ -228,7 +238,7 @@ class ManageEntities:
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
-        now, current = self._mono(), node_options(self._mesh, self._protected)
+        now, current = self._mono(), self._current()
         options = current if options is None else options
         if options != self._options:  # a change for Home Assistant: it counts, and is the last
             self._changes.allow(now)

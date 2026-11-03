@@ -70,6 +70,7 @@ queue_ttl_s = 60
 max_attempts = 4
 flood_after = 3
 ignore_channels = [0]
+publish_channels = "targets"
 clean_received = true
 
 [airtime]
@@ -130,6 +131,7 @@ def test_full_configuration_is_read_completely() -> None:
     assert config.mqtt.base_topic == "mesh/home"
     assert config.homeassistant.prefix == "ha"
     assert config.messages.ignore_channels == frozenset({0})
+    assert config.messages.publish_channels == "targets"
     assert config.messages.clean_received is True
     assert config.commands.senders == frozenset({KEY})
     assert config.commands.words == frozenset({"status", "arm"})
@@ -275,6 +277,7 @@ def test_the_history_is_on_by_default_and_bounded() -> None:
         ("[messages]\nmax_attempts = 0", "messages.max_attempts"),
         ('[messages]\nqueue_ttl_s = "60"', "messages.queue_ttl_s: expected a number"),
         ("[messages]\nignore_channels = [300]", "messages.ignore_channels: expected a list"),
+        ('[messages]\npublish_channels = "some"', "messages.publish_channels: one of"),
         ('[commands]\nsenders = ["a1b2c3d4e5f6"]\nwords = ["arm"]', "commands.senders"),
         ('[commands]\nwords = ["two words"]', "commands.words"),
         ('[commands]\nwords = "arm"', "commands.words: expected a list of strings"),
@@ -418,11 +421,16 @@ def test_every_setting_can_be_answered() -> None:
             "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
             "airtime.burst_s=6.5", "commands.max_age_s=0", "diagnostics.publish_rx_log=true",
             "contacts.manage=false", "history.readings_days=7.5", "messages.clean_received=true",
+            "messages.publish_channels=targets", "contacts.heard_nodes=off",
+            "telemetry.ask=household",
         ]
     )  # fmt: skip
     config = parse_config(render_config(answers))
     assert config.radio.set_clock is False
+    assert config.contacts.heard_nodes == "off"
+    assert config.telemetry.ask == "household"
     assert config.messages.clean_received is True
+    assert config.messages.publish_channels == "targets"
     assert (config.mqtt.tls, config.mqtt.cert_file, config.mqtt.key_file) == (
         True, "/etc/c.pem", "/etc/k.pem",
     )  # fmt: skip
@@ -621,8 +629,23 @@ def test_telemetry_is_on_by_default() -> None:
     assert "telemetry.enabled=true" in config_answers(FULL).splitlines()
 
 
+def test_telemetry_asks_every_companion_unless_only_the_households() -> None:
+    """SEC-016: `ask = "household"` asks the contacts the household included and the protected
+    keys only; the default stays `all`."""
+    assert parse_config(MINIMAL).telemetry.ask == "all"
+    household = parse_config(MINIMAL + '\n[telemetry]\nask = "household"\n')
+    assert household.telemetry.ask == "household"
+    with pytest.raises(ConfigError, match=r"telemetry\.ask: one of all, household, got 'some'"):
+        parse_config(MINIMAL + '\n[telemetry]\nask = "some"\n')
+
+
 def test_contacts_are_managed_on_request_by_default() -> None:
     assert parse_config(MINIMAL).contacts.manage is True
+    assert parse_config(MINIMAL).contacts.heard_nodes == "full"
+    keys = parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "keys"\n')
+    assert keys.contacts.heard_nodes == "keys"
+    with pytest.raises(ConfigError, match=r"contacts\.heard_nodes: one of full, keys, off"):
+        parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "names"\n')
     assert parse_config(MINIMAL + "\n[contacts]\nmanage = false\n").contacts.manage is False
     with pytest.raises(ConfigError, match=r"contacts\.manage"):
         parse_config(MINIMAL + '\n[contacts]\nmanage = "no"\n')

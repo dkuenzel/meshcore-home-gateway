@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -191,6 +192,25 @@ def test_look_alikes_are_not_offered() -> None:
     carol, room = f"{CAROL[:12]}…{CAROL[-8:]} Bob", f"{ROOM[:12]}…{ROOM[-8:]} Bob"
     assert node_options(mesh) == [carol, room]
     assert node_options(mesh, protected=frozenset({ROOM[:12] + "ff" * 26})) == [carol]
+
+
+def test_with_heard_nodes_keys_or_off_the_options_name_no_node() -> None:
+    """`[contacts] heard_nodes` (SEC-015): the labels of `keys` carry the key's digits only, as
+    the household compares them; `off` offers none, also in the announcement."""
+    mesh = Mesh()
+    heard(mesh, ROOM, "Club", node_type=3)
+    heard(mesh, CAROL, "Carol")
+    assert node_options(mesh, heard="keys") == [
+        f"{CAROL[:12]}…{CAROL[-8:]}", f"{ROOM[:12]}…{ROOM[-8:]} (room)",
+    ]  # fmt: skip
+    assert node_options(mesh, heard="off") == []
+    config = replace(CONFIG, contacts=replace(CONFIG.contacts, heard_nodes="off"))
+    bus = Recorder()
+    entities = ManageEntities(
+        config, TOPICS, bus, mesh, monotonic=Clock(), wall_clock=lambda: NOW, call_later=Timers()
+    )
+    entities.announce()
+    assert bus.options() == [[]]
 
 
 def test_the_most_recently_heard_are_offered() -> None:

@@ -28,7 +28,11 @@ versions.
    first time telemetry runs on an installation, the gateway asks nobody for an hour after the
    radio connects (*Telemetry status* `paused`, reason `first_start`, and a warning in its log with
    the number of companions it will ask): exclude the strangers in that hour
-   ([home-assistant.md](home-assistant.md#telemetry-of-the-households-companions)).
+   ([home-assistant.md](home-assistant.md#telemetry-of-the-households-companions)). With
+   `[telemetry] ask = "household"` (a new installation from the installer has it) it is the other
+   way round: only the companions you include (switch *Telemetry* on, or `contacts telemetry KEY
+   on`) and the contact targets and command senders are asked, and there is no such hour
+   ([configuration.md](configuration.md#telemetry)).
 
 ## On each companion
 
@@ -94,7 +98,7 @@ Telemetry is on by default (`[telemetry] enabled`, [configuration.md](configurat
   | `no_answer` | asked, no answer within a day | check steps 4 to 7: "not allowed" and "out of range" look the same |
   | `no_path` | not asked: the radio has no route to it and has not heard it within 30 minutes | send the gateway a message from it, or advertise (step 9) |
   | `look_alike` | another contact or the gateway's radio has its first 6 key bytes | remove the other contact |
-  | `excluded` | the household excluded it | switch *Telemetry* on to have it asked again |
+  | `excluded` | the household excluded it, or with `ask = "household"` did not include it | switch *Telemetry* on to have it asked |
   | `off` | telemetry is off in the configuration | – |
 
 * **Expiry.** Telemetry is current while the companion answers. After two unanswered requests in

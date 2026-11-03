@@ -535,6 +535,36 @@ def test_exclusions_round_trip_in_their_own_private_file(
     assert "telemetry exclusions stored" not in caplog.text  # only after a failed write
 
 
+def test_with_ask_household_only_included_and_protected_keys_are_asked(tmp_path: Path) -> None:
+    """`[telemetry] ask = "household"` (SEC-016): `key in exclusions` means not asked; the
+    inclusions are kept beside the exclusions, which an earlier version reads as before."""
+    path = exclusions_file(tmp_path)
+    household = TelemetryExclusions(path, household=True, protected=frozenset({C}))
+    assert (A in household, C in household, len(household), household.household) == (
+        True, False, 0, True,
+    )  # fmt: skip
+    assert household.include(A)
+    assert A not in household
+    assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": [], "included": [A]}
+    assert household.exclude(A)
+    assert A in household
+    assert household.exclude(C)  # a protected key can be excluded too
+    assert C in household
+    assert household.include(B)
+    stored = {"excluded": [A, C], "included": [B]}
+    assert json.loads(path.read_text(encoding="utf-8")) == stored
+    again = TelemetryExclusions(path, household=True)
+    assert (again.keys, again.included) == (frozenset({A, C}), frozenset({B}))
+    assert (B in again, D in again) == (False, True)
+    every = TelemetryExclusions(path)  # `all`: the inclusions do not count, and are kept
+    assert (B in every, D in every) == (False, False)
+    assert every.include(D)  # not excluded: nothing to store
+    assert every.include(A)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": [C], "included": [B]}
+    path.write_text(json.dumps({"excluded": [A], "included": [A, B]}), encoding="utf-8")
+    assert TelemetryExclusions(path, household=True).included == {B}  # excluded wins
+
+
 def test_invalid_and_too_many_exclusions_are_skipped(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -625,7 +655,15 @@ def test_an_inclusion_that_cannot_be_written_changes_nothing(
 
 @pytest.mark.parametrize(
     "content",
-    [b"{not json", b"\xff\xfe", b"[]", b'{"excluded": {}}', b'{"other": []}', b""],
+    [
+        b"{not json",
+        b"\xff\xfe",
+        b"[]",
+        b'{"excluded": {}}',
+        b'{"other": []}',
+        b"",
+        b'{"excluded": [], "included": {}}',
+    ],
 )
 def test_an_unreadable_exclusions_file_is_left_alone(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, content: bytes

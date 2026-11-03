@@ -1081,6 +1081,30 @@ def test_too_many_stored_keys_refuse_only_a_new_exclusion() -> None:
     assert len(observer.exclusions) == TelemetryExclusions.LIMIT
 
 
+def test_with_ask_household_too_many_inclusions_refuse_only_a_new_one() -> None:
+    """SEC-016: the inclusions are bounded as the exclusions are; `on` for a key neither on the
+    radio nor excluded stays unknown, also when that key is not asked."""
+    exclusions = TelemetryExclusions(None, household=True)
+    for n in range(TelemetryExclusions.LIMIT):
+        exclusions.include(f"{n:064x}")
+    manager, observer, bus, _ = telemetry_manager(exclusions=exclusions)
+    assert ALICE_KEY in observer.exclusions  # not included: not asked
+    ask(manager, ALICE_KEY, {"telemetry": "on", "id": "many"})
+    event = last_result(bus)
+    assert (event["event_type"], event["reason"], event["key"]) == (
+        "refused", "too_many", ALICE_KEY,
+    )  # fmt: skip
+    ask(manager, f"{0:064x}", "off")  # makes room: an inclusion becomes an exclusion
+    assert last_result(bus)["event_type"] == "excluded"
+    ask(manager, ALICE_KEY, "on")
+    assert last_result(bus)["event_type"] == "included"
+    assert ALICE_KEY not in observer.exclusions
+    ask(manager, DAVE_KEY, "on")
+    assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
+        "refused", "unknown_contact",
+    )  # fmt: skip
+
+
 def test_refused_telemetry_requests_share_the_bound_of_refusal_events(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

@@ -243,6 +243,7 @@ queue_ttl_s = 60
 max_attempts = 4
 flood_after = 3
 ignore_channels = [0]
+publish_channels = "targets"
 clean_received = true
 [airtime]
 budget_s_per_hour = 72
@@ -262,11 +263,13 @@ positions_days = 90
 readings_days = 14
 [contacts]
 manage = false
+heard_nodes = "keys"
 [diagnostics]
 publish_rx_log = true
 log_level = "debug"
 [telemetry]
 enabled = true
+ask = "household"
 """
 
 

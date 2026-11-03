@@ -120,7 +120,9 @@ the next attempt may show the message twice the same way.
 ## Received messages: `received`
 
 Every message the radio receives, after dropping exact repeats (same sender, timestamp and text,
-which is how retries arrive). Channels listed in `ignore_channels` are skipped.
+which is how retries arrive). Channels listed in `ignore_channels` are skipped, and with
+`publish_channels = "targets"` every channel that is no target
+([configuration.md](configuration.md#messages)).
 
 A sender or a channel that floods is cut off (SEC-012, SEC-013): beyond a burst of 10 direct
 messages of one sender, one every 2 seconds is published, and beyond a burst of 20 messages on
@@ -295,7 +297,8 @@ record on the radio holds a position from their adverts. `advert_carries_positio
 16, sorted) the companions not excluded from telemetry whose `advert_carries_position` is `true`:
 the household's companions whose adverts carry their position, which everyone in range can read;
 `advert_carries_position_total` counts them all. `telemetry_excluded` lists (up to 16, sorted) the
-keys excluded from telemetry, also those not on the radio, `telemetry_excluded_total` counts them
+keys excluded from telemetry, also those not on the radio, and with `[telemetry] ask =
+"household"` the contacts not included; `telemetry_excluded_total` counts them
 all ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 
 ```json
@@ -333,7 +336,7 @@ all ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 | `advert_carries_position` | for a companion: its newest advert carries its position (flag 0x10, also 0, 0 from a companion that never had one), which everyone in range can read, as the gateway checked it ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)). While its newest advert is not checked (before the first check, or an advert the gateway missed: `advert_checked_at` is `null` or older than `last_advert_at`), the last check's flag, or `true` when the radio's record holds a position from an earlier advert: it errs to warn. `null` for repeaters, room servers and sensors, which share theirs by design |
 | `advert_checked_at` | the contact's clock at the newest advert the gateway checked (for a companion it added after hearing it: that advert); `null` before a check, and for repeaters, room servers and sensors. Older than `last_advert_at` when a newer advert could not be checked (its report or log lost, or the gateway stopped) |
 | `telemetry_state` | its telemetry state ([below](#telemetry-states)); `null` for a repeater, room server or sensor, which are never asked |
-| `telemetry_excluded` | the household excluded it from telemetry ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)); `false` for other types |
+| `telemetry_excluded` | it is not asked for telemetry: the household excluded it, or with `[telemetry] ask = "household"` did not include it ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)); `false` for other types |
 | `telemetry_current` | its answers are current: `telemetry_state` is `answering` or `no_position`; `null` for other types |
 | `position_current` | a position from telemetry that is current (`telemetry_state` `answering`); `false`: from telemetry, no longer confirmed; `null`: no position, or one from adverts, which does not expire by time but goes once a checked advert no longer carries it |
 | `readings_at` | the gateway's time of the answer that the next three keys come from (never the companion's); after a restart the newest answer the history kept, unless telemetry is on and its saved schedule knows a later one the history missed (then `null`, and no values; after the clock went back while the gateway was stopped, it cannot tell, and the history's newest comes back, not as current) |
@@ -351,7 +354,7 @@ cleared when the contact is excluded.
 
 | State | Meaning |
 | --- | --- |
-| `excluded` | the household excluded it |
+| `excluded` | the household excluded it, or with `ask = "household"` did not include it |
 | `off` | telemetry is off in the configuration |
 | `look_alike` | another contact or the radio itself has its first 6 key bytes, so an answer could not be told apart: it is not asked |
 | `answering` | its answers are current and carry a position (or one did within the last hour) |
@@ -431,6 +434,12 @@ delay is 0, only from the advert's own log, `null` without it; with a delay abov
 radio does not report, from a log of its key within 10 s. That log is not authenticated, so treat
 them as a hint.
 
+The nodes are other people's radios ([What the gateway keeps](privacy.md)). With `[contacts]
+heard_nodes = "keys"` each entry has its key, prefix, type and `look_alike` only: `name`,
+`first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`. With
+`"off"`, `total` is 0 and `nodes` empty; `look_alike` and `look_alike_total` still name the
+look-alikes ([configuration](configuration.md#contacts)).
+
 ## History: `history`
 
 The latest messages in and out (up to 50, at most 15 KiB), newest first. They are kept in the
@@ -481,7 +490,8 @@ carries. It comes after the contact's document and the index, with `request`, `i
 while the newest advert is not checked, for a further advert that still carries one, when it
 stops, or at a restart. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
-adverts with invented keys does not flood the bus.
+adverts with invented keys does not flood the bus. With `[contacts] heard_nodes = "keys"` its
+`name`, `hops`, `snr_db`, `rssi_dbm` and `heard_at` are `null`; with `"off"` there is none.
 
 ## Managing contacts: `add_contact` and `contacts/<key>/remove`
 
@@ -498,7 +508,8 @@ gateway is offline is lost (clean session), and a stop drops those still queued.
 * a contact card: `meshcore://` and the hex of an advert packet, as the app exports a contact.
 
 `homeassistant/add_node` takes the label of a heard node, `<first 12 key digits>…<last 8> <name>`
-(room servers and sensors with ` (room)` or ` (sensor)` added), as the select *Add heard node* of
+(room servers and sensors with ` (room)` or ` (sensor)` added; with `heard_nodes = "keys"`
+without the name, with `"off"` none), as the select *Add heard node* of
 Home Assistant offers it; the gateway resolves the digits among
 the nodes it heard and the contacts (the name is not compared), and adds the node with its own
 advert. It is subscribed only with Home Assistant's discovery on.
@@ -571,7 +582,11 @@ nodes while it counts as heard.
 ## Excluding a contact from telemetry: `contacts/<key>/telemetry`
 
 The gateway asks every companion of its radio for its telemetry unless the household excluded it
-([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)).
+([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)); with `[telemetry]
+ask = "household"` only the companions the household included and the contact targets and command
+senders, unless excluded ([configuration](configuration.md#telemetry)). Here `on` includes and
+`off` excludes; below, "excluded" means not asked, which with `household` is also a contact not
+included.
 `contacts/<key>/telemetry`, `<key>` the full key in lower-case hex, takes `on` or `off` (spaces
 around them are ignored), or a JSON object such as `{"telemetry": "off", "id": "x1", "forget":
 true}`: `id` as for the other contact requests, and `forget` (only with `off`) also deletes the
@@ -591,7 +606,7 @@ order; the first check that fails is the `reason` of a `refused` event:
 | `rate_limited` | more than one telemetry request a second, beyond a burst of 30 (every request that got this far counts) |
 | `unknown_contact` | the topic level is not a key as the gateway writes it; for `on`: neither a contact of the table as last read nor an excluded key |
 | `not_a_companion` | the table as last read has the key as a repeater, room server or sensor |
-| `too_many` | `off` for a key not yet excluded while 1024 keys are |
+| `too_many` | `off` for a key not yet excluded while 1024 keys are; with `ask = "household"`, `on` for a key not yet included while 1024 keys are |
 
 Then, at once: the exclusion is stored, the contact's document (if it is on the radio) and the
 index are published, the history's rows are deleted if `forget` asks so, and the event follows. It

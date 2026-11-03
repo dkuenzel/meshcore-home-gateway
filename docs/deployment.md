@@ -98,9 +98,15 @@ every setting in the table.
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
 | Language of the names in Home Assistant (asked while it offers more than English) | the dialogs' language; on `--reconfigure` the configured one, else `en` | Advanced |
 | ASCII only | no | Advanced |
-| Channels and contacts to send to | read from the radio | both |
+| Channels and contacts to send to (only the messages of these channels are published, `messages.publish_channels = targets`) | read from the radio | both |
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
 | Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
+
+Without a question, a new installation keeps of other people's radios their keys and types only
+(`contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)) and asks only the
+companions the household includes for telemetry (`telemetry.ask = household`); the answers
+`contacts.heard_nodes=full` and `telemetry.ask=all` in an answers file keep the earlier
+behaviour.
 
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
@@ -355,9 +361,10 @@ English. The service's log is always English.
   meshcore-home-gateway`), or use a Proxmox backup of the whole container (`vzdump`): a backup of
   the running container holds the files as a power cut would leave them, which both survive
   (`state.json` is replaced atomically, the history uses SQLite's write-ahead log). Keep backups
-  private and encrypted: the configuration
-  holds the broker password, and `state.json` and `history.sqlite3` hold positions of the
-  household's companions and message texts. Restore the three state files together and with the
+  private and encrypted: the configuration holds the broker password, `state.json` and
+  `history.sqlite3` hold positions of the household's companions and message texts, and the
+  history also other people's names, keys and channel texts
+  ([what the gateway keeps](privacy.md)). Restore the three state files together and with the
   service stopped: the service rewrites `state.json` while it runs, an older `state.json` beside
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
   older `telemetry-excluded.json` asks companions excluded since.
@@ -372,9 +379,11 @@ English. The service's log is always English.
     requests, when it last answered, was asked and flooded, how long its answers count and when
     one last carried a position, and whether it was last moving, no positions; and what is left
     of the first-start hour.
-  * `telemetry-excluded.json` holds the companions the household excluded from telemetry:
-    without it a restored system asks them again. An exclusions file that cannot be parsed is
-    left as it is and pauses telemetry: fix it (`{"excluded": [keys]}`) or delete it, then
+  * `telemetry-excluded.json` holds the companions the household excluded from telemetry, and
+    with `[telemetry] ask = "household"` those it included: without it a restored system asks the
+    excluded ones again, or no longer the included ones. An exclusions file that cannot be parsed
+    is left as it is and pauses telemetry: fix it (`{"excluded": [keys], "included": [keys]}`,
+    `included` optional) or delete it, then
     restart the service.
   * `history.sqlite3` holds the history: messages, positions, the companions' readings and the
     nodes heard ([configuration](configuration.md#history)); copy it only with the service

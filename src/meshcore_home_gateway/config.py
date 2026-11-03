@@ -17,7 +17,7 @@ from typing import Any, Literal, cast
 
 from meshcore_home_gateway import i18n
 from meshcore_home_gateway.core.commands import CommandRules
-from meshcore_home_gateway.core.contacts import normalise_key
+from meshcore_home_gateway.core.contacts import HEARD_NODES, HeardNodes, normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
 from meshcore_home_gateway.texts import Text, TextError
 
@@ -124,6 +124,8 @@ class MessagesConfig:
     max_attempts: int = 3
     flood_after: int = 2
     ignore_channels: frozenset[int] = frozenset()
+    # "targets": only the channels of `[targets.*]` entries are published and kept (SEC-012)
+    publish_channels: Literal["all", "targets"] = "all"
     clean_received: bool = False  # control and direction characters out of received texts
 
 
@@ -145,16 +147,25 @@ class HistoryConfig:
 
 @dataclass(frozen=True, slots=True)
 class ContactsConfig:
-    """Managing the radio's contact table on request (ADR 0017)."""
+    """Managing the radio's contact table on request (ADR 0017), and what is published of the
+    nodes heard but not added (SEC-015)."""
 
     manage: bool = True
+    heard_nodes: HeardNodes = "full"
+
+
+TelemetryAsk = Literal["all", "household"]
+TELEMETRY_ASK: tuple[TelemetryAsk, ...] = ("all", "household")
 
 
 @dataclass(frozen=True, slots=True)
 class TelemetryConfig:
-    """Asking the radio's companions for their telemetry (ADR 0018)."""
+    """Asking the radio's companions for their telemetry (ADR 0018): every one not excluded
+    (`all`), or only those the household included and the protected keys (`household`,
+    SEC-016)."""
 
     enabled: bool = True
+    ask: TelemetryAsk = "all"
 
 
 @dataclass(frozen=True, slots=True)
@@ -578,6 +589,9 @@ def _not_segments(key: str, value: str) -> ConfigError:
 
 def _messages(s: _Section) -> MessagesConfig:
     max_attempts = s.integer("max_attempts", 3, 1, 4)  # the radio's attempt counter is 0..3
+    publish_channels = s.string("publish_channels", "all")
+    if publish_channels not in ("all", "targets"):
+        raise _one_of(s.key("publish_channels"), ("all", "targets"), publish_channels)
     return MessagesConfig(
         ascii_only=s.boolean("ascii_only", False),
         truncate=s.boolean("truncate", True),
@@ -587,6 +601,7 @@ def _messages(s: _Section) -> MessagesConfig:
         max_attempts=max_attempts,
         flood_after=s.integer("flood_after", 2, 1, max(1, max_attempts)),
         ignore_channels=frozenset(s.integers("ignore_channels", 0, CHANNEL_INDEX_MAX)),
+        publish_channels=cast(Literal["all", "targets"], publish_channels),
         clean_received=s.boolean("clean_received", False),
     )
 
@@ -641,11 +656,17 @@ def _history(s: _Section) -> HistoryConfig:
 
 
 def _contacts(s: _Section) -> ContactsConfig:
-    return ContactsConfig(manage=s.boolean("manage", True))
+    heard_nodes = s.string("heard_nodes", "full")
+    if heard_nodes not in HEARD_NODES:
+        raise _one_of(s.key("heard_nodes"), HEARD_NODES, heard_nodes)
+    return ContactsConfig(manage=s.boolean("manage", True), heard_nodes=heard_nodes)
 
 
 def _telemetry(s: _Section) -> TelemetryConfig:
-    return TelemetryConfig(enabled=s.boolean("enabled", True))
+    ask = s.string("ask", "all")
+    if ask not in TELEMETRY_ASK:
+        raise _one_of(s.key("ask"), TELEMETRY_ASK, ask)
+    return TelemetryConfig(enabled=s.boolean("enabled", True), ask=ask)
 
 
 def _diagnostics(s: _Section) -> DiagnosticsConfig:
@@ -673,11 +694,12 @@ _ANSWER_TYPES: dict[str, type] = {
     "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,
-    "messages.clean_received": bool,
+    "messages.publish_channels": str, "messages.clean_received": bool,
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
-    "history.readings_days": float, "contacts.manage": bool, "telemetry.enabled": bool,
+    "history.readings_days": float, "contacts.manage": bool, "contacts.heard_nodes": str,
+    "telemetry.enabled": bool, "telemetry.ask": str,
     "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
 }  # fmt: skip
 

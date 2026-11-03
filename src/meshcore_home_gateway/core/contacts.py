@@ -11,11 +11,16 @@ import re
 import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from typing import Literal
 
 from meshcore_home_gateway.texts import TextError
 
 KEY_HEX_DIGITS = 64
 PREFIX_HEX_DIGITS = 12
+# what the gateway publishes and keeps of the nodes it heard but did not add (`[contacts]
+# heard_nodes`): everything; their keys and types only; nothing but the look-alikes' keys
+HeardNodes = Literal["full", "keys", "off"]
+HEARD_NODES: tuple[HeardNodes, ...] = ("full", "keys", "off")
 _HEX = re.compile(r"[0-9a-f]+")
 _LOWER_HEX = re.compile(r"[0-9a-f]{64}")
 

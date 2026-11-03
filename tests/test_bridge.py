@@ -2260,6 +2260,33 @@ def test_the_alias_of_a_refused_request_is_echoed_up_to_64_characters(tmp_path: 
     scenario(main)
 
 
+@pytest.mark.parametrize("publish", ["all", "targets"])
+def test_only_the_channels_of_targets_are_published_when_asked(
+    tmp_path: Path, publish: str
+) -> None:
+    """SEC-012: the *Public* channel's key is in the firmware; with `publish_channels =
+    "targets"` the neighbours' chatter there is neither published nor kept, the channels the
+    household chose as targets are."""
+    radio = EmulatedRadio(contacts=[ALICE], channels={0: "Alerts", 1: "Public"})
+    config = make_config(messages=f'publish_channels = "{publish}"')  # channel 0 is a target
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            radio.queue_channel_message(1, "Carol: anyone around?", NOW - 6)
+            radio.queue_channel_message(0, "Alice: gate open", NOW - 5)
+            await bus.wait_for("/received", lambda e: e["text"] == "gate open")
+            await asyncio.sleep(0.05)
+            texts = [e["text"] for e in bus.payloads("radio1/received")]
+            history = [m["text"] for m in bus.payloads("radio1/history")[-1]["messages"]]
+            if publish == "all":
+                assert texts == ["anyone around?", "gate open"]
+            else:
+                assert texts == ["gate open"]
+                assert "anyone around?" not in history
+
+    scenario(main)
+
+
 def test_contacts_get_their_devices_in_home_assistant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

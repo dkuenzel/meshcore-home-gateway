@@ -7,6 +7,7 @@
     "commands.max_age_s",
     "commands.senders",
     "commands.words",
+    "contacts.heard_nodes",
     "contacts.manage",
     "diagnostics.log_level",
     "diagnostics.publish_rx_log",
@@ -26,6 +27,7 @@
     "messages.flood_after",
     "messages.ignore_channels",
     "messages.max_attempts",
+    "messages.publish_channels",
     "messages.queue_size",
     "messages.queue_ttl_s",
     "messages.truncate",
@@ -54,6 +56,7 @@
     "radio.tcp_unauthenticated",
     "radio.transport",
     "target.<alias>",
+    "telemetry.ask",
     "telemetry.enabled"
    ],
    "target.<alias>": [
@@ -633,6 +636,11 @@
   "contacts": {
    "type": "table"
   },
+  "contacts.heard_nodes": {
+   "answer": "str",
+   "default": "full",
+   "type": "string"
+  },
   "contacts.manage": {
    "answer": "bool",
    "default": true,
@@ -765,6 +773,11 @@
    "max": 4,
    "min": 1,
    "type": "integer"
+  },
+  "messages.publish_channels": {
+   "answer": "str",
+   "default": "all",
+   "type": "string"
   },
   "messages.queue_size": {
    "answer": "int",
@@ -947,6 +960,11 @@
   },
   "telemetry": {
    "type": "table"
+  },
+  "telemetry.ask": {
+   "answer": "str",
+   "default": "all",
+   "type": "string"
   },
   "telemetry.enabled": {
    "answer": "bool",

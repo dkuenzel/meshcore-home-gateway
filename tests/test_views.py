@@ -223,6 +223,28 @@ def test_look_alike_nodes_are_flagged() -> None:
     assert document["look_alike_total"] == 4
 
 
+def test_heard_nodes_keys_or_off_publish_less_of_strangers() -> None:
+    """`[contacts] heard_nodes` (SEC-015): `keys` keeps a stranger's key, type and look-alike
+    mark, not its name, times or signal; `off` lists none, only the look-alikes' keys."""
+    mesh = Mesh()
+    mesh.contacts_read([Node(KEY, "Alice", 1)], T)
+    twin = KEY[:12] + "ee" * 26
+    mesh.node_heard(Node("d4" * 32, "Dave", 2), Heard(T, "advert", Signal(1, 5.5, -90)))
+    mesh.node_heard(Node(twin, "Alice", 1), Heard(T + 1, "advert", Signal(0, 9.0, -60)))
+    full = nodes_document(mesh)
+    keys = nodes_document(mesh, heard="keys")
+    assert [n["key"] for n in keys["nodes"]] == [n["key"] for n in full["nodes"]]
+    newest = keys["nodes"][0]
+    assert (newest["key"], newest["type"], newest["look_alike"]) == (twin, "chat", True)
+    assert [k for k, v in newest.items() if v is None] == [
+        "name", "first_heard_at", "heard_at", "heard_via", "hops", "snr_db", "rssi_dbm",
+    ]  # fmt: skip
+    assert "Dave" not in json.dumps(keys)
+    off = nodes_document(mesh, heard="off")
+    assert (off["total"], off["truncated"], off["nodes"]) == (0, False, [])
+    assert (off["look_alike"], off["look_alike_total"]) == ([twin], 1)
+
+
 def test_the_nodes_document_stays_within_its_bound_with_its_warnings() -> None:
     mesh = Mesh(max_nodes=200)
     for i in range(200):  # every one a look-alike of the next

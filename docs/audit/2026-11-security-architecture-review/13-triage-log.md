@@ -47,11 +47,11 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SEC-009 | fix | `[mqtt] password_file` keeps the secret out of `config.toml` and out of `config answers`; the installer writes it; a systemd credential is documented | pending: password |
 | SEC-010 | fix | The history keeps node rows only for the contacts and the heard nodes the gateway keeps (the finding's option 3, tighter than a row cap), for 7 days as ADR 0016 says. No `[history] nodes_days` setting, as first planned: beyond the 7 days of the memory it would change nothing | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | SEC-011 | fix | The `nodes` document coalesced (at most every 30 s while only heard nodes change); no table read after a `NEW_ADVERT` on firmware that never uses it for a contact; once-heard nodes evicted before nodes heard again | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
-| SEC-012 | fix | `[messages] publish_channels = "targets"` publishes only the channels the household configured (new installations get it; the default stays `all` until the 2.0.0 decision); a rate limit per channel; documented | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43), pending: privacy |
+| SEC-012 | fix | `[messages] publish_channels = "targets"` publishes only the channels the household configured (new installations get it; the default stays `all` until the 2.0.0 decision); a rate limit per channel; documented | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43), [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
 | SEC-013 | fix | A rate limit per sender on what a message produces (events, history), commands still judged; the residual risk (the radio acknowledges before the gateway sees anything) in the threat model. Extending the acknowledgement wait by the radio's queue is not done: its statistics are read once a minute | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43), pending: threat-model |
 | SEC-014 | fix | Malformed pushes logged at most once a minute with a count; a run of them ends the session, which the reconnect resynchronises | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
-| SEC-015 | fix | A privacy section on what is kept about bystanders and for how long; heard nodes 7 days; `[contacts] heard_nodes` minimises or switches off what is kept of strangers. Redacting positions from the opt-in `rx` diagnostics is rejected: it would make the diagnostics wrong; documented instead | pending: privacy |
-| SEC-016 | fix | `[telemetry] ask = "household"` asks only contacts the household included (protected contacts are); new installations get it from the installer; README states the gateway's side | pending: privacy |
+| SEC-015 | fix | A privacy section on what is kept about bystanders and for how long; heard nodes 7 days; `[contacts] heard_nodes` minimises or switches off what is kept of strangers. Redacting positions from the opt-in `rx` diagnostics is rejected: it would make the diagnostics wrong; documented instead | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
+| SEC-016 | fix | `[telemetry] ask = "household"` asks only contacts the household included (protected contacts are); new installations get it from the installer; README states the gateway's side | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
 | SEC-017 | fix | A section "Handling text from the mesh" in `docs/development.md`; the alias echoed in a rejected `delivery` capped at 64 characters; an opt-in `[messages] clean_received` | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
 
 ## Architecture and design
@@ -119,7 +119,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | DOC-007 | fix | The README says whom the gateway asks, and that a companion answers only if allowed | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-008 | fix | Through SEC-001: one sentence wherever `confirmed` is explained | pending: acks |
 | DOC-009 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
-| DOC-010 | fix | A "What the gateway keeps" section (household and bystanders, where, how long, how to switch it off) | pending: threat-model |
+| DOC-010 | fix | A "What the gateway keeps" section (household and bystanders, where, how long, how to switch it off): `docs/privacy.md`, with SEC-015 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
 | DOC-011 | fix | The design document split into a core and one document per subsystem, with state and sequence diagrams and a table of where each section moved | pending: threat-model |
 | DOC-012 | fix | "Gateway" in prose, "bridge" for the module, a one-line glossary | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-013 | fix | `docs/architecture.md`: the short way in | pending: threat-model |
@@ -183,8 +183,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-001 | fix | Through SEC-001 | pending: acks |
 | IMP-002 | fix | Optional per-sender TOTP codes for commands, with an enrolment command | pending: totp |
 | IMP-003 | defer | Incremental table reads would touch the full reads ADR 0009's look-alike memory relies on; after SEC-011 strangers' adverts no longer cause reads, so the gain is small. Back when contact re-reads show up as a load | – |
-| IMP-004 | fix | Through SEC-012 | pending: privacy |
-| IMP-005 | fix | Through SEC-016 | pending: privacy |
+| IMP-004 | fix | Through SEC-012 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
+| IMP-005 | fix | Through SEC-016 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
 | IMP-006 | fix | Through SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | IMP-007 | fix | Through SEC-004 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | IMP-008 | fix | Through SEC-005 (healing); stamps rejected there, an HMAC signature deferred until a consumer can verify it (EXT-012) | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
@@ -299,7 +299,7 @@ the item IDs and referencing issue #34.
 | documents | SEC-005, ARC-006, IMP-008 |
 | tcp | SEC-003, DOC-009, DOC-023, IMP-041, IMP-042 |
 | limits | SEC-012 (rate), SEC-013, SEC-014, SEC-017, IMP-018, IMP-038, IMP-039, IMP-040 |
-| privacy | SEC-012, SEC-015, SEC-016, IMP-004, IMP-005 |
+| privacy | SEC-012, SEC-015, SEC-016, IMP-004, IMP-005, DOC-010 |
 | ha-exposure | SEC-008, ARC-015, OPS-003, IMP-011, IMP-025 |
 | names | SEC-007, IMP-010 |
 | password | SEC-009, IMP-012 |
@@ -315,6 +315,6 @@ the item IDs and referencing issue #34.
 | cli-ops | IMP-016, IMP-047, OPS-008, OPS-011, OPS-022, EXT-016 |
 | totp | IMP-002 |
 | mqtt5 | ARC-014, IMP-015 |
-| threat-model | ARC-001, ARC-002, ARC-017, DOC-005, DOC-010, DOC-011, DOC-013, IMP-026, IMP-030 |
+| threat-model | ARC-001, ARC-002, ARC-017, DOC-005, DOC-011, DOC-013, IMP-026, IMP-030 |
 | extensions | EXT-004, -005, -009, -011, -013, -017, -018, -019, IMP-049 |
 | github | Repository settings: the description, immutable releases, code scanning, the label `audit-2026-11` |
