@@ -26,7 +26,7 @@ import secrets
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from meshcore_home_gateway import __version__
@@ -37,7 +37,12 @@ from meshcore_home_gateway.core.airtime import (
     direct_attempt_airtime_s,
     time_on_air_s,
 )
-from meshcore_home_gateway.core.budget import AirtimeBudget, Deduplicator, RateLimit
+from meshcore_home_gateway.core.budget import (
+    AirtimeBudget,
+    Deduplicator,
+    KeyedRateLimit,
+    RateLimit,
+)
 from meshcore_home_gateway.core.commands import (
     CommandDecision,
     Rejection,
@@ -54,7 +59,12 @@ from meshcore_home_gateway.core.model import (
     Target,
 )
 from meshcore_home_gateway.core.telemetry import LaneFactory, TelemetryStatus
-from meshcore_home_gateway.core.text import TextPolicy, TextRejectedError, prepare_text
+from meshcore_home_gateway.core.text import (
+    TextPolicy,
+    TextRejectedError,
+    clean_received,
+    prepare_text,
+)
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
@@ -107,6 +117,12 @@ ACK_TIMEOUT_MIN_S, ACK_TIMEOUT_MAX_S = 5.0, 60.0
 RECENT_ACK_S = 120.0
 REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST = 20.0, 100.0  # events of requests refused at once
 REFUSED_REPORT_INTERVAL_S = 60.0  # the log counts the events left out at most this often
+# received messages that become events and history rows, per sender and per channel: a contact or
+# a channel that floods cannot fill the bus, the history and Home Assistant's recorder; an
+# accepted command always goes out (SEC-012, SEC-013)
+RECEIVED_PER_SENDER_PER_S, RECEIVED_PER_SENDER_BURST = 0.5, 10.0
+RECEIVED_PER_CHANNEL_PER_S, RECEIVED_PER_CHANNEL_BURST = 1.0, 20.0
+MAX_ECHOED_ALIAS = 64  # characters of a refused request's topic level in its event (SEC-017)
 INBOUND_DEDUP_S = 3600.0  # retries reach us as duplicates with the same timestamp and text
 LOOK_ALIKE_MEMORY_S = 86_400.0  # a key with a sender's prefix counts this long after last seen
 _FINAL_FROM_CACHE = frozenset(
@@ -171,6 +187,44 @@ class _Announcing:
     last: float | None = None  # monotonic time of the last announcement
     births: deque[float] = field(default_factory=deque)  # of the last minute, monotonic
     warned: float | None = None  # monotonic time of the last warning about births
+
+
+class ReceivedLimit:
+    """Which received messages become events and history rows: per sender and per channel at a
+    bounded rate (SEC-012, SEC-013). The log counts those left out at most once a minute."""
+
+    def __init__(self, now: float) -> None:
+        self._limits = {
+            MessageKind.CONTACT: KeyedRateLimit(
+                RECEIVED_PER_SENDER_PER_S, RECEIVED_PER_SENDER_BURST
+            ),
+            MessageKind.CHANNEL: KeyedRateLimit(
+                RECEIVED_PER_CHANNEL_PER_S, RECEIVED_PER_CHANNEL_BURST
+            ),
+        }
+        self._left_out: dict[MessageKind, int] = {}  # since the last report
+        self._next_report = now
+
+    def allow(self, kind: MessageKind, origin: object, now: float) -> bool:
+        """`origin`: the sender's key prefix, or the channel index."""
+        if self._limits[kind].allow(origin, now):
+            return True
+        self._left_out[kind] = self._left_out.get(kind, 0) + 1
+        self.report(now)
+        return False
+
+    def report(self, now: float) -> None:
+        if self._left_out and now >= self._next_report:
+            log.warning(
+                "received messages not published nor recorded (limit one every %g s per sender, "
+                "bursts of %g, and %g per second per channel, bursts of %g): %d direct, %d "
+                "channel", 1 / RECEIVED_PER_SENDER_PER_S, RECEIVED_PER_SENDER_BURST,
+                RECEIVED_PER_CHANNEL_PER_S, RECEIVED_PER_CHANNEL_BURST,
+                self._left_out.get(MessageKind.CONTACT, 0),
+                self._left_out.get(MessageKind.CHANNEL, 0),
+            )  # fmt: skip
+            self._left_out = {}
+            self._next_report = now + REFUSED_REPORT_INTERVAL_S
 
 
 class AckWaiter:
@@ -286,10 +340,12 @@ class Bridge:
         self._refusals = RateLimit(REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, now=monotonic())
         self._unpublished = 0  # events of refused requests left out since the last report
         self._next_report = monotonic()
+        self._received = ReceivedLimit(monotonic())
         # a copy passes the age check until 2 x max_age_s after the original (the sender's clock
         # may be max_age_s ahead): the duplicate memory must last as long (ADR 0009)
-        max_age_s = config.commands.max_age_s
-        self._inbound_dedup = Deduplicator(max(INBOUND_DEDUP_S, 2 * max_age_s + 60.0))
+        self._inbound_dedup = Deduplicator(
+            max(INBOUND_DEDUP_S, 2 * config.commands.max_age_s + 60.0)
+        )
         self._acks = AckWaiter(monotonic)
         self._session: CompanionSession | None = None
         self._radio_info: RadioInfo | None = None
@@ -511,7 +567,9 @@ class Bridge:
         try:
             target, text, raw = self._validate(request)
         except _FinalError as exc:
-            event = DeliveryEvent(event_id, request.alias, exc.state, reason=exc.reason)
+            # the topic level may be any length: the event echoes the start of it
+            alias = request.alias[:MAX_ECHOED_ALIAS]
+            event = DeliveryEvent(event_id, alias, exc.state, reason=exc.reason)
             self._deliver_refusal(event)
             return
         state, reason = DeliveryState.QUEUED, None
@@ -869,6 +927,10 @@ class Bridge:
             log.warning("command %s refused: the broker is unreachable", decision.word)
             command = None
             decision = CommandDecision(decision.word, rejection=Rejection.BROKER_UNAVAILABLE)
+        if command is None and not self._received.allow(message.kind, origin, self._mono()):
+            return  # judged, but neither published nor recorded: one sender or channel floods
+        if self.config.messages.clean_received:  # judged as it came, published cleaned
+            message = replace(message, text=clean_received(message.text))
         sender = None
         if message.sender_prefix is not None:
             matches = session.contacts.resolve(message.sender_prefix)
@@ -983,6 +1045,7 @@ class Bridge:
             if watchdog:
                 self._notify("WATCHDOG=1")
             self._report_unpublished()  # the end of a flood of refused requests
+            self._received.report(self._mono())  # the end of a flood of received messages
             self._contacts.report_unpublished()
             self._observe(self.observer.exclusions.flush)  # an exclusion not stored yet
             self._observe(self.observer.tick)

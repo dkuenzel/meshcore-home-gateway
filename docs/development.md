@@ -61,7 +61,9 @@ Names, message texts, labels and links come from strangers on the air or from an
 broker. The code keeps them data everywhere they go, and new code follows the same rules:
 
 * **Bounded at the entry:** a frame holds at most 176 bytes, a name 32, a request 1 KiB; what the
-  gateway echoes back (a refused request's alias, a label) stays within such a bound.
+  gateway echoes back stays within such a bound (a refused request's alias: 64 characters).
+* **Bounded in rate:** what a sender or a channel makes the gateway publish and store (events,
+  history rows), what it logs about malformed frames and refused requests.
 * **Never code:** never part of a format string, a Jinja template, a shell command, SQL (always
   parameters) or a file path. Discovery documents are written from constants; the mesh's values
   are only what a template reads.
@@ -71,7 +73,8 @@ broker. The code keeps them data everywhere they go, and new code follows the sa
 * **Home Assistant:** Markdown cards print every value through the macro `m()` (Translations,
   below); nothing from the mesh becomes an entity ID, a unique ID or an event type.
 * **MQTT:** JSON only; texts are passed on as received (`docs/mqtt-api.md`: consumers treat them
-  as plain data, never as markup).
+  as plain data, never as markup), or with `[messages] clean_received` without control and
+  direction characters, as outgoing texts are; commands are judged on the text as received.
 
 ### Adding a protocol message
 

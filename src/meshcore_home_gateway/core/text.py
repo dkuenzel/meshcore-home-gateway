@@ -142,6 +142,13 @@ def _clean(text: str) -> str:
     return _SPACES_AROUND_NEWLINE.sub("\n", _SPACES.sub(" ", kept)).strip()
 
 
+def clean_received(text: str) -> str:
+    """A received text cleaned as an outgoing one is, for `[messages] clean_received`: without
+    control and direction characters, which a terminal or a file could take for instructions
+    (SEC-017). Received texts are data and stay as they came by default."""
+    return _clean(text)
+
+
 def _to_ascii(text: str) -> str:
     """Transliterate; invisible format characters (soft hyphen, zero-width space, joiners) are
     dropped instead of becoming a visible '?'."""

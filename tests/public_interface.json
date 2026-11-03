@@ -21,6 +21,7 @@
     "homeassistant.prefix",
     "homeassistant.status_topic",
     "messages.ascii_only",
+    "messages.clean_received",
     "messages.dedup_window_s",
     "messages.flood_after",
     "messages.ignore_channels",
@@ -729,6 +730,11 @@
    "type": "table"
   },
   "messages.ascii_only": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
+  },
+  "messages.clean_received": {
    "answer": "bool",
    "default": false,
    "type": "boolean"
