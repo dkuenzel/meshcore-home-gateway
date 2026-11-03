@@ -361,7 +361,8 @@ def test_core_errors_keep_english_in_str() -> None:
 
 def _look_alikes(manage: str) -> list[Text]:
     twin = "ab" * 6 + "02" * 26  # the first 6 bytes of KEY
-    text = MINIMAL + (
+    text = MINIMAL + "insecure = true\n"  # commands without credentials (SEC-004)
+    text += (
         f'[radio.profile]\nmanage = "{manage}"\n'
         f'[commands]\nsenders = ["{KEY}", "{twin}"]\nwords = ["open"]\n'
         f'[targets.gate]\ncontact = "{KEY}"\n'
@@ -497,7 +498,7 @@ SUMMARIES = {  # between them, every kind of line of check-config's summary
     "tcp": (
         '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
         + MQTT
-        + 'username = "gateway"\npassword = "secret"\n'
+        + 'username = "gateway"\npassword = "secret"\ninsecure = true\n'
         f'[targets.alerts]\nchannel = 1\n[targets.gate]\ncontact = "{KEY}"\n'
         f'[commands]\nsenders = ["{KEY}", "{TWIN}"]\nwords = ["open", "status"]\n'
     ),
@@ -1152,7 +1153,8 @@ def test_check_config_counts_the_senders(tmp_path: Path) -> None:
         ([KEY, OTHER], "  commands   open, status from 2 senders\n"),
     ):
         words = '["status", "open"]' if len(senders) == 2 else '["open"]'
-        text = MINIMAL + f"[commands]\nsenders = {json.dumps(senders)}\nwords = {words}\n"
+        text = MINIMAL + "insecure = true\n"  # commands without credentials (SEC-004)
+        text += f"[commands]\nsenders = {json.dumps(senders)}\nwords = {words}\n"
         ran = _main(["check-config", "--config", _written(tmp_path, "config.toml", text)])
         assert line in ran.out
 

@@ -151,6 +151,49 @@ def test_the_radio_clock_steps_at_most_30_days_by_default() -> None:
             parse_config(text)
 
 
+COMMANDS = f'[commands]\nsenders = ["{KEY}"]\nwords = ["status"]\n'
+
+
+def _broker(host: str, login: str = "", tls: bool = False) -> str:
+    return (
+        '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
+        f'[mqtt]\nhost = "{host}"\nnode_id = "radio1"\n{login}' + ("tls = true\n" if tls else "")
+    )
+
+
+USER = 'username = "gateway"\npassword = "pw"\n'
+
+
+@pytest.mark.parametrize(
+    ("text", "missing"),
+    [
+        (_broker("broker.example.org"), "credentials"),
+        (_broker("127.0.0.1"), "credentials"),  # the host's other users, or the network
+        (_broker("broker.example.org", tls=True), "credentials"),
+        (_broker("broker.example.org", USER), "TLS"),
+        (_broker("192.168.1.2", USER), "TLS"),
+    ],
+)  # fmt: skip
+def test_commands_need_a_broker_connection_with_credentials_and_tls(
+    text: str, missing: str
+) -> None:
+    """Command events reach the automations through the broker: anyone who can log in, or read
+    a password on the network, could publish them (SEC-004). `insecure = true` accepts it."""
+    with pytest.raises(ConfigError, match=rf"mqtt\.insecure: .* has no {missing}: any client"):
+        parse_config(text + COMMANDS)
+    parse_config(text)  # without commands: warnings only
+    assert parse_config(text + "insecure = true\n" + COMMANDS).mqtt.insecure is True
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "::1", "169.254.10.20", "fe80::1"])
+def test_tls_is_not_needed_on_the_host_or_the_link(host: str) -> None:
+    config = parse_config(_broker(host, USER) + COMMANDS)
+    assert config.mqtt.local
+    assert not config.mqtt.insecure
+    assert parse_config(_broker("broker.example.org", USER, tls=True) + COMMANDS).mqtt.tls
+    assert not parse_config(_broker("mosquitto.local", USER)).mqtt.local
+
+
 def test_the_history_is_on_by_default_and_bounded() -> None:
     history = parse_config(MINIMAL).history
     assert (history.enabled, history.messages_days, history.positions_days) == (True, 30.0, 30.0)
@@ -269,6 +312,7 @@ mqtt.username=bridge
 mqtt.password=p"a\\ss=word
 mqtt.tls=false
 mqtt.node_id=radio1
+mqtt.insecure=true
 homeassistant.discovery=true
 homeassistant.device_name=Mesh radio
 messages.ascii_only=true

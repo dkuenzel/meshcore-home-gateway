@@ -6,6 +6,14 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 
 #: src/meshcore_home_gateway/bridge.py
+msgid "MQTT without TLS: the password, the messages, the positions and the command events cross the network in the clear (insecure = true accepts it)"
+msgstr ""
+
+#: src/meshcore_home_gateway/bridge.py
+msgid "MQTT without a user name: unless the broker refuses clients without one, any client that reaches it can read and write the gateway's topics (docs/mqtt-api.md, Securing the broker; insecure = true accepts it)"
+msgstr ""
+
+#: src/meshcore_home_gateway/bridge.py
 msgid "command sender"
 msgstr ""
 
@@ -38,6 +46,12 @@ msgstr ""
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "  airtime    {budget:g} s per hour, burst {burst:g} s"
+msgstr ""
+
+#. a line of check-config's summary, its value in the column of the others
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  anonymous  refused by {host}:{port}"
 msgstr ""
 
 #. a line of check-config's summary. Its value starts in the column where the
@@ -645,6 +659,10 @@ msgstr ""
 msgid "telemetry  {modes}"
 msgstr ""
 
+#: src/meshcore_home_gateway/cli.py
+msgid "the broker accepts clients without a user name: unless its ACL keeps them off the gateway's topics, any client that reaches it can read messages and positions and publish command events (docs/mqtt-api.md, Securing the broker)"
+msgstr ""
+
 #. what the gateway does about a setting of the radio that differs from the
 #. managed profile, in brackets after the setting's line
 #: src/meshcore_home_gateway/cli.py
@@ -794,6 +812,10 @@ msgid "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit, not ending w
 msgstr ""
 
 #: src/meshcore_home_gateway/config.py
+msgid "TLS"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "a host name or IP address only (a part between dots is empty or longer than 63 characters), got {value!r}"
 msgstr ""
@@ -834,6 +856,11 @@ msgstr ""
 msgid "cannot read {path}: {detail}"
 msgstr ""
 
+#. the broker connection has no user name and password
+#: src/meshcore_home_gateway/config.py
+msgid "credentials"
+msgstr ""
+
 #. detail is the TOML reader's English text, with the line and column.
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
@@ -864,6 +891,12 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: cannot read {value!r} as {kind}"
+msgstr ""
+
+#. what is missing is "credentials" or "TLS"; insecure = true is a setting
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: commands are configured and the broker connection has no {missing}: any client that reaches the broker could publish command events. Add it, or set insecure = true (docs/mqtt-api.md, Securing the broker)"
 msgstr ""
 
 #: src/meshcore_home_gateway/config.py

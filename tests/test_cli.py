@@ -830,6 +830,82 @@ def test_refused_broker_connection_is_an_error(
     assert "refused" in capsys.readouterr().err
 
 
+def test_check_config_warns_about_a_broker_connection_without_credentials_or_tls(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SEC-004: the gateway's topics are only as safe as the broker connection."""
+    path = tmp_path / "config.toml"
+    path.write_text('[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n')
+    assert main(["check-config", "--config", str(path)]) == EX_OK
+    err = capsys.readouterr().err
+    assert "warning: MQTT without a user name" in err
+    assert "warning: MQTT without TLS" in err
+    path.write_text(path.read_text() + "insecure = true\n")
+    assert main(["check-config", "--config", str(path)]) == EX_OK
+    assert "MQTT without" not in capsys.readouterr().err
+
+
+class _Code:
+    """paho's reason code of a CONNACK."""
+
+    def __init__(self, failure: bool) -> None:
+        self.is_failure = failure
+
+    def __str__(self) -> str:
+        return "Not authorized"
+
+
+class _Answering:
+    """A paho client that the broker answers at once: accepted, or refused."""
+
+    def __init__(self, refused: bool) -> None:
+        self.refused = refused
+        self.on_connect: Any = None
+
+    def connect(self, host: str, port: int, keepalive: int) -> None:
+        pass
+
+    def loop_start(self) -> None:
+        self.on_connect(self, None, None, _Code(self.refused), None)
+
+    def disconnect(self) -> None:
+        pass
+
+    def loop_stop(self) -> None:
+        pass
+
+
+@pytest.mark.parametrize("anonymous", [True, False], ids=["accepted", "refused"])
+def test_check_config_tries_the_broker_without_credentials(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+    anonymous: bool,
+) -> None:  # fmt: skip
+    """With a user name configured, a second login without one shows whether the broker takes
+    anyone (SEC-004): then only its ACL, which no client can see, keeps them off the topics."""
+    logins: list[str | None] = []
+
+    def client(mqtt: MqttConfig, suffix: str) -> _Answering:
+        logins.append(mqtt.username)
+        return _Answering(refused=mqtt.username is None and not anonymous)
+
+    monkeypatch.setattr(cli_module, "_mqtt_client", client)
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        'username = "gw"\npassword = "pw"\ntls = true\n'
+    )
+    assert main(["check-config", "--config", str(path), "--broker"]) == EX_OK
+    captured = capsys.readouterr()
+    assert logins == ["gw", None]
+    assert ("the broker accepts clients without a user name" in captured.err) is anonymous
+    assert ("anonymous  refused by h:1883" in captured.out) is not anonymous
+    path.write_text(path.read_text().replace('username = "gw"\npassword = "pw"\n', ""))
+    logins.clear()
+    expected = EX_OK if anonymous else EX_FAILURE
+    assert main(["check-config", "--config", str(path), "--broker"]) == expected
+    assert logins == [None]  # the login itself was the one without credentials
+
+
 @pytest.mark.broker
 def test_check_config_logs_in_to_the_broker_on_request(
     tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
@@ -1120,6 +1196,7 @@ def test_probe_shows_the_protected_contacts_the_service_writes(
     config = tmp_path / "config.toml"
     text = (
         '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        "insecure = true\n"
         f'[targets.alice]\ncontact = "{ALICE.public_key.hex()}"\n'
         f'[commands]\nsenders = ["{sender}"]\nwords = ["status"]\n'
     )

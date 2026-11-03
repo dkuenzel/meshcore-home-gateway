@@ -844,17 +844,26 @@ ask_radio() {
   fi
 }
 
+no_user_confirmed() {  # without a user name the broker is open to everyone it does not refuse
+  (( INTERACTIVE )) || return 0
+  [[ $(show_dialog yesno "$(t 'No user name: unless the broker refuses clients without one, anyone who reaches it can read the messages and the positions and send commands to the gateway. Continue without a user name?')" false) == true ]]
+}
+
 ask_broker() {  # address and login
   local tls password user
   OUT[mqtt.host]=$(ask_required mqtt.host \
     "$(t 'MQTT broker: host name or IP address (no mqtt://)')" "")
-  tls=$(ask_advanced mqtt.tls yesno "$(t 'Use TLS for the broker connection?')" "false")
+  # also in the default setup: without TLS the password and every message cross the network
+  tls=$(ask mqtt.tls yesno "$(t 'Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear.')" "false")
   OUT[mqtt.tls]=$tls
   OUT[mqtt.port]=$(ask_advanced mqtt.port input "$(t 'MQTT broker port')" \
     "$(if [[ $tls == true ]]; then echo 8883; else echo 1883; fi)")
   # no suggested name in the field: whiptail adds what is typed to it instead of replacing it
-  user=$(ask mqtt.username input \
-    "$(t 'MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)')" "")
+  while :; do
+    user=$(ask mqtt.username input \
+      "$(t 'MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)')" "")
+    if [[ -n $user ]] || [[ -v "ANSWERS[mqtt.username]" ]] || no_user_confirmed; then break; fi
+  done
   OUT[mqtt.username]=$user
   if [[ -z $user ]]; then
     # a password needs a user name: no dialog, and the current one goes (the settings check
@@ -882,7 +891,7 @@ ask_broker_again() {  # after a refused login, with dialogs: every broker settin
     OUT[mqtt.host]=$(show_dialog input \
       "$(t 'MQTT broker: host name or IP address (no mqtt://)')" "$host")
   done
-  tls=$(show_dialog yesno "$(t 'Use TLS for the broker connection?')" "$previous")
+  tls=$(show_dialog yesno "$(t 'Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear.')" "$previous")
   OUT[mqtt.tls]=$tls
   port=${OUT[mqtt.port]-}
   if [[ $tls != "$previous" && ( -z $port || $port == 1883 || $port == 8883 ) ]]; then
@@ -895,7 +904,10 @@ ask_broker_again() {  # after a refused login, with dialogs: every broker settin
   else
     prompt=$(t 'MQTT user name as set up on the broker; empty: none')
   fi
-  user=$(show_dialog input "$prompt" "")
+  while :; do
+    user=$(show_dialog input "$prompt" "")
+    if [[ -n $user ]] || no_user_confirmed; then break; fi
+  done
   OUT[mqtt.username]=$user
   if [[ -z $user ]]; then
     unset 'OUT[mqtt.password]'
@@ -965,6 +977,40 @@ probe_args() {  # the radio connection as arguments of `probe`, in PROBE
     host=${OUT[radio.host]}
     if [[ $host == *:* ]]; then host="[$host]"; fi   # IPv6 address
     PROBE=(--tcp "$host:${OUT[radio.port]:-5000}")
+  fi
+}
+
+local_broker() {  # local_broker HOST: on the container itself or the link, as the program sees it
+  local host=${1,,}
+  host=${host#\[}
+  host=${host%\]}
+  [[ $host == localhost || $host == ::1 || $host =~ ^127\. || $host =~ ^169\.254\. \
+     || $host =~ ^fe[89ab][0-9a-f]: ]]
+}
+
+knows_insecure() {  # does the program that renders the configuration read mqtt.insecure?
+  (( OWN_PROGRAM )) || ! [[ $VERSION =~ ^(0\.|1\.0\.|1\.1\.0a[1-4]$) ]]
+}
+
+accept_insecure() {  # commands over a broker connection without a user name or TLS (SEC-004)
+  local what
+  knows_insecure || return 0   # an older program has no such rule
+  [[ ${OUT[mqtt.insecure]-} != true ]] || return 0
+  if [[ -z ${OUT[mqtt.username]-} ]]; then
+    what=$(t 'no user name')
+  elif [[ ${OUT[mqtt.tls]-false} != true ]] && ! local_broker "${OUT[mqtt.host]-}"; then
+    what=$(t 'no TLS')
+  else
+    return 0
+  fi
+  # without dialogs and without the answer, the settings check names the setting
+  if (( ! INTERACTIVE )) && [[ ! -v "ANSWERS[mqtt.insecure]" ]]; then return 0; fi
+  # Translators: {what} is "no user name" or "no TLS".
+  if [[ $(ask mqtt.insecure yesno "$(t 'The broker connection has {what}: any client that reaches the broker could publish command events as if an allowed contact had sent them. Accept it (insecure = true)? No: no commands.' what "$what")" false) == true ]]; then
+    OUT[mqtt.insecure]=true
+  else
+    unset 'OUT[commands.senders]' 'OUT[commands.words]' 'OUT[mqtt.insecure]'
+    log "no commands: they need a broker connection with a user name and TLS, or insecure = true"
   fi
 }
 
@@ -1042,6 +1088,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
       OUT[commands.senders]=$selected
       OUT[commands.words]=$(ask commands.words input \
         "$(t 'Command words, comma-separated (e.g. status,arm,disarm)')" "status")
+      accept_insecure
     else
       unset 'OUT[commands.senders]' 'OUT[commands.words]'
     fi

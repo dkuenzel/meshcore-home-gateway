@@ -555,7 +555,9 @@ test without Home Assistant, in the gateway's container:
 * The gateway publishes the discovery document when it connects to the broker, a random 0.5–2 s
   after Home Assistant's birth message (`online` on `status_topic`), and when the radio's model,
   firmware or key first becomes known or changes. The document is not retained; after a restart of
-  Home Assistant the entities are back with the birth message, without any action.
+  Home Assistant the entities are back with the birth message, without any action. After birth
+  messages it announces itself at most every 30 s, and a later one never postpones it: another
+  client that floods `status_topic` cannot keep the entities away (the log names the topic).
 * A component of an earlier configuration (a removed target, command words or the rx log switched
   off) is removed by the gateway, also when Home Assistant restarted in between: each announcement
   sends a placeholder under the old ID, which Home Assistant binds, and then the removal. The

@@ -455,9 +455,9 @@ def _check_config(args: argparse.Namespace) -> int:
     print(tr("configuration {path}: valid", path=args.config))
     for line in _summary(config, login):
         print(line)
-    from meshcore_home_gateway.bridge import protected_look_alikes  # noqa: PLC0415
+    from meshcore_home_gateway.bridge import broker_warnings, protected_look_alikes  # noqa: PLC0415
 
-    for warning in protected_look_alikes(config):
+    for warning in protected_look_alikes(config) + broker_warnings(config):
         print(PREFIX + tr("warning: {detail}", detail=warning), file=sys.stderr)
     if not args.broker:
         return EX_OK
@@ -483,7 +483,33 @@ def _check_config(args: argparse.Namespace) -> int:
         return EX_FAILURE
     # Translators: a line of check-config's summary, its value in the column of the others
     print(tr("  login      accepted by {host}:{port}", host=mqtt.host, port=mqtt.port))
+    if mqtt.username:  # without one, the login above was the anonymous one
+        _probe_anonymous(mqtt)
     return EX_OK
+
+
+def _probe_anonymous(mqtt: MqttConfig) -> None:
+    """Whether the broker takes a client without credentials (SEC-004): then whoever reaches it
+    can use the gateway's topics unless an ACL stops them, which no client can see."""
+    import dataclasses  # noqa: PLC0415
+
+    client = _mqtt_client(dataclasses.replace(mqtt, username=None, password=None), "anonymous")
+    connection = _Connection()
+    try:
+        error = connection.open(client, mqtt)
+    finally:
+        client.disconnect()
+        client.loop_stop()
+    if error is None:
+        warning = tr(
+            "the broker accepts clients without a user name: unless its ACL keeps them off the "
+            "gateway's topics, any client that reaches it can read messages and positions and "
+            "publish command events (docs/mqtt-api.md, Securing the broker)"
+        )
+        print(PREFIX + tr("warning: {detail}", detail=warning), file=sys.stderr)
+    elif connection.refusal is not None:
+        # Translators: a line of check-config's summary, its value in the column of the others
+        print(tr("  anonymous  refused by {host}:{port}", host=mqtt.host, port=mqtt.port))
 
 
 def _login(mqtt: MqttConfig) -> str:

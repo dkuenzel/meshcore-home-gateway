@@ -91,14 +91,15 @@ every setting in the table.
 | IPv4 address with prefix, gateway | `dhcp` | Advanced |
 | Storage for templates | first active storage for templates | Advanced |
 | Radio connection | the devices in `/dev/serial/by-id/`, or TCP with address and port (5000) | both |
-| Broker address, user, password | –, none (suggested: `meshcore-home-gateway`), – (asked only with a user name) | both |
-| Broker TLS, port | no, 1883 (8883 with TLS) | Advanced |
+| Broker address, TLS, user, password | –, no, none (suggested: `meshcore-home-gateway`; an empty one is confirmed), – (asked only with a user name) | both |
+| Broker port | 1883 (8883 with TLS) | Advanced |
 | Base topic, node id | `meshcore`, `radio1` | Advanced |
 | Home Assistant discovery, device name | yes, `MeshCore radio` | Advanced |
 | Language of the names in Home Assistant (asked while it offers more than English) | the dialogs' language; on `--reconfigure` the configured one, else `en` | Advanced |
 | ASCII only | no | Advanced |
 | Channels and contacts to send to | read from the radio | both |
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
+| Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
@@ -404,7 +405,7 @@ English. The service's log is always English.
 | Commands rejected with `replay` although they are new | The sender's clock went backwards (reset, battery change): its timestamps are older than its last accepted command. Set the clock right; or, with the service stopped, remove the sender's key from `command_timestamps` in `/var/lib/meshcore-home-gateway/state.json` |
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
 | Commands rejected with `sender_unverified` | The gateway fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
-| `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto` (and add further users without `-c`, which replaces the file). `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on takes a Home Assistant user by its login name, not the display name (the Supervisor log names the user it refused: `Unauthorized login for '…'`), or a `logins` entry (read when the add-on starts); it remembers a refused login for about 5 minutes, so restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1`), not the user |
+| `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto` (and add further users without `-c`, which replaces the file). `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on takes a Home Assistant user by its login name, not the display name (the Supervisor log names the user it refused: `Unauthorized login for '…'`), or a `logins` entry (read when the add-on starts); it remembers a refused login for about 5 minutes, so restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1-` and a random part), not the user |
 | `MQTT: cannot reach …` | No broker answered at that name or address and port: check `mqtt.host` (a host name or IP address, no `mqtt://`) and `mqtt.port`, the network and the firewall |
 | `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
 | Commands rejected with `broker_unavailable` | The gateway could not reach the broker when the command arrived; check the broker connection (`availability`, the log), then send the command again |

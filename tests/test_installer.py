@@ -226,6 +226,7 @@ mqtt.host=old.example.org
 mqtt.username=bridge
 mqtt.password=old-secret
 mqtt.node_id=gw1
+mqtt.insecure=true
 messages.queue_size=50
 commands.senders={ALICE}
 commands.words=status
@@ -423,7 +424,7 @@ def answers_file(host: Host, text: str | None = None) -> Path:
             f"radio.choice={host.serial}\nmqtt.host=broker.example.org\n"
             "mqtt.username=meshcore-home-gateway\nmqtt.password=s3cret=x\n"
             f"targets.channels=1\ntargets.contacts={ALICE}\ncommands.senders={ALICE}\n"
-            "commands.words=status,arm\n"
+            "commands.words=status,arm\nmqtt.insecure=true\n"  # commands without TLS (SEC-004)
         )
     path.write_text(text, encoding="utf-8")
     return path
@@ -569,10 +570,12 @@ def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
 
 
 def test_interactive_default_setup_asks_only_what_has_no_default(host: Host) -> None:
+    """And TLS, whose default leaves the password readable on the network (SEC-004)."""
     dialog = [
         "default",  # setup
         str(host.serial),  # radio
         "", "broker.example.org",  # broker address: required, asked again
+        "no",  # TLS
         "bridge", "pw-secret",  # user, password
         "yes",  # create the container
         "0|1|2",  # channels
@@ -604,11 +607,13 @@ def test_interactive_advanced_setup_asks_for_everything(host: Host) -> None:
         "yes", "Mesh radio", "yes",  # discovery, device name, ASCII only
         "yes",  # create the container
         "0|1", ALICE, ALICE, "status,arm",  # channels, contacts, senders, words
+        "yes",  # commands without TLS: accepted (SEC-004)
         "Mesh gateway",  # the radio's name (the profile)
     ]  # fmt: skip
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert host.config().radio.profile.name == "Mesh gateway"
+    assert host.config().mqtt.insecure is True
     options = create_options(host)
     assert host.pct("create")[0][2] == "106"
     assert options["--net0"] == "name=eth0,bridge=vmbr1,ip=192.0.2.20/24,gw=192.0.2.1"
@@ -622,20 +627,25 @@ def test_interactive_advanced_setup_asks_for_everything(host: Host) -> None:
 
 
 def test_without_a_user_name_no_password_is_asked(host: Host) -> None:
-    """The broker takes a password only with a user name."""
-    dialog = ["default", str(host.serial), "broker.example.org", "", "yes", "1", "", ""]
+    """The broker takes a password only with a user name; an empty one is confirmed (SEC-004),
+    the default answer is no."""
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "", "no", "", "yes",
+              "yes", "1", "", ""]  # fmt: skip
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
     assert not [c for c in host.dialogs() if "--passwordbox" in c]
+    confirmations = [c for c in host.dialogs() if any("No user name:" in a for a in c)]
+    assert len(confirmations) == 2  # declined, then confirmed
+    assert all("--defaultno" in c for c in confirmations)
     config = host.config()
     assert (config.mqtt.username, config.mqtt.password) == (None, None)
 
 
 def test_the_dialogs_run_in_a_utf8_locale(host: Host) -> None:
     """In a locale the host lacks, whiptail drops every non-ASCII character typed."""
-    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pässwört§", "yes",
-              "1", "", ""]  # fmt: skip
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pässwört§",
+              "yes", "1", "", ""]  # fmt: skip
     env = {"LANG": "de_DE.UTF-8", "LC_CTYPE": "UTF-8"}  # as ssh passes them on
     result = run_installer(host, dialog=dialog, env=env)
     assert result.returncode == 0, result.stderr
@@ -647,7 +657,8 @@ def test_the_dialogs_run_in_a_utf8_locale(host: Host) -> None:
 
 def test_the_user_name_field_starts_empty_and_the_password_names_the_user(host: Host) -> None:
     """whiptail adds what is typed to a suggested name instead of replacing it."""
-    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "1", "", ""]
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
+              "1", "", ""]  # fmt: skip
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     (user,) = [c for c in host.dialogs() if any("MQTT user name" in a for a in c)]
@@ -676,7 +687,7 @@ def test_the_broker_login_is_checked_before_the_radio_is_read(host: Host) -> Non
 
 def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
     dialog = [
-        "default", str(host.serial), "broker.example.org", "bridge", "wrong", "yes",
+        "default", str(host.serial), "broker.example.org", "no", "bridge", "wrong", "yes",
         "yes",  # the login failed: enter the broker settings again
         "broker.example.org", "no", "1883", "bridge", "right",  # all of them this time
         "1", "", "",
@@ -697,8 +708,8 @@ def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
 
 def test_a_refused_login_can_be_kept(host: Host) -> None:
     """No: the installation goes on, the service keeps trying, and the message says so."""
-    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "no",
-              "1", "", ""]  # fmt: skip
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
+              "no", "1", "", ""]  # fmt: skip
     result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1"})
     assert result.returncode == 0, result.stderr
     assert "warning: the broker login failed: broker refused the connection" in result.stderr
@@ -718,8 +729,8 @@ def test_without_dialogs_a_refused_login_is_a_warning(host: Host) -> None:
 def test_settings_typed_again_that_are_refused_are_asked_once_more(host: Host) -> None:
     """No login was tried: going on would only fail when the configuration is written."""
     retry = ["broker.example.org", "no", "x1883", "bridge", "pw"]
-    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "wrong", "yes",
-              "yes", *retry, *retry[:2], "1883", *retry[3:], "1", "", ""]  # fmt: skip
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "wrong",
+              "yes", "yes", *retry, *retry[:2], "1883", *retry[3:], "1", "", ""]  # fmt: skip
     result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 4 0"})
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
@@ -738,8 +749,8 @@ def test_without_dialogs_refused_settings_stop_before_the_radio_is_read(host: Ho
 
 
 def test_changing_tls_when_typing_again_offers_the_other_port(host: Host) -> None:
-    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "yes",
-              "broker.example.org", "yes", "8883", "bridge", "pw", "1", "", ""]  # fmt: skip
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
+              "yes", "broker.example.org", "yes", "8883", "bridge", "pw", "1", "", ""]  # fmt: skip
     result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 0"})
     assert result.returncode == 0, result.stderr
     (port,) = [c for c in host.dialogs() if any("MQTT broker port" in a for a in c)]
@@ -750,7 +761,7 @@ def test_changing_tls_when_typing_again_offers_the_other_port(host: Host) -> Non
 def test_a_version_without_the_login_check_is_not_taken_for_a_refusal(host: Host) -> None:
     """--reconfigure uses the program installed in the container, which may be older."""
     existing_container(host)
-    dialog = ["default", "old.example.org", "bridge", "", "1", ALICE, ALICE, "status"]
+    dialog = ["default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE, "status"]
     result = run_installer(host, "--reconfigure", "105", dialog=dialog,
                            env={"BROKER_ANSWERS": "3"})  # fmt: skip
     assert result.returncode == 0, result.stderr
@@ -762,7 +773,7 @@ def test_a_version_without_the_login_check_is_not_taken_for_a_refusal(host: Host
 
 def test_reconfigure_typed_again_can_keep_the_installed_password(host: Host) -> None:
     existing_container(host)
-    dialog = ["default", "old.example.org", "bridge", "new-but-wrong", "yes",
+    dialog = ["default", "old.example.org", "no", "bridge", "new-but-wrong", "yes",
               "old.example.org", "no", "1883", "bridge", "",  # typed again: keep the installed one
               "1", ALICE, ALICE, "status"]  # fmt: skip
     result = run_installer(host, "--reconfigure", "105", dialog=dialog,
@@ -774,7 +785,7 @@ def test_reconfigure_typed_again_can_keep_the_installed_password(host: Host) -> 
 
 
 def test_declining_the_confirmation_creates_nothing(host: Host) -> None:
-    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "no"]
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "no"]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 1
     assert "cancelled" in result.stderr
@@ -783,7 +794,7 @@ def test_declining_the_confirmation_creates_nothing(host: Host) -> None:
 
 
 def test_names_that_look_like_options_are_offered_safely(host: Host) -> None:
-    dialog = ["default", str(host.serial), "broker", "bridge", "pw", "yes", "0", "", ""]
+    dialog = ["default", str(host.serial), "broker", "no", "bridge", "pw", "yes", "0", "", ""]
     env = {"PROBE_CHANNELS": "0\\t-=Ops=-\\n"}
     result = run_installer(host, dialog=dialog, env=env)
     assert result.returncode == 0, result.stderr
@@ -1136,7 +1147,7 @@ def test_reconfigure_with_a_new_user_name_does_not_keep_the_old_password(host: H
     result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
     assert result.returncode == 0, result.stderr
     assert (host.config().mqtt.username, host.config().mqtt.password) == ("david", None)
-    dialog = ["default", "old.example.org", "erika", "", "1", ALICE, ALICE, "status"]
+    dialog = ["default", "old.example.org", "no", "erika", "", "1", ALICE, ALICE, "status"]
     result = run_installer(host, "--reconfigure", "105", dialog=dialog)
     assert result.returncode == 0, result.stderr
     (password,) = [c for c in host.dialogs() if "--passwordbox" in c]
@@ -1195,13 +1206,14 @@ def test_interactive_reconfigure_offers_the_current_settings(host: Host) -> None
     existing_container(host)
     dialog = [
         "default",
-        "old.example.org", "bridge", "",  # broker, user, password: empty keeps the current one
+        "old.example.org", "no", "bridge", "",  # broker, TLS, user, password: empty keeps it
         "1|2", ALICE, ALICE, "status",  # channels, contacts, senders, words
     ]  # fmt: skip
     result = run_installer(host, "--reconfigure", "105", dialog=dialog)
     assert result.returncode == 0, result.stderr
     dialogs = host.dialogs()
     assert "old.example.org" in dialogs[1]  # the current value is the default
+    assert "--defaultno" in dialogs[2]  # TLS as it is: off
     channels = next(c for c in dialogs if "Channels to send to" in c)
     assert channels[-9:] == ["0", "Public", "off", "1", "Alerts", "on", "2", "public", "off"]
     config = host.config()
@@ -1219,7 +1231,7 @@ def test_interactive_reconfigure_keeps_targets_the_radio_does_not_offer(host: Ho
         + f"target.relay=contact:{RELAY}\ntarget.old=channel:7\n",
         encoding="utf-8",
     )
-    dialog = ["default", "old.example.org", "bridge", "", "1", ALICE, ALICE, "status"]
+    dialog = ["default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE, "status"]
     result = run_installer(host, "--reconfigure", "105", dialog=dialog)
     assert result.returncode == 0, result.stderr
     config = host.config()
@@ -1849,7 +1861,7 @@ def test_a_version_without_the_profile_skips_the_step(host: Host) -> None:
 
 def test_the_plan_is_shown_in_a_dialog(host: Host) -> None:
     dialog = [
-        "default", str(host.serial), "broker.example.org", "bridge", "pw-secret", "yes",
+        "default", str(host.serial), "broker.example.org", "no", "bridge", "pw-secret", "yes",
         "0|1|2", ALICE, "",
     ]  # fmt: skip
     result = run_installer(host, dialog=dialog)
@@ -1860,7 +1872,8 @@ def test_the_plan_is_shown_in_a_dialog(host: Host) -> None:
 
 def test_the_plan_is_logged_and_shown_line_by_line(host: Host) -> None:
     """Every line of the plan ends in a line break, in the log (indented) and in the box."""
-    dialog = ["default", str(host.serial), "broker.example.org", "bridge", "pw", "yes", "1", "", ""]
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
+              "1", "", ""]  # fmt: skip
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     plan = "At its next connect the service sets the radio:\n  manual_add: false -> true\n"
@@ -1877,7 +1890,7 @@ def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     assert host.config().radio.profile.name is None
     dialog = [
-        "default", str(host.serial), "broker.example.org", "bridge", "pw-secret", "yes",
+        "default", str(host.serial), "broker.example.org", "no", "bridge", "pw-secret", "yes",
         "0|1|2", ALICE, "",
     ]  # fmt: skip
     second = host.root.parent / "second"
@@ -1942,6 +1955,7 @@ def test_a_name_too_long_is_asked_again_in_the_dialog(host: Host) -> None:
         "yes", "Mesh radio", "yes",
         "yes",
         "0|1", ALICE, ALICE, "status,arm",
+        "yes",  # commands without TLS: accepted (SEC-004)
         "x" * 32, "Mesh gateway",  # 32 bytes, then one that fits
     ]  # fmt: skip
     result = run_installer(host, dialog=dialog)

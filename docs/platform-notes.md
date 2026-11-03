@@ -78,6 +78,7 @@ One line per fact, by section.
 
 **[Mosquitto](#mosquitto)**
 
+* A second connection with a client's id disconnects the first.
 * Every failed login gets the same answer: CONNACK 5, "not authorised" (MQTT 5: 135).
 * Mosquitto reads `password_file` only when it starts and when it reloads (SIGHUP, which `systemctl reload mosquitto` sends).
 * `mosquitto_passwd -c` creates the file anew, without the users already in it
@@ -663,6 +664,17 @@ printf 'log_dest file %s/log\nlog_type all\n' "$PWD" >> m.conf
 mosquitto -c m.conf & broker=$!
 ```
 
+* **A second connection with a client's id disconnects the first.** "If the ClientId
+  represents a Client already connected to the Server then the Server MUST disconnect the
+  existing Client" (MQTT 3.1.1 section 3.1.4, [MQTT-3.1.4-2]); with `clean_session` the broker
+  keeps nothing for the id between connections, so it is only a label in the log and in `$SYS`.
+  *Verified:* the OASIS standard text. *Here:* the service's default client id has a random
+  part per start (`default_client_id()` in
+  [`mqtt/client.py`](../src/meshcore_home_gateway/mqtt/client.py)): a fixed one that anyone can
+  read off the topics would let any client of the broker take the gateway offline, again at
+  every reconnect of paho (1 to 60 s). *Check:* run `mosquitto_sub -p 18830 -u mhg -P s3cret -i
+  same -t x` in two terminals: when the second connects, the broker closes the first one's
+  connection, and its log names the id.
 * **Every failed login gets the same answer: CONNACK 5, "not authorised" (MQTT 5: 135).** A wrong
   password, an unknown user, no user name, a user name in other letter case or with a leading
   blank, and `allow_anonymous false` without any `password_file` (the broker starts without a
@@ -716,18 +728,19 @@ mosquitto -c m.conf & broker=$!
   address:port."; the add-on's `rootfs/usr/share/tempio/mosquitto.gtpl:9-19` and `:43`,
   `CHANGELOG.md`, section 7.1.0. *Here:* the gateway's own warning names the user it sent
   (`_paho_connected()`); [deployment.md](deployment.md#5-troubleshooting) says that the broker
-  names the client (`meshcore-home-gateway-radio1`). *Check:* after the refused logins above and
-  one accepted (`-u mhg -P s3cret`), `grep -E "not authorised|u'" log`: the refusals name only
-  client ids, and only the accepted login's line shows `u'mhg'`.
+  names the client (`meshcore-home-gateway-radio1-` and a random part). *Check:* after the
+  refused logins above and one accepted (`-u mhg -P s3cret`), `grep -E "not authorised|u'" log`:
+  the refusals name only client ids, and only the accepted login's line shows `u'mhg'`.
 * **`clientid_prefixes` refuses a client id without the prefix with the same CONNACK 5 as a wrong
   password.** It is checked before the login, so only the log tells the two apart: the client
   appears as `<unknown>`. At start, 2.0.18 reports the option as deprecated. *Verified:* 2.0.18;
   `src/handle_connect.c:647-657`; `src/conf.c:1235`. *Here:* the service connects as
-  `meshcore-home-gateway-<node_id>` unless `client_id` is set (`make_paho_client()`), the commands
+  `meshcore-home-gateway-<node_id>-` and 8 random hex digits unless `client_id` is set
+  (`make_paho_client()`), the commands
   `check-config --broker`, `send` and `listen` as `meshcore-home-gateway-check-<pid>`,
   `-send-<pid>` and `-listen-<pid>` (`_mqtt_client()` in
   [`cli.py`](../src/meshcore_home_gateway/cli.py)). The prefix `meshcore-home-gateway-` admits
-  both; the service's full id as the prefix locks the commands out. *Check:* add
+  both; `meshcore-home-gateway-<node_id>-` locks the commands out. *Check:* add
   `clientid_prefixes meshcore-gw-`; `mosquitto_sub -p 18830 -i meshcore-home-gateway-radio1 -u mhg
   -P s3cret -t x -E` exits with 5, and the log reads `Client <unknown> disconnected, not
   authorised.`.

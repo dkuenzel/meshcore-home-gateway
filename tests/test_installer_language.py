@@ -441,12 +441,18 @@ PLAN_ALL = (
 
 
 def default(
-    host: Host, broker: list[str], again: tuple[str, ...] = (), language: str = "xx"
-) -> list[str]:
-    """The answers of a default installation: the language, the broker's, then (`again`) the
-    answers after a refused login, which comes after the confirmation."""
-    return [language, "default", str(host.serial), *broker, "yes", *again, "1", ALICE, ALICE,
-            "status"]  # fmt: skip
+    host: Host, broker: list[str], again: tuple[str, ...] = (), language: str = "xx",
+    accept: bool = True,
+) -> list[str]:  # fmt: skip
+    """The answers of a default installation: the language, the broker's (address, user name,
+    password: TLS is answered no, an empty user name confirmed), then (`again`) the answers
+    after a refused login, which comes after the confirmation; `accept`: the commands without
+    TLS are accepted (SEC-004)."""
+    address, *login = broker
+    confirm = ["yes"] if login[:1] == [""] else []
+    return [language, "default", str(host.serial), address, "no", *login[:1], *confirm,
+            *login[1:], "yes", *again, "1", ALICE, ALICE, "status",
+            *(["yes"] if accept else [])]  # fmt: skip
 
 
 def advanced(host: Host, names: str | None, language: str = "en") -> list[str]:
@@ -456,7 +462,7 @@ def advanced(host: Host, names: str | None, language: str = "en") -> list[str]:
             "vmbr1", "dhcp", "local", str(host.serial), "broker.example.org", "no", "1883",
             "bridge", "pw", "meshcore", "gw1", "yes", "Mesh radio",
             *([] if names is None else [names]),
-            "no", "yes", "1", ALICE, ALICE, "status", ""]  # fmt: skip
+            "no", "yes", "1", ALICE, ALICE, "status", "yes", ""]  # fmt: skip
 
 
 class Scenario(NamedTuple):
@@ -479,8 +485,8 @@ SCENARIOS = {
     ),
     "no user name, refused, settings refused": Scenario(
         lambda h: default(h, ["broker.example.org", ""],
-                          ("yes", "broker.example.org", "no", "x", "",
-                           "broker.example.org", "yes", "8883", "bridge", "")),
+                          ("yes", "broker.example.org", "no", "x", "", "yes",
+                           "broker.example.org", "yes", "8883", "bridge", ""), accept=False),
         {"BROKER_ANSWERS": "1 4 0"},
         ("Login:    ‹none (no user name)›", "‹configuration error: mqtt.port: not a number›"),
     ),
@@ -499,7 +505,7 @@ SCENARIOS = {
         ("Network:  ‹vmbr1, 192.0.2.20/24, gateway 192.0.2.1›",),
     ),
     "settings refused on the host": Scenario(
-        lambda h: ["xx", "default", str(h.serial), "broker example", "bridge", "pw"],
+        lambda h: ["xx", "default", str(h.serial), "broker example", "no", "bridge", "pw"],
         {},
         ("‹Error: ‹invalid settings: ‹mqtt.host: ",),  # the program's reason, translated
         status=1,
@@ -517,14 +523,15 @@ SCENARIOS = {
         release="0.2.0rc1",
     ),
     "a version without the login check, a profile observed": Scenario(
-        lambda h: ["xx", "default", "old.example.org", "bridge", "", "1", ALICE, ALICE, "status"],
+        lambda h: ["xx", "default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE,
+                   "status"],
         {"BROKER_ANSWERS": "3", "STUB_VERSION": "1.2.3", "PROBE_PLAN": PLAN_ALL},
         ("Broker:       ‹not checked (version 1.2.3 cannot; check after --update)›",),
         reconfigure=True,
     ),
     "the installed password kept": Scenario(
-        lambda h: ["xx", "default", "old.example.org", "bridge", "new", "yes", "old.example.org",
-                   "no", "1883", "bridge", "", "1", ALICE, ALICE, "status"],
+        lambda h: ["xx", "default", "old.example.org", "no", "bridge", "new", "yes",
+                   "old.example.org", "no", "1883", "bridge", "", "1", ALICE, ALICE, "status"],
         {"BROKER_ANSWERS": "1 0",
          "PROBE_PLAN": "name\\tGateway\\ntested\\tno\\nchange\\tautoadd\\t0\\t1\\treported\\n"},
         reconfigure=True,
@@ -600,12 +607,12 @@ FRAMES: dict[str, tuple[Callable[[Host], list[str]], dict[str, str], str]] = {
          "‹broker refused the connection: Not authorized›"),
     ),
     "settings refused on the host": (
-        lambda h: ["xx", "default", str(h.serial), "broker example", "bridge", "pw"],
+        lambda h: ["xx", "default", str(h.serial), "broker example", "no", "bridge", "pw"],
         {},
         "meshcore-home-gateway: error: invalid settings: ‹mqtt.host: ‹",
     ),
     "settings refused in the container": (
-        lambda h: ["xx", "default", "old.example.org", "bridge", ""],
+        lambda h: ["xx", "default", "old.example.org", "no", "bridge", ""],
         {"CHECK_FAILS": "1", "STUB_VERSION": "1.2.3"},
         "meshcore-home-gateway: ‹bad›",  # its stderr, passed on
     ),
@@ -846,7 +853,8 @@ def test_a_reconfiguration_keeps_the_names_language(
     if configured is not None:
         current = (host.root / "current").read_text(encoding="utf-8")
         (host.root / "current").write_text(current + f"homeassistant.language={configured}\n")
-    dialog = ["xx", "default", "old.example.org", "bridge", "", "1", ALICE, ALICE, "status"]
+    dialog = ["xx", "default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE,
+              "status"]  # fmt: skip
     result = run(host, script, "--reconfigure", "105", dialog=dialog,
                  env={"STUB_VERSION": "1.2.3"})  # fmt: skip
     assert result.returncode == 0, result.stderr
@@ -971,7 +979,8 @@ def test_every_state_of_the_login_has_its_words(
     script = offering(host, tmp_path, pseudo_program)
     if answers == "3":  # an installed version without the check: only on --reconfigure
         existing_container(host)
-        dialog = ["xx", "default", "old.example.org", "bridge", "", "1", ALICE, ALICE, "status"]
+        dialog = ["xx", "default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE,
+                  "status"]  # fmt: skip
         args: tuple[str, ...] = ("--reconfigure", "105")
     else:
         dialog = default(host, ["broker.example.org", "bridge", "pw"], again)

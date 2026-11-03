@@ -74,10 +74,11 @@ connect.
 | `tls` | `false` | TLS with certificate and host name verification |
 | `ca_file` | system store | CA certificate file for TLS, an absolute path; only with `tls = true` |
 | `cert_file`, `key_file` | – | client certificate and key for TLS authentication, absolute paths; only with `tls = true`. `key_file` needs `cert_file` and can be left out when the certificate file holds the key |
-| `client_id` | `meshcore-home-gateway-<node_id>` | MQTT client identifier |
+| `client_id` | `meshcore-home-gateway-<node_id>-<8 random hex digits>` | MQTT client identifier. The default changes at every start: a broker drops a client when another connects with its id, and a fixed one is easy to read off the topics. A broker ACL that names clients can use the prefix `meshcore-home-gateway-` |
 | `keepalive_s` | `60` | keep-alive interval, 10–3600 |
 | `base_topic` | `meshcore` | first topic levels; segments of `A-Z a-z 0-9 - _` separated by `/` |
 | `node_id` | required | this gateway's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`, starting with a letter or digit, not ending with `-` or `_`, no two of them in a row (Home Assistant would merge those). Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
+| `insecure` | `false` | accept a broker connection without a user name, or without TLS to a broker that is not on this host or the link (loopback, link-local address). Commands (`[commands] senders`) need it then: any client that reaches the broker could publish command events. It also silences the warnings about it at start and in `check-config` ([mqtt-api.md](mqtt-api.md#securing-the-broker)) |
 
 A TLS file that cannot be loaded (missing, unreadable, not a certificate or key) is a
 configuration error: `check-config` and `config render` load the files, and the service exits with

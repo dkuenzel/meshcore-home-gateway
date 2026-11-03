@@ -79,3 +79,6 @@ command, the package, the unit, the installer and the discovery IDs under the ne
 * Existing projects with similar names (2026-10-22): `ipnet-mesh/meshcore-mqtt` (MQTT bridge),
   `Cisien/meshcoretomqtt` (packet capture to MQTT), the Unraid app `meshcore-mqtt-bridge`, and
   `meshcore-dev/meshcore-ha` (Home Assistant integration).
+* Amended on 2026-11-03 (security and architecture review, SEC-006): the default MQTT client
+  identifier has a random part per start, `meshcore-home-gateway-<node_id>-<8 hex digits>`;
+  the name stays its prefix.

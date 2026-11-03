@@ -70,6 +70,7 @@ def test_service_end_to_end(
         config.write_text(
             f'[radio]\ntransport = "tcp"\nhost = "127.0.0.1"\nport = {server.port}\n'
             f'[mqtt]\nhost = "{broker.host}"\nport = {broker.port}\nnode_id = "radio1"\n'
+            "insecure = true\n"  # commands without credentials (SEC-004)
             f'[targets.alerts]\nchannel = 0\n[targets.alice]\ncontact = "{"a1" * 32}"\n'
             f'[commands]\nsenders = ["{"a1" * 32}"]\nwords = ["status"]\n'
             "[telemetry]\nenabled = false\n",  # its radio traffic stays exact

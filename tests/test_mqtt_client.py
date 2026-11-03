@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import socket
 import threading
 from types import SimpleNamespace
@@ -52,6 +53,24 @@ def make_bus(config: MqttConfig | None = None) -> tuple[MqttBus, FakePaho]:
 
 def names(fake: FakePaho) -> list[str]:
     return [name for name, _ in fake.calls]
+
+
+def test_the_default_client_id_has_a_random_part_per_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broker drops a client when another connects with its id (MQTT 3.1.1 section 3.1.4):
+    one that anyone can read in the topics would let any client take the gateway offline
+    (SEC-006). One set in the file is used as it is."""
+    given: list[str] = []
+    monkeypatch.setattr(paho, "Client", lambda **kwargs: given.append(kwargs["client_id"]))
+    config = MqttConfig(host="broker.example.org", node_id="radio1")
+    client_module.make_paho_client(config)
+    client_module.make_paho_client(config)
+    first, second = given
+    assert re.fullmatch(r"meshcore-home-gateway-radio1-[0-9a-f]{8}", first)
+    assert first != second
+    client_module.make_paho_client(MqttConfig(host="h", node_id="radio1", client_id="fixed"))
+    assert given[-1] == "fixed"
 
 
 def test_start_configures_will_credentials_and_reconnects() -> None:

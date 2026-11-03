@@ -83,10 +83,23 @@ class MqttConfig:
     client_id: str | None = None
     keepalive_s: int = 60
     base_topic: str = "meshcore"
+    insecure: bool = False  # accepts a broker connection without credentials or TLS (SEC-004)
 
     @property
     def topic_root(self) -> str:
         return f"{self.base_topic}/{self.node_id}"
+
+    @property
+    def local(self) -> bool:
+        """Whether the broker is on this host or the link (loopback, link-local address): its
+        traffic does not cross a network that others share."""
+        if self.host.lower() == "localhost":
+            return True
+        try:
+            address = ipaddress.ip_address(self.host)
+        except ValueError:  # a host name
+            return False
+        return address.is_loopback or address.is_link_local
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,7 +334,32 @@ def _build(root: _Section) -> Config:
         diagnostics=_checked(root.section("diagnostics"), _diagnostics),
     )
     root.check_unknown()
+    _check_commands_broker(config)
     return config
+
+
+def _check_commands_broker(config: Config) -> None:
+    """Commands from the mesh reach the automations as events on the broker: a broker that
+    anyone can log in to, or a password that crosses a shared network in the clear, lets any
+    client publish such events (SEC-004). Then `insecure = true` must say so."""
+    mqtt = config.mqtt
+    if not config.commands.senders or mqtt.insecure:
+        return
+    if mqtt.username is None:
+        # Translators: the broker connection has no user name and password
+        missing = Text("credentials")
+    elif not mqtt.tls and not mqtt.local:
+        missing = Text("TLS")
+    else:
+        return
+    # Translators: what is missing is "credentials" or "TLS"; insecure = true is a setting
+    raise ConfigError(
+        "{key}: commands are configured and the broker connection has no {missing}: any client "
+        "that reaches the broker could publish command events. Add it, or set insecure = true "
+        "(docs/mqtt-api.md, Securing the broker)",
+        key="mqtt.insecure",
+        missing=missing,
+    )
 
 
 def _radio(s: _Section) -> RadioConfig:
@@ -487,6 +525,7 @@ def _mqtt(s: _Section) -> MqttConfig:
         client_id=s.string("client_id"),
         keepalive_s=s.integer("keepalive_s", 60, 10, 3600),
         base_topic=base,
+        insecure=s.boolean("insecure", False),
     )
 
 
@@ -608,6 +647,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "mqtt.host": str, "mqtt.port": int, "mqtt.username": str, "mqtt.password": str,
     "mqtt.tls": bool, "mqtt.ca_file": str, "mqtt.cert_file": str, "mqtt.key_file": str,
     "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
+    "mqtt.insecure": bool,
     "homeassistant.discovery": bool, "homeassistant.prefix": str,
     "homeassistant.device_name": str, "homeassistant.status_topic": str,
     "homeassistant.contact_devices": int, "homeassistant.language": str,

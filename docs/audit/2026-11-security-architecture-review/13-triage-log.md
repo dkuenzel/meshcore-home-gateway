@@ -39,9 +39,9 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SEC-001 | fix | Document what `confirmed` proves; flag an acknowledgement whose round trip is shorter than the known path allows (`suspect`); an opt-in random suffix (`[messages] confirm_nonce`) makes the text, and so the code, unguessable. The protocol weakness itself is the firmware's (option 5: for the maintainer to raise upstream) | pending: acks |
 | SEC-002 | fix | Host clock plausibility bounds before the write (the release date, ten years, and `[radio] set_clock_max_days`, default 30 days, 0 to force, instead of the planned `set_clock = "always"` and an hour: the firmware restarts a radio at its contacts' newest time, so an hour would refuse a radio unplugged for a night), the radio's clock offset in `state`, `After=time-sync.target`, recovery documented | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | SEC-003 | fix | Exact wording of the risk (key export and import, no forward secrecy) everywhere the TCP interface is mentioned; a TCP radio now needs `[radio] tcp_unauthenticated = true` (**Breaking**); detection of a contested link from the radio's uptime; the installer warns | pending: tcp |
-| SEC-004 | fix | Warnings at start and in `check-config` for a broker without credentials or TLS; an anonymous-access probe in `check-config --broker`; commands over such a broker need `[mqtt] insecure = true` (**Breaking**); the installer asks for TLS and confirms an empty user name | pending: broker |
+| SEC-004 | fix | Warnings at start and in `check-config` for a broker without credentials or TLS; an anonymous-access probe in `check-config --broker`; commands over such a broker need `[mqtt] insecure = true` (**Breaking**; a broker on the gateway's host or link needs no TLS, as the review proposed); the installer asks for TLS and confirms an empty user name | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | SEC-005 | fix | The gateway subscribes to its own documents and restores any it finds changed by another client (rate-limited, with a warning); the integrity model is stated. Stamps (`published_at`) are not added: they would change every document at every publish and a forger copies them | pending: documents |
-| SEC-006 | fix | Announcements after a birth are never postponed past the first due time and come at most every 30 s; repeated births are logged; the default client id gets a random suffix per start (**Breaking**) | pending: broker |
+| SEC-006 | fix | Announcements after a birth are never postponed past the first due time and come at most every 30 s; repeated births are logged; the default client id gets a random suffix per start (**Breaking**) | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | SEC-007 | fix | `name_taken` in the `nodes` document and the `node` event, a mark in the select's labels, contact devices of the same name disambiguated by their key digits; names compared after NFKC and case folding | pending: names |
 | SEC-008 | fix | `[homeassistant] controls` separates Home Assistant's controls from the function (MQTT and the command line keep working); `[targets.<alias>] expose = false` hides a target's notify entity; the guide explains Home Assistant's user model | pending: ha-exposure |
 | SEC-009 | fix | `[mqtt] password_file` keeps the secret out of `config.toml` and out of `config answers`; the installer writes it; a systemd credential is documented | pending: password |
@@ -186,9 +186,9 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-004 | fix | Through SEC-012 | pending: privacy |
 | IMP-005 | fix | Through SEC-016 | pending: privacy |
 | IMP-006 | fix | Through SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
-| IMP-007 | fix | Through SEC-004 | pending: broker |
+| IMP-007 | fix | Through SEC-004 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | IMP-008 | fix | Through SEC-005 (healing); stamps rejected there, an HMAC signature deferred until a consumer can verify it (EXT-012) | pending: documents |
-| IMP-009 | fix | Through SEC-006 | pending: broker |
+| IMP-009 | fix | Through SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | IMP-010 | fix | Through SEC-007 | pending: names |
 | IMP-011 | fix | Through SEC-008 | pending: ha-exposure |
 | IMP-012 | fix | Through SEC-009 | pending: password |
@@ -269,7 +269,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | pending: tcp |
 | RES-009 | accept | Acknowledged; turned into a test (CODE-001) | pending: robustness |
-| RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | pending: broker |
+| RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | pending: ha-exposure |
 | RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | pending: installer-integrity |
 | RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | pending: ops |
