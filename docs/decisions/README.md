@@ -19,7 +19,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0009](0009-inbound-commands-from-allowlisted-contacts.md) | Inbound commands only from allowlisted contacts, with replay protection | accepted; amended 2026-10-19 and 2026-10-23 |
 | [0010](0010-home-assistant-through-mqtt-device-discovery.md) | Home Assistant integration through MQTT device discovery | accepted |
 | [0011](0011-neutral-english-language-project-under-mit.md) | A neutral, English-language project under the MIT license | accepted |
-| [0012](0012-project-name-meshcore-home-gateway.md) | The project is named meshcore-home-gateway | accepted |
+| [0012](0012-project-name-meshcore-home-gateway.md) | The project is named meshcore-home-gateway | accepted; amended 2026-11-03 (the client identifier) |
 | [0013](0013-signed-releases-with-github-artifact-attestations.md) | Signed releases with GitHub artifact attestations | accepted; amended by 0022 |
 | [0014](0014-the-gateway-as-the-households-mesh-observer.md) | The gateway as the household's mesh observer: positions, telemetry, contacts and dashboards | accepted |
 | [0015](0015-provider-neutral-documents-on-the-bus.md) | Provider-neutral documents on the bus; front ends are adapters | accepted |
