@@ -32,13 +32,15 @@ flowchart LR
 - **Commands** only from direct messages of allowlisted contacts (bound to their full public key),
   with replay protection; channel messages never command.
 - **Telemetry of the household's companions:** battery, sensor readings and position, asked of
-  every companion on the radio that the household has not excluded, in turn and within an airtime
-  budget of its own; a companion answers only if its owner allowed the gateway. The values appear
-  on each handheld's device in Home Assistant and on its map with its trace, unavailable once a
-  handheld stops answering, with an event when it stops or answers again; a warning when a
-  handheld's advert carries its position, which everyone in range can read. A contact is excluded
-  with one switch or one command, also before it is added; the first time telemetry runs, it waits
-  an hour for that ([`docs/companions.md`](docs/companions.md)).
+  every companion on the radio that the household has not excluded, or with `[telemetry] ask =
+  "household"` (new installations) only of those it included and its targets and command senders,
+  in turn and within an airtime budget of its own; a companion answers only if its owner allowed
+  the gateway. The values appear on each handheld's device in Home Assistant and on its map with
+  its trace, unavailable once a handheld stops answering, with an event when it stops or answers
+  again; a warning when a handheld's advert carries its position, which everyone in range can
+  read. A contact is excluded or included with one switch or one command, an exclusion also
+  before it is added; the first time telemetry runs with `ask = "all"`, it waits an hour for that
+  ([`docs/companions.md`](docs/companions.md)).
 - **Home Assistant:** nothing to install there; MQTT discovery creates one device with radio
   link, battery, airtime and queue sensors, event entities for messages, deliveries and commands,
   and a notify entity per target.

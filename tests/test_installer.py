@@ -539,17 +539,19 @@ def test_unattended_install_creates_and_configures_the_container(host: Host) -> 
     # other people's radios their keys (SEC-015)
     assert config.messages.publish_channels == "targets"
     assert config.contacts.heard_nodes == "keys"
+    assert config.telemetry.ask == "household"  # SEC-016
     assert "s3cret" not in result.stderr + host.log_text()  # the password is never logged
 
 
 def test_an_answer_keeps_publishing_every_channel(host: Host) -> None:
     answers = answers_file(host)
-    extra = "messages.publish_channels=all\ncontacts.heard_nodes=full\n"
+    extra = "messages.publish_channels=all\ncontacts.heard_nodes=full\ntelemetry.ask=all\n"
     answers.write_text(answers.read_text(encoding="utf-8") + extra)
     result = run_installer(host, "--answers", str(answers))
     assert result.returncode == 0, result.stderr
     assert host.config().messages.publish_channels == "all"
     assert host.config().contacts.heard_nodes == "full"
+    assert host.config().telemetry.ask == "all"
 
 
 def test_device_group_is_corrected_when_dialout_differs(host: Host) -> None:

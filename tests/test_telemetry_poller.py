@@ -690,6 +690,40 @@ def test_an_excluded_companion_is_not_asked_also_after_a_restart(
     assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": []}
 
 
+def test_with_ask_household_a_companion_is_asked_once_included(
+    tmp_path: Path, quick_intervals: None
+) -> None:
+    """SEC-016: with `[telemetry] ask = "household"` a companion the household did not include
+    is not asked, and its switch and the index say so; `on` includes it, asked at once."""
+    path = tmp_path / EXCLUSIONS_FILE
+    radio = bme280_radio()
+
+    def observer(bus: FakeBus) -> Observer:
+        exclusions = TelemetryExclusions(path, household=True)
+        return Observer(bus, Topics("meshcore", "radio1"), exclusions=exclusions,
+                        wall_clock=lambda: NOW)  # fmt: skip
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, observer=observer,
+                           telemetry_lanes=wide) as (_bridge, bus, _notes):  # fmt: skip
+            document = await bus.wait_for(
+                f"/contacts/{KEY}", lambda d: d["telemetry_state"] == "excluded"
+            )
+            assert document["telemetry_excluded"] is True
+            assert bus.payloads("/contacts")[-1]["telemetry_excluded"] == [KEY]
+            await asyncio.sleep(1.0)  # she would be asked every 0.5 s
+            assert requests(radio) == 0
+            ask(bus, b"on")
+            event = await bus.wait_for("/contact", lambda e: e["request"] == "telemetry")
+            assert (event["event_type"], event["reason"]) == ("included", None)
+            back = await bus.wait_for("/telemetry", lambda e: True)
+            assert (back["event_type"], back["state"]) == ("answered", "answering")
+            assert bus.payloads("/contacts")[-1]["telemetry_excluded"] == []
+
+    scenario(main)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": [], "included": [KEY]}
+
+
 def test_an_answer_in_flight_when_she_is_excluded_is_not_published(tmp_path: Path) -> None:
     radio = bme280_radio(auto=False)
 
@@ -2227,6 +2261,30 @@ def test_an_answer_taken_after_the_clock_stepped_forward_is_current(
         await r.until_asked(1)
         assert r.state() == "answering"
         assert r.events() == [("answered", KEY, "answering")]
+
+    asyncio.run(main())
+
+
+@pytest.mark.first_start_hold
+def test_with_ask_household_the_households_companions_are_asked_without_a_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEC-016: with `[telemetry] ask = "household"` nobody is asked whom the household did not
+    include or configure, so the first start holds nothing: a protected key is asked at once, a
+    companion not included only once included."""
+    exclusions = TelemetryExclusions(None, household=True, protected=frozenset({BOB_KEY}))
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, BOB, exclusions=exclusions)
+        await r.until_asked(1, steps=5)
+        assert r.held() == ("on", None)
+        await r.steps(20)
+        assert {key for key, _ in r.radio.asked} == {BOB_KEY}
+        assert r.state(KEY) == "excluded"  # not asked
+        r.include(KEY)
+        asked = len(r.radio.asked)
+        await r.until_asked(asked + 1, steps=5)
+        assert r.radio.asked[asked][0] == KEY
 
     asyncio.run(main())
 

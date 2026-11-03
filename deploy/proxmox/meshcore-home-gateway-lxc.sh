@@ -1013,10 +1013,12 @@ knows_insecure() {  # does the program that renders the configuration read mqtt.
 }
 
 privacy_defaults() {  # a new installation publishes only what the household chose (SEC-012),
-  # and of other people's radios their keys only (SEC-015)
+  # of other people's radios their keys only (SEC-015), and asks only the household's companions
+  # for telemetry (SEC-016)
   knows_insecure || return 0   # the settings came with the same release
   [[ -v "OUT[messages.publish_channels]" ]] || OUT[messages.publish_channels]=targets
   [[ -v "OUT[contacts.heard_nodes]" ]] || OUT[contacts.heard_nodes]=keys
+  [[ -v "OUT[telemetry.ask]" ]] || OUT[telemetry.ask]=household
 }
 
 accept_insecure() {  # commands over a broker connection without a user name or TLS (SEC-004)

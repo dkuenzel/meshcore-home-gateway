@@ -269,6 +269,7 @@ publish_rx_log = true
 log_level = "debug"
 [telemetry]
 enabled = true
+ask = "household"
 """
 
 

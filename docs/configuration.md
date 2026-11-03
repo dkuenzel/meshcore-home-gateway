@@ -239,6 +239,13 @@ A companion answers only contacts it allows: set the household's companions up
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | ask every companion (chat contact) of the radio's table that is not excluded, one at a time, after the messages; battery, readings and positions go to `contacts/<key>` and the contact's device in Home Assistant |
+| `ask` | `"all"` | whom: `"all"` every companion not excluded; `"household"` only the companions the household included (the switch *Telemetry*, `contacts telemetry KEY on`, `on` on `contacts/<key>/telemetry`) and the contact targets and command senders, unless excluded. A new installation from the installer gets `"household"` |
+
+**Household.** With `ask = "household"` a contact the radio adds is not asked until somebody
+includes it: its switch *Telemetry* is off and its state `excluded`, there is no first-start
+hour, and adding a neighbour's node to exchange messages does not track it. The inclusions are
+kept beside the exclusions in `telemetry-excluded.json` (`"included"`); `off` turns an inclusion
+into an exclusion. With `"all"` the inclusions are kept but do not count.
 
 **Exclusion.** A companion's firmware refuses telemetry to everyone until its owner allows it; one
 set to *Allow All* that has the gateway as a contact answers, and would be tracked like a
@@ -258,7 +265,8 @@ telemetry on.
 hour after the radio first connects: `state.telemetry` is `paused` with the reason `first_start`,
 and one warning in the log names the number of companions it will ask. Exclude the strangers in
 that hour; then the log says "telemetry resumed". What is left of the hour is saved, so a restart
-neither skips nor extends it. An installation that already ran telemetry has no hold.
+neither skips nor extends it. An installation that already ran telemetry has no hold, nor has
+one with `ask = "household"`.
 
 **Expiry** ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)). A
 companion's answers are current while at most one request in a row went unanswered and its last

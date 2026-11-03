@@ -71,6 +71,12 @@ def test_check_config_says_when_telemetry_is_off(
     off.write_text(text, encoding="utf-8")
     assert main(["check-config", "--config", str(off)]) == EX_OK
     assert "  telemetry  off\n" in capsys.readouterr().out
+    household = tmp_path / "household.toml"
+    text = EXAMPLE.read_text(encoding="utf-8").replace("# enabled = true", 'ask = "household"')
+    household.write_text(text, encoding="utf-8")
+    assert main(["check-config", "--config", str(household)]) == EX_OK
+    out = capsys.readouterr().out
+    assert "  telemetry  asked of the companions the household included\n" in out
 
 
 def test_check_config_reports_errors_with_ex_config(

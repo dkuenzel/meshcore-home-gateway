@@ -151,6 +151,12 @@ msgstr ""
 #. a line of check-config's summary. Its value starts in the column where the
 #. other lines start theirs (12 in English): pad the label with spaces to keep one column.
 #: src/meshcore_home_gateway/cli.py
+msgid "  telemetry  asked of the companions the household included"
+msgstr ""
+
+#. a line of check-config's summary. Its value starts in the column where the
+#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#: src/meshcore_home_gateway/cli.py
 msgid "  telemetry  off"
 msgstr ""
 

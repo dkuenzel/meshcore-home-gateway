@@ -722,7 +722,9 @@ output, exit codes and `run` never change with it.
 [ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md): the gateway asks the
 household's companions for battery, readings and position with `SEND_TELEMETRY_REQ`; a companion
 answers only contacts it allows (denial is silence). On by default (`[telemetry] enabled`); the
-household excludes every companion that is not its own. Values expire when a companion stops
+household excludes every companion that is not its own, or, with `[telemetry] ask = "household"`,
+includes those that are (SEC-016): then a contact is asked only once included, or as a contact
+target or command sender, and the first start holds nothing. Values expire when a companion stops
 answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
 
 ```mermaid

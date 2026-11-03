@@ -354,66 +354,91 @@ def _advert_check(key: object, entry: object) -> AdvertCheck | None:
 
 
 class TelemetryExclusions:
-    """The contacts the household excluded from telemetry (ADR 0018), in a file of their
-    own: kept until included again, also while they are not in the radio's table and while
-    telemetry is off. Written atomically, only when the set changed."""
+    """The contacts the household excluded from telemetry (ADR 0018) and, for `[telemetry] ask =
+    "household"`, those it included (SEC-016), in a file of their own: kept until changed, also
+    while they are not in the radio's table and while telemetry is off. Written atomically, only
+    when a set changed. `key in exclusions`: the contact is not asked."""
 
-    LIMIT = 1024
+    LIMIT = 1024  # of each set
     _KEY = "excluded"
+    _INCLUDED = "included"
 
-    def __init__(self, path: Path | None) -> None:
+    def __init__(
+        self, path: Path | None, *, household: bool = False,
+        protected: frozenset[str] = frozenset(),
+    ) -> None:  # fmt: skip
         """Loads at once. A missing file: none excluded. An OSError stops the service (as
-        state.json). A file that cannot be parsed, or holds no list under "excluded", is left in
-        place: `unreadable` is set, an error is logged once, nothing is ever written to it, and
-        telemetry stays paused until it is fixed or deleted and the service restarted. Entries
-        that are not 64 lower-case hex digits are skipped (a warning); at most LIMIT kept.
-        None: memory only (tests, and the observer's default)."""
+        state.json). A file that cannot be parsed, or holds no list under "excluded" (or something
+        else than a list under "included"), is left in place: `unreadable` is set, an error is
+        logged once, nothing is ever written to it, and telemetry stays paused until it is fixed
+        or deleted and the service restarted. Entries that are not 64 lower-case hex digits are
+        skipped (a warning); at most LIMIT of each kept. None: memory only (tests, and the
+        observer's default). `household`: only the included contacts and the `protected` keys
+        are asked, unless excluded; inclusions are kept only then."""
         self._path = path
+        self._household = household
+        self._protected = protected
         self._keys: set[str] = set()
-        self._stored: frozenset[str] = frozenset()  # what the file holds
+        self._included: set[str] = set()
+        # what the file holds: excluded, included
+        self._stored: tuple[frozenset[str], frozenset[str]] = (frozenset(), frozenset())
         self._warned = False  # a change is not stored, and the log said so
         self.unreadable = False
         if path is not None:
             self._load(path)
 
     def __contains__(self, key: object) -> bool:
-        return key in self._keys
+        """Not asked: excluded, or with `household` neither included nor protected."""
+        if key in self._keys:
+            return True
+        return self._household and key not in self._included and key not in self._protected
 
     def __len__(self) -> int:
         return len(self._keys)
 
     @property
+    def household(self) -> bool:
+        return self._household
+
+    @property
     def keys(self) -> frozenset[str]:
+        """The keys excluded."""
         return frozenset(self._keys)
+
+    @property
+    def included(self) -> frozenset[str]:
+        return frozenset(self._included)
 
     @property
     def pending(self) -> bool:
         """A change is not stored yet."""
-        return self._keys != self._stored
+        return (frozenset(self._keys), frozenset(self._included)) != self._stored
 
     def exclude(self, key: str) -> bool:
-        """Excluded from now on, also if the file cannot be written. True when the set is stored
-        (also unchanged with nothing pending); False if not: a warning, once while unsaved, and
-        flush() tries again."""
-        if key in self._keys and not self.pending:
+        """Excluded from now on, also if the file cannot be written. True when the sets are
+        stored (also unchanged with nothing pending); False if not: a warning, once while
+        unsaved, and flush() tries again."""
+        if key in self._keys and key not in self._included and not self.pending:
             return True
         self._keys.add(key)
+        self._included.discard(key)
         return self._store()
 
     def include(self, key: str) -> bool:
         """Asked again, only once stored: False and nothing changed if the file cannot be
-        written or is unreadable."""
+        written or is unreadable. With `household` it is kept as included."""
         if self.unreadable:
             return False
-        if key not in self._keys:
-            return True  # not excluded: nothing to store
         rest = self._keys - {key}
-        why = self._write(rest)
+        included = self._included | {key} if self._household else self._included
+        if rest == self._keys and included == self._included:
+            return True  # nothing to store
+        why = self._write(rest, included)
         if why is not None:
             log.warning("cannot write the telemetry exclusions (%s): %s stays excluded", why,
                         key[:12])  # fmt: skip
             return False
-        self._keys = rest
+        self._keys, self._included = rest, included
         self._stored_again()
         return True
 
@@ -424,8 +449,8 @@ class TelemetryExclusions:
             self._store()
 
     def _store(self) -> bool:
-        """The set as it is in memory: a warning once while it is not stored."""
-        why = self._write(self._keys)
+        """The sets as they are in memory: a warning once while they are not stored."""
+        why = self._write(self._keys, self._included)
         if why is None:
             self._stored_again()
             return True
@@ -440,16 +465,20 @@ class TelemetryExclusions:
             self._warned = False
             log.info("telemetry exclusions stored")
 
-    def _write(self, keys: set[str]) -> str | None:
-        """None once `keys` are stored, else why not."""
+    def _write(self, keys: set[str], included: set[str]) -> str | None:
+        """None once the sets are stored, else why not. Without inclusions the file is as an
+        earlier version wrote it, which ignores them."""
         if self._path is not None:
             if self.unreadable:
                 return f"{self._path} is unreadable"
+            document: dict[str, list[str]] = {self._KEY: sorted(keys)}
+            if included:
+                document[self._INCLUDED] = sorted(included)
             try:
-                JsonStateFile(self._path).save({self._KEY: sorted(keys)})
+                JsonStateFile(self._path).save(document)
             except OSError as exc:
                 return str(exc.strerror or exc)
-        self._stored = frozenset(keys)
+        self._stored = (frozenset(keys), frozenset(included))
         return None
 
     def _load(self, path: Path) -> None:
@@ -462,22 +491,27 @@ class TelemetryExclusions:
         except ValueError:  # not UTF-8, not JSON
             data = None
         entries = data.get(self._KEY) if isinstance(data, dict) else None
-        if not isinstance(entries, list):
+        included = data.get(self._INCLUDED, []) if isinstance(data, dict) else None
+        if not isinstance(entries, list) or not isinstance(included, list):
             self.unreadable = True
             log.error("telemetry exclusions %s cannot be read: telemetry paused, nothing "
                       "written to the file; fix or delete it and restart the service",
                       path)  # fmt: skip
             return
+        self._keys = self._valid(path, entries, "excluded")
+        self._included = self._valid(path, included, "included") - self._keys
+        self._stored = (frozenset(self._keys), frozenset(self._included))
+
+    def _valid(self, path: Path, entries: list[object], what: str) -> set[str]:
         keys = sorted({e for e in entries if isinstance(e, str) and is_key(e)})
         skipped = sum(not (isinstance(e, str) and is_key(e)) for e in entries)
         if skipped:
             log.warning("telemetry exclusions %s: %d entries that are no contact keys skipped",
                         path, skipped)  # fmt: skip
         if len(keys) > self.LIMIT:
-            log.warning("telemetry exclusions %s: %d excluded contacts, %d kept", path,
-                        len(keys), self.LIMIT)  # fmt: skip
-        self._keys = set(keys[: self.LIMIT])
-        self._stored = frozenset(self._keys)
+            log.warning("telemetry exclusions %s: %d %s contacts, %d kept", path, len(keys),
+                        what, self.LIMIT)  # fmt: skip
+        return set(keys[: self.LIMIT])
 
 
 class ProfileRecords:

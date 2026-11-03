@@ -321,7 +321,7 @@ shows the raw values, as below: MQTT entities have no translations yet.
 | `no_answer` | asked, no answer within a day: it does not allow the gateway, does not have it as a contact, or is out of range; the gateway cannot tell which |
 | `no_path` | not asked: the radio has no path to it and has not heard it within 30 minutes; a message from it, or its advert, brings it back |
 | `look_alike` | another contact or the radio itself has its first 6 key bytes, so an answer could not be told apart: not asked |
-| `excluded` | the household excluded it |
+| `excluded` | the household excluded it, or with `ask = "household"` did not include it |
 | `off` | telemetry is off in the configuration |
 
 **Expiry.** Telemetry is current while the companion answers. After two unanswered requests in a
@@ -370,6 +370,11 @@ contact's readings and telemetry positions for `readings_days` and `positions_da
 `meshcore-home-gateway contacts telemetry --forget KEY off` deletes them too. Home Assistant's own
 history stays ([Privacy](#privacy)). Every user who may switch entities can switch it on again;
 the broker's ACL decides who may write `contacts/+/telemetry`.
+
+**Only the household's.** With `[telemetry] ask = "household"` (a new installation from the
+installer has it) the switch *Telemetry* of a new companion is off: the gateway asks only the
+companions you switch on, and the contact targets and command senders
+([configuration.md](configuration.md#telemetry)). Switching one off excludes it as above.
 
 **The first hour.** Where telemetry never ran (an update from 1.0.0, from 1.1.0a1 with telemetry
 off, or a new installation), the gateway asks nobody for an hour after the radio first connects:

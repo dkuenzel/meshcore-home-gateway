@@ -391,7 +391,10 @@ async def _serve(config: Config, state_dir: Path) -> int:
         )
         history = History.open(state_dir / "history.sqlite3", retention)
     protected = protected_keys(config)
-    exclusions = TelemetryExclusions(state_dir / EXCLUSIONS_FILE)  # also while telemetry is off
+    exclusions = TelemetryExclusions(  # also while telemetry is off
+        state_dir / EXCLUSIONS_FILE, household=config.telemetry.ask == "household",
+        protected=protected,
+    )  # fmt: skip
     observer = Observer(
         bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
         protected=protected, exclusions=exclusions, current=CurrentDocuments(store),
@@ -563,9 +566,11 @@ def _summary(config: Config, login: str) -> list[str]:
         tr("  contacts   managed on request")
         if config.contacts.manage
         else tr("  contacts   not managed"),
-        tr("  telemetry  asked of every companion not excluded")
-        if config.telemetry.enabled
-        else tr("  telemetry  off"),
+        tr("  telemetry  off")
+        if not config.telemetry.enabled
+        else tr("  telemetry  asked of every companion not excluded")
+        if config.telemetry.ask == "all"
+        else tr("  telemetry  asked of the companions the household included"),
     ]  # fmt: skip
 
 

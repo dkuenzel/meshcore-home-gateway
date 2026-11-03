@@ -103,8 +103,10 @@ every setting in the table.
 | Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 
 Without a question, a new installation keeps of other people's radios their keys and types only
-(`contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)); the answer
-`contacts.heard_nodes=full` in an answers file keeps their names and signal too.
+(`contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)) and asks only the
+companions the household includes for telemetry (`telemetry.ask = household`); the answers
+`contacts.heard_nodes=full` and `telemetry.ask=all` in an answers file keep the earlier
+behaviour.
 
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
@@ -377,9 +379,11 @@ English. The service's log is always English.
     requests, when it last answered, was asked and flooded, how long its answers count and when
     one last carried a position, and whether it was last moving, no positions; and what is left
     of the first-start hour.
-  * `telemetry-excluded.json` holds the companions the household excluded from telemetry:
-    without it a restored system asks them again. An exclusions file that cannot be parsed is
-    left as it is and pauses telemetry: fix it (`{"excluded": [keys]}`) or delete it, then
+  * `telemetry-excluded.json` holds the companions the household excluded from telemetry, and
+    with `[telemetry] ask = "household"` those it included: without it a restored system asks the
+    excluded ones again, or no longer the included ones. An exclusions file that cannot be parsed
+    is left as it is and pauses telemetry: fix it (`{"excluded": [keys], "included": [keys]}`,
+    `included` optional) or delete it, then
     restart the service.
   * `history.sqlite3` holds the history: messages, positions, the companions' readings and the
     nodes heard ([configuration](configuration.md#history)); copy it only with the service

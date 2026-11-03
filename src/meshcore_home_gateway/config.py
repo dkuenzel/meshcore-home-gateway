@@ -154,11 +154,18 @@ class ContactsConfig:
     heard_nodes: HeardNodes = "full"
 
 
+TelemetryAsk = Literal["all", "household"]
+TELEMETRY_ASK: tuple[TelemetryAsk, ...] = ("all", "household")
+
+
 @dataclass(frozen=True, slots=True)
 class TelemetryConfig:
-    """Asking the radio's companions for their telemetry (ADR 0018)."""
+    """Asking the radio's companions for their telemetry (ADR 0018): every one not excluded
+    (`all`), or only those the household included and the protected keys (`household`,
+    SEC-016)."""
 
     enabled: bool = True
+    ask: TelemetryAsk = "all"
 
 
 @dataclass(frozen=True, slots=True)
@@ -656,7 +663,10 @@ def _contacts(s: _Section) -> ContactsConfig:
 
 
 def _telemetry(s: _Section) -> TelemetryConfig:
-    return TelemetryConfig(enabled=s.boolean("enabled", True))
+    ask = s.string("ask", "all")
+    if ask not in TELEMETRY_ASK:
+        raise _one_of(s.key("ask"), TELEMETRY_ASK, ask)
+    return TelemetryConfig(enabled=s.boolean("enabled", True), ask=ask)
 
 
 def _diagnostics(s: _Section) -> DiagnosticsConfig:
@@ -689,7 +699,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
     "history.readings_days": float, "contacts.manage": bool, "contacts.heard_nodes": str,
-    "telemetry.enabled": bool,
+    "telemetry.enabled": bool, "telemetry.ask": str,
     "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
 }  # fmt: skip
 

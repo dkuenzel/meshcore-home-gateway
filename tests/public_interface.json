@@ -56,6 +56,7 @@
     "radio.tcp_unauthenticated",
     "radio.transport",
     "target.<alias>",
+    "telemetry.ask",
     "telemetry.enabled"
    ],
    "target.<alias>": [
@@ -959,6 +960,11 @@
   },
   "telemetry": {
    "type": "table"
+  },
+  "telemetry.ask": {
+   "answer": "str",
+   "default": "all",
+   "type": "string"
   },
   "telemetry.enabled": {
    "answer": "bool",

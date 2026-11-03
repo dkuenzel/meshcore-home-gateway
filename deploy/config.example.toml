@@ -72,6 +72,7 @@ max_age_s = 900                                        # 0 disables the clock ch
 # meshcore-home-gateway contacts telemetry KEY off
 [telemetry]
 # enabled = true                                       # the default
+# ask = "all"  # the default; "household": only the contacts included and targets, senders
 
 # History of messages, positions and readings in the state directory (docs/configuration.md).
 [history]

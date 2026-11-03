@@ -328,7 +328,11 @@ class TelemetryPoller:
         """What is left of the first-start hold: all of it where telemetry never ran (no
         record; no state file either), the record's rest less the time since it was saved
         (all of the rest when that time is unknown, or when the hold had not started: the
-        radio's table was never read), none for a record this version cannot read."""
+        radio's table was never read), none for a record this version cannot read, and none
+        with `ask = household`: nobody is asked whom the household did not include or
+        configure (SEC-016)."""
+        if self._exclusions.household:
+            return None
         if saved is not None:
             if saved.hold_left_s is None:
                 return None

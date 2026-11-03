@@ -261,12 +261,14 @@ class ContactManager:
         if not self._telemetry_rate.allow(self._mono()):  # also one refused below counts
             raise _RefusedError("rate_limited")
         exclusions, key = self._observer.exclusions, seen.key
+        excluded = exclusions.keys  # not those only not included (`ask = household`)
         tracked = self._observer.mesh.contacts.get(key) if key is not None else None
-        if key is None or (tracked is None and not excluding and key not in exclusions):
+        if key is None or (tracked is None and not excluding and key not in excluded):
             raise _RefusedError("unknown_contact")
         if tracked is not None and tracked.node.node_type != NodeType.CHAT:
             raise _RefusedError("not_a_companion")  # only companions are asked
-        if excluding and key not in exclusions and len(exclusions) >= exclusions.LIMIT:
+        kept = excluded if excluding else exclusions.included if exclusions.household else None
+        if kept is not None and key not in kept and len(kept) >= exclusions.LIMIT:
             raise _RefusedError("too_many")
         return excluding, forget
 

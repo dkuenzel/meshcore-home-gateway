@@ -793,8 +793,10 @@ class Observer:
         return self.telemetry_state(key) or "waiting"
 
     def _publish_index(self) -> None:
+        # the keys not asked: those excluded, and with `ask = household` the contacts not included
+        excluded = self.exclusions.keys | {k for k in self.mesh.contacts if k in self.exclusions}
         index = contacts_document(self.mesh, protected=self._protected, manage=self.manage,
-                                  excluded=self.exclusions.keys)  # fmt: skip
+                                  excluded=excluded)  # fmt: skip
         self._publish(self._topics.contacts, index)
 
     def _publish_nodes(self, *, read: bool = False) -> None:
