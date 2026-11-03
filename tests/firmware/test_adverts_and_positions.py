@@ -82,8 +82,9 @@ def test_an_advert_is_logged_right_before_its_push_and_sets_a_flagged_position(
             assert unflagged.latitude_e6 is None
             record = await a.contact(bob_key)
             assert (record.latitude_e6, record.longitude_e6) == (
-                flagged.latitude_e6, flagged.longitude_e6,
-            )  # fmt: skip
+                flagged.latitude_e6,
+                flagged.longitude_e6,
+            )
             await b.set_position(0.0, 0.0)
             await b.settings(0, share_position=True)
             zeroed = await advert_heard(b, a, bob_key, Push.ADVERT)
@@ -116,9 +117,10 @@ def test_the_advert_button_sends_zero_hop_and_the_apps_flood_advert_is_repeated(
     """The device's Advert button sends a zero-hop advert, which a repeater does not forward;
     the app's flood advert it forwards."""
     alice, repeater, bob = (
-        nodes.companion("A", wait=False), nodes.repeater("R", wait=False),
+        nodes.companion("A", wait=False),
+        nodes.repeater("R", wait=False),
         nodes.companion("B", wait=False),
-    )  # fmt: skip
+    )
     nodes.ready()
     air.link(alice.node_id, repeater.node_id, snr=SNR)
     air.link(repeater.node_id, bob.node_id, snr=SNR)

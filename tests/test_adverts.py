@@ -29,15 +29,27 @@ SERIAL = 7  # the session's number
 
 
 def log(
-    seq: int, timestamp: int = TA, position: Position | None = HOME, *, carries: bool = True,
-    at: float = T, key: str = KEY, serial: int = SERIAL, hops: int = 0,
-) -> Logged:  # fmt: skip
+    seq: int,
+    timestamp: int = TA,
+    position: Position | None = HOME,
+    *,
+    carries: bool = True,
+    at: float = T,
+    key: str = KEY,
+    serial: int = SERIAL,
+    hops: int = 0,
+) -> Logged:
     """An advert as the radio logged it, frame `seq` of the session; `position` None with the
     flag: 0, 0."""
     return Logged(
-        key, at, (serial, seq), timestamp, carries, position if carries else None,
+        key,
+        at,
+        (serial, seq),
+        timestamp,
+        carries,
+        position if carries else None,
         Signal(hops, 6.0, -96),
-    )  # fmt: skip
+    )
 
 
 def record(last_advert: int = TA, position: Position | None = HOME) -> Node:
@@ -77,7 +89,7 @@ def test_a_log_whose_time_the_record_does_not_show_is_not_trusted() -> None:
 def test_a_forged_copy_before_the_real_log_does_not_decide() -> None:
     """While the receive delay is 0 the radio logs and handles a packet in one pass
     (Dispatcher.cpp:191-256): a forged copy with the same time is logged in another one and is
-    never the frame directly before the push (design D2)."""
+    never the frame directly before the push (ADR 0025)."""
     forged, real = log(10, carries=False), log(11)
     assert outcome(push([forged, real], 12), record(), None, T + 2) == Outcome(
         AdvertCheck(TA, True), problem="copies_differ"
@@ -91,7 +103,7 @@ def test_a_forged_copy_before_the_real_log_does_not_decide() -> None:
 def test_a_late_copy_of_an_older_advert_is_never_adjacent() -> None:
     """Each flood copy is logged and only the first is handled: a late copy of Alice's advert
     comes after its push. At her next advert its own log is the frame before the push and gives
-    the signal (design D13), not the late copy."""
+    the signal (ADR 0025), not the late copy."""
     first = log(10, TA - 60, at=T - 30, hops=1)
     late = log(12, TA - 60, at=T - 29, hops=3)  # frame 11 was the push of the first
     newest = log(13, carries=False, hops=0)
@@ -223,7 +235,7 @@ def test_a_new_record_position_needs_a_newer_advert() -> None:
 
 def test_a_new_record_position_wins_over_a_log_without_the_flag() -> None:
     """Two adverts between two reads, the first with the flag: the record took its position, the
-    newest log has none. It errs to warn (design D3)."""
+    newest log has none. It errs to warn (ADR 0025)."""
     pushed = push([log(10, carries=False)], 11)
     assert outcome(pushed, record(), record(TA - 60, FIELD), T + 2) == Outcome(
         AdvertCheck(TA, True)
@@ -246,9 +258,12 @@ def test_a_new_record_position_wins_over_a_log_without_the_flag() -> None:
 def test_candidates_are_the_keys_logs_within_the_window() -> None:
     """A flood is handled at most 32 s after its log (Dispatcher.cpp:11): LOGGED_S covers it."""
     logs = [
-        log(1, at=T - LOGGED_S - 0.5), log(2, at=T - LOGGED_S), log(3, at=T - 5, key=OTHER),
-        log(4, at=T), log(6, at=T + 1),
-    ]  # fmt: skip
+        log(1, at=T - LOGGED_S - 0.5),
+        log(2, at=T - LOGGED_S),
+        log(3, at=T - 5, key=OTHER),
+        log(4, at=T),
+        log(6, at=T + 1),
+    ]
     assert candidates(logs, KEY, T) == (logs[1], logs[3])
     assert LOGGED_S == 40.0
 
@@ -260,23 +275,35 @@ def test_outcome_is_total() -> None:
 
     def any_log(seq: int) -> Logged:
         return Logged(
-            rng.choice((KEY, OTHER)), T - rng.uniform(-5, 50), (rng.randrange(3), seq),
-            rng.choice(times), rng.random() < 0.5, rng.choice(places), Signal(),
-        )  # fmt: skip
+            rng.choice((KEY, OTHER)),
+            T - rng.uniform(-5, 50),
+            (rng.randrange(3), seq),
+            rng.choice(times),
+            rng.random() < 0.5,
+            rng.choice(places),
+            Signal(),
+        )
 
     def any_node() -> Node:
         return Node(
-            KEY, "Alice", rng.choice((1, 2)), last_advert=rng.choice(times),
+            KEY,
+            "Alice",
+            rng.choice((1, 2)),
+            last_advert=rng.choice(times),
             position=rng.choice(places),
-        )  # fmt: skip
+        )
 
     for _ in range(20_000):
         logs = [any_log(seq) for seq in range(rng.randrange(5))]
         near = adjacent(logs[-1] if logs else None, KEY, (rng.randrange(3), rng.randrange(6)))
         pushed = Pushed(T + rng.uniform(-5, 5), near, candidates(logs, KEY, T))
         node = any_node()
-        result = outcome(rng.choice((pushed, None)), node, rng.choice((any_node(), None)),
-                         T + rng.uniform(-10, 80))  # fmt: skip
+        result = outcome(
+            rng.choice((pushed, None)),
+            node,
+            rng.choice((any_node(), None)),
+            T + rng.uniform(-10, 80),
+        )
         assert result.check is None or result.check.at == node.last_advert
         assert result.problem in (None, "not_logged", "copies_differ", "record_differs")
         found = heard(pushed, node)
@@ -286,7 +313,7 @@ def test_outcome_is_total() -> None:
 
 def test_a_heard_record_with_a_position_is_a_check_that_carries() -> None:
     """NEW_ADVERT carries the record the radio made from this advert alone, lat/lon only with the
-    flag (BaseChatMesh.cpp:108-120): a position in it is evidence on its own (design D27)."""
+    flag (BaseChatMesh.cpp:108-120): a position in it is evidence on its own (ADR 0025)."""
     assert heard(push([], 11), record()) == Outcome(AdvertCheck(TA, True))
     unflagged = push([log(10, carries=False)], 11)  # a forged log: the radio took the flag
     assert heard(unflagged, record()) == Outcome(AdvertCheck(TA, True))
@@ -305,7 +332,7 @@ def test_a_heard_advert_is_checked_by_its_adjacent_log() -> None:
 
 
 def test_fresh_drops_old_and_future_entries() -> None:
-    """A logged position is held only while it can still decide (design §3.1)."""
+    """A logged position is held only while it can still decide (ADR 0025)."""
     pending = LOGGED_S + WAIT_S
     assert fresh(T, T, LOGGED_S)
     assert fresh(T, T + 40, LOGGED_S)

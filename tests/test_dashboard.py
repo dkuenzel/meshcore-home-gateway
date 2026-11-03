@@ -36,7 +36,7 @@ from tests.test_contact_devices import (
     node,
     stopped,
     topic,
-)  # fmt: skip
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "src" / "meshcore_home_gateway" / "dashboard.yaml"
@@ -134,9 +134,23 @@ def test_a_text_in_a_card_becomes_the_text_its_fields_jinja_variables() -> None:
 
 
 UNSAFE = [
-    "{{", "{%", "{#", "<", ">", "@", "](", "://", "www.", '_("', "\r", "\n", "\u2028", "\u2029",
-    "\u200e", "\x7f",
-]  # fmt: skip
+    "{{",
+    "{%",
+    "{#",
+    "<",
+    ">",
+    "@",
+    "](",
+    "://",
+    "www.",
+    '_("',
+    "\r",
+    "\n",
+    "\u2028",
+    "\u2029",
+    "\u200e",
+    "\x7f",
+]
 
 
 @pytest.mark.parametrize("bad", UNSAFE, ids=repr)
@@ -228,9 +242,11 @@ def test_the_map_lists_the_contacts_announced_with_a_position(tmp_path: Path) ->
     contacts, _ = devices(tmp_path, clock=Clock())
     nodes = [
         node(HILL, "Zed hill", NodeType.REPEATER, position=HERE),
-        node(ALICE, "Alice", position=HERE), node(BOB, "Bob"),
-        node(CAROL, "Carol", position=HERE), node(DAVE, "Dave", position=HERE),
-    ]  # fmt: skip
+        node(ALICE, "Alice", position=HERE),
+        node(BOB, "Bob"),
+        node(CAROL, "Carol", position=HERE),
+        node(DAVE, "Dave", position=HERE),
+    ]
     mesh = mesh_of(*nodes)
     contacts.update(mesh)
     contacts.discovery_message(topic(CAROL), b"", retained=False)  # the user deleted it
@@ -271,9 +287,13 @@ def test_the_contacts_card_finds_the_contacts_by_the_configured_prefix() -> None
     """ARC-015: `[homeassistant] contact_entity_prefix` reaches the card's entity patterns."""
     template = (Path(dashboard.__file__).parent / dashboard.TEMPLATE).read_text(encoding="utf-8")
     yaml = dashboard.render(
-        template, node_id="radio1", version="1.0", trackers=[], text=lambda m, v: m,
+        template,
+        node_id="radio1",
+        version="1.0",
+        trackers=[],
+        text=lambda m, v: m,
         contact_prefix="mesh_2",
-    )  # fmt: skip
+    )
     assert "sensor\\\\.mesh_2_.+_last_heard" in yaml
     assert "sensor\\\\.mesh_.+_last_heard" not in yaml
 
@@ -554,8 +574,12 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
 def test_the_shipped_template_keeps_its_rules() -> None:
     template = shipped()
     assert rule_findings(template) == []
-    names = {name for block in blocks(template.split("\n")) for _, t in block.lines for name in
-             re.findall(r"macro (\w+)\(", t)}  # fmt: skip
+    names = {
+        name
+        for block in blocks(template.split("\n"))
+        for _, t in block.lines
+        for name in re.findall(r"macro (\w+)\(", t)
+    }
     assert {"m", "ago", "said", "telemetry", "what"} <= names
     assert template.count(MACRO) == 8
     assert len(list(dashboard.MARKER.finditer(template))) > 70

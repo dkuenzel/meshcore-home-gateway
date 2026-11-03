@@ -12,9 +12,16 @@ from dataclasses import dataclass, field
 
 _MAGIC = 0x950412DE
 _ESCAPES = {
-    "a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\",
+    "a": "\a",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "\\": "\\",
     '"': '"',
-}  # fmt: skip
+}
 _KEYWORD = re.compile(r"(msgctxt|msgid_plural|msgid|msgstr(?:\[(\d+)\])?)[ \t]+(.*)")
 _PLURAL_FORMS = re.compile(r"\s*nplurals\s*=\s*(\d+)\s*;\s*plural\s*=\s*([^;]+?)\s*;?\s*")
 GERMANIC = "nplurals=2; plural=(n != 1);"  # gettext's rule when a catalog names none
@@ -40,7 +47,7 @@ class Entry:
 
     @property
     def translated(self) -> bool:
-        """Every form filled and not fuzzy: what an MO file holds (D5)."""
+        """Every form filled and not fuzzy: what an MO file holds (ADR 0027)."""
         return bool(self.msgstr) and all(self.msgstr) and "fuzzy" not in self.flags
 
 
@@ -207,8 +214,9 @@ class _Reader:
 
 
 def read_po(text: str, name: str = "<po>") -> tuple[dict[str, str], list[Entry]]:
-    """The header's fields, in file order, and the entries in file order (D5). Obsolete entries
-    (#~) and previous msgids (#|) are left out; anything GNU's tools would refuse is refused."""
+    """The header's fields, in file order, and the entries in file order (ADR 0027). Obsolete
+    entries (#~) and previous msgids (#|) are left out; anything GNU's tools would refuse is
+    refused."""
     reader = _Reader(name)
     if text.startswith("﻿"):
         raise reader.error("a byte order mark", 1)
@@ -236,7 +244,7 @@ def write_mo(header: Mapping[str, str], entries: Iterable[Entry]) -> bytes:
     """GNU `msgfmt --no-hash` bytes: little-endian, keys sorted by their UTF-8 bytes, no hash
     table; the header first (empty msgid), written as "{field}: {value}\\n" in the mapping's
     order; fuzzy and untranslated entries left out, a plural entry with any empty form
-    included (D5)."""
+    included (ADR 0027)."""
     messages = {b"": "".join(f"{key}: {value}\n" for key, value in header.items()).encode()}
     for entry in entries:
         if entry.translated:

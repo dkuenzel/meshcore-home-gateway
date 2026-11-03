@@ -25,22 +25,36 @@ from meshcore_home_gateway.views import settings_document
 from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
 
 OBSERVER: dict[str, policy.Value | None] = {
-    policy.MANUAL_ADD: True, policy.AUTOADD: 0, policy.TELEMETRY: 0, policy.ADVERT_LOCATION: 0,
-}  # fmt: skip
+    policy.MANUAL_ADD: True,
+    policy.AUTOADD: 0,
+    policy.TELEMETRY: 0,
+    policy.ADVERT_LOCATION: 0,
+}
 FACTORY: dict[str, policy.Value | None] = {
-    policy.MANUAL_ADD: False, policy.AUTOADD: 0x1F, policy.TELEMETRY: 0x15,
-    policy.ADVERT_LOCATION: 1, policy.AIRTIME_FACTOR: 1000, policy.NAME: "MeshCore-ab12",
-}  # fmt: skip
+    policy.MANUAL_ADD: False,
+    policy.AUTOADD: 0x1F,
+    policy.TELEMETRY: 0x15,
+    policy.ADVERT_LOCATION: 1,
+    policy.AIRTIME_FACTOR: 1000,
+    policy.NAME: "MeshCore-ab12",
+}
 SETTERS = {
-    Command.SET_OTHER_PARAMS, Command.SET_AUTOADD_CONFIG, Command.SET_TUNING_PARAMS,
-    Command.SET_ADVERT_NAME, Command.ADD_UPDATE_CONTACT,
-}  # fmt: skip
+    Command.SET_OTHER_PARAMS,
+    Command.SET_AUTOADD_CONFIG,
+    Command.SET_TUNING_PARAMS,
+    Command.SET_ADVERT_NAME,
+    Command.ADD_UPDATE_CONTACT,
+}
 
 
 def plan_for(
-    want: Desired, live: dict[str, Any], applied: Applied | None = None, *,
-    mode: Mode = Mode.AUTO, firmware: int = 14,
-) -> policy.Plan:  # fmt: skip
+    want: Desired,
+    live: dict[str, Any],
+    applied: Applied | None = None,
+    *,
+    mode: Mode = Mode.AUTO,
+    firmware: int = 14,
+) -> policy.Plan:
     return policy.plan(want, applied or Applied(), live, mode=mode, firmware_code=firmware)
 
 
@@ -81,8 +95,10 @@ def test_a_key_the_firmware_lacks_is_left_alone() -> None:
     want = policy.desired(869_618)
     live = {**FACTORY, policy.AUTOADD: None, policy.AIRTIME_FACTOR: None}
     assert set(plan_for(want, live).writes) == {
-        policy.MANUAL_ADD, policy.TELEMETRY, policy.ADVERT_LOCATION,
-    }  # fmt: skip
+        policy.MANUAL_ADD,
+        policy.TELEMETRY,
+        policy.ADVERT_LOCATION,
+    }
 
 
 def test_drift_of_the_policy_is_set_back_but_a_renamed_radio_is_kept() -> None:
@@ -124,8 +140,9 @@ def test_a_new_configured_value_starts_afresh() -> None:
     want, applied = policy.desired(869_618), Applied()
     live = {**OBSERVER, policy.AIRTIME_FACTOR: 1000}
     for _ in range(policy.NOT_CONVERGING_AFTER):
-        applied = policy.record(applied, want, plan_for(want, live, applied), live, {},
-                                firmware_code=14)  # fmt: skip
+        applied = policy.record(
+            applied, want, plan_for(want, live, applied), live, {}, firmware_code=14
+        )
     other = policy.desired(869_618, duty_cycle_percent=25.0)
     assert plan_for(other, live, applied).writes == {policy.AIRTIME_FACTOR: 3000}
 
@@ -151,8 +168,9 @@ def test_a_configured_name_the_radio_already_has_is_remembered() -> None:
     applied = Applied(dict(first.values))
     second = policy.desired(868_100, name="B")
     live = {**OBSERVER, policy.NAME: "B"}  # renamed by hand to the new name already
-    applied = policy.record(applied, second, plan_for(second, live, applied), live, {},
-                            firmware_code=14)  # fmt: skip
+    applied = policy.record(
+        applied, second, plan_for(second, live, applied), live, {}, firmware_code=14
+    )
     renamed = {**OBSERVER, policy.NAME: "Kitchen"}
     plan = plan_for(second, renamed, applied)
     assert (plan.writes, plan.drift) == ({}, {policy.NAME: "Kitchen"})
@@ -179,8 +197,10 @@ def test_a_setting_compiled_out_is_remembered_per_firmware_apart_from_unsupporte
         Applied(), want, plan, live, {policy.AUTOADD: policy.DISABLED}, firmware_code=14
     )
     assert (applied.disabled, applied.unsupported, applied.attempts) == (
-        {policy.AUTOADD: 14}, {}, {},
-    )  # fmt: skip
+        {policy.AUTOADD: 14},
+        {},
+        {},
+    )
     assert not Applied(disabled={policy.AUTOADD: 14}).empty  # a radio known, not a first connect
     again = plan_for(want, live, applied)
     assert (again.disabled, again.unsupported, again.writes) == ((policy.AUTOADD,), (), {})
@@ -193,8 +213,9 @@ def test_a_refused_write_counts_towards_the_guard() -> None:
     applied = Applied()
     for _ in range(policy.NOT_CONVERGING_AFTER):
         plan = plan_for(want, live, applied)
-        applied = policy.record(applied, want, plan, live, {policy.TELEMETRY: None},
-                                firmware_code=14)  # fmt: skip
+        applied = policy.record(
+            applied, want, plan, live, {policy.TELEMETRY: None}, firmware_code=14
+        )
     assert plan_for(want, live, applied).not_converging == (policy.TELEMETRY,)
     assert policy.TELEMETRY not in applied.values  # never taken
     assert applied.attempts[policy.TELEMETRY] == policy.Attempt(0, 3, 14)
@@ -243,12 +264,17 @@ def test_a_contact_is_written_back_with_other_flags_only() -> None:
 
 
 def test_a_new_contact_frame_has_the_type_and_signed_time_and_no_position() -> None:
-    frame = codec.new_contact(bytes.fromhex("d4" * 32), "Dave", 0, node_type=3,
-                              last_advert=1_800_000_000)  # fmt: skip
+    frame = codec.new_contact(
+        bytes.fromhex("d4" * 32), "Dave", 0, node_type=3, last_advert=1_800_000_000
+    )
     expected = (
-        bytes([Command.ADD_UPDATE_CONTACT]) + bytes.fromhex("d4" * 32) + bytes([3, 0, 0xFF])
-        + bytes(64) + b"Dave".ljust(32, b"\x00") + struct.pack("<Iii", 1_800_000_000, 0, 0)
-    )  # fmt: skip
+        bytes([Command.ADD_UPDATE_CONTACT])
+        + bytes.fromhex("d4" * 32)
+        + bytes([3, 0, 0xFF])
+        + bytes(64)
+        + b"Dave".ljust(32, b"\x00")
+        + struct.pack("<Iii", 1_800_000_000, 0, 0)
+    )
     assert frame == expected
     assert codec.remove_contact(bytes.fromhex("d4" * 32)) == bytes([15]) + bytes.fromhex("d4" * 32)
 
@@ -294,9 +320,13 @@ def test_telemetry_is_the_only_remote_request() -> None:
 
 def factory_radio(**options: Any) -> EmulatedRadio:
     factory: dict[str, Any] = {
-        "name": "MeshCore-ab12", "manual_add": False, "autoadd_config": 0x1F,
-        "telemetry_modes": 0x15, "advert_location": 1, "tuning": (250, 1000),
-    }  # fmt: skip
+        "name": "MeshCore-ab12",
+        "manual_add": False,
+        "autoadd_config": 0x1F,
+        "telemetry_modes": 0x15,
+        "advert_location": 1,
+        "tuning": (250, 1000),
+    }
     return EmulatedRadio(**{**factory, **options})
 
 
@@ -304,9 +334,13 @@ async def connect(radio: EmulatedRadio, manager: RadioProfile) -> CompanionSessi
     """One connect with the profile; the setters of earlier connects are forgotten."""
     radio.received.clear()
     session = CompanionSession(
-        radio, asyncio.Queue[RadioEvent](), wall_clock=lambda: START_TIME, command_timeout_s=0.5,
-        flush_settle_s=0.01, set_clock=False,
-    )  # fmt: skip
+        radio,
+        asyncio.Queue[RadioEvent](),
+        wall_clock=lambda: START_TIME,
+        command_timeout_s=0.5,
+        flush_settle_s=0.01,
+        set_clock=False,
+    )
     session.profile = manager
     await session.start(fetch_messages=False)
     await session.close()
@@ -369,8 +403,10 @@ def test_a_renamed_radio_keeps_its_name(tmp_path: Path, caplog: pytest.LogCaptur
     assert manager.report is not None
     document = settings_document(manager.report, START_TIME)
     assert document["settings"]["name"] == {
-        "live": "Kitchen radio", "desired": "Gateway", "state": "drift",
-    }  # fmt: skip
+        "live": "Kitchen radio",
+        "desired": "Gateway",
+        "state": "drift",
+    }
     assert document["status"] == "drift"
 
 
@@ -395,8 +431,10 @@ def test_untested_firmware_is_only_observed(caplog: pytest.LogCaptureFixture) ->
         "state": "differs",
     }
     assert document["settings"]["telemetry"]["live"] == {
-        "base": "contacts", "location": "contacts", "environment": "contacts",
-    }  # fmt: skip
+        "base": "contacts",
+        "location": "contacts",
+        "environment": "contacts",
+    }
 
 
 @pytest.mark.parametrize(
@@ -421,9 +459,10 @@ def test_the_firmware_gate_is_logged_at_every_connect(
     with caplog.at_level(logging.INFO):
         asyncio.run(main())
     said = [
-        r.levelno for r in caplog.records
+        r.levelno
+        for r in caplog.records
         if "is not tested" in r.getMessage() or "observed only" in r.getMessage()
-    ]  # fmt: skip
+    ]
     assert said == ([level] * 2 if level else [])
 
 
@@ -456,8 +495,9 @@ def test_a_setter_compiled_out_of_the_firmware_is_marked_disabled(tmp_path: Path
         assert policy.AUTOADD not in report.reasons
         document = settings_document(report, START_TIME)
         assert (document["status"], document["settings"]["autoadd"]["state"]) == (
-            "problem", "disabled",
-        )  # fmt: skip
+            "problem",
+            "disabled",
+        )
         assert records.load(SELF_KEY.hex()).disabled == {policy.AUTOADD: 14}
         restarted = RadioProfile(ProfileConfig(), records)
         await connect(radio, restarted)
@@ -494,8 +534,9 @@ def test_protected_contacts_are_kept_on_the_radio_as_favourites() -> None:
     alice = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
     radio = EmulatedRadio(contacts=[alice])
     operator = "b2" * 32
-    manager = RadioProfile(ProfileConfig(), protected={alice.public_key.hex(): "alice",
-                                                       operator: "operator"})  # fmt: skip
+    manager = RadioProfile(
+        ProfileConfig(), protected={alice.public_key.hex(): "alice", operator: "operator"}
+    )
 
     async def main() -> None:
         session = await connect(radio, manager)
@@ -582,9 +623,15 @@ def test_drift_and_not_converging_are_reported_once_per_run() -> None:
     bus = Bus()
     observer = Observer(bus, Topics("meshcore", "radio1"), wall_clock=lambda: START_TIME)
     report = policy.ProfileReport(
-        "auto", 14, True, False, live={policy.NAME: "Kitchen"}, desired={policy.NAME: "A"},
-        drift={policy.NAME: "Kitchen"}, not_converging=(policy.AIRTIME_FACTOR,),
-    )  # fmt: skip
+        "auto",
+        14,
+        True,
+        False,
+        live={policy.NAME: "Kitchen"},
+        desired={policy.NAME: "A"},
+        drift={policy.NAME: "Kitchen"},
+        not_converging=(policy.AIRTIME_FACTOR,),
+    )
     observer.profile_applied(report)
     observer.profile_applied(report)  # the next connect finds the same
     assert bus.events == ["not_converging", "drift"]
@@ -607,11 +654,17 @@ def test_events_are_reported_per_radio() -> None:
 
     observer = Observer(Bus(), Topics("meshcore", "radio1"), wall_clock=lambda: START_TIME)
     report = policy.ProfileReport(
-        "auto", 14, True, False, live={policy.NAME: "Kitchen", policy.AIRTIME_FACTOR: 1000},
-        desired={policy.NAME: "A", policy.AIRTIME_FACTOR: 9000}, drift={policy.NAME: "Kitchen"},
-        not_taken=(policy.AIRTIME_FACTOR,), reasons={policy.AIRTIME_FACTOR: "initial"},
+        "auto",
+        14,
+        True,
+        False,
+        live={policy.NAME: "Kitchen", policy.AIRTIME_FACTOR: 1000},
+        desired={policy.NAME: "A", policy.AIRTIME_FACTOR: 9000},
+        drift={policy.NAME: "Kitchen"},
+        not_taken=(policy.AIRTIME_FACTOR,),
+        reasons={policy.AIRTIME_FACTOR: "initial"},
         radio="aa" * 32,
-    )  # fmt: skip
+    )
     observer.profile_applied(report)
     observer.profile_applied(replace(report, radio="bb" * 32))
     assert events == [("not_taken", "initial"), ("drift", None)] * 2
@@ -693,8 +746,13 @@ def test_a_radio_that_goes_away_after_a_setter_counts_as_an_attempt(tmp_path: Pa
         restarted = ProfileRecords(JsonStateFile(tmp_path / "state.json"))  # after a crash
         attempts = restarted.load(SELF_KEY.hex()).attempts
         assert attempts[policy.AIRTIME_FACTOR] == policy.Attempt(9000, 1, 14)
-        sent = [policy.MANUAL_ADD, policy.TELEMETRY, policy.ADVERT_LOCATION, policy.AUTOADD,
-                policy.AIRTIME_FACTOR]  # fmt: skip
+        sent = [
+            policy.MANUAL_ADD,
+            policy.TELEMETRY,
+            policy.ADVERT_LOCATION,
+            policy.AUTOADD,
+            policy.AIRTIME_FACTOR,
+        ]
         assert {k: a.connects for k, a in attempts.items()} == dict.fromkeys(
             sent, 1
         )  # not read back
@@ -771,8 +829,10 @@ def test_only_the_setters_sent_count_when_the_radio_goes_away(tmp_path: Path) ->
         radio.opened = False
         manager = RadioProfile(ProfileConfig(), records)
         await connect(radio, manager)
-        assert [p[0] for p in setters(radio)] == [Command.SET_AUTOADD_CONFIG,
-                                                  Command.SET_TUNING_PARAMS]  # fmt: skip
+        assert [p[0] for p in setters(radio)] == [
+            Command.SET_AUTOADD_CONFIG,
+            Command.SET_TUNING_PARAMS,
+        ]
         assert (radio.autoadd_config, radio.tuning) == (0, (250, 9000))
         assert manager.report is not None
         assert set(manager.report.not_converging) == other
@@ -820,8 +880,9 @@ def test_a_state_file_that_cannot_be_written_does_not_stop_the_profile(
     radio = factory_radio()
     state = tmp_path / "state.json"
     store = JsonStateFile(state)
-    manager = RadioProfile(ProfileConfig(), ProfileRecords(store),
-                           protected={"b2" * 32: "operator"})  # fmt: skip
+    manager = RadioProfile(
+        ProfileConfig(), ProfileRecords(store), protected={"b2" * 32: "operator"}
+    )
 
     async def main() -> None:
         await connect(radio, manager)

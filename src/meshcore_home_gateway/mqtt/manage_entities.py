@@ -73,9 +73,11 @@ def manage_topic(config: Config) -> str:
 
 
 def node_options(
-    mesh: Mesh, protected: Iterable[str] = (), heard: HeardNodes = "full",
+    mesh: Mesh,
+    protected: Iterable[str] = (),
+    heard: HeardNodes = "full",
     reserved: Iterable[str] = (),
-) -> list[str]:  # fmt: skip
+) -> list[str]:
     """The labels of the heard nodes to offer: companions, room servers and sensors, no
     look-alikes (they would be refused, or block the node they imitate), the most recently heard,
     ordered by name. A label names one node: look-alikes share their first 12 digits. `heard`
@@ -86,9 +88,10 @@ def node_options(
         return []
     flagged, taken = look_alike_nodes(mesh, protected), name_taken_nodes(mesh, reserved)
     offered = [
-        t.node for t in reversed(mesh.nodes.values())
+        t.node
+        for t in reversed(mesh.nodes.values())
         if t.node.node_type in LABEL_TYPES and t.node.public_key not in flagged
-    ][:NODE_OPTIONS]  # fmt: skip
+    ][:NODE_OPTIONS]
 
     def label(n: Node, name: str) -> str:
         return node_label(n.public_key, name, n.node_type, name_taken=n.public_key in taken)
@@ -113,27 +116,40 @@ def manage_payload(
 
     def component(key: str, platform: str, name: str, **options: Any) -> dict[str, Any]:
         return {
-            "p": platform, "unique_id": f"{uid}_{key}",
-            "default_entity_id": f"{platform}.{uid}_{key}", "name": name,
-            "state_topic": topics.contacts, "entity_category": "config",
-            "icon": "mdi:account-plus", **options,
-        }  # fmt: skip
+            "p": platform,
+            "unique_id": f"{uid}_{key}",
+            "default_entity_id": f"{platform}.{uid}_{key}",
+            "name": name,
+            "state_topic": topics.contacts,
+            "entity_category": "config",
+            "icon": "mdi:account-plus",
+            **options,
+        }
 
     components = {
         "add_node": component(
+            "add_node",
+            "select",
             # Translators: select of the gateway: choosing one of the nodes its radio heard adds
             # that node as a contact
-            "add_node", "select", ha_name("Add heard node"), command_topic=topics.add_node,
-            options=options, value_template="None",
+            ha_name("Add heard node"),
+            command_topic=topics.add_node,
+            options=options,
+            value_template="None",
         ),
         "add_contact": component(
+            "add_contact",
+            "text",
             # Translators: text entity of the gateway: a node's public key or a contact link
             # typed or pasted here adds that node as a contact
-            "add_contact", "text", ha_name("Add contact (key or link)"),
+            ha_name("Add contact (key or link)"),
             command_topic=topics.add_contact,
-            value_template="{{ '' }}", min=0, max=255, pattern=TEXT_PATTERN,
+            value_template="{{ '' }}",
+            min=0,
+            max=255,
+            pattern=TEXT_PATTERN,
         ),
-    }  # fmt: skip
+    }
     with_removed(components, uid, topics, removed, ha_name, bind=bind)
     return {
         "dev": {"ids": [uid], "name": device_name(config, ha_name)},

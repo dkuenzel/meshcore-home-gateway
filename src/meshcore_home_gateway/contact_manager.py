@@ -164,8 +164,9 @@ class ContactManager:
             self._jobs.put_nowait(job)
         except _RefusedError as exc:
             level = request.key if request.kind == "remove" and seen.key is None else None
-            self._refuse(request.kind, seen.key, seen.request_id, exc.reason, seen.claim,
-                         level=level)  # fmt: skip
+            self._refuse(
+                request.kind, seen.key, seen.request_id, exc.reason, seen.claim, level=level
+            )
         except asyncio.QueueFull:
             self._refuse(request.kind, seen.key, seen.request_id, "busy", seen.claim)
 
@@ -234,9 +235,14 @@ class ContactManager:
         assert claim is not None  # noqa: S101 - parsed above
         heard = self._observer.mesh.nodes.get(key)
         return Job(
-            "add", key, request_id, claim.source, claim.name, claim.node_type,
+            "add",
+            key,
+            request_id,
+            claim.source,
+            claim.name,
+            claim.node_type,
             heard.node if heard is not None else None,
-        )  # fmt: skip
+        )
 
     # --- telemetry (ADR 0018) --------------------------------------------------------------------
 
@@ -253,14 +259,25 @@ class ContactManager:
         key = seen.key
         assert key is not None  # noqa: S101 - checked above
         kind, reason = self._exclude(key, forget) if excluding else self._include(key)
-        log.info("contact request %s telemetry %s %s: %s%s", seen.request_id,
-                 "off" if excluding else "on", key[:12], kind,
-                 f" ({reason})" if reason else "")  # fmt: skip
+        log.info(
+            "contact request %s telemetry %s %s: %s%s",
+            seen.request_id,
+            "off" if excluding else "on",
+            key[:12],
+            kind,
+            f" ({reason})" if reason else "",
+        )
         tracked = self._observer.mesh.contacts.get(key)
-        self._observer.contact_result(contact_event(
-            kind, key, tracked.node if tracked is not None else None, request="telemetry",
-            request_id=seen.request_id, reason=reason,
-        ))  # fmt: skip
+        self._observer.contact_result(
+            contact_event(
+                kind,
+                key,
+                tracked.node if tracked is not None else None,
+                request="telemetry",
+                request_id=seen.request_id,
+                reason=reason,
+            )
+        )
 
     def _telemetry_checked(self, request: ContactRequest, seen: _Seen) -> tuple[bool, bool]:
         """The checks in their documented order: whether the request excludes, and whether it
@@ -367,9 +384,13 @@ class ContactManager:
             name, node_type, advert = job.name or "", job.node_type or 1, 0
         name = contact_name(name) or job.key[:12]
         reason = add_refusal(
-            job.key, node_type, table=session.contact_records, protected=self._protected,
-            own_key=own_key, max_contacts=limit,
-        )  # fmt: skip
+            job.key,
+            node_type,
+            table=session.contact_records,
+            protected=self._protected,
+            own_key=own_key,
+            max_contacts=limit,
+        )
         if reason is not None:
             raise _RefusedError(reason)
         request = codec.new_contact(
@@ -411,8 +432,13 @@ class ContactManager:
         if present == (job.kind == "add"):
             await self._done(job, expected, None)  # reported by the read, normally
             return
-        log.warning("contact request %s %s %s: the radio answered OK, but its table does not "
-                    "show the change", job.request_id, job.kind, job.key[:12])  # fmt: skip
+        log.warning(
+            "contact request %s %s %s: the radio answered OK, but its table does not "
+            "show the change",
+            job.request_id,
+            job.kind,
+            job.key[:12],
+        )
         await self._done(job, "failed", "not_confirmed")
 
     async def _done(self, job: Job, kind: str, reason: str | None) -> None:
@@ -421,16 +447,28 @@ class ContactManager:
         await self._events.put(barrier)
         await barrier.done.wait()
         if reason is not None:
-            log.info("contact request %s %s %s: %s (%s)", job.request_id, job.kind,
-                     job.key[:12], kind, reason)  # fmt: skip
+            log.info(
+                "contact request %s %s %s: %s (%s)",
+                job.request_id,
+                job.kind,
+                job.key[:12],
+                kind,
+                reason,
+            )
         self._observer.request_done(_RESULT[job.kind], job.key, self._event(kind, job, reason))
 
     # --- results --------------------------------------------------------------------------------
 
     def _refuse(
-        self, kind: str, key: str | None, request_id: str, reason: str,
-        claim: LinkContact | Job | None, *, level: str | None = None,
-    ) -> None:  # fmt: skip
+        self,
+        kind: str,
+        key: str | None,
+        request_id: str,
+        reason: str,
+        claim: LinkContact | Job | None,
+        *,
+        level: str | None = None,
+    ) -> None:
         """A refusal (nothing written), at a bounded rate: a flood of requests must not flood
         the bus. `level`: the topic level of a remove request that names no key."""
         named = key[:12] if key else repr(level[:80]) if level is not None else None
@@ -448,24 +486,40 @@ class ContactManager:
             else None
         )  # as known now: a node's own record over a claim
         node = tracked.node if tracked is not None else None
-        self._observer.contact_result(contact_event(
-            "refused", key, node, name=name, node_type=node_type, request=kind,
-            request_id=request_id, reason=reason,
-        ))  # fmt: skip
+        self._observer.contact_result(
+            contact_event(
+                "refused",
+                key,
+                node,
+                name=name,
+                node_type=node_type,
+                request=kind,
+                request_id=request_id,
+                reason=reason,
+            )
+        )
 
     def _event(self, kind: str, job: Job, reason: str | None) -> dict[str, Any]:
         return contact_event(
-            kind, job.key, name=job.name, node_type=job.node_type, request=job.kind,
-            request_id=job.request_id, reason=reason,
-        )  # fmt: skip
+            kind,
+            job.key,
+            name=job.name,
+            node_type=job.node_type,
+            request=job.kind,
+            request_id=job.request_id,
+            reason=reason,
+        )
 
     def report_unpublished(self) -> None:
         now = self._mono()
         if self._unpublished and now >= self._next_report:
             log.warning(
                 "contact events of refused requests not published (limit %g per second, bursts "
-                "of %g): %d", REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, self._unpublished,
-            )  # fmt: skip
+                "of %g): %d",
+                REFUSED_EVENTS_PER_S,
+                REFUSED_EVENTS_BURST,
+                self._unpublished,
+            )
             self._unpublished = 0
             self._next_report = now + REFUSED_REPORT_INTERVAL_S
 

@@ -97,13 +97,13 @@ def widened(text: str, argparse: bool = False) -> str:
 
 def hostile(language: str = "xx") -> i18n.Translator:
     """Every text of the template with ' 50 %' and a lone '{' added: the guard must show English
-    (D7) wherever argparse formats a text or values are filled in."""
+    (design §6.12) wherever argparse formats a text or values are filled in."""
     return compiled(language, _translated(lambda text: f"{text} 50 % {{"))
 
 
 def percents(language: str = "xx") -> i18n.Translator:
     """Every text of the template with ' 50 %' added, a valid text wherever nothing %-formats it:
-    only texts argparse formats must show English (D7)."""
+    only texts argparse formats must show English (design §6.12)."""
     return compiled(language, _translated(lambda text: f"{text} 50 %"))
 
 

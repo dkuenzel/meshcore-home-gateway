@@ -161,9 +161,13 @@ def radio_name(name: str) -> str:
 
 
 def new_contact(
-    public_key: bytes, name: str, flags: int, *, node_type: int = NodeType.CHAT,
+    public_key: bytes,
+    name: str,
+    flags: int,
+    *,
+    node_type: int = NodeType.CHAT,
     last_advert: int = 0,
-) -> bytes:  # fmt: skip
+) -> bytes:
     """A node the radio does not hold yet: no path (it floods), no position; the radio takes name,
     type and position from its next advert. `last_advert`: the timestamp of a signed advert the
     radio reported (a later replay of an older one is then dropped), else 0. Flags only none or
@@ -177,9 +181,14 @@ def new_contact(
     label = radio_name(name).encode("utf-8").ljust(32, b"\x00")
     position = struct.pack("<ii", 0, 0)  # none: the radio takes it from the next advert
     return (
-        bytes([Command.ADD_UPDATE_CONTACT]) + public_key + bytes([node_type, flags, NO_PATH])
-        + bytes(MAX_PATH_BYTES) + label + _u32(last_advert, "advert time") + position
-    )  # fmt: skip
+        bytes([Command.ADD_UPDATE_CONTACT])
+        + public_key
+        + bytes([node_type, flags, NO_PATH])
+        + bytes(MAX_PATH_BYTES)
+        + label
+        + _u32(last_advert, "advert time")
+        + position
+    )
 
 
 def remove_contact(public_key: bytes) -> bytes:
@@ -513,11 +522,33 @@ MESSAGE_CODES = frozenset(
 )
 
 Decoded = (
-    Ok | Err | Disabled | SelfInfo | DeviceInfo | CurrentTime | Sent | SendConfirmed
-    | ContactsStart | ContactRecord | EndOfContacts | ChannelInfo | Battery | NoMoreMessages
-    | MessageWaiting | Advert | PathUpdated | ContactDeleted | AutoAddConfig | TuningParams
-    | CoreStats | RadioStats | PacketStats | TelemetryResponse | RxLog | Unknown
-)  # fmt: skip
+    Ok
+    | Err
+    | Disabled
+    | SelfInfo
+    | DeviceInfo
+    | CurrentTime
+    | Sent
+    | SendConfirmed
+    | ContactsStart
+    | ContactRecord
+    | EndOfContacts
+    | ChannelInfo
+    | Battery
+    | NoMoreMessages
+    | MessageWaiting
+    | Advert
+    | PathUpdated
+    | ContactDeleted
+    | AutoAddConfig
+    | TuningParams
+    | CoreStats
+    | RadioStats
+    | PacketStats
+    | TelemetryResponse
+    | RxLog
+    | Unknown
+)
 
 
 def decode(payload: bytes) -> Decoded:

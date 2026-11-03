@@ -219,5 +219,5 @@ hooks: ## Run `make check` before every push
 	@echo "pre-push hook active: make check runs before every push"
 
 clean: ## Remove build and tool output (keeps the virtual environments)
-	rm -rf dist build .coverage .coverage.* .mypy_cache .pytest_cache .ruff_cache
+	rm -rf dist build .coverage .coverage.* .mypy_cache .pytest_cache .ruff_cache .hypothesis
 	find . -name __pycache__ -type d -prune -not -path './.venv*' -exec rm -rf {} +

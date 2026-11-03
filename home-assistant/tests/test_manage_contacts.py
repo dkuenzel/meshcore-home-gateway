@@ -165,9 +165,12 @@ async def test_a_key_or_link_is_published(
     "text",
     [
         "meshcore://" + "11" * 120,  # a contact card: the field would cut it
-        "Bob", BOB[:-2], "meshcore://contact/add?name=Bob Smith", "x" * 300,
+        "Bob",
+        BOB[:-2],
+        "meshcore://contact/add?name=Bob Smith",
+        "x" * 300,
     ],
-)  # fmt: skip
+)
 async def test_other_text_is_refused_before_it_is_sent(
     hass: HomeAssistant, mqtt: Any, text: str
 ) -> None:
@@ -255,8 +258,9 @@ async def with_bob(hass: HomeAssistant, tmp_path: Path) -> Mesh:
     await broker.deliver(hass)
     await online(hass)
     await fire(hass, TOPICS.state, state_document(known=True), retain=True)
-    await fire(hass, TOPICS.contact(BOB), contact_document(mesh.contacts[BOB], manage=True),
-               retain=True)  # fmt: skip
+    await fire(
+        hass, TOPICS.contact(BOB), contact_document(mesh.contacts[BOB], manage=True), retain=True
+    )
     return mesh
 
 
@@ -300,10 +304,14 @@ async def test_a_user_who_is_no_administrator_can_press_the_remove_button(
     refresh = await hass.auth.async_create_refresh_token(user, CLIENT_ID)
     client = await hass_ws_client(hass, hass.auth.async_create_access_token(refresh))
     mqtt.async_publish.reset_mock()
-    await client.send_json_auto_id({
-        "type": "call_service", "domain": "button", "service": "press",
-        "target": {"entity_id": "button.mesh_bob_remove"},
-    })  # fmt: skip
+    await client.send_json_auto_id(
+        {
+            "type": "call_service",
+            "domain": "button",
+            "service": "press",
+            "target": {"entity_id": "button.mesh_bob_remove"},
+        }
+    )
     answer = await client.receive_json()
     assert answer["success"], answer
     await hass.async_block_till_done()
@@ -322,8 +330,10 @@ async def test_a_look_alike_node_is_a_problem(
     await fire(hass, TOPICS.nodes, nodes_document(mesh), retain=True)
     sensor = hass.states.get(LOOK_ALIKE)
     assert (sensor.state, sensor.attributes["nodes"], sensor.attributes["total"]) == (
-        "on", sorted([BOB, twin]), 2,
-    )  # fmt: skip
+        "on",
+        sorted([BOB, twin]),
+        2,
+    )
     await fire(hass, TOPICS.nodes, nodes_document(heard((DAVE, "Dave", 1))))
     assert hass.states.get(LOOK_ALIKE).state == "off"
     old = {k: v for k, v in nodes_document(mesh).items() if not k.startswith("look_alike")}
@@ -384,9 +394,16 @@ async def test_the_automation_reports_a_contact_not_changed(
     await hass.async_block_till_done()
 
     def refused(reason: str, key: str | None, kind: str = "refused") -> dict[str, Any]:
-        return {"event_type": kind, "key": key, "prefix": key[:12] if key else None,
-                "name": "**Mallory**", "type": "chat", "request": "add", "id": "r1",
-                "reason": reason}  # fmt: skip
+        return {
+            "event_type": kind,
+            "key": key,
+            "prefix": key[:12] if key else None,
+            "name": "**Mallory**",
+            "type": "chat",
+            "request": "add",
+            "id": "r1",
+            "reason": reason,
+        }
 
     await fire(hass, TOPICS.contact_event, refused("already_contact", BOB))  # left out
     await fire(hass, TOPICS.contact_event, refused("look_alike", BOB))
@@ -394,7 +411,8 @@ async def test_the_automation_reports_a_contact_not_changed(
     await fire(hass, TOPICS.contact_event, refused("outcome_unknown", DAVE, "failed"))
     notifications = persistent_notification._async_get_or_create_notifications(hass)
     assert [n["message"] for n in notifications.values()] == [
-        f"add {BOB[:12]}: look_alike", "add no key: invalid_link",
+        f"add {BOB[:12]}: look_alike",
+        "add no key: invalid_link",
         f"add {DAVE[:12]}: outcome_unknown",
-    ]  # fmt: skip
+    ]
     assert problems(caplog) == []

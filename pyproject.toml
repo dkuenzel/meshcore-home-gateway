@@ -95,6 +95,10 @@ pythonpath = ["src"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = ["error"]
+# A test still running after 5 minutes prints the stacks of every thread and goes on (one slow
+# test does so on a slow machine): CI's job timeout would otherwise end a hung run without saying
+# where it stood.
+faulthandler_timeout = 300
 markers = [
   "broker: starts a local mosquitto broker (integration test)",
   "first_start_hold: keeps telemetry's first-start hold (tests/conftest.py skips it elsewhere)",

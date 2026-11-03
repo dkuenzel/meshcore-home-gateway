@@ -109,8 +109,9 @@ async def test_every_companion_shows_whether_its_adverts_carry_its_position(
     assert (entry.entity_category, entry.device_id) == (None, registry.async_get(TRACKER).device_id)
     sensor = hass.states.get(SENSOR)
     assert (sensor.attributes["device_class"], sensor.attributes["friendly_name"]) == (
-        "problem", "Alice Position in adverts",
-    )  # fmt: skip
+        "problem",
+        "Alice Position in adverts",
+    )
     assert "latitude" not in sensor.attributes
     assert set(contact_entities(hass, HILL)) == HILL_IDS  # a repeater shares by design
 
@@ -148,23 +149,29 @@ async def test_the_gateway_sensor_follows_the_households_companions(
     await fire(hass, TOPICS.contacts, index, retain=True)
     sensor = hass.states.get(GATEWAY_SENSOR)
     assert (sensor.state, sensor.attributes["contacts"], sensor.attributes["total"]) == (
-        "on", [ALICE, BOB], 2,
-    )  # fmt: skip
+        "on",
+        [ALICE, BOB],
+        2,
+    )
 
     advert(mesh, TA + 60, False, ALICE_NODE)
     advert(mesh, TA + 60, False, bob)  # his record keeps the position
     await fire(hass, TOPICS.contacts, contacts_document(mesh, excluded={CAROL}))
     sensor = hass.states.get(GATEWAY_SENSOR)
     assert (sensor.state, sensor.attributes["contacts"], sensor.attributes["total"]) == (
-        "off", [], 0,
-    )  # fmt: skip
+        "off",
+        [],
+        0,
+    )
 
     earlier = {k: v for k, v in index.items() if not k.startswith("advert_carries_position")}
     await fire(hass, TOPICS.contacts, earlier)  # as the gateway publishes it at a connect
     sensor = hass.states.get(GATEWAY_SENSOR)
     assert (sensor.state, sensor.attributes["contacts"], sensor.attributes["total"]) == (
-        "unknown", [], 0,
-    )  # fmt: skip
+        "unknown",
+        [],
+        0,
+    )
     assert problems(caplog) == []
 
 
@@ -209,15 +216,21 @@ async def test_the_shares_position_example_notifies_once_per_event(
         ': its adverts carry its position; turn off "Share Position in Advert" on it and press '
         "Advert near the gateway"
     )
-    assert notifications(hass) == [f"{ALICE[:12]}{advice}", f"{BOB[:12]}{advice}",
-                                   f"{ALICE[:12]}{advice}"]  # fmt: skip
+    assert notifications(hass) == [
+        f"{ALICE[:12]}{advice}",
+        f"{BOB[:12]}{advice}",
+        f"{ALICE[:12]}{advice}",
+    ]
     assert problems(caplog) == []
 
 
 async def test_a_position_no_longer_shared_leaves_the_map(
-    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
     freezer: FrozenDateTimeFactory,
-) -> None:  # fmt: skip
+) -> None:
     """Alice's only position came from her adverts. A checked advert without it takes her
     tracker off the map, although the radio's record keeps the position (design 6c D12): her
     person turns `unknown`, and the guide's *Alice left home* fires after its `for`."""

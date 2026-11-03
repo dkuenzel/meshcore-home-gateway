@@ -171,9 +171,12 @@ def test_command_word_marks_the_messages_that_need_sender_checks() -> None:
     assert command_word(dm(" \n "), RULES) is None
     assert command_word(dm("arm", text_type=TextType.SIGNED_PLAIN), RULES) is None
     channel = InboundMessage(
-        kind=MessageKind.CHANNEL, text="arm", sender_timestamp=int(NOW), received_at=NOW,
+        kind=MessageKind.CHANNEL,
+        text="arm",
+        sender_timestamp=int(NOW),
+        received_at=NOW,
         channel_index=1,
-    )  # fmt: skip
+    )
     assert command_word(channel, RULES) is None
 
 

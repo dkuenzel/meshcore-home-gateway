@@ -97,12 +97,28 @@ def test_a_label_starts_with_the_key_and_ends_with_the_name() -> None:
 @pytest.mark.parametrize(
     "imitation",
     [
-        "Alice", "ALICE", " alice ", "\uff21\uff4c\uff49\uff43\uff45", "\u0410lice",
-        "Al\u0456c\u0435", "\u0391lice", "Ali\u200bce", "Alice\u202e",
+        "Alice",
+        "ALICE",
+        " alice ",
+        "\uff21\uff4c\uff49\uff43\uff45",
+        "\u0410lice",
+        "Al\u0456c\u0435",
+        "\u0391lice",
+        "Ali\u200bce",
+        "Alice\u202e",
     ],
-    ids=["same", "upper", "spaces", "fullwidth", "cyrillic-a", "cyrillic-i-e", "greek-alpha",
-         "zero-width-space", "direction"],
-)  # fmt: skip
+    ids=[
+        "same",
+        "upper",
+        "spaces",
+        "fullwidth",
+        "cyrillic-a",
+        "cyrillic-i-e",
+        "greek-alpha",
+        "zero-width-space",
+        "direction",
+    ],
+)
 def test_names_are_compared_as_a_person_reads_them(imitation: str) -> None:
     """SEC-007: NFKC, case folding, Cyrillic and Greek look-alikes, without the invisible
     format characters."""
@@ -135,10 +151,12 @@ def test_a_label_keeps_a_hostile_name_on_one_plain_line() -> None:
 @pytest.mark.parametrize(
     "label",
     [
-        f"{A[:12]}…{A[-8:]} Alice", f"{A[:12]}…{A[-8:]}", f"{A[:12]}...{A[-8:]} Alice",
+        f"{A[:12]}…{A[-8:]} Alice",
+        f"{A[:12]}…{A[-8:]}",
+        f"{A[:12]}...{A[-8:]} Alice",
         f"  {A[:12].upper()}…{A[-8:].upper()} renamed since  ",
     ],
-)  # fmt: skip
+)
 def test_a_label_names_its_key(label: str) -> None:
     assert key_from_label(label, [A, A_TWIN, B]) == A
 
@@ -146,10 +164,15 @@ def test_a_label_names_its_key(label: str) -> None:
 @pytest.mark.parametrize(
     "label",
     [
-        "", "Alice", f"{A[:12]}…{A[-8:]}x", f"{A[:12]}…{A[-7:]} Alice", f"x{A[:12]}…{A[-8:]}",
-        f"{A[:12]}…{A[-8:]}\nAlice", f"{B[:12]}…{A[-8:]}",
+        "",
+        "Alice",
+        f"{A[:12]}…{A[-8:]}x",
+        f"{A[:12]}…{A[-7:]} Alice",
+        f"x{A[:12]}…{A[-8:]}",
+        f"{A[:12]}…{A[-8:]}\nAlice",
+        f"{B[:12]}…{A[-8:]}",
     ],
-)  # fmt: skip
+)
 def test_a_label_without_its_key_names_nothing(label: str) -> None:
     assert key_from_label(label, [A, B]) is None
 

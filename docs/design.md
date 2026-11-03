@@ -1351,6 +1351,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Level | What | How |
 | --- | --- | --- |
 | Unit | core, protocol codec, configuration, payloads, discovery | pytest, golden byte vectors from the firmware source, reference values for time on air |
+| Property | the parsers of what the radio, the air and the bus send in: frames, messages, logged packets and adverts, sensor answers, keys, links and cards, cut texts, message catalogs, installer answers and configuration files | Hypothesis makes up the input; each parser returns or refuses with its own error, never another, within a second (`tests/test_properties.py`, CODE-009) |
 | Component | session and bridge | an in-memory radio that emulates the firmware's responses and pushes |
 | Integration | MQTT adapter and bridge end to end | a private `mosquitto` per test on a free port; the system test runs the service as a process (its coverage is measured too) |
 | Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text |

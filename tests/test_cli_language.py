@@ -68,7 +68,7 @@ def argparse_texts() -> set[tuple[str, str | None]]:
 
 
 def test_every_argparse_message_is_listed() -> None:
-    """A new Python may bring new words: `make translations` under it adds them (D10)."""
+    """A new Python may bring new words: `make translations` under it adds them (design §6.12)."""
     listed = {(msgid, plural) for msgid, plural in json.loads(LISTED.read_text(encoding="utf-8"))}
     assert argparse_texts() <= listed, "run make translations with this Python"
     _, template = read_po(TEMPLATE.read_text(encoding="utf-8"), TEMPLATE.name)
@@ -395,7 +395,7 @@ def test_look_alike_warnings_keep_english_in_str() -> None:
 
 
 def test_a_bad_sender_key_names_senders() -> None:
-    """config._commands tells the setting by the English text of the core's error (D11)."""
+    """config._commands tells the setting by the English text of the core's error (design §6.12)."""
     for setting, value in (("senders", "xyz"), ("words", "two words"), ("senders", "a b")):
         with pytest.raises(ConfigError) as caught:
             parse_config(MINIMAL + f'[commands]\n{setting} = ["{value}"]\n')
@@ -439,7 +439,7 @@ def test_a_text_inside_an_error_is_translated_inside_it(
     call: Callable[[], object], marked: str
 ) -> None:
     """The core's errors, the host's problem and the rule of IDs are texts of their own, which
-    the command line translates inside the configuration error (D11)."""
+    the command line translates inside the configuration error (design §6.12)."""
     with pytest.raises(ConfigError) as caught:
         call()
     assert _pseudo().render(caught.value.text) == marked
@@ -448,7 +448,7 @@ def test_a_text_inside_an_error_is_translated_inside_it(
 def test_language_setting_is_strict(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One of the languages this version ships, like log_level (D9); en by default."""
+    """One of the languages this version ships, like log_level (design §6.12); en by default."""
     assert parse_config(MINIMAL).homeassistant.language == "en"
     english = MINIMAL + '[homeassistant]\nlanguage = "en"\n'
     assert parse_config(english).homeassistant.language == "en"
@@ -482,7 +482,7 @@ def test_language_setting_is_strict(
 
 
 def test_the_default_device_name_is_one_constant() -> None:
-    """The names sent to Home Assistant translate the default device name (D18)."""
+    """The names sent to Home Assistant translate the default device name (design §6.12)."""
     assert configuration.DEFAULT_DEVICE_NAME == "MeshCore radio"
     assert HomeAssistantConfig().device_name == configuration.DEFAULT_DEVICE_NAME
     assert parse_config(MINIMAL).homeassistant.device_name == configuration.DEFAULT_DEVICE_NAME
@@ -516,20 +516,88 @@ SUMMARIES = {  # between them, every kind of line of check-config's summary
 # what the tests put into the texts: names, addresses, settings, the system's and paho's own
 # texts, and the command line's own names, which argparse's errors show
 VALUES = (
-    "tcp", "serial", "192.0.2.10", "broker.example.org", "/dev/ttyACM0", "gateway",
-    "meshcore/radio1/delivery", "meshcore/radio1", "homeassistant", "English", "alerts", "gate",
-    "nowhere", "open", "status", "Not authorized", "no route to the broker",
-    "the client is not connected", "the radio went away", "No such file or directory",
-    "Not a directory", "File exists", "no-such-group", "invalid_link", "Alice", "Bob", "Radio",
-    "v1.18.0", "X1", "2026-01-01", "chat", "repeater", "room", "sensor", "deny", "base",
-    "location", "environment", "Public", "name", "manual_add", "duty_cycle_percent", "autoadd",
-    "telemetry", "Old", "New", "true", "false", "hello", "off", "readings_days",
-    "positions_days", "None", "radio.device", "systemctl reload mosquitto",
-    "docs/deployment.md, troubleshooting", "meshcore-home-gateway listen --topic contact",
-    "meshcore-home-gateway", "command", "bogus", "maybe", "run", "check-config", "probe", "send",
-    "listen", "contacts", "dashboard", "config", "state", "on", "--serial", "--tcp", "--wait",
-    "--count", "--bogus", KEY, TWIN, OTHER, NODE, NODE_TWIN,
-)  # fmt: skip
+    "tcp",
+    "serial",
+    "192.0.2.10",
+    "broker.example.org",
+    "/dev/ttyACM0",
+    "gateway",
+    "meshcore/radio1/delivery",
+    "meshcore/radio1",
+    "homeassistant",
+    "English",
+    "alerts",
+    "gate",
+    "nowhere",
+    "open",
+    "status",
+    "Not authorized",
+    "no route to the broker",
+    "the client is not connected",
+    "the radio went away",
+    "No such file or directory",
+    "Not a directory",
+    "File exists",
+    "no-such-group",
+    "invalid_link",
+    "Alice",
+    "Bob",
+    "Radio",
+    "v1.18.0",
+    "X1",
+    "2026-01-01",
+    "chat",
+    "repeater",
+    "room",
+    "sensor",
+    "deny",
+    "base",
+    "location",
+    "environment",
+    "Public",
+    "name",
+    "manual_add",
+    "duty_cycle_percent",
+    "autoadd",
+    "telemetry",
+    "Old",
+    "New",
+    "true",
+    "false",
+    "hello",
+    "off",
+    "readings_days",
+    "positions_days",
+    "None",
+    "radio.device",
+    "systemctl reload mosquitto",
+    "docs/deployment.md, troubleshooting",
+    "meshcore-home-gateway listen --topic contact",
+    "meshcore-home-gateway",
+    "command",
+    "bogus",
+    "maybe",
+    "run",
+    "check-config",
+    "probe",
+    "send",
+    "listen",
+    "contacts",
+    "dashboard",
+    "config",
+    "state",
+    "on",
+    "--serial",
+    "--tcp",
+    "--wait",
+    "--count",
+    "--bogus",
+    KEY,
+    TWIN,
+    OTHER,
+    NODE,
+    NODE_TWIN,
+)
 # absolute paths, and keys, parts of keys and request ids as the command line shows them
 _MACHINE = re.compile(
     r"(?<![\w/])/[\w.@/-]*|cli-[0-9a-f]{8}|(?:[0-9a-f]{4} ){15}[0-9a-f]{4}"
@@ -690,14 +758,28 @@ def _delivered(_topic: str, payload: bytes) -> list[tuple[str, Any]]:
 
 def _report(**changes: Any) -> dict[str, Any]:
     """What probe reports, with these values changed."""
-    actions = {"name": "set", "manual_add": "kept", "duty_cycle_percent": "given_up",
-               "autoadd": "unsupported", "telemetry": "reported"}  # fmt: skip
+    actions = {
+        "name": "set",
+        "manual_add": "kept",
+        "duty_cycle_percent": "given_up",
+        "autoadd": "unsupported",
+        "telemetry": "reported",
+    }
     report = {
-        "name": "Radio", "public_key": KEY, "firmware": "v1.18.0", "firmware_code": 14,
-        "model": "X1", "build_date": "2026-01-01", "frequency_mhz": 869.618,
-        "bandwidth_khz": 62.5, "spreading_factor": 8, "coding_rate": 8, "tx_power_dbm": 22,
+        "name": "Radio",
+        "public_key": KEY,
+        "firmware": "v1.18.0",
+        "firmware_code": 14,
+        "model": "X1",
+        "build_date": "2026-01-01",
+        "frequency_mhz": 869.618,
+        "bandwidth_khz": 62.5,
+        "spreading_factor": 8,
+        "coding_rate": 8,
+        "tx_power_dbm": 22,
         "auto_add": {"manual": True, "types": [], "overwrite_oldest": None},
-        "position": None, "advert_location": "none",
+        "position": None,
+        "advert_location": "none",
         "telemetry": {"base": "deny", "location": "deny", "environment": "deny"},
         "airtime_factor": 9.0,
         "contacts": [
@@ -706,7 +788,10 @@ def _report(**changes: Any) -> dict[str, Any]:
         ],
         "channels": [{"index": 0, "name": "Public"}],
         "profile": {
-            "manage": "observe", "configured": True, "firmware_tested": True, "writes": False,
+            "manage": "observe",
+            "configured": True,
+            "firmware_tested": True,
+            "writes": False,
             "changes": {
                 name: {"live": "Old", "profile": "New", "action": action, "reason": None}
                 for name, action in actions.items()
@@ -720,7 +805,7 @@ def _report(**changes: Any) -> dict[str, Any]:
                 )
             },
         },
-    }  # fmt: skip
+    }
     return report | changes
 
 
@@ -735,8 +820,10 @@ REPORTS = [
     _report(),
     _report(
         auto_add={"manual": True, "types": ["chat", "room"], "overwrite_oldest": True},
-        position={"latitude": 53.55, "longitude": 9.99}, advert_location="share",
-        airtime_factor=None, profile=_profile("auto", False, changes=False),
+        position={"latitude": 53.55, "longitude": 9.99},
+        advert_location="share",
+        airtime_factor=None,
+        profile=_profile("auto", False, changes=False),
     ),
     _report(
         auto_add={"manual": True, "types": ["sensor"], "overwrite_oldest": False},
@@ -748,9 +835,10 @@ REPORTS = [
         profile=_profile("always", False, changes=True),
     ),
     _report(
-        auto_add={"manual": False, "types": [], "overwrite_oldest": None}, advert_location="share",
+        auto_add={"manual": False, "types": [], "overwrite_oldest": None},
+        advert_location="share",
     ),
-]  # fmt: skip
+]
 
 
 def _probed(monkeypatch: pytest.MonkeyPatch, report: dict[str, Any] | None) -> None:
@@ -797,10 +885,15 @@ def _send(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     send = ["send", "--config", _written(tmp, "config.toml", SUMMARIES["tcp"])]
     printed = [_main([*send, "nowhere", "hello"]).err, _main([*send, "alerts", "\udcff"]).err]
     for behaviour in (
-        {"unreachable": True}, {"refusal": "Not authorized"}, {"silent": True},
-        {"subscription": "Not authorized"}, {"subscription": None},
-        {"sending": "the client is not connected"}, {"sending": None}, {},
-    ):  # fmt: skip
+        {"unreachable": True},
+        {"refusal": "Not authorized"},
+        {"silent": True},
+        {"subscription": "Not authorized"},
+        {"subscription": None},
+        {"sending": "the client is not connected"},
+        {"sending": None},
+        {},
+    ):
         _broker(monkeypatch, **behaviour)
         printed.append(_main([*send, "alerts", "hello", "--wait", "0.01"]).err)
     _broker(monkeypatch, unreachable=True)
@@ -820,33 +913,50 @@ def _contacts(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
         ({"documents": _online(nodes=_listed("nodes"))}, ["add", NODE_LABEL]),
         ({"documents": _online(nodes=_listed("nodes", truncated=True))}, ["add", NODE_LABEL]),
         ({"documents": _online(nodes=_listed("nodes", NODE, NODE_TWIN))}, ["add", NODE_LABEL]),
-        ({"documents": _online(nodes=nodes), "answer": _contact_result("added")},
-         ["add", NODE_LABEL]),
+        (
+            {"documents": _online(nodes=nodes), "answer": _contact_result("added")},
+            ["add", NODE_LABEL],
+        ),
         ({"documents": _online()}, ["add", link, "--wait", "0.01"]),
         ({"documents": _online(), "sending": "the client is not connected"}, ["add", NODE]),
         ({}, ["remove", "xyz"]),
         ({"documents": _online(contacts=_listed("contacts"))}, ["remove", NODE_LABEL]),
-        ({"documents": _online(contacts=_listed("contacts", truncated=True))},
-         ["remove", NODE_LABEL]),
-        ({"documents": _online(contacts=contacts), "answer": _contact_result("removed")},
-         ["remove", KEY]),
+        (
+            {"documents": _online(contacts=_listed("contacts", truncated=True))},
+            ["remove", NODE_LABEL],
+        ),
+        (
+            {"documents": _online(contacts=contacts), "answer": _contact_result("removed")},
+            ["remove", KEY],
+        ),
         ({}, ["telemetry", KEY, "on", "--forget"]),
         ({"documents": _online(contacts=_listed("contacts"))}, [*telemetry, "off"]),
         ({"documents": _online(contacts=contacts)}, [*telemetry, "off", "--forget"]),
         ({"documents": _online(contacts=contacts)}, [*telemetry, "on"]),
         ({"unreachable": True}, ["list"]),
         ({"documents": _online()}, ["list"]),
-        ({"documents": {
-            TOPICS.availability: "offline", TOPICS.contacts: _listed("contacts", truncated=True),
-            TOPICS.nodes: _listed("nodes", NODE) | {"truncated": True, "total": 2},
-        }}, ["list"]),
-        ({"documents": _online(
-            contacts=_listed("contacts", truncated=True) | {"total": 1},
-            nodes=_listed("nodes", NODE, truncated=True) | {"total": None},
-        )}, ["list"]),
+        (
+            {
+                "documents": {
+                    TOPICS.availability: "offline",
+                    TOPICS.contacts: _listed("contacts", truncated=True),
+                    TOPICS.nodes: _listed("nodes", NODE) | {"truncated": True, "total": 2},
+                }
+            },
+            ["list"],
+        ),
+        (
+            {
+                "documents": _online(
+                    contacts=_listed("contacts", truncated=True) | {"total": 1},
+                    nodes=_listed("nodes", NODE, truncated=True) | {"total": None},
+                )
+            },
+            ["list"],
+        ),
         ({"unreachable": True}, ["link"]),
         ({"documents": _online()}, ["link"]),
-    ]  # fmt: skip
+    ]
     printed = []
     for behaviour, command in runs:
         _broker(monkeypatch, **behaviour)
@@ -879,11 +989,17 @@ def _usage(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """argparse's errors: the last line names the error; the usage line before it is names."""
     printed = []
     for argv in (
-        [], ["bogus"], ["probe"], ["probe", "--tcp", "[::1"], ["probe", "--tcp", ":1"],
-        ["probe", "--tcp", "192.0.2.10:0"], ["send", "--wait", "999999", "alerts", "hello"],
-        ["listen", "--count", "-1"], ["contacts", "telemetry", KEY, "maybe"],
+        [],
+        ["bogus"],
+        ["probe"],
+        ["probe", "--tcp", "[::1"],
+        ["probe", "--tcp", ":1"],
+        ["probe", "--tcp", "192.0.2.10:0"],
+        ["send", "--wait", "999999", "alerts", "hello"],
+        ["listen", "--count", "-1"],
+        ["contacts", "telemetry", KEY, "maybe"],
         ["check-config", "--bogus"],
-    ):  # fmt: skip
+    ):
         lines = _main(argv).err.splitlines()
         assert re.match("‹[^‹›]+›meshcore-home-gateway", lines[0])  # usage: the names
         printed.append(lines[-1])
@@ -900,9 +1016,14 @@ def _dashboard(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 SCENARIOS = {
-    "check-config": _check_config, "probe": _probe, "send": _send, "contacts": _contacts,
-    "render": _render, "usage": _usage, "dashboard": _dashboard,
-}  # fmt: skip
+    "check-config": _check_config,
+    "probe": _probe,
+    "send": _send,
+    "contacts": _contacts,
+    "render": _render,
+    "usage": _usage,
+    "dashboard": _dashboard,
+}
 
 
 def _unmarked(line: str) -> str:
@@ -932,7 +1053,7 @@ def test_every_text_for_people_goes_through_the_catalog(
 ) -> None:
     """In the pseudo-language with wide letters every text the command line prints for people,
     also one shown inside another, has them: what is left in plain letters is the values the test
-    put in; and no text is shown with a field it did not fill (D13, D14)."""
+    put in; and no text is shown with a field it did not fill (design §6.12)."""
     _speak(monkeypatch, wide())
     lines = [
         line for text in SCENARIOS[scenario](tmp_path, monkeypatch) for line in text.splitlines()
@@ -979,7 +1100,7 @@ def test_argparse_words_are_translated_and_restored(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """argparse's own words follow the language while main() runs, and are its own again after
-    it, also when argparse ends it with SystemExit (D10)."""
+    it, also when argparse ends it with SystemExit (design §6.12)."""
     words = vars(argparse)["_"], vars(argparse)["ngettext"]
     _speak(monkeypatch)
     helped = _main(["--help"])
@@ -1008,7 +1129,8 @@ def test_argparse_words_are_translated_and_restored(
 def test_argparse_stays_english_without_its_module_attributes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A Python whose argparse lacks `_` or `ngettext`: its words stay English, ours not (D10)."""
+    """A Python whose argparse lacks `_` or `ngettext`: its words stay English, ours not
+    (design §6.12)."""
     monkeypatch.delattr(argparse, "ngettext")
     with cli._speaking(pseudo()):
         text = cli._parser().format_help()
@@ -1031,7 +1153,7 @@ TEST_CATALOGS = {"xx": pseudo, "hostile": hostile, "percents": percents}
 @pytest.mark.parametrize("language", [*SHIPPED, *TEST_CATALOGS])
 def test_every_command_builds_and_helps_in_every_language(language: str) -> None:
     """argparse %-formats help texts, on 3.14 already when an argument is added: a translation
-    with a % its English text lacks must not break a command (D7, P6)."""
+    with a % its English text lacks must not break a command (design §6.12)."""
     catalog = TEST_CATALOGS.get(language)
     translator = i18n.translator(language) if catalog is None else catalog()
     with cli._speaking(translator):
@@ -1047,7 +1169,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
 
 def test_help_texts_are_marked_for_argparse() -> None:
     """Help and description texts reach argparse, which %-formats them: tr_help marks them so,
-    and its translations are held to their English %-directives (D7)."""
+    and its translations are held to their English %-directives (design §6.12)."""
     _, entries = read_po(TEMPLATE.read_text(encoding="utf-8"), TEMPLATE.name)
     flags = {entry.msgid: entry.flags for entry in entries if entry.msgctxt is None}
     texts = {
@@ -1072,9 +1194,11 @@ def _machine_outputs(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[R
     ran = [_main([*probe, "--list", listing]) for listing in ("channels", "contacts", "profile")]
     ran.append(_main([*probe, "--json"]))
     requests = [
-        ("added", ["contacts", "add", NODE]), ("removed", ["contacts", "remove", KEY]),
-        ("excluded", ["contacts", "telemetry", KEY, "off"]), ("refused", ["contacts", "add", NODE]),
-    ]  # fmt: skip
+        ("added", ["contacts", "add", NODE]),
+        ("removed", ["contacts", "remove", KEY]),
+        ("excluded", ["contacts", "telemetry", KEY, "off"]),
+        ("refused", ["contacts", "add", NODE]),
+    ]
     for event_type, command in requests:
         _broker(monkeypatch, documents=documents, answer=_contact_result(event_type))
         ran.append(_main([*command, "--config", config, "--wait", "1"]))
@@ -1097,7 +1221,7 @@ def _machine_outputs(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[R
 def test_machine_outputs_ignore_the_language(
     language: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Programs read them: the installer, scripts, Home Assistant (ADR 0019, D12)."""
+    """Programs read them: the installer, scripts, Home Assistant (ADR 0019, design §6.12)."""
     english, notes = _machine_outputs(tmp_path, monkeypatch)
     assert all(ran.out for ran in english)
     assert "‹" not in notes
@@ -1113,7 +1237,7 @@ def test_run_speaks_english_in_any_language(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The service's output goes to the journal: English, whatever the environment asks for, also
-    argparse's errors, decided before parsing (D8)."""
+    argparse's errors, decided before parsing (design §6.12)."""
     bad = _written(tmp_path, "bad.toml", RADIO)
     commands = [["run", "--config", bad], ["run", "--bogus"]]
     english = [_main(argv) for argv in commands]
@@ -1136,7 +1260,7 @@ def test_run_speaks_english_in_any_language(
 def test_check_config_names_the_language_of_the_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The discovery line says in which language Home Assistant gets the names (D14)."""
+    """The discovery line says in which language Home Assistant gets the names (design §6.12)."""
     english = _main(["check-config", "--config", _written(tmp_path, "en.toml", MINIMAL)])
     assert "\n  discovery  on, prefix homeassistant, names in English\n" in english.out
     speaking(monkeypatch)  # offered; the command line stays English
@@ -1151,7 +1275,7 @@ def test_check_config_names_the_language_of_the_names(
 
 
 def test_check_config_counts_the_senders(tmp_path: Path) -> None:
-    """A real plural instead of "sender(s)" (D14)."""
+    """A real plural instead of "sender(s)" (design §6.12)."""
     for senders, line in (
         ([KEY], "  commands   open from 1 sender\n"),
         ([KEY, OTHER], "  commands   open, status from 2 senders\n"),
@@ -1190,7 +1314,7 @@ UNTESTED = "only reported: the firmware is untested; radio.profile.manage = alwa
 
 
 def test_probe_keeps_its_english_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each case of the report in the English it had before translations (D14)."""
+    """Each case of the report in the English it had before translations (design §6.12)."""
     printed = []
     for report in REPORTS:
         _probed(monkeypatch, report)
@@ -1276,11 +1400,14 @@ CONTACTS_NOTES = [
 
 
 def test_contacts_keep_their_english_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every note and error of the contacts commands in the English it had before (D14); the
-    program's name before the errors, not before the notes on the contact."""
+    """Every note and error of the contacts commands in the English it had before
+    (design §6.12); the program's name before the errors, not before the notes on the contact."""
     by_id = re.compile(r"cli-[0-9a-f]{8}")
-    lines = [by_id.sub("cli-<id>", line) for text in _contacts(tmp_path, monkeypatch)
-             for line in text.splitlines()]  # fmt: skip
+    lines = [
+        by_id.sub("cli-<id>", line)
+        for text in _contacts(tmp_path, monkeypatch)
+        for line in text.splitlines()
+    ]
     assert [line.removeprefix(PREFIX) for line in lines] == CONTACTS_NOTES
     unnamed = ("key ", "warning: ", "the radio drops", "the gateway stops", "not on the radio")
     assert [line.startswith(PREFIX) for line in lines] == [
@@ -1289,8 +1416,8 @@ def test_contacts_keep_their_english_notes(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_check_config_keeps_its_english_summary(tmp_path: Path) -> None:
-    """The summary's English is the one before translations, but for the two lines of D14: the
-    values in one column."""
+    """The summary's English is the one before translations, but for its two lines
+    (design §6.12): the values in one column."""
     ran = _main(["check-config", "--config", _written(tmp_path, "c.toml", SUMMARIES["tcp"])])
     path = tmp_path / "c.toml"
     assert ran.out == (
@@ -1366,8 +1493,10 @@ def test_no_translation_in_log_calls() -> None:
     }
     assert found == {}
     for logged in (
-        'log.warning(tr("x"))', 'logging.info("%s", cli.trn("a", "b", 2))',
-        'log.error("%s", i18n.translator(x).text("y"))', 'log.debug(m, extra=render(t))',
-    ):  # fmt: skip
+        'log.warning(tr("x"))',
+        'logging.info("%s", cli.trn("a", "b", 2))',
+        'log.error("%s", i18n.translator(x).text("y"))',
+        "log.debug(m, extra=render(t))",
+    ):
         assert _translated_in_log_calls(ast.parse(logged)) == [1]
     assert _translated_in_log_calls(ast.parse('log.warning("%s", warning)')) == []

@@ -78,9 +78,15 @@ EVERY_TYPE = (
     "0364000000070302007b0378500376000003640382000005dc"
 )
 NEW_KEYS = {  # the keys of contacts/<key> that 1.1.0a1 did not write
-    "telemetry_state", "telemetry_excluded", "telemetry_current", "position_current",
-    "readings_at", "battery_v", "mcu_temperature_c", "readings",
-}  # fmt: skip
+    "telemetry_state",
+    "telemetry_excluded",
+    "telemetry_current",
+    "position_current",
+    "readings_at",
+    "battery_v",
+    "mcu_temperature_c",
+    "readings",
+}
 
 
 def gps(position: Position) -> str:
@@ -123,9 +129,12 @@ async def with_alice(
 
 
 async def announce_alice(
-    hass: HomeAssistant, mesh: Mesh, devices: ContactDevices, broker: Broker,
+    hass: HomeAssistant,
+    mesh: Mesh,
+    devices: ContactDevices,
+    broker: Broker,
     state: TelemetryState = "answering",
-) -> None:  # fmt: skip
+) -> None:
     """As the observer publishes an answer: her document, then her device with the components
     it gained; the broker sends the retained messages to the new subscriptions only."""
     await fire(hass, TOPICS.contact(ALICE), document(mesh, state))
@@ -181,35 +190,69 @@ async def test_an_answer_adds_its_entities_to_the_contact_device(
     for entity_id in SENSORS:
         state, entry = hass.states.get(entity_id), registry.async_get(entity_id)
         shown[entity_id] = (
-            state.attributes["friendly_name"], state.state, state.attributes.get("device_class"),
-            state.attributes.get("unit_of_measurement"), state.attributes.get("state_class"),
+            state.attributes["friendly_name"],
+            state.state,
+            state.attributes.get("device_class"),
+            state.attributes.get("unit_of_measurement"),
+            state.attributes.get("state_class"),
             entry.options["sensor"]["suggested_display_precision"],
             entry.entity_category.value if entry.entity_category else None,
-        )  # fmt: skip
+        )
     assert shown == {
         BATTERY: ("Alice Battery", "4.12", "voltage", "V", "measurement", 2, None),
         "sensor.mesh_alice_mcu_temperature": (
-            "Alice MCU temperature", "23.4", "temperature", "°C", "measurement", 1, "diagnostic",
+            "Alice MCU temperature",
+            "23.4",
+            "temperature",
+            "°C",
+            "measurement",
+            1,
+            "diagnostic",
         ),
         "sensor.mesh_alice_ch2_temperature": (
-            "Alice Temperature 2", "21.3", "temperature", "°C", "measurement", 1, None,
+            "Alice Temperature 2",
+            "21.3",
+            "temperature",
+            "°C",
+            "measurement",
+            1,
+            None,
         ),
         "sensor.mesh_alice_ch2_humidity": (
-            "Alice Humidity 2", "55.5", "humidity", "%", "measurement", 1, None,
+            "Alice Humidity 2",
+            "55.5",
+            "humidity",
+            "%",
+            "measurement",
+            1,
+            None,
         ),
         "sensor.mesh_alice_ch2_barometric_pressure": (
-            "Alice Pressure 2", "1013.2", "atmospheric_pressure", "hPa", "measurement", 1, None,
+            "Alice Pressure 2",
+            "1013.2",
+            "atmospheric_pressure",
+            "hPa",
+            "measurement",
+            1,
+            None,
         ),
         "sensor.mesh_alice_ch2_altitude": (
-            "Alice Altitude 2", "120.0", "distance", "m", "measurement", 0, None,
+            "Alice Altitude 2",
+            "120.0",
+            "distance",
+            "m",
+            "measurement",
+            0,
+            None,
         ),
-    }  # fmt: skip
+    }
     switch, sensor = registry.async_get(SWITCH), registry.async_get(STATE)
     assert (switch.entity_category.value, sensor.entity_category) == ("config", None)
     telemetry_state = hass.states.get(STATE)
     assert (telemetry_state.state, telemetry_state.attributes["options"]) == (
-        "answering", list(STATES),
-    )  # fmt: skip
+        "answering",
+        list(STATES),
+    )
     assert telemetry_state.attributes["friendly_name"] == "Alice Telemetry state"
     assert hass.states.get(SWITCH).attributes["friendly_name"] == "Alice Telemetry"
     assert problems(caplog) == []
@@ -229,10 +272,11 @@ async def test_every_published_reading_type_gets_its_class_unit_and_precision(
         entity_id, entity = f"sensor.mesh_alice_{component}", READING_ENTITIES[lpp_type]
         state, entry = hass.states.get(entity_id), registry.async_get(entity_id)
         shown[lpp_type] = (
-            state.state, state.attributes.get("device_class"),
+            state.state,
+            state.attributes.get("device_class"),
             state.attributes.get("unit_of_measurement"),
             entry.options["sensor"]["suggested_display_precision"],
-        )  # fmt: skip
+        )
         announced[lpp_type] = (str(value), entity.device_class, entity.unit, entity.precision)
     assert set(announced) == set(lpp.UNITS)  # every type the documents publish
     assert shown == announced
@@ -243,8 +287,9 @@ async def test_older_documents_and_the_clearing_message_log_nothing(
     hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
     """A document that 1.1.0a1 retained, and the empty message that clears a contact's."""
-    mesh, _devices, _broker = await with_alice(hass, tmp_path, BATTERY_4_12, gps(home(hass)),
-                                               BME280, MCU)  # fmt: skip
+    mesh, _devices, _broker = await with_alice(
+        hass, tmp_path, BATTERY_4_12, gps(home(hass)), BME280, MCU
+    )
     older = {k: v for k, v in document(mesh).items() if k not in NEW_KEYS}
     await fire(hass, TOPICS.contact(ALICE), older)
     assert set(states(hass, *SENSORS, STATE)) == {"unknown"}
@@ -267,14 +312,17 @@ async def test_the_switch_sends_the_request_and_follows_the_document(
         published = [c.args[:4] for c in mqtt.async_publish.call_args_list]
         assert published == [(request, payload, 1, False)]
         assert hass.states.get(SWITCH).state == refused  # not until the gateway took it
-        event = contact_event("refused", ALICE, ALICE_NODE, request="telemetry",
-                              reason="rate_limited")  # fmt: skip
+        event = contact_event(
+            "refused", ALICE, ALICE_NODE, request="telemetry", reason="rate_limited"
+        )
         await fire(hass, TOPICS.contact_event, event)
         assert hass.states.get(SWITCH).state == refused  # its document is unchanged
         excluded = payload == "off"
-        await fire(hass, TOPICS.contact(ALICE), document(
-            mesh, "excluded" if excluded else "waiting", excluded=excluded
-        ))  # fmt: skip
+        await fire(
+            hass,
+            TOPICS.contact(ALICE),
+            document(mesh, "excluded" if excluded else "waiting", excluded=excluded),
+        )
         assert hass.states.get(SWITCH).state == payload
     assert problems(caplog) == []
 
@@ -292,12 +340,19 @@ async def test_every_state_is_an_option(
 async def test_answers_that_are_not_current_make_the_sensors_and_tracker_unavailable(
     hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
-    mesh, _devices, _broker = await with_alice(hass, tmp_path, BATTERY_4_12, gps(home(hass)),
-                                               BME280, MCU)  # fmt: skip
+    mesh, _devices, _broker = await with_alice(
+        hass, tmp_path, BATTERY_4_12, gps(home(hass)), BME280, MCU
+    )
     before = hass.states.get(TRACKER)
     assert {*states(hass, *SENSORS, TRACKER)} - {"unavailable", "unknown"} == {
-        "4.12", "23.4", "21.3", "55.5", "1013.2", "120.0", "home",
-    }  # fmt: skip
+        "4.12",
+        "23.4",
+        "21.3",
+        "55.5",
+        "1013.2",
+        "120.0",
+        "home",
+    }
     await fire(hass, TOPICS.contact(ALICE), document(mesh, "no_position"))  # GPS off for an hour
     assert "unavailable" not in states(hass, *SENSORS)
     assert hass.states.get(TRACKER).state == "unavailable"
@@ -308,8 +363,10 @@ async def test_answers_that_are_not_current_make_the_sensors_and_tracker_unavail
     assert "unavailable" not in states(hass, *SENSORS)
     tracker = hass.states.get(TRACKER)
     assert (tracker.state, tracker.attributes["latitude"], tracker.attributes["longitude"]) == (
-        "home", before.attributes["latitude"], before.attributes["longitude"],
-    )  # fmt: skip
+        "home",
+        before.attributes["latitude"],
+        before.attributes["longitude"],
+    )
     assert problems(caplog) == []
 
 
@@ -337,9 +394,13 @@ def presence_automations() -> list[dict[str, Any]]:
     """One automation per presence trigger of the guide's table; each posts its own name."""
 
     def posting(name: str, trigger: dict[str, Any]) -> dict[str, Any]:
-        return {"alias": name, "triggers": [trigger], "actions": [
-            {"action": "persistent_notification.create", "data": {"message": name}},
-        ]}  # fmt: skip
+        return {
+            "alias": name,
+            "triggers": [trigger],
+            "actions": [
+                {"action": "persistent_notification.create", "data": {"message": name}},
+            ],
+        }
 
     alice, zone = {"entity_id": "person.alice"}, {"zone": "zone.home"}
     return [
@@ -379,8 +440,12 @@ async def test_a_person_ignores_an_expired_mesh_tracker(
     assert states(hass, "person.alice", "zone.home") == ["home", "1"]
     assert notifications(hass)[3:] == ["zone enter", "detected"]  # no zone.entered
 
-    at_home = {"source_type": "gps", "latitude": hass.config.latitude,
-               "longitude": hass.config.longitude, "gps_accuracy": 10}  # fmt: skip
+    at_home = {
+        "source_type": "gps",
+        "latitude": hass.config.latitude,
+        "longitude": hass.config.longitude,
+        "gps_accuracy": 10,
+    }
     hass.states.async_set(phone, "home", {**at_home, "in_zones": ["zone.home"]})
     await fire(hass, TOPICS.contact(ALICE), document(mesh, "away"))
     assert states(hass, "person.alice", "zone.home") == ["home", "1"]  # it follows the phone
@@ -394,9 +459,10 @@ async def test_readings_have_no_coordinates(
     await with_alice(hass, tmp_path, BATTERY_4_12, gps(home(hass, 500)), BME280, MCU)
     assert hass.states.get(TRACKER).state == "not_home"
     on_map = {
-        s.entity_id for s in hass.states.async_all()
+        s.entity_id
+        for s in hass.states.async_all()
         if "latitude" in s.attributes or "longitude" in s.attributes
-    }  # fmt: skip
+    }
     assert on_map == {TRACKER, "zone.home"}  # only the tracker of all of Alice's entities
     assert problems(caplog) == []
 
@@ -407,9 +473,12 @@ async def test_readings_have_no_coordinates(
 def telemetry_state_document(status: str, reason: str | None) -> dict[str, Any]:
     """The state document with the telemetry keys, as Bridge.state_payload writes them."""
     return {
-        **state_document(known=True), "telemetry": status, "telemetry_reason": reason,
-        "telemetry_airtime_1h_s": 2.464, "telemetry_mesh_airtime_1h_s": 7.392,
-    }  # fmt: skip
+        **state_document(known=True),
+        "telemetry": status,
+        "telemetry_reason": reason,
+        "telemetry_airtime_1h_s": 2.464,
+        "telemetry_mesh_airtime_1h_s": 7.392,
+    }
 
 
 async def test_the_gateway_telemetry_entities(
@@ -448,13 +517,18 @@ async def test_the_gateway_telemetry_entities(
 
 @pytest.mark.parametrize("restart", [False, True], ids=["running", "after-a-restart"])
 async def test_a_removed_contact_takes_its_switch_and_readings(
-    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path, *,
+    hass: HomeAssistant,
+    mqtt: Any,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    *,
     restart: bool,
-) -> None:  # fmt: skip
+) -> None:
     """After a restart Home Assistant ignores an empty document for a device it has not
     discovered since; the placeholders sent first bind each entity, the switch too."""
-    _mesh, devices, broker = await with_alice(hass, tmp_path, BATTERY_4_12, gps(home(hass)),
-                                              BME280, MCU)  # fmt: skip
+    _mesh, devices, broker = await with_alice(
+        hass, tmp_path, BATTERY_4_12, gps(home(hass)), BME280, MCU
+    )
     assert set(contact_entities(hass, ALICE)) == ALICE_IDS | ALICE_ANSWER_IDS
     if restart:
         await hass.config_entries.async_reload(
@@ -490,8 +564,13 @@ async def test_the_dashboard_card_and_the_battery_template(
     card = guide_block("type: entities\ntitle: Alice's handheld")
     assert [row["entity"] for row in card["entities"]] == [STATE, BATTERY, TRACKER, SWITCH]
     # the helper of the guide: a template sensor with its state template
-    helper = {"name": "Alice battery level", "state": guide_template(), "device_class": "battery",
-              "unit_of_measurement": "%", "state_class": "measurement"}  # fmt: skip
+    helper = {
+        "name": "Alice battery level",
+        "state": guide_template(),
+        "device_class": "battery",
+        "unit_of_measurement": "%",
+        "state_class": "measurement",
+    }
     assert await async_setup_component(hass, "template", {"template": [{"sensor": [helper]}]})
     await hass.async_block_till_done()
     level = "sensor.alice_battery_level"
@@ -545,15 +624,21 @@ async def test_the_not_answering_example_posts_one_notification_per_event(
         telemetry_event("unanswered", ALICE, ALICE_NODE, "away"),  # the next absence
     ):
         await fire(hass, TOPICS.telemetry_event, event)
-    assert notifications(hass) == [f"{ALICE[:12]}: away", f"{BOB[:12]}: away",
-                                   f"{ALICE[:12]}: away"]  # fmt: skip
+    assert notifications(hass) == [
+        f"{ALICE[:12]}: away",
+        f"{BOB[:12]}: away",
+        f"{ALICE[:12]}: away",
+    ]
     assert problems(caplog) == []
 
 
 async def test_the_left_home_example_skips_a_paused_telemetry_and_a_restart(
-    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
     freezer: FrozenDateTimeFactory,
-) -> None:  # fmt: skip
+) -> None:
     await with_person(hass)
     mesh, _devices, _broker = await with_alice(hass, tmp_path, BATTERY_4_12, gps(home(hass)), MCU)
     await fire(hass, TOPICS.state, telemetry_state_document("on", None), retain=True)
@@ -587,9 +672,12 @@ async def test_the_left_home_example_skips_a_paused_telemetry_and_a_restart(
 
 
 async def test_the_left_home_example_waits_for_the_first_answer_after_the_radio_returns(
-    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
     freezer: FrozenDateTimeFactory,
-) -> None:  # fmt: skip
+) -> None:
     """*Telemetry status* reads `on` as soon as the radio is back, and Alice answers later: after
     her answers expired during the outage, or when they expire while she waits for her turn."""
     await with_person(hass)
@@ -627,16 +715,22 @@ async def test_the_contact_not_changed_example_reports_an_unsaved_exclusion(
     assert await async_setup_component(hass, "automation", {"automation": [automation]})
     await hass.async_block_till_done()
     for kind, reason in (
-        ("excluded", None), ("included", None), ("excluded", "not_saved"),
-        ("excluded", "not_forgotten"), ("refused", "not_a_companion"),
+        ("excluded", None),
+        ("included", None),
+        ("excluded", "not_saved"),
+        ("excluded", "not_forgotten"),
+        ("refused", "not_a_companion"),
         ("failed", "state_unwritable"),
-    ):  # fmt: skip
-        event = contact_event(kind, ALICE, ALICE_NODE, request="telemetry", request_id="x1",
-                              reason=reason)  # fmt: skip
+    ):
+        event = contact_event(
+            kind, ALICE, ALICE_NODE, request="telemetry", request_id="x1", reason=reason
+        )
         await fire(hass, TOPICS.contact_event, event)
     prefix = ALICE[:12]
     assert notifications(hass) == [
-        f"telemetry {prefix}: not_saved", f"telemetry {prefix}: not_forgotten",
-        f"telemetry {prefix}: not_a_companion", f"telemetry {prefix}: state_unwritable",
-    ]  # fmt: skip
+        f"telemetry {prefix}: not_saved",
+        f"telemetry {prefix}: not_forgotten",
+        f"telemetry {prefix}: not_a_companion",
+        f"telemetry {prefix}: state_unwritable",
+    ]
     assert problems(caplog) == []

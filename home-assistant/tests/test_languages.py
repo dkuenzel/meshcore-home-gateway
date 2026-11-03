@@ -48,8 +48,18 @@ OPTIONS = ["e5e5e5e5e5e5…e5e5e5e5 Hilltop", "b2b2b2b2b2b2…b2b2b2b2 Hall (roo
 FIRST, SECOND = "radio1", "radio2"  # the node IDs of the English gateway and the other one
 # what may differ between the two gateways' entries: the names and what Home Assistant keeps
 # about the entry itself, not about the entity
-OWN = {"id", "entity_id", "unique_id", "device_id", "config_entry_id", "created_at",
-       "modified_at", "original_name", "original_name_unprefixed", "_cache"}  # fmt: skip
+OWN = {
+    "id",
+    "entity_id",
+    "unique_id",
+    "device_id",
+    "config_entry_id",
+    "created_at",
+    "modified_at",
+    "original_name",
+    "original_name_unprefixed",
+    "_cache",
+}
 SPOKEN = ["xx", *(code for code in i18n.LANGUAGES if code != "en")]
 
 
@@ -113,9 +123,12 @@ def answered() -> Mesh:
 
 
 async def discover(
-    hass: HomeAssistant, config: Config, store: JsonStateFile, mesh: Mesh,
+    hass: HomeAssistant,
+    config: Config,
+    store: JsonStateFile,
+    mesh: Mesh,
     slug: Callable[[str], str] = slugify,
-) -> dict[str, str]:  # fmt: skip
+) -> dict[str, str]:
     """What the gateway announces when it starts: its document (the components of an earlier
     run bound, then removed), its controls, its contacts' devices, and the documents they show.
     The names it sent, by unique ID; `slug` makes its contacts' entity IDs."""
@@ -192,18 +205,26 @@ def facts(hass: HomeAssistant, node_id: str) -> dict[str, Any]:
 
 @pytest.mark.parametrize("language", SPOKEN)
 async def test_entity_ids_are_the_same_in_every_language(
-    hass: HomeAssistant, mqtt: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-    caplog: pytest.LogCaptureFixture, *, language: str,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    *,
+    language: str,
+) -> None:
     """An English gateway and one in `language` side by side; the second one's contacts get
     other slugs, so that their entity IDs stay apart."""
     translator = offer(language, monkeypatch)
     mesh = answered()
     english = await discover(hass, gateway(), JsonStateFile(tmp_path / "one.json"), mesh)
     spoken = await discover(
-        hass, gateway(SECOND, language), JsonStateFile(tmp_path / "two.json"), mesh,
+        hass,
+        gateway(SECOND, language),
+        JsonStateFile(tmp_path / "two.json"),
+        mesh,
         slug=lambda name: f"two_{slugify(name)}",
-    )  # fmt: skip
+    )
     first, second = facts(hass, FIRST), facts(hass, SECOND)
     assert len(first) > 70
     assert second == first
@@ -243,9 +264,12 @@ async def test_entity_ids_are_the_same_in_every_language(
 
 
 async def test_a_language_change_renames_only_display_names(
-    hass: HomeAssistant, mqtt: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """Set in the configuration, a language renames the display names at the next start; the
     entity IDs, the names the user gave and every entity stay, as Home Assistant keeps a
     known entity's ID and the user's name when its discovery changes."""
@@ -277,9 +301,12 @@ async def test_a_language_change_renames_only_display_names(
 
 
 async def test_a_chosen_device_name_stays(
-    hass: HomeAssistant, mqtt: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """Only the default device name is translated: a name the household chose stays."""
     translator = offer("xx", monkeypatch)
     config = gateway(language="xx", device_name="Greenhouse")

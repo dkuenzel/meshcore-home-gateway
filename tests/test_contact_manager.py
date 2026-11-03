@@ -55,9 +55,14 @@ def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def request(
-    bus: FakeBus, kind: str, body: str | bytes | dict[str, Any], *, key: str | None = None,
-    retained: bool = False, node_label: bool = False,
-) -> None:  # fmt: skip
+    bus: FakeBus,
+    kind: str,
+    body: str | bytes | dict[str, Any],
+    *,
+    key: str | None = None,
+    retained: bool = False,
+    node_label: bool = False,
+) -> None:
     if isinstance(body, dict):
         body = json.dumps(body)
     payload = body.encode() if isinstance(body, str) else body
@@ -66,9 +71,10 @@ def request(
 
 async def result(bus: FakeBus, request_id: str, within_s: float = 3) -> dict[str, Any]:
     return await bus.wait_for(
-        f"{ROOT}/contact", lambda e: e.get("id") == request_id and e["event_type"] in FINAL,
+        f"{ROOT}/contact",
+        lambda e: e.get("id") == request_id and e["event_type"] in FINAL,
         within_s,
-    )  # fmt: skip
+    )
 
 
 def results(bus: FakeBus) -> list[dict[str, Any]]:
@@ -109,9 +115,15 @@ def test_a_heard_node_is_added_with_its_own_advert(tmp_path: Path) -> None:
             request(bus, "add", {"contact": dave, "id": "t1"})
             event = await result(bus, "t1")
             assert event == {
-                "event_type": "added", "key": dave, "prefix": dave[:12], "name": "Dave",
-                "type": "chat", "request": "add", "id": "t1", "reason": None,
-            }  # fmt: skip
+                "event_type": "added",
+                "key": dave,
+                "prefix": dave[:12],
+                "name": "Dave",
+                "type": "chat",
+                "request": "add",
+                "id": "t1",
+                "reason": None,
+            }
             (frame,) = contact_writes(radio)
             assert len(frame) == 144
             assert (frame[33], frame[34], frame[35]) == (1, 0x00, 0xFF)  # chat, no flags, no path
@@ -141,8 +153,10 @@ def test_a_link_adds_a_node_not_heard_with_its_claims(tmp_path: Path) -> None:
             request(bus, "add", {"contact": link, "id": "link"})
             event = await result(bus, "link")
             assert (event["event_type"], event["name"], event["type"]) == (
-                "added", "Hill top ä", "room",
-            )  # fmt: skip
+                "added",
+                "Hill top ä",
+                "room",
+            )
             (frame,) = contact_writes(radio)
             assert frame[33] == 3
             assert struct.unpack_from("<I", frame, 132)[0] == 0  # a claim, not signed
@@ -174,8 +188,11 @@ def test_a_bare_key_gets_a_name_from_its_digits(tmp_path: Path) -> None:
         ("hello", "invalid_link", None),
         ("meshcore://channel/add?name=Public&secret=" + "00" * 16, "unsupported_link", None),
         ("meshcore://contact/add?public_key=" + "d4" * 32 + "&type=0", "unsupported_type", None),
-        ("meshcore://contact/add?public_key=" + "d4" * 32 + "&public_key=" + "d4" * 32,
-         "invalid_link", None),
+        (
+            "meshcore://contact/add?public_key=" + "d4" * 32 + "&public_key=" + "d4" * 32,
+            "invalid_link",
+            None,
+        ),
         ("{", "invalid_request", None),
         ('{"contact": "' + "d4" * 32 + '", "id": "bad id"}', "invalid_request", None),
         ('{"a":' + "[" * 1010, "invalid_request", None),  # nested too deeply for json
@@ -185,7 +202,7 @@ def test_a_bare_key_gets_a_name_from_its_digits(tmp_path: Path) -> None:
         (ALICE_TWIN.hex(), "look_alike", ALICE_TWIN.hex()),
         (SELF_KEY.hex(), "own_key", SELF_KEY.hex()),
     ],
-)  # fmt: skip
+)
 def test_an_add_is_refused_with_its_reason(
     tmp_path: Path, body: str | bytes, reason: str, key: str | None
 ) -> None:
@@ -211,8 +228,10 @@ def test_a_look_alike_of_a_protected_key_not_on_the_radio_is_refused(tmp_path: P
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
             request(bus, "add", {"contact": twin, "id": "twin"})
             assert (await result(bus, "twin"))["reason"] == "look_alike"
-            assert all(p[0] != Command.ADD_UPDATE_CONTACT or p[1:33] != bytes.fromhex(twin)
-                       for p in radio.received)  # fmt: skip
+            assert all(
+                p[0] != Command.ADD_UPDATE_CONTACT or p[1:33] != bytes.fromhex(twin)
+                for p in radio.received
+            )
 
     scenario(main)
 
@@ -424,8 +443,10 @@ def test_a_contact_is_removed_and_offered_again_as_a_heard_node(tmp_path: Path) 
             request(bus, "remove", {"id": "rm"}, key=dave)
             event = await result(bus, "rm")
             assert (event["event_type"], event["name"], event["request"]) == (
-                "removed", "Dave", "remove",
-            )  # fmt: skip
+                "removed",
+                "Dave",
+                "remove",
+            )
             (frame,) = contact_writes(radio)
             assert frame == bytes([Command.REMOVE_CONTACT]) + DAVE.public_key
             cleared = index_of(bus, f"{ROOT}/contacts/{dave}", lambda p: p == b"")
@@ -604,8 +625,9 @@ def test_a_write_that_broke_off_has_an_unknown_outcome_and_one_result(tmp_path: 
             request(bus, "add", {"contact": dave, "id": "torn"})
             event = await result(bus, "torn")
             assert (event["event_type"], event["reason"]) in {
-                ("failed", "outcome_unknown"), ("added", None),
-            }  # fmt: skip
+                ("failed", "outcome_unknown"),
+                ("added", None),
+            }
             await bus.wait_for(f"{ROOT}/contact", lambda e: e["event_type"] == "added")
             await asyncio.sleep(0.1)
             assert len([e for e in results(bus) if e["id"] == "torn"]) == 1
@@ -644,8 +666,10 @@ def test_a_refusal_at_once_names_the_heard_node(tmp_path: Path) -> None:
 
     async def main() -> None:
         async with running(make_config("[contacts]\nmanage = false"), radio, tmp_path) as (
-            _, bus, _n,
-        ):  # fmt: skip
+            _,
+            bus,
+            _n,
+        ):
             await heard(bus, radio, ROOM)
             request(bus, "add", {"contact": ROOM.public_key.hex(), "id": "off"})
             event = await result(bus, "off")
@@ -662,10 +686,12 @@ def test_a_refusal_names_a_node_heard_after_its_request_was_taken() -> None:
         bus = FakeBus()
         observer = Observer(bus, Topics("meshcore", "radio1"), wall_clock=lambda: NOW)
         events: asyncio.Queue[Any] = asyncio.Queue()
-        manager = ContactManager(make_config(), observer, events, lambda: None,
-                                 protected=frozenset())  # fmt: skip
-        manager.accept(ContactRequest("add", json.dumps({"contact": room, "id": "q"}).encode(),
-                                      retained=False))  # fmt: skip
+        manager = ContactManager(
+            make_config(), observer, events, lambda: None, protected=frozenset()
+        )
+        manager.accept(
+            ContactRequest("add", json.dumps({"contact": room, "id": "q"}).encode(), retained=False)
+        )
         observer.mesh.node_heard(Node(room, "Hilltop", 3), Heard(NOW, "advert"))
         worker = asyncio.create_task(manager.run())
         try:
@@ -718,10 +744,13 @@ def test_a_heard_node_picked_in_the_select_is_added(tmp_path: Path) -> None:
         (label(DAVE), "unknown_node", False),  # not heard
         ("Dave", "unknown_node", False),
         (label(EmulatedContact(BOB.public_key, "Bob")), "already_contact", True),
-        ({"contact": label(EmulatedContact(BOB.public_key, "Bob")), "id": "env"},
-         "already_contact", True),
+        (
+            {"contact": label(EmulatedContact(BOB.public_key, "Bob")), "id": "env"},
+            "already_contact",
+            True,
+        ),
     ],
-)  # fmt: skip
+)
 def test_a_label_is_refused_with_its_reason(
     tmp_path: Path, body: str | dict[str, Any], reason: str, named: bool
 ) -> None:
@@ -748,8 +777,10 @@ def test_a_retained_label_is_refused_and_management_off_names_the_node(tmp_path:
 
     async def main() -> None:
         async with running(make_config("[contacts]\nmanage = false"), radio, tmp_path) as (
-            _, bus, _n,
-        ):  # fmt: skip
+            _,
+            bus,
+            _n,
+        ):
             await heard(bus, radio, DAVE)
             request(bus, "add", label(DAVE), node_label=True, retained=True)
             request(bus, "add", label(DAVE), node_label=True)
@@ -757,8 +788,10 @@ def test_a_retained_label_is_refused_and_management_off_names_the_node(tmp_path:
             first, second = results(bus)
             assert (first["reason"], first["key"]) == ("retained", dave)
             assert (second["reason"], second["key"], second["name"]) == (
-                "management_off", dave, "Dave",
-            )  # fmt: skip
+                "management_off",
+                dave,
+                "Dave",
+            )
 
     scenario(main)
 
@@ -790,25 +823,41 @@ def records(*contacts: EmulatedContact) -> dict[str, codec.ContactRecord]:
 
 
 def telemetry_manager(
-    *, exclusions: TelemetryExclusions | None = None, config: Config | None = None,
-    history: History | None = None, read: bool = True,
-) -> tuple[ContactManager, Observer, FakeBus, Ticks]:  # fmt: skip
+    *,
+    exclusions: TelemetryExclusions | None = None,
+    config: Config | None = None,
+    history: History | None = None,
+    read: bool = True,
+) -> tuple[ContactManager, Observer, FakeBus, Ticks]:
     """No radio: the session is None. `read`: the observer has the table of Alice, Bob, the
     room server and a repeater."""
     bus, clock = FakeBus(), Ticks()
-    observer = Observer(bus, Topics("meshcore", "radio1"), history=history, exclusions=exclusions,
-                        wall_clock=lambda: NOW)  # fmt: skip
+    observer = Observer(
+        bus,
+        Topics("meshcore", "radio1"),
+        history=history,
+        exclusions=exclusions,
+        wall_clock=lambda: NOW,
+    )
     if read:
         observer.radio_event(ContactsRead(records(ALICE, BOB, ROOM, RELAY), NOW))
-    manager = ContactManager(config or make_config(), observer, asyncio.Queue(), lambda: None,
-                             protected=frozenset(), monotonic=clock)  # fmt: skip
+    manager = ContactManager(
+        config or make_config(),
+        observer,
+        asyncio.Queue(),
+        lambda: None,
+        protected=frozenset(),
+        monotonic=clock,
+    )
     return manager, observer, bus, clock
 
 
 def ask(
-    manager: ContactManager, key: str | None, body: str | bytes | dict[str, Any],
+    manager: ContactManager,
+    key: str | None,
+    body: str | bytes | dict[str, Any],
     retained: bool = False,
-) -> None:  # fmt: skip
+) -> None:
     if isinstance(body, dict):
         body = json.dumps(body)
     payload = body.encode() if isinstance(body, str) else body
@@ -826,23 +875,34 @@ def test_off_excludes_at_once_and_the_documents_come_before_the_event(tmp_path: 
     path = tmp_path / EXCLUSIONS_FILE
 
     def observer(bus: FakeBus) -> Observer:
-        return Observer(bus, Topics("meshcore", "radio1"), exclusions=TelemetryExclusions(path),
-                        wall_clock=lambda: NOW)  # fmt: skip
+        return Observer(
+            bus,
+            Topics("meshcore", "radio1"),
+            exclusions=TelemetryExclusions(path),
+            wall_clock=lambda: NOW,
+        )
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
             request(bus, "telemetry", {"telemetry": "off", "id": "x1"}, key=ALICE_KEY)
             event = await result(bus, "x1")
             assert event == {
-                "event_type": "excluded", "key": ALICE_KEY, "prefix": ALICE_KEY[:12],
-                "name": "Alice", "type": "chat", "request": "telemetry", "id": "x1",
+                "event_type": "excluded",
+                "key": ALICE_KEY,
+                "prefix": ALICE_KEY[:12],
+                "name": "Alice",
+                "type": "chat",
+                "request": "telemetry",
+                "id": "x1",
                 "reason": None,
-            }  # fmt: skip
+            }
             assert TelemetryExclusions(path).keys == {ALICE_KEY}
-            shown = index_of(bus, f"{ROOT}/contacts/{ALICE_KEY}",
-                             lambda p: json.loads(p)["telemetry_excluded"])  # fmt: skip
-            head = index_of(bus, f"{ROOT}/contacts",
-                            lambda p: ALICE_KEY in json.loads(p)["telemetry_excluded"])  # fmt: skip
+            shown = index_of(
+                bus, f"{ROOT}/contacts/{ALICE_KEY}", lambda p: json.loads(p)["telemetry_excluded"]
+            )
+            head = index_of(
+                bus, f"{ROOT}/contacts", lambda p: ALICE_KEY in json.loads(p)["telemetry_excluded"]
+            )
             excluded = index_of(bus, f"{ROOT}/contact", lambda p: b'"excluded"' in p)
             assert shown < excluded
             assert head < excluded
@@ -914,11 +974,15 @@ def test_a_telemetry_request_needs_neither_management_nor_the_radio(
         ("on", False, ROOM_KEY, "not_a_companion", True),
         ("off", False, RELAY_KEY, "not_a_companion", True),
     ],
-)  # fmt: skip
+)
 def test_a_telemetry_request_is_refused_with_the_first_reason(  # noqa: PLR0917 - the cases
-    caplog: pytest.LogCaptureFixture, body: str | bytes, retained: bool, key: str | None,
-    reason: str, named: bool,
-) -> None:  # fmt: skip
+    caplog: pytest.LogCaptureFixture,
+    body: str | bytes,
+    retained: bool,
+    key: str | None,
+    reason: str,
+    named: bool,
+) -> None:
     """The checks in their documented order: each case would fail the later ones too."""
     manager, observer, bus, _ = telemetry_manager()
     with caplog.at_level(logging.INFO):
@@ -927,8 +991,10 @@ def test_a_telemetry_request_is_refused_with_the_first_reason(  # noqa: PLR0917 
         assert f"telemetry '+' refused: {reason}" in caplog.text
     event = last_result(bus)
     assert (event["event_type"], event["reason"], event["request"]) == (
-        "refused", reason, "telemetry",
-    )  # fmt: skip
+        "refused",
+        reason,
+        "telemetry",
+    )
     assert event["key"] == (key if named else None)
     if key == ROOM_KEY:
         assert (event["name"], event["type"]) == ("Hilltop", "room")
@@ -943,8 +1009,11 @@ def test_a_key_not_on_the_radio_can_be_excluded_in_advance() -> None:
     ask(manager, DAVE_KEY, {"telemetry": "off", "id": "early"})
     event = last_result(bus)
     assert (event["event_type"], event["key"], event["name"], event["type"]) == (
-        "excluded", DAVE_KEY, None, None,
-    )  # fmt: skip
+        "excluded",
+        DAVE_KEY,
+        None,
+        None,
+    )
     assert bus.payloads(f"{ROOT}/contacts")[-1]["telemetry_excluded"] == [DAVE_KEY]
     observer.radio_event(ContactsRead(records(ALICE, BOB, ROOM), NOW))  # Dave is not there
     ask(manager, ALICE_KEY, "off")
@@ -953,8 +1022,9 @@ def test_a_key_not_on_the_radio_can_be_excluded_in_advance() -> None:
     assert observer.exclusions.keys == {ALICE_KEY}
     ask(manager, DAVE_KEY, "on")  # again: no longer stored, and not on the radio
     assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
-        "refused", "unknown_contact",
-    )  # fmt: skip
+        "refused",
+        "unknown_contact",
+    )
 
 
 def test_telemetry_requests_are_limited_to_one_a_second_with_bursts_of_30() -> None:
@@ -968,8 +1038,11 @@ def test_telemetry_requests_are_limited_to_one_a_second_with_bursts_of_30() -> N
     ask(manager, ALICE_KEY, {"telemetry": "off", "id": "31st"})
     event = last_result(bus)
     assert (event["event_type"], event["reason"], event["key"], event["id"]) == (
-        "refused", "rate_limited", ALICE_KEY, "31st",
-    )  # fmt: skip
+        "refused",
+        "rate_limited",
+        ALICE_KEY,
+        "31st",
+    )
     assert ALICE_KEY not in observer.exclusions
     clock.now += 1.0
     ask(manager, ALICE_KEY, "off")
@@ -1003,8 +1076,10 @@ def test_an_exclusion_that_cannot_be_stored_takes_effect_and_an_inclusion_does_n
         ask(manager, key, "on")
         event = last_result(bus)
         assert (event["event_type"], event["reason"], event["request"]) == (
-            "failed", "state_unwritable", "telemetry",
-        )  # fmt: skip
+            "failed",
+            "state_unwritable",
+            "telemetry",
+        )
         assert key in observer.exclusions  # still excluded
     assert bus.payloads(f"{ROOT}/contacts/{ALICE_KEY}")[-1]["telemetry_excluded"] is True
 
@@ -1018,14 +1093,16 @@ def test_a_failed_forget_is_reported_also_when_the_exclusion_is_not_stored(
     history = History.open(tmp_path / "history.sqlite3")
     assert history is not None
     path = tmp_path / EXCLUSIONS_FILE
-    manager, observer, bus, _ = telemetry_manager(exclusions=TelemetryExclusions(path),
-                                                  history=history)  # fmt: skip
+    manager, observer, bus, _ = telemetry_manager(
+        exclusions=TelemetryExclusions(path), history=history
+    )
     monkeypatch.setattr(os, "replace", failing_rename)
     history._db.execute("DROP TABLE reading")  # its delete fails
     ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})
     assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
-        "excluded", "not_forgotten",
-    )  # fmt: skip
+        "excluded",
+        "not_forgotten",
+    )
     assert history.broken
     assert ALICE_KEY in observer.exclusions
     monkeypatch.undo()
@@ -1045,8 +1122,9 @@ def test_an_unreadable_exclusions_file_takes_off_in_memory_only_and_refuses_on(
     assert ALICE_KEY in observer.exclusions
     ask(manager, ALICE_KEY, "on")
     assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
-        "failed", "state_unwritable",
-    )  # fmt: skip
+        "failed",
+        "state_unwritable",
+    )
     assert ALICE_KEY in observer.exclusions
     assert path.read_bytes() == b"{not json"
 
@@ -1064,8 +1142,9 @@ def test_forget_deletes_the_contacts_history_or_says_it_could_not(tmp_path: Path
     manager, observer, bus, _ = telemetry_manager()  # no history
     ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})
     assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
-        "excluded", "not_forgotten",
-    )  # fmt: skip
+        "excluded",
+        "not_forgotten",
+    )
     assert ALICE_KEY in observer.exclusions
 
 
@@ -1079,8 +1158,10 @@ def test_too_many_stored_keys_refuse_only_a_new_exclusion() -> None:
     ask(manager, DAVE_KEY, {"telemetry": "off", "id": "many"})
     event = last_result(bus)
     assert (event["event_type"], event["reason"], event["key"]) == (
-        "refused", "too_many", DAVE_KEY,
-    )  # fmt: skip
+        "refused",
+        "too_many",
+        DAVE_KEY,
+    )
     ask(manager, ALICE_KEY, "off")  # stored already
     assert last_result(bus)["event_type"] == "excluded"
     ask(manager, BOB.public_key.hex(), "on")  # not excluded: nothing to store
@@ -1103,8 +1184,10 @@ def test_with_ask_household_too_many_inclusions_refuse_only_a_new_one() -> None:
     ask(manager, ALICE_KEY, {"telemetry": "on", "id": "many"})
     event = last_result(bus)
     assert (event["event_type"], event["reason"], event["key"]) == (
-        "refused", "too_many", ALICE_KEY,
-    )  # fmt: skip
+        "refused",
+        "too_many",
+        ALICE_KEY,
+    )
     ask(manager, f"{0:064x}", "off")  # makes room: an inclusion becomes an exclusion
     assert last_result(bus)["event_type"] == "excluded"
     ask(manager, ALICE_KEY, "on")
@@ -1112,8 +1195,9 @@ def test_with_ask_household_too_many_inclusions_refuse_only_a_new_one() -> None:
     assert ALICE_KEY not in observer.exclusions
     ask(manager, DAVE_KEY, "on")
     assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
-        "refused", "unknown_contact",
-    )  # fmt: skip
+        "refused",
+        "unknown_contact",
+    )
 
 
 def test_refused_telemetry_requests_share_the_bound_of_refusal_events(
@@ -1146,5 +1230,6 @@ def test_a_bug_behind_the_exclusion_still_ends_the_request(
     assert "observer failed" in caplog.text
     ask(manager, ALICE_KEY, {"telemetry": "off", "forget": True})  # nothing could be deleted
     assert (last_result(bus)["event_type"], last_result(bus)["reason"]) == (
-        "excluded", "not_forgotten",
-    )  # fmt: skip
+        "excluded",
+        "not_forgotten",
+    )

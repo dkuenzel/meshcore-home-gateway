@@ -133,9 +133,13 @@ def dashboard(config: Config, state_dir: Path) -> tuple[str, int]:
 
     template = (resources.files(__package__ or __name__) / TEMPLATE).read_text(encoding="utf-8")
     yaml = render(
-        template, node_id=config.mqtt.node_id, version=__version__, trackers=listed, text=text,
+        template,
+        node_id=config.mqtt.node_id,
+        version=__version__,
+        trackers=listed,
+        text=text,
         contact_prefix=prefix,
-    )  # fmt: skip
+    )
     return yaml, len(listed)
 
 

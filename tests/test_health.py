@@ -63,9 +63,12 @@ def test_a_bug_is_counted_and_its_traceback_logged_once_a_minute(
         logger.removeFilter(failures)
     lines = [r.getMessage() for r in caplog.records]
     assert lines == [
-        "listener x failed", "another x failed", "listener z failed (1 more since)", "not a bug",
+        "listener x failed",
+        "another x failed",
+        "listener z failed (1 more since)",
+        "not a bug",
         "no traceback",
-    ]  # fmt: skip
+    ]
     assert all(r.exc_info for r in caplog.records[:3])
     assert failures.last_hour() == 4
     clock.now += 3600
@@ -74,8 +77,14 @@ def test_a_bug_is_counted_and_its_traceback_logged_once_a_minute(
 
 def test_the_service_loggers_report_to_the_one_count() -> None:
     """The parts that catch their own bugs; a count of their own: count()."""
-    for name in ("bridge", "observer", "telemetry_poller", "contact_manager", "radio.session",
-                 "history"):  # fmt: skip
+    for name in (
+        "bridge",
+        "observer",
+        "telemetry_poller",
+        "contact_manager",
+        "radio.session",
+        "history",
+    ):
         module = importlib.import_module(f"meshcore_home_gateway.{name}")
         assert health.FAILURES in module.log.filters
     health.FAILURES.count()

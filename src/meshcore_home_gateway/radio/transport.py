@@ -130,9 +130,17 @@ def _set_modem_lines(fd: int) -> None:
 def _make_raw(fd: int, speed: int) -> None:
     iflag, oflag, cflag, lflag, _, _, cc = termios.tcgetattr(fd)
     iflag &= ~(
-        termios.IGNBRK | termios.BRKINT | termios.PARMRK | termios.ISTRIP | termios.INLCR
-        | termios.IGNCR | termios.ICRNL | termios.IXON | termios.IXOFF | termios.IXANY
-    )  # fmt: skip
+        termios.IGNBRK
+        | termios.BRKINT
+        | termios.PARMRK
+        | termios.ISTRIP
+        | termios.INLCR
+        | termios.IGNCR
+        | termios.ICRNL
+        | termios.IXON
+        | termios.IXOFF
+        | termios.IXANY
+    )
     oflag &= ~termios.OPOST
     lflag &= ~(termios.ECHO | termios.ECHONL | termios.ICANON | termios.ISIG | termios.IEXTEN)
     cflag &= ~(termios.CSIZE | termios.PARENB | termios.CSTOPB | termios.CRTSCTS)

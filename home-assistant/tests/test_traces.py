@@ -52,10 +52,15 @@ async def subscribe(hass: HomeAssistant, hass_ws_client: Any, card: dict[str, An
     await async_wait_recording_done(hass)
     client = await hass_ws_client(hass)
     start = dt_util.utcnow() - timedelta(hours=card["hours_to_show"])
-    await client.send_json({
-        "id": 1, "type": "history/stream", "entity_ids": card["entities"],
-        "start_time": start.isoformat(), **MAP_CARD,
-    })  # fmt: skip
+    await client.send_json(
+        {
+            "id": 1,
+            "type": "history/stream",
+            "entity_ids": card["entities"],
+            "start_time": start.isoformat(),
+            **MAP_CARD,
+        }
+    )
     return client
 
 
@@ -93,9 +98,14 @@ def card_of(*entities: str) -> dict[str, Any]:
 
 
 async def test_a_trace_has_a_point_per_move_and_none_per_resting_answer(
-    recorder_mock: Any, hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *,
-    caplog: pytest.LogCaptureFixture, tmp_path: Path,
-) -> None:  # fmt: skip
+    recorder_mock: Any,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
     """Telemetry: the first fix and each move of 20 m or more, nothing for an answer at rest or
     a move of 10 m. Then an advert that carries a position 5 m on, and an answer at that place
     (to the 11 m of a GPS entry): a point each, the second for the switch of the source."""
@@ -104,8 +114,12 @@ async def test_a_trace_has_a_point_per_move_and_none_per_resting_answer(
         hass, tmp_path, BATTERY_4_12, gps(home(hass, 300)), MCU
     )
     expected = [point(mesh)]
-    for at, north_m, moved in ((900, 300, False), (1800, 330, True), (2700, 340, False),
-                               (3600, 400, True)):  # fmt: skip
+    for at, north_m, moved in (
+        (900, 300, False),
+        (1800, 330, True),
+        (2700, 340, False),
+        (3600, 400, True),
+    ):
         answer(mesh, NOW + at, BATTERY_4_12, gps(home(hass, north_m)), MCU)
         await fire(hass, TOPICS.contact(ALICE), document(mesh))
         if moved:
@@ -126,9 +140,14 @@ async def test_a_trace_has_a_point_per_move_and_none_per_resting_answer(
 
 
 async def test_an_expiry_is_a_point_without_coordinates(
-    recorder_mock: Any, hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *,
-    caplog: pytest.LogCaptureFixture, tmp_path: Path,
-) -> None:  # fmt: skip
+    recorder_mock: Any,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
     """Her answers expire, then she answers again at the same place: a row without a position,
     which the card skips, and the same point again."""
     assert await async_setup_component(hass, "history", {})
@@ -141,16 +160,24 @@ async def test_an_expiry_is_a_point_without_coordinates(
     found = (await rows(await subscribe(hass, hass_ws_client, card_of(TRACKER))))[TRACKER]
     shown = [(row["s"], (row.get("a") or {}).get("latitude")) for row in found]
     first = shown.index(("not_home", located[0]))
-    assert shown[first:] == [("not_home", located[0]), ("unavailable", None),
-                             ("not_home", located[0])]  # fmt: skip
+    assert shown[first:] == [
+        ("not_home", located[0]),
+        ("unavailable", None),
+        ("not_home", located[0]),
+    ]
     assert points(found) == [located, located]  # the card joins them with a straight line
     assert problems(caplog) == []
 
 
 async def test_the_documented_map_card_reads_its_trace(
-    recorder_mock: Any, hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *,
-    caplog: pytest.LogCaptureFixture, tmp_path: Path,
-) -> None:  # fmt: skip
+    recorder_mock: Any,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
     """The guide's card exactly as written: a map of the mesh trackers, whose `hours_to_show`
     (24) is the window the card asks for."""
     card = guide_block("type: map")
@@ -173,9 +200,14 @@ async def test_the_documented_map_card_reads_its_trace(
     "recorder_config", [{"exclude": {"entity_globs": guide_recorder("device_tracker.mesh_*")}}]
 )
 async def test_without_the_recorder_there_is_no_trace_but_a_person_keeps_one(
-    recorder_mock: Any, hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *,
-    caplog: pytest.LogCaptureFixture, tmp_path: Path,
-) -> None:  # fmt: skip
+    recorder_mock: Any,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
     """The guide's recorder exclusion: the tracker leaves no row in the database, a card open at
     that moment still gets the next point, and a `person` with the tracker records its own."""
     assert await async_setup_component(hass, "history", {})

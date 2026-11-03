@@ -32,8 +32,12 @@ _FLAGS = {
     ContactFlag.REMOTE_CLI: "remote_cli",
 }
 _ERRORS = {0x01: "queue_full", 0x02: "cad_timeout", 0x04: "start_rx_timeout"}  # Dispatcher.h
-_AUTO_ADD = {AutoAdd.CHAT: "chat", AutoAdd.REPEATER: "repeater", AutoAdd.ROOM_SERVER: "room",
-             AutoAdd.SENSOR: "sensor"}  # fmt: skip
+_AUTO_ADD = {
+    AutoAdd.CHAT: "chat",
+    AutoAdd.REPEATER: "repeater",
+    AutoAdd.ROOM_SERVER: "room",
+    AutoAdd.SENSOR: "sensor",
+}
 
 
 def encode(document: Mapping[str, Any]) -> bytes:
@@ -91,7 +95,7 @@ def advert_carries_position(tracked: Tracked) -> bool | None:
     flag of its newest advert, as the gateway checked it. While its newest advert is not checked
     (none yet, or a newer one the gateway missed), the last check's flag, or True when the
     radio's record holds a position from an earlier advert, which it may still send: it errs to
-    warn (design 6c D4, D5; ADR 0025). None for other node types, which share theirs by design and
+    warn (ADR 0025). None for other node types, which share theirs by design and
     are not checked."""
     node, check = tracked.node, tracked.advert
     if node.node_type != NodeType.CHAT:
@@ -102,9 +106,13 @@ def advert_carries_position(tracked: Tracked) -> bool | None:
 
 
 def contact_document(
-    tracked: Tracked, *, protected: bool = False, manage: bool = False,
-    telemetry_state: TelemetryState | None = None, excluded: bool = False,
-) -> dict[str, Any]:  # fmt: skip
+    tracked: Tracked,
+    *,
+    protected: bool = False,
+    manage: bool = False,
+    telemetry_state: TelemetryState | None = None,
+    excluded: bool = False,
+) -> dict[str, Any]:
     """`contacts/<key>`: one contact of the radio and what the gateway learned about it.
     `telemetry_state`: None for a contact that is never asked (no companion)."""
     node, fix, readings = tracked.node, tracked.fix, tracked.readings
@@ -159,8 +167,14 @@ def _current(state: TelemetryState | None, from_telemetry: bool) -> tuple[bool |
 
 
 _FORGOTTEN = ("readings_at", "battery_v", "mcu_temperature_c", "position_received_at")
-_POSITION = ("latitude", "longitude", "altitude_m", "position_at", "position_source",
-             "position_accuracy_m")  # fmt: skip
+_POSITION = (
+    "latitude",
+    "longitude",
+    "altitude_m",
+    "position_at",
+    "position_source",
+    "position_accuracy_m",
+)
 
 
 def restated(
@@ -182,15 +196,23 @@ def restated(
             again |= dict.fromkeys(_POSITION)
             from_telemetry = False
     telemetry_current, position_current = _current(state, from_telemetry)
-    again |= {"telemetry_state": state, "telemetry_current": telemetry_current,
-              "position_current": position_current, "telemetry_excluded": excluded}  # fmt: skip
+    again |= {
+        "telemetry_state": state,
+        "telemetry_current": telemetry_current,
+        "position_current": position_current,
+        "telemetry_excluded": excluded,
+    }
     return again
 
 
 def contacts_document(
-    mesh: Mesh, *, protected: Iterable[str] = (), manage: bool = False,
-    excluded: Collection[str] = (), manage_reason: str | None = None,
-) -> dict[str, Any]:  # fmt: skip
+    mesh: Mesh,
+    *,
+    protected: Iterable[str] = (),
+    manage: bool = False,
+    excluded: Collection[str] = (),
+    manage_reason: str | None = None,
+) -> dict[str, Any]:
     """`contacts`: the index of the radio's contact table, most recently heard first.
     `excluded`: every key excluded from telemetry, also those not on the radio.
     `manage_reason`: why add and remove requests are refused now (management_off, no_radio,
@@ -259,15 +281,19 @@ def name_taken_nodes(mesh: Mesh, reserved: Iterable[str] = ()) -> set[str]:
         if compared:
             counts[compared] = counts.get(compared, 0) + 1
     return {
-        key for key, t in mesh.nodes.items()
+        key
+        for key, t in mesh.nodes.items()
         if (compared := name_key(t.node.name)) and counts[compared] > 1
-    }  # fmt: skip
+    }
 
 
 def nodes_document(
-    mesh: Mesh, *, protected: Iterable[str] = (), heard: HeardNodes = "full",
+    mesh: Mesh,
+    *,
+    protected: Iterable[str] = (),
+    heard: HeardNodes = "full",
     reserved: Iterable[str] = (),
-) -> dict[str, Any]:  # fmt: skip
+) -> dict[str, Any]:
     """`nodes`: nodes the radio heard but did not add, most recently heard first; no positions.
     `heard` (`[contacts] heard_nodes`, SEC-015): with `keys` without their names, times and
     signal; with `off` none of them, only the look-alikes' and the taken names' keys."""
@@ -290,19 +316,29 @@ def nodes_document(
     )
     warning, names = sorted(flagged), sorted(taken)
     head = {
-        "total": len(listed), "truncated": True, "look_alike": warning[:WARNING_KEYS],
-        "look_alike_total": len(warning), "name_taken": names[:WARNING_KEYS],
-        "name_taken_total": len(names), "nodes": [],
-    }  # fmt: skip
+        "total": len(listed),
+        "truncated": True,
+        "look_alike": warning[:WARNING_KEYS],
+        "look_alike_total": len(warning),
+        "name_taken": names[:WARNING_KEYS],
+        "name_taken_total": len(names),
+        "nodes": [],
+    }
     kept, total = bounded(entries, ATTRIBUTE_LIMIT_BYTES - len(encode(head)))  # all within it
     return {**head, "total": total, "truncated": len(kept) < total, "nodes": kept}
 
 
 def contact_event(
-    kind: str, key: str | None, node: Node | None = None, *, name: str | None = None,
-    node_type: int | None = None, request: str | None = None, request_id: str | None = None,
+    kind: str,
+    key: str | None,
+    node: Node | None = None,
+    *,
+    name: str | None = None,
+    node_type: int | None = None,
+    request: str | None = None,
+    request_id: str | None = None,
     reason: str | None = None,
-) -> dict[str, Any]:  # fmt: skip
+) -> dict[str, Any]:
     """A `contact` event: what changed in the table, or a request's result. Name and type from
     the node, else as given (a request's claim)."""
     kind_of = node.node_type if node else node_type
@@ -389,10 +425,13 @@ _TELEMETRY_MODES: dict[int, str] = {
     TelemetryMode.ALLOW_ALL: "all",
 }
 SETTING_NAMES = {
-    profile.MANUAL_ADD: "manual_add", profile.AUTOADD: "autoadd", profile.TELEMETRY: "telemetry",
-    profile.ADVERT_LOCATION: "advert_location", profile.AIRTIME_FACTOR: "duty_cycle_percent",
+    profile.MANUAL_ADD: "manual_add",
+    profile.AUTOADD: "autoadd",
+    profile.TELEMETRY: "telemetry",
+    profile.ADVERT_LOCATION: "advert_location",
+    profile.AIRTIME_FACTOR: "duty_cycle_percent",
     profile.NAME: "name",
-}  # fmt: skip
+}
 
 
 def setting_value(key: str, value: object) -> object:
@@ -419,13 +458,18 @@ def settings_document(report: profile.ProfileReport, at: float) -> dict[str, Any
     """`settings`: the radio's managed settings as found at the last connect, what the profile
     wants, and what happened to each (ADR 0020)."""
     problems = (
-        *report.not_converging, *report.unsupported, *report.disabled, *report.failed,
-        *report.not_taken, *report.contacts_failed,
-    )  # fmt: skip
+        *report.not_converging,
+        *report.unsupported,
+        *report.disabled,
+        *report.failed,
+        *report.not_taken,
+        *report.contacts_failed,
+    )
     differs = [
-        k for k, v in report.desired.items()
+        k
+        for k, v in report.desired.items()
         if report.live.get(k) is not None and not profile.same(k, report.live.get(k), v)
-    ]  # fmt: skip
+    ]
     if problems:
         status = "problem"
     elif report.observing and (differs or report.contacts_missing or report.contacts_not_favourite):
@@ -438,10 +482,15 @@ def settings_document(report: profile.ProfileReport, at: float) -> dict[str, Any
         status = "ok"
 
     def state(key: str) -> str:
-        for name, keys in (("unsupported", report.unsupported), ("disabled", report.disabled),
-                           ("failed", report.failed), ("not_taken", report.not_taken),
-                           ("not_converging", report.not_converging),
-                           ("written", report.written), ("drift", report.drift)):  # fmt: skip
+        for name, keys in (
+            ("unsupported", report.unsupported),
+            ("disabled", report.disabled),
+            ("failed", report.failed),
+            ("not_taken", report.not_taken),
+            ("not_converging", report.not_converging),
+            ("written", report.written),
+            ("drift", report.drift),
+        ):
             if key in keys:
                 return name
         if key not in report.desired:

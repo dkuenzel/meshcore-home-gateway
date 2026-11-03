@@ -80,7 +80,7 @@ def directives(text: str) -> collections.Counter[str]:
 
 @dataclass(frozen=True, slots=True)
 class Translator:
-    """One language's catalog; English where it has no usable translation (D7)."""
+    """One language's catalog; English where it has no usable translation (design §6.12)."""
 
     language: str
     catalog: gettext.NullTranslations
@@ -107,7 +107,7 @@ class Translator:
 
     def argparse_text(self, msgid: str, /) -> str:
         """A text argparse %-formats (help, description, argparse's own words): the translation
-        only when its %-directives equal the msgid's; never filled (D7)."""
+        only when its %-directives equal the msgid's; never filled (design §6.12)."""
         return _guarded(msgid, self._lookup(None, msgid, None, 1))
 
     def argparse_words(self) -> tuple[Callable[[str], str], Callable[[str, str, int], str]]:
@@ -148,7 +148,7 @@ class Translator:
 
     def _fits(self, text: str, english: tuple[str, ...], values: Mapping[str, object]) -> bool:
         """A translation names only fields of its English texts (no {alias.upper}) and formats
-        with the given values (D7)."""
+        with the given values (design §6.12)."""
         try:
             fill(text, values, show=self.render)
             names = _field_names(text)

@@ -98,9 +98,13 @@ def run_block(
     assert BLOCK is not None
     program = "set -Eeuo pipefail\n" + BLOCK.group() + driver
     return subprocess.run(  # noqa: S603 - the block of our script and a fixed driver
-        [BASH, "-c", program, "block", *args], cwd=where, input=payload, capture_output=True,
-        check=False, timeout=60,
-    )  # fmt: skip
+        [BASH, "-c", program, "block", *args],
+        cwd=where,
+        input=payload,
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
 
 
 # --- the messages block, on its own ------------------------------------------------------------
@@ -148,19 +152,31 @@ def test_messages_round_trip_in_bash(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["$(touch ran)", "`touch ran`", "A&B", "%s %b", "\\n \\c \\\\", "two\nlines", "{other}",
-     "{message}", "‹›"],
-)  # fmt: skip
+    [
+        "$(touch ran)",
+        "`touch ran`",
+        "A&B",
+        "%s %b",
+        "\\n \\c \\\\",
+        "two\nlines",
+        "{other}",
+        "{message}",
+        "‹›",
+    ],
+)
 def test_values_are_filled_in_as_given(tmp_path: Path, value: str) -> None:
     """A value is inserted once, never read again: not as a field, an escape or a command."""
     pack, pin = pinned(tmp_path, tool.pack("xx", marked(template())))
-    asked = [("t", "Error: {message}", "message", value),
-             ("t", "invalid settings: {reason}", "reason", value)]  # fmt: skip
+    asked = [
+        ("t", "Error: {message}", "message", value),
+        ("t", "invalid settings: {reason}", "reason", value),
+    ]
     result = run_block(tmp_path, CALLS, str(pack), pin, payload=calls(*asked))
     assert result.returncode == 0, result.stderr
     assert result.stdout.decode("utf-8").split("\0")[:-1] == [
-        f"‹Error: {value}›", f"‹invalid settings: {value}›",
-    ]  # fmt: skip
+        f"‹Error: {value}›",
+        f"‹invalid settings: {value}›",
+    ]
     assert not (tmp_path / "ran").exists()
 
 
@@ -199,9 +215,17 @@ printf '%s %s %s' "$before" "$status" "${#L10N[@]}"
 
 @pytest.mark.parametrize(
     "case",
-    ["tampered", "another pin", "no pin", "an upper-case pin", "an unknown line", "an empty line",
-     "a line without a text", "two final line breaks"],
-)  # fmt: skip
+    [
+        "tampered",
+        "another pin",
+        "no pin",
+        "an upper-case pin",
+        "an unknown line",
+        "an empty line",
+        "a line without a text",
+        "two final line breaks",
+    ],
+)
 def test_a_pack_that_does_not_match_is_refused_whole(tmp_path: Path, case: str) -> None:
     """Refused before or while it is read, and no entry stays behind: the dialogs stay English."""
     good, pin = pinned(tmp_path, tool.pack("xx", marked(template())))
@@ -233,9 +257,12 @@ BUDGET = 98_304  # bytes: 96 KiB, 75 % of the 131,071 that Linux takes in one ar
 def published(version: str) -> bytes:
     """The installer as `make release` writes it: the release's version in its one line."""
     return re.sub(
-        rb'^RELEASE=""', b'RELEASE="' + version.encode() + b'"', SCRIPT.read_bytes(), count=1,
+        rb'^RELEASE=""',
+        b'RELEASE="' + version.encode() + b'"',
+        SCRIPT.read_bytes(),
+        count=1,
         flags=re.MULTILINE,
-    )  # fmt: skip
+    )
 
 
 def fits(script: bytes) -> bool:
@@ -362,9 +389,13 @@ def run(
         (host.root / "dialog").write_text("\n".join(dialog) + "\n", encoding="utf-8")
     return subprocess.run(  # noqa: S603 - a copy of our script with fixed arguments
         [BASH, "-c", script.read_text(encoding="utf-8"), "--", *args],
-        env=installer_env(host, env), capture_output=True, text=True,
-        stdin=subprocess.DEVNULL, timeout=60, check=False,
-    )  # fmt: skip
+        env=installer_env(host, env),
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=60,
+        check=False,
+    )
 
 
 def text_of(call: list[str]) -> str:
@@ -388,8 +419,16 @@ def environment_of(call: list[str]) -> list[str]:
 
 
 # the button labels the pack gives: whiptail gets them before the rest of each call
-BUTTONS = ["--yes-button", "‹Yes›", "--no-button", "‹No›", "--ok-button", "‹Ok›",
-           "--cancel-button", "‹Cancel›"]  # fmt: skip
+BUTTONS = [
+    "--yes-button",
+    "‹Yes›",
+    "--no-button",
+    "‹No›",
+    "--ok-button",
+    "‹Ok›",
+    "--cancel-button",
+    "‹Cancel›",
+]
 
 
 @pytest.fixture
@@ -409,18 +448,25 @@ def pseudo_program(tmp_path: Path) -> Path:
     package = source / "meshcore_home_gateway"
     module = package / "i18n.py"
     text, count = re.subn(
-        r"MappingProxyType\(\{", 'MappingProxyType({"xx": "Pseudo", ',
-        module.read_text(encoding="utf-8"), count=1,
-    )  # fmt: skip
+        r"MappingProxyType\(\{",
+        'MappingProxyType({"xx": "Pseudo", ',
+        module.read_text(encoding="utf-8"),
+        count=1,
+    )
     assert count == 1
     module.write_text(text, encoding="utf-8")
     python = tool.Project(ROOT).template
     _, entries = read_po(python.read_text(encoding="utf-8"), python.name)
     translated = [
-        Entry(e.msgid, tuple(f"‹{t}›" for t in (e.msgid, e.msgid_plural) if t is not None),
-              e.msgctxt, e.msgid_plural, e.flags)
+        Entry(
+            e.msgid,
+            tuple(f"‹{t}›" for t in (e.msgid, e.msgid_plural) if t is not None),
+            e.msgctxt,
+            e.msgid_plural,
+            e.flags,
+        )
         for e in entries
-    ]  # fmt: skip
+    ]
     po = tool.write_po(tool.catalog_header("xx", GERMANIC), translated)
     (package / "locale" / "xx.po").write_text(po, encoding="utf-8")
     return source
@@ -442,28 +488,71 @@ PLAN_ALL = (
 
 
 def default(
-    host: Host, broker: list[str], again: tuple[str, ...] = (), language: str = "xx",
+    host: Host,
+    broker: list[str],
+    again: tuple[str, ...] = (),
+    language: str = "xx",
     accept: bool = True,
-) -> list[str]:  # fmt: skip
+) -> list[str]:
     """The answers of a default installation: the language, the broker's (address, user name,
     password: TLS is answered no, an empty user name confirmed), then (`again`) the answers
     after a refused login, which comes after the confirmation; `accept`: the commands without
     TLS are accepted (SEC-004)."""
     address, *login = broker
     confirm = ["yes"] if login[:1] == [""] else []
-    return [language, "default", str(host.serial), address, "no", *login[:1], *confirm,
-            *login[1:], "yes", *again, "1", ALICE, ALICE, "status",
-            *(["yes"] if accept else [])]  # fmt: skip
+    return [
+        language,
+        "default",
+        str(host.serial),
+        address,
+        "no",
+        *login[:1],
+        *confirm,
+        *login[1:],
+        "yes",
+        *again,
+        "1",
+        ALICE,
+        ALICE,
+        "status",
+        *(["yes"] if accept else []),
+    ]
 
 
 def advanced(host: Host, names: str | None, language: str = "en") -> list[str]:
     """The answers of an advanced installation: `names` for the menu of the names' language,
     None where the installer does not ask it."""
-    return [language, "advanced", "106", "meshcore-home-gateway", "local-lvm", "4", "512",
-            "vmbr1", "dhcp", "local", str(host.serial), "broker.example.org", "no", "1883",
-            "bridge", "pw", "meshcore", "gw1", "yes", "Mesh radio",
-            *([] if names is None else [names]),
-            "no", "yes", "1", ALICE, ALICE, "status", "yes", ""]  # fmt: skip
+    return [
+        language,
+        "advanced",
+        "106",
+        "meshcore-home-gateway",
+        "local-lvm",
+        "4",
+        "512",
+        "vmbr1",
+        "dhcp",
+        "local",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "pw",
+        "meshcore",
+        "gw1",
+        "yes",
+        "Mesh radio",
+        *([] if names is None else [names]),
+        "no",
+        "yes",
+        "1",
+        ALICE,
+        ALICE,
+        "status",
+        "yes",
+        "",
+    ]
 
 
 class Scenario(NamedTuple):
@@ -478,31 +567,83 @@ class Scenario(NamedTuple):
 SCENARIOS = {
     # a login refused, then the broker typed again: the user name it was; the plan; the summary
     "refused, typed again": Scenario(
-        lambda h: default(h, ["broker.example.org", "bridge", "wrong"],
-                          ("yes", "broker.example.org", "no", "1883", "bridge", "right")),
+        lambda h: default(
+            h,
+            ["broker.example.org", "bridge", "wrong"],
+            ("yes", "broker.example.org", "no", "1883", "bridge", "right"),
+        ),
         {"BROKER_ANSWERS": "1 0", "PROBE_PLAN": PLAN_ALL},
-        ("Login:    ‹user 'bridge' with a password›", "Broker:       ‹login accepted›",
-         "‹broker refused the connection: Not authorized›"),
+        (
+            "Login:    ‹user 'bridge' with a password›",
+            "Broker:       ‹login accepted›",
+            "‹broker refused the connection: Not authorized›",
+        ),
     ),
     "no user name, refused, settings refused": Scenario(
-        lambda h: default(h, ["broker.example.org", ""],
-                          ("yes", "broker.example.org", "no", "x", "", "yes",
-                           "broker.example.org", "yes", "8883", "bridge", ""), accept=False),
+        lambda h: default(
+            h,
+            ["broker.example.org", ""],
+            (
+                "yes",
+                "broker.example.org",
+                "no",
+                "x",
+                "",
+                "yes",
+                "broker.example.org",
+                "yes",
+                "8883",
+                "bridge",
+                "",
+            ),
+            accept=False,
+        ),
         {"BROKER_ANSWERS": "1 4 0"},
         ("Login:    ‹none (no user name)›", "‹configuration error: mqtt.port: not a number›"),
     ),
     "a login refused and kept": Scenario(
         lambda h: default(h, ["broker.example.org", "bridge", ""], ("no",)),
         {"BROKER_ANSWERS": "1"},
-        ("Login:    ‹user 'bridge' without a password›",
-         "Broker:       ‹login failed (see above), the service keeps trying›"),
+        (
+            "Login:    ‹user 'bridge' without a password›",
+            "Broker:       ‹login failed (see above), the service keeps trying›",
+        ),
     ),
     "advanced, a gateway, a radio over TCP": Scenario(
-        lambda h: ["xx", "advanced", "106", "meshcore-home-gateway", "local-lvm", "4", "512",
-                   "vmbr1", "192.0.2.20/24", "192.0.2.1", "local", "tcp", "192.0.2.30", "5000",
-                   "yes",
-                   "broker.example.org", "yes", "8883", "bridge", "pw", "meshcore", "gw1", "yes",
-                   "Mesh radio", "en", "yes", "yes", "1", "", "", "x" * 32, "Mesh gateway"],
+        lambda h: [
+            "xx",
+            "advanced",
+            "106",
+            "meshcore-home-gateway",
+            "local-lvm",
+            "4",
+            "512",
+            "vmbr1",
+            "192.0.2.20/24",
+            "192.0.2.1",
+            "local",
+            "tcp",
+            "192.0.2.30",
+            "5000",
+            "yes",
+            "broker.example.org",
+            "yes",
+            "8883",
+            "bridge",
+            "pw",
+            "meshcore",
+            "gw1",
+            "yes",
+            "Mesh radio",
+            "en",
+            "yes",
+            "yes",
+            "1",
+            "",
+            "",
+            "x" * 32,
+            "Mesh gateway",
+        ],
         {},
         ("Network:  ‹vmbr1, 192.0.2.20/24, gateway 192.0.2.1›",),
     ),
@@ -525,20 +666,48 @@ SCENARIOS = {
         release="0.2.0rc1",
     ),
     "a version without the login check, a profile observed": Scenario(
-        lambda h: ["xx", "default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE,
-                   "status"],
+        lambda h: [
+            "xx",
+            "default",
+            "old.example.org",
+            "no",
+            "bridge",
+            "",
+            "1",
+            ALICE,
+            ALICE,
+            "status",
+        ],
         {"BROKER_ANSWERS": "3", "STUB_VERSION": "1.2.3", "PROBE_PLAN": PLAN_ALL},
         ("Broker:       ‹not checked (version 1.2.3 cannot; check after --update)›",),
         reconfigure=True,
     ),
     "the installed password kept": Scenario(
-        lambda h: ["xx", "default", "old.example.org", "no", "bridge", "new", "yes",
-                   "old.example.org", "no", "1883", "bridge", "", "1", ALICE, ALICE, "status"],
-        {"BROKER_ANSWERS": "1 0",
-         "PROBE_PLAN": "name\\tGateway\\ntested\\tno\\nchange\\tautoadd\\t0\\t1\\treported\\n"},
+        lambda h: [
+            "xx",
+            "default",
+            "old.example.org",
+            "no",
+            "bridge",
+            "new",
+            "yes",
+            "old.example.org",
+            "no",
+            "1883",
+            "bridge",
+            "",
+            "1",
+            ALICE,
+            ALICE,
+            "status",
+        ],
+        {
+            "BROKER_ANSWERS": "1 0",
+            "PROBE_PLAN": "name\\tGateway\\ntested\\tno\\nchange\\tautoadd\\t0\\t1\\treported\\n",
+        },
         reconfigure=True,
     ),
-}  # fmt: skip
+}
 
 
 def shown(host: Host) -> list[str]:
@@ -550,9 +719,10 @@ def shown(host: Host) -> list[str]:
         if "--menu" in call:  # tag, item, ...: our items say what a tag means
             items = call[call.index("--") + 6 :: 2]
             texts += [
-                item for item in items
+                item
+                for item in items
                 if not item.startswith(("usb-", str(host.serial))) and item not in PSEUDO.values()
-            ]  # fmt: skip
+            ]
     return texts
 
 
@@ -566,8 +736,14 @@ def scenario_run(
         current = (host.root / "current").read_text(encoding="utf-8")
         (host.root / "current").write_text(current + "radio.profile.manage=observe\n")
         args = ("--reconfigure", "105")
-    return run(host, script, *args, dialog=scenario.dialog(host), env=scenario.env,
-               address=bool(scenario.release))  # fmt: skip
+    return run(
+        host,
+        script,
+        *args,
+        dialog=scenario.dialog(host),
+        env=scenario.env,
+        address=bool(scenario.release),
+    )
 
 
 @pytest.mark.parametrize("name", SCENARIOS)
@@ -605,8 +781,10 @@ FRAMES: dict[str, tuple[Callable[[Host], list[str]], dict[str, str], str]] = {
     "a refused login kept": (
         lambda h: default(h, ["broker.example.org", "bridge", ""], ("no",)),
         {"BROKER_ANSWERS": "1"},
-        ("meshcore-home-gateway: warning: the broker login failed: "
-         "‹broker refused the connection: Not authorized›"),
+        (
+            "meshcore-home-gateway: warning: the broker login failed: "
+            "‹broker refused the connection: Not authorized›"
+        ),
     ),
     "settings refused on the host": (
         lambda h: ["xx", "default", str(h.serial), "broker example", "no", "bridge", "pw"],
@@ -618,7 +796,7 @@ FRAMES: dict[str, tuple[Callable[[Host], list[str]], dict[str, str], str]] = {
         {"CHECK_FAILS": "1", "STUB_VERSION": "1.2.3"},
         "meshcore-home-gateway: ‹bad›",  # its stderr, passed on
     ),
-}  # fmt: skip
+}
 
 
 @pytest.mark.parametrize("name", FRAMES)
@@ -715,8 +893,9 @@ def test_a_pack_that_cannot_be_loaded_leaves_english(host: Host, tmp_path: Path,
     assert text_of(calls[2]) == "Setup"
     assert all(call[1] == "--title" for call in calls)  # no button labels
     assert not any("‹" in arg for call in calls for arg in call)
-    assert all(not any(a.startswith("LANGUAGE=") for a in environment_of(c))
-               for c in host.pct("exec"))  # fmt: skip
+    assert all(
+        not any(a.startswith("LANGUAGE=") for a in environment_of(c)) for c in host.pct("exec")
+    )
     assert answered(host)["homeassistant.language"] == "xx"
 
 
@@ -759,9 +938,17 @@ def test_language_default_follows_the_environment(
 
 
 @pytest.mark.parametrize(
-    "case", ["install", "reconfigure", "only English", "--answers", "--update", "--help",
-             "an unknown option"],
-)  # fmt: skip
+    "case",
+    [
+        "install",
+        "reconfigure",
+        "only English",
+        "--answers",
+        "--update",
+        "--help",
+        "an unknown option",
+    ],
+)
 def test_the_language_menu_comes_first(host: Host, tmp_path: Path, case: str) -> None:
     """The first dialog of an installation and a reconfiguration, while more than English is
     offered; none without dialogs. --help and errors before it stay English."""
@@ -855,10 +1042,8 @@ def test_a_reconfiguration_keeps_the_names_language(
     if configured is not None:
         current = (host.root / "current").read_text(encoding="utf-8")
         (host.root / "current").write_text(current + f"homeassistant.language={configured}\n")
-    dialog = ["xx", "default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE,
-              "status"]  # fmt: skip
-    result = run(host, script, "--reconfigure", "105", dialog=dialog,
-                 env={"STUB_VERSION": "1.2.3"})  # fmt: skip
+    dialog = ["xx", "default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE, "status"]
+    result = run(host, script, "--reconfigure", "105", dialog=dialog, env={"STUB_VERSION": "1.2.3"})
     assert result.returncode == 0, result.stderr
     assert answered(host)["homeassistant.language"] == written
 
@@ -866,9 +1051,8 @@ def test_a_reconfiguration_keeps_the_names_language(
 @pytest.mark.parametrize("offered", [PSEUDO, {"en": "English"}])
 @pytest.mark.parametrize(
     ("answers", "written"),
-    [("", "en"), ("homeassistant.language=xx\n", "xx"),
-     ("homeassistant.discovery=false\n", None)],
-)  # fmt: skip
+    [("", "en"), ("homeassistant.language=xx\n", "xx"), ("homeassistant.discovery=false\n", None)],
+)
 def test_the_answers_name_the_names_language(
     host: Host,
     tmp_path: Path,
@@ -891,9 +1075,13 @@ OLDER = "meshcore-home-gateway 1.1.0a3 in container 105 has no setting homeassis
 
 @pytest.mark.parametrize(
     ("installed", "answers", "written"),
-    [("1.1.0a3", "", None), ("1.1.0a4", "", "en"), ("1.2.0", "", "en"),
-     ("1.1.0a3", "homeassistant.language=en\n", "en")],
-)  # fmt: skip
+    [
+        ("1.1.0a3", "", None),
+        ("1.1.0a4", "", "en"),
+        ("1.2.0", "", "en"),
+        ("1.1.0a3", "homeassistant.language=en\n", "en"),
+    ],
+)
 def test_an_older_version_gets_no_language_setting(
     host: Host, installed: str, answers: str, written: str | None
 ) -> None:
@@ -901,8 +1089,9 @@ def test_an_older_version_gets_no_language_setting(
     the installer leaves its own value out and says so once; a value of the answers goes as
     given."""
     path = answers_file(host, f"radio.choice={host.serial}\nmqtt.host=b\n{answers}")
-    result = run_installer(host, "--ref", "v1.1.0a3", "--answers", str(path),
-                           env={"STUB_VERSION": installed})  # fmt: skip
+    result = run_installer(
+        host, "--ref", "v1.1.0a3", "--answers", str(path), env={"STUB_VERSION": installed}
+    )
     assert result.returncode == 0, result.stderr
     assert answered(host).get("homeassistant.language") == written
     logged = result.stderr.count(OLDER)
@@ -914,8 +1103,14 @@ def test_an_older_version_gets_no_language_setting(
 def test_an_older_release_is_not_asked_for_the_names_language(host: Host, tmp_path: Path) -> None:
     """Its version is known before the installation."""
     script = offering(host, tmp_path)
-    result = run(host, script, "--release", "1.1.0a3", dialog=advanced(host, None),
-                 env={"STUB_VERSION": "1.1.0a3"})  # fmt: skip
+    result = run(
+        host,
+        script,
+        "--release",
+        "1.1.0a3",
+        dialog=advanced(host, None),
+        env={"STUB_VERSION": "1.1.0a3"},
+    )
     assert result.returncode == 0, result.stderr
     assert not [call for call in host.calls("whiptail") if "Language of the names" in str(call)]
     assert "homeassistant.language" not in answered(host)
@@ -928,10 +1123,28 @@ def test_a_reconfiguration_asks_what_the_installed_version_knows(
     checkout's."""
     script = offering(host, tmp_path)
     existing_container(host)
-    dialog = ["en", "advanced", "old.example.org", "no", "1883", "bridge", "", "meshcore", "gw1",
-              "yes", "MeshCore radio", "no", "1", ALICE, ALICE, "status", ""]  # fmt: skip
-    result = run(host, script, "--reconfigure", "105", dialog=dialog,
-                 env={"STUB_VERSION": "1.1.0a3"})  # fmt: skip
+    dialog = [
+        "en",
+        "advanced",
+        "old.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "",
+        "meshcore",
+        "gw1",
+        "yes",
+        "MeshCore radio",
+        "no",
+        "1",
+        ALICE,
+        ALICE,
+        "status",
+        "",
+    ]
+    result = run(
+        host, script, "--reconfigure", "105", dialog=dialog, env={"STUB_VERSION": "1.1.0a3"}
+    )
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
     assert not [call for call in host.calls("whiptail") if "Language of the names" in str(call)]
@@ -981,8 +1194,18 @@ def test_every_state_of_the_login_has_its_words(
     script = offering(host, tmp_path, pseudo_program)
     if answers == "3":  # an installed version without the check: only on --reconfigure
         existing_container(host)
-        dialog = ["xx", "default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE,
-                  "status"]  # fmt: skip
+        dialog = [
+            "xx",
+            "default",
+            "old.example.org",
+            "no",
+            "bridge",
+            "",
+            "1",
+            ALICE,
+            ALICE,
+            "status",
+        ]
         args: tuple[str, ...] = ("--reconfigure", "105")
     else:
         dialog = default(host, ["broker.example.org", "bridge", "pw"], again)
@@ -1011,9 +1234,13 @@ def test_the_host_check_speaks_the_language_it_is_given(
     assert CHECK is not None
     result = subprocess.run(  # noqa: S603 - the installer's check on a copy of our package
         [sys.executable, "-I", "-B", "-c", CHECK.group(1), str(pseudo_program)],
-        input=INVALID, env={"LANGUAGE": language, "PATH": os.environ["PATH"]},
-        capture_output=True, text=True, check=False, timeout=60,
-    )  # fmt: skip
+        input=INVALID,
+        env={"LANGUAGE": language, "PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
     assert result.returncode == 1
     with pytest.raises(ConfigError) as refused:
         render_config(INVALID)

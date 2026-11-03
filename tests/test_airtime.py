@@ -55,10 +55,14 @@ def lora(sf: int, bw_khz: float, cr: int, preamble: int = 8, **kw: bool) -> LoRa
         (lora(12, 125, 5), 64, 2793.472, 1e-6),  # tanupoo/lorawan_toa
         (lora(10, 125, 6, crc=False), 10, 264.2, 0.05),  # AN1200.13 Table 3
         # SDR measurement on an SX1276: implicit header, CRC off, LDRO off
-        (lora(12, 125, 6, 6, explicit_header=False, crc=False, low_data_rate_optimize=False),
-         11, 794.624, 1e-6),
+        (
+            lora(12, 125, 6, 6, explicit_header=False, crc=False, low_data_rate_optimize=False),
+            11,
+            794.624,
+            1e-6,
+        ),
     ],
-)  # fmt: skip
+)
 def test_time_on_air_matches_published_values(
     params: LoRaParams, payload: int, expected_ms: float, tolerance_ms: float
 ) -> None:
@@ -156,9 +160,12 @@ def test_telemetry_packet_sizes() -> None:
 
 @pytest.mark.parametrize(
     ("lpp_bytes", "mesh_s"),
-    [(8, (0.756, 1.577, 2.398, 3.219)), (19, (0.887, 1.839, 2.791, 3.744)),
-     (34, (1.018, 2.101, 3.185, 4.268))],
-)  # fmt: skip
+    [
+        (8, (0.756, 1.577, 2.398, 3.219)),
+        (19, (0.887, 1.839, 2.791, 3.744)),
+        (34, (1.018, 2.101, 3.185, 4.268)),
+    ],
+)
 def test_direct_poll_costs_count_every_hop_both_ways(
     lpp_bytes: int, mesh_s: tuple[float, ...]
 ) -> None:

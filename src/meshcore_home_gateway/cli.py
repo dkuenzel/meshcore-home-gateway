@@ -168,58 +168,72 @@ def _parser() -> argparse.ArgumentParser:
         "check-config", tr_help("validate the configuration and print a summary"), _check_config
     )
     check.add_argument(
-        "--broker", action="store_true",
+        "--broker",
+        action="store_true",
         help=tr_help("also log in to the broker with the configured user name and password"),
-    )  # fmt: skip
+    )
 
     probe = command(
-        "probe", tr_help("connect to a radio directly and list what it knows"), _probe,
+        "probe",
+        tr_help("connect to a radio directly and list what it knows"),
+        _probe,
         config=False,
-    )  # fmt: skip
+    )
     where = probe.add_mutually_exclusive_group(required=True)
     where.add_argument(
         "--serial", metavar="DEVICE", help=tr_help("serial device, e.g. /dev/serial/by-id/...")
     )
     where.add_argument(
-        "--tcp", metavar="HOST[:PORT]", type=tcp_address,
+        "--tcp",
+        metavar="HOST[:PORT]",
+        type=tcp_address,
         help=tr_help("WiFi companion, port 5000 by default; IPv6 as [ADDRESS]:PORT"),
-    )  # fmt: skip
+    )
     probe.add_argument(
-        "--list", choices=["contacts", "channels", "profile"],
+        "--list",
+        choices=["contacts", "channels", "profile"],
         help=tr_help("tab-separated list only"),
-    )  # fmt: skip
+    )
     probe.add_argument("--json", action="store_true", help=tr_help("everything as JSON"))
     probe.add_argument(
-        "--config", type=Path, default=None,
+        "--config",
+        type=Path,
+        default=None,
         help=tr_help(
             "show what the [radio.profile] of this configuration changes (default: the "
             "observer profile without a name)"
         ),
-    )  # fmt: skip
+    )
     probe.add_argument(
-        "--state-dir", type=Path, default=None,
+        "--state-dir",
+        type=Path,
+        default=None,
         help=tr_help(
             "the service's state, read only, for its exact plan (default: $STATE_DIRECTORY or "
             "/var/lib/meshcore-home-gateway)"
         ),
-    )  # fmt: skip
+    )
 
     send = command("send", tr_help("send a text to a configured target through the broker"), _send)
     send.add_argument("alias")
     send.add_argument("text")
     send.add_argument(
-        "--wait", type=_wait_seconds, default=0.0, metavar="SECONDS",
+        "--wait",
+        type=_wait_seconds,
+        default=0.0,
+        metavar="SECONDS",
         help=tr_help(
             "wait for the delivery result; exit 1 unless sent or confirmed, also when confirmed "
             "sooner than the path allows"
         ),
-    )  # fmt: skip
+    )
 
     listen = command("listen", tr_help("print events from the broker as JSON lines"), _listen)
     listen.add_argument(
-        "--topic", default="all",
+        "--topic",
+        default="all",
         choices=["received", "command", "delivery", "state", "contact", "node", "telemetry", "all"],
-    )  # fmt: skip
+    )
     listen.add_argument(
         "--count", type=_count, default=0, help=tr_help("stop after this many events (0: never)")
     )
@@ -232,12 +246,14 @@ def _parser() -> argparse.ArgumentParser:
         _dashboard,
     )
     dashboard.add_argument(
-        "--state-dir", type=Path, default=None,
+        "--state-dir",
+        type=Path,
+        default=None,
         help=tr_help(
             "the service's state, read only, for the contacts on the map (default: "
             "$STATE_DIRECTORY or /var/lib/meshcore-home-gateway)"
         ),
-    )  # fmt: skip
+    )
 
     config = commands.add_parser("config", help=tr_help("configuration helpers"))
     config_commands = config.add_subparsers(required=True, metavar="action")
@@ -336,16 +352,20 @@ def _contacts_parser(commands: argparse._SubParsersAction[argparse.ArgumentParse
         "state", choices=["on", "off"], help=tr_help("off: excluded; on: asked again")
     )
     telemetry.add_argument(
-        "--forget", action="store_true",
+        "--forget",
+        action="store_true",
         help=tr_help(
             "with off: also delete its readings and its positions from telemetry from the "
             "gateway's history"
         ),
-    )  # fmt: skip
+    )
     telemetry.add_argument(
-        "--wait", type=_wait_seconds, default=30.0, metavar="SECONDS",
+        "--wait",
+        type=_wait_seconds,
+        default=30.0,
+        metavar="SECONDS",
         help=tr_help("wait this long for the result; 0: only send the request (default 30)"),
-    )  # fmt: skip
+    )
 
 
 # --- run ------------------------------------------------------------------------------------
@@ -406,14 +426,21 @@ async def _serve(config: Config, state_dir: Path) -> int:
         history = History.open(state_dir / "history.sqlite3", retention)
     protected = protected_keys(config)
     exclusions = TelemetryExclusions(  # also while telemetry is off
-        state_dir / EXCLUSIONS_FILE, household=config.telemetry.ask == "household",
+        state_dir / EXCLUSIONS_FILE,
+        household=config.telemetry.ask == "household",
         protected=protected,
-    )  # fmt: skip
+    )
     observer = Observer(
-        bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
-        protected=protected, exclusions=exclusions, current=CurrentDocuments(store),
-        advert_checks=AdvertChecks(store), names=gateway_names(config),
-    )  # fmt: skip
+        bus,
+        topics,
+        history=history,
+        retained=RetainedKeys(store, "contacts"),
+        protected=protected,
+        exclusions=exclusions,
+        current=CurrentDocuments(store),
+        advert_checks=AdvertChecks(store),
+        names=gateway_names(config),
+    )
     profile = RadioProfile(
         config.radio.profile, ProfileRecords(store), protected=protected_names(config)
     )
@@ -422,11 +449,18 @@ async def _serve(config: Config, state_dir: Path) -> int:
         records = ContactDeviceRecords(store)
         devices = ContactDevices(config, topics, bus, records, protected=protected)
     bridge = Bridge(
-        config, bus, lambda: transport_for(config), CommandLedger(store),
-        components=AnnouncedComponents(store), observer=observer, devices=devices,
-        profile=profile, manage_components=AnnouncedComponents(store, OBJECT_ID),
-        telemetry_records=TelemetryRecords(store), state_dir=state_dir,
-    )  # fmt: skip
+        config,
+        bus,
+        lambda: transport_for(config),
+        CommandLedger(store),
+        components=AnnouncedComponents(store),
+        observer=observer,
+        devices=devices,
+        profile=profile,
+        manage_components=AnnouncedComponents(store, OBJECT_ID),
+        telemetry_records=TelemetryRecords(store),
+        state_dir=state_dir,
+    )
     try:
         await bridge.run(stop)
     finally:
@@ -557,33 +591,51 @@ def _summary(config: Config, login: str) -> list[str]:
         if radio.transport == "serial"
         # Translators: security text (docs/translations.md): the radio's TCP interface has no
         # authentication (SEC-003)
-        else tr("  radio      tcp {where}, unauthenticated: anyone who reaches it controls the "
-                "radio", where=where),
+        else tr(
+            "  radio      tcp {where}, unauthenticated: anyone who reaches it controls the radio",
+            where=where,
+        ),
         # Translators: security text (docs/translations.md): the broker connection uses TLS
         tr("  broker     {host}:{port} (TLS), {login}, topics {root}/...", **broker)
         if mqtt.tls
         # Translators: security text (docs/translations.md): the broker connection has no TLS
         else tr("  broker     {host}:{port}, {login}, topics {root}/...", **broker),
-        tr("  discovery  on, prefix {prefix}, names in {language}", prefix=ha.prefix,
-           language=language)
+        tr(
+            "  discovery  on, prefix {prefix}, names in {language}",
+            prefix=ha.prefix,
+            language=language,
+        )
         if ha.discovery
         else tr("  discovery  off"),
         *(
-            tr("  target     {alias}: channel {index}", alias=target.alias,
-               index=target.channel_index)
+            tr(
+                "  target     {alias}: channel {index}",
+                alias=target.alias,
+                index=target.channel_index,
+            )
             if target.channel_index is not None
-            else tr("  target     {alias}: contact {key}", alias=target.alias,
-                    key=target.public_key)
+            else tr(
+                "  target     {alias}: contact {key}", alias=target.alias, key=target.public_key
+            )
             for target in config.targets
         ),
         *(
-            [trn("  commands   {words} from {count} sender",
-                 "  commands   {words} from {count} senders", senders, words=words)]
+            [
+                trn(
+                    "  commands   {words} from {count} sender",
+                    "  commands   {words} from {count} senders",
+                    senders,
+                    words=words,
+                )
+            ]
             if words
             else []
         ),
-        tr("  airtime    {budget:g} s per hour, burst {burst:g} s",
-           budget=airtime.budget_s_per_hour, burst=airtime.burst_s),
+        tr(
+            "  airtime    {budget:g} s per hour, burst {burst:g} s",
+            budget=airtime.budget_s_per_hour,
+            burst=airtime.burst_s,
+        ),
         tr("  contacts   managed on request")
         if config.contacts.manage
         else tr("  contacts   not managed"),
@@ -592,7 +644,7 @@ def _summary(config: Config, login: str) -> list[str]:
         else tr("  telemetry  asked of every companion not excluded")
         if config.telemetry.ask == "all"
         else tr("  telemetry  asked of the companions the household included"),
-    ]  # fmt: skip
+    ]
 
 
 # --- dashboard ------------------------------------------------------------------------------
@@ -778,12 +830,14 @@ async def _probe_radio(
     )
     changes = {
         SETTING_NAMES[key]: {
-            "live": setting_value(key, live[key]), "profile": setting_value(key, value),
-            "action": _profile_action(key, plan), "reason": plan.reasons.get(key),
+            "live": setting_value(key, live[key]),
+            "profile": setting_value(key, value),
+            "action": _profile_action(key, plan),
+            "reason": plan.reasons.get(key),
         }
         for key, value in want.values.items()
         if live.get(key) is not None and not policy.same(key, live[key], value)
-    }  # fmt: skip
+    }
     contacts = {}  # the protected contacts the service adds or makes favourites
     for key, name in sorted(protected.items()):
         record = session.contact_records.get(key)
@@ -907,22 +961,38 @@ def _print_report(r: dict[str, Any]) -> None:
     # lines start theirs (12 in English): pad the label with spaces to keep one column.
     lines = [
         _safe_text(tr("radio      {name}  {key}", name=r["name"], key=r["public_key"])),
-        _safe_text(tr("firmware   {version} (code {code}), {model}, built {date}",
-                      version=r["firmware"], code=r["firmware_code"], model=r["model"],
-                      date=r["build_date"])),
-        tr("lora       {frequency:.3f} MHz, {bandwidth:g} kHz, SF {sf}, CR 4/{cr}, {power} dBm",
-           frequency=r["frequency_mhz"], bandwidth=r["bandwidth_khz"],
-           sf=r["spreading_factor"], cr=r["coding_rate"], power=r["tx_power_dbm"]),
+        _safe_text(
+            tr(
+                "firmware   {version} (code {code}), {model}, built {date}",
+                version=r["firmware"],
+                code=r["firmware_code"],
+                model=r["model"],
+                date=r["build_date"],
+            )
+        ),
+        tr(
+            "lora       {frequency:.3f} MHz, {bandwidth:g} kHz, SF {sf}, CR 4/{cr}, {power} dBm",
+            frequency=r["frequency_mhz"],
+            bandwidth=r["bandwidth_khz"],
+            sf=r["spreading_factor"],
+            cr=r["coding_rate"],
+            power=r["tx_power_dbm"],
+        ),
         tr(_ADDING[(*adding, overwrites)], types=types),
         tr("telemetry  {modes}", modes=modes),
         tr(_POSITION[spot is not None, shared], **(spot or {})),
         *(
-            [tr("airtime    factor {factor:g}: the radio sends at most {duty:.3g} %",
-                factor=factor, duty=100 / (1 + factor))]
+            [
+                tr(
+                    "airtime    factor {factor:g}: the radio sends at most {duty:.3g} %",
+                    factor=factor,
+                    duty=100 / (1 + factor),
+                )
+            ]
             if factor is not None
             else []
         ),
-    ]  # fmt: skip
+    ]
     for line in lines:
         print(line)
     for c in r["contacts"]:
@@ -955,10 +1025,11 @@ def _print_plan(profile: dict[str, Any]) -> None:
     # Translators: what the gateway does about a setting of the radio that differs from the
     # managed profile, in brackets after the setting's line
     what = {
-        "set": N_("set at the next connect"), "kept": N_("changed on the radio; kept"),
+        "set": N_("set at the next connect"),
+        "kept": N_("changed on the radio; kept"),
         "unsupported": N_("the firmware does not support it"),
         "disabled": N_("compiled out of the radio's firmware"),
-    }  # fmt: skip
+    }
     for name, change in profile["changes"].items():
         live, wanted = _json_text(change["live"]), _json_text(change["profile"])
         action = change["action"]
@@ -983,8 +1054,9 @@ def _print_plan(profile: dict[str, Any]) -> None:
         action = tr(doing[contact["action"]], reported=reported)
         # Translators: a contact the managed profile adds or makes a favourite: its first 12 key
         # digits, its name, what the gateway does
-        line = tr("  contact {key} {name}  ({action})", key=key[:12], name=contact["name"],
-                  action=action)  # fmt: skip
+        line = tr(
+            "  contact {key} {name}  ({action})", key=key[:12], name=contact["name"], action=action
+        )
         print(_safe_text(line))
 
 
@@ -1098,9 +1170,11 @@ class _DeliveryWatch:
 
         if _matches(event_text, self._wanted):
             return True
-        return self._nonce and isinstance(event_text, str) and (
-            _matches(without_nonce(event_text), self._wanted)
-        )  # fmt: skip
+        return (
+            self._nonce
+            and isinstance(event_text, str)
+            and (_matches(without_nonce(event_text), self._wanted))
+        )
 
     def on_message(self, _c: Any, _u: Any, message: Any) -> None:
         try:
@@ -1147,9 +1221,11 @@ def _send(args: argparse.Namespace) -> int:
     except TextRejectedError:
         wanted = args.text
     watch = _DeliveryWatch(
-        args.alias, wanted, final,
+        args.alias,
+        wanted,
+        final,
         nonce=config.messages.confirm_nonce and target.public_key is not None,
-    )  # fmt: skip
+    )
     client = _mqtt_client(config.mqtt, "send")
     client.on_message = watch.on_message
     try:
@@ -1195,8 +1271,9 @@ def _subscribe(client: Any, topic: str) -> str | None:
         return tr("broker did not confirm the subscription")
     if refused:
         # Translators: the reason is the broker's, in English (paho's text)
-        return tr("broker refused the subscription to {topic}: {reason}", topic=topic,
-                  reason=refused[0])  # fmt: skip
+        return tr(
+            "broker refused the subscription to {topic}: {reason}", topic=topic, reason=refused[0]
+        )
     return None
 
 
@@ -1216,13 +1293,23 @@ def _listen(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
     wanted = {
-        "received": [topics.received], "command": [topics.command],
-        "delivery": [topics.delivery], "state": [topics.state],
-        "contact": [topics.contact_event], "node": [topics.node_event],
+        "received": [topics.received],
+        "command": [topics.command],
+        "delivery": [topics.delivery],
+        "state": [topics.state],
+        "contact": [topics.contact_event],
+        "node": [topics.node_event],
         "telemetry": [topics.telemetry_event],
-        "all": [topics.received, topics.command, topics.delivery, topics.state,
-                topics.contact_event, topics.node_event, topics.telemetry_event],
-    }[args.topic]  # fmt: skip
+        "all": [
+            topics.received,
+            topics.command,
+            topics.delivery,
+            topics.state,
+            topics.contact_event,
+            topics.node_event,
+            topics.telemetry_event,
+        ],
+    }[args.topic]
     client = _mqtt_client(config.mqtt, "listen")
     seen = 0
     finished = threading.Event()
@@ -1355,9 +1442,13 @@ class _ContactSession:
         return bool(self.document("availability") == "online")
 
     def request(
-        self, topic: str, payload: dict[str, Any], wait_s: float, final: set[str],
+        self,
+        topic: str,
+        payload: dict[str, Any],
+        wait_s: float,
+        final: set[str],
         ok: frozenset[str] = frozenset({"added", "removed"}),
-    ) -> int:  # fmt: skip
+    ) -> int:
         """Publish the request and print its result: success is an event of `ok` without a
         reason."""
         request_id = f"cli-{os.urandom(4).hex()}"
@@ -1416,8 +1507,9 @@ def _resolve_label(label: re.Match[str], document: Any, where: str) -> dict[str,
         return found[0]
     if found:
         keys = ", ".join(sorted(e["key"] for e in found))
-        matches = trn("{count} key matches: {keys}", "{count} keys match: {keys}", len(found),
-                      keys=keys)  # fmt: skip
+        matches = trn(
+            "{count} key matches: {keys}", "{count} keys match: {keys}", len(found), keys=keys
+        )
         print(PREFIX + matches, file=sys.stderr)
     else:
         cut = isinstance(document, dict) and document.get("truncated") is True
@@ -1493,12 +1585,20 @@ def _contacts_add(args: argparse.Namespace) -> int:
         _print_key(key, name if isinstance(name, str) else None, claimed=claimed)
         if _looks_alike(key, nodes):
             # Translators: security text (docs/translations.md): translate all of it, add nothing
-            print(tr("warning: another node has the same first 12 key digits: compare the full "
-                     "key above with the node's own screen; the one added first keeps them"),
-                  file=sys.stderr)  # fmt: skip
+            print(
+                tr(
+                    "warning: another node has the same first 12 key digits: compare the full "
+                    "key above with the node's own screen; the one added first keeps them"
+                ),
+                file=sys.stderr,
+            )
         contact = key if claimed is False else text  # a card's text: the gateway parses it
-        return session.request(session.topics.add_contact, {"contact": contact}, args.wait,
-                               {"added", "refused", "failed"})  # fmt: skip
+        return session.request(
+            session.topics.add_contact,
+            {"contact": contact},
+            args.wait,
+            {"added", "refused", "failed"},
+        )
     finally:
         session.close()
 
@@ -1509,8 +1609,10 @@ def _contact_given(text: str) -> tuple[str, re.Match[str] | None] | None:
     text = text.strip()
     label = _LABEL.fullmatch(text)
     if label is None and not _FULL_KEY.fullmatch(text):
-        print(PREFIX + tr("give the contact's full key (64 hex digits) or KEY12…KEY8"),
-              file=sys.stderr)  # fmt: skip
+        print(
+            PREFIX + tr("give the contact's full key (64 hex digits) or KEY12…KEY8"),
+            file=sys.stderr,
+        )
         return None
     return text, label
 
@@ -1537,10 +1639,16 @@ def _contacts_remove(args: argparse.Namespace) -> int:
             return EX_USAGE
         name = entry.get("name")
         _print_key(entry["key"], name if isinstance(name, str) else None)
-        print(tr("the radio drops its direct messages from then on; messages queued to it fail"),
-              file=sys.stderr)  # fmt: skip
-        return session.request(session.topics.contact_remove(entry["key"]), {}, args.wait,
-                               {"removed", "refused", "failed"})  # fmt: skip
+        print(
+            tr("the radio drops its direct messages from then on; messages queued to it fail"),
+            file=sys.stderr,
+        )
+        return session.request(
+            session.topics.contact_remove(entry["key"]),
+            {},
+            args.wait,
+            {"removed", "refused", "failed"},
+        )
     finally:
         session.close()
 
@@ -1566,13 +1674,18 @@ def _contacts_telemetry(args: argparse.Namespace) -> int:
         if args.state == "off":
             # Translators: {readings} and {positions} are the names of two settings, which stay
             stops = (
-                tr("the gateway stops asking it and forgets its battery, readings and position "
-                   "and deletes them from its history")
+                tr(
+                    "the gateway stops asking it and forgets its battery, readings and position "
+                    "and deletes them from its history"
+                )
                 if args.forget
-                else tr("the gateway stops asking it and forgets its battery, readings and "
-                        "position; its history keeps them for {readings} and {positions}",
-                        readings="readings_days", positions="positions_days")
-            )  # fmt: skip
+                else tr(
+                    "the gateway stops asking it and forgets its battery, readings and "
+                    "position; its history keeps them for {readings} and {positions}",
+                    readings="readings_days",
+                    positions="positions_days",
+                )
+            )
             print(stops, file=sys.stderr)
             listed = any(e["key"] == key for e in _entries(index, "contacts"))
             cut = isinstance(index, dict) and index.get("truncated") is True
@@ -1580,9 +1693,12 @@ def _contacts_telemetry(args: argparse.Namespace) -> int:
                 print(tr("not on the radio now: excluded in advance"), file=sys.stderr)
         request = {"telemetry": args.state, **({"forget": True} if args.forget else {})}
         return session.request(
-            session.topics.contact_telemetry(key), request, args.wait,
-            {"excluded", "included", "refused", "failed"}, frozenset({"excluded", "included"}),
-        )  # fmt: skip
+            session.topics.contact_telemetry(key),
+            request,
+            args.wait,
+            {"excluded", "included", "refused", "failed"},
+            frozenset({"excluded", "included"}),
+        )
     finally:
         session.close()
 
@@ -1647,15 +1763,17 @@ def _bounded(name: str, shown: int, total: Any) -> str:
             "others by full key",
             "the gateway lists {shown} of {count} contacts (its document is bounded); give the "
             "others by full key",
-            n, **values,
-        )  # fmt: skip
+            n,
+            **values,
+        )
     return trn(
         "the gateway lists {shown} of {count} node (its document is bounded); give the others "
         "by full key",
         "the gateway lists {shown} of {count} nodes (its document is bounded); give the others "
         "by full key",
-        n, **values,
-    )  # fmt: skip
+        n,
+        **values,
+    )
 
 
 def _list_line(kind: str, entry: dict[str, Any], mark: str) -> str:
@@ -1707,8 +1825,9 @@ def _render(args: argparse.Namespace) -> int:
         write_private(path, text, gid)
     except OSError as exc:
         detail = exc.strerror or exc  # the system's text
-        print(PREFIX + tr("cannot write {path}: {detail}", path=path, detail=detail),
-              file=sys.stderr)  # fmt: skip
+        print(
+            PREFIX + tr("cannot write {path}: {detail}", path=path, detail=detail), file=sys.stderr
+        )
         return EX_FAILURE
     print(tr("wrote {path}", path=args.output))
     return EX_OK

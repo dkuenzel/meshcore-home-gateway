@@ -112,11 +112,12 @@ def test_a_channel_message_crosses_the_air(nodes: Nodes, air: AirThread) -> None
         lambda: [
             t
             for t in air.transmissions()
-            if t.sender == alice.node_id and t.kind.startswith("GRP_TXT/")
+            if t.sender == alice.node_id
+            and t.kind.startswith("GRP_TXT/")
             and t.outcomes.get(bob.node_id) == "received"
         ],
         "channel message from A received by B",
-    )  # fmt: skip
+    )
     assert len(heard) == 1
     # the packet log goes to the node's log, never into its serial port
     assert wait_for(lambda: "RX, len=" in bob.log_text(), "packet log line of B")

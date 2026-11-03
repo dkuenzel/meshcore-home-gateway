@@ -207,15 +207,28 @@ def test_contacts_stream() -> None:
     assert codec.decode(payload("3E 05 00 02 02 00 00 00")) == codec.ContactsStart(2)
     assert codec.decode(payload("3E 05 00 04 C4 77 E7 68")) == codec.EndOfContacts(TS - 60)
     bob = (
-        "3E 94 00 03 " + PEER.hex() + " 01 00 FF " + "00" * 64 + " 42 6F 62 " + "00" * 29
+        "3E 94 00 03 "
+        + PEER.hex()
+        + " 01 00 FF "
+        + "00" * 64
+        + " 42 6F 62 "
+        + "00" * 29
         + " F0 69 E7 68  B0 1B 31 03  70 6F 98 00  C4 77 E7 68"
-    )  # fmt: skip
+    )
     contact = codec.decode(payload(bob))
     assert contact == codec.ContactRecord(
-        public_key=PEER, node_type=1, flags=0, out_path_len=0xFF, name="Bob",
-        last_advert=TS - 3600, last_modified=TS - 60, out_path=b"",
-        latitude_e6=53_550_000, longitude_e6=9_990_000, raw=payload(bob)[1:],
-    )  # fmt: skip
+        public_key=PEER,
+        node_type=1,
+        flags=0,
+        out_path_len=0xFF,
+        name="Bob",
+        last_advert=TS - 3600,
+        last_modified=TS - 60,
+        out_path=b"",
+        latitude_e6=53_550_000,
+        longitude_e6=9_990_000,
+        raw=payload(bob)[1:],
+    )
     assert isinstance(contact, codec.ContactRecord)
     assert contact.position == Position(53.55, 9.99)
     assert (contact.path_known, contact.path_hops, contact.path_hashes) == (False, None, [])
@@ -236,9 +249,15 @@ def test_contact_with_a_known_path(path_len: str, path: str, hashes: list[bytes]
     is always 64 bytes, of which the radio uses hops x size (MyMesh.cpp:177-178)."""
     used = h(path)
     record = (
-        "03" + PEER.hex() + "01 01 " + path_len + used.ljust(64, b"\xee").hex()
-        + "42 6F 62" + "00" * 29 + "F0 69 E7 68 00 00 00 00 00 00 00 00 C4 77 E7 68"
-    )  # fmt: skip
+        "03"
+        + PEER.hex()
+        + "01 01 "
+        + path_len
+        + used.ljust(64, b"\xee").hex()
+        + "42 6F 62"
+        + "00" * 29
+        + "F0 69 E7 68 00 00 00 00 00 00 00 00 C4 77 E7 68"
+    )
     contact = codec.decode(h(record))
     assert isinstance(contact, codec.ContactRecord)
     assert contact.path_known
@@ -255,35 +274,50 @@ def test_a_new_advert_from_older_firmware_without_the_record_has_none() -> None:
 
 def test_channel_info_ignores_bytes_after_the_name() -> None:
     frame = (
-        "3E 32 00 12 00 50 75 62 6C 69 63 00 " + "EE" * 25
+        "3E 32 00 12 00 50 75 62 6C 69 63 00 "
+        + "EE" * 25
         + " 8B 33 87 E9 C5 CD EA 6A C9 E5 ED BA A1 15 CD 72"
-    )  # fmt: skip
+    )
     assert codec.decode(payload(frame)) == codec.ChannelInfo(index=0, name="Public")
 
 
 def test_device_info() -> None:
     frame = (
         "3E 52 00 0D 0E AF 28 00 00 00 00 31 35 20 4F 63 74 20 32 30 32 36 00"
-        " 4C 69 6C 79 47 6F 20 54 2D 45 63 68 6F " + "00" * 27
-        + " 76 31 2E 31 38 2E 30 " + "00" * 13 + " 00 00"
-    )  # fmt: skip
+        " 4C 69 6C 79 47 6F 20 54 2D 45 63 68 6F "
+        + "00" * 27
+        + " 76 31 2E 31 38 2E 30 "
+        + "00" * 13
+        + " 00 00"
+    )
     assert codec.decode(payload(frame)) == codec.DeviceInfo(
-        firmware_code=14, max_contacts=350, max_channels=40, build_date="15 Oct 2026",
-        model="LilyGo T-Echo", version="v1.18.0", path_hash_mode=0,
-    )  # fmt: skip
+        firmware_code=14,
+        max_contacts=350,
+        max_channels=40,
+        build_date="15 Oct 2026",
+        model="LilyGo T-Echo",
+        version="v1.18.0",
+        path_hash_mode=0,
+    )
 
 
 def test_self_info() -> None:
     frame = (
         "3E 42 00 05 01 16 16 " + SELF.hex() + " 00 00 00 00 00 00 00 00 00 00 00 00"
         " F2 44 0D 00 24 F4 00 00 08 05 31 30 31 31 31 32 31 33"
-    )  # fmt: skip
+    )
     info = codec.decode(payload(frame))
     assert info == codec.SelfInfo(
-        public_key=SELF, name="10111213", tx_power_dbm=22, max_tx_power_dbm=22,
-        frequency_khz=869_618, bandwidth_hz=62_500, spreading_factor=8, coding_rate=5,
+        public_key=SELF,
+        name="10111213",
+        tx_power_dbm=22,
+        max_tx_power_dbm=22,
+        frequency_khz=869_618,
+        bandwidth_hz=62_500,
+        spreading_factor=8,
+        coding_rate=5,
         manual_add_contacts=False,
-    )  # fmt: skip
+    )
     assert isinstance(info, codec.SelfInfo)
     assert info.position is None
     assert info.telemetry_base is TelemetryMode.DENY
@@ -295,7 +329,7 @@ def test_self_info_position_policies_and_telemetry_modes() -> None:
     frame = (
         "05 01 16 16 " + SELF.hex() + " B0 1B 31 03 90 90 67 FF 01 01 26 01"
         " F2 44 0D 00 24 F4 00 00 08 08 47 57"
-    )  # fmt: skip
+    )
     info = codec.decode(h(frame))
     assert isinstance(info, codec.SelfInfo)
     assert info.position == Position(53.55, -9.99)
@@ -312,9 +346,12 @@ def test_statistics() -> None:
     assert core == codec.CoreStats(battery_mv=4012, uptime_s=3600, error_flags=5, queue_length=3)
     radio = codec.decode(h("18 01 8A FF 9F 1A 29 00 00 00 2C 01 00 00"))
     assert radio == codec.RadioStats(
-        noise_floor_dbm=-118, last_rssi_dbm=-97, last_snr_db=6.5, tx_airtime_s=41,
+        noise_floor_dbm=-118,
+        last_rssi_dbm=-97,
+        last_snr_db=6.5,
+        tx_airtime_s=41,
         rx_airtime_s=300,
-    )  # fmt: skip
+    )
     counters = "78 00 00 00 1E 00 00 00 0A 00 00 00 14 00 00 00 46 00 00 00 32 00 00 00"
     packets = codec.decode(h("18 02 " + counters + " 02 00 00 00"))
     assert packets == codec.PacketStats(120, 30, 10, 20, 70, 50, receive_errors=2)

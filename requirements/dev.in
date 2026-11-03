@@ -2,6 +2,7 @@
 # Compile with `make lock`; the lock file pins every package by hash.
 paho-mqtt==2.1.0   # same version as Debian 13 (python3-paho-mqtt), the deployment target
 pytest
+hypothesis  # property tests of the parsers that face the air and the bus (CODE-009)
 coverage
 ruff
 mypy

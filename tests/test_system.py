@@ -79,11 +79,19 @@ def test_service_end_to_end(
         )
         watcher = Watcher(broker)
         service = subprocess.Popen(  # noqa: S603 - our own module with fixed arguments
-            [sys.executable, "-m", "meshcore_home_gateway", "run", "--config", str(config),
-             "--state-dir", str(tmp_path / "state")],
+            [
+                sys.executable,
+                "-m",
+                "meshcore_home_gateway",
+                "run",
+                "--config",
+                str(config),
+                "--state-dir",
+                str(tmp_path / "state"),
+            ],
             stderr=subprocess.PIPE,
             env={**os.environ, "JOURNAL_STREAM": "1:1", "PYTHONPATH": str(SRC)},
-        )  # fmt: skip
+        )
         try:
             watcher.wait("meshcore/radio1/availability", lambda p: p == b"online")
             watcher.wait("meshcore/radio1/state", lambda p: json.loads(p)["radio"] == "connected")
@@ -119,9 +127,9 @@ def test_service_end_to_end(
             watcher.wait("meshcore/radio1/node", lambda p: json.loads(p)["key"] == "d4" * 32)
             label = f"{'d4' * 6}…{'d4' * 4} Dave"
             watcher.client.publish("meshcore/radio1/homeassistant/add_node", label, qos=1)
-            added = json.loads(watcher.wait(
-                "meshcore/radio1/contact", lambda p: json.loads(p)["key"] == "d4" * 32
-            ))  # fmt: skip
+            added = json.loads(
+                watcher.wait("meshcore/radio1/contact", lambda p: json.loads(p)["key"] == "d4" * 32)
+            )
             assert (added["event_type"], added["request"]) == ("added", "add")
         finally:  # a failure above stays the reported one; a hanging service must not outlive it
             service.send_signal(signal.SIGTERM)

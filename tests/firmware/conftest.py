@@ -89,9 +89,14 @@ class Nodes:
     def _start(self, binary: Path, name: str, gps: str | None, *, wait: bool) -> Node:
         node_id = len(self.started) + 1
         node = start_node(
-            binary, self.directory / name, name=name, node_id=node_id, air_port=self._air.port,
-            seed=node_id, gps=gps,
-        )  # fmt: skip
+            binary,
+            self.directory / name,
+            name=name,
+            node_id=node_id,
+            air_port=self._air.port,
+            seed=node_id,
+            gps=gps,
+        )
         self.started.append(node)
         if wait:
             node.wait_ready()
@@ -161,9 +166,12 @@ class Scene:
 
 @pytest.fixture
 def scene(
-    air: AirThread, nodes: Nodes, broker: Broker, tmp_path: Path,
+    air: AirThread,
+    nodes: Nodes,
+    broker: Broker,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> Iterator[Scene]:  # fmt: skip
+) -> Iterator[Scene]:
     caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway")
     watcher = Watcher(broker)
     try:

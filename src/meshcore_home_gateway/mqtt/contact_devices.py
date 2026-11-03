@@ -69,18 +69,33 @@ log = logging.getLogger(__name__)
 # Translators: the model of a contact's device in Home Assistant: the MeshCore node type
 # (companion: a person's radio; room server: a node that keeps messages for a group)
 MODELS: dict[int, str] = {
-    NodeType.CHAT: N_ha("Companion"), NodeType.REPEATER: N_ha("Repeater"),
-    NodeType.ROOM_SERVER: N_ha("Room server"), NodeType.SENSOR: N_ha("Sensor"),
-}  # fmt: skip
+    NodeType.CHAT: N_ha("Companion"),
+    NodeType.REPEATER: N_ha("Repeater"),
+    NodeType.ROOM_SERVER: N_ha("Room server"),
+    NodeType.SENSOR: N_ha("Sensor"),
+}
 TEXT_TYPES = frozenset({NodeType.CHAT, NodeType.ROOM_SERVER})  # nodes that send texts
 ECHO_S = 10.0  # an empty document seen this long after the gateway sent one is its own
 SLUG_CHARS = 32
 TAKEN_DIGITS = 8  # of the key, after a device name another device has (SEC-007)
 # letters that Unicode does not decompose into an ASCII letter and a mark
-_LETTERS = str.maketrans({
-    "ß": "ss", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ø": "o", "Ø": "O", "ł": "l",
-    "Ł": "L", "đ": "d", "Đ": "D", "þ": "th", "Þ": "TH",
-})  # fmt: skip
+_LETTERS = str.maketrans(
+    {
+        "ß": "ss",
+        "æ": "ae",
+        "Æ": "AE",
+        "œ": "oe",
+        "Œ": "OE",
+        "ø": "o",
+        "Ø": "O",
+        "ł": "l",
+        "Ł": "L",
+        "đ": "d",
+        "Đ": "D",
+        "þ": "th",
+        "Þ": "TH",
+    }
+)
 _OBJECT = re.compile(r"contact_([0-9a-f]{64})")
 POSITION_KNOWN = "value_json.latitude is number and value_json.longitude is number"
 # `is defined`, `is true`: a document retained by an earlier version, without the key, reads as
@@ -101,9 +116,10 @@ TELEMETRY_CURRENT = (
     "else 'online' }}"
 )
 POSITION_AVAILABLE = (  # also gone while a position from telemetry is not current
-    "{{ 'online' if value_json is defined and " + POSITION_KNOWN
+    "{{ 'online' if value_json is defined and "
+    + POSITION_KNOWN
     + " and value_json.position_current is not false else 'offline' }}"
-)  # fmt: skip
+)
 TELEMETRY_STATE = (
     "{{ value_json.telemetry_state if value_json is defined "
     "and value_json.telemetry_state is string else None }}"
@@ -134,21 +150,23 @@ class ReadingEntity:
 # Translators: a reading of a contact's sensor board, a sensor in Home Assistant. It shows the
 # channel after the name ("Temperature 2"), and the occurrence when a channel has two
 # ("Temperature 2 (2)").
-READING_ENTITIES: Mapping[int, ReadingEntity] = MappingProxyType({
-    116: ReadingEntity(N_ha("Voltage"), "voltage", "V", 2),
-    117: ReadingEntity(N_ha("Current"), "current", "A", 3),
-    128: ReadingEntity(N_ha("Power"), "power", "W", 0),
-    103: ReadingEntity(N_ha("Temperature"), "temperature", "°C", 1),
-    104: ReadingEntity(N_ha("Humidity"), "humidity", "%", 1),
-    115: ReadingEntity(N_ha("Pressure"), "atmospheric_pressure", "hPa", 1),
-    121: ReadingEntity(N_ha("Altitude"), "distance", "m", 0),  # barometric
-    101: ReadingEntity(N_ha("Luminosity"), None, None, 0),
-    100: ReadingEntity(N_ha("Generic"), None, None, 0),
-    2: ReadingEntity(N_ha("Analog input"), None, None, 2),
-    120: ReadingEntity(N_ha("Percentage"), None, "%", 0),
-    118: ReadingEntity(N_ha("Frequency"), "frequency", "Hz", 0),
-    130: ReadingEntity(N_ha("Distance"), "distance", "m", 3),
-})  # fmt: skip
+READING_ENTITIES: Mapping[int, ReadingEntity] = MappingProxyType(
+    {
+        116: ReadingEntity(N_ha("Voltage"), "voltage", "V", 2),
+        117: ReadingEntity(N_ha("Current"), "current", "A", 3),
+        128: ReadingEntity(N_ha("Power"), "power", "W", 0),
+        103: ReadingEntity(N_ha("Temperature"), "temperature", "°C", 1),
+        104: ReadingEntity(N_ha("Humidity"), "humidity", "%", 1),
+        115: ReadingEntity(N_ha("Pressure"), "atmospheric_pressure", "hPa", 1),
+        121: ReadingEntity(N_ha("Altitude"), "distance", "m", 0),  # barometric
+        101: ReadingEntity(N_ha("Luminosity"), None, None, 0),
+        100: ReadingEntity(N_ha("Generic"), None, None, 0),
+        2: ReadingEntity(N_ha("Analog input"), None, None, 2),
+        120: ReadingEntity(N_ha("Percentage"), None, "%", 0),
+        118: ReadingEntity(N_ha("Frequency"), "frequency", "Hz", 0),
+        130: ReadingEntity(N_ha("Distance"), "distance", "m", 3),
+    }
+)
 
 
 def number_at(*path: str) -> str:
@@ -228,48 +246,75 @@ def contact_payload(
 
     def component(key: str, platform: str, suffix: str, **options: Any) -> dict[str, Any]:
         return {
-            "p": platform, "unique_id": f"{uid}_{key}",
-            "default_entity_id": f"{platform}.{entity}_{slug}{suffix}", **options,
-        }  # fmt: skip
+            "p": platform,
+            "unique_id": f"{uid}_{key}",
+            "default_entity_id": f"{platform}.{entity}_{slug}{suffix}",
+            **options,
+        }
 
     # every template asks whether the document is JSON: the empty message that clears it can
     # reach Home Assistant before the removal of the device took effect
     state = {"state_topic": document}
     components: dict[str, dict[str, Any]] = {
         "last_heard": component(
+            "last_heard",
+            "sensor",
+            "_last_heard",
             # Translators: sensor (timestamp) of a contact: when the gateway's radio last heard
             # it. Home Assistant shows the contact's name first.
-            "last_heard", "sensor", "_last_heard", name=ha_name("Last heard"),
+            name=ha_name("Last heard"),
             device_class="timestamp",
             value_template="{{ value_json.heard_at if value_json is defined else None }}",
             **state,
         ),
         "hops": component(
+            "hops",
+            "sensor",
+            "_hops",
             # Translators: sensor of a contact: how many repeaters its last packet passed
-            "hops", "sensor", "_hops", name=ha_name("Hops"), icon="mdi:transit-connection-variant",
-            entity_category="diagnostic", value_template=number_at("hops"), **state,
+            name=ha_name("Hops"),
+            icon="mdi:transit-connection-variant",
+            entity_category="diagnostic",
+            value_template=number_at("hops"),
+            **state,
         ),
         "snr": component(  # no name: Home Assistant names it after the class, translated
-            "snr", "sensor", "_snr", device_class="signal_strength", unit_of_measurement="dB",
-            state_class="measurement", suggested_display_precision=2,
-            entity_category="diagnostic", value_template=number_at("snr_db"), **state,
+            "snr",
+            "sensor",
+            "_snr",
+            device_class="signal_strength",
+            unit_of_measurement="dB",
+            state_class="measurement",
+            suggested_display_precision=2,
+            entity_category="diagnostic",
+            value_template=number_at("snr_db"),
+            **state,
         ),
-    }  # fmt: skip
+    }
     if node.node_type in TEXT_TYPES or "message" in kept:  # the text is an event attribute
         components["message"] = component(
+            "message",
+            "event",
+            "_message",
             # Translators: event entity of a contact: a message from it
-            "message", "event", "_message", name=ha_name("Message"),
-            state_topic=topics.contact_received(key), event_types=["contact"],
-        )  # fmt: skip
+            name=ha_name("Message"),
+            state_topic=topics.contact_received(key),
+            event_types=["contact"],
+        )
     if node.node_type == NodeType.CHAT or "send" in kept:
         components["send"] = component(  # no name: the device's main feature, named like it
             "send", "notify", "", name=None, command_topic=topics.contact_send(key)
         )
     components["remove"] = component(  # on every contact; available while it would be taken
+        "remove",
+        "button",
+        "_remove",
         # Translators: button of a contact: removes it from the contacts of the gateway's radio
-        "remove", "button", "_remove", name=ha_name("Remove from radio"),
-        command_topic=topics.contact_remove(key), payload_press="remove",
-        entity_category="config", icon="mdi:account-remove",
+        name=ha_name("Remove from radio"),
+        command_topic=topics.contact_remove(key),
+        payload_press="remove",
+        entity_category="config",
+        icon="mdi:account-remove",
         availability=[
             {"topic": topics.availability},
             {"topic": topics.state, "value_template": RADIO_CONNECTED},
@@ -277,47 +322,71 @@ def contact_payload(
             *off,
         ],
         availability_mode="all",
-    )  # fmt: skip
+    )
     companion = node.node_type == NodeType.CHAT
     if companion or "telemetry" in kept:  # also with telemetry off: exclude before it asks
         components["telemetry"] = component(
+            "telemetry",
+            "switch",
+            "_telemetry",
             # Translators: switch of a companion: whether the gateway asks it for telemetry
-            "telemetry", "switch", "_telemetry", name=ha_name("Telemetry"),
+            name=ha_name("Telemetry"),
             entity_category="config",
-            command_topic=topics.contact_telemetry(key), payload_on="on", payload_off="off",
-            value_template=TELEMETRY_SWITCH, **state,
-            **({"availability": [{"topic": topics.availability}, *off],
-                "availability_mode": "all"} if off else {}),
-        )  # fmt: skip
+            command_topic=topics.contact_telemetry(key),
+            payload_on="on",
+            payload_off="off",
+            value_template=TELEMETRY_SWITCH,
+            **state,
+            **(
+                {"availability": [{"topic": topics.availability}, *off], "availability_mode": "all"}
+                if off
+                else {}
+            ),
+        )
     if companion or "telemetry_state" in kept:
         components["telemetry_state"] = component(
+            "telemetry_state",
+            "sensor",
+            "_telemetry_state",
             # Translators: sensor (enum) of a companion: whether it answers the gateway's
             # telemetry requests; keep it apart from "Telemetry status" of the gateway
-            "telemetry_state", "sensor", "_telemetry_state", name=ha_name("Telemetry state"),
-            device_class="enum", options=list(STATES), value_template=TELEMETRY_STATE, **state,
-        )  # fmt: skip
+            name=ha_name("Telemetry state"),
+            device_class="enum",
+            options=list(STATES),
+            value_template=TELEMETRY_STATE,
+            **state,
+        )
     if companion or "advert_position" in kept:  # the household acts on it: no category
         components["advert_position"] = component(
             # Translators: binary sensor (problem) of a companion: on while its adverts carry
             # its position, which every node hears
-            "advert_position", "binary_sensor", "_advert_position",
+            "advert_position",
+            "binary_sensor",
+            "_advert_position",
             name=ha_name("Position in adverts"),
-            device_class="problem", value_template=ADVERT_POSITION, **state,
-        )  # fmt: skip
+            device_class="problem",
+            value_template=ADVERT_POSITION,
+            **state,
+        )
     sensors = _telemetry_sensors(tracked, keep, component, topics, document, ha_name=ha_name)
     components.update(sensors)
     if tracked.fix is not None or "position" in kept:
         components["position"] = component(
+            "position",
+            "device_tracker",
+            "",
             # Translators: device tracker of a contact: its position on the map
-            "position", "device_tracker", "", name=ha_name("Position"), source_type="gps",
-            json_attributes_topic=document, json_attributes_template=POSITION_ATTRIBUTES,
+            name=ha_name("Position"),
+            source_type="gps",
+            json_attributes_topic=document,
+            json_attributes_template=POSITION_ATTRIBUTES,
             # replaces the shared availability: also gone while no position is known
             availability=[
                 {"topic": topics.availability},
                 {"topic": document, "value_template": POSITION_AVAILABLE},
             ],
             availability_mode="all",
-        )  # fmt: skip
+        )
     model = MODELS.get(node.node_type)  # an unknown type is shown as the radio names it
     return {
         "dev": {
@@ -336,50 +405,71 @@ def contact_payload(
 
 
 def _telemetry_sensors(
-    tracked: Tracked, keep: Iterable[str], component: Callable[..., dict[str, Any]],
-    topics: Topics, document: str, *, ha_name: Callable[..., str],
-) -> dict[str, dict[str, Any]]:  # fmt: skip
+    tracked: Tracked,
+    keep: Iterable[str],
+    component: Callable[..., dict[str, Any]],
+    topics: Topics,
+    document: str,
+    *,
+    ha_name: Callable[..., str],
+) -> dict[str, dict[str, Any]]:
     """Battery, MCU temperature and the readings of a companion's newest answer, and those it
     was announced with; unavailable while its answers are not current."""
     kept = frozenset(keep)
     readings = tracked.readings if tracked.node.node_type == NodeType.CHAT else None  # asked
     named = readings.named if readings is not None else None
     options = {
-        "state_class": "measurement", "state_topic": document,
+        "state_class": "measurement",
+        "state_topic": document,
         "availability": [
             {"topic": topics.availability},
             {"topic": document, "value_template": TELEMETRY_CURRENT},
         ],
         "availability_mode": "all",
-    }  # fmt: skip
+    }
     sensors: dict[str, dict[str, Any]] = {}
     if (named is not None and named.battery_v is not None) or "battery" in kept:
         sensors["battery"] = component(
+            "battery",
+            "sensor",
+            "_battery",
             # Translators: sensor (voltage) of a companion: the battery of its radio
-            "battery", "sensor", "_battery", name=ha_name("Battery"), device_class="voltage",
-            unit_of_measurement="V", suggested_display_precision=2,
-            value_template=number_at(lpp.BATTERY_V), **options,
-        )  # fmt: skip
+            name=ha_name("Battery"),
+            device_class="voltage",
+            unit_of_measurement="V",
+            suggested_display_precision=2,
+            value_template=number_at(lpp.BATTERY_V),
+            **options,
+        )
     if (named is not None and named.mcu_temperature_c is not None) or "mcu_temperature" in kept:
         sensors["mcu_temperature"] = component(
+            "mcu_temperature",
+            "sensor",
+            "_mcu_temperature",
             # Translators: sensor (temperature) of a companion: the temperature of its radio's
             # microcontroller (MCU), not of the air
-            "mcu_temperature", "sensor", "_mcu_temperature", name=ha_name("MCU temperature"),
-            device_class="temperature", unit_of_measurement="°C", suggested_display_precision=1,
-            entity_category="diagnostic", value_template=number_at(lpp.MCU_TEMPERATURE_C),
+            name=ha_name("MCU temperature"),
+            device_class="temperature",
+            unit_of_measurement="°C",
+            suggested_display_precision=1,
+            entity_category="diagnostic",
+            value_template=number_at(lpp.MCU_TEMPERATURE_C),
             **options,
-        )  # fmt: skip
+        )
     keys = named.readings if named is not None else {}
     for name, (key, channel, lpp_type, n) in _readings(keep, keys).items():
         entity = READING_ENTITIES[lpp_type]
         known = (("device_class", entity.device_class), ("unit_of_measurement", entity.unit))
         sensors[name] = component(
-            name, "sensor", f"_{name}",
+            name,
+            "sensor",
+            f"_{name}",
             name=f"{ha_name(entity.name)} {channel}" + (f" ({n})" if n > 1 else ""),
             **{option: value for option, value in known if value is not None},
             suggested_display_precision=entity.precision,
-            value_template=number_at("readings", key), **options,
-        )  # fmt: skip
+            value_template=number_at("readings", key),
+            **options,
+        )
     return sensors
 
 
@@ -484,9 +574,10 @@ class ContactDevices:
             self._announce(mesh.contacts[key])
         now = self._wall()
         records.removed = {
-            k: r for k, r in records.removed.items()
+            k: r
+            for k, r in records.removed.items()
             if k not in records.announced and now - r.since < REMOVAL_KEEP_S
-        }  # fmt: skip
+        }
         records.prune(mesh.contacts.keys(), now)
         records.save()
 
@@ -529,8 +620,11 @@ class ContactDevices:
         self._records.hidden.add(key)
         self._records.save()
         asked = self._config.telemetry.enabled and "telemetry" in record.components
-        log.info("Home Assistant: contact %s deleted by the user, hidden there%s", key[:12],
-                 f"; it is still asked for telemetry {EXCLUDE_HINT}" if asked else "")  # fmt: skip
+        log.info(
+            "Home Assistant: contact %s deleted by the user, hidden there%s",
+            key[:12],
+            f"; it is still asked for telemetry {EXCLUDE_HINT}" if asked else "",
+        )
         self._event("hidden", key)
 
     def show_hidden(self) -> None:
@@ -549,9 +643,10 @@ class ContactDevices:
         """Contacts with a device: those that have one keep it unless the limit went down."""
         records = self._records
         visible = [
-            t for k, t in mesh.contacts.items()
+            t
+            for k, t in mesh.contacts.items()
             if k not in records.hidden and (k in records.announced or not self._unheard(t))
-        ]  # fmt: skip
+        ]
 
         def order(group: Iterable[Tracked]) -> list[str]:
             ranked = sorted(group, key=lambda t: priority(t, self._protected))
@@ -565,10 +660,15 @@ class ContactDevices:
             self._without = without
             if without:
                 asked = self._config.telemetry.enabled
-                log.info("Home Assistant: %d contacts without a device "
-                         "(homeassistant.contact_devices = %d)%s", without, self._limit,
-                         f"; the companions among them are still asked for telemetry "
-                         f"{EXCLUDE_HINT}" if asked else "")  # fmt: skip
+                log.info(
+                    "Home Assistant: %d contacts without a device "
+                    "(homeassistant.contact_devices = %d)%s",
+                    without,
+                    self._limit,
+                    f"; the companions among them are still asked for telemetry {EXCLUDE_HINT}"
+                    if asked
+                    else "",
+                )
         return chosen
 
     def _unheard(self, tracked: Tracked) -> bool:
@@ -597,12 +697,17 @@ class ContactDevices:
             records.removed.pop(key, None)
             log.info("Home Assistant: device for contact %r (%s)", tracked.node.name, key[:12])
         document = contact_payload(
-            self._config, self._topics, tracked, record.slug, keep=record.components,
+            self._config,
+            self._topics,
+            tracked,
+            record.slug,
+            keep=record.components,
             name_taken=key in self._taken,
-        )  # fmt: skip
+        )
         record.components = {
-            **record.components, **{n: c["p"] for n, c in document["cmps"].items()},
-        }  # fmt: skip
+            **record.components,
+            **{n: c["p"] for n, c in document["cmps"].items()},
+        }
         self._log_beyond(tracked, document["cmps"])
         payload = encode(document)
         if self._published.get(key) != payload:
@@ -617,8 +722,13 @@ class ContactDevices:
         for reading in readings.named.readings:
             if lpp.component_of(reading) not in components and (key, reading) not in self._beyond:
                 self._beyond.add((key, reading))
-                log.info("Home Assistant: contact %s sends more than %d readings: %s only in "
-                         "its document", key[:12], MAX_READING_COMPONENTS, reading)  # fmt: skip
+                log.info(
+                    "Home Assistant: contact %s sends more than %d readings: %s only in "
+                    "its document",
+                    key[:12],
+                    MAX_READING_COMPONENTS,
+                    reading,
+                )
 
     def _remove(self, key: str) -> None:
         record = self._records.announced.pop(key)

@@ -66,21 +66,41 @@ def make() -> tuple[RetainedTopics, Bus]:
 def test_the_gateways_retained_topics_are_covered() -> None:
     retained, _ = make()
     for topic in (
-        TOPICS.availability, TOPICS.state, TOPICS.stats, TOPICS.contacts, CONTACT, TOPICS.nodes,
-        TOPICS.history, TOPICS.settings, TOPICS.contact("not-a-key"),
-    ):  # fmt: skip
+        TOPICS.availability,
+        TOPICS.state,
+        TOPICS.stats,
+        TOPICS.contacts,
+        CONTACT,
+        TOPICS.nodes,
+        TOPICS.history,
+        TOPICS.settings,
+        TOPICS.contact("not-a-key"),
+    ):
         assert retained.covers(topic), topic
     for topic in (
-        TOPICS.received, TOPICS.delivery, TOPICS.command, TOPICS.send("alerts"),
-        TOPICS.contact_send(KEY), TOPICS.contact_remove(KEY), TOPICS.contacts + "/",
-        TOPICS.add_contact, TOPICS.contact_event, "meshcore/radio2/state", "homeassistant/status",
-    ):  # fmt: skip
+        TOPICS.received,
+        TOPICS.delivery,
+        TOPICS.command,
+        TOPICS.send("alerts"),
+        TOPICS.contact_send(KEY),
+        TOPICS.contact_remove(KEY),
+        TOPICS.contacts + "/",
+        TOPICS.add_contact,
+        TOPICS.contact_event,
+        "meshcore/radio2/state",
+        "homeassistant/status",
+    ):
         assert not retained.covers(topic), topic
     assert retained.filters == (
-        "meshcore/radio1/availability", "meshcore/radio1/contacts", "meshcore/radio1/history",
-        "meshcore/radio1/nodes", "meshcore/radio1/settings", "meshcore/radio1/state",
-        "meshcore/radio1/stats", "meshcore/radio1/contacts/+",
-    )  # fmt: skip
+        "meshcore/radio1/availability",
+        "meshcore/radio1/contacts",
+        "meshcore/radio1/history",
+        "meshcore/radio1/nodes",
+        "meshcore/radio1/settings",
+        "meshcore/radio1/state",
+        "meshcore/radio1/stats",
+        "meshcore/radio1/contacts/+",
+    )
 
 
 def test_the_gateways_own_payloads_come_back_without_a_word(

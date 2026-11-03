@@ -33,8 +33,12 @@ def test_a_nonce_is_eight_random_hex_digits_after_the_text() -> None:
 def test_only_one_nonce_comes_off() -> None:
     assert without_nonce("Gate #0a1b2c3d #4e5f6a7b") == "Gate #0a1b2c3d"
     for text in (
-        "Gate open", "Gate #0A1B2C3D", "Gate #0a1b2c3", "Gate#0a1b2c3d", "Gate #0a1b2c3d ",
-    ):  # fmt: skip
+        "Gate open",
+        "Gate #0A1B2C3D",
+        "Gate #0a1b2c3",
+        "Gate#0a1b2c3d",
+        "Gate #0a1b2c3d ",
+    ):
         assert without_nonce(text) == text
 
 

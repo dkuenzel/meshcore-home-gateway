@@ -52,8 +52,9 @@ def test_the_first_start_holds_then_a_later_start_asks_b_after_76_s(
             async with running(scene.configuration(household.alice), scene.state_dir):
                 await watcher.wait("state", held, since=first)
                 await watcher.wait("received", since=first)  # B's message, fetched now
-                over = await watcher.wait("state", lambda s: s["telemetry"] == "on", since=first,
-                                          timeout_s=HOLD_S + 10)  # fmt: skip
+                over = await watcher.wait(
+                    "state", lambda s: s["telemetry"] == "on", since=first, timeout_s=HOLD_S + 10
+                )
             assert not scene.air.sent_by(alice_id, "REQ/")  # nobody asked during the hold
             states = [m for m in watcher.on("state", first) if m.at < over.at]
             while_connected = [m for m in states if connected(m.json())]
@@ -66,11 +67,13 @@ def test_the_first_start_holds_then_a_later_start_asks_b_after_76_s(
             later = watcher.mark()
             async with running(scene.configuration(household.alice), scene.state_dir):
                 up = await watcher.wait("state", connected, since=later)
-                request = await scene.air.next_sent(alice_id, "REQ/", after=scene.air.count(),
-                                                    timeout_s=FIRST_REQUEST_S + 15)  # fmt: skip
+                request = await scene.air.next_sent(
+                    alice_id, "REQ/", after=scene.air.count(), timeout_s=FIRST_REQUEST_S + 15
+                )
                 key = household.bob_key.hex()
-                await watcher.wait(f"contacts/{key}", lambda d: d["telemetry_state"] == "answering",
-                                   since=later)  # fmt: skip
+                await watcher.wait(
+                    f"contacts/{key}", lambda d: d["telemetry_state"] == "answering", since=later
+                )
                 await logged(scene.caplog, "answer of 28 bytes, 19 of them readings")
         assert request.kind == "REQ/D"
         return battery.millivolts, up.at, scene.air.started + request.at

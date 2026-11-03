@@ -78,7 +78,10 @@ GitHub Actions are pinned to full commit SHAs with the version as a comment.
 
 ## Style
 
-- Python: `ruff` (lint and format) and `mypy --strict` must pass; type hints everywhere.
+- Python: `ruff` (lint and format) and `mypy --strict` must pass; type hints everywhere. The
+  formatter's output is the style: no line opts out of it (CODE-007). A `# Translators:` note
+  stands directly above the line of the text it explains; after `ruff format` moved a call, check
+  that `make translations` leaves the templates as they were.
 - Small modules with one responsibility; the domain core (`meshcore_home_gateway.core`) does no I/O.
   A module that grows beyond about 800 lines asks for a split in its review.
 - Shell: `shellcheck` clean, `set -Eeuo pipefail`, functions over long scripts.

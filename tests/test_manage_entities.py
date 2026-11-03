@@ -93,9 +93,16 @@ def controls(
 ) -> tuple[ManageEntities, Recorder, Timers, Clock]:
     bus, timers, clock, state = Recorder(), Timers(), Clock(), online or [True]
     entities = ManageEntities(
-        CONFIG, TOPICS, bus, mesh, records=records, monotonic=clock, wall_clock=lambda: NOW,
-        call_later=timers, connected=lambda: state[0],
-    )  # fmt: skip
+        CONFIG,
+        TOPICS,
+        bus,
+        mesh,
+        records=records,
+        monotonic=clock,
+        wall_clock=lambda: NOW,
+        call_later=timers,
+        connected=lambda: state[0],
+    )
     return entities, bus, timers, clock
 
 
@@ -133,9 +140,11 @@ def test_the_availability_reads_keys_with_guards() -> None:
         TOPICS.contacts,
     ]
     for entry, keys, document in zip(
-        availability[1:], ({"radio"}, {"manage"}), (STATE_KEYS, set(contacts_document(Mesh()))),
+        availability[1:],
+        ({"radio"}, {"manage"}),
+        (STATE_KEYS, set(contacts_document(Mesh()))),
         strict=True,
-    ):  # fmt: skip
+    ):
         assert entry["value_template"].startswith("{{ 'online' if value_json is defined and ")
         assert template_keys(entry["value_template"]) == keys
         assert keys <= document
@@ -154,14 +163,20 @@ def test_with_controls_off_the_controls_are_unavailable() -> None:
 @pytest.mark.parametrize(
     ("text", "taken"),
     [
-        ("", True), ("b0" * 32, True), ("B0" * 32, True),
+        ("", True),
+        ("b0" * 32, True),
+        ("B0" * 32, True),
         ("meshcore://contact/add?name=Bob&public_key=" + "b0" * 32 + "&type=1", True),
         ("meshcore://" + "11" * 120, False),  # a card: cut at 255 characters it still parses
-        ("b0" * 31, False), ("meshcore://contact/add?name=Bob Smith", False), ("Bob", False),
-        ("b0" * 32 + "\n", True), (" " + "b0" * 32 + " ", True),  # the gateway strips them
-        ("meshcore://contact/add?public_key=" + "b0" * 32 + " ", True), ("   ", False),
+        ("b0" * 31, False),
+        ("meshcore://contact/add?name=Bob Smith", False),
+        ("Bob", False),
+        ("b0" * 32 + "\n", True),
+        (" " + "b0" * 32 + " ", True),  # the gateway strips them
+        ("meshcore://contact/add?public_key=" + "b0" * 32 + " ", True),
+        ("   ", False),
     ],
-)  # fmt: skip
+)
 def test_the_text_takes_keys_and_contact_links(text: str, taken: bool) -> None:
     """Home Assistant checks the pattern with re.match (homeassistant/components/text); its
     frontend takes it as an HTML pattern, which knows no `\\Z`."""
@@ -182,9 +197,11 @@ def test_the_heard_companions_rooms_and_sensors_are_offered_by_name() -> None:
     heard(mesh, "f4" * 32, "Weather", node_type=4)
     options = node_options(mesh)
     assert options == [
-        f"{BOB[:12]}…{BOB[-8:]} Bob", f"{CAROL[:12]}…{CAROL[-8:]} carol",
-        f"{ROOM[:12]}…{ROOM[-8:]} Club (room)", f"{'f4' * 6}…{'f4' * 4} Weather (sensor)",
-    ]  # fmt: skip
+        f"{BOB[:12]}…{BOB[-8:]} Bob",
+        f"{CAROL[:12]}…{CAROL[-8:]} carol",
+        f"{ROOM[:12]}…{ROOM[-8:]} Club (room)",
+        f"{'f4' * 6}…{'f4' * 4} Weather (sensor)",
+    ]
     keys = {*mesh.nodes, *mesh.contacts}
     assert [key_from_label(o, keys) for o in options] == [BOB, CAROL, ROOM, "f4" * 32]
 
@@ -213,9 +230,10 @@ def test_a_node_with_a_taken_name_is_marked() -> None:
     heard(mesh, ROOM, "MeshCore radio", node_type=3)
     heard(mesh, HILL, "Hilltop")
     assert node_options(mesh, reserved={"MeshCore radio"}) == [
-        f"{CAROL[:12]}…{CAROL[-8:]} BOB (name taken)", f"{HILL[:12]}…{HILL[-8:]} Hilltop",
+        f"{CAROL[:12]}…{CAROL[-8:]} BOB (name taken)",
+        f"{HILL[:12]}…{HILL[-8:]} Hilltop",
         f"{ROOM[:12]}…{ROOM[-8:]} MeshCore radio (room) (name taken)",
-    ]  # fmt: skip
+    ]
     assert node_options(mesh, heard="keys", reserved={"MeshCore radio"})[0].endswith(
         " (name taken)"
     )
@@ -231,8 +249,9 @@ def test_with_heard_nodes_keys_or_off_the_options_name_no_node() -> None:
     heard(mesh, ROOM, "Club", node_type=3)
     heard(mesh, CAROL, "Carol")
     assert node_options(mesh, heard="keys") == [
-        f"{CAROL[:12]}…{CAROL[-8:]}", f"{ROOM[:12]}…{ROOM[-8:]} (room)",
-    ]  # fmt: skip
+        f"{CAROL[:12]}…{CAROL[-8:]}",
+        f"{ROOM[:12]}…{ROOM[-8:]} (room)",
+    ]
     assert node_options(mesh, heard="off") == []
     config = replace(CONFIG, contacts=replace(CONFIG.contacts, heard_nodes="off"))
     bus = Recorder()
@@ -315,8 +334,15 @@ def test_components_of_an_earlier_version_are_removed(tmp_path: Path) -> None:
     """Placeholders first, which bind what Home Assistant kept, then the document without them;
     the next run removes them again, until the removal expires."""
     store = JsonStateFile(tmp_path / "state.json")
-    store.save({"ha_components_manage_contacts": {"add_node": "select", "add_group": "select",
-                                                  "add_note": "text"}})  # fmt: skip
+    store.save(
+        {
+            "ha_components_manage_contacts": {
+                "add_node": "select",
+                "add_group": "select",
+                "add_note": "text",
+            }
+        }
+    )
     entities, bus, _, _ = controls(Mesh(), records=AnnouncedComponents(store, "manage_contacts"))
     entities.announce()
     entities.announce()  # Home Assistant started meanwhile: it binds only what it discovered since

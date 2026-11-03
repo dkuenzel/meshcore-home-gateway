@@ -185,7 +185,7 @@ USER = 'username = "gateway"\npassword = "pw"\n'
         (_broker("broker.example.org", USER), "TLS"),
         (_broker("192.168.1.2", USER), "TLS"),
     ],
-)  # fmt: skip
+)
 def test_commands_need_a_broker_connection_with_credentials_and_tls(
     text: str, missing: str
 ) -> None:
@@ -386,6 +386,38 @@ def test_rendering_rejects_lines_without_an_equals_sign() -> None:
         render_config("no equals sign")
 
 
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [("nan", "nan"), ("NaN", "nan"), ("inf", "inf"), ("Infinity", "inf"), ("-inf", "-inf")],
+)
+def test_a_number_that_is_no_number_is_refused_with_its_range(value: str, shown: str) -> None:
+    """CODE-014: `float()` reads "nan" and "inf", and so does TOML; the range check refuses them
+    (a comparison with NaN is false, every range has an upper end) and says what it takes."""
+    message = rf"airtime\.burst_s: must be between \S+ and 3600\.0, got {re.escape(shown)}$"
+    with pytest.raises(ConfigError, match=message):
+        render_config(ANSWERS + f"airtime.burst_s={value}\n")
+    rendered = render_config(ANSWERS)
+    assert "[airtime]" not in rendered
+    with pytest.raises(ConfigError, match=message):
+        parse_config(rendered + f"\n[airtime]\nburst_s = {shown}\n")
+
+
+@pytest.mark.parametrize(
+    "invisible",
+    ["\u2028", "\u2029", "\u200b", "\u200e", "\u202e", "\u2066", "\ufeff", "\u0085", "\U000e0001"],
+)
+def test_written_strings_show_invisible_characters_escaped(invisible: str) -> None:
+    """CODE-015: a line or paragraph separator, a bidirectional control, a zero-width or other
+    format character, which TOML would take as they are, is written as an escape that an editor
+    shows; the value reads back the same."""
+    answers = ANSWERS.replace("mqtt.username=bridge", f"mqtt.username=bri{invisible}dge")
+    text = render_config(answers)
+    line = next(line for line in text.split("\n") if line.startswith("username = "))
+    assert invisible not in line
+    assert line.isascii()
+    assert tomllib.loads(text)["mqtt"]["username"] == f"bri{invisible}dge"
+
+
 def test_a_tcp_radio_is_answered_with_its_acknowledgement() -> None:
     """The installer writes `radio.tcp_unauthenticated` once the user accepted the risk."""
     serial = "radio.transport=serial\nradio.device=/dev/serial/by-id/usb-Example_Radio-if00\n"
@@ -420,17 +452,30 @@ def test_every_setting_can_be_answered() -> None:
     """The installer answers cover the whole configuration (docs/configuration.md)."""
     answers = ANSWERS + "\n".join(
         [
-            "radio.set_clock=false", "mqtt.tls=true", "mqtt.cert_file=/etc/c.pem",
+            "radio.set_clock=false",
+            "mqtt.tls=true",
+            "mqtt.cert_file=/etc/c.pem",
             "mqtt.key_file=/etc/k.pem",
-            "mqtt.client_id=bridge-a", "mqtt.keepalive_s=30", "messages.truncate=false",
-            "messages.dedup_window_s=60", "messages.queue_size=5", "messages.queue_ttl_s=120",
-            "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
-            "airtime.burst_s=6.5", "commands.max_age_s=0", "diagnostics.publish_rx_log=true",
-            "contacts.manage=false", "history.readings_days=7.5", "messages.clean_received=true",
-            "messages.publish_channels=targets", "contacts.heard_nodes=off",
+            "mqtt.client_id=bridge-a",
+            "mqtt.keepalive_s=30",
+            "messages.truncate=false",
+            "messages.dedup_window_s=60",
+            "messages.queue_size=5",
+            "messages.queue_ttl_s=120",
+            "messages.max_attempts=4",
+            "messages.flood_after=3",
+            "messages.ignore_channels=0,2",
+            "airtime.burst_s=6.5",
+            "commands.max_age_s=0",
+            "diagnostics.publish_rx_log=true",
+            "contacts.manage=false",
+            "history.readings_days=7.5",
+            "messages.clean_received=true",
+            "messages.publish_channels=targets",
+            "contacts.heard_nodes=off",
             "telemetry.ask=household",
         ]
-    )  # fmt: skip
+    )
     config = parse_config(render_config(answers))
     assert config.radio.set_clock is False
     assert config.contacts.heard_nodes == "off"
@@ -438,8 +483,10 @@ def test_every_setting_can_be_answered() -> None:
     assert config.messages.clean_received is True
     assert config.messages.publish_channels == "targets"
     assert (config.mqtt.tls, config.mqtt.cert_file, config.mqtt.key_file) == (
-        True, "/etc/c.pem", "/etc/k.pem",
-    )  # fmt: skip
+        True,
+        "/etc/c.pem",
+        "/etc/k.pem",
+    )
     assert (config.mqtt.client_id, config.mqtt.keepalive_s) == ("bridge-a", 30)
     assert (config.messages.max_attempts, config.messages.flood_after) == (4, 3)
     assert config.messages.ignore_channels == frozenset({0, 2})
@@ -669,9 +716,18 @@ def test_a_url_or_a_port_in_a_host_is_refused(host: str, hint: str) -> None:
 
 @pytest.mark.parametrize(
     "host",
-    ["broker.example.org", "broker.example.org.", "192.0.2.20", "2001:db8::1", "fe80::1%eth0",
-     "::ffff:192.0.2.1", "mqtt.müller.example", "xn--mller-kva.example", "my_broker"],
-)  # fmt: skip
+    [
+        "broker.example.org",
+        "broker.example.org.",
+        "192.0.2.20",
+        "2001:db8::1",
+        "fe80::1%eth0",
+        "::ffff:192.0.2.1",
+        "mqtt.müller.example",
+        "xn--mller-kva.example",
+        "my_broker",
+    ],
+)
 def test_host_names_and_addresses_are_accepted(host: str) -> None:
     """Python passes a name to the resolver in its IDNA form, so a non-ASCII name works too."""
     config = parse_config(MINIMAL.replace('host = "broker.example.org"', f'host = "{host}"'))
@@ -727,8 +783,10 @@ def test_home_assistant_controls_hidden_targets_and_entity_prefix() -> None:
     config = parse_config(text + 'hidden_targets = ["alarm"]\ncontact_entity_prefix = "mesh_2"\n')
     ha = config.homeassistant
     assert (ha.controls, ha.hidden_targets, ha.contact_entity_prefix) == (
-        False, frozenset({"alarm"}), "mesh_2",
-    )  # fmt: skip
+        False,
+        frozenset({"alarm"}),
+        "mesh_2",
+    )
     with pytest.raises(
         ConfigError, match=r"homeassistant\.hidden_targets: 'siren' is not a target"
     ):

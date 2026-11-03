@@ -217,7 +217,7 @@ BROKEN = [
 
 @pytest.mark.real_catalogs
 def test_a_broken_translation_gives_english() -> None:
-    """Nothing a translator writes can break a command (D7)."""
+    """Nothing a translator writes can break a command (design §6.12)."""
     broken = compiled("de", BROKEN)
     assert broken.text("no host in {text!r}", text="gate") == "no host in 'gate'"
     assert broken.plural("{count} sender", "{count} senders", 1) == "1 sender"
@@ -265,15 +265,35 @@ def test_a_percent_is_text_outside_argparse() -> None:
 @pytest.mark.parametrize(
     ("language", "forms", "plural_forms", "expected"),
     [
-        ("de", ("{count} Absender", "{count} Absender"), "nplurals=2; plural=(n != 1);",
-         {0: "0 Absender", 1: "1 Absender", 2: "2 Absender"}),
-        ("fr", ("{count} expéditeur", "{count} expéditeurs"), FRENCH,
-         {0: "0 expéditeur", 1: "1 expéditeur", 2: "2 expéditeurs"}),
-        ("pl", ("{count} nadawca", "{count} nadawców (2-4)", "{count} nadawców"), POLISH,
-         {1: "1 nadawca", 2: "2 nadawców (2-4)", 5: "5 nadawców", 12: "12 nadawców",
-          22: "22 nadawców (2-4)", 25: "25 nadawców", 101: "101 nadawców", 111: "111 nadawców"}),
+        (
+            "de",
+            ("{count} Absender", "{count} Absender"),
+            "nplurals=2; plural=(n != 1);",
+            {0: "0 Absender", 1: "1 Absender", 2: "2 Absender"},
+        ),
+        (
+            "fr",
+            ("{count} expéditeur", "{count} expéditeurs"),
+            FRENCH,
+            {0: "0 expéditeur", 1: "1 expéditeur", 2: "2 expéditeurs"},
+        ),
+        (
+            "pl",
+            ("{count} nadawca", "{count} nadawców (2-4)", "{count} nadawców"),
+            POLISH,
+            {
+                1: "1 nadawca",
+                2: "2 nadawców (2-4)",
+                5: "5 nadawców",
+                12: "12 nadawców",
+                22: "22 nadawców (2-4)",
+                25: "25 nadawców",
+                101: "101 nadawców",
+                111: "111 nadawców",
+            },
+        ),
     ],
-)  # fmt: skip
+)
 def test_plural_fills_count(
     language: str, forms: tuple[str, ...], plural_forms: str, expected: dict[int, str]
 ) -> None:
@@ -332,7 +352,8 @@ def test_the_hostile_catalog_shows_english(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_a_text_missing_from_the_template_fails_the_test() -> None:
-    """tests/conftest.py's strict catalog: a text nobody marked cannot pass the tests (D13)."""
+    """tests/conftest.py's strict catalog: a text nobody marked cannot pass the tests
+    (design §6.12)."""
     with pytest.raises(pytest.fail.Exception, match="not in the template"):
         i18n.ENGLISH.text("a text nobody marked")
     with pytest.raises(pytest.fail.Exception, match=r"home assistant.*not in the template"):

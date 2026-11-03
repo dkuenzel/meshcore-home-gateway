@@ -132,26 +132,41 @@ def friendly(hass: HomeAssistant, entity_id: str) -> str:
 
 
 ALICE_IDS = {
-    "notify.mesh_alice", "event.mesh_alice_message", "sensor.mesh_alice_last_heard",
-    "sensor.mesh_alice_hops", "sensor.mesh_alice_snr", "button.mesh_alice_remove",
-    "switch.mesh_alice_telemetry", "sensor.mesh_alice_telemetry_state",
+    "notify.mesh_alice",
+    "event.mesh_alice_message",
+    "sensor.mesh_alice_last_heard",
+    "sensor.mesh_alice_hops",
+    "sensor.mesh_alice_snr",
+    "button.mesh_alice_remove",
+    "switch.mesh_alice_telemetry",
+    "sensor.mesh_alice_telemetry_state",
     "binary_sensor.mesh_alice_advert_position",
-}  # fmt: skip
+}
 ALICE_ANSWER_IDS = {  # with her answers (tests/test_telemetry.py): GPS and a BME280 on channel 2
-    "device_tracker.mesh_alice", "sensor.mesh_alice_battery", "sensor.mesh_alice_mcu_temperature",
-    "sensor.mesh_alice_ch2_temperature", "sensor.mesh_alice_ch2_humidity",
-    "sensor.mesh_alice_ch2_barometric_pressure", "sensor.mesh_alice_ch2_altitude",
-}  # fmt: skip
+    "device_tracker.mesh_alice",
+    "sensor.mesh_alice_battery",
+    "sensor.mesh_alice_mcu_temperature",
+    "sensor.mesh_alice_ch2_temperature",
+    "sensor.mesh_alice_ch2_humidity",
+    "sensor.mesh_alice_ch2_barometric_pressure",
+    "sensor.mesh_alice_ch2_altitude",
+}
 HILL_IDS = {
-    "device_tracker.mesh_hilltop", "sensor.mesh_hilltop_last_heard", "sensor.mesh_hilltop_hops",
-    "sensor.mesh_hilltop_snr", "button.mesh_hilltop_remove",
-}  # fmt: skip
+    "device_tracker.mesh_hilltop",
+    "sensor.mesh_hilltop_last_heard",
+    "sensor.mesh_hilltop_hops",
+    "sensor.mesh_hilltop_snr",
+    "button.mesh_hilltop_remove",
+}
 
 
 async def test_every_contact_gets_a_device_below_the_gateway(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     await with_gateway(hass)
     gateway_devices(broker, store).update(mesh_of(ALICE_NODE, HILL_NODE))
     await broker.deliver(hass)
@@ -159,8 +174,11 @@ async def test_every_contact_gets_a_device_below_the_gateway(
     gateway, alice = devices[PREFIX], devices[f"{PREFIX}_contact_{ALICE}"]
     assert alice.via_device_id == gateway.id
     assert (alice.name, alice.manufacturer, alice.model, alice.serial_number) == (
-        "Alice", "MeshCore", "Companion", ALICE,
-    )  # fmt: skip
+        "Alice",
+        "MeshCore",
+        "Companion",
+        ALICE,
+    )
     assert set(contact_entities(hass, ALICE)) == ALICE_IDS
     assert set(contact_entities(hass, HILL)) == HILL_IDS
     assert not any(entry.disabled_by for entry in contact_entities(hass, ALICE).values())
@@ -173,9 +191,12 @@ async def test_every_contact_gets_a_device_below_the_gateway(
 
 
 async def test_the_contact_document_fills_its_entities(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     await with_gateway(hass)
     mesh = mesh_of(ALICE_NODE, HILL_NODE)
     mesh.contact_heard(ALICE, Heard(NOW, "message", Signal(2, 6.25, -101)))
@@ -190,21 +211,26 @@ async def test_the_contact_document_fills_its_entities(
     tracker = hass.states.get("device_tracker.mesh_hilltop")
     assert tracker.state == "not_home"
     assert (tracker.attributes["latitude"], tracker.attributes["longitude"]) == (
-        52.123456, 9.654321,
-    )  # fmt: skip
+        52.123456,
+        9.654321,
+    )
     assert tracker.attributes["position_source"] == "advert"
     on_map = {
-        s.entity_id for s in hass.states.async_all()
+        s.entity_id
+        for s in hass.states.async_all()
         if "latitude" in s.attributes and "longitude" in s.attributes
-    }  # fmt: skip
+    }
     assert on_map == {"device_tracker.mesh_hilltop", "zone.home"}  # nothing else on the map
     assert problems(caplog) == []
 
 
 async def test_a_position_from_telemetry_carries_its_accuracy(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """A telemetry position has `gps_accuracy` 15, which widens the zone test: 110 m from the
     centre of a 100 m home zone is `home`. An advert's has none (0). A resting companion's
     answers change no tracker state."""
@@ -222,8 +248,9 @@ async def test_a_position_from_telemetry_carries_its_accuracy(
     assert alice.state == "home"
     assert alice.attributes["gps_accuracy"] == 15
     assert (alice.attributes["position_source"], alice.attributes["altitude_m"]) == (
-        "telemetry", 12.0,
-    )  # fmt: skip
+        "telemetry",
+        12.0,
+    )
     hill = hass.states.get("device_tracker.mesh_hilltop")
     assert hill.attributes["gps_accuracy"] == 0
     mesh.contact_answered(ALICE, NOW + 900, near_home, 12.0)  # the next answer, at rest
@@ -247,9 +274,12 @@ async def test_a_position_from_telemetry_carries_its_accuracy(
 
 
 async def test_a_tracker_without_a_position_leaves_the_map(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     await with_gateway(hass)
     mesh = mesh_of(HILL_NODE)
     gateway_devices(broker, store).update(mesh)
@@ -269,9 +299,12 @@ async def test_a_tracker_without_a_position_leaves_the_map(
 
 
 async def test_messages_and_sending_per_contact(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     await with_gateway(hass)
     gateway_devices(broker, store).update(mesh_of(ALICE_NODE))
     await broker.deliver(hass)
@@ -286,18 +319,24 @@ async def test_messages_and_sending_per_contact(
     assert event.attributes["text"] == "x" * 300  # attributes have no length limit
     mqtt.async_publish.reset_mock()
     await hass.services.async_call(
-        "notify", "send_message", {"message": "Dinner is ready"}, blocking=True,
+        "notify",
+        "send_message",
+        {"message": "Dinner is ready"},
+        blocking=True,
         target={"entity_id": "notify.mesh_alice"},
-    )  # fmt: skip
+    )
     (send,) = [c.args for c in mqtt.async_publish.call_args_list]
     assert send[:4] == (f"meshcore/radio1/contacts/{ALICE}/send", "Dinner is ready", 1, False)
     assert problems(caplog) == []
 
 
 async def test_a_contact_that_left_loses_its_device(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     await with_gateway(hass)
     devices = gateway_devices(broker, store)
     mesh = mesh_of(ALICE_NODE, HILL_NODE)
@@ -313,9 +352,14 @@ async def test_a_contact_that_left_loses_its_device(
 
 @pytest.mark.parametrize("pending", [False, True], ids=["left-while-stopped", "pending"])
 async def test_the_removal_works_after_a_restart_of_home_assistant(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile, *,
-    caplog: pytest.LogCaptureFixture, pending: bool,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
+    *,
+    caplog: pytest.LogCaptureFixture,
+    pending: bool,
+) -> None:
     """Home Assistant ignores an empty document for a device it has not discovered since its own
     start; the placeholders sent first bind the entities it kept."""
     await with_gateway(hass)
@@ -340,9 +384,14 @@ async def test_the_removal_works_after_a_restart_of_home_assistant(
 
 
 async def test_a_device_the_user_deletes_stays_hidden_until_shown(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile, *, hass_ws_client: Any,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
+    *,
+    hass_ws_client: Any,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     assert await async_setup_component(hass, "config", {})
     await with_gateway(hass)
     devices = gateway_devices(broker, store)
@@ -383,9 +432,12 @@ async def test_a_device_the_user_deletes_stays_hidden_until_shown(
 
 
 async def test_equal_names_on_two_gateways_get_numbered_entity_ids(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     from test_contract import make_config  # noqa: PLC0415
 
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
@@ -413,9 +465,12 @@ def warnings_of(caplog: pytest.LogCaptureFixture) -> set[str]:
 
 
 async def test_a_removal_sent_again_after_home_assistant_started_leaves_nothing(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """Home Assistant took the removal, then restarted: the removal sent once more brings the
     device back for a moment and removes it again, with cosmetic warnings only."""
     await with_gateway(hass)
@@ -440,9 +495,12 @@ async def test_a_removal_sent_again_after_home_assistant_started_leaves_nothing(
 
 
 async def test_an_entity_the_user_disabled_never_hides_the_contact(
-    hass: HomeAssistant, mqtt: Any, broker: Broker, store: JsonStateFile,
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """Home Assistant clears a device's topic itself when it removes a disabled entity. The
     gateway never removes a single component, and the copy of a removal it sees is no deletion."""
     await with_gateway(hass)
@@ -496,11 +554,16 @@ async def test_the_observer_documents_fill_the_gateway_entities(
     assert (remote.state, remote.attributes["contacts"]) == ("on", [HILL])
     advert = states[f"binary_sensor.{PREFIX}_advert_position"]  # Alice's record has no position
     assert (advert.state, advert.attributes["contacts"], advert.attributes["total"]) == (
-        "off", [], 0,
-    )  # fmt: skip
+        "off",
+        [],
+        0,
+    )
     assert states[f"sensor.{PREFIX}_noise_floor"].state == "unknown"
-    await fire(hass, TOPICS.contact_event, {"event_type": "hidden", "key": ALICE, "name": "Alice",
-                                            "type": "chat"})  # fmt: skip
+    await fire(
+        hass,
+        TOPICS.contact_event,
+        {"event_type": "hidden", "key": ALICE, "name": "Alice", "type": "chat"},
+    )
     assert hass.states.get(f"event.{PREFIX}_contact").attributes["event_type"] == "hidden"
     mqtt.async_publish.reset_mock()
     await hass.services.async_call(
@@ -538,16 +601,21 @@ def excluded_by(globs: list[str], entity_ids: Iterable[str]) -> set[str]:
 
 
 GATEWAY_IDS = {
-    f"event.{PREFIX}_message", f"sensor.{PREFIX}_contacts", f"event.{PREFIX}_contact",
-    f"event.{PREFIX}_telemetry", f"sensor.{PREFIX}_telemetry_status", f"sensor.{PREFIX}_battery",
-}  # fmt: skip
+    f"event.{PREFIX}_message",
+    f"sensor.{PREFIX}_contacts",
+    f"event.{PREFIX}_contact",
+    f"event.{PREFIX}_telemetry",
+    f"sensor.{PREFIX}_telemetry_status",
+    f"sensor.{PREFIX}_battery",
+}
 
 
 def test_the_recorder_exclusions_keep_only_the_texts_out() -> None:
     globs = guide_recorder("event.mesh_*_message*")
     assert excluded_by(globs, contact_entity_ids()) == {
-        "event.mesh_alice_message", "event.mesh_alice_message_2",
-    }  # fmt: skip
+        "event.mesh_alice_message",
+        "event.mesh_alice_message_2",
+    }
     assert not excluded_by(globs, GATEWAY_IDS)
     assert encode({"text": "ä"}) == '{"text":"ä"}'.encode()
 
@@ -558,9 +626,11 @@ def test_the_telemetry_exclusions_keep_the_telemetry_out() -> None:
     loses the history of its other sensors too, which the guide says."""
     globs = guide_recorder("device_tracker.mesh_*")
     telemetry = {
-        "device_tracker.mesh_hilltop", "switch.mesh_alice_telemetry",
-        "sensor.mesh_alice_telemetry_state", *ALICE_ANSWER_IDS,
-    }  # fmt: skip
+        "device_tracker.mesh_hilltop",
+        "switch.mesh_alice_telemetry",
+        "sensor.mesh_alice_telemetry_state",
+        *ALICE_ANSWER_IDS,
+    }
     assert excluded_by(globs, contact_entity_ids()) == telemetry | {f"{e}_2" for e in telemetry}
     assert excluded_by(globs, GATEWAY_IDS) == {f"event.{PREFIX}_telemetry"}
     # whether and when a companion's adverts carried its position, never where (the guide)

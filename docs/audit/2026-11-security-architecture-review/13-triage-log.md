@@ -85,18 +85,18 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-003 | fix | `slugs` of contacts that left the table kept for 90 days and at most 1 000 (the newest), `radio_profile` for the current radio and the two saved before it | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | CODE-004 | fix | By the single store: a section never re-reads the file | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | CODE-005 | fix | `cli.py` becomes a package of command modules, `bridge.py` is split (ARC-009); state and sequence diagrams for the telemetry subsystem | pending: structure, threat-model |
-| CODE-006 | fix | Every reference to the sprint's "design 6c" decisions replaced by the section or record that holds the rule; a test that design references in the code resolve | pending: code-quality |
-| CODE-007 | fix | The `# fmt: skip` markers removed in one mechanical commit; the formatter's output is the style | pending: code-quality |
+| CODE-006 | fix | Every reference to the sprint's "design 6c" decisions replaced by the section or record that holds the rule; a test that design references in the code resolve | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
+| CODE-007 | fix | The `# fmt: skip` markers removed in one mechanical commit; the formatter's output is the style | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-008 | fix | Through ARC-012 (counters, rate-limited logs) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
-| CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38), [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: code-quality |
+| CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38), [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-010 | fix | The `Bus` protocol moves to the ports module and `MqttBus` declares it | pending: structure |
-| CODE-011 | fix | The cost noted in `refresh_channels`' docstring | pending: code-quality |
-| CODE-012 | fix | A comment naming the radio's table as the bound | pending: code-quality |
+| CODE-011 | fix | The cost noted in `refresh_channels`' docstring | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
+| CODE-012 | fix | A comment naming the radio's table as the bound | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-013 | fix | The purge in one transaction, as it is since [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38); now also in a thread of its own (CODE-002) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
-| CODE-014 | fix | A test that `nan` and `inf` are refused with a readable message | pending: code-quality |
-| CODE-015 | fix | `_toml_string` escapes line and paragraph separators and other invisible format characters | pending: code-quality |
+| CODE-014 | fix | A test that `nan` and `inf` are refused with a readable message | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
+| CODE-015 | fix | `_toml_string` escapes line and paragraph separators and other invisible format characters | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-016 | accept | The lazy imports keep `--version` and the light commands fast; documented where they are | – |
-| CODE-017 | fix | A comment naming the bound of the retry loop | pending: code-quality |
+| CODE-017 | fix | A comment naming the bound of the retry loop | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-018 | fix | Through SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | CODE-019 | accept | The adapter's own bound is the documented design | – |
 | CODE-020 | accept | Deciding the language before parsing is required for English service logs; Ctrl-C as exit 1 is the documented failure | – |
@@ -196,7 +196,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-014 | fix | Through ARC-013 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-015 | fix | Through ARC-014 | pending: mqtt5 |
 | IMP-016 | fix | `status`, `backup` and `retire` commands | pending: cli-ops |
-| IMP-017 | fix | Through CODE-009 | pending: code-quality |
+| IMP-017 | fix | Through CODE-009 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | IMP-018 | fix | Through SEC-012 and SEC-013 | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
 | IMP-019 | fix | Through SEC-010 and SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | IMP-020 | fix | Through CODE-001 and CODE-002 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
@@ -209,7 +209,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-027 | fix | Through SUP-001 (code owners, checklist); identity and cooldown deferred to the maintainer | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-028 | fix | Through SUP-002 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-029 | fix | Through SUP-005 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
-| IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | pending: threat-model, code-quality |
+| IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55), pending: threat-model |
 | IMP-031 | fix | Through ARC-005 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-032 | fix | `[messages] alert_targets`: alerts overtake the queue and go between two attempts of a message in flight. Per target, not per request: a JSON envelope would change what a text that looks like JSON means, and the installer's answers carry no per-target setting (as for `hidden_targets`, SEC-008); a second target for the same recipient gives a request the choice | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-033 | fix | Through OPS-007 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
@@ -224,7 +224,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-042 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | IMP-043 | fix | Through SUP-007 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-044 | fix | Through CODE-023 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| IMP-045 | fix | Through CODE-007 | pending: code-quality |
+| IMP-045 | fix | Through CODE-007 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | IMP-046 | fix | Through DOC-026 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-047 | fix | `history export` as JSON lines or CSV | pending: cli-ops |
 | IMP-048 | fix | Through OPS-013 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |

@@ -138,14 +138,18 @@ class FakeBus:
         """Payloads on the topics ending in `suffix`; those of single contacts only if the suffix
         names contacts."""
         return [
-            json.loads(p) for t, p, _ in self.published
+            json.loads(p)
+            for t, p, _ in self.published
             if t.endswith(suffix) and ("contact" in suffix or "/contact" not in t)
-        ]  # fmt: skip
+        ]
 
     async def wait_for(
-        self, suffix: str, check: Callable[[dict[str, Any]], bool], within_s: float = 3,
+        self,
+        suffix: str,
+        check: Callable[[dict[str, Any]], bool],
+        within_s: float = 3,
         since: int = 0,
-    ) -> dict[str, Any]:  # fmt: skip
+    ) -> dict[str, Any]:
         """First payload on the topic (from index `since`) that passes `check`."""
 
         async def poll() -> dict[str, Any]:
@@ -162,9 +166,13 @@ def fast_sessions(
     transport: Transport, events: asyncio.Queue[RadioEvent], set_clock: bool
 ) -> CompanionSession:
     return CompanionSession(
-        transport, events, wall_clock=lambda: NOW, command_timeout_s=0.5, flush_settle_s=0.01,
+        transport,
+        events,
+        wall_clock=lambda: NOW,
+        command_timeout_s=0.5,
+        flush_settle_s=0.01,
         set_clock=set_clock,
-    )  # fmt: skip
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -208,13 +216,22 @@ async def running(
         records = ContactDeviceRecords(store)
         contact_devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: NOW)
     bridge = Bridge(
-        config, bus, transport or (lambda: radio), CommandLedger(store), session_factory=sessions,
-        wall_clock=lambda: NOW, monotonic=monotonic, notifier=note,
-        components=AnnouncedComponents(store), observer=observer(bus) if observer else None,
-        devices=contact_devices, profile=profile,
+        config,
+        bus,
+        transport or (lambda: radio),
+        CommandLedger(store),
+        session_factory=sessions,
+        wall_clock=lambda: NOW,
+        monotonic=monotonic,
+        notifier=note,
+        components=AnnouncedComponents(store),
+        observer=observer(bus) if observer else None,
+        devices=contact_devices,
+        profile=profile,
         manage_components=AnnouncedComponents(store, "manage_contacts"),
-        telemetry_records=TelemetryRecords(store), telemetry_lanes=telemetry_lanes,
-    )  # fmt: skip
+        telemetry_records=TelemetryRecords(store),
+        telemetry_lanes=telemetry_lanes,
+    )
     task = asyncio.create_task(bridge.run(stop))
     try:
         if transport is None:
@@ -400,16 +417,19 @@ def test_a_stop_keeps_the_queue_and_the_next_start_sends_it(tmp_path: Path) -> N
             events = [(d["id"], d["event_type"]) for d in bus.payloads("/delivery")]
             assert events[:2] == [(ids["alerts"], "queued"), (ids["bob"], "queued")]
             assert events[2:] == [
-                (ids["alerts"], "sent"), (ids["bob"], "sent"), (ids["bob"], "confirmed"),
-            ]  # fmt: skip
+                (ids["alerts"], "sent"),
+                (ids["bob"], "sent"),
+                (ids["bob"], "confirmed"),
+            ]
             bus.send("alerts", "Gate open")  # its client sends it again: it was sent
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
 
     scenario(stopped)
     kept = JsonStateFile(path).load()["outbox"]["messages"]
     assert [(m["id"], m["target"], m["text"], m["sent"]) for m in kept] == [
-        (ids["alerts"], "alerts", "Gate open", 0), (ids["bob"], "bob", "Pump stopped", 0),
-    ]  # fmt: skip
+        (ids["alerts"], "alerts", "Gate open", 0),
+        (ids["bob"], "bob", "Pump stopped", 0),
+    ]
     scenario(started)
     assert radio.channel_texts == [(0, "Gate open", NOW)]
     assert "outbox" not in JsonStateFile(path).load()
@@ -422,13 +442,28 @@ def test_kept_messages_whose_time_ran_out_or_whose_target_left_end_at_the_start(
 
     def kept(ident: str, target: str, age_s: float, sent: int = 0) -> dict[str, Any]:
         timestamp = NOW - 600 if sent else None
-        return {"id": ident, "target": target, "text": "x", "age_s": age_s, "sent": sent,
-                "timestamp": timestamp}  # fmt: skip
+        return {
+            "id": ident,
+            "target": target,
+            "text": "x",
+            "age_s": age_s,
+            "sent": sent,
+            "timestamp": timestamp,
+        }
 
-    JsonStateFile(tmp_path / "state.json").save({"outbox": {"saved_at": NOW - 30, "messages": [
-        kept("old", "alerts", 590.0), kept("tried", "bob", 590.0, sent=1),
-        kept("gone", "porch", 1.0), kept("fresh", "alerts", 1.0),
-    ]}})  # fmt: skip
+    JsonStateFile(tmp_path / "state.json").save(
+        {
+            "outbox": {
+                "saved_at": NOW - 30,
+                "messages": [
+                    kept("old", "alerts", 590.0),
+                    kept("tried", "bob", 590.0, sent=1),
+                    kept("gone", "porch", 1.0),
+                    kept("fresh", "alerts", 1.0),
+                ],
+            }
+        }
+    )
     radio = EmulatedRadio(contacts=[ALICE, BOB])
 
     async def main() -> None:
@@ -436,13 +471,17 @@ def test_kept_messages_whose_time_ran_out_or_whose_target_left_end_at_the_start(
             await bus.wait_for(
                 "/delivery", lambda d: d["id"] == "fresh" and d["event_type"] == "sent"
             )
-            events = [(d["id"], d["event_type"], d["reason"], d["attempt"])
-                      for d in bus.payloads("/delivery")]  # fmt: skip
+            events = [
+                (d["id"], d["event_type"], d["reason"], d["attempt"])
+                for d in bus.payloads("/delivery")
+            ]
             assert events == [
-                ("old", "expired", "queue_ttl", 0), ("tried", "failed", "no_acknowledgement", 1),
-                ("gone", "failed", "unknown_target", 0), ("fresh", "queued", None, 0),
+                ("old", "expired", "queue_ttl", 0),
+                ("tried", "failed", "no_acknowledgement", 1),
+                ("gone", "failed", "unknown_target", 0),
+                ("fresh", "queued", None, 0),
                 ("fresh", "sent", None, 1),
-            ]  # fmt: skip
+            ]
             assert radio.texts == []
 
     scenario(main)
@@ -474,8 +513,11 @@ def test_a_stop_waits_for_the_acknowledgement_of_the_message_in_flight(
     scenario(main)
     events = [(d["target"], d["event_type"], d["attempt"]) for d in buses[0].payloads("/delivery")]
     assert events == [
-        ("bob", "queued", 0), ("bob", "sent", 1), ("alice", "queued", 0), ("bob", "confirmed", 1),
-    ]  # fmt: skip
+        ("bob", "queued", 0),
+        ("bob", "sent", 1),
+        ("alice", "queued", 0),
+        ("bob", "confirmed", 1),
+    ]
     assert [t.text for t in radio.texts] == ["Still there?"]  # no attempt starts in the stop
     (kept,) = JsonStateFile(tmp_path / "state.json").load()["outbox"]["messages"]
     assert (kept["target"], kept["sent"]) == ("alice", 0)
@@ -542,8 +584,9 @@ def test_an_alert_goes_before_the_queue_and_between_the_attempts_of_a_message(
     """IMP-032: Bob's message is in flight and Alice's waits when the alert comes: it goes
     after Bob's first attempt, before his second and before Alice's."""
     radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
-    config = make_config(messages='alert_targets = ["alerts"]',
-                         airtime="budget_s_per_hour = 3600\nburst_s = 60")  # fmt: skip
+    config = make_config(
+        messages='alert_targets = ["alerts"]', airtime="budget_s_per_hour = 3600\nburst_s = 60"
+    )
 
     async def main() -> None:
         async with running(config, radio, tmp_path) as (_, bus, _n):
@@ -561,8 +604,13 @@ def test_an_alert_goes_before_the_queue_and_between_the_attempts_of_a_message(
     ]
     assert sends[:3] == [Command.SEND_TXT_MSG, Command.SEND_CHANNEL_TXT_MSG, Command.SEND_TXT_MSG]
     assert [(t.text, t.attempt) for t in radio.texts] == [
-        ("first", 0), ("first", 1), ("first", 2), ("second", 0), ("second", 1), ("second", 2),
-    ]  # fmt: skip
+        ("first", 0),
+        ("first", 1),
+        ("first", 2),
+        ("second", 0),
+        ("second", 1),
+        ("second", 2),
+    ]
 
 
 def test_the_budget_level_survives_a_restart_and_a_long_message_still_goes_out(
@@ -650,9 +698,12 @@ NEIGHBOUR = EmulatedContact(bytes.fromhex("c3" * 32), "Carol", out_path_len=0x00
     [(BOB, 400, True), (BOB, 1500, False), (ALICE, 1, False), (NEIGHBOUR, 1, False)],
 )
 def test_an_acknowledgement_sooner_than_the_path_allows_is_suspect(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, contact: EmulatedContact,
-    round_trip_ms: int, suspect: bool,
-) -> None:  # fmt: skip
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    contact: EmulatedContact,
+    round_trip_ms: int,
+    suspect: bool,
+) -> None:
     """SEC-001: Bob is two repeaters away, so a genuine acknowledgement of a 9-byte text takes
     922 ms at least at the emulated radio's settings; one in 400 ms is `suspect` and logged. To
     Alice, without a path, the radio floods, and Carol is a neighbour: a forger in range answers
@@ -728,8 +779,10 @@ def test_command_is_refused_while_the_broker_is_unreachable(tmp_path: Path) -> N
             radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 10)
             received = await bus.wait_for("/received", lambda r: True)
             assert received["command"] == {
-                "word": "arm", "accepted": False, "reason": "broker_unavailable",
-            }  # fmt: skip
+                "word": "arm",
+                "accepted": False,
+                "reason": "broker_unavailable",
+            }
             bus.connected = True
             radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 5)  # sent again
             await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
@@ -978,8 +1031,10 @@ def test_running_out_of_time_after_sending_is_a_failure(
                 "/delivery", lambda d: d["text"] == "busy" and d["event_type"] in FINAL, 5
             )
             assert (busy["event_type"], busy["reason"], busy["attempt"]) == (
-                "failed", "no_acknowledgement", 2,
-            )  # fmt: skip
+                "failed",
+                "no_acknowledgement",
+                2,
+            )
             late = await bus.wait_for(
                 "/delivery", lambda d: d["text"] == "late" and d["event_type"] in FINAL, 5
             )
@@ -1037,8 +1092,9 @@ def test_after_the_path_reset_the_next_message_is_budgeted_as_a_flood(tmp_path: 
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
             bus.send("bob", "Are you there?")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "failed")
-            bob = await bus.wait_for(f"/contacts/{BOB.public_key.hex()}",
-                                     lambda d: d["path_known"] is False)  # fmt: skip
+            bob = await bus.wait_for(
+                f"/contacts/{BOB.public_key.hex()}", lambda d: d["path_known"] is False
+            )
             assert bob["path_hops"] is None
             radio.auto_ack = True
             bus.send("bob", "Still there?")
@@ -1093,8 +1149,10 @@ def test_burst_is_checked_before_the_path_is_reset(tmp_path: Path) -> None:
             bus.send("bob", "x" * 20)
             event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
             assert (event["event_type"], event["reason"], event["attempt"]) == (
-                "failed", "exceeds_airtime_burst", 1,
-            )  # fmt: skip
+                "failed",
+                "exceeds_airtime_burst",
+                1,
+            )
             assert radio.path_resets == []
 
     scenario(main)
@@ -1126,8 +1184,10 @@ def test_airtime_running_out_after_sending_is_a_failure(tmp_path: Path) -> None:
             bridge._budget._tokens, bridge._budget._rate = 0.0, 1e-6  # nothing for attempt 2
             event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
             assert (event["event_type"], event["reason"], event["attempt"]) == (
-                "failed", "no_acknowledgement", 1,
-            )  # fmt: skip
+                "failed",
+                "no_acknowledgement",
+                1,
+            )
             assert len(radio.texts) == 1
 
     scenario(main)
@@ -1612,7 +1672,7 @@ def test_adverts_over_tcp_are_checked_as_over_usb(tmp_path: Path) -> None:
     """Over TCP the radio queues an advert's log and its push in one pass of its loop
     (SerialWifiInterface.cpp:21-40, MyMesh.cpp:2388-2421): a companion's advert, and the advert
     of a node heard and then added, are checked as over USB, and command 17 is never sent
-    (design 6c §8.3)."""
+    (ADR 0025)."""
     position = (50_123_456, 8_654_321)
     dave = EmulatedContact(bytes.fromhex("d4" * 32), "Dave", last_advert=int(NOW) - 30)
     alice, dave_key = ALICE.public_key.hex(), dave.public_key.hex()
@@ -1641,7 +1701,7 @@ def test_adverts_over_tcp_are_checked_as_over_usb(tmp_path: Path) -> None:
 
     with TcpRadioServer(radio) as server:
         scenario(lambda: main(server))
-    assert 17 not in radio.commands()  # EXPORT_CONTACT (design 6c D1)
+    assert 17 not in radio.commands()  # EXPORT_CONTACT (ADR 0025)
 
 
 def test_contact_reads_are_spent_only_where_they_can_change_the_verdict(tmp_path: Path) -> None:
@@ -1870,8 +1930,9 @@ def test_the_broker_connection_is_warned_about_until_accepted() -> None:
     )
     anonymous = parse_config(base + 'host = "broker.example.org"\n')
     assert [str(w).split(":")[0] for w in broker_warnings(anonymous)] == [
-        "MQTT without a user name", "MQTT without TLS",
-    ]  # fmt: skip
+        "MQTT without a user name",
+        "MQTT without TLS",
+    ]
     assert broker_warnings(parse_config(base + 'host = "127.0.0.1"\nusername = "gw"\n')) == []
     accepted = parse_config(base + 'host = "broker.example.org"\ninsecure = true\n')
     assert broker_warnings(accepted) == []
@@ -1941,14 +2002,15 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
 def test_with_telemetry_off_an_exclusion_or_inclusion_forgets_the_saved_answers(
     tmp_path: Path,
 ) -> None:
-    """D13 also when telemetry is switched on again later: the saved schedule no longer knows
+    """Also when telemetry is switched on again later: the saved schedule no longer knows
     the answers of a contact excluded, included or added again while telemetry was off."""
     store = JsonStateFile(tmp_path / "state.json")
     records = TelemetryRecords(store)
     key = "d4" * 32
     records.save(telemetry.Saved({key: telemetry.SavedContact(812.5, 0, 95.0)}), NOW)
-    off = Bridge(make_config(), FakeBus(), EmulatedRadio, CommandLedger(store),
-                 telemetry_records=records)  # fmt: skip
+    off = Bridge(
+        make_config(), FakeBus(), EmulatedRadio, CommandLedger(store), telemetry_records=records
+    )
     off.observer.telemetry_excluded(key, False)  # included again, as the contact manager does
     saved, _ = records.load(NOW)
     assert saved is not None
@@ -1993,13 +2055,16 @@ def test_the_state_says_why_telemetry_waits(
     monkeypatch.setattr(telemetry, "STEP_S", 0.1)  # the step that finds the radio comes soon
 
     async def main() -> None:
-        async with running(make_config(telemetry=True), EmulatedRadio(), tmp_path,
-                           transport=Unreachable) as (_, bus, _notes):  # fmt: skip
+        async with running(
+            make_config(telemetry=True), EmulatedRadio(), tmp_path, transport=Unreachable
+        ) as (_, bus, _notes):
             state = await bus.wait_for("/state", lambda s: True)
             assert (state["telemetry"], state["telemetry_reason"]) == ("paused", "no_radio")
         async with running(make_config(telemetry=True), EmulatedRadio(), tmp_path) as (
-            bridge, _bus, _notes,
-        ):  # fmt: skip
+            bridge,
+            _bus,
+            _notes,
+        ):
             await until(lambda: bridge.state_payload()["telemetry"] == "on")
             assert bridge.state_payload()["telemetry_reason"] is None
         async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, _bus, _notes):
@@ -2073,8 +2138,10 @@ def test_an_exclusion_not_stored_is_written_at_the_next_status_tick(
 
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path, observer=observer) as (
-            bridge, _bus, _notes,
-        ):  # fmt: skip
+            bridge,
+            _bus,
+            _notes,
+        ):
             exclusions = bridge.observer.exclusions
             assert not exclusions.exclude(ALICE.public_key.hex())
             await asyncio.sleep(0.15)
@@ -2236,10 +2303,12 @@ def test_discovery_can_be_switched_off(tmp_path: Path) -> None:
 
 def test_components_of_an_earlier_configuration_are_removed(tmp_path: Path) -> None:
     store = JsonStateFile(tmp_path / "state.json")
-    store.save({
-        "ha_components": {"send_old": "notify", "radio": "binary_sensor"},
-        "command_timestamps": {"a1" * 32: 5},
-    })  # fmt: skip
+    store.save(
+        {
+            "ha_components": {"send_old": "notify", "radio": "binary_sensor"},
+            "command_timestamps": {"a1" * 32: 5},
+        }
+    )
 
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
@@ -2427,10 +2496,15 @@ def test_a_rejected_command_cannot_be_replayed_while_its_age_window_lasts(
     async def main() -> None:
         stop = asyncio.Event()
         bridge = Bridge(
-            config, bus, lambda: radio, CommandLedger(store), session_factory=fast_sessions,
-            wall_clock=lambda: NOW + offset[0], monotonic=lambda: time.monotonic() + offset[0],
+            config,
+            bus,
+            lambda: radio,
+            CommandLedger(store),
+            session_factory=fast_sessions,
+            wall_clock=lambda: NOW + offset[0],
+            monotonic=lambda: time.monotonic() + offset[0],
             notifier=lambda _m: True,
-        )  # fmt: skip
+        )
         task = asyncio.create_task(bridge.run(stop))
         try:
             if not at_connect:
@@ -2481,8 +2555,9 @@ def test_any_contact_is_a_recipient(tmp_path: Path) -> None:
             assert refused["event_type"] == "rejected"
             history = await bus.wait_for("/history", lambda d: d["total"] == 1)
             assert (history["messages"][0]["name"], history["messages"][0]["contact_key"]) == (
-                "Carol", key,
-            )  # fmt: skip
+                "Carol",
+                key,
+            )
             assert radio.texts[0].prefix == carol.public_key[:6]
 
     scenario(main)
@@ -2582,9 +2657,11 @@ def test_a_flooding_sender_or_channel_is_not_published_beyond_its_rate(
             await asyncio.sleep(0.1)
             texts = [e["text"] for e in bus.payloads("radio1/received")]
             assert texts == [
-                *(f"spam {n}" for n in range(burst)), "status", "hello",
+                *(f"spam {n}" for n in range(burst)),
+                "status",
+                "hello",
                 *(f"chatter {n}" for n in range(20)),
-            ]  # fmt: skip
+            ]
             history = [m["text"] for m in bus.payloads("radio1/history")[-1]["messages"]]
             assert "spam 10" not in history
             assert "chatter 20" not in history
@@ -2831,8 +2908,12 @@ def test_a_control_of_an_earlier_version_is_removed_by_the_service(tmp_path: Pat
     """The controls' document keeps its own record in the state file (state.py): placeholders
     first, then the document without the component, at every announcement of the run."""
     store = JsonStateFile(tmp_path / "state.json")
-    store.save({"ha_components_manage_contacts": {"add_node": "select", "add_group": "select"},
-                "ha_components": {"radio": "binary_sensor"}})  # fmt: skip
+    store.save(
+        {
+            "ha_components_manage_contacts": {"add_node": "select", "add_group": "select"},
+            "ha_components": {"radio": "binary_sensor"},
+        }
+    )
 
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _n):
@@ -2868,8 +2949,9 @@ def test_the_select_leaves_out_a_look_alike_of_a_protected_key(
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
             radio.advertise(TWIN)
             radio.advertise(dave)
-            await bus.wait_for("/manage_contacts/config",
-                               lambda d: any(o.endswith(" Dave") for o in labels(d)))  # fmt: skip
+            await bus.wait_for(
+                "/manage_contacts/config", lambda d: any(o.endswith(" Dave") for o in labels(d))
+            )
             nodes = bus.payloads("radio1/nodes")[-1]
             assert TWIN.public_key.hex() in nodes["look_alike"]
             assert not any(
@@ -2882,12 +2964,14 @@ def test_the_select_leaves_out_a_look_alike_of_a_protected_key(
 def test_the_service_watches_the_discovery_topics_it_announces() -> None:
     own = "homeassistant/device/meshcore_home_gateway_radio1/config"
     assert ha_device_topics(make_config()) == [
-        own, "homeassistant/device/meshcore_home_gateway_radio1/+/config",
-    ]  # fmt: skip
+        own,
+        "homeassistant/device/meshcore_home_gateway_radio1/+/config",
+    ]
     without = make_config(extra="[homeassistant]\ncontact_devices = 0")
     assert ha_device_topics(without) == [
-        own, "homeassistant/device/meshcore_home_gateway_radio1/manage_contacts/config",
-    ]  # fmt: skip
+        own,
+        "homeassistant/device/meshcore_home_gateway_radio1/manage_contacts/config",
+    ]
     assert ha_device_topics(make_config(extra="[homeassistant]\ndiscovery = false")) == []
 
 
@@ -2920,14 +3004,19 @@ def test_the_radio_becomes_an_observer_and_reports_its_settings(tmp_path: Path) 
             document = await bus.wait_for("radio1/settings", lambda d: True)
             assert document["status"] == "written"
             assert document["settings"]["duty_cycle_percent"] == {
-                "live": 10.0, "desired": 10.0, "state": "written",
-            }  # fmt: skip
+                "live": 10.0,
+                "desired": 10.0,
+                "state": "written",
+            }
             events = {e["setting"]: e for e in bus.payloads("radio1/setting")}
             assert set(events) == {"manual_add", "autoadd", "duty_cycle_percent"}
             assert events["autoadd"] == {
-                "event_type": "written", "setting": "autoadd", "reason": "initial",
-                "live": [], "desired": [],
-            }  # fmt: skip
+                "event_type": "written",
+                "setting": "autoadd",
+                "reason": "initial",
+                "live": [],
+                "desired": [],
+            }
             assert any(r for t, _, r in bus.published if t.endswith("radio1/settings"))
             setters = [c for c in radio.commands() if c in (38, 58, 21)]
             first_read = radio.commands().index(4)  # GET_CONTACTS
@@ -2970,9 +3059,15 @@ def test_the_state_tells_the_gateways_health(
     assert isinstance(free, int)
     assert free >= 0
     assert health == {
-        "degraded": False, "history": "off", "state_file": "ok", "exclusions": "ok",
-        "errors_1h": 0, "loop_lag_max_s": None, "events_dropped_1h": 0, "disk_free_mb": free,
-    }  # fmt: skip
+        "degraded": False,
+        "history": "off",
+        "state_file": "ok",
+        "exclusions": "ok",
+        "errors_1h": 0,
+        "loop_lag_max_s": None,
+        "events_dropped_1h": 0,
+        "disk_free_mb": free,
+    }
     bus.dropped = 3
     bridge._publish_state()
     assert bridge.state_payload()["health"]["events_dropped_1h"] == 3
@@ -3033,8 +3128,9 @@ def test_the_health_of_the_history_and_the_exclusions(
     unreadable_path = tmp_path / EXCLUSIONS_FILE
     unreadable_path.write_text("{not json", encoding="utf-8")
     for exclusions, expected in (
-        (unsaved, "unsaved"), (TelemetryExclusions(unreadable_path), "unreadable"),
-    ):  # fmt: skip
+        (unsaved, "unsaved"),
+        (TelemetryExclusions(unreadable_path), "unreadable"),
+    ):
         observer = Observer(FakeBus(), Topics("meshcore", "radio1"), exclusions=exclusions)
         config = make_config(extra="[history]\nenabled = false")
         bridge, _, _ = idle_bridge(tmp_path, config, observer=observer)

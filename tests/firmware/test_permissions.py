@@ -46,12 +46,16 @@ def test_b_answers_only_what_it_allows_the_gateway(scene: Scene) -> None:
         """The gateway's next request, whether B answered it, and B's document after it, once
         it reads `state` (an answer publishes it again; a silence that changes nothing does
         not)."""
-        request = await scene.air.next_sent(household.alice.node_id, "REQ/",
-                                            after=scene.air.count())  # fmt: skip
+        request = await scene.air.next_sent(
+            household.alice.node_id, "REQ/", after=scene.air.count()
+        )
         since = scene.watcher.mark()
         await asyncio.sleep(ANSWER_S)
-        answers = [t for t in scene.air.sent_by(household.bob.node_id) if t.at > request.at
-                   and t.kind.startswith(("RESPONSE/", "PATH/"))]  # fmt: skip
+        answers = [
+            t
+            for t in scene.air.sent_by(household.bob.node_id)
+            if t.at > request.at and t.kind.startswith(("RESPONSE/", "PATH/"))
+        ]
         topic = f"contacts/{key}"
         if answers:
             await scene.watcher.wait(topic, since=since)

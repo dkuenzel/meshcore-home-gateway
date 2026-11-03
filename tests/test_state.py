@@ -306,9 +306,17 @@ def test_current_documents_of_another_shape_read_as_empty(tmp_path: Path) -> Non
         store.save({"current_contacts": section})
         assert CurrentDocuments(store).documents == {}
     good = {"key": "bb" * 32}
-    store.save({"current_contacts": {
-        "bb" * 32: good, "BB" * 32: good, "bb": good, "cc" * 32: [], "dd" * 32: None,
-    }})  # fmt: skip
+    store.save(
+        {
+            "current_contacts": {
+                "bb" * 32: good,
+                "BB" * 32: good,
+                "bb": good,
+                "cc" * 32: [],
+                "dd" * 32: None,
+            }
+        }
+    )
     assert CurrentDocuments(store).documents == {"bb" * 32: good}
     store.path.write_bytes(b'{"current_contacts": {')  # unreadable: moved aside at the start
     assert CurrentDocuments(JsonStateFile(store.path)).documents == {}
@@ -333,7 +341,7 @@ def test_advert_checks_round_trip_with_a_time_and_a_flag_only(tmp_path: Path) ->
     assert data.pop("advert_checks") == {
         "aa" * 32: {"advert_at": 1_768_464_000, "carries": True},
         "bb" * 32: {"advert_at": 0, "carries": False},
-    }  # fmt: skip
+    }
     assert data == others
     checks.checks["cc" * 32] = AdvertCheck(1, True)  # a copy: what is stored stays
     assert checks.checks == CHECKED
@@ -364,25 +372,32 @@ def test_invalid_advert_checks_are_skipped_with_one_warning(
 ) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     good = {"advert_at": 1_768_464_000, "carries": True}
-    store.save({"advert_checks": {
-        "aa" * 32: good, "aa" * 6: good, "AA" * 32: good,
-        "b1" * 32: {"advert_at": -1, "carries": True},
-        "b2" * 32: {"advert_at": 1.5, "carries": True},
-        "b3" * 32: {"advert_at": True, "carries": True},
-        "b4" * 32: {"advert_at": 2**32, "carries": True},  # the sender's clock is 32 bits
-        "b5" * 32: {"advert_at": "5", "carries": True},
-        "c1" * 32: {"advert_at": 5, "carries": 1},
-        "c2" * 32: {"advert_at": 5, "carries": None},
-        "c3" * 32: {"advert_at": 5},
-        "d1" * 32: [5, True],
-        "d2" * 32: None,
-        "e1" * 32: {"advert_at": 0xFFFFFFFF, "carries": False, "later": "ignored"},
-    }})  # fmt: skip
+    store.save(
+        {
+            "advert_checks": {
+                "aa" * 32: good,
+                "aa" * 6: good,
+                "AA" * 32: good,
+                "b1" * 32: {"advert_at": -1, "carries": True},
+                "b2" * 32: {"advert_at": 1.5, "carries": True},
+                "b3" * 32: {"advert_at": True, "carries": True},
+                "b4" * 32: {"advert_at": 2**32, "carries": True},  # the sender's clock is 32 bits
+                "b5" * 32: {"advert_at": "5", "carries": True},
+                "c1" * 32: {"advert_at": 5, "carries": 1},
+                "c2" * 32: {"advert_at": 5, "carries": None},
+                "c3" * 32: {"advert_at": 5},
+                "d1" * 32: [5, True],
+                "d2" * 32: None,
+                "e1" * 32: {"advert_at": 0xFFFFFFFF, "carries": False, "later": "ignored"},
+            }
+        }
+    )
     with caplog.at_level(logging.WARNING):
         checks = AdvertChecks(store)
     assert checks.checks == {
-        "aa" * 32: AdvertCheck(1_768_464_000, True), "e1" * 32: AdvertCheck(0xFFFFFFFF, False),
-    }  # fmt: skip
+        "aa" * 32: AdvertCheck(1_768_464_000, True),
+        "e1" * 32: AdvertCheck(0xFFFFFFFF, False),
+    }
     assert caplog.text.count("invalid advert checks skipped, 2 kept") == 1
     assert len(caplog.records) == 1
     sections: list[object] = [[], "x", 7, None]
@@ -431,11 +446,17 @@ def test_contact_device_records_survive_and_skip_foreign_entries(tmp_path: Path)
     assert again.announced == {"aa" * 32: DeviceRecord("alice", {"send": "notify"})}
     assert again.removed == {"bb" * 32: RemovedDevice({"hops": "sensor"}, 1.5)}
     assert again.hidden == {"cc" * 32}
-    store.save({**store.load(), "ha_contact_devices": {
-        "announced": {"dd" * 32: {"slug": 7}, "ee" * 32: {"slug": "e", "cmps": {"x": 1}}},
-        "removed": {"ff" * 32: {"since": "never"}}, "hidden": ["11" * 32, None],
-        "left": {"ee" * 32: "yesterday", "99" * 32: 5.0},
-    }})  # fmt: skip
+    store.save(
+        {
+            **store.load(),
+            "ha_contact_devices": {
+                "announced": {"dd" * 32: {"slug": 7}, "ee" * 32: {"slug": "e", "cmps": {"x": 1}}},
+                "removed": {"ff" * 32: {"since": "never"}},
+                "hidden": ["11" * 32, None],
+                "left": {"ee" * 32: "yesterday", "99" * 32: 5.0},
+            },
+        }
+    )
     foreign = ContactDeviceRecords(store)
     assert foreign.announced == {"ee" * 32: DeviceRecord("e", {})}
     assert (foreign.removed, foreign.hidden, foreign.left) == ({}, {"11" * 32}, {})
@@ -504,8 +525,8 @@ def test_the_telemetry_schedule_round_trips_relative_to_its_save(tmp_path: Path)
 def test_a_saved_schedule_forgets_the_answers_of_a_contact_excluded_meanwhile(
     tmp_path: Path,
 ) -> None:
-    """Excluded or included while telemetry is off (D13): as Scheduler.forget, its answers are
-    gone and it is due at once; when it was asked and flooded stays."""
+    """Excluded or included while telemetry is off (design §6.11): as Scheduler.forget, its
+    answers are gone and it is due at once; when it was asked and flooded stays."""
     store = JsonStateFile(tmp_path / "state.json")
     records = TelemetryRecords(store)
     asked = SavedContact(812.5, 1, 95.0, 96.0, 4000.0, 1, True, 0, 19, None, 8373.0, 95.0)
@@ -543,10 +564,16 @@ def test_a_saved_schedule_forgets_the_answers_of_a_contact_excluded_meanwhile(
 def test_invalid_telemetry_entries_are_skipped(tmp_path: Path, entry: object) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     good = {"due_in_s": 10.0, "unknown": "ignored"}
-    store.save({"telemetry": {
-        "version": 1, "saved_at": 0.0, "contacts": {A: entry, B: good, "B2" * 32: good},
-        "floods_age_s": [10.0, -1.0, 4000.0, "x"],
-    }})  # fmt: skip
+    store.save(
+        {
+            "telemetry": {
+                "version": 1,
+                "saved_at": 0.0,
+                "contacts": {A: entry, B: good, "B2" * 32: good},
+                "floods_age_s": [10.0, -1.0, 4000.0, "x"],
+            }
+        }
+    )
     saved, _ = TelemetryRecords(store).load(0.0)
     assert saved == Saved({B: SavedContact(10.0)}, (10.0,))  # upper-case key: not one
 
@@ -561,8 +588,13 @@ def test_an_unknown_or_unreadable_telemetry_schedule_starts_empty(tmp_path: Path
     unreadable = TelemetryRecords(JsonStateFile(tmp_path / "dir"))
     assert unreadable.load(0.0) == (None, 0.0)  # an OSError: logged, never raised
     unreadable.save(Saved(), 0.0)  # logged too
-    huge = {"version": 1, "saved_at": 10**400, "contacts": {A: {"due_in_s": 10**400}},
-            "own_debt_s": 10**400, "mesh_debt_s": -1.0}  # fmt: skip
+    huge = {
+        "version": 1,
+        "saved_at": 10**400,
+        "contacts": {A: {"due_in_s": 10**400}},
+        "own_debt_s": 10**400,
+        "mesh_debt_s": -1.0,
+    }
     store.save({"telemetry": huge})
     assert TelemetryRecords(store).load(0.0) == (Saved({}, (), 0.0, 0.0), None)  # never raises
     capped = {"version": 1, "saved_at": 0.0, "contacts": {A: {"due_in_s": 1e9}}}
@@ -575,10 +607,16 @@ def test_an_unknown_or_unreadable_telemetry_schedule_starts_empty(tmp_path: Path
 def test_the_newest_floods_of_the_hour_are_kept(tmp_path: Path) -> None:
     """Only four count against the hourly limit: the newest, so a restart frees nothing early."""
     store = JsonStateFile(tmp_path / "state.json")
-    store.save({"telemetry": {
-        "version": 1, "saved_at": 0.0, "contacts": {},
-        "floods_age_s": [3300.0, 2700.0, 2100.0, 1500.0, 300.0],
-    }})  # fmt: skip
+    store.save(
+        {
+            "telemetry": {
+                "version": 1,
+                "saved_at": 0.0,
+                "contacts": {},
+                "floods_age_s": [3300.0, 2700.0, 2100.0, 1500.0, 300.0],
+            }
+        }
+    )
     saved, _ = TelemetryRecords(store).load(0.0)
     assert saved is not None
     assert saved.floods_age_s == (300.0, 1500.0, 2100.0, 2700.0)
@@ -587,9 +625,16 @@ def test_the_newest_floods_of_the_hour_are_kept(tmp_path: Path) -> None:
 def test_the_new_telemetry_fields_are_checked_and_capped(tmp_path: Path) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     entry = {"due_in_s": 1.0, "current_s": 1e9, "located_age_s": 0.0}
-    store.save({"telemetry": {
-        "version": 1, "saved_at": 0.0, "contacts": {A: entry}, "hold_left_s": 1e9,
-    }})  # fmt: skip
+    store.save(
+        {
+            "telemetry": {
+                "version": 1,
+                "saved_at": 0.0,
+                "contacts": {A: entry},
+                "hold_left_s": 1e9,
+            }
+        }
+    )
     saved, _ = TelemetryRecords(store).load(0.0)
     assert saved is not None
     assert saved.contacts[A].current_s == 7 * 86_400.0
@@ -635,8 +680,11 @@ def test_the_airtime_level_is_written_at_once_with_the_longest_message(tmp_path:
     assert again.longest_s == 1.5
     assert again.load(900.0) == (2.25, None)  # the clock went back: unknown
     invalid_entries: list[object] = [
-        {"level_s": "2", "saved_at": 1.0}, {"level_s": 2.0}, [], {"level_s": 1e999},
-    ]  # fmt: skip
+        {"level_s": "2", "saved_at": 1.0},
+        {"level_s": 2.0},
+        [],
+        {"level_s": 1e999},
+    ]
     for bad in invalid_entries:
         JsonStateFile(path).save({"airtime": bad})
         assert AirtimeLevel(JsonStateFile(path)).load(1_000.0) is None
@@ -721,8 +769,11 @@ def test_exclusions_round_trip_in_their_own_private_file(
     assert path.name == "telemetry-excluded.json"
     excluded = TelemetryExclusions(path)
     assert (len(excluded), excluded.keys, excluded.unreadable, excluded.pending) == (
-        0, frozenset(), False, False,
-    )  # fmt: skip
+        0,
+        frozenset(),
+        False,
+        False,
+    )
     assert not path.exists()  # nothing written until something changes
     assert excluded.exclude(B)
     assert excluded.exclude(A)
@@ -754,8 +805,11 @@ def test_with_ask_household_only_included_and_protected_keys_are_asked(tmp_path:
     path = exclusions_file(tmp_path)
     household = TelemetryExclusions(path, household=True, protected=frozenset({C}))
     assert (A in household, C in household, len(household), household.household) == (
-        True, False, 0, True,
-    )  # fmt: skip
+        True,
+        False,
+        0,
+        True,
+    )
     assert household.include(A)
     assert A not in household
     assert json.loads(path.read_text(encoding="utf-8")) == {"excluded": [], "included": [A]}
@@ -782,9 +836,15 @@ def test_invalid_and_too_many_exclusions_are_skipped(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     path = exclusions_file(tmp_path)
-    path.write_text(json.dumps({
-        "excluded": [B, "B2" * 32, 7, "ab", A, None, A], "later": "ignored",
-    }), encoding="utf-8")  # fmt: skip
+    path.write_text(
+        json.dumps(
+            {
+                "excluded": [B, "B2" * 32, 7, "ab", A, None, A],
+                "later": "ignored",
+            }
+        ),
+        encoding="utf-8",
+    )
     with caplog.at_level(logging.WARNING):
         excluded = TelemetryExclusions(path)
     assert excluded.keys == {A, B}

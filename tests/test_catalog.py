@@ -16,7 +16,7 @@ LOCALE = Path(__file__).resolve().parent.parent / "src" / "meshcore_home_gateway
 POLISH = "nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);"
 
 # A context, Polish plurals, an empty and a fuzzy entry; no partly translated plural entry, where
-# GNU's output differs from ours on purpose (D5).
+# GNU's output differs from ours on purpose (ADR 0027).
 GOLDEN_PO = r"""msgid ""
 msgstr ""
 "Project-Id-Version: meshcore-home-gateway\n"
@@ -133,8 +133,12 @@ def test_read_po_reads_what_gnu_writes() -> None:
     po = GNU_PO.replace(r"\u2028", "\u2028")  # a line separator inside a msgstr, as typed
     header, entries = read_po(po, "de.po")
     assert list(header) == [
-        "Project-Id-Version", "POT-Creation-Date", "Language", "Content-Type", "Plural-Forms",
-    ]  # fmt: skip
+        "Project-Id-Version",
+        "POT-Creation-Date",
+        "Language",
+        "Content-Type",
+        "Plural-Forms",
+    ]
     assert header["Plural-Forms"] == "nplurals=2; plural=(n != 1);"
     radio, send, lines, plural, escapes = entries
     assert radio == Entry(
@@ -150,8 +154,10 @@ def test_read_po_reads_what_gnu_writes() -> None:
         notes=("a note of the translator",),
     )
     assert (send.msgctxt, send.msgid, send.msgstr) == (
-        "home assistant", "Send to {alias}", ("An {alias} senden",),
-    )  # fmt: skip
+        "home assistant",
+        "Send to {alias}",
+        ("An {alias} senden",),
+    )
     assert send.key == "home assistant\x04Send to {alias}"
     assert (lines.msgid, lines.msgstr) == (
         "first line\nsecond line",
@@ -221,8 +227,10 @@ def test_fuzzy_and_untranslated_are_left_out() -> None:
     assert loaded.pgettext("home assistant", "Radio link") == "Połączenie z radiem"
     # a plural entry with one empty form: English for every count, never an empty text
     assert [loaded.ngettext("{count} node", "{count} nodes", n) for n in (1, 2, 5)] == [
-        "{count} node", "{count} nodes", "{count} nodes",
-    ]  # fmt: skip
+        "{count} node",
+        "{count} nodes",
+        "{count} nodes",
+    ]
     assert not partly.translated
     assert Entry("a", ("x",)).translated
     assert not Entry("a").translated
@@ -230,7 +238,7 @@ def test_fuzzy_and_untranslated_are_left_out() -> None:
 
 
 def test_compiler_matches_gnu_msgfmt(msgfmt: str, tmp_path: Path) -> None:
-    """Every shipped catalog and the golden fixture's source, byte for byte (D5, D22)."""
+    """Every shipped catalog and the golden fixture's source, byte for byte (ADR 0027)."""
     golden = tmp_path / "golden.po"
     golden.write_text(GOLDEN_PO, encoding="utf-8")
     for path in [golden, *sorted(LOCALE.glob("*.po"))]:

@@ -42,9 +42,13 @@ ADVERT_LOCATION = "advert_location"
 AIRTIME_FACTOR = "airtime_factor_milli"
 NAME = "name"
 KINDS = {
-    MANUAL_ADD: Kind.ENFORCED, AUTOADD: Kind.ENFORCED, TELEMETRY: Kind.ENFORCED,
-    ADVERT_LOCATION: Kind.ENFORCED, AIRTIME_FACTOR: Kind.ENFORCED, NAME: Kind.SEED,
-}  # fmt: skip
+    MANUAL_ADD: Kind.ENFORCED,
+    AUTOADD: Kind.ENFORCED,
+    TELEMETRY: Kind.ENFORCED,
+    ADVERT_LOCATION: Kind.ENFORCED,
+    AIRTIME_FACTOR: Kind.ENFORCED,
+    NAME: Kind.SEED,
+}
 
 Value = bool | int | str
 
@@ -63,8 +67,11 @@ def desired(
     automatically, all telemetry denied, no position in adverts, the duty cycle as configured or
     10 % in the 10 % sub-band, the name if configured."""
     values: dict[str, Value] = {
-        MANUAL_ADD: True, AUTOADD: 0, TELEMETRY: 0, ADVERT_LOCATION: 0,
-    }  # fmt: skip
+        MANUAL_ADD: True,
+        AUTOADD: 0,
+        TELEMETRY: 0,
+        ADVERT_LOCATION: 0,
+    }
     low, high = TEN_PERCENT_BAND_KHZ
     if duty_cycle_percent is None and low <= frequency_khz <= high:
         duty_cycle_percent = 10.0
@@ -174,18 +181,21 @@ def plan(
 
 def _given_up(attempt: Attempt | None, key: str, value: Value, firmware_code: int) -> bool:
     return (
-        attempt is not None and attempt.firmware_code == firmware_code
-        and same(key, attempt.value, value) and attempt.connects >= NOT_CONVERGING_AFTER
-    )  # fmt: skip
+        attempt is not None
+        and attempt.firmware_code == firmware_code
+        and same(key, attempt.value, value)
+        and attempt.connects >= NOT_CONVERGING_AFTER
+    )
 
 
 def _tried(attempts: Mapping[str, Attempt], key: str, value: Value, firmware_code: int) -> Attempt:
     """The attempt after one more connect that wrote `value` without effect."""
     earlier = attempts.get(key)
     again = (
-        earlier is not None and earlier.firmware_code == firmware_code
+        earlier is not None
+        and earlier.firmware_code == firmware_code
         and same(key, earlier.value, value)
-    )  # fmt: skip
+    )
     return Attempt(value, earlier.connects + 1 if again and earlier else 1, firmware_code)
 
 
@@ -202,9 +212,14 @@ def pending(applied: Applied, sent: Mapping[str, Value], *, firmware_code: int) 
 
 
 def record(
-    applied: Applied, want: Desired, done: Plan, live_after: Mapping[str, Value | None],
-    failed: Mapping[str, str | None], *, firmware_code: int,
-) -> Applied:  # fmt: skip
+    applied: Applied,
+    want: Desired,
+    done: Plan,
+    live_after: Mapping[str, Value | None],
+    failed: Mapping[str, str | None],
+    *,
+    firmware_code: int,
+) -> Applied:
     """The state after the writes: `live_after` is read back, `failed` names the writes the
     radio refused, with UNSUPPORTED or DISABLED when it is not to be written to that firmware
     again."""

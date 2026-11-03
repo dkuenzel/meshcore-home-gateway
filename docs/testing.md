@@ -14,6 +14,12 @@ make check       # lint, types, shellcheck, workflow audit, tests, build, unit c
 
 `make unit-check` needs `systemd-analyze` (any systemd-based Linux).
 
+The property tests (`tests/test_properties.py`) let Hypothesis make up frames, packets, links,
+catalogs and configurations for the parsers that read them, 100 per test and run; a failure
+prints the smallest input it found and a `@reproduce_failure` line that repeats it. A test that
+hangs prints the stacks of every thread after 5 minutes (`faulthandler_timeout`), so that a CI
+job that times out still says where it stood.
+
 ## Home Assistant contract tests
 
 ```sh
