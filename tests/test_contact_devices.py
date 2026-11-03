@@ -716,6 +716,22 @@ def test_equal_names_get_distinct_slugs(tmp_path: Path) -> None:
     assert ids == {"notify.mesh_alice", f"notify.mesh_alice_{BOB[:4]}"}
 
 
+def test_a_device_name_another_device_has_gets_the_key_digits(tmp_path: Path) -> None:
+    """SEC-007: the contact whose device came first keeps its name; a later one of the same name
+    (as a person reads it: case, look-alike letters) and one named like the gateway's device get
+    their key's first 8 digits. Once the first leaves, the other gets its plain name."""
+    contacts, bus = devices(tmp_path)
+    contacts.update(mesh_of(node(ALICE, "Alice")))
+    bus.take()
+    mesh = mesh_of(node(ALICE, "Alice"), node(BOB, "\u0410LICE"), node(CAROL, "MeshCore radio"))
+    contacts.update(mesh)
+    names = {key_from_discovery_topic(CONFIG, t): d["dev"]["name"] for t, d in bus.take()}
+    assert names == {BOB: f"\u0410LICE ({BOB[:8]})", CAROL: f"MeshCore radio ({CAROL[:8]})"}
+    contacts.update(mesh_of(node(BOB, "\u0410LICE"), node(CAROL, "MeshCore radio"), mesh=Mesh()))
+    (renamed,) = [d for t, d in bus.take() if t == topic(BOB)]
+    assert renamed["dev"]["name"] == "\u0410LICE"
+
+
 def test_a_name_without_letters_uses_the_key(tmp_path: Path) -> None:
     contacts, bus = devices(tmp_path)
     contacts.update(mesh_of(node(ALICE, "🙂")))

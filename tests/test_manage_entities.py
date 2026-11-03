@@ -198,9 +198,30 @@ def test_look_alikes_are_not_offered() -> None:
     twin_a, twin_b = "a7" * 6 + "01" * 26, "a7" * 6 + "02" * 26
     for key in (twin_of_bob, twin_a, twin_b, ROOM, CAROL):
         heard(mesh, key, "Bob")
-    carol, room = f"{CAROL[:12]}…{CAROL[-8:]} Bob", f"{ROOM[:12]}…{ROOM[-8:]} Bob"
+    # all of them named like the contact Bob, as an impostor would (SEC-007)
+    carol = f"{CAROL[:12]}…{CAROL[-8:]} Bob (name taken)"
+    room = f"{ROOM[:12]}…{ROOM[-8:]} Bob (name taken)"
     assert node_options(mesh) == [carol, room]
     assert node_options(mesh, protected=frozenset({ROOM[:12] + "ff" * 26})) == [carol]
+
+
+def test_a_node_with_a_taken_name_is_marked() -> None:
+    """SEC-007: a heard node named like a contact or the gateway's device."""
+    mesh = Mesh()
+    mesh.contacts_read([Node(BOB, "Bob", 1)], NOW)
+    heard(mesh, CAROL, "BOB")
+    heard(mesh, ROOM, "MeshCore radio", node_type=3)
+    heard(mesh, HILL, "Hilltop")
+    assert node_options(mesh, reserved={"MeshCore radio"}) == [
+        f"{CAROL[:12]}…{CAROL[-8:]} BOB (name taken)", f"{HILL[:12]}…{HILL[-8:]} Hilltop",
+        f"{ROOM[:12]}…{ROOM[-8:]} MeshCore radio (room) (name taken)",
+    ]  # fmt: skip
+    assert node_options(mesh, heard="keys", reserved={"MeshCore radio"})[0].endswith(
+        " (name taken)"
+    )
+    entities, bus, _, _ = controls(mesh)  # the gateway's own device name, from the config
+    entities.announce()
+    assert any(o.endswith("MeshCore radio (room) (name taken)") for o in bus.options()[-1])
 
 
 def test_with_heard_nodes_keys_or_off_the_options_name_no_node() -> None:

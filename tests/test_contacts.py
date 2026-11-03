@@ -8,6 +8,7 @@ from meshcore_home_gateway.core.contacts import (
     add_refusal,
     key_from_label,
     look_alike,
+    name_key,
     node_label,
     normalise_key,
     remove_refusal,
@@ -91,6 +92,35 @@ def test_a_label_starts_with_the_key_and_ends_with_the_name() -> None:
     assert node_label(B, "Hilltop", 3) == f"{B[:12]}…{B[-8:]} Hilltop (room)"
     assert node_label(B, "Weather", 4).endswith(" Weather (sensor)")
     assert node_label(A, "", 1) == f"{A[:12]}…{A[-8:]}"
+
+
+@pytest.mark.parametrize(
+    "imitation",
+    [
+        "Alice", "ALICE", " alice ", "\uff21\uff4c\uff49\uff43\uff45", "\u0410lice",
+        "Al\u0456c\u0435", "\u0391lice", "Ali\u200bce", "Alice\u202e",
+    ],
+    ids=["same", "upper", "spaces", "fullwidth", "cyrillic-a", "cyrillic-i-e", "greek-alpha",
+         "zero-width-space", "direction"],
+)  # fmt: skip
+def test_names_are_compared_as_a_person_reads_them(imitation: str) -> None:
+    """SEC-007: NFKC, case folding, Cyrillic and Greek look-alikes, without the invisible
+    format characters."""
+    assert name_key(imitation) == name_key("Alice") == "alice"
+
+
+def test_other_names_stay_apart() -> None:
+    assert name_key("Alice 2") != name_key("Alice")
+    assert name_key("Bob") == "bob"
+    assert name_key("") == name_key("\u200b") == ""  # no name
+    assert name_key("\u039d\u0399\u039a\u039f") == name_key("NIKO")  # Greek capitals
+
+
+def test_a_label_marks_a_name_that_is_taken() -> None:
+    label = node_label(A, "Alice", 1, name_taken=True)
+    assert label == f"{A[:12]}…{A[-8:]} Alice (name taken)"
+    assert node_label(B, "", 3, name_taken=True).endswith(" (room) (name taken)")
+    assert key_from_label(label, [A, B]) == A  # the digits still name it
 
 
 def test_a_label_keeps_a_hostile_name_on_one_plain_line() -> None:

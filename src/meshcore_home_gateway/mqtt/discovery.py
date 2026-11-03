@@ -292,6 +292,14 @@ def device_name(config: Config, ha_name: Callable[..., str]) -> str:
     return ha_name("MeshCore radio") if name == DEFAULT_DEVICE_NAME else name
 
 
+def gateway_names(config: Config) -> frozenset[str]:
+    """The names the gateway goes by: its device in Home Assistant, and its radio's name when
+    the profile sets it. A node or contact of such a name could pass for the gateway (SEC-007)."""
+    ha_name = i18n.translator(config.homeassistant.language).ha_name
+    names = {device_name(config, ha_name), config.radio.profile.name}
+    return frozenset(n for n in names if n)
+
+
 def with_removed(
     components: dict[str, dict[str, Any]], uid: str, topics: Topics,
     removed: Mapping[str, str] | None, ha_name: Callable[..., str], *, bind: bool,

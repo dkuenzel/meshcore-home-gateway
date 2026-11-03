@@ -30,18 +30,19 @@ from meshcore_home_gateway import i18n
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import RateLimit
 from meshcore_home_gateway.core.contacts import LABEL_TYPES, HeardNodes, node_label
-from meshcore_home_gateway.core.mesh import Mesh
+from meshcore_home_gateway.core.mesh import Mesh, Node
 from meshcore_home_gateway.mqtt.contact_devices import RADIO_CONNECTED
 from meshcore_home_gateway.mqtt.discovery import (
     controls_off,
     device_id,
     device_name,
+    gateway_names,
     origin,
     with_removed,
 )
 from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.views import look_alike_nodes
+from meshcore_home_gateway.views import look_alike_nodes, name_taken_nodes
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.observer import Publisher
@@ -72,23 +73,30 @@ def manage_topic(config: Config) -> str:
 
 
 def node_options(
-    mesh: Mesh, protected: Iterable[str] = (), heard: HeardNodes = "full"
-) -> list[str]:
+    mesh: Mesh, protected: Iterable[str] = (), heard: HeardNodes = "full",
+    reserved: Iterable[str] = (),
+) -> list[str]:  # fmt: skip
     """The labels of the heard nodes to offer: companions, room servers and sensors, no
     look-alikes (they would be refused, or block the node they imitate), the most recently heard,
     ordered by name. A label names one node: look-alikes share their first 12 digits. `heard`
-    (`[contacts] heard_nodes`): with `keys` the labels name no node, with `off` there are none."""
+    (`[contacts] heard_nodes`): with `keys` the labels name no node, with `off` there are none.
+    A node whose name a contact, another heard node or the gateway (`reserved`) has is marked
+    (SEC-007)."""
     if heard == "off":
         return []
-    flagged = look_alike_nodes(mesh, protected)
+    flagged, taken = look_alike_nodes(mesh, protected), name_taken_nodes(mesh, reserved)
     offered = [
         t.node for t in reversed(mesh.nodes.values())
         if t.node.node_type in LABEL_TYPES and t.node.public_key not in flagged
     ][:NODE_OPTIONS]  # fmt: skip
+
+    def label(n: Node, name: str) -> str:
+        return node_label(n.public_key, name, n.node_type, name_taken=n.public_key in taken)
+
     if heard == "keys":
-        return sorted(node_label(n.public_key, "", n.node_type) for n in offered)
+        return sorted(label(n, "") for n in offered)
     ordered = sorted(offered, key=lambda n: (n.name.casefold(), n.public_key))
-    return [node_label(n.public_key, n.name, n.node_type) for n in ordered]
+    return [label(n, n.name) for n in ordered]
 
 
 def manage_payload(
@@ -212,7 +220,8 @@ class ManageEntities:
         return self._options if held and self._options is not None else options
 
     def _current(self) -> list[str]:
-        return node_options(self._mesh, self._protected, self._config.contacts.heard_nodes)
+        heard, reserved = self._config.contacts.heard_nodes, gateway_names(self._config)
+        return node_options(self._mesh, self._protected, heard, reserved)
 
     def nodes_changed(self, read: bool) -> None:
         """The heard nodes may have changed. When a contact joined or left the table (`read`),

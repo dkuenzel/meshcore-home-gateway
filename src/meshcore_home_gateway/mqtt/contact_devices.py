@@ -43,10 +43,17 @@ from typing import TYPE_CHECKING, Any
 from meshcore_home_gateway import i18n
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core.contacts import name_key
 from meshcore_home_gateway.core.mesh import Mesh, Tracked, type_name
 from meshcore_home_gateway.core.telemetry import STATES
 from meshcore_home_gateway.i18n import N_ha
-from meshcore_home_gateway.mqtt.discovery import controls_off, device_id, origin, placeholder
+from meshcore_home_gateway.mqtt.discovery import (
+    controls_off,
+    device_id,
+    gateway_names,
+    origin,
+    placeholder,
+)
 from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import ContactFlag, NodeType
@@ -68,6 +75,7 @@ MODELS: dict[int, str] = {
 TEXT_TYPES = frozenset({NodeType.CHAT, NodeType.ROOM_SERVER})  # nodes that send texts
 ECHO_S = 10.0  # an empty document seen this long after the gateway sent one is its own
 SLUG_CHARS = 32
+TAKEN_DIGITS = 8  # of the key, after a device name another device has (SEC-007)
 # letters that Unicode does not decompose into an ASCII letter and a mark
 _LETTERS = str.maketrans({
     "ß": "ss", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ø": "o", "Ø": "O", "ł": "l",
@@ -201,10 +209,13 @@ def contact_payload(
     tracked: Tracked,
     slug: str,
     keep: Iterable[str] = (),
+    *,
+    name_taken: bool = False,
 ) -> dict[str, Any]:
     """The discovery document of one contact. Components it was announced with earlier (`keep`)
     stay, also without data: Home Assistant clears the whole device's topic when it removes a
-    disabled entity, and the gateway would take that for a deletion by the user."""
+    disabled entity, and the gateway would take that for a deletion by the user. `name_taken`:
+    another device has its name, so its device's name ends in its key's first digits."""
     keep = tuple(keep)  # in order: the reading components announced first come first
     kept = frozenset(keep)
     node = tracked.node
@@ -311,7 +322,7 @@ def contact_payload(
     return {
         "dev": {
             "ids": [uid],
-            "name": node.name or key[:12],
+            "name": f"{node.name} ({key[:TAKEN_DIGITS]})" if name_taken else node.name or key[:12],
             "mf": "MeshCore",
             "mdl": ha_name(model) if model else type_name(node.node_type),
             "sn": key,
@@ -452,6 +463,7 @@ class ContactDevices:
         self._emptied: dict[str, float] = {}  # key -> when the gateway last sent it empty
         self._ha_running = False  # Home Assistant announced itself and has not gone offline
         self._without = 0  # contacts without a device because of the limit, as last logged
+        self._taken: frozenset[str] = frozenset()  # contacts whose name another device has
         self._beyond: set[tuple[str, str]] = set()  # (contact, reading key) logged beyond the cap
 
     @property
@@ -465,6 +477,7 @@ class ContactDevices:
         records = self._records
         records.hidden &= set(mesh.contacts)  # a contact that left is shown again if it returns
         wanted = self._select(mesh)
+        self._taken = self._names_taken(mesh, wanted)
         for key in [k for k in records.announced if k not in wanted]:
             self._remove(key)
         for key in wanted:
@@ -583,8 +596,9 @@ class ContactDevices:
             records.removed.pop(key, None)
             log.info("Home Assistant: device for contact %r (%s)", tracked.node.name, key[:12])
         document = contact_payload(
-            self._config, self._topics, tracked, record.slug, keep=record.components
-        )
+            self._config, self._topics, tracked, record.slug, keep=record.components,
+            name_taken=key in self._taken,
+        )  # fmt: skip
         record.components = {
             **record.components, **{n: c["p"] for n, c in document["cmps"].items()},
         }  # fmt: skip
@@ -623,6 +637,21 @@ class ContactDevices:
         self._emptied = {k: at for k, at in self._emptied.items() if now - at < ECHO_S}
         self._emptied[key] = now
         self._bus.publish(topic, b"")
+
+    def _names_taken(self, mesh: Mesh, wanted: list[str]) -> frozenset[str]:
+        """The contacts whose device would have the name of the gateway's device or of a contact
+        whose device came first, compared as `name_key` does (SEC-007)."""
+        chosen = set(wanted)
+        first = [k for k in self._records.slugs if k in chosen]  # in the order of their devices
+        seen = {name_key(n) for n in gateway_names(self._config)}
+        taken: set[str] = set()
+        for key in first + [k for k in wanted if k not in self._records.slugs]:
+            compared = name_key(mesh.contacts[key].node.name)
+            if compared in seen:
+                taken.add(key)
+            elif compared:
+                seen.add(compared)
+        return frozenset(taken)
 
     def _new_slug(self, tracked: Tracked) -> str:
         """The contact's name as slug, made unique with the key's start among every slug given
