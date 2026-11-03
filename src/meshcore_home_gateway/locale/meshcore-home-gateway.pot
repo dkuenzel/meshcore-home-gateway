@@ -5,10 +5,12 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#. security text (docs/translations.md); insecure = true is a setting
 #: src/meshcore_home_gateway/bridge.py
 msgid "MQTT without TLS: the password, the messages, the positions and the command events cross the network in the clear (insecure = true accepts it)"
 msgstr ""
 
+#. security text (docs/translations.md); insecure = true is a setting
 #: src/meshcore_home_gateway/bridge.py
 msgid "MQTT without a user name: unless the broker refuses clients without one, any client that reaches it can read and write the gateway's topics (docs/mqtt-api.md, Securing the broker; insecure = true accepts it)"
 msgstr ""
@@ -58,15 +60,13 @@ msgstr ""
 msgid "  anonymous  refused by {host}:{port}"
 msgstr ""
 
-#. a line of check-config's summary. Its value starts in the column where the
-#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#. security text (docs/translations.md): the broker connection uses TLS
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "  broker     {host}:{port} (TLS), {login}, topics {root}/..."
 msgstr ""
 
-#. a line of check-config's summary. Its value starts in the column where the
-#. other lines start theirs (12 in English): pad the label with spaces to keep one column.
+#. security text (docs/translations.md): the broker connection has no TLS
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "  broker     {host}:{port}, {login}, topics {root}/..."
@@ -119,7 +119,8 @@ msgstr ""
 msgid "  login      accepted by {host}:{port}"
 msgstr ""
 
-#. the radio's TCP interface has no authentication (SEC-003)
+#. security text (docs/translations.md): the radio's TCP interface has no
+#. authentication (SEC-003)
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "  radio      tcp {where}, unauthenticated: anyone who reaches it controls the radio"
@@ -311,8 +312,8 @@ msgstr ""
 msgid "configuration {path}: valid"
 msgstr ""
 
-#. the recipient's acknowledgement came sooner than the message's way
-#. through the mesh allows
+#. security text (docs/translations.md): the recipient's
+#. acknowledgement came sooner than the message's way through the mesh allows
 #: src/meshcore_home_gateway/cli.py
 msgid "confirmed sooner than the path allows: the acknowledgement may be forged"
 msgstr ""
@@ -516,6 +517,7 @@ msgstr ""
 msgid "no target {alias!r} in {path}"
 msgstr ""
 
+#. security text (docs/translations.md)
 #: src/meshcore_home_gateway/cli.py
 msgid "no user name"
 msgstr ""
@@ -687,6 +689,7 @@ msgstr ""
 msgid "telemetry  {modes}"
 msgstr ""
 
+#. security text (docs/translations.md): translate all of it, add nothing
 #: src/meshcore_home_gateway/cli.py
 msgid "the broker accepts clients without a user name: unless its ACL keeps them off the gateway's topics, any client that reaches it can read messages and positions and publish command events (docs/mqtt-api.md, Securing the broker)"
 msgstr ""
@@ -779,11 +782,13 @@ msgstr ""
 msgid "the text is not valid UTF-8"
 msgstr ""
 
+#. security text (docs/translations.md)
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "user {user!r} with a password"
 msgstr ""
 
+#. security text (docs/translations.md)
 #: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "user {user!r} without a password"
@@ -809,6 +814,7 @@ msgstr ""
 msgid "wait this long for the result; 0: only send the request (default 30: the gateway reads the radio's table before and after the change, several seconds for a large table)"
 msgstr ""
 
+#. security text (docs/translations.md): translate all of it, add nothing
 #: src/meshcore_home_gateway/cli.py
 msgid "warning: another node has the same first 12 key digits: compare the full key above with the node's own screen; the one added first keeps them"
 msgstr ""
@@ -833,6 +839,7 @@ msgstr ""
 msgid "write a validated configuration from key=value answers"
 msgstr ""
 
+#. security text (docs/translations.md): where the broker's password goes
 #: src/meshcore_home_gateway/cli.py
 #, python-format
 msgid "write the broker password into this file (mode 0640) instead of the configuration"
@@ -867,6 +874,7 @@ msgstr ""
 msgid "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit, not ending with '-' or '_', and no two of them in a row"
 msgstr ""
 
+#. security text (docs/translations.md): the broker connection has no TLS
 #: src/meshcore_home_gateway/config.py
 msgid "TLS"
 msgstr ""
@@ -912,7 +920,8 @@ msgstr ""
 msgid "cannot read {path}: {detail}"
 msgstr ""
 
-#. the broker connection has no user name and password
+#. security text (docs/translations.md): the broker connection has no user
+#. name and password
 #: src/meshcore_home_gateway/config.py
 msgid "credentials"
 msgstr ""
@@ -959,7 +968,8 @@ msgstr ""
 msgid "{key}: cannot read {value!r} as {kind}"
 msgstr ""
 
-#. what is missing is "credentials" or "TLS"; insecure = true is a setting
+#. security text (docs/translations.md): what is missing is "credentials" or
+#. "TLS"; insecure = true is a setting
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: commands are configured and the broker connection has no {missing}: any client that reaches the broker could publish command events. Add it, or set insecure = true (docs/mqtt-api.md, Securing the broker)"
@@ -1092,7 +1102,8 @@ msgstr ""
 msgid "{key}: set password or password_file, not both"
 msgstr ""
 
-#. tcp_unauthenticated = true is a setting; keep it as it is.
+#. security text (docs/translations.md); tcp_unauthenticated = true is a
+#. setting, keep it as it is.
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: the radio's TCP interface has no authentication: anyone who reaches it controls the radio and can read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use USB, or set tcp_unauthenticated = true for a radio in a network that only the gateway reaches (docs/configuration.md, [radio])"
@@ -1145,7 +1156,7 @@ msgstr ""
 msgid "public key must be {digits} hex digits, got {key!r}"
 msgstr ""
 
-#. after "confirmed": the acknowledgement came sooner than the message's way through the mesh allows
+#. security text (docs/translations.md): after "confirmed": the acknowledgement came sooner than the message's way through the mesh allows
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "(sooner than the path allows: maybe forged)"

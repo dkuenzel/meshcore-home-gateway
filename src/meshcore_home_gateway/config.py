@@ -431,13 +431,16 @@ def _check_commands_broker(config: Config) -> None:
     if not config.commands.senders or mqtt.insecure:
         return
     if mqtt.username is None:
-        # Translators: the broker connection has no user name and password
+        # Translators: security text (docs/translations.md): the broker connection has no user
+        # name and password
         missing = Text("credentials")
     elif not mqtt.tls and not mqtt.local:
+        # Translators: security text (docs/translations.md): the broker connection has no TLS
         missing = Text("TLS")
     else:
         return
-    # Translators: what is missing is "credentials" or "TLS"; insecure = true is a setting
+    # Translators: security text (docs/translations.md): what is missing is "credentials" or
+    # "TLS"; insecure = true is a setting
     raise ConfigError(
         "{key}: commands are configured and the broker connection has no {missing}: any client "
         "that reaches the broker could publish command events. Add it, or set insecure = true "
@@ -472,7 +475,8 @@ def _radio(s: _Section) -> RadioConfig:
         raise ConfigError("{key}: required for the tcp transport", key=s.key("host"))
     unauthenticated = s.boolean("tcp_unauthenticated", False)
     if transport == "tcp" and not unauthenticated:
-        # Translators: tcp_unauthenticated = true is a setting; keep it as it is.
+        # Translators: security text (docs/translations.md); tcp_unauthenticated = true is a
+        # setting, keep it as it is.
         raise ConfigError(
             "{key}: the radio's TCP interface has no authentication: anyone who reaches it "
             "controls the radio and can read its private key, which decrypts every direct "

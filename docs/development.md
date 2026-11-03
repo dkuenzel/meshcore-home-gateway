@@ -175,15 +175,33 @@ before 1.1.0a4 never.
 
 ## Tool chain updates
 
-`make lock` re-resolves `requirements/dev.txt` from `requirements/dev.in` with hashes and takes
-the newest release of every tool that is at least `COOLDOWN_DAYS` (14) old. `make ha-lock` does the
-same for the Home Assistant test environment (`home-assistant/requirements.in`, one pinned
-`pytest-homeassistant-custom-component`, which pins Home Assistant); after a Home Assistant update,
-run `make ha-test` and adjust "tested with" in `docs/home-assistant.md`. Review the diff like code. GitHub Actions are
-pinned to commit SHAs; Dependabot proposes updates with the same cooldown. `paho-mqtt` stays at the
-version of Debian 13 (ADR 0005), and Dependabot ignores it: raise it with the deployment target.
-A changed lock file gives `make venv` a fresh environment, so that no package the lock dropped
-stays installed. The firmware that the firmware tests build is pinned in
+`make lock` re-resolves the lock files in `requirements/` from their `.in` files with hashes and
+takes the newest release of every tool that is at least `COOLDOWN_DAYS` (14) old: `dev.txt` (the
+development tools), `release.txt` (the build tools alone, for the release build) and `audit.txt`
+(pip-audit). The cutoff is a date, the start of the day `COOLDOWN_DAYS` back, so a release from
+that day waits a day longer. The files are resolved for Linux alone
+([ADR 0005](decisions/0005-runtime-dependencies-from-the-distribution.md)) and from inside their
+directory: the form Dependabot writes, so that its pull requests change versions and hashes only
+and need no `make lock` (SUP-004). `make lock UPGRADE=` writes them again with the versions they
+pin.
+
+`make ha-lock` does the same for the Home Assistant test environment
+(`home-assistant/requirements.in`, one pinned `pytest-homeassistant-custom-component`, which pins
+Home Assistant), with the versions that `home-assistant/overrides.txt` raises past known
+vulnerabilities; run it in Dependabot's pull requests for that environment too, so that the
+overrides hold (whether Dependabot applies them is not checked).
+After a Home Assistant update, run `make ha-test` and adjust "tested with" in
+`docs/home-assistant.md`. Review the diff like code.
+
+`make audit` (CI; it needs the network) looks up every locked version in the Python Packaging
+Advisory Database with pip-audit (SUP-005). A known vulnerability in a tool chain fails it. One in
+the Home Assistant test environment, whose versions the pinned Home Assistant release decides,
+warns: raise the version in `home-assistant/overrides.txt` and run `make ha-lock`.
+
+GitHub Actions are pinned to commit SHAs; Dependabot proposes updates with the same cooldown.
+`paho-mqtt` stays at the version of Debian 13 (ADR 0005), and Dependabot ignores it: raise it with
+the deployment target. A changed lock file gives `make venv` a fresh environment, so that no
+package the lock dropped stays installed. The firmware that the firmware tests build is pinned in
 `tests/firmware/sources.toml`, which Dependabot does not read: move it with a firmware release
 ([testing.md](testing.md#testing-another-firmware-release)).
 
@@ -397,16 +415,20 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    commit and starts the release only if there is none and none is running. Until a release is
    tagged, the release plan of every other change refuses ("no tag vX.Y.Z here"): run it again
    once the tag is there.
-4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
-   zipapp, wheel and sdist reproducibly, adds the systemd unit (its second line names the
-   version: `# Version: X.Y.Z`, refused without it) and the Proxmox installer with the
-   version and the SHA-256 of the zipapp and the unit written in (`RELEASE="X.Y.Z"`,
-   `RELEASE_PYZ_SHA256`, `RELEASE_UNIT_SHA256`: run from the release's address, it installs this
-   release) and, beside it, the language pack of each language it offers
-   (`meshcore-home-gateway-lxc.<language>.messages`, refused unless it is the pack the installer
-   pins), writes `SHA256SUMS`, attests every file (Sigstore-signed build provenance) and
-   publishes the GitHub release with the changelog section as notes (its relative links point at
-   the files of the tag).
+4. The workflow runs `make check` in one job and builds the release files in another, in an
+   environment of the build tools alone
+   (`make release VENV=.venv-release REQUIREMENTS=requirements/release.txt`), so that no test or
+   lint tool runs where they are made (SUP-002). The build refuses a tag that differs from
+   `__version__`, builds the zipapp, wheel and sdist reproducibly, adds the systemd unit (its
+   second line names the version: `# Version: X.Y.Z`, refused without it) and the Proxmox
+   installer with the version and the SHA-256 of the zipapp and the unit written in
+   (`RELEASE="X.Y.Z"`, `RELEASE_PYZ_SHA256`, `RELEASE_UNIT_SHA256`: run from the release's
+   address, it installs this release) and, beside it, the language pack of each language it
+   offers (`meshcore-home-gateway-lxc.<language>.messages`, refused unless it is the pack the
+   installer pins), and writes `SHA256SUMS`. A third job builds the files again on an arm64
+   runner and compares `SHA256SUMS`. After all three, the last job attests every file
+   (Sigstore-signed build provenance) and publishes the GitHub release with the changelog section
+   as notes (its relative links point at the files of the tag).
 5. Check the result like a user: download a file and run
 
    ```sh
@@ -422,5 +444,11 @@ maintainer and the workflows of this repository have (pull requests from forks g
 tokens). A release that failed is followed by the next version, never by a moved tag.
 
 A manual run of the workflow ("Run workflow" in the Actions tab) is a dry run on a branch: it
-builds the same files and keeps them as a workflow artifact, without attestation or release; on a
-tag it releases that tag, as a pushed tag does.
+checks, builds and rebuilds the same files and keeps them as a workflow artifact, without
+attestation or release; on a tag it releases that tag, as a pushed tag does.
+
+The provenance meets SLSA Build Level 2: a hosted build platform makes and signs it
+([GitHub](https://docs.github.com/en/actions/concepts/security/artifact-attestations)). Level 3
+would need the build in a reusable workflow that the release workflow cannot influence; the
+rebuild on another runner image and the immutable releases cover part of that gap
+([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)).

@@ -168,13 +168,13 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| SUP-001 | fix | `CODEOWNERS`, a reviewer's checklist in the pull request template and a note on the agent's inputs. A separate GitHub identity for the agent and required reviews are deferred to the maintainer (an account and a ruleset only the maintainer can create); a release cooldown is deferred with them | pending: supply-chain |
-| SUP-002 | fix | The release workflow builds in a job with a minimal, hash-pinned environment, a rebuild on another runner image must give the same `SHA256SUMS`, and only then is it attested | pending: supply-chain |
+| SUP-001 | fix | `CODEOWNERS`, a reviewer's checklist in the pull request template and a note on the agent's inputs. A separate GitHub identity for the agent and required reviews are deferred to the maintainer (an account and a ruleset only the maintainer can create); a release cooldown is deferred with them | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| SUP-002 | fix | The release workflow builds in a job with a minimal, hash-pinned environment, a rebuild on another runner image must give the same `SHA256SUMS`, and only then is it attested | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | SUP-003 | fix | The installer's pinned digests (OPS-002); immutable releases switched on for the repository | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53); immutable releases: repository settings, 2026-11-02 |
-| SUP-004 | fix | `make lock` and Dependabot write the same form | pending: supply-chain |
-| SUP-005 | fix | `pip-audit` against both lock files in CI (the Home Assistant lock warns); code scanning switched on; the 43 open alerts of the Home Assistant lock resolved | pending: supply-chain, github |
-| SUP-006 | fix | Translations reviewed by a second speaker; security-relevant texts carry a translators' note | pending: supply-chain |
-| SUP-007 | fix | The rulesets exported to `.github/rulesets/`; `SECURITY.md` names the repository's security settings | pending: supply-chain |
+| SUP-004 | fix | `make lock` and Dependabot write the same form | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| SUP-005 | fix | `pip-audit` against every lock file in CI (`make audit`; the Home Assistant lock warns); code scanning switched on; the 43 open alerts of the Home Assistant lock resolved by overrides (Pillow 13.0.0, certifi 2026.10.19, uv 0.13.4) | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54); code scanning: repository settings, 2026-11-02 |
+| SUP-006 | fix | Translations reviewed by a second speaker; security-relevant texts carry a translators' note | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| SUP-007 | fix | The tag ruleset exported to `.github/rulesets/`; `SECURITY.md` names the repository's security settings; branch protection of `main` stays with the maintainer | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 
 ## Improvement opportunities
 
@@ -206,9 +206,9 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-024 | fix | Through OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-026 | fix | Through ARC-001 | pending: threat-model |
-| IMP-027 | fix | Through SUP-001 (code owners, checklist); identity and cooldown deferred to the maintainer | pending: supply-chain |
-| IMP-028 | fix | Through SUP-002 | pending: supply-chain |
-| IMP-029 | fix | Through SUP-005 | pending: supply-chain |
+| IMP-027 | fix | Through SUP-001 (code owners, checklist); identity and cooldown deferred to the maintainer | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| IMP-028 | fix | Through SUP-002 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| IMP-029 | fix | Through SUP-005 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | pending: threat-model, code-quality |
 | IMP-031 | fix | Through ARC-005 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-032 | fix | `[messages] alert_targets`: alerts overtake the queue and go between two attempts of a message in flight. Per target, not per request: a JSON envelope would change what a text that looks like JSON means, and the installer's answers carry no per-target setting (as for `hidden_targets`, SEC-008); a second target for the same recipient gives a request the choice | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
@@ -222,7 +222,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-040 | fix | Through SEC-014 | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
 | IMP-041 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | IMP-042 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
-| IMP-043 | fix | Through SUP-007 | pending: supply-chain |
+| IMP-043 | fix | Through SUP-007 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-044 | fix | Through CODE-023 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-045 | fix | Through CODE-007 | pending: code-quality |
 | IMP-046 | fix | Through DOC-026 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -278,7 +278,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-016 | accept | Acknowledged; verified, moves to `docs/protocol.md` (DOC-022) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-017 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-018 | accept | Acknowledged; moves to `docs/protocol.md` §3 with IMP-041 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
-| RES-019 | accept | Acknowledged; resolved by SUP-004 | pending: supply-chain |
+| RES-019 | accept | Acknowledged; resolved by SUP-004 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | RES-020 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-009 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | RES-021 | accept | Acknowledged; `docs/platform-notes.md` covers these | – |
 | RES-022 | accept | Acknowledged; nothing to change | – |

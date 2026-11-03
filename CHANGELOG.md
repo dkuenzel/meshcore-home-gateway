@@ -180,6 +180,13 @@ format, the command line and Home Assistant discovery are public interfaces
 - The warning at every connect to firmware the gateway is not tested with names what it switches
   off (the radio profile's writes and contact requests) and comes also with
   `radio.profile.manage = "observe"`.
+- `make lock` writes the lock files for Linux alone and in the form Dependabot writes, so that its
+  pull requests change versions and hashes only; `requirements/release.txt` (the release build)
+  and `requirements/audit.txt` (`make audit`) are new lock files, and `make lock UPGRADE=` writes
+  the files again with the versions they pin.
+- A translation is read by a second speaker of the language before it is merged, and the texts
+  that warn of a risk, say how a connection is secured or ask for a secret tell their translators
+  so ([translations.md](docs/translations.md#review-of-a-translation)).
 
 ### Fixed
 
@@ -270,6 +277,12 @@ format, the command line and Home Assistant discovery are public interfaces
   `acl_file` grants every subscription)
   ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker),
   [ADR 0015](docs/decisions/0015-provider-neutral-documents-on-the-bus.md)).
+- A release is built in an environment of the build tools alone, built again on a runner of
+  another architecture (arm64) and compared byte for byte before it is attested and published
+  ([development.md](docs/development.md#release)). CI looks every locked tool up in the Python
+  Packaging Advisory Database (`make audit`), and the test environment of Home Assistant no longer
+  holds versions with known vulnerabilities (Pillow, certifi, uv). SECURITY.md lists how the
+  repository and the releases are protected.
 
 ## [1.1.0a4] - 2026-10-31
 

@@ -110,6 +110,16 @@ pass.
   release's `SHA256SUMS`, from the same place as the files, cannot vouch for them alone. The
   verified installation comes first in the README and the guide, and the repository's releases
   are immutable once published (repository settings, 2026-11-02).
+* Amended on 2026-11-03 (security and architecture review, SUP-002): the release files are made in
+  a job of their own, in an environment of the build tools alone (`requirements/release.txt`),
+  made again on a runner of another image (arm64) and compared byte for byte; `make check` runs
+  in a job beside them, and the publish job attests only after all three. The provenance meets
+  SLSA Build Level 2: a hosted build platform makes and signs it. Level 3 asks that the build
+  cannot influence its provenance, which needs the build in a reusable workflow the release
+  workflow cannot change; not adopted, since with one maintainer the workflow and the code have
+  the same author, and the rebuild shows a build that one runner alone made differently.
+* SLSA levels of artifact attestations:
+  <https://docs.github.com/en/actions/concepts/security/artifact-attestations>
 * `actions/attest`: <https://github.com/actions/attest>
 * Using artifact attestations:
   <https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds>

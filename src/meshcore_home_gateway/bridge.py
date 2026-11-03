@@ -1460,12 +1460,14 @@ def broker_warnings(config: Config) -> list[Text]:
     if mqtt.insecure:
         return warnings
     if mqtt.username is None:
+        # Translators: security text (docs/translations.md); insecure = true is a setting
         warnings.append(Text(
             "MQTT without a user name: unless the broker refuses clients without one, any client "
             "that reaches it can read and write the gateway's topics (docs/mqtt-api.md, Securing "
             "the broker; insecure = true accepts it)"
         ))  # fmt: skip
     if not mqtt.tls and not mqtt.local:
+        # Translators: security text (docs/translations.md); insecure = true is a setting
         warnings.append(Text(
             "MQTT without TLS: the password, the messages, the positions and the command events "
             "cross the network in the clear (insecure = true accepts it)"

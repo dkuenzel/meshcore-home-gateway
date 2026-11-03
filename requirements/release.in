@@ -1,0 +1,5 @@
+# The release build (`make release` in .github/workflows/release.yml): the build tools alone, so
+# that no test or lint tool runs where the release files are made (SUP-002). Compile with
+# `make lock`; the lock file requirements/release.txt pins every package by hash.
+build
+flit_core

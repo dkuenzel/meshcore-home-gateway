@@ -4,6 +4,7 @@ one canonical form, and these tests fail until it has run (like `make interface`
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -81,3 +82,49 @@ def test_the_template_holds_the_dashboards_texts() -> None:
     assert {entry.references for entry in texts.values()} == {
         ("src/meshcore_home_gateway/dashboard.yaml",)
     }
+
+
+# SUP-006 (docs/translations.md, Review of a translation): a text that warns of a risk, says how a
+# connection is secured or asks for a secret says so to its translator and to the second speaker
+# who reads the translation. A new text with one of these words is one of them, or listed below.
+SECURITY_WORDS = re.compile(
+    r"authenticat|\bTLS\b|private key|forged|user name|anyone|whoever|password|credentials"
+    r"|any client|first 12 key digits",
+    flags=re.IGNORECASE,
+)
+NOT_SECURITY_TEXTS = frozenset({
+    # help and errors that name a setting or explain a check
+    "also log in to the broker with the configured user name and password",
+    (
+        "brokers such as Mosquitto refuse a wrong password, an unknown user and missing "
+        "credentials alike; a standalone Mosquitto knows a user added with mosquitto_passwd only "
+        "after '{command}' ({guide})"
+    ),
+    (
+        "a host name or IP address only, without a scheme such as mqtt:// (TLS and port are "
+        "settings of their own), got {value!r}"
+    ),
+    "{key}: only used with tls = true",
+    "{key}: set password or password_file, not both",
+    "{key}: {path} holds no password",
+    "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container",
+    # the installer's question for the user name, which is no secret
+    "MQTT user name as set up on the broker (it was '{was}'); empty: none",
+    "MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)",
+    "MQTT user name as set up on the broker; empty: none",
+})  # fmt: skip
+
+
+def test_security_texts_say_so_to_their_translators() -> None:
+    unmarked, listed = [], set()
+    for template in (PROJECT.template, PROJECT.installer_template):
+        _, entries = tool.read_po(template.read_text(encoding="utf-8"))
+        for entry in entries:
+            if not SECURITY_WORDS.search(entry.msgid):
+                continue
+            if entry.msgid in NOT_SECURITY_TEXTS:
+                listed.add(entry.msgid)
+            elif not any(note.startswith("security text") for note in entry.comments):
+                unmarked.append(entry.msgid)
+    assert unmarked == []
+    assert listed == NOT_SECURITY_TEXTS  # none of them is gone or marked meanwhile

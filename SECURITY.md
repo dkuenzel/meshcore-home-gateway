@@ -45,4 +45,31 @@ system. The threat model, the trust boundaries and the mitigations are described
   above all for commands, or else a network that only the gateway and the radio can reach; the
   configuration says so with `[radio] tcp_unauthenticated = true`
   ([configuration.md](docs/configuration.md#radio)).
-- Runtime dependencies come from the Linux distribution only; development tools are hash-pinned.
+- Runtime dependencies come from the Linux distribution only; the tools that build, test and
+  audit the project are pinned by hash, at least 14 days old, and looked up in the Python
+  Packaging Advisory Database by CI.
+
+## How the repository and the releases are protected
+
+What GitHub enforces for this repository, as set on 2026-11-03 (SUP-007). The tag ruleset is
+exported to [`.github/rulesets/`](.github/rulesets/); the settings themselves are the authority
+(`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them).
+
+- `main` has no branch protection: changes arrive by pull request and squash merge, after CI, by
+  practice. Whether a ruleset enforces that, and a review by a second identity, is the
+  maintainer's to decide (SUP-001).
+- Release tags `v*` (ruleset `v-star`): cannot be moved or deleted
+  ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)).
+- Releases are immutable once published. Each carries Sigstore-signed build provenance (SLSA Build
+  Level 2), its files are built twice, on x86-64 and on arm64 runners, and compared, and the
+  published installer pins the program it installs ([install](docs/deployment.md#install)).
+- Private vulnerability reporting, Dependabot alerts and security updates, secret scanning with
+  push protection, and code scanning (CodeQL's default setup, for Python and the workflows) are
+  on.
+- [`.github/CODEOWNERS`](.github/CODEOWNERS) names the security-relevant paths; the pull request
+  template's review checklist asks to read their diff.
+- Most changes are written by an AI coding agent that works through the maintainer's GitHub login
+  on the maintainer's computer; its commits name it as their author, and the maintainer reviews
+  and merges them ([CONTRIBUTING.md](CONTRIBUTING.md#changes-written-by-an-agent)). The login's
+  protection (two-factor authentication, the scope of its token) is the account's and not visible
+  here.
