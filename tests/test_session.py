@@ -995,6 +995,39 @@ def test_a_bug_in_the_maintenance_ends_the_session(monkeypatch: pytest.MonkeyPat
     run(radio, scenario)
 
 
+class LateBattery(EmulatedRadio):
+    """Answers GET_BATT_AND_STORAGE 0.1 s late once `late` is set: during a stall of the loop."""
+
+    late = False
+
+    def _handle(self, p: bytes) -> None:
+        if p[0] == Command.GET_BATT_AND_STORAGE and self.late:
+            self.late = False
+            asyncio.get_running_loop().call_later(0.1, super()._handle, p)
+            return
+        super()._handle(p)
+
+
+def test_an_answer_that_came_while_the_loop_stalled_is_taken() -> None:
+    """CODE-001, RES-009: the host holds the event loop up longer than the command timeout,
+    and the answer comes meanwhile. When the loop resumes, the answer and the timeout are due
+    together, and the timeout's waiter ran before the reader had handed the frame on: the
+    session ended although the answer was there. Now it is taken."""
+    radio = LateBattery()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.late = True
+        asyncio.get_running_loop().call_later(0.05, time.sleep, 0.6)  # the timeout is 0.3 s
+        assert await session.get_battery() == codec.Battery(4012, 12, 976)
+        assert not session.closed
+        radio.silent.add(Command.GET_BATT_AND_STORAGE)  # a radio that does not answer at all
+        with pytest.raises(RadioError, match="no answer from the radio"):
+            await session.get_battery()
+
+    run(radio, scenario)
+
+
 def test_close_passes_on_the_callers_cancellation() -> None:
     """A shutdown that arrives while the session closes must not be swallowed."""
     radio = EmulatedRadio()

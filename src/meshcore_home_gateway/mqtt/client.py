@@ -25,6 +25,7 @@ import paho.mqtt.client as paho
 from paho.mqtt.enums import CallbackAPIVersion, MQTTProtocolVersion
 
 from meshcore_home_gateway.config import ConfigError, MqttConfig
+from meshcore_home_gateway.health import MinuteCounts
 from meshcore_home_gateway.mqtt.retained import RetainedTopics
 from meshcore_home_gateway.mqtt.topics import Topics
 
@@ -163,6 +164,7 @@ class MqttBus:
         self.connected = False
         self._queued = 0  # events published since the connection was lost
         self._dropped = 0
+        self._drops = MinuteCounts()  # events dropped, for the health section
         self._stopping = False
         self._answered = False  # paho thread: the broker answered the current attempt
         # paho thread: the message id of the connect's subscription, and its topics
@@ -196,6 +198,11 @@ class MqttBus:
         client.loop_start()
         log.info("MQTT: connecting to %s:%d", config.host, config.port)
 
+    def dropped_1h(self) -> int:
+        """Events dropped in the last hour while the broker was unreachable (more than
+        MAX_QUEUED_EVENTS waited): the health section tells them once the broker is back."""
+        return self._drops.total(time.monotonic())
+
     def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
         """QoS 1 events are queued while the broker is unreachable; QoS 0 events (commands) are
         not, so they can never arrive late."""
@@ -209,6 +216,7 @@ class MqttBus:
                     log.warning("MQTT: broker unreachable, %d events queued; dropping events "
                                 "until the connection is back", self._queued)  # fmt: skip
                 self._dropped += 1
+                self._drops.add(time.monotonic())
                 return
             self._queued += 1
         info = self._client.publish(topic, payload, qos=qos, retain=retain)

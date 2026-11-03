@@ -44,6 +44,7 @@ from meshcore_home_gateway.core.telemetry import (
     TelemetryState,
     TelemetryStatus,
 )
+from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import NodeType
@@ -60,6 +61,7 @@ from meshcore_home_gateway.radio.session import (
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryRecords
 
 log = logging.getLogger(__name__)
+log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
 
 QUIET_S = 10.0  # no request until the outbox has been quiet this long
 BUSY_PAUSE_S = 60.0  # after ERR 3: the radio had no packet buffer free
@@ -77,7 +79,6 @@ HEARD_KEPT = 512  # heard times kept before old ones are dropped
 # the first time telemetry runs on a state directory, nobody is asked this long after the radio's
 # table is read (read when used, so tests can change it)
 FIRST_START_S = 3600.0
-STATE_ERROR_LOG_S = 60.0  # an error while the states are evaluated is logged at most this often
 
 
 class OutboxActivity:
@@ -271,7 +272,6 @@ class TelemetryPoller:
         self._restored = False
         self._hold_left: float | None = None  # the first-start hold still to come; None: none
         self._hold_until: float | None = None  # when it ends, once it runs
-        self._state_error_at = -math.inf
         self._busy_until = -math.inf
         self._saved_version, self._saved_mono = -1, -math.inf
 
@@ -742,15 +742,12 @@ class TelemetryPoller:
     # --- the companions' states (ADR 0024) ------------------------------------------------------
 
     def _report_states(self, keys: Collection[str] | None = None) -> None:
-        """_refresh_states(); an error is logged at most every STATE_ERROR_LOG_S, the step goes
-        on."""
+        """_refresh_states(); an error is logged (at most once a minute: health.FAILURES), the
+        step goes on."""
         try:
             self._refresh_states(keys)
         except Exception:
-            now = self._mono()
-            if now - self._state_error_at >= STATE_ERROR_LOG_S:
-                self._state_error_at = now
-                log.exception("telemetry: the states could not be evaluated")
+            log.exception("telemetry: the states could not be evaluated")
 
     def _refresh_states(self, keys: Collection[str] | None = None) -> None:
         """The state of each companion of the table as last read (or of `keys`) now; the

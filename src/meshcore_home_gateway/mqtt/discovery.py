@@ -50,6 +50,16 @@ STATS_ATTRIBUTES = (
     "{{ {'window_s': value_json.tx_airtime_window_s, 'airtime_factor': value_json.airtime_factor, "
     "'duty_cycle_percent': value_json.duty_cycle_percent} | tojson }}"
 )
+# the health section (ARC-012), which a document of an earlier version lacks
+HEALTH_KEYS = (
+    "history", "state_file", "exclusions", "errors_1h", "loop_lag_max_s", "events_dropped_1h",
+    "disk_free_mb",
+)  # fmt: skip
+HEALTH_ATTRIBUTES = (
+    "{% set h = value_json.get('health') or {} %}{{ {"
+    + ", ".join(f"'{key}': h.get('{key}')" for key in HEALTH_KEYS)
+    + "} | tojson }}"
+)
 
 
 def device_id(config: Config) -> str:
@@ -152,6 +162,19 @@ def discovery_payload(
             # Translators: sensor of the gateway: the messages waiting to be sent
             "queue", "sensor", ha_name("Queue"), state_class="measurement", icon="mdi:tray-full",
             value_template="{{ value_json.queue }}", **diagnostic,
+        ),
+        "degraded": component(
+            # Translators: binary sensor (problem) of the gateway: on while a part of it is in
+            # trouble (its history, its state file, a bug it caught, a host that holds it up);
+            # the log tells which
+            "degraded", "binary_sensor", ha_name("Gateway degraded"), device_class="problem",
+            icon="mdi:heart-pulse",
+            value_template=(
+                "{{ ('ON' if value_json.health.degraded else 'OFF') "
+                "if value_json.get('health') is not none else None }}"
+            ),
+            json_attributes_topic=topics.state, json_attributes_template=HEALTH_ATTRIBUTES,
+            **diagnostic,
         ),
         "message": component(
             # Translators: event entity of the gateway: a message received from a contact or on

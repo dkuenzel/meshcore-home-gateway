@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 import stat
+import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -368,3 +371,112 @@ def test_forgetting_is_one_transaction_and_none_without_a_working_history(
     assert history._db.execute("SELECT COUNT(*) FROM reading").fetchone()[0] == 1  # rolled back
     assert history.forget_telemetry(KEY) is None
     assert caplog.text.count("history cannot be written") == 1
+
+
+# --- the purge in its thread (CODE-002) ----------------------------------------------------------
+
+
+def slow_purge(monkeypatch: pytest.MonkeyPatch, seconds: float) -> list[str]:
+    """The purge's thread takes `seconds` longer; the names of the threads it ran in."""
+    threads: list[str] = []
+    real = history_module._purge_apart
+
+    def slow(path: Path, steps: history_module.Steps) -> None:
+        threads.append(threading.current_thread().name)
+        time.sleep(seconds)
+        real(path, steps)
+
+    monkeypatch.setattr(history_module, "_purge_apart", slow)
+    return threads
+
+
+async def purged(history: History) -> None:
+    """Until the purge that runs has finished and the writes it held are written: its thread
+    schedules that before the result of the future."""
+    if (future := history._purging) is not None:
+        await asyncio.wait([asyncio.wrap_future(future)])  # also one that failed
+    assert history._purging is None
+
+
+def test_the_purge_runs_in_a_thread_and_the_writes_meanwhile_follow_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loop goes on while the purge runs: a timer fires, and what is written meanwhile waits
+    in memory and follows the purge in its order, also a row the purge would have dropped."""
+    history = opened(tmp_path / "h.sqlite3", Retention(messages_days=1))
+    history.add_message(HistoryEntry(T, "in", "channel", "old"))
+    threads = slow_purge(monkeypatch, 0.3)
+
+    async def main() -> list[str]:
+        fired: list[str] = []
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.05, fired.append, "timer")
+        history.purge_in_thread(T + 2 * DAY)
+        history.add_message(HistoryEntry(T + 1, "in", "channel", "meanwhile, old too"))
+        history.add_message(HistoryEntry(T + 2 * DAY, "in", "channel", "meanwhile, new"))
+        await asyncio.sleep(0.1)
+        fired.append("purging" if history._purging is not None else "done")
+        history.purge_in_thread(T + 2 * DAY)  # one at a time: this one is left out
+        await purged(history)
+        return fired
+
+    assert asyncio.run(main()) == ["timer", "purging"]
+    assert threads == ["history-purge_0"]
+    texts = [m.text for m in history.recent_messages(10)]
+    assert texts == ["meanwhile, new", "meanwhile, old too"]  # "old" purged, the rest after
+
+
+def test_without_an_event_loop_the_purge_runs_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history = opened(tmp_path / "h.sqlite3", Retention(messages_days=1))
+    history.add_message(HistoryEntry(T, "in", "channel", "old"))
+    threads = slow_purge(monkeypatch, 0.0)
+    history.purge_in_thread(T + 2 * DAY)
+    assert (history.recent_messages(10), threads) == ([], [])
+
+
+def test_forgetting_and_closing_wait_for_the_purge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forgetting tells how many rows went: it waits for a purge that runs, then the writes it
+    held go first. Closing waits too, and writes what was held."""
+    path = tmp_path / "h.sqlite3"
+    history = opened(path)
+    history.add_readings(KEY, T, {"battery_v": 4.1})
+    slow_purge(monkeypatch, 0.2)
+
+    async def main() -> int | None:
+        history.purge_in_thread(T)
+        history.add_readings(KEY, T + 60, {"battery_v": 4.0})  # held
+        rows = history.forget_telemetry(KEY)
+        history.purge_in_thread(T)
+        history.add_message(HistoryEntry(T, "in", "channel", "held at the stop"))
+        history.close()
+        return rows
+
+    assert asyncio.run(main()) == 2  # the held reading was written before
+    again = opened(path)
+    assert [m.text for m in again.recent_messages(10)] == ["held at the stop"]
+
+
+def test_a_purge_that_fails_in_its_thread_breaks_the_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    history = opened(tmp_path / "h.sqlite3")
+
+    def failing(_path: Path, _steps: history_module.Steps) -> None:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(history_module, "_purge_apart", failing)
+
+    async def main() -> None:
+        history.purge_in_thread(T)
+        history.add_message(HistoryEntry(T, "in", "channel", "held"))
+        await purged(history)
+
+    caplog.set_level(logging.WARNING)
+    asyncio.run(main())
+    assert history.broken
+    assert "history cannot be written (disk I/O error)" in caplog.text
+    assert history._db.execute("SELECT COUNT(*) FROM message").fetchone()[0] == 0

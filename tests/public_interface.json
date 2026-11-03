@@ -1369,6 +1369,20 @@
      "platform": "sensor",
      "state_class": "measurement"
     },
+    "degraded": {
+     "attributes": [
+      "disk_free_mb",
+      "errors_1h",
+      "events_dropped_1h",
+      "exclusions",
+      "history",
+      "loop_lag_max_s",
+      "state_file"
+     ],
+     "device_class": "problem",
+     "entity_id": "binary_sensor.<device>_degraded",
+     "platform": "binary_sensor"
+    },
     "delivery": {
      "attributes": "<document delivery>",
      "entity_id": "event.<device>_delivery",
@@ -1886,6 +1900,15 @@
     "contact_link",
     "firmware",
     "frequency_mhz",
+    "health",
+    "health.degraded",
+    "health.disk_free_mb",
+    "health.errors_1h",
+    "health.events_dropped_1h",
+    "health.exclusions",
+    "health.history",
+    "health.loop_lag_max_s",
+    "health.state_file",
     "model",
     "public_key",
     "queue",

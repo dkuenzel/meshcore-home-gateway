@@ -41,6 +41,7 @@ from meshcore_home_gateway.core.contacts import (
 )
 from meshcore_home_gateway.core.mesh import Node
 from meshcore_home_gateway.core.text import contact_name
+from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.protocol import codec
@@ -58,6 +59,7 @@ from meshcore_home_gateway.radio.session import (
 from meshcore_home_gateway.views import contact_event
 
 log = logging.getLogger(__name__)
+log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
 
 MAX_REQUEST_BYTES = 1024
 MAX_WAITING = 8  # queued requests; then `busy`

@@ -246,7 +246,10 @@ reason, and every 60 s.
  "bandwidth_khz": 62.5, "spreading_factor": 8, "coding_rate": 8, "tx_power_dbm": 22,
  "contact_link": "meshcore://contact/add?name=Gateway&public_key=…&type=1",
  "version": "0.1.0", "telemetry": "on", "telemetry_reason": null, "telemetry_airtime_1h_s": 4.5,
- "telemetry_mesh_airtime_1h_s": 10.6, "radio_clock_offset_s": 0, "radio_link_contested": null}
+ "telemetry_mesh_airtime_1h_s": 10.6, "radio_clock_offset_s": 0, "radio_link_contested": null,
+ "health": {"degraded": false, "history": "ok", "state_file": "ok", "exclusions": "ok",
+            "errors_1h": 0, "loop_lag_max_s": 0.004, "events_dropped_1h": 0,
+            "disk_free_mb": 5120}}
 ```
 
 `radio_clock_offset_s` is how far the radio's clock is ahead of the host's, in seconds (negative:
@@ -280,6 +283,21 @@ is `paused`, `telemetry_reason` says why, else it is `null`:
 `telemetry_airtime_1h_s` is the gateway's own transmit time for telemetry in the last hour,
 `telemetry_mesh_airtime_1h_s` the estimated airtime its requests caused in the mesh (every hop
 both ways); both `null` with telemetry off.
+
+`health` says how the gateway itself is doing. Its parts keep messages going whatever happens to
+the others ([design §6.6](design.md#66-observer-documents-and-history)); this tells what the journal says
+in detail. `degraded` is `true` while any of the following is not as it should be, which Home
+Assistant shows as the problem sensor *Gateway degraded* ([what to do](deployment.md#5-troubleshooting)):
+
+| Key | Meaning | Degraded when |
+| --- | --- | --- |
+| `history` | `ok`, `off` (`[history] enabled = false`), `broken`: it could not be opened or a write failed, and it is off until the next start | `broken` |
+| `state_file` | `ok`, or `unwritable`: the last write of `state.json` failed (a full or read-only disk) | not `ok` |
+| `exclusions` | `ok`, `unsaved`: an exclusion from telemetry waits to be written to `telemetry-excluded.json`, or `unreadable`: that file cannot be parsed and telemetry is paused | not `ok` |
+| `errors_1h` | bugs that a part caught and logged with their traceback in the last hour; the journal shows each place at most once a minute, with how many came since | above 0 |
+| `loop_lag_max_s` | the longest the gateway's event loop was held up in the last hour: a host that gives it no CPU or a slow disk (a backup, swapping); `null` in the first second | 1 s or more |
+| `events_dropped_1h` | events that were dropped in the last hour because the broker was unreachable for more than 1000 of them | never: the broker was away |
+| `disk_free_mb` | free space in MB where the state and the history are kept; `null` if it cannot be told | below 100 |
 
 ## Radio statistics: `stats`
 

@@ -424,7 +424,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
         config, bus, lambda: transport_for(config), CommandLedger(store),
         components=AnnouncedComponents(store), observer=observer, devices=devices,
         profile=profile, manage_components=AnnouncedComponents(store, OBJECT_ID),
-        telemetry_records=TelemetryRecords(store),
+        telemetry_records=TelemetryRecords(store), state_dir=state_dir,
     )  # fmt: skip
     try:
         await bridge.run(stop)
@@ -471,9 +471,9 @@ def _check_config(args: argparse.Namespace) -> int:
     print(tr("configuration {path}: valid", path=args.config))
     for line in _summary(config, login):
         print(line)
-    from meshcore_home_gateway.bridge import broker_warnings, protected_look_alikes  # noqa: PLC0415
+    from meshcore_home_gateway.bridge import start_warnings  # noqa: PLC0415
 
-    for warning in protected_look_alikes(config) + broker_warnings(config):
+    for warning in start_warnings(config):
         print(PREFIX + tr("warning: {detail}", detail=warning), file=sys.stderr)
     if not args.broker:
         return EX_OK

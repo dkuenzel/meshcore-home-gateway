@@ -317,7 +317,7 @@ a position from telemetry from the history.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `publish_rx_log` | `false` | publish SNR, RSSI and raw bytes of every received packet on `rx` |
-| `log_level` | `info` | `debug`, `info`, `warning`, `error`; message texts are logged only at `debug` |
+| `log_level` | `info` | `debug`, `info`, `warning`, `error`; message texts are logged only at `debug`, with positions, keys and every frame of the radio, which journald keeps for weeks: the service and `check-config` warn about it; set it back after the search |
 
 ## Installer answers
 

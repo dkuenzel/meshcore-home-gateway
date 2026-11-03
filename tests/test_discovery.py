@@ -78,7 +78,7 @@ STATE_KEYS = {
     "queue", "radio_name", "public_key", "model", "firmware", "frequency_mhz", "bandwidth_khz",
     "spreading_factor", "coding_rate", "tx_power_dbm", "contact_link", "version", "telemetry",
     "telemetry_reason", "telemetry_airtime_1h_s", "telemetry_mesh_airtime_1h_s",
-    "radio_clock_offset_s", "radio_link_contested",
+    "radio_clock_offset_s", "radio_link_contested", "health",
 }  # fmt: skip
 
 
@@ -144,7 +144,7 @@ def test_entities_and_their_sources() -> None:
         "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
         "advert_position", "look_alike", "contact", "node", "show_hidden", "profile", "setting",
         "telemetry_status", "telemetry_airtime", "telemetry_mesh_airtime", "telemetry",
-        "radio_clock_offset", "radio_link_contested",
+        "radio_clock_offset", "radio_link_contested", "degraded",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -267,6 +267,20 @@ def test_every_state_value_reaches_home_assistant() -> None:
     assert "radio_name" in cmps["radio"]["json_attributes_template"]
     # newer than the state documents of earlier versions: read without a warning there
     assert "value_json.get('contact_link')" in cmps["radio"]["json_attributes_template"]
+
+
+def test_a_degraded_gateway_is_a_problem() -> None:
+    """ARC-012: on while a part is not as it should be; the health section as attributes. A
+    state document of an earlier version has none: unknown, without a warning."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["degraded"]
+    assert (sensor["p"], sensor["name"], sensor["device_class"], sensor["entity_category"]) == (
+        "binary_sensor", "Gateway degraded", "problem", "diagnostic",
+    )  # fmt: skip
+    assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.state
+    assert "value_json.get('health') is not none" in sensor["value_template"]
+    for key in ("history", "state_file", "exclusions", "errors_1h", "loop_lag_max_s",
+                "events_dropped_1h", "disk_free_mb"):  # fmt: skip
+        assert f"'{key}': h.get('{key}')" in sensor["json_attributes_template"]
 
 
 def test_a_look_alike_node_is_a_problem() -> None:

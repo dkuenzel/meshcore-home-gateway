@@ -17,6 +17,10 @@ msgstr ""
 msgid "command sender"
 msgstr ""
 
+#: src/meshcore_home_gateway/bridge.py
+msgid "log level debug: the journal gets the texts of the messages, the positions, the keys and every frame of the radio, which journald keeps for weeks; set it back to info after the search (docs/configuration.md, diagnostics)"
+msgstr ""
+
 #. first and second are contacts, each a shortened key and its roles.
 #: src/meshcore_home_gateway/bridge.py
 #, python-brace-format
@@ -1760,6 +1764,14 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Delivery"
+msgstr ""
+
+#. binary sensor (problem) of the gateway: on while a part of it is in
+#. trouble (its history, its state file, a bug it caught, a host that holds it up);
+#. the log tells which
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Gateway degraded"
 msgstr ""
 
 #. sensor (signal strength) of the gateway: the received signal strength

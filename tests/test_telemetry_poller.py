@@ -18,6 +18,7 @@ from typing import Any, cast
 import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
+from meshcore_home_gateway import health
 from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway import telemetry_poller as poller_module
 from meshcore_home_gateway.config import Config
@@ -2119,16 +2120,19 @@ def test_a_bug_in_the_states_is_logged_once_a_minute_and_the_step_goes_on(
         r = rig(monkeypatch, DANA)
         r.radio.answers[KEY] = LPP_FULL
         monkeypatch.setattr(r.poller, "_refresh_states", broken)
+        monkeypatch.setattr(health.FAILURES, "_mono", lambda: r.clock[0])
         first = r.clock[0]
         await r.steps(1)  # also the answer's evaluation fails
         assert r.radio.asked == [(KEY, first)]  # the step went on
         assert logged() == 1
-        r.clock[0] = first + poller_module.STATE_ERROR_LOG_S - 1.0
+        r.clock[0] = first + health.FAILURE_LOG_S - 1.0
         r.poller._report_states()
         assert logged() == 1
-        r.clock[0] = first + poller_module.STATE_ERROR_LOG_S
+        r.clock[0] = first + health.FAILURE_LOG_S
         r.poller._report_states()
         assert logged() == 2
+        assert "evaluated (2 more since)" in caplog.text  # the answer's and the one held back
+        assert health.FAILURES.last_hour() == 4
 
     asyncio.run(main())
 

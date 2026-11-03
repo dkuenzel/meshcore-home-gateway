@@ -81,6 +81,15 @@ format, the command line and Home Assistant discovery are public interfaces
   the message's path through repeaters allows, as a forger beside the gateway's radio answers;
   the log warns, the dashboard marks it and `send --wait` exits 1
   ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)).
+- `health` in the `state` document and the problem sensor *Gateway degraded*: whether the
+  history works, the state file and the exclusions from telemetry are written, how many bugs the
+  gateway caught in the last hour, how long its event loop was held up, how many events were
+  dropped while the broker was away, and the free disk space; `degraded` while one is not as it
+  should be, which `systemctl status` and the dashboard show too
+  ([mqtt-api.md](docs/mqtt-api.md#state-state), what to do:
+  [deployment.md](docs/deployment.md#5-troubleshooting)).
+- A warning at the start and in `check-config` when `[diagnostics] log_level` is `debug`, which
+  puts texts, positions and keys into the journal.
 
 ### Changed
 
@@ -113,6 +122,19 @@ format, the command line and Home Assistant discovery are public interfaces
 - The installer says what a radio over TCP exposes and asks to accept it
   (`radio.tcp_unauthenticated`), or offers the radios again; `check-config` calls the TCP radio
   unauthenticated in its summary.
+- The traceback of a bug that a part of the gateway catches is logged at most once a minute per
+  place, with how many came since, instead of with every event that meets it.
+- The hourly purge of the history runs in a thread on a connection of its own; the event loop
+  serves the radio meanwhile, and what is written in the meantime follows the purge
+  ([ADR 0016](docs/decisions/0016-history-in-a-local-sqlite-database.md)).
+- A warning when the event loop was held up for a second or more: the host gives the container
+  no CPU, or its disk is slow (a backup, swapping).
+
+### Fixed
+
+- A stall of the host longer than a radio command's timeout (5 s), such as a backup of the
+  Proxmox host, ended the radio session although the radio's answer had come meanwhile, and the
+  gateway reconnected; it now takes the answer.
 
 ### Security
 

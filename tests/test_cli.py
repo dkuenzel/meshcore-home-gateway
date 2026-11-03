@@ -887,6 +887,23 @@ def test_check_config_warns_about_a_broker_connection_without_credentials_or_tls
     assert "MQTT without" not in capsys.readouterr().err
 
 
+def test_check_config_warns_about_the_log_level_debug(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """OPS-017: `debug` puts texts, positions and keys into the journal."""
+    path = tmp_path / "config.toml"
+    base = (
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "h"\n'
+        '[mqtt]\nhost = "h"\nnode_id = "n"\ninsecure = true\n[diagnostics]\n'
+    )
+    path.write_text(base + 'log_level = "debug"\n')
+    assert main(["check-config", "--config", str(path)]) == EX_OK
+    assert "warning: log level debug: the journal gets the texts" in capsys.readouterr().err
+    path.write_text(base + 'log_level = "info"\n')
+    assert main(["check-config", "--config", str(path)]) == EX_OK
+    assert "log level" not in capsys.readouterr().err
+
+
 class _Code:
     """paho's reason code of a CONNACK."""
 

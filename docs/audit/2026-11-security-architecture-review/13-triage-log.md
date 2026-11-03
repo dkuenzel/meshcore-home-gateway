@@ -92,7 +92,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-010 | fix | The `Bus` protocol moves to the ports module and `MqttBus` declares it | pending: structure |
 | CODE-011 | fix | The cost noted in `refresh_channels`' docstring | pending: code-quality |
 | CODE-012 | fix | A comment naming the radio's table as the bound | pending: code-quality |
-| CODE-013 | fix | The purge in one transaction | pending: robustness |
+| CODE-013 | fix | The purge in one transaction, as it is since [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38); now also in a thread of its own (CODE-002) | pending: robustness |
 | CODE-014 | fix | A test that `nan` and `inf` are refused with a readable message | pending: code-quality |
 | CODE-015 | fix | `_toml_string` escapes line and paragraph separators and other invisible format characters | pending: code-quality |
 | CODE-016 | accept | The lazy imports keep `--version` and the light commands fast; documented where they are | – |

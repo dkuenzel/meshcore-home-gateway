@@ -16,12 +16,14 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
+from meshcore_home_gateway import health as health_module
 from meshcore_home_gateway import observer as observer_module
-from meshcore_home_gateway.bridge import Bridge, broker_warnings, ha_device_topics
+from meshcore_home_gateway.bridge import Bridge, broker_warnings, ha_device_topics, start_warnings
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.core.telemetry import LaneFactory
+from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import manage_entities
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
@@ -110,6 +112,7 @@ class FakeBus:
         self.qos: dict[str, set[int]] = {}
         self.stopped = False
         self.connected = True
+        self.dropped = 0  # events of the last hour the broker did not take
 
     async def start(self) -> None:
         for callback in self.on_connected:
@@ -117,6 +120,9 @@ class FakeBus:
 
     async def stop(self) -> None:
         self.stopped = True
+
+    def dropped_1h(self) -> int:
+        return self.dropped
 
     def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
         self.published.append((topic, payload, retain))
@@ -2643,3 +2649,146 @@ def test_the_radio_becomes_an_observer_and_reports_its_settings(tmp_path: Path) 
             assert all(radio.commands().index(c) < first_read for c in setters)
 
     scenario(main)
+
+
+# --- the gateway's own health (ARC-012) ----------------------------------------------------------
+
+
+def idle_bridge(
+    tmp_path: Path, config: Config, *, observer: Observer | None = None
+) -> tuple[Bridge, FakeBus, list[str]]:
+    """A bridge that is not run: its state document as the status loop publishes it."""
+    bus, notes = FakeBus(), []
+    ledger = CommandLedger(JsonStateFile(tmp_path / "state.json"))
+
+    def note(message: str) -> bool:
+        notes.append(message)
+        return True
+
+    bridge = Bridge(
+        config, bus, EmulatedRadio, ledger, notifier=note, observer=observer, state_dir=tmp_path
+    )
+    return bridge, bus, notes
+
+
+def test_the_state_tells_the_gateways_health(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each part's trouble in the `health` section; `degraded` while one is not as it should
+    be, which the status line of systemd says too. Events the broker did not take are told,
+    and do not degrade: the broker was away."""
+    config = make_config(extra="[history]\nenabled = false")
+    bridge, bus, notes = idle_bridge(tmp_path, config)
+    health = bridge.state_payload()["health"]
+    free = health["disk_free_mb"]
+    assert isinstance(free, int)
+    assert free >= 0
+    assert health == {
+        "degraded": False, "history": "off", "state_file": "ok", "exclusions": "ok",
+        "errors_1h": 0, "loop_lag_max_s": None, "events_dropped_1h": 0, "disk_free_mb": free,
+    }  # fmt: skip
+    bus.dropped = 3
+    bridge._publish_state()
+    assert bridge.state_payload()["health"]["events_dropped_1h"] == 3
+    assert notes[-1] == "STATUS=radio disconnected, queue 0"
+
+    def degraded(**expected: Any) -> None:
+        health = bridge.state_payload()["health"]
+        assert health["degraded"]
+        assert {key: health[key] for key in expected} == expected
+        bridge._publish_state()
+        assert notes[-1] == "STATUS=radio disconnected, queue 0, degraded"
+
+    bridge._ledger.store.failed = True  # a write of state.json failed
+    degraded(state_file="unwritable")
+    bridge._ledger.store.failed = False
+    bridge._health.lag.record(1.5, 100.0)
+    degraded(loop_lag_max_s=1.5)
+    bridge._health.lag = type(bridge._health.lag)()
+    try:
+        raise_a_bug()
+    except RuntimeError:
+        bridge_module.log.exception("observer failed")
+    degraded(errors_1h=1)
+    health_module.FAILURES.reset()
+    monkeypatch.setattr(bridge_module, "DISK_LOW_MB", free + 1_000_000)
+    degraded(disk_free_mb=free)
+
+
+def raise_a_bug() -> None:
+    raise RuntimeError("a bug")
+
+
+def full_disk(*_: object) -> None:
+    raise OSError(28, "No space left on device")
+
+
+def test_the_health_of_the_history_and_the_exclusions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The history: `off` when switched off, `broken` when it could not be opened or a write
+    failed. The exclusions: `unsaved` while a change waits for its file, `unreadable` when the
+    file cannot be read (telemetry is paused)."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    observer = Observer(FakeBus(), Topics("meshcore", "radio1"), history=history)
+    bridge, _, _ = idle_bridge(tmp_path, make_config(), observer=observer)
+    assert bridge.state_payload()["health"]["history"] == "ok"
+    history.broken = True
+    assert bridge.state_payload()["health"]["history"] == "broken"
+    history.close()
+    without, _, _ = idle_bridge(tmp_path, make_config())  # enabled, but none was opened
+    assert without.state_payload()["health"]["history"] == "broken"
+
+    unsaved = TelemetryExclusions(tmp_path / "saved" / EXCLUSIONS_FILE)
+    with monkeypatch.context() as patch:
+        patch.setattr(JsonStateFile, "save", full_disk)
+        assert not unsaved.exclude(ALICE.public_key.hex())
+    unreadable_path = tmp_path / EXCLUSIONS_FILE
+    unreadable_path.write_text("{not json", encoding="utf-8")
+    for exclusions, expected in (
+        (unsaved, "unsaved"), (TelemetryExclusions(unreadable_path), "unreadable"),
+    ):  # fmt: skip
+        observer = Observer(FakeBus(), Topics("meshcore", "radio1"), exclusions=exclusions)
+        config = make_config(extra="[history]\nenabled = false")
+        bridge, _, _ = idle_bridge(tmp_path, config, observer=observer)
+        health = bridge.state_payload()["health"]
+        assert (health["exclusions"], health["degraded"]) == (expected, True)
+
+
+def test_a_stalled_event_loop_is_measured_and_logged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """CODE-001: the host holds the loop up (here a blocking sleep): the probe measures it, the
+    log says what it means, the health section keeps the hour's largest."""
+    monkeypatch.setattr(bridge_module, "LAG_TICK_S", 0.02)
+    caplog.set_level(logging.WARNING)
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, _bus, _notes):
+            await asyncio.sleep(0.1)
+            assert bridge.state_payload()["health"]["loop_lag_max_s"] < 0.5
+            asyncio.get_running_loop().call_soon(time.sleep, 1.1)
+            await asyncio.sleep(0.1)
+            assert bridge.state_payload()["health"]["loop_lag_max_s"] >= 1.0
+
+    scenario(main)
+    assert "the event loop was held up for 1." in caplog.text
+
+
+def test_the_log_level_debug_is_warned_about_at_the_start(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """OPS-017: texts, positions and keys would go to the journal."""
+    config = make_config(extra='[diagnostics]\nlog_level = "debug"')
+    assert [str(w).split(":")[0] for w in start_warnings(config)] == ["log level debug"]
+    assert start_warnings(make_config()) == []
+    caplog.set_level(logging.WARNING)
+
+    async def main() -> None:
+        async with running(config, EmulatedRadio(), tmp_path):
+            pass
+
+    scenario(main)
+    assert "log level debug: the journal gets the texts of the messages" in caplog.text
