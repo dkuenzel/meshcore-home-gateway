@@ -9,12 +9,16 @@
 ## 1 Summary
 
 meshcore-home-gateway connects one MeshCore companion radio to an MQTT broker. Automations publish a
-text to a topic and the bridge sends it over the mesh; messages the radio receives appear as MQTT
+text to a topic and the gateway sends it over the mesh; messages the radio receives appear as MQTT
 events; direct messages from allowlisted contacts that start with a configured word become command
-events. The bridge budgets airtime, suppresses duplicates, reports the delivery state of every
+events. The gateway budgets airtime, suppresses duplicates, reports the delivery state of every
 message, and announces itself to Home Assistant through MQTT discovery. It is small, has one runtime
 dependency from the Linux distribution, and installs on Proxmox VE into its own unprivileged
 container.
+
+The documents call the whole program the gateway. *The bridge* is its application module
+(`bridge.py`, §5.1) between the radio session and the bus; where this document says "the bridge"
+for the whole program, it is the older word for the same thing.
 
 ## 2 Context and scope
 
@@ -259,9 +263,11 @@ sequenceDiagram
 
 * **Clock.** With `set_clock` (the default) the session reads the radio clock at connect and sets
   it when it is behind; the firmware only moves its clock forward. If the radio is ahead of the
-  bridge by more than 60 s the bridge logs a warning; command age checks may then reject commands
-  until the clock is right (visible as `too_old` or `from_the_future`). Without `set_clock` the
-  clock is neither read nor checked.
+  host by more than 60 s the gateway logs a warning: the radio stamps its adverts with its clock,
+  and every node that holds it as a contact drops its adverts until real time passes that time
+  ([protocol.md](protocol.md#5-semantics)). Command age checks do not use the radio's clock: they
+  compare the sender's timestamp with the host's clock (§7.3). Without `set_clock` the clock is
+  neither read nor checked.
 * **Messages.** On `MSG_WAITING`, after connecting, and every 5 minutes as a safety net, the session
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
@@ -419,7 +425,9 @@ EU duty cycle for them. Telemetry has two budgets of its own, which never take f
 
 ### 6.5 MQTT interface
 
-The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md).
+The full API with payload examples is in [`mqtt-api.md`](mqtt-api.md); the table below lists the
+main topics only (the contact requests, the radio profile's topics and the discovery topics are
+there).
 
 | Topic below `<base>/<node>/` | Direction | Retained | Content |
 | --- | --- | --- | --- |
@@ -1116,7 +1124,8 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | --- | --- | --- | --- |
 | Radio unplugged or rebooted | read error, command timeout | session closed, reconnect with back-off; queue waits; an interrupted attempt is repeated | `state.radio = disconnected`; connectivity entity off |
 | Malformed or unexpected answer | decoding | session closed, resynchronised on reconnect | log warning |
-| Radio clock wrong | `CURR_TIME` vs bridge clock | with `set_clock`: set forward; warn if ahead | log warning; command rejections `too_old` / `from_the_future` |
+| Radio clock wrong | `CURR_TIME` vs host clock | with `set_clock`: set forward; warn if ahead | log warning; contacts drop the radio's adverts while its clock is ahead |
+| Host clock wrong | sender timestamps vs host clock | commands outside `max_age_s` rejected; with `set_clock` a host ahead moves the radio's clock forward too | command rejections `too_old` / `from_the_future` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
 | Bridge crashes or restarts | systemd | restart after 5 s; queued outgoing messages are lost; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; no delivery state for lost messages |
@@ -1273,7 +1282,7 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 4 | Managed radio profile: the observer reveals nothing, adds contacts only on request, keeps the regional duty cycle; installer dialog | 0020 |
 | 5 | Contact management: the gateway, the MQTT requests, the command line and the Home Assistant controls (add a heard node, add by key or link, remove; the gateway's QR code) | 0017 |
 | 6 | Telemetry and positions of the household's companions, with traces on the map. **6a**: the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b**: readings, the answer's time and state, expiry, events, exclusion of a contact, on by default with a first-start hour; **6c**: the check for positions in adverts, traces on Home Assistant's map | 0018, 0024, 0025 |
-| 7 | Translations of the command line, the installer and the Home Assistant names. **The machinery** (this release), English only so far; more languages come by contribution, German first ([translations.md](translations.md#adding-a-language)) | 0019, 0027 |
+| 7 | Translations of the command line, the installer and the Home Assistant names. **The machinery** (this release), English only so far; more languages come by contribution, German first ([translations.md](translations.md#adding-a-language)). The first language is the machinery's proof: after it, review whether the installer's language packs (fetched, pinned, size-limited) are worth keeping, or whether the installer stays English and only the program and Home Assistant are translated | 0019, 0027 |
 | 8 | Generated dashboards for desktop and mobile. **MVP** (this release): four views on the existing entities, English, `meshcore-home-gateway dashboard`; deferred: [§6.13](#613-dashboard-mvp) | 0021 |
 
 Later: a terminal dashboard and a web dashboard on the same documents, Home Assistant as a

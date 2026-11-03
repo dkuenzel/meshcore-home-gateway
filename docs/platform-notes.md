@@ -14,6 +14,189 @@ Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext
 dashboards](#home-assistant-dashboards), [MeshCore companion
 firmware](#meshcore-companion-firmware).
 
+<!-- index of the facts -->
+## Index of the facts
+
+One line per fact, by section.
+
+**[Proxmox VE](#proxmox-ve)**
+
+* `pct exec` passes the host's environment into the container, `PATH` included.
+* `pct exec` and `pct enter` keep the umask of the process that runs `pct`.
+* `pct exec` hands its standard input to the command in the container.
+* `pveam update` and `pveam download` exit with status 0 when they fail.
+* On Proxmox VE 8, `pct create` makes a privileged container unless `--unprivileged 1` is given; on 8 and 9, nesting stays off unless `--features nesting=1` is given.
+* pve-container accepts every Debian 13 point release only from 5.3.1 on.
+* A passed-through device (`devN`) is resolved when the container starts.
+* Container IDs are 100 to 999999999, and `pvesh get /cluster/nextid --vmid N` fails differently below 100.
+
+**[Shell](#shell)**
+
+* `bash -c "$(wget -qO- URL)"` prints nothing and exits with status 0 when the address answers 404.
+* With `wget -qO- URL | bash`, the script is bash's standard input, and every command in it reads from there.
+* A long here-string goes through a temporary file; process substitution never does.
+* In `bash -c SCRIPT ARG...`, the first argument becomes `$0`, not `$1`.
+* A script run with `bash -c` has no `BASH_SOURCE`.
+* `set -e` does not stop at a failed command substitution inside another command's arguments or inside `local x=$(...)`.
+* A bash script whose standard error is a pipe without a reader ends with `SIGPIPE` (status 141) at its next message.
+
+**[Debian, systemd and Linux](#debian-systemd-and-linux)**
+
+* Debian 13 ships `python3-paho-mqtt` 2.1.0 and Python 3.13; Debian 12 ships paho-mqtt 1.6.1, without the version-2 callback API.
+* The unit's full sandbox runs in an unprivileged Debian 13 container with nesting.
+* `PrivateDevices=` would hide the radio, and `DeviceAllow=` is not enforced in an unprivileged container.
+* Debian's `dialout` group has the fixed GID 20.
+* Root on the host can open a serial port that another process locked with `TIOCEXCL`; root in an unprivileged container cannot.
+
+**[Python](#python)**
+
+* PEP 440 calls some versions pre-releases that a tag pattern like `(a|b|rc|dev)[0-9]+$` calls final.
+* On Python 3.11, `asyncio.wait_for()` can lose a cancellation.
+* Python's `gettext` reads `LANGUAGE` also under the `C` locale; the C library ignores it there.
+* argparse %-formats help texts, and a description that contains `%(prog)`: a lone `%` there stops the program.
+
+**[GNU gettext](#gnu-gettext)**
+
+* `msgfmt -c` warns about a header without translator fields but exits 0, does not compare `{x!r}` fields, and keeps a plural entry with an empty form.
+
+**[GitHub](#github)**
+
+* `releases/latest` never serves a pre-release or a draft; without a full release, its download address answers 404.
+* `gh attestation verify` with only the repository given accepts an attestation from any workflow and any ref of that repository.
+* `actions/attest-build-provenance` v4 is only a wrapper around `actions/attest`, and `actions/attest` needs `artifact-metadata: write` only for registry storage records.
+* `github.com/OWNER/REPO/archive/REF.tar.gz` serves the source of a branch, tag or commit under one top-level directory; a missing release file or raw path answers 404.
+
+**[whiptail](#whiptail)**
+
+* In a locale that cannot be set, whiptail drops every non-ASCII character typed into an input or password box.
+* whiptail draws the dialog on standard output and writes the answer to standard error.
+* An input box starts with its default text in the field and the cursor after it, so typing adds to the default instead of replacing it.
+* `--yes-button`, `--no-button`, `--ok-button` and `--cancel-button` set the labels of every box kind and keep the exit status.
+* In a password or input box, Tab moves the focus to the buttons instead of being typed, and what is typed after it is lost.
+* whiptail takes every argument that starts with `-` for an option, also a text, a menu tag or a list item, unless it follows `--`.
+* A message box shows as many lines as fit its height and cuts the rest without a mark; with `--scrolltext` the text scrolls, but Enter no longer closes the box.
+
+**[Mosquitto](#mosquitto)**
+
+* Every failed login gets the same answer: CONNACK 5, "not authorised" (MQTT 5: 135).
+* Mosquitto reads `password_file` only when it starts and when it reloads (SIGHUP, which `systemctl reload mosquitto` sends).
+* `mosquitto_passwd -c` creates the file anew, without the users already in it
+* With `per_listener_settings true`, a `password_file` above the first `listener` line belongs to an extra default listener.
+* The broker's log names the client id of a refused login, not the user, and its format changed in 2.1.1.
+* `clientid_prefixes` refuses a client id without the prefix with the same CONNACK 5 as a wrong password.
+* With `retain_available false`, a CONNECT whose will is retained is refused, over MQTT 3.1.1 without any CONNACK.
+* With an `acl_file`, a user has only the access listed for it.
+* Over MQTT 3.1.1, a QoS 1 PUBLISH that the ACL denies is acknowledged like any other.
+* The `acl_file` check never refuses a SUBSCRIBE.
+* Mosquitto checks a will against the ACL only when it publishes it, not at CONNECT.
+* Under MQTT 3.1.1, a retained PUBLISH reaches clients that are already subscribed with the retain flag cleared; only the stored copy, sent on every new subscription, has it set.
+* A password file written by `mosquitto_passwd` 2.1 loses users on a 2.0 broker.
+* Mosquitto accepts passwords with unusual characters.
+
+**[Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on)**
+
+* The add-on remembers the result of each login for 300 s ± 30 s, refusals included, per user name and password.
+* `logins` are read only when the add-on starts, and a pre-hashed password must be in go-auth's format.
+* With `debug: true`, the add-on's log contains MQTT passwords in recoverable form.
+* The user names `homeassistant` and `addons` belong to the add-on.
+* When the Supervisor answers the login check with an error status (500 or higher), the add-on closes the connection without a CONNACK and does not remember the result.
+* A `password_file` added through the add-on's `customize` folder shuts out Home Assistant users on add-on 6.5.2, but not on 7.1.2.
+
+**[paho-mqtt](#paho-mqtt)**
+
+* A refused login reaches `on_connect` as an MQTT 5 reason code: CONNACK 5 arrives as "Not authorized", value 135.
+* When no broker answers, paho calls only `on_connect_fail`, at every attempt and without the error; the error is in `sys.exception()`, because the callback runs inside paho's `except OSError:` block.
+* A host name with an empty label or a label longer than 63 characters ends paho's network thread without any callback.
+* An exception in a callback such as `on_message` ends paho's network thread; the client then receives nothing more while the program goes on.
+* `publish()` of a QoS 1 message without a connection returns `MQTT_ERR_NO_CONN` (4), but keeps the message and sends it after the connection is made.
+* `max_queued_messages_set()` counts the unacknowledged backlog, and at a reconnect `on_connect` runs before the backlog is sent again.
+* paho notices a broker that stops answering only through keepalive, after up to two keepalive intervals; then it sends unacknowledged QoS 1 messages again with the DUP flag, also with a clean session.
+* paho reads a whole packet into memory before any callback sees it
+
+**[Home Assistant MQTT](#home-assistant-mqtt)**
+
+* Home Assistant validates a device discovery document as a whole: without `o` (origin), with a device that has neither `identifiers` nor `connections`, with a component that has options but no `unique_id`, or with an unknown top-level key, `~` included, it creates none of the document's entities.
+* A JSON `null` in any device field rejects the whole document; a field left out is accepted.
+* Deleting one entity of a device-discovered device in Home Assistant removes all the device's entities, until the gateway announces again.
+* A component left out of the next document stays; Home Assistant removes it only when the document lists it as `{"p": <platform>}`. An empty payload on the device topic removes every component of the device.
+* A bare `{"p": <platform>}` removes only a component that Home Assistant has discovered since its own start.
+* The documented setup needs Home Assistant 2026.8, for the five reasons listed in [home-assistant.md, Requirements](home-assistant.md#requirements).
+* Home Assistant subscribes to device discovery at QoS 0 by default, so a discovery document can be lost on the way.
+* Home Assistant's birth message is `online` on `homeassistant/status`, QoS 0, not retained, and its topic does not follow a changed discovery prefix.
+* A later document with changed device fields updates the device page in place and changes no entity state; device fields it leaves out keep their stored values.
+* A known entity that comes with another name keeps its entity ID and the name a user gave it: Home Assistant updates only its original name.
+* `default_entity_id` sets the entity ID only when Home Assistant registers the unique ID for the first time, or again after the entity was deleted; a changed value does not rename an existing entity, and an entity ID set by the user stays.
+* Home Assistant builds entity IDs with `slugify`: `-` becomes `_`, runs of `-` and `_` collapse, a trailing one goes, and an ID already taken gets `_2`.
+* The MQTT event entity ignores every message that arrives with the retain flag.
+* An event payload is a JSON object whose `event_type` is one of the component's `event_types`; every other key, nested objects included, becomes an attribute.
+* Automations on an event entity need the `event.received` trigger: a state trigger that skips `unknown` misses the entity's first event, and a trigger on the attribute `event_type` misses the second of two equal events.
+* The new entity triggers, such as `event.received`, reach through a device, area or floor target only the entities without an `entity_category`.
+* While an entity is unavailable, its state drops the state and extra attributes: an event entity's `event_type` and payload attributes are hidden until the gateway is online again.
+* Event attributes, message texts and sender keys included, are recorded, and the last event of each event entity is kept as restore data in `.storage/core.restore_state`.
+* The MQTT notify entity publishes only the `message` of `notify.send_message`, with the entity's QoS and without retain; `title` is dropped.
+* From 2026.10.0, `mqtt.publish` and `mqtt.dump` need an administrator when a user starts them; `notify.send_message` does not.
+* A device discovery topic may have a node ID level, `<prefix>/device/<node_id>/<object_id>/config`, and works like one without; one subscription with `+` for the object ID sees all devices below that node ID, and does not match the one-level topic.
+* An empty document on a device topic removes only what Home Assistant discovered since its own start; for anything else it warns `No device components to cleanup` and does nothing. Each component sent first as a placeholder under its `unique_id` binds what it kept, and the empty document then removes the device. Sent again for a device Home Assistant has already removed, the placeholders bring it back for a moment, and it logs `Unable to remove unknown dispatcher` per entity.
+* When Home Assistant removes a disabled entity of a device-discovered device, it publishes an empty retained message on the device's discovery topic itself, once per disabled entity; the broker hands it back, and Home Assistant removes every entity of the device (the further copies warn `No device components to cleanup`).
+* Deleting a device in Home Assistant publishes one empty retained message, QoS 0, on its discovery topic; a re-announced device gets its old device ID, name, area and entity settings back, except entity IDs the user renamed, which return to `default_entity_id`.
+* `default_entity_id` gives the entity ID only if it is free; otherwise Home Assistant appends `_2`.
+* The map shows every entity whose attributes have numeric `latitude` and `longitude`, of any domain; a tracker's `gps_accuracy` widens the zone test, so a large one puts it `home`.
+* An MQTT tracker writes its state only when its attributes as rendered change.
+* For each new subscription Home Assistant subscribes to the topic again, so the broker sends its retained message again; each subscription takes only the first retained message.
+* A sensor's unit must be one of its device class's units, or that component is dropped; a template result `None`, as from a JSON `null`, makes the sensor `unknown`.
+* Home Assistant hands each subscription only the first retained message of a topic and skips later ones that still carry the retain flag.
+* Home Assistant accepts a discovery prefix of several topic levels; the gateway accepts one.
+* Home Assistant moves its own broker connection to MQTT 5 when the broker accepts it; otherwise it raises the repair issue `protocol_5_migration`, which names 2027.1.0 as the release that breaks.
+* From 2026.10.0 the MQTT schemas use `probatio` instead of `voluptuous`.
+* Home Assistant 2026.10.0 requires Python 3.14.2 or newer, and `pytest-homeassistant-custom-component` pins one Home Assistant release.
+* Home Assistant installs missing integration requirements from PyPI at runtime, with `uv pip install`.
+* A select's options exist only in its discovery configuration; announced again with other options, the select keeps its entity and shows the new ones. A state that renders `None` sets it to *unknown*.
+* Home Assistant warns when an entity changes its capabilities (a select's options) more than 100 times within an hour, and it updates the entity registry, which it saves to disk, for every change.
+* A text entity's state must fit its own length limits and pattern, or Home Assistant raises `ValueError` writing it; `text.set_value` refuses a value that does not fit with `ValueError` before anything is published. Both use `re.match`, so a `$` also matches before a final line break.
+* A template that prints, tests or iterates a key that `value_json` lacks logs a warning; `is defined`, `is true`, `is false`, `is not false`, `is number`, `is string` and `.get()` log nothing.
+* Deleting a device in Home Assistant clears every discovery topic of it: the gateway's main document and the one of its controls.
+* An MQTT switch with a state topic is not optimistic: it follows only the value its template renders from that topic, `on` for `state_on` (else `payload_on`), `off` for `state_off` (else `payload_off`), unknown for `None`, and ignores every other value.
+* An enum sensor ignores a value outside its options, with a warning, and keeps its state.
+* MQTT entities carry no `translation_key`, so an enum sensor shows its raw values.
+* A `person` skips a device tracker that is `unknown` or `unavailable` and follows its other trackers; with none it turns `unknown`, and a zone, whose state counts the persons in it, no longer counts it.
+* The legacy `zone` trigger fires `leave` when a person turns `unknown`, because its state keeps the `in_zones` attribute (empty); the entity triggers `zone.left` and `zone.entered` drop `unknown` and `unavailable` on either side, so they never fire for a person whose only GPS tracker expired, also not for a real departure.
+* Device triggers skip a sensor that has neither a unit nor a state class.
+* `recorder.purge_entities` removes an entity's states and events, not its long-term statistics; those go only with `recorder/clear_statistics` (*Developer tools → Statistics*).
+* The device classes and units of the reading sensors are accepted: voltage V, current A, power W, temperature °C, humidity %, atmospheric pressure hPa, distance m, frequency Hz.
+* A discovery update that keeps an entity's `state_topic`, QoS and encoding keeps its subscription, so the broker does not send the retained message again: the entity keeps its state, read with the old template, until the next message on the topic.
+
+**[Home Assistant dashboards](#home-assistant-dashboards)**
+
+* A Markdown card parses what its template puts out as Markdown, after the template's own escaping: an escaped mesh text still becomes an image that the browser loads, a link or an autolink; in an HTML block on one line it stays text.
+* A Markdown card can show a QR code: `ha-qr-code` with `data` and `scale` is on the sanitiser's allow list. A button entity's own row in an entities card is disabled while the button is unavailable and asks first when the row has `confirmation`; a row of `type: button` stays pressable then, asks, and its `button.press` reaches no entity (Home Assistant only logs a warning). The more-info dialog presses at once.
+* A map card draws a trail only with `hours_to_show` above 0, which defaults to 0; the Map panel sets none. A trail is the entity's recorder rows that have `latitude` and `longitude`: a row without them (`unavailable`) is skipped, and the line joins its neighbours.
+* A device tracker is `force_update`: every write is a new state, so a write after an MQTT reconnect or a restart adds a second point on one spot. A card open while its entity is kept out of the recorder still draws the points that come while it stays open, and a `person` keeps its own copy of the position.
+* A map card's `conditions` filter only the markers: with `show_all`, every entity with a location draws its trail, a phone's and a person's too, also when its marker is filtered out. `show_all` takes the entities that have a location when the card gets its configuration; one without a location then (an `unavailable` tracker) gets neither marker nor trail until the page loads again.
+* A Markdown card's `entity_id` option does nothing: Home Assistant renders the template again when what it read changes, and a template that calls `now()` also each minute.
+* A card's visibility condition `state` reads a missing entity, and a missing attribute, as `unknown`, and compares the values as they are: an unquoted `on` in YAML is the boolean true, which matches no state.
+* A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and its more-info dialog shows a form for its `fields`.
+* A script's `data` written as a mapping of templates reads each value as Python would: `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text without the spaces around it, and refuses `None`. One template for the whole mapping, `data: "{{ {'message': message} }}"`, keeps the text as it was.
+* Every user can open any entity from the entity search (`e`) and use its controls: a button's dialog has *Press*, a switch's dialog its toggle; only the device and command searches, and the *Settings* panel with the device pages, are for administrators.
+
+**[MeshCore companion firmware](#meshcore-companion-firmware)**
+
+* `SYNC_NEXT_MESSAGE` takes the message out of the radio's queue when it answers.
+* Radios on ESP32 boards with an auto-reset circuit reset when RTS alone is asserted.
+* The WiFi interface source moved at `companion-v1.18.0`.
+* A factory reset gives the radio a new identity.
+* `ADD_UPDATE_CONTACT` overwrites every field of an existing key, and only contacts get the advert replay check.
+* The radio's record keeps the position of a contact's last advert that carried one.
+* A companion that shares its position in adverts sends the last valid one when it has no fix, after a reboot the one it saved; 0, 0 only when it never had a position.
+* The device button sends a zero-hop advert, which no repeater forwards; the app sends zero hop or, with the parameter 1, a flood.
+* The radio logs every received packet (`LOG_RX_DATA`) before it checks or handles it, if the frame fits 176 bytes: an advert is not logged when its path is longer than 71 bytes minus its app data (67 with transport codes).
+* With the default receive delay 0 the radio logs a packet and handles it in the same pass, so an advert's push is the frame right after its log; with a delay above 0 a flood waits up to 32 s and is handled at the start of a later pass.
+* `EXPORT_CONTACT` (17) with a key reads the radio's stored copy of the contact's advert into its 177-byte frame buffer; an ESP32 or RP2040 radio reads up to 255 bytes there, and a frame over 176 bytes is never sent.
+* A companion denies telemetry to everyone until its owner allows it.
+* A telemetry answer starts with the battery as the channel 1 voltage and ends with the processor's temperature as a channel 1 temperature, only on a board that reports one.
+* The T1000-E sends its light level as 0–100 % in the luminosity type
+
+<!-- end of the index -->
+
 ## How we verify
 
 1. **Reproduce with the real component, at a named version.** A private Mosquitto on a local port,
@@ -1378,7 +1561,7 @@ The entries below are what that page does not cover.
   *Check*, with a radio emulator that dequeues the same way, fails when the session does not wait
   for the answer (`assert [] == ['hello']`). *Here:* `CompanionSession.close`
   (`radio/session.py`) waits for the answer to a sync in flight, for at most the 5 s command
-  timeout, and on stop the bridge still handles the messages already handed over, for up to
+  timeout, and on stop the gateway still handles the messages already handed over, for up to
   `STOP_DRAIN_S` (2 s, `bridge.py`; [design.md](design.md#52-concurrency)). *Check:*
   `.venv/bin/pytest tests/test_bridge.py -k answer_is_on_its_way`; in the firmware tree,
   `sed -n '248,260p;1415,1423p' examples/companion_radio/MyMesh.cpp`.
@@ -1524,7 +1707,7 @@ The entries below are what that page does not cover.
 
 Already in protocol.md, with the firmware lines:
 
-* Zeros sent to resynchronise misalign the TCP parser, so the bridge sends them only over USB:
+* Zeros sent to resynchronise misalign the TCP parser, so the gateway sends them only over USB:
   [section 1](protocol.md#1-framing-usb-serial-and-tcp), "The TCP parser is different".
 * Over USB the zeros complete a partly received frame, which then runs with zero-padded arguments:
   [section 1](protocol.md#1-framing-usb-serial-and-tcp), "Resynchronisation".
@@ -1547,7 +1730,7 @@ Already in protocol.md, with the firmware lines:
 * The radio does not retry direct messages, and a retry with the same attempt number gets no
   acknowledgement: [section 5](protocol.md#5-semantics), "ACK code" and "Retries".
 * The path packet returned after a flooded acknowledgement grows with the path, beyond the
-  bridge's estimate for more than 4 path bytes: [section 6](protocol.md#6-on-air-sizes).
+  gateway's estimate for more than 4 path bytes: [section 6](protocol.md#6-on-air-sizes).
 * The firmware's own transmit budget, `airtime_factor`, allows 50 % by default:
   [section 7](protocol.md#7-radio-parameters-and-time-on-air); setting it is in
   [deployment.md](deployment.md#1-before-you-start).

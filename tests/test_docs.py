@@ -5,8 +5,11 @@ External links are not fetched (the tests run offline); the documents cite them 
 
 from __future__ import annotations
 
+import importlib.util
 import re
+import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -66,3 +69,24 @@ def test_attestation_checks_name_the_release_workflow_and_the_tag() -> None:
     for command in commands:
         assert "--signer-workflow" in command, command
         assert "--source-ref" in command, command
+
+
+def _load_index_tool() -> ModuleType:
+    path = ROOT / "tools" / "platform_notes_index.py"
+    spec = importlib.util.spec_from_file_location("platform_notes_index", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["platform_notes_index"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_index_of_the_platform_notes_lists_every_fact() -> None:
+    """Run `python3 tools/platform_notes_index.py` after adding or changing a fact."""
+    tool = _load_index_tool()
+    text = tool.NOTES.read_text(encoding="utf-8")
+    assert tool.with_index(text) == text
+    leads = [lead for _, section in tool.facts(text) for lead in section]
+    assert len(leads) > 100
+    assert all(f"\n* {lead}\n" in text for lead in leads)

@@ -71,7 +71,9 @@ def test_check_leaves_the_firmware_tests_out() -> None:
     )
     assert collected.returncode == 0, collected.stdout
     assert "tests/test_tooling.py::" in collected.stdout
-    assert "tests/firmware/" not in collected.stdout
+    # no test of tests/firmware/ (a test of another module may name a file there)
+    lines = collected.stdout.splitlines()
+    assert not [line for line in lines if line.startswith("tests/firmware/")]
 
 
 def test_matrix_fails_when_a_python_is_missing() -> None:

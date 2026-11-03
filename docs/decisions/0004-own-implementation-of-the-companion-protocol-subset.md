@@ -73,3 +73,9 @@ version is raised.
   licensed MIT.
 * Revisit when the scope grows beyond messaging, or when an official, minimal and signed client
   library exists.
+* Note of 2026-11-02 (security and architecture review, ARC-007): the observer
+  ([ADR 0014](0014-the-gateway-as-the-households-mesh-observer.md)) grew the subset; the protocol
+  layer (`src/meshcore_home_gateway/protocol/`) is 1,175 lines, no longer "a few hundred". It is
+  still pure encode and decode, with a golden frame from the firmware source for every message
+  (`tests/test_codec.py`) and the real firmware in the tests
+  ([ADR 0026](0026-gateway-tested-against-the-real-firmware-built-natively.md)).

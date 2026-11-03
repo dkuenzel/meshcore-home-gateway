@@ -44,7 +44,7 @@ flood_after = 2                                        # unanswered sends, then 
 ignore_channels = []                                   # channel indices not to publish
 
 [airtime]
-budget_s_per_hour = 36                                 # 1 % of an hour for this bridge's messages
+budget_s_per_hour = 36                                 # 1 % of an hour for this gateway's messages
 burst_s = 10
 
 # Commands: direct messages from these contacts whose first word is listed. Set the radio to add
@@ -53,6 +53,12 @@ burst_s = 10
 senders = []                                           # full public keys
 words = []                                             # e.g. ["status", "arm", "disarm"]
 max_age_s = 900                                        # 0 disables the clock check
+
+# Contacts: Home Assistant's controls, the MQTT requests and the command line add contacts to the
+# radio and remove them. Every user of Home Assistant can use the controls
+# (docs/home-assistant.md); false switches contact management off everywhere.
+[contacts]
+# manage = true                                        # the default
 
 # Telemetry: battery, readings and position of the radio's companions, asked of each in turn
 # (docs/companions.md sets them up). Every companion of the radio that is not excluded is asked,

@@ -55,6 +55,24 @@ tools/           build and release helpers: zipapp, release plan, public interfa
    `home-assistant.md`, `protocol.md`) and `CHANGELOG.md`; after a change of a public interface,
    `make interface` ([Compatibility](#compatibility)).
 
+### Text from the mesh and the bus
+
+Names, message texts, labels and links come from strangers on the air or from any client of the
+broker. The code keeps them data everywhere they go, and new code follows the same rules:
+
+* **Bounded at the entry:** a frame holds at most 176 bytes, a name 32, a request 1 KiB; what the
+  gateway echoes back (a refused request's alias, a label) stays within such a bound.
+* **Never code:** never part of a format string, a Jinja template, a shell command, SQL (always
+  parameters) or a file path. Discovery documents are written from constants; the mesh's values
+  are only what a template reads.
+* **Logs:** names, labels and texts with `%r`, so that they cannot forge a line or steer a
+  terminal; message texts only at debug level.
+* **Terminals:** the command line prints them through `_safe_text` or `_json_text`.
+* **Home Assistant:** Markdown cards print every value through the macro `m()` (Translations,
+  below); nothing from the mesh becomes an entity ID, a unique ID or an event type.
+* **MQTT:** JSON only; texts are passed on as received (`docs/mqtt-api.md`: consumers treat them
+  as plain data, never as markup).
+
 ### Adding a protocol message
 
 1. Find the command or response in the firmware (`examples/companion_radio/MyMesh.cpp` at the
@@ -325,7 +343,10 @@ and the dashboard's template.
 
 Releases are built, signed and published by the workflow `.github/workflows/release.yml`
 ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)); nobody builds
-release files by hand.
+release files by hand. The tools that decide what a release is and contains,
+`tools/release_plan.py`, `tools/public_interface.py`, `tools/release_notes.py`,
+`tools/build_pyz.py` and the `release` target of the `Makefile`, are reviewed like the
+security-relevant parts of the program: a change to them changes what every installation gets.
 
 Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0 on, for
 the four public interfaces of [Compatibility](#compatibility): an incompatible change raises the
@@ -345,7 +366,9 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    since the last release. The release ships the program of that candidate: only `__version__`
    may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`.
 2. The pull request that finishes the increment sets `__version__` in
-   `src/meshcore_home_gateway/__init__.py` and moves the *Unreleased* entries of `CHANGELOG.md`
+   `src/meshcore_home_gateway/__init__.py`, adds its row to the table of Home Assistant releases
+   tested with ([home-assistant.md](home-assistant.md#requirements)) and moves the *Unreleased*
+   entries of `CHANGELOG.md`
    under `## [X.Y.Z] - YYYY-MM-DD` (a pre-release's section says that the hardware checklist was
    not run for it). The version must be the next one, which `make release-plan` and the CI job
    *release plan* check: the kind of change comes from the changelog entries since the last

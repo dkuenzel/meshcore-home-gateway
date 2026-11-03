@@ -31,9 +31,10 @@ flowchart LR
   are deduplicated.
 - **Commands** only from direct messages of allowlisted contacts (bound to their full public key),
   with replay protection; channel messages never command.
-- **Telemetry of the household's companions:** battery, sensor readings and position asked of
-  each in turn, within an airtime budget of its own, only from those who allow the gateway; on
-  each handheld's device in Home Assistant and on its map with its trace, unavailable once a
+- **Telemetry of the household's companions:** battery, sensor readings and position, asked of
+  every companion on the radio that the household has not excluded, in turn and within an airtime
+  budget of its own; a companion answers only if its owner allowed the gateway. The values appear
+  on each handheld's device in Home Assistant and on its map with its trace, unavailable once a
   handheld stops answering, with an event when it stops or answers again; a warning when a
   handheld's advert carries its position, which everyone in range can read. A contact is excluded
   with one switch or one command, also before it is added; the first time telemetry runs, it waits
@@ -76,10 +77,9 @@ On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root:
 bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
 ```
 
-Before the first release, use a pre-release's own installer (its address is on the releases
-page) or `main`'s copy:
-`bash -c "$(wget -qO- https://raw.githubusercontent.com/dkuenzel/meshcore-home-gateway/main/deploy/proxmox/meshcore-home-gateway-lxc.sh)"`. Nothing is stored on the host: the program is downloaded (from
-a release: checked against its `SHA256SUMS`) inside the new container.
+A pre-release has an installer of its own (its address is on the releases page). Nothing is
+stored on the host: the program is downloaded inside the new container and checked against the
+release's `SHA256SUMS`.
 
 In the default setup the script asks only for the radio (USB serial device or TCP address) and the
 broker; the advanced setup also asks for the container and topic settings. After a confirmation it
@@ -90,14 +90,15 @@ the radio's channels and contacts so you can pick targets and command senders, a
 
 ### Any systemd-based Linux
 
-As root, in a clone of this repository:
+As root, in a clone of this repository, at the tag of the release you install (`X.Y.Z` is its
+version):
 
 ```sh
 apt install python3 python3-paho-mqtt            # Debian 13 or newer
 install -d /usr/local/lib/meshcore-home-gateway
 python3 tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
-  --output /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-0.1.0.pyz
-ln -sfn meshcore-home-gateway-0.1.0.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+  --output /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-X.Y.Z.pyz
+ln -sfn meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
 ln -sfn /usr/local/lib/meshcore-home-gateway/current.pyz /usr/local/bin/meshcore-home-gateway
 useradd --system --user-group --groups dialout --no-create-home --home-dir /nonexistent \
   --shell /usr/sbin/nologin meshcore-home-gateway
@@ -134,6 +135,9 @@ automations on the event entities *Message*, *Command* and *Delivery*. Examples:
 
 ## Documentation
 
+The documents call the whole program the gateway; `bridge.py` is its module between the radio and
+the bus.
+
 | Document | Content |
 | --- | --- |
 | [`docs/design.md`](docs/design.md) | Design: goals, architecture, interfaces, security, failure modes, testing |
@@ -150,15 +154,15 @@ automations on the event entities *Message*, *Command* and *Delivery*. Examples:
 
 ## Security
 
-The bridge can make a radio transmit and can trigger home automation, so it is strict by default:
+The gateway can make a radio transmit and can trigger home automation, so it is strict by default:
 only configured targets, an airtime budget, commands only from allowlisted full public keys with
-replay protection, retained send requests rejected on replay, nothing executed by the bridge
+replay protection, retained send requests rejected on replay, nothing executed by the gateway
 itself. Secure the broker (authentication, topic ACLs). Prefer USB over the unauthenticated TCP
 companion interface. Details: [`docs/design.md#7-security`](docs/design.md#7-security) and
 [`SECURITY.md`](SECURITY.md).
 
 Radio regulation is your responsibility. In the EU band 869.40–869.65 MHz a device may transmit
-at most 10 % of the time; the bridge's default budget uses 1 %, but the radio's own limit is a
+at most 10 % of the time; the gateway's default budget uses 1 %, but the radio's own limit is a
 separate setting on the radio.
 
 ## Development

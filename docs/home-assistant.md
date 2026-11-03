@@ -28,6 +28,17 @@ Why 2026.8: device-based discovery exists since 2024.11, the entity IDs below (f
 the `event.received` trigger without the Labs setting since 2026.7, and since 2026.8 every event
 is a state change of its own, also two events within the same millisecond.
 
+The Home Assistant releases each gateway release was tested with: the contract tests
+([testing.md](testing.md#home-assistant-contract-tests)) run against the one their environment
+pins, the hardware checklist against a real installation. The pull request of a release adds its
+row.
+
+| Gateway | Contract tests | Hardware checklist |
+| --- | --- | --- |
+| 1.1.0a1 – 1.1.0a4 | 2026.10.0 | not run (pre-releases) |
+| 1.0.0, the program of 1.0.0rc1 | 2026.10.0 | 2026.10 |
+| 0.1.0a1 | 2026.10.0 | not run (pre-release) |
+
 ## Entities
 
 One device for the gateway, named after `homeassistant.device_name`, and one for each contact of

@@ -36,6 +36,12 @@ Pull requests that change behaviour, interfaces or dependencies add or reference
 (`CONTRIBUTING.md`). Accepted records are not edited; a new record supersedes an old one and both
 carry the link.
 
+Amended on 2026-11-02 (security and architecture review, ARC-008), stating the practice the
+records follow: an accepted record may carry a dated amendment at its end that corrects it,
+narrows it, or names a later record that supersedes a part of it; the original text stays as it
+was. A decision that is reversed or replaced needs a new record. The index
+([README.md](README.md)) names each amendment.
+
 ## More Information
 
 * MADR 4.0.0, <https://adr.github.io/madr/> (file naming `NNNN-title-with-dashes.md`).

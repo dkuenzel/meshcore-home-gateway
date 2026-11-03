@@ -1,4 +1,4 @@
-# MeshCore companion protocol: the subset the bridge uses
+# MeshCore companion protocol: the subset the gateway uses
 
 This is a reference for the part of the MeshCore companion protocol that meshcore-home-gateway
 implements, written from the firmware source. The firmware is authoritative; client libraries were
@@ -29,13 +29,13 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
   while idle; a zero length returns to idle; longer frames are consumed and truncated to 176 bytes,
   not rejected. There is no timeout, and the parser state survives a reconnect of the client
   *(inferred)*: a partial frame from an earlier client would swallow the next bytes.
-* **Resynchronisation** *(inferred from the parser)*: the bridge writes 256 zero bytes at session
+* **Resynchronisation** *(inferred from the parser)*: the gateway writes 256 zero bytes at session
   start and discards everything that arrives during the next 0.5 s. Zeros are ignored when idle,
   complete a pending header, and complete a pending frame that still expects at most 256 bytes. A
   frame with no payload byte yet executes as unknown command 0 (answered with `ERR 1`); a partly
   received command executes with zero-padded arguments: a cut channel send, for example, transmits
   its truncated text (`MyMesh.cpp:1178-1193`). A corrupted header that announced a longer frame is
-  not completed: the first command then times out and the bridge reconnects; every reconnect feeds
+  not completed: the first command then times out and the gateway reconnects; every reconnect feeds
   the stale frame another 256 bytes and a command until it is complete, and restarting the radio
   clears it at once. Valid frames are at most 176 bytes, so only a client that wrote garbage leaves
   such a header. This is for USB serial only.
@@ -43,13 +43,13 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
   header is pending it consumes exactly 3 bytes; a header with type 0 or length 0 is not one
   (:46-48), and the next 3 bytes are read as a header again. 256 zeros are 85 such headers plus
   one byte, which shifts every later header by one byte, so the radio never sees `APP_START`.
-  A new TCP connection resets the parser (:57-70), so no stale frame can survive one: the bridge
+  A new TCP connection resets the parser (:57-70), so no stale frame can survive one: the gateway
   sends no zeros over TCP. `tests/radio_emulator.py` parses TCP input the same way.
 * **DTR on nRF52 boards** (Adafruit TinyUSB core): the USB serial port only sends while DTR is
   asserted; without DTR the radio silently drops every frame but still executes commands. With DTR
   asserted and nobody reading, the firmware's main loop blocks until there is room
   (TinyUSB `Adafruit_USBD_CDC.cpp:240-258`). Opening the port at **1200 baud** and dropping DTR
-  reboots the radio into its bootloader (`Adafruit_USBD_CDC.cpp:270-286`). The bridge opens the
+  reboots the radio into its bootloader (`Adafruit_USBD_CDC.cpp:270-286`). The gateway opens the
   port at 115200 baud, asserts DTR, clears RTS (as meshcore_py and meshcore-cli do) and reads
   continuously.
 * **TCP** (WiFi companion builds, `src/helpers/wifi/SerialWifiInterface.cpp`): same framing on port
@@ -58,7 +58,7 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
   full (`SerialWifiInterface.h:27`, :21-40).
 * **Several interfaces at once** (`src/helpers/MultiSerialInterface.h:160-198`): every response and
   push goes to all interfaces, and whichever client sends `SYNC_NEXT_MESSAGE` first takes the
-  message from the shared queue. The bridge should be the radio's only client.
+  message from the shared queue. The gateway should be the radio's only client.
 
 ## 2 Commands
 
@@ -118,18 +118,31 @@ Details that matter:
 * `SEND_TXT_MSG` looks up the first contact whose key starts with the 6-byte prefix
   (`BaseChatMesh.cpp:874-880`); no match gives `ERR 2`. The text limit is 160 bytes, 158 if
   `attempt > 3` (`BaseChatMesh.cpp:451-454`). An all-zero prefix matches an unused anonymous slot
-  *(inferred)*; the bridge never sends one.
+  *(inferred)*; the gateway never sends one.
 * `SEND_CHANNEL_TXT_MSG` has **no minimum-length check**; a frame shorter than 7 bytes leads to a
-  `memcpy` with a negative length *(inferred: crash)*. The bridge always sends a non-empty text.
+  `memcpy` with a negative length *(inferred: crash)*. The gateway always sends a non-empty text.
   An index inside the range but never configured is not an error: the radio sends with an all-zero
-  key *(inferred)*. The bridge only sends to channels whose `CHANNEL_INFO` has a name.
+  key *(inferred)*. The gateway only sends to channels whose `CHANNEL_INFO` has a name.
 * `SENT` means "queued for transmission" (`src/Mesh.cpp:637-715`).
 * `SEND_TELEMETRY_REQ` with exactly 4 bytes asks the radio itself (`MyMesh.cpp:1700`); 5 to 35
   bytes fall through to `ERR 1`. With the key it looks the contact up by key alone, of any type,
   and answers `ERR 2` if none, `ERR 3` if no packet could be built (no free buffer), else `SENT`
-  with the route (1 flood, 0 direct), the request's tag and the estimated timeout. The command is
+  with the route (1 flood, 0 direct), the request's tag and the estimated timeout. The tag is the
+  radio's clock in seconds, made unique (`getCurrentTimeUnique()`, `BaseChatMesh.cpp:694`,
+  `src/MeshCore.h:119-125`): one more than the last tag when the clock has not moved on. The radio
+  keeps the one pending tag (`MyMesh.cpp:1690`) and pushes an answer with that tag as 0x8B, any
+  other as 0x8C (`MyMesh.cpp:739-775`); another contact that knows the radio's clock can guess
+  it, which is why the gateway binds an answer to the contact it asked, never to the tag
+  ([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)). The command is
   marked "can deprecate, in favour of `CMD_SEND_BINARY_REQ`" (`MyMesh.cpp:1680`);
   a golden frame in `tests/test_codec.py` pins its layout.
+* `GET_CONTACTS` with `since` lists only the contacts whose last-modified time is later
+  (`MyMesh.cpp:1242-1246, 2397`); `CONTACTS_START` still carries the total count
+  (`MyMesh.cpp:1250`), and `END_OF_CONTACTS` the newest last-modified time it listed
+  (`MyMesh.cpp:2403-2407`). The last-modified time is the radio's clock when the contact last
+  changed, so the filter is only as reliable as that clock (§5). A removed contact is never
+  listed. While a listing runs, another `GET_CONTACTS` gets `ERR 4` (`MyMesh.cpp:1239-1240`).
+  The gateway always reads the whole table.
 
 ## 3 Responses
 
@@ -156,7 +169,7 @@ Details that matter:
 contacts / 2 (2), maximum channels (3), stored BLE PIN (4–7), build date (8–19), manufacturer and
 model (20–59), version string (60–79), client repeat (80, firmware code 9 and later), path hash
 mode (81, code 10 and later). Strings are NUL-padded. Older firmware sends 80 or 81 bytes; the
-bridge accepts 80 and more.
+the gateway accepts 80 and more.
 
 **`CONTACT`** (3), 148 bytes (`MyMesh.cpp:171-192`); the push `NEW_ADVERT` (0x8A) uses the same
 layout: public key (1–32), type (33: 1 chat, 2 repeater, 3 room server, 4 sensor), flags (34),
@@ -201,12 +214,12 @@ booted:
 | 2 packets | 28 | packets received, sent, sent flood, sent direct, received flood, received direct, receive errors, uint32 each; the last one from 1.18 on (24 bytes before) |
 
 **`CHANNEL_INFO`** (18), 50 bytes: index (1), name (2–33, NUL-terminated; **the bytes after the NUL
-are stale buffer contents**), secret (34–49) (`MyMesh.cpp:1752-1766`). The bridge does not keep
+are stale buffer contents**), secret (34–49) (`MyMesh.cpp:1752-1766`). The gateway does not keep
 channel secrets.
 
 **Received messages**, returned by `SYNC_NEXT_MESSAGE` (`MyMesh.cpp:440-467, 558-583`). The layout
 is fixed when the message is queued, so messages that arrived before `DEVICE_QUERY 3` come in the
-legacy layout; the bridge decodes both.
+legacy layout; the gateway decodes both.
 
 | Direct, V3 (16) | Legacy (7) | Size | Field |
 | --- | --- | --- | --- |
@@ -226,15 +239,15 @@ legacy layout; the bridge decodes both.
 | 7 | 4 | 4 | sender timestamp |
 | 11 | 8 | n | `"<sender name>: <text>"`; the name is not authenticated |
 
-`SYNC_NEXT_MESSAGE` can also return `CHANNEL_DATA_RECV` (27, binary channel data), which the bridge
+`SYNC_NEXT_MESSAGE` can also return `CHANNEL_DATA_RECV` (27, binary channel data), which the gateway
 skips.
 
 ## 4 Push frames
 
 Codes 0x80 and above can arrive at any time, also between the frames of `GET_CONTACTS`
-(`MyMesh.cpp:2388-2421`). Those the bridge acts on:
+(`MyMesh.cpp:2388-2421`). Those the gateway acts on:
 
-| Code | Name | Content | Bridge |
+| Code | Name | Content | Gateway |
 | --- | --- | --- | --- |
 | 0x80 | `ADVERT` | public key of a contact in the table that advertised (`MyMesh.cpp:358-367`) | remember the key if it shares a command sender's prefix (ADR 0009); refresh contacts; report the advert |
 | 0x81 | `PATH_UPDATED` | public key: the radio stored a path the contact sent, also the same one again (`BaseChatMesh.cpp:353-359`) | remember the key, as above; refresh contacts; for telemetry, the contact was heard, unless it is the path of the gateway's own flooded request |
@@ -262,7 +275,7 @@ the sender's clock), signature (64), then app data of at most 32 bytes
 0–3 type; 0x10 position follows, int32 latitude and longitude × 10⁻⁶; 0x20 and 0x40 a uint16
 feature field each; 0x80 the rest is the name). The radio drops an advert without a name
 (`BaseChatMesh.cpp:122-127`). **A logged advert is unverified**: its signature is checked by the
-radio only after the log (`src/Mesh.cpp:271-290`), and the bridge cannot check Ed25519 signatures
+radio only after the log (`src/Mesh.cpp:271-290`), and the gateway cannot check Ed25519 signatures
 with the standard library. What the radio accepted shows only afterwards. `ADVERT` carries the
 key only, no timestamp and no content (`MyMesh.cpp:358-366`); with the default receive delay 0 the
 radio writes it directly after the advert's log, in the same pass (`src/Dispatcher.cpp:191-256`).
@@ -278,15 +291,33 @@ right after its log. The gateway checks a companion's advert from these
 (`src/Mesh.cpp:488-509`): the gateway reads them from a flooded one to count the airtime of a
 telemetry answer that the companion flooded, never to grant anything.
 
+**What the advert check relies on.** The check infers from the order of the frames which logged
+advert the radio accepted; no interface of the firmware promises that order. Before the pinned
+firmware is raised ([testing.md](testing.md#testing-another-firmware-release)), check that each of
+these still holds; the firmware tests `test_advert_check.py` and `test_adverts_and_positions.py`
+fail when one does not:
+
+1. The radio logs a received packet before it parses and handles it (`logRxRaw`,
+   `src/Dispatcher.cpp:199`).
+2. With a receive delay of 0, the default (`NodePrefs.h:29`; the delay is then 0,
+   `MyMesh.cpp:274`), a flood packet is handled in the pass that logged it
+   (`src/Dispatcher.cpp:243-246`), a direct one always (`:255-256`). The gateway reads the delay
+   at connect (`GET_TUNING_PARAMS`, `MyMesh.cpp:1481-1487`).
+3. Handling an accepted advert writes `ADVERT` or `NEW_ADVERT` at once (`MyMesh.cpp:358-367`), so
+   the log directly before the push is the advert's own.
+4. A contact's advert is accepted only when its timestamp is newer than the record's
+   (`BaseChatMesh.cpp:133-136`), and the record takes that timestamp as `last_advert`
+   (`BaseChatMesh.cpp:197`).
+
 ## 5 Semantics
 
 * **One command at a time.** The radio reads one frame per main-loop pass and answers it before the
-  next (`MyMesh.cpp:2388-2391`). The bridge sends one command, waits up to 5 s for an answer with
+  next (`MyMesh.cpp:2388-2391`). The gateway sends one command, waits up to 5 s for an answer with
   one of the expected codes, routes push frames separately and drops anything else.
 * **Offline queue** (`MyMesh.h:61-63`, `MyMesh.cpp:224-260`): 16 frames by default (some builds
   more), RAM only. When full, the oldest channel message is evicted; without one, the new message
   is dropped. `MSG_WAITING` is pushed once per queued message; nothing is pushed for messages that
-  were already waiting, so the bridge drains the queue after connecting.
+  were already waiting, so the gateway drains the queue after connecting.
 * **Text limits:** direct 160 bytes; channel `160 − (name length + 2)` bytes, because the radio
   prepends `"<name>: "` and silently truncates the rest (`BaseChatMesh.cpp:518-531`).
 * **ACK code** (`BaseChatMesh.cpp:451-471`):
@@ -296,12 +327,12 @@ telemetry answer that the companion flooded, never to grant anything.
   retry with the same timestamp and a higher attempt number is a new packet, and the receiving
   radio does not deduplicate it, so it can show up twice *(inferred)*; a retry with the same attempt
   number is dropped by the 160-entry seen-packet table and gets no acknowledgement
-  (`src/helpers/SimpleMeshTables.h:9-57`). The bridge keeps the timestamp, increments the attempt,
+  (`src/helpers/SimpleMeshTables.h:9-57`). The gateway keeps the timestamp, increments the attempt,
   accepts late acknowledgements of earlier attempts, and deduplicates received messages by sender,
   timestamp and text.
 * **Expected ACKs:** 8 entries, circular (`MyMesh.h:280-287`).
 * **Suggested timeout** in `SENT` (`MyMesh.cpp:888-896`): flood `500 + 16 · t`, direct
-  `500 + (6 · t + 250) · (hops + 1)` ms, with `t` the estimated airtime of the packet. The bridge
+  `500 + (6 · t + 250) · (hops + 1)` ms, with `t` the estimated airtime of the packet. The gateway
   waits 1.2 times that, between 5 and 60 s, like meshcore_py.
 * **Path reset:** after unanswered direct attempts, `RESET_PATH` makes the next send flood
   (meshcore_py and meshcore-cli do this before the third attempt). The radio sets only the path
@@ -309,7 +340,7 @@ telemetry answer that the companion flooded, never to grant anything.
   session patches its cached record the same way, and the contact's document says at once that
   no path is known.
 * **No replay protection for text messages** in the firmware beyond the seen-packet table
-  (`BaseChatMesh.cpp:133-136` checks timestamps only for adverts). The bridge adds its own for
+  (`BaseChatMesh.cpp:133-136` checks timestamps only for adverts). The gateway adds its own for
   commands (ADR 0009).
 * **Unknown senders:** direct messages are decrypted only for senders in the contact table
   (`BaseChatMesh.cpp:203-211`); messages from others are dropped by the radio.
@@ -331,7 +362,7 @@ telemetry answer that the companion flooded, never to grant anything.
   with `NEW_ADVERT`, but they have no way to drop a contact without a client: neither overwriting
   (from 1.12) nor the type-0 path (from 1.17). A push goes out once, to whichever client is
   connected: over USB the firmware always assumes one (`ArduinoSerialInterface.cpp:16-18`), over
-  TCP only a connected client gets it (`MyMesh.cpp:342-349`). A bridge that was not connected
+  TCP only a connected client gets it (`MyMesh.cpp:342-349`). A gateway that was not connected
   never learns of it.
 * **Over TCP pushes can be lost.** The WiFi interface queues at most 4 frames and drops new ones
   while the queue is full (`SerialWifiInterface.cpp:27-31`); it sends one queued frame per
@@ -419,7 +450,7 @@ Encryption: AES-128-ECB in 16-byte blocks, zero-padded, with a 2-byte MAC in fro
 | telemetry answer, `L` LPP bytes | direct `4 + 16 · ⌈(4 + L) / 16⌉` (tag and LPP); as a flooded path return `4 + 16 · ⌈(6 + P + L) / 16⌉` with the path of `P` bytes (`src/Mesh.cpp:452-480`) |
 
 A flood leaves the originating radio with an empty path; each repeater adds its hash
-(`src/Mesh.cpp:344-357, 647-678`). The bridge counts the transport codes on every flood and,
+(`src/Mesh.cpp:344-357, 647-678`). The gateway counts the transport codes on every flood and,
 after a flooded direct message, the returned path packet for a recipient 4 path bytes away (4 hops
 with one-byte hashes, either way): 26 bytes on air. Up to that distance the estimate errs on the
 high side. A more distant recipient makes the path packet larger than counted: at EU/UK Narrow a
@@ -454,9 +485,22 @@ answer to a direct request 11.8 s more.
   and an SDR measurement on an SX1276, and RadioLib's `getTimeOnAir` for the EU/UK Narrow preset
   (869.618 MHz, 62.5 kHz, SF 8, CR 4/8): 20 bytes 377.856 ms, 100 bytes 1033.216 ms, 200 bytes
   1852.416 ms. Sources are listed in `tests/test_airtime.py`.
+* Times on air at EU/UK Narrow of the packets that bound floods and acknowledgements
+  *(calculated with `core/airtime.py`)*:
+
+  | Packet | Bytes on air | Time on air |
+  | --- | --- | --- |
+  | Acknowledgement: header, path length, 4-byte code, attempt and random byte | 8 | 0.28 s |
+  | Direct text of 20 bytes to a neighbour | 38 | 0.51 s |
+  | Direct text of 160 bytes to a neighbour | 182 | 1.69 s |
+  | Advert with a 12-byte name, no position: key, timestamp, signature, flags, name | 115 | 1.16 s |
+  | The same advert with a position | 123 | 1.23 s |
+
+  So a board can send an advert every 1.2 s at most on this preset, and the radio spends 0.28 s
+  on each acknowledgement it owes.
 * The firmware has its own transmit budget, `airtime_factor`: duty cycle `1 / (1 + af)` over an
   hour, default 50 % (`src/Dispatcher.cpp:19-53`, `MyMesh.cpp:917`). For a 10 % limit it has to be
-  set on the radio (af = 9); the bridge's budget only covers what the bridge asks the radio to send.
+  set on the radio (af = 9); the gateway's budget only covers what the gateway asks the radio to send.
 
 ## 8 Where the firmware's own documentation differs from the code
 

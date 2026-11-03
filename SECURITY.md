@@ -2,7 +2,13 @@
 
 ## Supported versions
 
-Only the latest release receives fixes.
+Fixes go into the next version of the current line. While a minor version is in pre-release (for
+example 1.1.0a4), a fix comes with its next pre-release; the latest release (for example 1.0.0)
+gets a patch release (1.0.1) unless a newer release already has the fix. Older versions get no
+fixes: update to the latest release. The changelog names the versions in scope with each release.
+
+We aim to acknowledge a report within seven days, to agree on a date for the disclosure with the
+reporter, and to publish a GitHub security advisory when the fix is released.
 
 ## Reporting a vulnerability
 
@@ -16,7 +22,7 @@ reproduce.
 
 ## Scope and threat model
 
-The bridge sits between an untrusted radio channel, a local MQTT broker and a home automation
+The gateway sits between an untrusted radio channel, a local MQTT broker and a home automation
 system. The threat model, the trust boundaries and the mitigations are described in
 [`docs/design.md`](docs/design.md#7-security). In short:
 
@@ -24,12 +30,12 @@ system. The threat model, the trust boundaries and the mitigations are described
   from channels, and are protected against replay and against look-alike keys that share an
   allowed sender's 6-byte prefix
   ([ADR 0009](docs/decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
-- The bridge never executes anything itself; it publishes events that the home automation
+- The gateway never executes anything itself; it publishes events that the home automation
   evaluates.
 - Outbound traffic is limited to configured targets and an airtime budget
   ([ADR 0008](docs/decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)).
 - The MeshCore TCP companion interface has no authentication in either direction: any client
   controls the radio, and a host that takes the radio's network address can pose as the radio and
   forge commands. It can also lose push frames. Use USB, above all for commands, or else an
-  isolated network that only the bridge and the radio can reach.
+  isolated network that only the gateway and the radio can reach.
 - Runtime dependencies come from the Linux distribution only; development tools are hash-pinned.
