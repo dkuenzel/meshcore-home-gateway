@@ -287,9 +287,13 @@ class Mesh:
         return True
 
     def contact_answered(
-        self, key: str, at: float, position: Position | None, altitude_m: float | None,
+        self,
+        key: str,
+        at: float,
+        position: Position | None,
+        altitude_m: float | None,
         readings: Readings | None = None,
-    ) -> bool:  # fmt: skip
+    ) -> bool:
         """A telemetry answer of the contact (ADR 0018); True when `heard` moved. Its readings,
         when given, replace those of the answer before.
 
@@ -318,9 +322,10 @@ class Mesh:
             tracked.position_received_at = at
             fix = tracked.fix
             if (
-                fix is None or fix.source != "telemetry"
+                fix is None
+                or fix.source != "telemetry"
                 or distance_m(fix.position, position) >= FIX_MOVED_M
-            ):  # fmt: skip
+            ):
                 tracked.fix = Fix(position, at, "telemetry", altitude_m)
         return moved
 

@@ -30,9 +30,14 @@ STAMP = ".fetched"
 COMMIT = re.compile(r"[0-9a-f]{40}")
 # git reads these to find a repository; a hook or a wrapper may have set them for another one
 REPOSITORY_VARIABLES = (
-    "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE",
-)  # fmt: skip
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+)
 
 
 class FetchError(Exception):
@@ -117,8 +122,17 @@ def fetch(pin: Pin, dest: Path, source: str | None = None) -> bool:
                     f"{pin.name}: tag {tag} at {origin} is commit {found}, pinned {pin.commit}"
                 )
         tree.mkdir()
-        _git("--git-dir", repo, "--work-tree", tree, "checkout", "--quiet", pin.commit, "--",
-             *pin.paths)  # fmt: skip
+        _git(
+            "--git-dir",
+            repo,
+            "--work-tree",
+            tree,
+            "checkout",
+            "--quiet",
+            pin.commit,
+            "--",
+            *pin.paths,
+        )
         (tree / STAMP).write_text(pin.stamp, encoding="utf-8")
         if target.exists():
             shutil.rmtree(target)

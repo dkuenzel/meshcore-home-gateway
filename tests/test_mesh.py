@@ -223,8 +223,12 @@ def test_a_new_advert_of_a_contact_counts_as_heard_contact() -> None:
 
 def test_type_names() -> None:
     assert [type_name(t) for t in (1, 2, 3, 4, 9)] == [
-        "chat", "repeater", "room", "sensor", "type_9",
-    ]  # fmt: skip
+        "chat",
+        "repeater",
+        "room",
+        "sensor",
+        "type_9",
+    ]
 
 
 def test_the_airtime_meter_counts_the_last_hour_across_restarts() -> None:
@@ -259,8 +263,11 @@ def test_a_contact_that_leaves_the_table_is_a_heard_node_again_in_its_place() ->
     assert list(mesh.nodes) == ["c3" * 32, ALICE.public_key, "d4" * 32]  # Bob was never heard
     back = mesh.nodes[ALICE.public_key]
     assert (back.node.flags, back.node.path_hops, back.node.position, back.fix) == (
-        0, None, None, None,
-    )  # fmt: skip
+        0,
+        None,
+        None,
+        None,
+    )
     small = Mesh(max_nodes=2)
     small.node_heard(carol, Heard(T - 200, "advert"))
     small.node_heard(dave, Heard(T - 50, "advert"))
@@ -328,8 +335,9 @@ def test_an_answer_with_readings_keeps_the_rules_of_last_heard_and_the_fix() -> 
     tracked = mesh.contacts[key]
     assert tracked.readings == BME280
     assert (tracked.heard, tracked.fix) == (
-        Heard(T, "telemetry"), Fix(HOME, T, "telemetry", 40.0),
-    )  # fmt: skip
+        Heard(T, "telemetry"),
+        Fix(HOME, T, "telemetry", 40.0),
+    )
     later = Readings(T + 900, lpp.named(lpp.decode(LPP_FULL)))
     assert not mesh.contact_answered(key, T + 900, HOME, 40.0, later)  # within the hour
     assert tracked.readings == later  # the newest answer's, also when it has fewer
@@ -349,8 +357,10 @@ def test_readings_from_the_history_apply_at_the_first_table_read() -> None:
     mesh.contacts_read([ALICE], T)
     tracked = mesh.contacts[key]
     assert (tracked.readings, tracked.fix, tracked.heard) == (
-        BME280, gps, Heard(T - 60, "telemetry"),
-    )  # fmt: skip
+        BME280,
+        gps,
+        Heard(T - 60, "telemetry"),
+    )
     mesh.restore(BOB.public_key, None, None)
     mesh.contacts_read([ALICE, BOB], T + 1)
     assert mesh.contacts[BOB.public_key].readings is None
@@ -466,8 +476,9 @@ def test_a_check_without_a_position_drops_an_advert_fix_and_keeps_a_telemetry_fi
     mesh.contacts_read([newer], T + 120)
     assert not mesh.advert_checked(key, AdvertCheck(int(T) + 100, False), T + 122)
     assert (tracked.advert, tracked.fix) == (
-        AdvertCheck(int(T) + 100, False), Fix(FIELD, T + 70, "telemetry"),
-    )  # fmt: skip
+        AdvertCheck(int(T) + 100, False),
+        Fix(FIELD, T + 70, "telemetry"),
+    )
 
 
 def test_a_check_with_a_position_brings_the_record_position_back_at_the_adverts_time() -> None:
@@ -591,8 +602,9 @@ def test_a_record_without_a_position_drops_an_advert_fix() -> None:
     repeater = Node(BOB.public_key, "Bob", 2, last_advert=int(T) - 600, position=FIELD)
     mesh.contacts_read([SHARED, repeater], T)
     zeroed = [
-        replace(SHARED, last_advert=int(T) + 60, position=None), replace(repeater, position=None),
-    ]  # fmt: skip
+        replace(SHARED, last_advert=int(T) + 60, position=None),
+        replace(repeater, position=None),
+    ]
     mesh.contacts_read(zeroed, T + 120)
     assert [t.fix for t in mesh.contacts.values()] == [None, None]
     mesh.contact_answered(key, T + 130, FIELD, None)
@@ -630,8 +642,10 @@ def test_a_stored_check_applies_at_the_first_read() -> None:
     mesh.contacts_read([SHARED, Node(BOB.public_key, "Bob", 1)], T)
     tracked, bob = mesh.contacts[key], mesh.contacts[BOB.public_key]
     assert (tracked.advert, tracked.heard, tracked.fix) == (
-        check, heard, Fix(HOME, T - 600, "advert"),
-    )  # fmt: skip
+        check,
+        heard,
+        Fix(HOME, T - 600, "advert"),
+    )
     assert (bob.advert, bob.heard) == (check, heard)
     mesh.contacts_read([], T + 1)
     mesh.contacts_read([SHARED], T + 2)  # back: what the last run knew is used up

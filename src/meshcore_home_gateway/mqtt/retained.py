@@ -57,10 +57,17 @@ class RetainedTopics:
         monotonic: Callable[[], float],
     ) -> None:
         """`publish`: writes a retained payload, if the broker is connected."""
-        self._fixed = frozenset({
-            topics.availability, topics.state, topics.stats, topics.contacts, topics.nodes,
-            topics.history, topics.settings,
-        })  # fmt: skip
+        self._fixed = frozenset(
+            {
+                topics.availability,
+                topics.state,
+                topics.stats,
+                topics.contacts,
+                topics.nodes,
+                topics.history,
+                topics.settings,
+            }
+        )
         self._contact_prefix = topics.contacts + "/"
         self.filters = (*sorted(self._fixed), topics.contact("+"))
         self._publish = publish
@@ -121,8 +128,12 @@ class RetainedTopics:
         entry.writes += 1
         if entry.warned_at is None or not 0 <= now - entry.warned_at < WARNING_INTERVAL_S:
             times = f" ({entry.writes} times since the last warning)" if entry.writes > 1 else ""
-            log.warning("MQTT: another client wrote %s%s; restoring the gateway's payload (%s)",
-                        topic, times, HINT)  # fmt: skip
+            log.warning(
+                "MQTT: another client wrote %s%s; restoring the gateway's payload (%s)",
+                topic,
+                times,
+                HINT,
+            )
             entry.warned_at, entry.writes = now, 0
         if entry.restore is not None:
             return
@@ -150,8 +161,12 @@ class RetainedTopics:
             return
         warned = self._cleared_warned_at
         if warned is None or not 0 <= now - warned < WARNING_INTERVAL_S:
-            log.warning("MQTT: another client wrote %s, where the gateway has published nothing "
-                        "in this run; clearing it (%s)", topic, HINT)  # fmt: skip
+            log.warning(
+                "MQTT: another client wrote %s, where the gateway has published nothing "
+                "in this run; clearing it (%s)",
+                topic,
+                HINT,
+            )
             self._cleared_warned_at = now
         self._publish(topic, b"")
 

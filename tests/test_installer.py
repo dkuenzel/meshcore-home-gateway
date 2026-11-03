@@ -377,9 +377,14 @@ def run_installer(
         (host.root / "dialog").write_text("\n".join(dialog) + "\n", encoding="utf-8")
     path = host.installer if script is None else script
     return subprocess.run(  # noqa: S603 - our script with fixed arguments
-        [BASH, str(path), *args], env=installer_env(host, env), capture_output=True, text=True,
-        stdin=subprocess.DEVNULL, timeout=60, check=False,
-    )  # fmt: skip
+        [BASH, str(path), *args],
+        env=installer_env(host, env),
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=60,
+        check=False,
+    )
 
 
 def interrupt_installer(
@@ -390,9 +395,13 @@ def interrupt_installer(
     Like Ctrl-C or a closed SSH session, which signal the whole foreground process group.
     """
     process = subprocess.Popen(  # noqa: S603 - our script with fixed arguments
-        [BASH, str(host.installer), *args], env=installer_env(host, {"SLEEP_AT": during}),
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
-    )  # fmt: skip
+        [BASH, str(host.installer), *args],
+        env=installer_env(host, {"SLEEP_AT": during}),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
     try:
         deadline = time.monotonic() + 30
         while not any(during in c for c in host.inside()):
@@ -482,16 +491,26 @@ class Container:
         script = re.sub(absolute, lambda _: f"{self.root}/", script)
         script = re.sub(r"(?<=\s)/usr/bin/python3\b", lambda _: sys.executable, script)
         return subprocess.run(  # noqa: S603 - a script of the installer
-            [BASH, "-c", script], env={"PATH": f"{self.root / 'stubs'}:{os.environ['PATH']}"},
-            input=stdin, capture_output=True, text=True, timeout=60, check=False,
-        )  # fmt: skip
+            [BASH, "-c", script],
+            env={"PATH": f"{self.root / 'stubs'}:{os.environ['PATH']}"},
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
 
 
 @pytest.fixture
 def container(tmp_path: Path) -> Container:
     root = tmp_path / "container"
-    for directory in ("stubs", "root", "etc/meshcore-home-gateway", "etc/systemd/system",
-                      "usr/local/bin"):  # fmt: skip
+    for directory in (
+        "stubs",
+        "root",
+        "etc/meshcore-home-gateway",
+        "etc/systemd/system",
+        "usr/local/bin",
+    ):
         (root / directory).mkdir(parents=True)
     container = Container(root)
     container.stub("python3", f'exec "{sys.executable}" "$@"')
@@ -586,8 +605,10 @@ def test_radio_over_tcp_needs_no_device(host: Host) -> None:
     assert any("probe --tcp 192.0.2.30:5001 --list channels" in c for c in host.inside())
     config = host.config()
     assert (config.radio.transport, config.radio.host, config.radio.port) == (
-        "tcp", "192.0.2.30", 5001,
-    )  # fmt: skip
+        "tcp",
+        "192.0.2.30",
+        5001,
+    )
     assert config.radio.tcp_unauthenticated is True
     # the summary says what was chosen (OPS-010), in place of the note on re-plugging a USB radio
     assert (
@@ -636,11 +657,21 @@ def test_a_radio_over_tcp_needs_the_acknowledgement(host: Host) -> None:
 def test_a_declined_tcp_radio_offers_the_radios_again(host: Host) -> None:
     """The dialog says what TCP exposes; no: the menu again, here for the USB radio."""
     dialog = [
-        "default", "tcp", "192.0.2.30", "5000",  # setup, radio, its address and port
+        "default",
+        "tcp",
+        "192.0.2.30",
+        "5000",  # setup, radio, its address and port
         "no",  # TCP declined
         str(host.serial),  # the radio again
-        "broker.example.org", "no", "bridge", "pw", "yes", "1", "", "",
-    ]  # fmt: skip
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
@@ -656,9 +687,20 @@ def test_a_declined_tcp_radio_offers_the_radios_again(host: Host) -> None:
 
 def test_an_accepted_tcp_radio_is_written_with_the_acknowledgement(host: Host) -> None:
     dialog = [
-        "default", "tcp", "192.0.2.30", "5000", "yes",  # TCP accepted
-        "broker.example.org", "no", "bridge", "pw", "yes", "1", "", "",
-    ]  # fmt: skip
+        "default",
+        "tcp",
+        "192.0.2.30",
+        "5000",
+        "yes",  # TCP accepted
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     config = host.config()
@@ -734,9 +776,18 @@ def test_a_radio_in_use_offers_the_radios_again(host: Host) -> None:
     second = host.serial.parent / "usb-Example_Radio_0002-if00"
     second.write_text("", encoding="utf-8")
     dialog = [
-        "default", str(host.serial),  # the radio of container 107: a box, then the menu again
-        str(second), "broker.example.org", "no", "bridge", "pw", "yes", "1", "", "",
-    ]  # fmt: skip
+        "default",
+        str(host.serial),  # the radio of container 107: a box, then the menu again
+        str(second),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
@@ -762,21 +813,25 @@ def test_interactive_default_setup_asks_only_what_has_no_default(host: Host) -> 
     dialog = [
         "default",  # setup
         str(host.serial),  # radio
-        "", "broker.example.org",  # broker address: required, asked again
+        "",
+        "broker.example.org",  # broker address: required, asked again
         "no",  # TLS
-        "bridge", "pw-secret",  # user, password
+        "bridge",
+        "pw-secret",  # user, password
         "yes",  # create the container
         "0|1|2",  # channels
         ALICE,  # contacts
         "",  # command senders: none
-    ]  # fmt: skip
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
     options = create_options(host)
     assert (options["--rootfs"], options["--memory"], options["--hostname"]) == (
-        "local-lvm:2", "256", "meshcore-home-gateway",
-    )  # fmt: skip
+        "local-lvm:2",
+        "256",
+        "meshcore-home-gateway",
+    )
     config = host.config()
     assert config.mqtt.node_id == "radio1"
     assert {t.alias for t in config.targets} == {"public", "alerts", "public-2", "alice-example"}
@@ -788,16 +843,34 @@ def test_interactive_advanced_setup_asks_for_everything(host: Host) -> None:
     dialog = [
         "advanced",
         # id, name, disk, memory, bridge
-        "106", "meshcore-home-gateway", "local-lvm", "4", "512", "vmbr1",
-        "192.0.2.20/24", "192.0.2.1", "local",  # address, gateway, template storage
+        "106",
+        "meshcore-home-gateway",
+        "local-lvm",
+        "4",
+        "512",
+        "vmbr1",
+        "192.0.2.20/24",
+        "192.0.2.1",
+        "local",  # address, gateway, template storage
         str(host.serial),
-        "broker.example.org", "no", "1883", "bridge", "pw", "meshcore", "gw1",  # broker, topics
-        "yes", "Mesh radio", "yes",  # discovery, device name, ASCII only
+        "broker.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "pw",
+        "meshcore",
+        "gw1",  # broker, topics
+        "yes",
+        "Mesh radio",
+        "yes",  # discovery, device name, ASCII only
         "yes",  # create the container
-        "0|1", ALICE, ALICE, "status,arm",  # channels, contacts, senders, words
+        "0|1",
+        ALICE,
+        ALICE,
+        "status,arm",  # channels, contacts, senders, words
         "yes",  # commands without TLS: accepted (SEC-004)
         "Mesh gateway",  # the radio's name (the profile)
-    ]  # fmt: skip
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert host.config().radio.profile.name == "Mesh gateway"
@@ -817,8 +890,20 @@ def test_interactive_advanced_setup_asks_for_everything(host: Host) -> None:
 def test_without_a_user_name_no_password_is_asked(host: Host) -> None:
     """The broker takes a password only with a user name; an empty one is confirmed (SEC-004),
     the default answer is no."""
-    dialog = ["default", str(host.serial), "broker.example.org", "no", "", "no", "", "yes",
-              "yes", "1", "", ""]  # fmt: skip
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "",
+        "no",
+        "",
+        "yes",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
@@ -832,8 +917,18 @@ def test_without_a_user_name_no_password_is_asked(host: Host) -> None:
 
 def test_the_dialogs_run_in_a_utf8_locale(host: Host) -> None:
     """In a locale the host lacks, whiptail drops every non-ASCII character typed."""
-    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pässwört§",
-              "yes", "1", "", ""]  # fmt: skip
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pässwört§",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
     env = {"LANG": "de_DE.UTF-8", "LC_CTYPE": "UTF-8"}  # as ssh passes them on
     result = run_installer(host, dialog=dialog, env=env)
     assert result.returncode == 0, result.stderr
@@ -845,8 +940,18 @@ def test_the_dialogs_run_in_a_utf8_locale(host: Host) -> None:
 
 def test_the_user_name_field_starts_empty_and_the_password_names_the_user(host: Host) -> None:
     """whiptail adds what is typed to a suggested name instead of replacing it."""
-    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
-              "1", "", ""]  # fmt: skip
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     (user,) = [c for c in host.dialogs() if any("MQTT user name" in a for a in c)]
@@ -875,11 +980,23 @@ def test_the_broker_login_is_checked_before_the_radio_is_read(host: Host) -> Non
 
 def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
     dialog = [
-        "default", str(host.serial), "broker.example.org", "no", "bridge", "wrong", "yes",
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "wrong",
+        "yes",
         "yes",  # the login failed: enter the broker settings again
-        "broker.example.org", "no", "1883", "bridge", "right",  # all of them this time
-        "1", "", "",
-    ]  # fmt: skip
+        "broker.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "right",  # all of them this time
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 0"})
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
@@ -896,8 +1013,19 @@ def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
 
 def test_a_refused_login_can_be_kept(host: Host) -> None:
     """No: the installation goes on, the service keeps trying, and the message says so."""
-    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
-              "no", "1", "", ""]  # fmt: skip
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "no",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1"})
     assert result.returncode == 0, result.stderr
     assert "warning: the broker login failed: broker refused the connection" in result.stderr
@@ -907,8 +1035,7 @@ def test_a_refused_login_can_be_kept(host: Host) -> None:
 
 def test_without_dialogs_a_refused_login_is_a_warning(host: Host) -> None:
     """The broker may be down while the gateway is installed: the service keeps trying."""
-    result = run_installer(host, "--answers", str(answers_file(host)),
-                           env={"BROKER_ANSWERS": "1"})  # fmt: skip
+    result = run_installer(host, "--answers", str(answers_file(host)), env={"BROKER_ANSWERS": "1"})
     assert result.returncode == 0, result.stderr
     assert "warning: the broker login failed" in result.stderr
     assert len([c for c in host.inside() if "--broker" in c]) == 1
@@ -917,8 +1044,23 @@ def test_without_dialogs_a_refused_login_is_a_warning(host: Host) -> None:
 def test_settings_typed_again_that_are_refused_are_asked_once_more(host: Host) -> None:
     """No login was tried: going on would only fail when the configuration is written."""
     retry = ["broker.example.org", "no", "x1883", "bridge", "pw"]
-    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "wrong",
-              "yes", "yes", *retry, *retry[:2], "1883", *retry[3:], "1", "", ""]  # fmt: skip
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "wrong",
+        "yes",
+        "yes",
+        *retry,
+        *retry[:2],
+        "1883",
+        *retry[3:],
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 4 0"})
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)
@@ -929,16 +1071,31 @@ def test_settings_typed_again_that_are_refused_are_asked_once_more(host: Host) -
 
 
 def test_without_dialogs_refused_settings_stop_before_the_radio_is_read(host: Host) -> None:
-    result = run_installer(host, "--answers", str(answers_file(host)),
-                           env={"BROKER_ANSWERS": "4"})  # fmt: skip
+    result = run_installer(host, "--answers", str(answers_file(host)), env={"BROKER_ANSWERS": "4"})
     assert result.returncode == 1
     assert "the broker settings were not accepted: configuration error" in result.stderr
     assert not [c for c in host.inside() if "--list channels" in c]
 
 
 def test_changing_tls_when_typing_again_offers_the_other_port(host: Host) -> None:
-    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
-              "yes", "broker.example.org", "yes", "8883", "bridge", "pw", "1", "", ""]  # fmt: skip
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "yes",
+        "broker.example.org",
+        "yes",
+        "8883",
+        "bridge",
+        "pw",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 0"})
     assert result.returncode == 0, result.stderr
     (port,) = [c for c in host.dialogs() if any("MQTT broker port" in a for a in c)]
@@ -950,8 +1107,7 @@ def test_a_version_without_the_login_check_is_not_taken_for_a_refusal(host: Host
     """--reconfigure uses the program installed in the container, which may be older."""
     existing_container(host)
     dialog = ["default", "old.example.org", "no", "bridge", "", "1", ALICE, ALICE, "status"]
-    result = run_installer(host, "--reconfigure", "105", dialog=dialog,
-                           env={"BROKER_ANSWERS": "3"})  # fmt: skip
+    result = run_installer(host, "--reconfigure", "105", dialog=dialog, env={"BROKER_ANSWERS": "3"})
     assert result.returncode == 0, result.stderr
     assert len(host.dialogs()) == len(dialog)  # no question about the login
     assert "cannot check the broker login" in result.stderr
@@ -961,11 +1117,26 @@ def test_a_version_without_the_login_check_is_not_taken_for_a_refusal(host: Host
 
 def test_reconfigure_typed_again_can_keep_the_installed_password(host: Host) -> None:
     existing_container(host)
-    dialog = ["default", "old.example.org", "no", "bridge", "new-but-wrong", "yes",
-              "old.example.org", "no", "1883", "bridge", "",  # typed again: keep the installed one
-              "1", ALICE, ALICE, "status"]  # fmt: skip
-    result = run_installer(host, "--reconfigure", "105", dialog=dialog,
-                           env={"BROKER_ANSWERS": "1 0"})  # fmt: skip
+    dialog = [
+        "default",
+        "old.example.org",
+        "no",
+        "bridge",
+        "new-but-wrong",
+        "yes",
+        "old.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "",  # typed again: keep the installed one
+        "1",
+        ALICE,
+        ALICE,
+        "status",
+    ]
+    result = run_installer(
+        host, "--reconfigure", "105", dialog=dialog, env={"BROKER_ANSWERS": "1 0"}
+    )
     assert result.returncode == 0, result.stderr
     passwords = [c for c in host.dialogs() if "--passwordbox" in c]
     assert any("(empty: keep the installed one)" in a for a in passwords[1])
@@ -1158,8 +1329,9 @@ def test_an_answers_file_that_is_not_utf8_is_reported_clearly(host: Host) -> Non
 
 def test_a_container_id_below_100_is_refused(host: Host) -> None:
     answers = answers_file(host)
-    answers.write_text(answers.read_text(encoding="utf-8") + "setup=advanced\nct.id=50\n",
-                       encoding="utf-8")  # fmt: skip
+    answers.write_text(
+        answers.read_text(encoding="utf-8") + "setup=advanced\nct.id=50\n", encoding="utf-8"
+    )
     result = run_installer(host, "--answers", str(answers))
     assert result.returncode == 1
     assert "at least 100" in result.stderr
@@ -1237,8 +1409,9 @@ def test_update_installs_this_checkout_and_restarts_the_service(
     assert container.calls("systemctl") == ["daemon-reload"]
     assert not list(container.path("/root").iterdir())  # the sources are removed
     assert sorted(p.name for p in lib.iterdir()) == [
-        "current.pyz", f"meshcore-home-gateway-{__version__}.pyz",
-    ]  # fmt: skip
+        "current.pyz",
+        f"meshcore-home-gateway-{__version__}.pyz",
+    ]
 
 
 def test_update_keeps_the_active_version_when_the_configuration_does_not_pass(
@@ -1277,8 +1450,10 @@ def test_the_journal_keeps_at_most_100_mb(host: Host, container: Container) -> N
     assert run.returncode == 0, run.stderr
     conf = container.path("/etc/systemd/journald.conf.d/meshcore-home-gateway.conf")
     assert conf.read_text(encoding="utf-8").split("\n")[1:] == [
-        "[Journal]", "SystemMaxUse=100M", "",
-    ]  # fmt: skip
+        "[Journal]",
+        "SystemMaxUse=100M",
+        "",
+    ]
     assert stat.S_IMODE(conf.stat().st_mode) == 0o644
     assert container.calls("systemctl") == ["try-restart systemd-journald"]
     assert container.run(script).returncode == 0  # again at the next update
@@ -1321,8 +1496,9 @@ def test_reconfigure_keeps_the_settings_it_does_not_ask_for(host: Host) -> None:
         "alice": (None, ALICE),
     }
     assert (config.commands.senders, config.commands.words) == (
-        frozenset({ALICE}), frozenset({"status"}),
-    )  # fmt: skip
+        frozenset({ALICE}),
+        frozenset({"status"}),
+    )
     inside = host.inside()
     assert (
         inside[0]
@@ -1357,8 +1533,17 @@ def test_reconfigure_keeps_a_password_in_its_file(host: Host) -> None:
     pushed = host.pushed("meshcore-home-gateway-answers")
     assert "mqtt.password_file=/etc/meshcore-home-gateway/mqtt-password\n" in pushed
     assert "mqtt.password=" not in pushed
-    dialog = ["default", "old.example.org", "no", "bridge", "new-secret", "1", ALICE, ALICE,
-              "status"]  # fmt: skip
+    dialog = [
+        "default",
+        "old.example.org",
+        "no",
+        "bridge",
+        "new-secret",
+        "1",
+        ALICE,
+        ALICE,
+        "status",
+    ]
     result = run_installer(host, "--reconfigure", "105", dialog=dialog)
     assert result.returncode == 0, result.stderr
     pushed = host.pushed("meshcore-home-gateway-answers")
@@ -1453,10 +1638,17 @@ def test_reconfiguring_a_tcp_radio_asks_for_the_acknowledgement(host: Host, acce
     text = current.read_text(encoding="utf-8")
     current.write_text(text.replace(serial, "radio.transport=tcp\nradio.host=192.0.2.30\n"))
     dialog = [
-        "default", "old.example.org", "no", "bridge", "",  # setup, broker
+        "default",
+        "old.example.org",
+        "no",
+        "bridge",
+        "",  # setup, broker
         "yes" if accepted else "no",  # TCP
-        "1|2", ALICE, ALICE, "status",  # channels, contacts, senders, words
-    ]  # fmt: skip
+        "1|2",
+        ALICE,
+        ALICE,
+        "status",  # channels, contacts, senders, words
+    ]
     result = run_installer(
         host, "--reconfigure", "105", dialog=dialog, env={"STUB_VERSION": "2.0.0"}
     )
@@ -1473,9 +1665,15 @@ def test_interactive_reconfigure_offers_the_current_settings(host: Host) -> None
     existing_container(host)
     dialog = [
         "default",
-        "old.example.org", "no", "bridge", "",  # broker, TLS, user, password: empty keeps it
-        "1|2", ALICE, ALICE, "status",  # channels, contacts, senders, words
-    ]  # fmt: skip
+        "old.example.org",
+        "no",
+        "bridge",
+        "",  # broker, TLS, user, password: empty keeps it
+        "1|2",
+        ALICE,
+        ALICE,
+        "status",  # channels, contacts, senders, words
+    ]
     result = run_installer(host, "--reconfigure", "105", dialog=dialog)
     assert result.returncode == 0, result.stderr
     dialogs = host.dialogs()
@@ -1573,9 +1771,12 @@ def test_failed_reconfigure_starts_the_service_again_when_messages_cannot_be_wri
     with Path("/dev/full").open("w") as full:  # every write fails
         result = subprocess.run(  # noqa: S603 - our script with fixed arguments
             [BASH, str(host.installer), "--reconfigure", "105", "--answers", str(answers)],
-            env=installer_env(host, {"PROBE_FAILS": "1"}), stdout=subprocess.DEVNULL,
-            stderr=full, timeout=60, check=False,
-        )  # fmt: skip
+            env=installer_env(host, {"PROBE_FAILS": "1"}),
+            stdout=subprocess.DEVNULL,
+            stderr=full,
+            timeout=60,
+            check=False,
+        )
     assert result.returncode == 1
     assert host.inside()[-1] == "systemctl start meshcore-home-gateway"
 
@@ -1645,9 +1846,12 @@ def test_reconfigure_starts_the_service_again_when_its_output_pipe_is_gone(host:
     try:
         result = subprocess.run(  # noqa: S603 - our script with fixed arguments
             [BASH, str(host.installer), "--reconfigure", "105", "--answers", str(answers)],
-            env=installer_env(host, {"PROBE_FAILS": "1"}), stdout=write, stderr=write,
-            timeout=60, check=False,
-        )  # fmt: skip
+            env=installer_env(host, {"PROBE_FAILS": "1"}),
+            stdout=write,
+            stderr=write,
+            timeout=60,
+            check=False,
+        )
     finally:
         os.close(write)
     assert result.returncode == 1  # not killed by SIGPIPE (-13)
@@ -1679,9 +1883,12 @@ STAGE = "/root/meshcore-home-gateway-src"
 
 
 def run_from_url(
-    host: Host, *args: str, release: str = "", env: dict[str, str] | None = None,
+    host: Host,
+    *args: str,
+    release: str = "",
+    env: dict[str, str] | None = None,
     pins: tuple[str, str] = ("", ""),
-) -> subprocess.CompletedProcess[str]:  # fmt: skip
+) -> subprocess.CompletedProcess[str]:
     """Like `bash -c "$(wget -qO- URL)" -- ARGS`: the script is no file, so there is no checkout.
     `release` is the version that `make release` writes into the published copy, `pins` the
     digests of its zipapp and unit."""
@@ -1695,8 +1902,12 @@ def run_from_url(
     return subprocess.run(  # noqa: S603 - our script with fixed arguments
         [BASH, "-c", text, "--", *args],
         env=installer_env(host, {"TMPDIR": str(temporary), **(env or {})}),
-        capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60, check=False,
-    )  # fmt: skip
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=60,
+        check=False,
+    )
 
 
 def fetches(host: Host) -> list[list[str]]:
@@ -1726,8 +1937,9 @@ def test_from_a_url_the_source_of_main_is_built_in_the_container(host: Host) -> 
 
 
 def test_from_a_release_its_checked_files_are_downloaded_in_the_container(host: Host) -> None:
-    result = run_from_url(host, "--answers", str(answers_file(host)), release="1.2.3",
-                          env={"STUB_VERSION": "1.2.3"})  # fmt: skip
+    result = run_from_url(
+        host, "--answers", str(answers_file(host)), release="1.2.3", env={"STUB_VERSION": "1.2.3"}
+    )
     assert result.returncode == 0, result.stderr
     assert fetches(host) == [["release", f"{RELEASES}v1.2.3/", "1.2.3", "-", "-", STAGE]]
     assert "meshcore-home-gateway 1.2.3 in container 105" in result.stderr  # known in advance
@@ -1738,8 +1950,13 @@ def test_from_a_release_its_checked_files_are_downloaded_in_the_container(host: 
 
 def test_a_pre_release_names_its_own_installer(host: Host) -> None:
     """releases/latest skips pre-releases: it would not find one, or install an older release."""
-    result = run_from_url(host, "--answers", str(answers_file(host)), release="0.2.0rc1",
-                          env={"STUB_VERSION": "0.2.0rc1"})  # fmt: skip
+    result = run_from_url(
+        host,
+        "--answers",
+        str(answers_file(host)),
+        release="0.2.0rc1",
+        env={"STUB_VERSION": "0.2.0rc1"},
+    )
     assert result.returncode == 0, result.stderr
     installer = f"{RELEASES}v0.2.0rc1/meshcore-home-gateway-lxc.sh"
     assert f'wget -qO- {installer})" -- --reconfigure 105' in result.stderr
@@ -1760,8 +1977,15 @@ def test_reconfigure_names_the_version_that_runs_in_the_container(host: Host, re
     """Not the version of the installer: nothing is installed."""
     existing_container(host)
     answers = answers_file(host, "mqtt.host=new.example.org\n")
-    result = run_from_url(host, "--reconfigure", "105", "--answers", str(answers),
-                          release=release, env={"STUB_VERSION": "1.2.3"})  # fmt: skip
+    result = run_from_url(
+        host,
+        "--reconfigure",
+        "105",
+        "--answers",
+        str(answers),
+        release=release,
+        env={"STUB_VERSION": "1.2.3"},
+    )
     assert result.returncode == 0, result.stderr
     assert "meshcore-home-gateway 1.2.3 runs in container 105" in result.stderr
     assert not fetches(host)
@@ -1771,8 +1995,15 @@ def test_reconfigure_names_the_installer_by_its_own_release(host: Host) -> None:
     """Not by the version in the container: main's 0.1.0.dev0 was never published."""
     existing_container(host)
     answers = answers_file(host, "mqtt.host=new.example.org\n")
-    result = run_from_url(host, "--reconfigure", "105", "--answers", str(answers),
-                          release="0.1.0", env={"STUB_VERSION": "0.1.0.dev0"})  # fmt: skip
+    result = run_from_url(
+        host,
+        "--reconfigure",
+        "105",
+        "--answers",
+        str(answers),
+        release="0.1.0",
+        env={"STUB_VERSION": "0.1.0.dev0"},
+    )
     assert result.returncode == 0, result.stderr
     assert "meshcore-home-gateway 0.1.0.dev0 runs in container 105" in result.stderr
     assert 'releases/latest/download/meshcore-home-gateway-lxc.sh)" -- --update 105' in (
@@ -1784,8 +2015,9 @@ def test_reconfigure_names_the_installer_by_its_own_release(host: Host) -> None:
 def test_reconfigure_with_refused_settings_leaves_the_service_running(host: Host) -> None:
     existing_container(host)
     answers = answers_file(host, "mqtt.host=new.example.org\n")
-    result = run_from_url(host, "--reconfigure", "105", "--answers", str(answers),
-                          env={"CHECK_FAILS": "1"})  # fmt: skip
+    result = run_from_url(
+        host, "--reconfigure", "105", "--answers", str(answers), env={"CHECK_FAILS": "1"}
+    )
     assert result.returncode == 1
     assert "invalid settings" in result.stderr
     assert not [c for c in host.inside() if "systemctl" in c or "--group" in c]
@@ -1861,7 +2093,7 @@ def test_the_published_copy_installs_the_files_it_pins(
         (["--release", "2.0.0"], ["release", f"{RELEASES}v2.0.0/", "2.0.0", "-", "-", STAGE]),
         (["--ref", "v0.1.0"], ["source", ARCHIVE.replace("main", "v0.1.0"), STAGE]),
     ],
-)  # fmt: skip
+)
 def test_a_release_or_a_ref_can_be_chosen_also_from_a_checkout(
     host: Host, args: list[str], expected: list[str]
 ) -> None:
@@ -1891,9 +2123,14 @@ def test_a_failed_installation_names_what_it_installed(
 
 @pytest.mark.parametrize(
     "args",
-    [["--release", "1.0;rm"], ["--release"], ["--ref", "-x"], ["--ref", "a b"],
-     ["--release", "1.0.0", "--ref", "main"]],
-)  # fmt: skip
+    [
+        ["--release", "1.0;rm"],
+        ["--release"],
+        ["--ref", "-x"],
+        ["--ref", "a b"],
+        ["--release", "1.0.0", "--ref", "main"],
+    ],
+)
 def test_bad_release_and_ref_options_are_refused(host: Host, args: list[str]) -> None:
     result = run_installer(host, *args, "--update", "105")
     assert result.returncode == 1
@@ -1904,8 +2141,13 @@ def test_bad_release_and_ref_options_are_refused(host: Host, args: list[str]) ->
 def test_the_published_copy_names_its_release() -> None:
     """`make release` writes the version and the digests into the lines it replaces."""
     lines = SCRIPT.read_text(encoding="utf-8").splitlines()
-    assert lines.count('RELEASE=""     # the copy published with a release names its version here '
-                       "(make release)") == 1  # fmt: skip
+    assert (
+        lines.count(
+            'RELEASE=""     # the copy published with a release names its version here '
+            "(make release)"
+        )
+        == 1
+    )
     assert lines.count('RELEASE_PYZ_SHA256=""') == lines.count('RELEASE_UNIT_SHA256=""') == 1
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert "meshcore-home-gateway-lxc.sh" in makefile
@@ -1947,8 +2189,11 @@ def fetch(*args: str) -> subprocess.CompletedProcess[str]:
     assert FETCH is not None
     return subprocess.run(  # noqa: S603 - the installer's download step
         [sys.executable, "-I", "-c", FETCH.group(1), *args],
-        capture_output=True, text=True, timeout=60, check=False,
-    )  # fmt: skip
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
 
 
 def publish_release(
@@ -1983,8 +2228,10 @@ def test_the_files_a_published_installer_pins_are_installed(
 ) -> None:
     base, files = server
     publish_release(files, "1.2.3")
-    pins = [hashlib.sha256(b"PK zipapp").hexdigest(),
-            hashlib.sha256((ROOT / UNIT).read_bytes()).hexdigest()]  # fmt: skip
+    pins = [
+        hashlib.sha256(b"PK zipapp").hexdigest(),
+        hashlib.sha256((ROOT / UNIT).read_bytes()).hexdigest(),
+    ]
     target = tmp_path / "stage"
     result = fetch("release", f"{base}v1.2.3/", "1.2.3", *pins, str(target))
     assert result.returncode == 0, result.stderr
@@ -1999,8 +2246,10 @@ def test_a_release_file_replaced_with_its_checksum_is_not_installed(
     not the file the installer was published with; nothing is written."""
     base, files = server
     publish_release(files, "1.2.3")
-    pins = [hashlib.sha256(b"PK zipapp").hexdigest(),
-            hashlib.sha256((ROOT / UNIT).read_bytes()).hexdigest()]  # fmt: skip
+    pins = [
+        hashlib.sha256(b"PK zipapp").hexdigest(),
+        hashlib.sha256((ROOT / UNIT).read_bytes()).hexdigest(),
+    ]
     shutil.rmtree(files / "v1.2.3")
     if replaced == "pyz":
         publish_release(files, "1.2.3", pyz=b"PK replaced")
@@ -2040,8 +2289,11 @@ def source_archive(files: Path, *extra: tarfile.TarInfo) -> None:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
         for path in ("src/meshcore_home_gateway", "tools/build_pyz.py", UNIT, "README.md"):
-            archive.add(ROOT / path, f"meshcore-home-gateway-main/{path}",
-                        filter=lambda i: None if "__pycache__" in i.name else i)  # fmt: skip
+            archive.add(
+                ROOT / path,
+                f"meshcore-home-gateway-main/{path}",
+                filter=lambda i: None if "__pycache__" in i.name else i,
+            )
         for member in extra:
             archive.addfile(member, io.BytesIO(b"x" * member.size))
     (files / "main.tar.gz").write_bytes(buffer.getvalue())
@@ -2063,9 +2315,18 @@ def test_the_source_of_a_ref_is_extracted_without_the_rest(
     assert not (target / "README.md").exists()
     assert not (tmp_path / "escaped").exists()
     build = subprocess.run(  # noqa: S603 - the build the installation step runs
-        [sys.executable, str(target / "tools/build_pyz.py"), "--source", str(target / "src"),
-         "--output", str(tmp_path / "gw.pyz")], capture_output=True, text=True, check=False,
-    )  # fmt: skip
+        [
+            sys.executable,
+            str(target / "tools/build_pyz.py"),
+            "--source",
+            str(target / "src"),
+            "--output",
+            str(tmp_path / "gw.pyz"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert build.returncode == 0, build.stderr
 
 
@@ -2106,9 +2367,17 @@ def test_a_release_file_is_installed_as_it_was_published(
     (stage / "deploy/systemd").mkdir(parents=True)
     shutil.copy(ROOT / UNIT, stage / UNIT)
     build = subprocess.run(  # noqa: S603 - a zipapp like the release one
-        [sys.executable, str(ROOT / "tools/build_pyz.py"), "--source", str(ROOT / "src"),
-         "--output", str(stage / "meshcore-home-gateway.pyz")], capture_output=True, check=False,
-    )  # fmt: skip
+        [
+            sys.executable,
+            str(ROOT / "tools/build_pyz.py"),
+            "--source",
+            str(ROOT / "src"),
+            "--output",
+            str(stage / "meshcore-home-gateway.pyz"),
+        ],
+        capture_output=True,
+        check=False,
+    )
     assert build.returncode == 0
     published = (stage / "meshcore-home-gateway.pyz").read_bytes()
     config = render_config(CURRENT.format(serial=host.serial))
@@ -2145,9 +2414,14 @@ def test_the_source_of_a_ref_is_built_in_the_container(host: Host, container: Co
 def test_dialogs_refuse_a_script_piped_into_bash(host: Host) -> None:
     """`wget -qO- URL | bash`: the dialogs would read the rest of the script as answers."""
     result = subprocess.run(  # noqa: S603 - our script, fed like `wget -qO- URL | bash`
-        [BASH, "-s"], input=host.installer.read_text(encoding="utf-8"), env=installer_env(host),
-        capture_output=True, text=True, timeout=60, check=False,
-    )  # fmt: skip
+        [BASH, "-s"],
+        input=host.installer.read_text(encoding="utf-8"),
+        env=installer_env(host),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
     assert result.returncode == 1
     assert 'bash -c "$(wget -qO- URL)"' in result.stderr
     assert not host.calls("whiptail")
@@ -2186,24 +2460,34 @@ def test_a_name_too_long_for_the_radio_is_refused(host: Host) -> None:
 
 def test_untested_firmware_and_older_versions_are_reported(host: Host) -> None:
     untested = "name\\tGateway\\ntested\\tno\\nchange\\tmanual_add\\tfalse\\ttrue\\n"
-    result = run_installer(host, "--answers", str(answers_file(host)),
-                           env={"PROBE_PROFILE": untested})  # fmt: skip
+    result = run_installer(
+        host, "--answers", str(answers_file(host)), env={"PROBE_PROFILE": untested}
+    )
     assert result.returncode == 0, result.stderr
     assert "firmware is not tested: the service only reports" in result.stderr
 
 
 def test_a_version_without_the_profile_skips_the_step(host: Host) -> None:
-    result = run_installer(host, "--answers", str(answers_file(host)),
-                           env={"PROBE_NO_PROFILE": "1"})  # fmt: skip
+    result = run_installer(
+        host, "--answers", str(answers_file(host)), env={"PROBE_NO_PROFILE": "1"}
+    )
     assert result.returncode == 0, result.stderr
     assert "does not manage the radio's settings; skipped" in result.stderr
 
 
 def test_the_plan_is_shown_in_a_dialog(host: Host) -> None:
     dialog = [
-        "default", str(host.serial), "broker.example.org", "no", "bridge", "pw-secret", "yes",
-        "0|1|2", ALICE, "",
-    ]  # fmt: skip
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw-secret",
+        "yes",
+        "0|1|2",
+        ALICE,
+        "",
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     boxes = [c for c in host.calls("whiptail") if "--msgbox" in c]
@@ -2212,8 +2496,18 @@ def test_the_plan_is_shown_in_a_dialog(host: Host) -> None:
 
 def test_the_plan_is_logged_and_shown_line_by_line(host: Host) -> None:
     """Every line of the plan ends in a line break, in the log (indented) and in the box."""
-    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes",
-              "1", "", ""]  # fmt: skip
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     plan = "At its next connect the service sets the radio:\n  manual_add: false -> true\n"
@@ -2230,9 +2524,17 @@ def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     assert host.config().radio.profile.name is None
     dialog = [
-        "default", str(host.serial), "broker.example.org", "no", "bridge", "pw-secret", "yes",
-        "0|1|2", ALICE, "",
-    ]  # fmt: skip
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw-secret",
+        "yes",
+        "0|1|2",
+        ALICE,
+        "",
+    ]
     second = host.root.parent / "second"
     second.mkdir()
     other = dataclasses.replace(install_stubs(second), installer=host.installer)
@@ -2281,8 +2583,12 @@ def test_the_plan_names_what_the_service_leaves_alone(host: Host) -> None:
 
 
 def test_a_radio_with_the_profile_needs_no_plan(host: Host) -> None:
-    result = run_installer(host, "--answers", str(answers_file(host)),
-                           env={"PROBE_PLAN": "name\\tGateway\\ntested\\tyes\\n"})  # fmt: skip
+    result = run_installer(
+        host,
+        "--answers",
+        str(answers_file(host)),
+        env={"PROBE_PLAN": "name\\tGateway\\ntested\\tyes\\n"},
+    )
     assert result.returncode == 0, result.stderr
     assert "the radio already has the managed profile" in result.stderr
 
@@ -2290,16 +2596,35 @@ def test_a_radio_with_the_profile_needs_no_plan(host: Host) -> None:
 def test_a_name_too_long_is_asked_again_in_the_dialog(host: Host) -> None:
     dialog = [
         "advanced",
-        "106", "meshcore-home-gateway", "local-lvm", "4", "512", "vmbr1",
-        "192.0.2.20/24", "192.0.2.1", "local",
+        "106",
+        "meshcore-home-gateway",
+        "local-lvm",
+        "4",
+        "512",
+        "vmbr1",
+        "192.0.2.20/24",
+        "192.0.2.1",
+        "local",
         str(host.serial),
-        "broker.example.org", "no", "1883", "bridge", "pw", "meshcore", "gw1",
-        "yes", "Mesh radio", "yes",
+        "broker.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "pw",
+        "meshcore",
+        "gw1",
         "yes",
-        "0|1", ALICE, ALICE, "status,arm",
+        "Mesh radio",
+        "yes",
+        "yes",
+        "0|1",
+        ALICE,
+        ALICE,
+        "status,arm",
         "yes",  # commands without TLS: accepted (SEC-004)
-        "x" * 32, "Mesh gateway",  # 32 bytes, then one that fits
-    ]  # fmt: skip
+        "x" * 32,
+        "Mesh gateway",  # 32 bytes, then one that fits
+    ]
     result = run_installer(host, dialog=dialog)
     assert result.returncode == 0, result.stderr
     assert host.config().radio.profile.name == "Mesh gateway"
@@ -2323,8 +2648,9 @@ def test_the_plan_names_the_protected_contacts(host: Host) -> None:
 
 def test_a_radio_that_does_not_answer_stops_the_installation(host: Host) -> None:
     """Not taken for a version without the profile: the operator would not see the plan."""
-    result = run_installer(host, "--answers", str(answers_file(host)),
-                           env={"PROBE_PROFILE_FAILS": "1"})  # fmt: skip
+    result = run_installer(
+        host, "--answers", str(answers_file(host)), env={"PROBE_PROFILE_FAILS": "1"}
+    )
     assert result.returncode != 0
     assert "cannot read the radio's settings" in result.stderr
     assert "does not manage the radio's settings" not in result.stderr

@@ -25,23 +25,46 @@ HOSTILE = "Mal\tlory\n\x1b[2J\u202e"
 
 def contacts_index(**extra: Any) -> dict[str, Any]:
     return {
-        "total": 2, "manage": True, "truncated": False,
+        "total": 2,
+        "manage": True,
+        "truncated": False,
         "contacts": [
-            {"key": "a1" * 32, "name": "Alice", "type": "chat", "heard_at": None,
-             "protected": True},
-            {"key": ERIN, "name": HOSTILE, "type": "room", "heard_at": "2027-01-15T08:00:00+00:00",
-             "protected": False},
+            {
+                "key": "a1" * 32,
+                "name": "Alice",
+                "type": "chat",
+                "heard_at": None,
+                "protected": True,
+            },
+            {
+                "key": ERIN,
+                "name": HOSTILE,
+                "type": "room",
+                "heard_at": "2027-01-15T08:00:00+00:00",
+                "protected": False,
+            },
         ],
         **extra,
-    }  # fmt: skip
+    }
 
 
 def nodes_document(*keys: str, truncated: bool = False) -> dict[str, Any]:
     return {
-        "total": len(keys), "truncated": truncated, "look_alike": [], "look_alike_total": 0,
-        "nodes": [{"key": k, "name": f"Node {k[:2]}", "type": "chat", "look_alike": False,
-                   "heard_at": None} for k in keys],
-    }  # fmt: skip
+        "total": len(keys),
+        "truncated": truncated,
+        "look_alike": [],
+        "look_alike_total": 0,
+        "nodes": [
+            {
+                "key": k,
+                "name": f"Node {k[:2]}",
+                "type": "chat",
+                "look_alike": False,
+                "heard_at": None,
+            }
+            for k in keys
+        ],
+    }
 
 
 class FakeGateway:
@@ -49,9 +72,14 @@ class FakeGateway:
     first, then its own."""
 
     def __init__(
-        self, broker: Broker, *, online: bool = True, answer: str | None = "ok",
-        documents: dict[str, Any] | None = None, reason: str | None = None,
-    ) -> None:  # fmt: skip
+        self,
+        broker: Broker,
+        *,
+        online: bool = True,
+        answer: str | None = "ok",
+        documents: dict[str, Any] | None = None,
+        reason: str | None = None,
+    ) -> None:
         """`reason`: of a telemetry request's result (`not_saved`, `not_forgotten`)."""
         self.requests: list[tuple[str, bytes]] = []
         self.answer = answer
@@ -63,16 +91,20 @@ class FakeGateway:
         self.client.connect(broker.host, broker.port)
         self.client.loop_start()
         retained = {
-            "availability": "online" if online else "offline", "nodes": nodes_document(),
+            "availability": "online" if online else "offline",
+            "nodes": nodes_document(),
             **(documents or {}),
-        }  # fmt: skip
+        }
         for name, document in retained.items():
             body = document if isinstance(document, str) else json.dumps(document)
             self.client.publish(f"{ROOT}/{name}", body, qos=1, retain=True).wait_for_publish(5)
-        self.client.subscribe([
-            (f"{ROOT}/add_contact", 1), (f"{ROOT}/contacts/+/remove", 1),
-            (f"{ROOT}/contacts/+/telemetry", 1),
-        ])  # fmt: skip
+        self.client.subscribe(
+            [
+                (f"{ROOT}/add_contact", 1),
+                (f"{ROOT}/contacts/+/remove", 1),
+                (f"{ROOT}/contacts/+/telemetry", 1),
+            ]
+        )
         assert ready.wait(5)
 
     def _on_message(self, _c: Any, _u: Any, message: Any) -> None:
@@ -89,11 +121,18 @@ class FakeGateway:
             "telemetry": "excluded" if request.get("telemetry") == "off" else "included",
         }
         done = results[kind] if self.answer == "ok" else "refused"
-        reason = "look_alike" if done == "refused" else self.reason  # fmt: skip
+        reason = "look_alike" if done == "refused" else self.reason
         for event_id, event_type in (("other", "added"), (request["id"], done)):
-            body = {"event_type": event_type, "key": key, "prefix": key[:12], "name": "Dave",
-                    "type": "chat", "request": kind, "id": event_id,
-                    "reason": reason if event_id != "other" else None}  # fmt: skip
+            body = {
+                "event_type": event_type,
+                "key": key,
+                "prefix": key[:12],
+                "name": "Dave",
+                "type": "chat",
+                "request": kind,
+                "id": event_id,
+                "reason": reason if event_id != "other" else None,
+            }
             self.client.publish(f"{ROOT}/contact", json.dumps(body), qos=1)
 
     def stop(self) -> None:
@@ -151,9 +190,12 @@ def test_add_a_heard_node_by_its_label(
     ],
 )
 def test_a_label_must_name_one_heard_node(
-    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str],
-    nodes: dict[str, Any], message: str,
-) -> None:  # fmt: skip
+    tmp_path: Path,
+    broker: Broker,
+    capsys: pytest.CaptureFixture[str],
+    nodes: dict[str, Any],
+    message: str,
+) -> None:
     gateway = FakeGateway(broker, documents={"nodes": nodes})
     try:
         assert run(tmp_path, broker, "add", DAVE_LABEL) == EX_USAGE
@@ -245,9 +287,13 @@ def test_remove_by_key_or_label(
 def test_list_shows_contacts_and_nodes_with_harmless_names(
     tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    gateway = FakeGateway(broker, documents={
-        "contacts": contacts_index(), "nodes": nodes_document(DAVE),
-    })  # fmt: skip
+    gateway = FakeGateway(
+        broker,
+        documents={
+            "contacts": contacts_index(),
+            "nodes": nodes_document(DAVE),
+        },
+    )
     try:
         assert run(tmp_path, broker, "list") == EX_OK
         lines = capsys.readouterr().out.splitlines()
@@ -257,8 +303,12 @@ def test_list_shows_contacts_and_nodes_with_harmless_names(
         gateway.stop()
     assert lines[0] == "contact\t" + "a1" * 32 + "\tchat\tprotected\t-\tAlice"
     assert lines[1].split("\t")[:5] == [
-        "contact", ERIN, "room", "removable", "2027-01-15T08:00:00+00:00",
-    ]  # fmt: skip
+        "contact",
+        ERIN,
+        "room",
+        "removable",
+        "2027-01-15T08:00:00+00:00",
+    ]
     assert len(lines[1].split("\t")) == 6  # the name's tab and line break are spaces
     assert "\x1b" not in lines[1]
     assert "\u202e" not in lines[1]
@@ -333,8 +383,10 @@ def test_check_config_names_contact_management_and_protected_look_alikes(
     assert main(["check-config", "--config", str(config)]) == EX_OK  # a warning, no error
     captured = capsys.readouterr()
     assert "  contacts   not managed\n" in captured.out
-    assert ("b2b2b2b2b2b2…00000000 (command sender) and b2b2b2b2b2b2…b2b2b2b2 (target one) "
-            "have the same first 6 bytes") in captured.err  # fmt: skip
+    assert (
+        "b2b2b2b2b2b2…00000000 (command sender) and b2b2b2b2b2b2…b2b2b2b2 (target one) "
+        "have the same first 6 bytes"
+    ) in captured.err
     assert "adds b2b2b2b2b2b2…00000000 unless the other is on the radio" in captured.err
     config.write_text(config.read_text() + '[radio.profile]\nmanage = "observe"\n')
     assert main(["check-config", "--config", str(config)]) == EX_OK
@@ -379,9 +431,13 @@ def test_adding_a_look_alike_warns(
 def test_list_says_when_a_document_is_cut(
     tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    gateway = FakeGateway(broker, documents={
-        "contacts": contacts_index(truncated=True, total=300), "nodes": nodes_document(DAVE),
-    })  # fmt: skip
+    gateway = FakeGateway(
+        broker,
+        documents={
+            "contacts": contacts_index(truncated=True, total=300),
+            "nodes": nodes_document(DAVE),
+        },
+    )
     try:
         assert run(tmp_path, broker, "list") == EX_OK
     finally:
@@ -400,9 +456,12 @@ def test_list_says_when_a_document_is_cut(
     ],
 )
 def test_list_says_why_requests_are_refused(
-    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str], reason: str | None,
+    tmp_path: Path,
+    broker: Broker,
+    capsys: pytest.CaptureFixture[str],
+    reason: str | None,
     said: str | None,
-) -> None:  # fmt: skip
+) -> None:
     """OPS-007: after a firmware update of the radio the controls turn unavailable; the list
     says why, after the lists."""
     gateway = FakeGateway(broker, documents={"contacts": contacts_index(manage_reason=reason)})
@@ -438,15 +497,19 @@ def test_telemetry_off_excludes_a_contact_and_says_what_goes(
     assert [t for t, _ in gateway.requests] == [f"{ROOT}/contacts/{'a1' * 32}/telemetry"] * 3
     requests = [json.loads(p) for _, p in gateway.requests]
     assert [{k: v for k, v in r.items() if k != "id"} for r in requests] == [
-        {"telemetry": "off"}, {"telemetry": "off", "forget": True}, {"telemetry": "on"},
-    ]  # fmt: skip
+        {"telemetry": "off"},
+        {"telemetry": "off", "forget": True},
+        {"telemetry": "on"},
+    ]
     assert all(r["id"].startswith("cli-") for r in requests)
     assert json.loads(off.out)["event_type"] == "excluded"
     assert json.loads(off.out)["id"] == requests[0]["id"]  # its own result, not the other's
     assert "key a1a1 a1a1" in off.err
     assert "'Alice'" in off.err
-    assert ("the gateway stops asking it and forgets its battery, readings and position; its "
-            "history keeps them for readings_days and positions_days") in off.err  # fmt: skip
+    assert (
+        "the gateway stops asking it and forgets its battery, readings and position; its "
+        "history keeps them for readings_days and positions_days"
+    ) in off.err
     assert "and deletes them from its history" in forget.err
     assert "history keeps them" not in forget.err
     assert json.loads(on.out)["event_type"] == "included"
@@ -489,9 +552,12 @@ def test_telemetry_by_label(tmp_path: Path, broker: Broker) -> None:
     ("answer", "reason"), [("ok", "not_saved"), ("ok", "not_forgotten"), ("refused", None)]
 )
 def test_telemetry_fails_unless_it_took_effect_without_a_reason(
-    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str],
-    answer: str, reason: str | None,
-) -> None:  # fmt: skip
+    tmp_path: Path,
+    broker: Broker,
+    capsys: pytest.CaptureFixture[str],
+    answer: str,
+    reason: str | None,
+) -> None:
     """`not_saved`: in effect, written again every minute; `not_forgotten`: excluded, but the
     history could not delete its rows."""
     gateway = FakeGateway(broker, answer=answer, reason=reason)

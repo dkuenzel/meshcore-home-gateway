@@ -133,8 +133,12 @@ def test_read_po_reads_what_gnu_writes() -> None:
     po = GNU_PO.replace(r"\u2028", "\u2028")  # a line separator inside a msgstr, as typed
     header, entries = read_po(po, "de.po")
     assert list(header) == [
-        "Project-Id-Version", "POT-Creation-Date", "Language", "Content-Type", "Plural-Forms",
-    ]  # fmt: skip
+        "Project-Id-Version",
+        "POT-Creation-Date",
+        "Language",
+        "Content-Type",
+        "Plural-Forms",
+    ]
     assert header["Plural-Forms"] == "nplurals=2; plural=(n != 1);"
     radio, send, lines, plural, escapes = entries
     assert radio == Entry(
@@ -150,8 +154,10 @@ def test_read_po_reads_what_gnu_writes() -> None:
         notes=("a note of the translator",),
     )
     assert (send.msgctxt, send.msgid, send.msgstr) == (
-        "home assistant", "Send to {alias}", ("An {alias} senden",),
-    )  # fmt: skip
+        "home assistant",
+        "Send to {alias}",
+        ("An {alias} senden",),
+    )
     assert send.key == "home assistant\x04Send to {alias}"
     assert (lines.msgid, lines.msgstr) == (
         "first line\nsecond line",
@@ -221,8 +227,10 @@ def test_fuzzy_and_untranslated_are_left_out() -> None:
     assert loaded.pgettext("home assistant", "Radio link") == "Połączenie z radiem"
     # a plural entry with one empty form: English for every count, never an empty text
     assert [loaded.ngettext("{count} node", "{count} nodes", n) for n in (1, 2, 5)] == [
-        "{count} node", "{count} nodes", "{count} nodes",
-    ]  # fmt: skip
+        "{count} node",
+        "{count} nodes",
+        "{count} nodes",
+    ]
     assert not partly.translated
     assert Entry("a", ("x",)).translated
     assert not Entry("a").translated

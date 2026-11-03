@@ -51,6 +51,19 @@ def executable(path: Path, text: str) -> Path:
     return path
 
 
+def test_the_formatter_has_the_last_word() -> None:
+    """CODE-007: the output of `ruff format` is the style; no line of the code opts out of it."""
+    marker = "# fmt" + ": "  # not in this file's own text
+    opted_out = [
+        f"{path.relative_to(ROOT)}:{number}"
+        for folder in ("src", "tests", "tools")
+        for path in sorted((ROOT / folder).rglob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if marker in line
+    ]
+    assert opted_out == []
+
+
 def test_check_builds_the_zipapp_once() -> None:
     """`unit-check` takes the zipapp of `dist`; a second build could race `rm -rf dist` (-j)."""
     dry_run = make("--dry-run", "check")
@@ -323,8 +336,11 @@ def test_the_release_is_built_where_no_test_or_lint_tool_runs() -> None:
         "rebuild",
     ]
     assert job_commands(jobs["check"])[-1] == "make check"
-    releasing = [job for job, text in jobs.items() if "release" in set().union(
-        *map(make_targets, job_commands(text)))]  # fmt: skip
+    releasing = [
+        job
+        for job, text in jobs.items()
+        if "release" in set().union(*map(make_targets, job_commands(text)))
+    ]
     assert releasing == ["build", "rebuild"]
     assert "diff built/release/SHA256SUMS dist/release/SHA256SUMS" in job_commands(jobs["rebuild"])
     assert "    needs: [check, build, rebuild]\n" in jobs["publish"]
@@ -332,8 +348,9 @@ def test_the_release_is_built_where_no_test_or_lint_tool_runs() -> None:
     locked = set(re.findall(r"^([\w.-]+)==", lock, flags=re.MULTILINE))
     assert {"build", "flit-core"} <= locked
     assert not locked & {"pytest", "coverage", "ruff", "mypy", "zizmor", "shellcheck-py"}
-    environment = make("--dry-run", "VENV=.venv-x", "REQUIREMENTS=requirements/release.txt",
-                       ".venv-x/.locked")  # fmt: skip
+    environment = make(
+        "--dry-run", "VENV=.venv-x", "REQUIREMENTS=requirements/release.txt", ".venv-x/.locked"
+    )
     assert "--require-hashes --no-deps -r requirements/release.txt" in environment.stdout
 
 
@@ -421,10 +438,21 @@ def test_dist_refuses_a_compiled_catalog(tmp_path: Path) -> None:
 
     def dist() -> subprocess.CompletedProcess[str]:
         return subprocess.run(  # noqa: S603 - our Makefile with fixed arguments
-            [MAKE, "--no-print-directory", "-f", str(ROOT / "Makefile"), "-C", str(tmp_path),
-             "dist", *options],
-            env=env, capture_output=True, text=True, check=False,
-        )  # fmt: skip
+            [
+                MAKE,
+                "--no-print-directory",
+                "-f",
+                str(ROOT / "Makefile"),
+                "-C",
+                str(tmp_path),
+                "dist",
+                *options,
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
     clean = dist()
     assert clean.returncode == 0, clean.stderr
@@ -499,10 +527,23 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
 
     def release() -> subprocess.CompletedProcess[str]:
         return subprocess.run(  # noqa: S603 - our Makefile with fixed arguments
-            [MAKE, "--no-print-directory", "-f", str(ROOT / "Makefile"), "-C", str(tmp_path),
-             "release", f"VENV={environment}", f"BIN={stubs}", "MAKE=true"],
-            env=env, capture_output=True, text=True, check=False,
-        )  # fmt: skip
+            [
+                MAKE,
+                "--no-print-directory",
+                "-f",
+                str(ROOT / "Makefile"),
+                "-C",
+                str(tmp_path),
+                "release",
+                f"VENV={environment}",
+                f"BIN={stubs}",
+                "MAKE=true",
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
     made = release()
     assert made.returncode == 0, made.stderr
@@ -521,8 +562,10 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     assert "  meshcore-home-gateway.service\n" in sums
     # OPS-002: the installer pins what it installs, so its attestation covers the program
     pinning = (dist / "release" / "meshcore-home-gateway-lxc.sh").read_text(encoding="utf-8")
-    for name, file in (("PYZ", "meshcore-home-gateway-9.9.9.pyz"),
-                       ("UNIT", "meshcore-home-gateway.service")):  # fmt: skip
+    for name, file in (
+        ("PYZ", "meshcore-home-gateway-9.9.9.pyz"),
+        ("UNIT", "meshcore-home-gateway.service"),
+    ):
         digest = hashlib.sha256((dist / "release" / file).read_bytes()).hexdigest()
         assert f'\nRELEASE_{name}_SHA256="{digest}"\n' in pinning
         assert f"{digest}  {file}\n" in sums

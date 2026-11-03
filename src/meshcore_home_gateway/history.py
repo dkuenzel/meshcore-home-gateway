@@ -181,9 +181,19 @@ class History:
         self._write(
             "INSERT INTO message (at, direction, kind, contact_key, channel_index, name, text, "
             "state, hops, snr_db) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (entry.at, entry.direction, entry.kind, entry.contact_key, entry.channel_index,
-             entry.name, entry.text, entry.state, entry.hops, entry.snr_db),
-        )  # fmt: skip
+            (
+                entry.at,
+                entry.direction,
+                entry.kind,
+                entry.contact_key,
+                entry.channel_index,
+                entry.name,
+                entry.text,
+                entry.state,
+                entry.hops,
+                entry.snr_db,
+            ),
+        )
 
     def add_position(self, key: str, fix: Fix) -> None:
         position = fix.position
@@ -206,10 +216,12 @@ class History:
         positions from adverts stay. The rows deleted, or None without a working history. A
         purge that runs is waited for (rare: the household excludes a contact and forgets)."""
         self._finish_purge()
-        return self._write_all([
-            ("DELETE FROM reading WHERE contact_key = ?", [(key,)]),
-            ("DELETE FROM position WHERE contact_key = ? AND source = 'telemetry'", [(key,)]),
-        ])  # fmt: skip
+        return self._write_all(
+            [
+                ("DELETE FROM reading WHERE contact_key = ?", [(key,)]),
+                ("DELETE FROM position WHERE contact_key = ? AND source = 'telemetry'", [(key,)]),
+            ]
+        )
 
     def node_heard(
         self, key: str, name: str, node_type: int, heard: Heard, last_advert: int = 0
@@ -223,9 +235,19 @@ class History:
             "heard_at = excluded.heard_at, how = excluded.how, hops = excluded.hops, "
             "snr_db = excluded.snr_db, rssi_dbm = excluded.rssi_dbm, "
             "last_advert = excluded.last_advert WHERE excluded.heard_at >= node.heard_at",
-            (key, name, node_type, heard.at, heard.at, heard.how, signal.hops, signal.snr_db,
-             signal.rssi_dbm, last_advert),
-        )  # fmt: skip
+            (
+                key,
+                name,
+                node_type,
+                heard.at,
+                heard.at,
+                heard.how,
+                signal.hops,
+                signal.snr_db,
+                signal.rssi_dbm,
+                last_advert,
+            ),
+        )
 
     def purge(self, now: float, nodes: Iterable[str] | None = None) -> None:
         """Drop what is older than the retention, and rows beyond the caps (the oldest first;
@@ -273,7 +295,7 @@ class History:
             ("DELETE FROM node WHERE heard_at < ?", [(now - r.nodes_days * DAY_S,)]),
             ("DELETE FROM reading WHERE at < ?", [(now - r.readings_days * DAY_S,)]),
             (_READINGS_BEYOND_CAP, [(MAX_READINGS,)]),
-        ]  # fmt: skip
+        ]
         if nodes is not None:
             steps.append((_NODES_FORGOTTEN, [(json.dumps(sorted(set(nodes))),)]))
         return steps
@@ -306,8 +328,9 @@ class History:
             self._held.append(steps)
             return
         if not self._dropped:
-            log.warning("history: more than %d writes while the purge ran; later ones lost",
-                        MAX_HELD)  # fmt: skip
+            log.warning(
+                "history: more than %d writes while the purge ran; later ones lost", MAX_HELD
+            )
         self._dropped += 1
 
     def _write(self, sql: str, args: tuple[Any, ...]) -> None:

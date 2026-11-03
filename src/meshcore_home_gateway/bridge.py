@@ -152,9 +152,14 @@ MAX_ECHOED_ALIAS = 64  # characters of a refused request's topic level in its ev
 INBOUND_DEDUP_S = 3600.0  # retries reach us as duplicates with the same timestamp and text
 LOOK_ALIKE_MEMORY_S = 86_400.0  # a key with a sender's prefix counts this long after last seen
 _FINAL_FROM_CACHE = frozenset(
-    {Rejection.SENDER_AMBIGUOUS, Rejection.SENDER_NOT_ALLOWED, Rejection.REPLAY,
-     Rejection.TOO_OLD, Rejection.FROM_THE_FUTURE}
-)  # fmt: skip
+    {
+        Rejection.SENDER_AMBIGUOUS,
+        Rejection.SENDER_NOT_ALLOWED,
+        Rejection.REPLAY,
+        Rejection.TOO_OLD,
+        Rejection.FROM_THE_FUTURE,
+    }
+)
 DISCOVERY_DELAY_S = (0.5, 2.0)  # random delay after Home Assistant's birth message
 ANNOUNCE_MIN_INTERVAL_S = 30  # announcements after births and clears, at most this often
 BIRTHS_PER_MINUTE = 5  # more come from another client than Home Assistant: logged
@@ -254,11 +259,14 @@ class ReceivedLimit:
             log.warning(
                 "received messages not published nor recorded (limit one every %g s per sender, "
                 "bursts of %g, and %g per second per channel, bursts of %g): %d direct, %d "
-                "channel", 1 / RECEIVED_PER_SENDER_PER_S, RECEIVED_PER_SENDER_BURST,
-                RECEIVED_PER_CHANNEL_PER_S, RECEIVED_PER_CHANNEL_BURST,
+                "channel",
+                1 / RECEIVED_PER_SENDER_PER_S,
+                RECEIVED_PER_SENDER_BURST,
+                RECEIVED_PER_CHANNEL_PER_S,
+                RECEIVED_PER_CHANNEL_BURST,
                 self._left_out.get(MessageKind.CONTACT, 0),
                 self._left_out.get(MessageKind.CHANNEL, 0),
-            )  # fmt: skip
+            )
             self._left_out = {}
             self._next_report = now + REFUSED_REPORT_INTERVAL_S
 
@@ -357,16 +365,26 @@ class Bridge:
         self._manage: ManageEntities | None = None  # Home Assistant's controls to add contacts
         if config.homeassistant.discovery:
             self._manage = ManageEntities(
-                config, self.topics, bus, self.observer.mesh, records=manage_components,
-                protected=protected_keys(config), monotonic=monotonic, wall_clock=wall_clock,
+                config,
+                self.topics,
+                bus,
+                self.observer.mesh,
+                records=manage_components,
+                protected=protected_keys(config),
+                monotonic=monotonic,
+                wall_clock=wall_clock,
                 connected=lambda: bus.connected,
-            )  # fmt: skip
+            )
             self.observer.on_nodes.append(self._manage.nodes_changed)
         self._events: asyncio.Queue[RadioEvent] = asyncio.Queue()
         self._contacts = ContactManager(
-            config, self.observer, self._events, self.live_session,
-            protected=protected_keys(config), monotonic=monotonic,
-        )  # fmt: skip
+            config,
+            self.observer,
+            self._events,
+            self.live_session,
+            protected=protected_keys(config),
+            monotonic=monotonic,
+        )
         self._messages: asyncio.Queue[MessageReceived] = asyncio.Queue()
         # keys with the 6-byte prefix of an allowed command sender, as the radio named them:
         # key -> when last seen; only these are kept, so the memory stays small (ADR 0009)
@@ -411,10 +429,15 @@ class Bridge:
         if not self.config.telemetry.enabled:
             return None
         poller = TelemetryPoller(
-            self.observer, self.live_session, self._activity, records=records,
-            tcp=self.config.radio.transport == "tcp", monotonic=self._mono, wall_clock=self._wall,
+            self.observer,
+            self.live_session,
+            self._activity,
+            records=records,
+            tcp=self.config.radio.transport == "tcp",
+            monotonic=self._mono,
+            wall_clock=self._wall,
             lanes=lanes,
-        )  # fmt: skip
+        )
         self.observer.telemetry_state = poller.state_of
         self.observer.on_telemetry_exclusion.append(poller.exclusion_changed)
         self.observer.on_contact_added.append(poller.contact_added)
@@ -444,8 +467,10 @@ class Bridge:
         for warning in start_warnings(self.config):
             log.warning("%s", warning)
         if self.config.contacts.manage and self.config.radio.transport == "tcp":
-            log.warning("contact management over TCP: heard nodes are best effort, the radio "
-                        "drops its pushes while no client is connected")  # fmt: skip
+            log.warning(
+                "contact management over TCP: heard nodes are best effort, the radio "
+                "drops its pushes while no client is connected"
+            )
         if self.config.messages.publish_channels == "targets":
             channels = ", ".join(map(str, sorted(_target_channels(self.config)))) or "none"
             log.info("channel messages published only from the channels of targets: %s", channels)
@@ -513,12 +538,19 @@ class Bridge:
         now, kept = self._mono(), self._queue.take_all()
         OutboxRecords(self._ledger.store).save(
             [
-                SavedMessage(item.id, item.target.alias, item.text, item.raw, now - item.created,
-                             item.timestamp, item.sent)
+                SavedMessage(
+                    item.id,
+                    item.target.alias,
+                    item.text,
+                    item.raw,
+                    now - item.created,
+                    item.timestamp,
+                    item.sent,
+                )
                 for item in kept
             ],
             self._wall(),
-        )  # fmt: skip
+        )
         if kept:
             log.info("%d messages kept for the next start", len(kept))
 
@@ -532,26 +564,42 @@ class Bridge:
             target = self._target_of(saved.target)
             age = saved.age_s + elapsed if elapsed is not None else config.queue_ttl_s
             if target is None:  # its target left the configuration
-                event = DeliveryEvent(saved.id, saved.target, DeliveryState.FAILED,
-                                      text=saved.text, attempt=saved.sent,
-                                      reason="unknown_target")  # fmt: skip
+                event = DeliveryEvent(
+                    saved.id,
+                    saved.target,
+                    DeliveryState.FAILED,
+                    text=saved.text,
+                    attempt=saved.sent,
+                    reason="unknown_target",
+                )
                 self._deliver_event(event)
                 continue
-            item = Outgoing(saved.id, target, saved.text, now - age, saved.raw,
-                            alert=target.alias in config.alert_targets,
-                            timestamp=saved.timestamp, sent=saved.sent)  # fmt: skip
+            item = Outgoing(
+                saved.id,
+                target,
+                saved.text,
+                now - age,
+                saved.raw,
+                alert=target.alias in config.alert_targets,
+                timestamp=saved.timestamp,
+                sent=saved.sent,
+            )
             if age >= config.queue_ttl_s:  # it would have expired meanwhile
                 self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))
                 continue
             nonce = target.kind is MessageKind.CONTACT and config.confirm_nonce
-            self._dedup.is_duplicate((target.alias, without_nonce(item.text) if nonce else
-                                      item.text), now)  # fmt: skip
+            self._dedup.is_duplicate(
+                (target.alias, without_nonce(item.text) if nonce else item.text), now
+            )
             self._queue.restore(item)
             queued += 1
             self._deliver_event(self._event(item, DeliveryState.QUEUED, attempt=item.sent))
         if messages:
-            log.info("messages kept by the last stop: %d queued again, %d at an end", queued,
-                     len(messages) - queued)  # fmt: skip
+            log.info(
+                "messages kept by the last stop: %d queued again, %d at an end",
+                queued,
+                len(messages) - queued,
+            )
 
     async def _finish_inbound(self, radio: asyncio.Task[None]) -> None:
         """Stop the radio first, then handle the messages it has already handed over, for at most
@@ -628,10 +676,13 @@ class Bridge:
         """Over TCP: whether another client took the link before this one (core.link)."""
         uptime_s, read_at = _uptime(session)
         if self._link.started(uptime_s, read_at):
-            log.warning("radio: the radio closed the TCP connection and kept running (uptime %s "
-                        "s): another client connected to it, which can control the radio and "
-                        "read its private key; the gateway took the link back "
-                        "(docs/deployment.md, Troubleshooting)", uptime_s)  # fmt: skip
+            log.warning(
+                "radio: the radio closed the TCP connection and kept running (uptime %s "
+                "s): another client connected to it, which can control the radio and "
+                "read its private key; the gateway took the link back "
+                "(docs/deployment.md, Troubleshooting)",
+                uptime_s,
+            )
 
     def _check_radio(self, session: CompanionSession) -> None:
         """Warn about targets the radio does not know, a burst that is too small, and commands
@@ -649,17 +700,22 @@ class Bridge:
                 log.warning(
                     "a long direct message takes %.1f s of airtime at the radio's settings, more "
                     "than airtime.burst_s (%.1f s): such messages fail (exceeds_airtime_burst)",
-                    longest, self._budget.capacity_s,
-                )  # fmt: skip
+                    longest,
+                    self._budget.capacity_s,
+                )
         for target in self._targets.values():
             if target.kind is MessageKind.CHANNEL and target.channel_index not in session.channels:
-                log.warning("target %s: channel %s is not configured on the radio",
-                            target.alias, target.channel_index)  # fmt: skip
+                log.warning(
+                    "target %s: channel %s is not configured on the radio",
+                    target.alias,
+                    target.channel_index,
+                )
             if target.kind is MessageKind.CONTACT and target.public_key is not None:
                 matches = session.contacts.resolve(target.public_key[:PREFIX_HEX_DIGITS])
                 if [c.public_key for c in matches] != [target.public_key]:
-                    log.warning("target %s: contact missing on the radio or prefix ambiguous",
-                                target.alias)  # fmt: skip
+                    log.warning(
+                        "target %s: contact missing on the radio or prefix ambiguous", target.alias
+                    )
 
     async def _radio_until(self, deadline: float) -> CompanionSession | None:
         """The connected session, waiting for it until the deadline; never a closed one."""
@@ -742,8 +798,11 @@ class Bridge:
         if self._unpublished and now >= self._next_report:
             log.warning(
                 "delivery events of refused send requests not published (limit %g per second, "
-                "bursts of %g): %d", REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, self._unpublished,
-            )  # fmt: skip
+                "bursts of %g): %d",
+                REFUSED_EVENTS_PER_S,
+                REFUSED_EVENTS_BURST,
+                self._unpublished,
+            )
             self._unpublished = 0
             self._next_report = now + REFUSED_REPORT_INTERVAL_S
 
@@ -843,9 +902,9 @@ class Bridge:
         direct = item.target.kind is MessageKind.CONTACT
         attempts = messages.max_attempts if direct else 1
         while item.sent < attempts:
-            if item.sent and (self._flight.stopping or (
-                not item.alert and self._queue.alert_waiting
-            )):  # fmt: skip
+            if item.sent and (
+                self._flight.stopping or (not item.alert and self._queue.alert_waiting)
+            ):
                 log.info("delivery %s: paused after attempt %d", item.id, item.sent)
                 self._queue.put_back(item)
                 return
@@ -971,8 +1030,10 @@ class Bridge:
             log.warning(
                 "delivery %s: acknowledged after %d ms, sooner than the %.0f ms a genuine "
                 "acknowledgement takes over the path at least: it may be forged (SEC-001)",
-                item.id, round_trip, acks.shortest_ms,
-            )  # fmt: skip
+                item.id,
+                round_trip,
+                acks.shortest_ms,
+            )
         return self._event(
             item, DeliveryState.CONFIRMED, attempt=item.sent, rtt_ms=round_trip, suspect=suspect
         )
@@ -1023,19 +1084,37 @@ class Bridge:
         return matches[0]
 
     def _event(
-        self, item: Outgoing, state: DeliveryState, *, attempt: int = 0, reason: str | None = None,
-        rtt_ms: int | None = None, airtime_s: float | None = None, suspect: bool | None = None,
-    ) -> DeliveryEvent:  # fmt: skip
+        self,
+        item: Outgoing,
+        state: DeliveryState,
+        *,
+        attempt: int = 0,
+        reason: str | None = None,
+        rtt_ms: int | None = None,
+        airtime_s: float | None = None,
+        suspect: bool | None = None,
+    ) -> DeliveryEvent:
         return DeliveryEvent(
-            item.id, item.target.alias, state, text=item.text, attempt=attempt, reason=reason,
-            rtt_ms=rtt_ms, airtime_ms=None if airtime_s is None else round(airtime_s * 1000),
+            item.id,
+            item.target.alias,
+            state,
+            text=item.text,
+            attempt=attempt,
+            reason=reason,
+            rtt_ms=rtt_ms,
+            airtime_ms=None if airtime_s is None else round(airtime_s * 1000),
             suspect=suspect,
-        )  # fmt: skip
+        )
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
         # %r: the alias of a rejected request comes from its topic, which may hold any character
-        log.info("delivery %s to %r: %s%s", event.id, event.target, event.state.value,
-                 f" ({event.reason})" if event.reason else "")  # fmt: skip
+        log.info(
+            "delivery %s to %r: %s%s",
+            event.id,
+            event.target,
+            event.state.value,
+            f" ({event.reason})" if event.reason else "",
+        )
         self._bus.publish(self.topics.delivery, encode(delivery_payload(event)))
         self._observe(self.observer.delivery, event, self._target_of(event.target))
 
@@ -1137,11 +1216,15 @@ class Bridge:
             sender = matches[0] if len(matches) == 1 else None
         target = self._target_for(message, sender)
         # %r: names come from the mesh and must not forge log lines or terminal escapes
-        log.info("received %s message from %r (%d bytes)%s", message.kind.value,
-                 sender.name if sender else message.sender_prefix or message.channel_index,
-                 len(message.text.encode()),
-                 f", command {decision.word}: {'accepted' if command else decision.rejection}"
-                 if decision else "")  # fmt: skip
+        log.info(
+            "received %s message from %r (%d bytes)%s",
+            message.kind.value,
+            sender.name if sender else message.sender_prefix or message.channel_index,
+            len(message.text.encode()),
+            f", command {decision.word}: {'accepted' if command else decision.rejection}"
+            if decision
+            else "",
+        )
         log.debug("text: %r", message.text)
         payload = received_payload(message, sender, target, decision)
         self._bus.publish(self.topics.received, encode(payload))
@@ -1149,9 +1232,11 @@ class Bridge:
             self._bus.publish(self.topics.contact_received(sender.public_key), encode(payload))
         self._observe(self.observer.message, message, sender)
         if (
-            self._telemetry is not None and sender is not None and not event.at_connect
+            self._telemetry is not None
+            and sender is not None
+            and not event.at_connect
             and message.kind is MessageKind.CONTACT
-        ):  # fmt: skip
+        ):
             # as it arrived; one fetched at connect may have waited in the radio for hours
             self._observe(self._telemetry.heard, sender.public_key)
         if command is not None:
@@ -1202,9 +1287,13 @@ class Bridge:
         now = self._mono()
         self._seen = {k: at for k, at in self._seen.items() if now - at < LOOK_ALIKE_MEMORY_S}
         return evaluate_command(
-            message, self.config.commands, session.contacts, self._ledger.view, self._wall(),
+            message,
+            self.config.commands,
+            session.contacts,
+            self._ledger.view,
+            self._wall(),
             seen=self._seen,
-        )  # fmt: skip
+        )
 
     def _contact_key(self, key: str, held: bool) -> None:
         """Every key the radio names, from a table read or a push; keep those with a sender's
@@ -1266,8 +1355,9 @@ class Bridge:
             if self._health.lag.record(now - due, now):
                 log.warning(
                     "the event loop was held up for %.1f s: the host gave the gateway no CPU, or "
-                    "its disk was slow (a backup, swapping)", now - due,
-                )  # fmt: skip
+                    "its disk was slow (a backup, swapping)",
+                    now - due,
+                )
 
     def state_payload(self) -> dict[str, Any]:
         info = self._radio_info
@@ -1307,17 +1397,24 @@ class Bridge:
         should be, which the log tells in detail (docs/mqtt-api.md, State)."""
         history = self.observer.history
         history_state = (
-            "off" if not self.config.history.enabled
-            else "broken" if history is None or history.broken else "ok"
-        )  # fmt: skip
+            "off"
+            if not self.config.history.enabled
+            else "broken"
+            if history is None or history.broken
+            else "ok"
+        )
         state_file = "unwritable" if self._ledger.store.failed else "ok"
         exclusions = self.observer.exclusions.health
         errors, lag = FAILURES.last_hour(), self._health.lag.worst()
         disk = _free_mb(self._health.state_dir)
         degraded = (
-            history_state == "broken" or state_file != "ok" or exclusions != "ok" or errors > 0
-            or (lag is not None and lag >= LAG_WARN_S) or (disk is not None and disk < DISK_LOW_MB)
-        )  # fmt: skip
+            history_state == "broken"
+            or state_file != "ok"
+            or exclusions != "ok"
+            or errors > 0
+            or (lag is not None and lag >= LAG_WARN_S)
+            or (disk is not None and disk < DISK_LOW_MB)
+        )
         return {
             "degraded": degraded,
             "history": history_state,
@@ -1332,9 +1429,11 @@ class Bridge:
     def _telemetry_state(self) -> dict[str, Any]:
         off: TelemetryStatus = "off"
         state: dict[str, Any] = {
-            "telemetry": off, "telemetry_reason": None, "telemetry_airtime_1h_s": None,
+            "telemetry": off,
+            "telemetry_reason": None,
+            "telemetry_airtime_1h_s": None,
             "telemetry_mesh_airtime_1h_s": None,
-        }  # fmt: skip
+        }
         if self._telemetry is None:
             return state
         try:
@@ -1382,8 +1481,9 @@ class Bridge:
                 platforms = {key: component["p"] for key, component in current.items()}
                 self._removed = (
                     self._components.replace(platforms, now=self._wall())
-                    if self._components else {}
-                )  # fmt: skip
+                    if self._components
+                    else {}
+                )
                 if self._removed:
                     log.info("Home Assistant: removing %s", ", ".join(sorted(self._removed)))
             topic, info = discovery_topic(self.config), self._radio_info
@@ -1436,9 +1536,11 @@ class Bridge:
             state.warned = now
             log.warning(
                 "%d birth messages on %s in a minute: another client writes there; the gateway "
-                "announces itself at most every %d s", len(births),
-                self.config.homeassistant.status_topic, ANNOUNCE_MIN_INTERVAL_S,
-            )  # fmt: skip
+                "announces itself at most every %d s",
+                len(births),
+                self.config.homeassistant.status_topic,
+                ANNOUNCE_MIN_INTERVAL_S,
+            )
 
 
 def ha_device_topics(config: Config) -> list[str]:
@@ -1468,17 +1570,21 @@ def broker_warnings(config: Config) -> list[Text]:
         return warnings
     if mqtt.username is None:
         # Translators: security text (docs/translations.md); insecure = true is a setting
-        warnings.append(Text(
-            "MQTT without a user name: unless the broker refuses clients without one, any client "
-            "that reaches it can read and write the gateway's topics (docs/mqtt-api.md, Securing "
-            "the broker; insecure = true accepts it)"
-        ))  # fmt: skip
+        warnings.append(
+            Text(
+                "MQTT without a user name: unless the broker refuses clients without one, any "
+                "client that reaches it can read and write the gateway's topics (docs/mqtt-api.md, "
+                "Securing the broker; insecure = true accepts it)"
+            )
+        )
     if not mqtt.tls and not mqtt.local:
         # Translators: security text (docs/translations.md); insecure = true is a setting
-        warnings.append(Text(
-            "MQTT without TLS: the password, the messages, the positions and the command events "
-            "cross the network in the clear (insecure = true accepts it)"
-        ))  # fmt: skip
+        warnings.append(
+            Text(
+                "MQTT without TLS: the password, the messages, the positions and the command "
+                "events cross the network in the clear (insecure = true accepts it)"
+            )
+        )
     return warnings
 
 
@@ -1486,11 +1592,13 @@ def log_level_warnings(config: Config) -> list[Text]:
     """`debug` logs what the gateway sees: texts, positions, keys, every frame (OPS-017)."""
     if config.diagnostics.log_level != "debug":
         return []
-    return [Text(
-        "log level debug: the journal gets the texts of the messages, the positions, the keys "
-        "and every frame of the radio, which journald keeps for weeks; set it back to info "
-        "after the search (docs/configuration.md, diagnostics)"
-    )]  # fmt: skip
+    return [
+        Text(
+            "log level debug: the journal gets the texts of the messages, the positions, the keys "
+            "and every frame of the radio, which journald keeps for weeks; set it back to info "
+            "after the search (docs/configuration.md, diagnostics)"
+        )
+    ]
 
 
 def start_warnings(config: Config) -> list[Text]:
@@ -1597,9 +1705,12 @@ def _key(target: Target) -> str:
 
 
 def _shortest_ms(
-    session: CompanionSession, record: codec.ContactRecord | None, sent: codec.Sent, text: str,
+    session: CompanionSession,
+    record: codec.ContactRecord | None,
+    sent: codec.Sent,
+    text: str,
     info: RadioInfo,
-) -> float:  # fmt: skip
+) -> float:
     """The shortest round trip of a genuine acknowledgement of an attempt the radio sent over a
     path through repeaters (SEC-001). 0 if it cannot be told: a flood or a neighbour, which a
     forger in range answers as soon, or a table that changed since it was read."""

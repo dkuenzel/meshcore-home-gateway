@@ -159,9 +159,13 @@ def test_clock_is_read_but_not_written_without_set_clock() -> None:
     async def main() -> None:
         events: asyncio.Queue[RadioEvent] = asyncio.Queue()
         session = CompanionSession(
-            radio, events, wall_clock=lambda: START_TIME + 100, command_timeout_s=0.3,
-            flush_settle_s=0.01, set_clock=False,
-        )  # fmt: skip
+            radio,
+            events,
+            wall_clock=lambda: START_TIME + 100,
+            command_timeout_s=0.3,
+            flush_settle_s=0.01,
+            set_clock=False,
+        )
         try:
             await session.start()
             offsets.append(session.clock_offset_s)
@@ -192,14 +196,23 @@ UNSET = 1_715_770_351  # where a radio without a clock chip and contacts starts 
         (UNSET, RELEASED_AFTER - 86_400, 0, "before this release"),  # a host never set
     ],
     ids=[
-        "unset-radio", "29-days", "31-days", "31-days-no-limit", "31-days-60-allowed",
-        "host-in-2062", "host-in-2062-no-limit", "host-before-the-release",
+        "unset-radio",
+        "29-days",
+        "31-days",
+        "31-days-no-limit",
+        "31-days-60-allowed",
+        "host-in-2062",
+        "host-in-2062-no-limit",
+        "host-before-the-release",
     ],
-)  # fmt: skip
+)
 def test_the_radio_clock_is_written_only_from_a_plausible_host_clock(
-    caplog: pytest.LogCaptureFixture, radio_time: int, host_time: int, max_days: int,
+    caplog: pytest.LogCaptureFixture,
+    radio_time: int,
+    host_time: int,
+    max_days: int,
     warning: str | None,
-) -> None:  # fmt: skip
+) -> None:
     """The radio cannot be set back: a wrong host clock written to it stays (SEC-002). Without
     a warning the host's time is written."""
     caplog.set_level(logging.INFO)
@@ -209,9 +222,13 @@ def test_the_radio_clock_is_written_only_from_a_plausible_host_clock(
     async def main() -> None:
         events: asyncio.Queue[RadioEvent] = asyncio.Queue()
         session = CompanionSession(
-            radio, events, wall_clock=lambda: host_time, command_timeout_s=0.3,
-            flush_settle_s=0.01, set_clock_max_days=max_days,
-        )  # fmt: skip
+            radio,
+            events,
+            wall_clock=lambda: host_time,
+            command_timeout_s=0.3,
+            flush_settle_s=0.01,
+            set_clock_max_days=max_days,
+        )
         try:
             await session.start()
             assert session.clock_offset_s == (0 if written else radio_time - host_time)
@@ -1164,8 +1181,9 @@ def test_firmware_without_statistics_and_tuning(caplog: pytest.LogCaptureFixture
 
 
 def test_adverts_are_reported_with_the_record_of_a_node_not_added() -> None:
-    carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol", latitude_e6=53_550_000,
-                            longitude_e6=9_990_000)  # fmt: skip
+    carol = EmulatedContact(
+        bytes.fromhex("c3" * 32), "Carol", latitude_e6=53_550_000, longitude_e6=9_990_000
+    )
     radio = EmulatedRadio(contacts=[ALICE])
 
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
@@ -1262,12 +1280,16 @@ def test_an_emulated_advert_of_a_contact_updates_its_record_as_the_firmware_does
         shared = radio.send_advert(ALICE, position=(50_123_456, 8_654_321))
         assert shared == ALICE.last_advert + 60  # by default a minute after the record's
         assert (record.latitude_e6, record.longitude_e6, record.last_advert) == (
-            50_123_456, 8_654_321, shared,
-        )  # fmt: skip
+            50_123_456,
+            8_654_321,
+            shared,
+        )
         stopped = radio.send_advert(ALICE)  # sharing off: the record keeps the old position
         assert (record.latitude_e6, record.longitude_e6, record.last_advert) == (
-            50_123_456, 8_654_321, stopped,
-        )  # fmt: skip
+            50_123_456,
+            8_654_321,
+            stopped,
+        )
         never = radio.send_advert(ALICE, position=(0, 0))  # sharing on, never had a position
         assert (record.latitude_e6, record.longitude_e6, record.last_advert) == (0, 0, never)
         radio.send_advert(ALICE, timestamp=never, position=(1, 2))  # not newer: a replay
@@ -1275,12 +1297,16 @@ def test_an_emulated_advert_of_a_contact_updates_its_record_as_the_firmware_does
         renamed = radio.send_advert(replace(ALICE, name="Alice B", node_type=3))
         assert (record.name, record.node_type, record.last_advert) == ("Alice B", 3, renamed)
         assert [shown(event) for event in await adverts_so_far(radio, events)] == [
-            ("log", alice, shared, 50_123_456, 8_654_321), ("push", alice),
-            ("log", alice, stopped, None, None), ("push", alice),
-            ("log", alice, never, 0, 0), ("push", alice),
+            ("log", alice, shared, 50_123_456, 8_654_321),
+            ("push", alice),
+            ("log", alice, stopped, None, None),
+            ("push", alice),
+            ("log", alice, never, 0, 0),
+            ("push", alice),
             ("log", alice, never, 1, 2),
-            ("log", alice, renamed, None, None), ("push", alice),
-        ]  # fmt: skip
+            ("log", alice, renamed, None, None),
+            ("push", alice),
+        ]
         await session.refresh_contacts()
         taken = session.contact_records[ALICE.public_key.hex()]
         assert (taken.last_advert, taken.position, taken.name) == (renamed, None, "Alice B")
@@ -1293,9 +1319,13 @@ def test_an_emulated_advert_of_a_node_not_added_comes_with_the_record_it_made() 
     time, no path, no flags; also for an older advert. The radio does not add the node
     (BaseChatMesh.cpp:108-120, 156-179)."""
     carol = EmulatedContact(
-        bytes.fromhex("c3" * 32), "Carol", out_path_len=2, flags=1, latitude_e6=53_550_000,
+        bytes.fromhex("c3" * 32),
+        "Carol",
+        out_path_len=2,
+        flags=1,
+        latitude_e6=53_550_000,
         longitude_e6=9_990_000,
-    )  # fmt: skip
+    )
     radio = EmulatedRadio(contacts=[ALICE])
 
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
@@ -1305,10 +1335,13 @@ def test_an_emulated_advert_of_a_node_not_added_comes_with_the_record_it_made() 
         older = radio.send_advert(carol, timestamp=plain - 600)
         frames = await adverts_so_far(radio, events)
         assert [shown(event) for event in frames] == [
-            ("log", "c3c3", plain, None, None), ("new", "c3c3"),
-            ("log", "c3c3", located, 53_550_000, 9_990_000), ("new", "c3c3"),
-            ("log", "c3c3", older, None, None), ("new", "c3c3"),
-        ]  # fmt: skip
+            ("log", "c3c3", plain, None, None),
+            ("new", "c3c3"),
+            ("log", "c3c3", located, 53_550_000, 9_990_000),
+            ("new", "c3c3"),
+            ("log", "c3c3", older, None, None),
+            ("new", "c3c3"),
+        ]
         made = records(frames)
         assert [(r.last_advert, r.position, r.name, r.out_path_len, r.flags) for r in made] == [
             (plain, None, "Carol", 0xFF, 0),
@@ -1340,8 +1373,10 @@ def test_an_emulated_advert_can_lose_its_log_or_its_push_or_have_a_frame_between
             ("push", alice),
             ("log", alice, unpushed, None, None),
             ("log", "c3c3", heard, None, None),
-            ("log", alice, late, None, None), ("path", "b2b2"), ("push", alice),
-        ]  # fmt: skip
+            ("log", alice, late, None, None),
+            ("path", "b2b2"),
+            ("push", alice),
+        ]
 
     run(radio, scenario)
 
@@ -1349,10 +1384,14 @@ def test_an_emulated_advert_can_lose_its_log_or_its_push_or_have_a_frame_between
 @pytest.mark.parametrize(
     ("hops", "hash_bytes", "transport", "logged"),
     [
-        (57, 1, False, True), (58, 1, False, False), (28, 2, False, True), (29, 2, False, False),
-        (53, 1, True, True), (54, 1, True, False),
+        (57, 1, False, True),
+        (58, 1, False, False),
+        (28, 2, False, True),
+        (29, 2, False, False),
+        (53, 1, True, True),
+        (54, 1, True, False),
     ],
-)  # fmt: skip
+)
 def test_an_emulated_advert_too_long_for_a_log_frame_is_not_logged(
     hops: int, hash_bytes: int, transport: bool, logged: bool
 ) -> None:
@@ -1364,9 +1403,12 @@ def test_an_emulated_advert_too_long_for_a_log_frame_is_not_logged(
     async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
         await session.start()
         radio.send_advert(
-            ALICE, position=(50_123_456, 8_654_321), hops=hops, hash_bytes=hash_bytes,
+            ALICE,
+            position=(50_123_456, 8_654_321),
+            hops=hops,
+            hash_bytes=hash_bytes,
             transport=transport,
-        )  # fmt: skip
+        )
         frames = await adverts_so_far(radio, events)
         assert [type(event) for event in frames] == [PacketLogged] * logged + [AdvertHeard]
         if isinstance(log := frames[0], PacketLogged):
@@ -1399,21 +1441,29 @@ def test_an_emulated_advert_in_its_flood_transport_and_zero_hop_forms() -> None:
         logs = [event for event in frames if isinstance(event, PacketLogged)]
         packets = [parse_packet(log.rx.raw) for log in logs]
         assert [(p.route, p.flood, p.path_hashes) for p in packets if p] == [
-            (1, True, (b"\x00", b"\x00")), (0, True, (bytes(3),)), (2, False, ()), (3, False, ()),
-            (1, True, ()), (1, True, ()),
-        ]  # fmt: skip
+            (1, True, (b"\x00", b"\x00")),
+            (0, True, (bytes(3),)),
+            (2, False, ()),
+            (3, False, ()),
+            (1, True, ()),
+            (1, True, ()),
+        ]
         assert (logs[1].rx.raw[1:5], logs[3].rx.raw[1:5]) == (bytes(4), bytes(4))  # the codes
         adverts = [parse_advert(packet) for packet in packets if packet]
         assert [(a.node_type, a.name, a.position) for a in adverts if a] == [
-            (1, "Alice", None), (1, "Alice", None), (1, "Alice", None), (1, "Alice", None),
+            (1, "Alice", None),
+            (1, "Alice", None),
+            (1, "Alice", None),
+            (1, "Alice", None),
             (4, "Greenhouse sensor at 2°C", None),
             (4, "Greenhouse sensor at 2", Position(0.000001, 0.000002)),
-        ]  # fmt: skip
+        ]
         assert len(logs[-1].rx.raw) == 2 + 100 + 1 + 8 + 22  # not the first byte of the °
         made = records(frames)
         assert [(r.node_type, r.name) for r in made] == [
-            (4, "Greenhouse sensor at 2°C"), (4, "Greenhouse sensor at 2"),
-        ]  # fmt: skip
+            (4, "Greenhouse sensor at 2°C"),
+            (4, "Greenhouse sensor at 2"),
+        ]
         with pytest.raises(ValueError, match="zero hop"):
             radio.send_advert(ALICE, zero_hop=True, hops=1)
 

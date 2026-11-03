@@ -46,8 +46,11 @@ _WIDER_TYPES = {("integer", "number")}  # a TOML file with an integer still load
 _WIDER_ANSWERS = {("int", "float")}  # an answer of an older installation still reads
 # how many values an option or a positional takes, by nargs (absent: exactly one)
 _COUNTS: dict[str | None, tuple[float, float]] = {
-    None: (1, 1), "?": (0, 1), "*": (0, math.inf), "+": (1, math.inf),
-}  # fmt: skip
+    None: (1, 1),
+    "?": (0, 1),
+    "*": (0, math.inf),
+    "+": (1, math.inf),
+}
 
 
 @dataclass(frozen=True, order=True)
@@ -197,24 +200,38 @@ class Attribute(NamedTuple):
 # every attribute a record may have
 ATTRIBUTES: dict[str, Attribute] = {
     # mqtt.publish
-    "retained": Attribute(_equal, _FLAG), "qos": Attribute(_equal, _INTEGER),
-    "payload": Attribute(_equal, _TEXT), "cleared": Attribute(_kept_flag, _FLAG),
+    "retained": Attribute(_equal, _FLAG),
+    "qos": Attribute(_equal, _INTEGER),
+    "payload": Attribute(_equal, _TEXT),
+    "cleared": Attribute(_kept_flag, _FLAG),
     # config and cli
-    "type": Attribute(_type, _TEXT), "default": Attribute(_default, _DEFAULT),
-    "required": Attribute(_required, _FLAG), "min": Attribute(_minimum, _NUMBER),
-    "max": Attribute(_maximum, _NUMBER), "choices": Attribute(_choices, _CHOICES),
-    "answer": Attribute(_answer, _TEXT), "takes_value": Attribute(_equal, _FLAG),
-    "nargs": Attribute(_nargs, _TEXT_OR_INTEGER), "name": Attribute(_equal, _TEXT),
-    "output": Attribute(_equal, _TEXT), "identity": Attribute(_ignored, _FLAG),
-    "conditional": Attribute(_conditional, _FLAG), "names": Attribute(_values, _TEXTS),
+    "type": Attribute(_type, _TEXT),
+    "default": Attribute(_default, _DEFAULT),
+    "required": Attribute(_required, _FLAG),
+    "min": Attribute(_minimum, _NUMBER),
+    "max": Attribute(_maximum, _NUMBER),
+    "choices": Attribute(_choices, _CHOICES),
+    "answer": Attribute(_answer, _TEXT),
+    "takes_value": Attribute(_equal, _FLAG),
+    "nargs": Attribute(_nargs, _TEXT_OR_INTEGER),
+    "name": Attribute(_equal, _TEXT),
+    "output": Attribute(_equal, _TEXT),
+    "identity": Attribute(_ignored, _FLAG),
+    "conditional": Attribute(_conditional, _FLAG),
+    "names": Attribute(_values, _TEXTS),
     # homeassistant
-    "id": Attribute(_equal, _TEXT), "topic": Attribute(_equal, _TEXT),
-    "platform": Attribute(_equal, _TEXT), "entity_id": Attribute(_equal, _TEXT),
-    "unit": Attribute(_unit, _TEXT), "device_class": Attribute(_class, _TEXT),
-    "state_class": Attribute(_class, _TEXT), "event_types": Attribute(_values, _TEXTS),
-    "options": Attribute(_values, _TEXTS), "attributes": Attribute(_values, _ATTRIBUTES),
+    "id": Attribute(_equal, _TEXT),
+    "topic": Attribute(_equal, _TEXT),
+    "platform": Attribute(_equal, _TEXT),
+    "entity_id": Attribute(_equal, _TEXT),
+    "unit": Attribute(_unit, _TEXT),
+    "device_class": Attribute(_class, _TEXT),
+    "state_class": Attribute(_class, _TEXT),
+    "event_types": Attribute(_values, _TEXTS),
+    "options": Attribute(_values, _TEXTS),
+    "attributes": Attribute(_values, _ATTRIBUTES),
     "node_types": Attribute(_values, _TEXTS),
-}  # fmt: skip
+}
 
 
 def check(doc: dict[str, Any]) -> None:

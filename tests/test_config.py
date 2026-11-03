@@ -185,7 +185,7 @@ USER = 'username = "gateway"\npassword = "pw"\n'
         (_broker("broker.example.org", USER), "TLS"),
         (_broker("192.168.1.2", USER), "TLS"),
     ],
-)  # fmt: skip
+)
 def test_commands_need_a_broker_connection_with_credentials_and_tls(
     text: str, missing: str
 ) -> None:
@@ -452,17 +452,30 @@ def test_every_setting_can_be_answered() -> None:
     """The installer answers cover the whole configuration (docs/configuration.md)."""
     answers = ANSWERS + "\n".join(
         [
-            "radio.set_clock=false", "mqtt.tls=true", "mqtt.cert_file=/etc/c.pem",
+            "radio.set_clock=false",
+            "mqtt.tls=true",
+            "mqtt.cert_file=/etc/c.pem",
             "mqtt.key_file=/etc/k.pem",
-            "mqtt.client_id=bridge-a", "mqtt.keepalive_s=30", "messages.truncate=false",
-            "messages.dedup_window_s=60", "messages.queue_size=5", "messages.queue_ttl_s=120",
-            "messages.max_attempts=4", "messages.flood_after=3", "messages.ignore_channels=0,2",
-            "airtime.burst_s=6.5", "commands.max_age_s=0", "diagnostics.publish_rx_log=true",
-            "contacts.manage=false", "history.readings_days=7.5", "messages.clean_received=true",
-            "messages.publish_channels=targets", "contacts.heard_nodes=off",
+            "mqtt.client_id=bridge-a",
+            "mqtt.keepalive_s=30",
+            "messages.truncate=false",
+            "messages.dedup_window_s=60",
+            "messages.queue_size=5",
+            "messages.queue_ttl_s=120",
+            "messages.max_attempts=4",
+            "messages.flood_after=3",
+            "messages.ignore_channels=0,2",
+            "airtime.burst_s=6.5",
+            "commands.max_age_s=0",
+            "diagnostics.publish_rx_log=true",
+            "contacts.manage=false",
+            "history.readings_days=7.5",
+            "messages.clean_received=true",
+            "messages.publish_channels=targets",
+            "contacts.heard_nodes=off",
             "telemetry.ask=household",
         ]
-    )  # fmt: skip
+    )
     config = parse_config(render_config(answers))
     assert config.radio.set_clock is False
     assert config.contacts.heard_nodes == "off"
@@ -470,8 +483,10 @@ def test_every_setting_can_be_answered() -> None:
     assert config.messages.clean_received is True
     assert config.messages.publish_channels == "targets"
     assert (config.mqtt.tls, config.mqtt.cert_file, config.mqtt.key_file) == (
-        True, "/etc/c.pem", "/etc/k.pem",
-    )  # fmt: skip
+        True,
+        "/etc/c.pem",
+        "/etc/k.pem",
+    )
     assert (config.mqtt.client_id, config.mqtt.keepalive_s) == ("bridge-a", 30)
     assert (config.messages.max_attempts, config.messages.flood_after) == (4, 3)
     assert config.messages.ignore_channels == frozenset({0, 2})
@@ -701,9 +716,18 @@ def test_a_url_or_a_port_in_a_host_is_refused(host: str, hint: str) -> None:
 
 @pytest.mark.parametrize(
     "host",
-    ["broker.example.org", "broker.example.org.", "192.0.2.20", "2001:db8::1", "fe80::1%eth0",
-     "::ffff:192.0.2.1", "mqtt.müller.example", "xn--mller-kva.example", "my_broker"],
-)  # fmt: skip
+    [
+        "broker.example.org",
+        "broker.example.org.",
+        "192.0.2.20",
+        "2001:db8::1",
+        "fe80::1%eth0",
+        "::ffff:192.0.2.1",
+        "mqtt.müller.example",
+        "xn--mller-kva.example",
+        "my_broker",
+    ],
+)
 def test_host_names_and_addresses_are_accepted(host: str) -> None:
     """Python passes a name to the resolver in its IDNA form, so a non-ASCII name works too."""
     config = parse_config(MINIMAL.replace('host = "broker.example.org"', f'host = "{host}"'))
@@ -759,8 +783,10 @@ def test_home_assistant_controls_hidden_targets_and_entity_prefix() -> None:
     config = parse_config(text + 'hidden_targets = ["alarm"]\ncontact_entity_prefix = "mesh_2"\n')
     ha = config.homeassistant
     assert (ha.controls, ha.hidden_targets, ha.contact_entity_prefix) == (
-        False, frozenset({"alarm"}), "mesh_2",
-    )  # fmt: skip
+        False,
+        frozenset({"alarm"}),
+        "mesh_2",
+    )
     with pytest.raises(
         ConfigError, match=r"homeassistant\.hidden_targets: 'siren' is not a target"
     ):

@@ -23,17 +23,36 @@ _NONCE = re.compile(rf" #[0-9a-f]{{{CONFIRM_NONCE_DIGITS}}}\Z")
 # decomposition (é -> e); what is still not ASCII becomes "?".
 _TRANSLITERATION = str.maketrans(
     {
-        "ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss",
+        "ä": "ae",
+        "ö": "oe",
+        "ü": "ue",
+        "Ä": "Ae",
+        "Ö": "Oe",
+        "Ü": "Ue",
+        "ß": "ss",
         # double quotes and guillemets
-        "\u201e": '"', "\u201c": '"', "\u201d": '"', "\u00ab": '"', "\u00bb": '"',
+        "\u201e": '"',
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u00ab": '"',
+        "\u00bb": '"',
         # single quotes
-        "\u201a": "'", "\u2018": "'", "\u2019": "'", "\u2039": "'", "\u203a": "'",
+        "\u201a": "'",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u2039": "'",
+        "\u203a": "'",
         # en dash, em dash, minus sign
-        "\u2013": "-", "\u2014": "-", "\u2212": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2212": "-",
         # ellipsis, degree sign, euro sign, no-break space
-        "\u2026": "...", "\u00b0": "deg", "\u20ac": "EUR", "\u00a0": " ",
+        "\u2026": "...",
+        "\u00b0": "deg",
+        "\u20ac": "EUR",
+        "\u00a0": " ",
     }
-)  # fmt: skip
+)
 
 
 class TextRejectedError(ValueError):
@@ -153,9 +172,10 @@ def _clean(text: str) -> str:
     scarce)."""
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ").translate(_BREAKS)
     kept = "".join(
-        ch for ch in text
+        ch
+        for ch in text
         if ch == "\n" or (unicodedata.category(ch) != "Cc" and ch not in _DIRECTION)
-    )  # fmt: skip
+    )
     return _SPACES_AROUND_NEWLINE.sub("\n", _SPACES.sub(" ", kept)).strip()
 
 
@@ -171,7 +191,8 @@ def _to_ascii(text: str) -> str:
     dropped instead of becoming a visible '?'."""
     decomposed = unicodedata.normalize("NFKD", text.translate(_TRANSLITERATION))
     base = "".join(
-        ch for ch in decomposed
+        ch
+        for ch in decomposed
         if not unicodedata.combining(ch) and unicodedata.category(ch) != "Cf"
-    )  # fmt: skip
+    )
     return "".join(ch if ch.isascii() else "?" for ch in base)

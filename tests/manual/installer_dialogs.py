@@ -76,16 +76,26 @@ def main() -> int:
 def drive(root: Path, host: stubs.Host) -> int:
     master, slave = pty.openpty()
     env = {
-        **os.environ, "TERM": "xterm", "PATH": f"{root / 'bin'}:{os.environ['PATH']}",
-        "STUB": str(root), "ALICE": stubs.ALICE, "RELAY": stubs.RELAY,
+        **os.environ,
+        "TERM": "xterm",
+        "PATH": f"{root / 'bin'}:{os.environ['PATH']}",
+        "STUB": str(root),
+        "ALICE": stubs.ALICE,
+        "RELAY": stubs.RELAY,
         "MESHCORE_HOME_GATEWAY_SERIAL_DIR": str(host.serial.parent),
-        "COLUMNS": "100", "LINES": "30",
-        "LANG": "de_DE.UTF-8", "LC_CTYPE": "UTF-8",  # as ssh may pass them on; not installed
-    }  # fmt: skip
+        "COLUMNS": "100",
+        "LINES": "30",
+        "LANG": "de_DE.UTF-8",
+        "LC_CTYPE": "UTF-8",  # as ssh may pass them on; not installed
+    }
     process = subprocess.Popen(  # noqa: S603 - our script
-        [stubs.BASH, str(stubs.SCRIPT)], stdin=slave, stdout=slave, stderr=slave, env=env,
+        [stubs.BASH, str(stubs.SCRIPT)],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
         start_new_session=True,
-    )  # fmt: skip
+    )
     os.close(slave)
     keys, deadline = list(KEYS), time.monotonic() + 60
     while process.poll() is None and time.monotonic() < deadline:

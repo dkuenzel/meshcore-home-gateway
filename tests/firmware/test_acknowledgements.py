@@ -43,9 +43,15 @@ def final(text: str) -> Any:
 
 
 async def forge(
-    scene: Scene, stranger: StandIn, message: Transmission, *, key: bytes, text: str,
-    timestamps: list[int], radio: RadioSettings,
-) -> None:  # fmt: skip
+    scene: Scene,
+    stranger: StandIn,
+    message: Transmission,
+    *,
+    key: bytes,
+    text: str,
+    timestamps: list[int],
+    radio: RadioSettings,
+) -> None:
     """Once A's message is over (A hears nothing while it sends), the stranger sends the
     acknowledgement of attempt 0 for each timestamp, one after the other (the air loses
     overlapping packets)."""
@@ -95,9 +101,14 @@ def test_a_stranger_who_knows_the_text_confirms_what_nobody_received(
             timestamps = seconds_around(published_at)
             radio = scene.air.settings()[alice]
             await forge(
-                scene, stranger, message, key=household.alice_key, text=ALARM,
-                timestamps=timestamps, radio=radio,
-            )  # fmt: skip
+                scene,
+                stranger,
+                message,
+                key=household.alice_key,
+                text=ALARM,
+                timestamps=timestamps,
+                radio=radio,
+            )
             done = await scene.watcher.wait("delivery", final(ALARM), timeout_s=90)
         return done.json()
 
@@ -108,8 +119,10 @@ def test_a_stranger_who_knows_the_text_confirms_what_nobody_received(
     sent = scene.air.sent_by(alice, "TXT_MSG/")
     if nonce:
         assert (done["event_type"], done["reason"], done["attempt"]) == (
-            "failed", "no_acknowledgement", 2,
-        )  # fmt: skip
+            "failed",
+            "no_acknowledgement",
+            2,
+        )
         assert done["text"] != ALARM
         assert len(sent) == 2
     else:
@@ -149,9 +162,14 @@ def test_an_acknowledgement_sooner_than_the_path_allows_is_suspect(scene: Scene)
             timestamps = seconds_around(published_at)
             radio = scene.air.settings()[alice]
             await forge(
-                scene, stranger, message, key=household.alice_key, text=LONG_ALARM,
-                timestamps=timestamps, radio=radio,
-            )  # fmt: skip
+                scene,
+                stranger,
+                message,
+                key=household.alice_key,
+                text=LONG_ALARM,
+                timestamps=timestamps,
+                radio=radio,
+            )
             forged = await scene.watcher.wait("delivery", final("Smoke"), timeout_s=60)
         return [genuine.json(), forged.json()]
 

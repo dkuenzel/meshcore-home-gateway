@@ -92,27 +92,29 @@ SECURITY_WORDS = re.compile(
     r"|any client|first 12 key digits",
     flags=re.IGNORECASE,
 )
-NOT_SECURITY_TEXTS = frozenset({
-    # help and errors that name a setting or explain a check
-    "also log in to the broker with the configured user name and password",
-    (
-        "brokers such as Mosquitto refuse a wrong password, an unknown user and missing "
-        "credentials alike; a standalone Mosquitto knows a user added with mosquitto_passwd only "
-        "after '{command}' ({guide})"
-    ),
-    (
-        "a host name or IP address only, without a scheme such as mqtt:// (TLS and port are "
-        "settings of their own), got {value!r}"
-    ),
-    "{key}: only used with tls = true",
-    "{key}: set password or password_file, not both",
-    "{key}: {path} holds no password",
-    "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container",
-    # the installer's question for the user name, which is no secret
-    "MQTT user name as set up on the broker (it was '{was}'); empty: none",
-    "MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)",
-    "MQTT user name as set up on the broker; empty: none",
-})  # fmt: skip
+NOT_SECURITY_TEXTS = frozenset(
+    {
+        # help and errors that name a setting or explain a check
+        "also log in to the broker with the configured user name and password",
+        (
+            "brokers such as Mosquitto refuse a wrong password, an unknown user and missing "
+            "credentials alike; a standalone Mosquitto knows a user added with mosquitto_passwd "
+            "only after '{command}' ({guide})"
+        ),
+        (
+            "a host name or IP address only, without a scheme such as mqtt:// (TLS and port are "
+            "settings of their own), got {value!r}"
+        ),
+        "{key}: only used with tls = true",
+        "{key}: set password or password_file, not both",
+        "{key}: {path} holds no password",
+        "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container",
+        # the installer's question for the user name, which is no secret
+        "MQTT user name as set up on the broker (it was '{was}'); empty: none",
+        "MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)",
+        "MQTT user name as set up on the broker; empty: none",
+    }
+)
 
 
 def test_security_texts_say_so_to_their_translators() -> None:

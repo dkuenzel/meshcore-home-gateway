@@ -12,9 +12,16 @@ from dataclasses import dataclass, field
 
 _MAGIC = 0x950412DE
 _ESCAPES = {
-    "a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\",
+    "a": "\a",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "\\": "\\",
     '"': '"',
-}  # fmt: skip
+}
 _KEYWORD = re.compile(r"(msgctxt|msgid_plural|msgid|msgstr(?:\[(\d+)\])?)[ \t]+(.*)")
 _PLURAL_FORMS = re.compile(r"\s*nplurals\s*=\s*(\d+)\s*;\s*plural\s*=\s*([^;]+?)\s*;?\s*")
 GERMANIC = "nplurals=2; plural=(n != 1);"  # gettext's rule when a catalog names none

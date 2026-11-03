@@ -37,9 +37,11 @@ SET_CUSTOM_VAR = 41  # :1867-1889: "name:value", such as "gps:1"
 BY_CONTACT = 0b01_01_01
 # what docs/companions.md step 6 grants the gateway: favourite, base, location, environment
 GATEWAY_FLAGS = (
-    ContactFlag.FAVOURITE | ContactFlag.TELEMETRY_BASE | ContactFlag.TELEMETRY_LOCATION
+    ContactFlag.FAVOURITE
+    | ContactFlag.TELEMETRY_BASE
+    | ContactFlag.TELEMETRY_LOCATION
     | ContactFlag.TELEMETRY_ENVIRONMENT
-)  # fmt: skip
+)
 
 
 class AppError(Exception):

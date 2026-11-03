@@ -182,8 +182,9 @@ def test_b_beside_a_shares_its_position_in_an_advert_and_stops(scene: Scene) -> 
     assert shared["advert_position"] is True
     assert from_advert(shared, on.advert)
     assert (index_on["advert_carries_position"], index_on["advert_carries_position_total"]) == (
-        [key], 1,
-    )  # fmt: skip
+        [key],
+        1,
+    )
     (event,) = in_advert(scene, key)
     assert set(event) == EVENT_KEYS
     # name and type as the radio's table has them
@@ -236,8 +237,9 @@ def test_behind_a_repeater_only_the_apps_flood_advert_is_heard_and_checked(scene
         (copy,) = copies(scene, repeater, advert)
         assert copy.heard_by(alice)
     assert (unheard["last_advert_at"], unheard["advert_checked_at"]) == (
-        first["last_advert_at"], None,
-    )  # fmt: skip
+        first["last_advert_at"],
+        None,
+    )
     assert unheard["last_advert_at"] != pressed.at
     assert landmark(flooded.advert)
     assert over["advert_carries_position"] is True
@@ -293,8 +295,9 @@ def test_a_companion_heard_before_the_household_adds_it_starts_checked(scene: Sc
     assert (added["latitude"], added["position_source"]) == (None, None)
     events = [m.json() for m in scene.watcher.on("contact")]
     assert [(e["event_type"], e["key"], e["request"], e["id"]) for e in events] == [
-        ("added", key, "add", "add-bob"), ("position_in_advert", key, None, None),
-    ]  # fmt: skip
+        ("added", key, "add", "add-bob"),
+        ("position_in_advert", key, None, None),
+    ]
     assert set(events[1]) == EVENT_KEYS
     assert later["advert_checked_at"] == following.at
     assert later["advert_carries_position"] is True

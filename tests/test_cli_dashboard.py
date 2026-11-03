@@ -34,10 +34,12 @@ def _state(directory: Path, *located: str) -> Path:
     """The service's state with a device for Bob and a tracker for each of `located`."""
     contacts, _ = devices(directory, clock=Clock())
     names = {ALICE: "Alice", HILL: "Hilltop"}
-    contacts.update(mesh_of(
-        node(BOB, "Bob"),
-        *(node(key, names[key], NodeType.REPEATER, position=HERE) for key in located),
-    ))  # fmt: skip
+    contacts.update(
+        mesh_of(
+            node(BOB, "Bob"),
+            *(node(key, names[key], NodeType.REPEATER, position=HERE) for key in located),
+        )
+    )
     stopped(directory)  # the service stopped and wrote its state
     return directory
 
@@ -58,9 +60,11 @@ def test_the_dashboard_goes_to_standard_output(
 
 
 def test_the_state_directory_is_the_services_by_default(
-    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-) -> None:  # fmt: skip
+) -> None:
     state = _state(tmp_path / "state", ALICE, HILL)
     monkeypatch.setenv("STATE_DIRECTORY", str(state))
     assert main(["dashboard", "--config", str(config)]) == EX_OK

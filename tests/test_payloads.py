@@ -142,18 +142,28 @@ def test_delivery_payload() -> None:
         suspect=False,
     )
     assert delivery_payload(event) == {
-        "event_type": "confirmed", "id": "7f3a", "target": "alice", "text": "hi",
-        "attempt": 2, "reason": None, "rtt_ms": 2300, "airtime_ms": 640, "suspect": False,
-    }  # fmt: skip
+        "event_type": "confirmed",
+        "id": "7f3a",
+        "target": "alice",
+        "text": "hi",
+        "attempt": 2,
+        "reason": None,
+        "rtt_ms": 2300,
+        "airtime_ms": 640,
+        "suspect": False,
+    }
     queued = DeliveryEvent(id="7f3a", target="alice", state=DeliveryState.QUEUED, text="hi")
     assert delivery_payload(queued)["suspect"] is None  # only a confirmation is judged
 
 
 def test_rx_payload() -> None:
     assert rx_payload(snr_db=-3.5, rssi_dbm=-112, raw=bytes.fromhex("1122"), received_at=T0) == {
-        "snr_db": -3.5, "rssi_dbm": -112, "length": 2, "raw": "1122",
+        "snr_db": -3.5,
+        "rssi_dbm": -112,
+        "length": 2,
+        "raw": "1122",
         "received_at": "2027-01-15T08:00:00+00:00",
-    }  # fmt: skip
+    }
 
 
 def test_encode_is_compact_json_without_ascii_escaping() -> None:

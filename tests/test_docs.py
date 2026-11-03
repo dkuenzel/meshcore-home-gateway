@@ -84,8 +84,9 @@ def test_design_references_in_the_code_resolve(module: Path) -> None:
         for heading in HEADING.findall((ROOT / "docs" / "design.md").read_text(encoding="utf-8"))
     }
     decisions = {path.name[:4] for path in (ROOT / "docs" / "decisions").glob("[0-9]*.md")}
-    unresolved = [f"design §{number}" for number in DESIGN_SECTION.findall(text)
-                  if number not in sections]  # fmt: skip
+    unresolved = [
+        f"design §{number}" for number in DESIGN_SECTION.findall(text) if number not in sections
+    ]
     unresolved += [f"ADR {number}" for number in DECISION.findall(text) if number not in decisions]
     unresolved += WORKING_DOCUMENT.findall(text)
     assert not unresolved, unresolved

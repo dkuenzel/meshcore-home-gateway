@@ -8,21 +8,43 @@ import pytest
 
 PACKAGE = Path(__file__).resolve().parent.parent / "src" / "meshcore_home_gateway"
 FORBIDDEN = {
-    "asyncio", "socket", "termios", "fcntl", "os", "subprocess", "threading", "time", "paho",
-    "meshcore_home_gateway.radio", "meshcore_home_gateway.mqtt", "meshcore_home_gateway.bridge",
-    "meshcore_home_gateway.cli", "meshcore_home_gateway.state", "meshcore_home_gateway.systemd",
-    "meshcore_home_gateway.config", "meshcore_home_gateway.i18n",
-}  # fmt: skip
-PURE = sorted([
-    *PACKAGE.glob("core/*.py"), *PACKAGE.glob("protocol/*.py"), PACKAGE / "views.py",
-    PACKAGE / "texts.py", PACKAGE / "catalog.py",
-])  # fmt: skip
+    "asyncio",
+    "socket",
+    "termios",
+    "fcntl",
+    "os",
+    "subprocess",
+    "threading",
+    "time",
+    "paho",
+    "meshcore_home_gateway.radio",
+    "meshcore_home_gateway.mqtt",
+    "meshcore_home_gateway.bridge",
+    "meshcore_home_gateway.cli",
+    "meshcore_home_gateway.state",
+    "meshcore_home_gateway.systemd",
+    "meshcore_home_gateway.config",
+    "meshcore_home_gateway.i18n",
+}
+PURE = sorted(
+    [
+        *PACKAGE.glob("core/*.py"),
+        *PACKAGE.glob("protocol/*.py"),
+        PACKAGE / "views.py",
+        PACKAGE / "texts.py",
+        PACKAGE / "catalog.py",
+    ]
+)
 # The modules that choose a language; every other one makes Texts (texts.py), which these
 # translate where they show them.
 SPEAKING = {
-    "cli.py", "config.py", "mqtt/discovery.py", "mqtt/manage_entities.py",
-    "mqtt/contact_devices.py", "dashboard.py",
-}  # fmt: skip
+    "cli.py",
+    "config.py",
+    "mqtt/discovery.py",
+    "mqtt/manage_entities.py",
+    "mqtt/contact_devices.py",
+    "dashboard.py",
+}
 I18N = "meshcore_home_gateway.i18n"
 
 
@@ -49,9 +71,10 @@ def test_every_import_form_is_recorded(tmp_path: Path) -> None:
 @pytest.mark.parametrize("path", PURE, ids=lambda p: f"{p.parent.name}/{p.name}")
 def test_pure_modules_do_no_io(path: Path) -> None:
     offending = {
-        name for name in imported_modules(path)
+        name
+        for name in imported_modules(path)
         if any(name == f or name.startswith(f + ".") for f in FORBIDDEN)
-    }  # fmt: skip
+    }
     assert not offending, f"{path.name} imports {sorted(offending)}"
 
 

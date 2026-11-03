@@ -56,22 +56,24 @@ PLURAL_FORMS: Final = {  # each language's rule, as GNU gettext and CLDR give it
 }
 # Words a translation keeps as they are, as often as the English text has them.
 TOKENS: Final = re.compile(
-    "|".join([
-        r"(?<![\w-])--[a-z][\w-]*",  # options
-        r"\$[A-Z_]+",  # environment variables
-        r"(?<![\w/.])/[\w-]+(?:[./][\w-]+)*",  # absolute paths
-        (
-            r"\b(?:radio|mqtt|homeassistant|messages|airtime|commands|targets|history|contacts"
-            r"|telemetry|diagnostics)(?:\.[a-z_]+)+"
-        ),  # configuration keys
-        r"KEY12…KEY8",
-        r"\bADR \d{4}\b",
-        r"\bdocs/[\w/-]*\.md\b",
-        r"https?://[\w.~:/?#@!$&'()*+,;=%-]*[\w/#=-]",  # addresses
-        r"\bpct exec\b",
-        r"\bjournalctl\b",
-    ])
-)  # fmt: skip
+    "|".join(
+        [
+            r"(?<![\w-])--[a-z][\w-]*",  # options
+            r"\$[A-Z_]+",  # environment variables
+            r"(?<![\w/.])/[\w-]+(?:[./][\w-]+)*",  # absolute paths
+            (
+                r"\b(?:radio|mqtt|homeassistant|messages|airtime|commands|targets|history|contacts"
+                r"|telemetry|diagnostics)(?:\.[a-z_]+)+"
+            ),  # configuration keys
+            r"KEY12…KEY8",
+            r"\bADR \d{4}\b",
+            r"\bdocs/[\w/-]*\.md\b",
+            r"https?://[\w.~:/?#@!$&'()*+,;=%-]*[\w/#=-]",  # addresses
+            r"\bpct exec\b",
+            r"\bjournalctl\b",
+        ]
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -279,11 +281,13 @@ def _check_values(call: ast.Call, fields: set[str], plural: bool, where: str) ->
 
 def _translator_comments(source: str) -> dict[int, tuple[str, ...]]:
     """`# Translators:` comments of a module, by the line below them."""
-    return _comment_blocks({
-        token.start[0]: token.string[1:].strip()
-        for token in tokenize.generate_tokens(io.StringIO(source).readline)
-        if token.type == tokenize.COMMENT and token.line.lstrip().startswith("#")
-    })  # fmt: skip
+    return _comment_blocks(
+        {
+            token.start[0]: token.string[1:].strip()
+            for token in tokenize.generate_tokens(io.StringIO(source).readline)
+            if token.type == tokenize.COMMENT and token.line.lstrip().startswith("#")
+        }
+    )
 
 
 def _comment_blocks(lines: Mapping[int, str]) -> dict[int, tuple[str, ...]]:
@@ -333,11 +337,13 @@ def extract_dashboard(path: Path, top: Path) -> list[Entry]:
     value and a `{#- Translators: … -#}` line in a card's content."""
     name = path.relative_to(top).as_posix()
     lines = path.read_text(encoding="utf-8").split("\n")
-    comments = _comment_blocks({
-        number: line.strip()[1:].strip()
-        for number, line in enumerate(lines, 1)
-        if line.strip().startswith("#")
-    })  # fmt: skip
+    comments = _comment_blocks(
+        {
+            number: line.strip()[1:].strip()
+            for number, line in enumerate(lines, 1)
+            if line.strip().startswith("#")
+        }
+    )
     notes = {
         number + 1: (match.group(1),)
         for number, line in enumerate(lines, 1)
@@ -794,8 +800,10 @@ def shell_hazards(path: Path, top: Path) -> list[str]:
     data), or translate with bash's own $"…", which reads catalogs the installer does not ship."""
     name = path.relative_to(top).as_posix()
     shell = _Shell(path.read_text(encoding="utf-8"), name)
-    found = [(line, f"{name}:{line}: $\"…\" translates with bash's catalogs: use t") for line in
-             shell.translated]  # fmt: skip
+    found = [
+        (line, f'{name}:{line}: $"…" translates with bash\'s catalogs: use t')
+        for line in shell.translated
+    ]
     for command in shell.commands:
         head = command.head()
         if head is None:
@@ -991,14 +999,16 @@ def pin_block(languages: Mapping[str, str], packs: Mapping[str, str]) -> str:
     digests = " ".join(
         f"[{code}]={hashlib.sha256(packs[code].encode('utf-8')).hexdigest()}" for code in codes[1:]
     )
-    return "\n".join([
-        PINS_START,
-        f"L10N_ORDER=({' '.join(codes)})",
-        f"declare -A L10N_NAME=({names})",
-        f"declare -A L10N_SHA256=({digests})",
-        PINS_END,
-        "",
-    ])  # fmt: skip
+    return "\n".join(
+        [
+            PINS_START,
+            f"L10N_ORDER=({' '.join(codes)})",
+            f"declare -A L10N_NAME=({names})",
+            f"declare -A L10N_SHA256=({digests})",
+            PINS_END,
+            "",
+        ]
+    )
 
 
 def with_pins(script: str, block: str) -> str:
@@ -1363,12 +1373,14 @@ def control_characters(name: str, header: Mapping[str, str], entries: Sequence[E
     findings = []
     for entry in entries:
         for form in entry.msgstr:
-            bad = sorted({
-                char
-                for char in form
-                if (char != "\n" and unicodedata.category(char) in {"Cc", "Cf"})
-                or (entry.msgctxt is None and char in "\u00a0\u202f")
-            })  # fmt: skip
+            bad = sorted(
+                {
+                    char
+                    for char in form
+                    if (char != "\n" and unicodedata.category(char) in {"Cc", "Cf"})
+                    or (entry.msgctxt is None and char in "\u00a0\u202f")
+                }
+            )
             if bad:
                 found = ", ".join(f"U+{ord(char):04X}" for char in bad)
                 findings.append(f"{name}: {_label(entry)}: {found}")
@@ -1403,22 +1415,34 @@ def dashboard_texts(name: str, header: Mapping[str, str], entries: Sequence[Entr
 
 
 CATALOG_CHECKS: Final = (
-    untranslated, fuzzy, placeholders, percent, plural_forms, tokens, control_characters,
-    buttons, dashboard_texts,
-)  # fmt: skip
+    untranslated,
+    fuzzy,
+    placeholders,
+    percent,
+    plural_forms,
+    tokens,
+    control_characters,
+    buttons,
+    dashboard_texts,
+)
 
 
 def check(project: Project, languages: Mapping[str, str] | None = None) -> list[str]:
     """Every finding of the checks above on the project's files."""
     offered = i18n.LANGUAGES if languages is None else languages
     findings = [
-        *outdated_template(project), *unmerged(project), *stale_packs(project),
-        *stale_pins(project, offered), *languages_agree(project, offered),
-    ]  # fmt: skip
+        *outdated_template(project),
+        *unmerged(project),
+        *stale_packs(project),
+        *stale_pins(project, offered),
+        *languages_agree(project, offered),
+    ]
     files = [
-        project.template, *project.catalogs(),
-        project.installer_template, *project.installer_catalogs(),
-    ]  # fmt: skip
+        project.template,
+        *project.catalogs(),
+        project.installer_template,
+        *project.installer_catalogs(),
+    ]
     for path in files:
         if not path.exists():
             continue

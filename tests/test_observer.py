@@ -68,8 +68,14 @@ from tests.test_bridge import (
 
 ROOT = "meshcore/radio1"
 TOPICS = Topics("meshcore", "radio1")
-CAROL = EmulatedContact(bytes.fromhex("c3" * 32), "Carol", node_type=2, latitude_e6=53_550_000,
-                        longitude_e6=9_990_000, last_advert=int(NOW) - 5)  # fmt: skip
+CAROL = EmulatedContact(
+    bytes.fromhex("c3" * 32),
+    "Carol",
+    node_type=2,
+    latitude_e6=53_550_000,
+    longitude_e6=9_990_000,
+    last_advert=int(NOW) - 5,
+)
 
 
 def retained(bus: FakeBus, topic: str) -> list[bytes]:
@@ -121,8 +127,10 @@ def test_a_removed_contact_clears_its_document_and_is_announced(tmp_path: Path) 
             radio.overwrite(BOB)  # the radio dropped it, and reads the table again
             event = await bus.wait_for(f"{ROOT}/contact", lambda e: e["event_type"] == "removed")
             assert (event["key"], event["name"], event["type"]) == (
-                BOB.public_key.hex(), "Bob", "chat",
-            )  # fmt: skip
+                BOB.public_key.hex(),
+                "Bob",
+                "chat",
+            )
             assert len(bus.payloads(f"{ROOT}/contact")) == 1  # the start announced nothing
             topic = f"{ROOT}/contacts/{BOB.public_key.hex()}"
             await asyncio.sleep(0.05)
@@ -138,8 +146,9 @@ def test_contacts_gone_while_the_gateway_was_stopped_are_cleared(tmp_path: Path)
     radio = EmulatedRadio(contacts=[ALICE])
 
     def observer(bus: FakeBus) -> Observer:
-        return Observer(bus, TOPICS, retained=RetainedKeys(store, "contacts"),
-                        wall_clock=lambda: NOW)  # fmt: skip
+        return Observer(
+            bus, TOPICS, retained=RetainedKeys(store, "contacts"), wall_clock=lambda: NOW
+        )
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
@@ -147,9 +156,18 @@ def test_contacts_gone_while_the_gateway_was_stopped_are_cleared(tmp_path: Path)
             assert retained(bus, f"{ROOT}/contacts/{'dd' * 32}") == [b""]
             assert retained(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")[-1] != b""
             events = bus.payloads(f"{ROOT}/contact")  # only what changed while stopped
-            assert events == [{"event_type": "removed", "key": "dd" * 32, "prefix": "dd" * 6,
-                               "name": None, "type": None, "request": None, "id": None,
-                               "reason": None}]  # fmt: skip
+            assert events == [
+                {
+                    "event_type": "removed",
+                    "key": "dd" * 32,
+                    "prefix": "dd" * 6,
+                    "name": None,
+                    "type": None,
+                    "request": None,
+                    "id": None,
+                    "reason": None,
+                }
+            ]
 
     scenario(main)
     assert RetainedKeys(store, "contacts").keys == {ALICE.public_key.hex()}
@@ -164,8 +182,10 @@ def test_a_new_node_is_heard_with_its_signal_but_without_its_position(tmp_path: 
             radio.advertise(CAROL)
             event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
             assert (event["key"], event["name"], event["type"]) == (
-                CAROL.public_key.hex(), "Carol", "repeater",
-            )  # fmt: skip
+                CAROL.public_key.hex(),
+                "Carol",
+                "repeater",
+            )
             assert (event["hops"], event["snr_db"], event["rssi_dbm"]) == (3, 5.5, -95)
             assert event["look_alike"] is False
             nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
@@ -194,11 +214,15 @@ def test_contacts_heard_by_advert_and_message_and_the_history(tmp_path: Path) ->
             history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 2)
             channel, direct = history["messages"]
             assert (direct["direction"], direct["text"], direct["contact_key"]) == (
-                "in", "hi there", key,
-            )  # fmt: skip
+                "in",
+                "hi there",
+                key,
+            )
             assert (channel["kind"], channel["name"], channel["text"]) == (
-                "channel", "Carol", "on my way",
-            )  # fmt: skip
+                "channel",
+                "Carol",
+                "on my way",
+            )
             bus.send("alice", "Back soon")
             history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 3)
             out = history["messages"][0]
@@ -215,8 +239,9 @@ def test_the_history_survives_a_restart(tmp_path: Path) -> None:
         history = History.open(path)
         assert history is not None
         observers.append(history)
-        return Observer(bus, TOPICS, history=history, protected=protected_keys(config),
-                        wall_clock=lambda: NOW)  # fmt: skip
+        return Observer(
+            bus, TOPICS, history=history, protected=protected_keys(config), wall_clock=lambda: NOW
+        )
 
     observers: list[History] = []
 
@@ -340,8 +365,12 @@ def test_with_heard_nodes_keys_a_stranger_has_no_name_times_or_signal(tmp_path: 
             event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
             assert (event["key"], event["type"]) == (CAROL.public_key.hex(), "repeater")
             assert [k for k, v in event.items() if v is None] == [
-                "name", "hops", "snr_db", "rssi_dbm", "heard_at",
-            ]  # fmt: skip
+                "name",
+                "hops",
+                "snr_db",
+                "rssi_dbm",
+                "heard_at",
+            ]
             nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
             assert "Carol" not in json.dumps(nodes)
 
@@ -383,8 +412,9 @@ def test_with_heard_nodes_off_nothing_of_a_stranger_is_published_or_kept(tmp_pat
     assert [row.name for row in history.nodes()] == ["Carol"]  # a run with `full`
 
     bus, alice = FakeBus(), ALICE.public_key.hex()
-    observer = Observer(bus, TOPICS, history=history, protected=frozenset({alice}),
-                        wall_clock=clock)  # fmt: skip
+    observer = Observer(
+        bus, TOPICS, history=history, protected=frozenset({alice}), wall_clock=clock
+    )
     observer.heard_nodes = "off"
     observer.radio_event(ContactsRead({}, NOW))
     twin = contact_record(EmulatedContact(ALICE.public_key[:6] + b"\xee" * 26, "Alice"))
@@ -438,10 +468,11 @@ def test_an_advert_flood_is_bounded_on_the_bus_and_in_the_history(
     observer.radio_event(ContactsRead({}, NOW))
     sent = len(retained(bus, f"{ROOT}/nodes"))
     records = [
-        contact_record(EmulatedContact(bytes.fromhex(f"{i:04x}" * 16), f"Spam{i}",
-                                       last_advert=int(NOW) + i))
+        contact_record(
+            EmulatedContact(bytes.fromhex(f"{i:04x}" * 16), f"Spam{i}", last_advert=int(NOW) + i)
+        )
         for i in range(200)
-    ]  # fmt: skip
+    ]
     for i, record in enumerate(records):
         advert = codec.Advert(record.public_key, True, record)
         observer.radio_event(AdvertHeard(advert, NOW + i / 200))
@@ -518,8 +549,9 @@ def test_node_listeners_learn_of_every_change_and_cannot_stop_the_documents(
     assert last(bus, f"{ROOT}/nodes")["total"] == 1  # published although a listener failed
     # the radio reads its table after every advert: unchanged, it is no reason to hurry
     observer.radio_event(ContactsRead({ALICE.public_key.hex(): alice}, NOW + 3))
-    observer.radio_event(ContactsRead({k.public_key.hex(): r for k, r in
-                                       ((ALICE, alice), (BOB, bob))}, NOW + 4))  # fmt: skip
+    observer.radio_event(
+        ContactsRead({k.public_key.hex(): r for k, r in ((ALICE, alice), (BOB, bob))}, NOW + 4)
+    )
     assert calls == [False, False, True]  # Bob joined
     clock[0] = NOW + 8 * 86_400  # Carol is forgotten
     observer.tick()
@@ -575,8 +607,11 @@ def test_the_history_keeps_the_record_of_the_newest_advert(tmp_path: Path) -> No
     assert history is not None
     observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW + 60)
     observer.radio_event(ContactsRead({}, NOW + 60))
-    record = contact_record(EmulatedContact(bytes.fromhex("c3" * 32), "Mallory", node_type=1,
-                                            last_advert=int(NOW) - 500))  # fmt: skip
+    record = contact_record(
+        EmulatedContact(
+            bytes.fromhex("c3" * 32), "Mallory", node_type=1, last_advert=int(NOW) - 500
+        )
+    )
     observer.radio_event(AdvertHeard(codec.Advert(record.public_key, True, record), NOW + 60))
     assert observer.mesh.nodes["c3" * 32].node.name == "Carol"
     assert [(row.name, row.last_advert) for row in history.nodes()] == [("Carol", int(NOW) - 5)]
@@ -590,8 +625,9 @@ def test_a_replay_heard_before_the_first_table_read_does_not_win(tmp_path: Path)
     path = tmp_path / "history.sqlite3"
     history = History.open(path)
     assert history is not None
-    carol = contact_record(EmulatedContact(bytes.fromhex("c3" * 32), "Carol", node_type=2,
-                                           last_advert=int(NOW) - 5))  # fmt: skip
+    carol = contact_record(
+        EmulatedContact(bytes.fromhex("c3" * 32), "Carol", node_type=2, last_advert=int(NOW) - 5)
+    )
     observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW)
     observer.radio_event(ContactsRead({}, NOW))
     observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW))
@@ -599,8 +635,11 @@ def test_a_replay_heard_before_the_first_table_read_does_not_win(tmp_path: Path)
     history = History.open(path)
     assert history is not None
     observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW + 30)
-    replay = contact_record(EmulatedContact(bytes.fromhex("c3" * 32), "Mallory", node_type=1,
-                                            last_advert=int(NOW) - 500))  # fmt: skip
+    replay = contact_record(
+        EmulatedContact(
+            bytes.fromhex("c3" * 32), "Mallory", node_type=1, last_advert=int(NOW) - 500
+        )
+    )
     observer.radio_event(AdvertHeard(codec.Advert(replay.public_key, True, replay), NOW + 30))
     observer.radio_event(ContactsRead({}, NOW + 30))  # the first table read of this run
     tracked = observer.mesh.nodes["c3" * 32]
@@ -630,8 +669,10 @@ def test_telemetry_answers_publish_the_position_and_store_only_changes(tmp_path:
     observer.telemetry(key, answer(NOW + 10))
     document = last(bus, f"{ROOT}/contacts/{key}")
     assert (document["latitude"], document["longitude"], document["altitude_m"]) == (
-        50.12345, 8.56775, 120.5,
-    )  # fmt: skip
+        50.12345,
+        8.56775,
+        120.5,
+    )
     assert (document["position_source"], document["position_accuracy_m"]) == ("telemetry", 15.0)
     assert document["heard_via"] == "telemetry"
     assert tracker_updates == [True]  # its device gets a tracker at once
@@ -689,12 +730,19 @@ def test_the_radios_own_time_on_air_needs_two_readings(tmp_path: Path) -> None:
 # --- telemetry readings, states and exclusion (ADR 0018) ----------------------------------------
 
 # a companion whose adverts carry a position
-GREENHOUSE = EmulatedContact(bytes.fromhex("e7" * 32), "Greenhouse", latitude_e6=53_560_000,
-                             longitude_e6=10_000_000, last_advert=int(NOW) - 50)  # fmt: skip
+GREENHOUSE = EmulatedContact(
+    bytes.fromhex("e7" * 32),
+    "Greenhouse",
+    latitude_e6=53_560_000,
+    longitude_e6=10_000_000,
+    last_advert=int(NOW) - 50,
+)
 BME280_READINGS = {
-    "ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5, "ch2_barometric_pressure_hpa": 1013.2,
+    "ch2_temperature_c": 21.3,
+    "ch2_humidity_percent": 55.5,
+    "ch2_barometric_pressure_hpa": 1013.2,
     "ch2_altitude_m": 120.0,
-}  # fmt: skip
+}
 T1000E_READINGS = {"ch1_temperature_c": 23.4, "ch1_luminosity": 50.0}
 
 
@@ -730,9 +778,10 @@ def test_an_answer_publishes_its_readings_and_stores_each_value(
     assert list(document["readings"].items()) == list(BME280_READINGS.items())  # in order
     assert document["readings_at"] == iso(NOW + 10)
     assert reading_rows(history) == [
-        (key, NOW + 10, "battery_v", 4.12), (key, NOW + 10, "mcu_temperature_c", 23.4),
+        (key, NOW + 10, "battery_v", 4.12),
+        (key, NOW + 10, "mcu_temperature_c", 23.4),
         *((key, NOW + 10, k, v) for k, v in BME280_READINGS.items()),
-    ]  # fmt: skip
+    ]
     assert updates == [True]  # its tracker and four sensors, at once
     observer.telemetry(key, answer(NOW + 100, LPP_BME280))  # the same keys
     assert updates == [True]
@@ -778,8 +827,9 @@ def test_each_contact_a_table_read_adds_is_told_before_its_document(
     alice, bob, greenhouse = (c.public_key.hex() for c in (ALICE, BOB, GREENHOUSE))
     RetainedKeys(store, "contacts").replace({alice})
     bus = FakeBus()
-    observer = Observer(bus, TOPICS, retained=RetainedKeys(store, "contacts"),
-                        wall_clock=lambda: NOW)  # fmt: skip
+    observer = Observer(
+        bus, TOPICS, retained=RetainedKeys(store, "contacts"), wall_clock=lambda: NOW
+    )
     states: dict[str, TelemetryState] = {alice: "answering", bob: "answering"}
     observer.telemetry_state = states.get
     told: list[str] = []
@@ -817,10 +867,15 @@ def test_the_state_is_pulled_and_an_event_follows_the_document() -> None:
     document = last(bus, f"{ROOT}/contacts/{alice}")
     assert (document["telemetry_state"], document["telemetry_current"]) == ("away", False)
     observer.telemetry_event("unanswered", alice, "away")
-    assert bus.payloads(f"{ROOT}/telemetry") == [{
-        "event_type": "unanswered", "key": alice, "prefix": alice[:12], "name": "Alice",
-        "state": "away",
-    }]  # fmt: skip
+    assert bus.payloads(f"{ROOT}/telemetry") == [
+        {
+            "event_type": "unanswered",
+            "key": alice,
+            "prefix": alice[:12],
+            "name": "Alice",
+            "state": "away",
+        }
+    ]
     topics = [(t, keep) for t, _p, keep in bus.published]
     assert topics[-2:] == [(f"{ROOT}/contacts/{alice}", True), (f"{ROOT}/telemetry", False)]
     observer.exclusions.exclude(bob)
@@ -908,13 +963,20 @@ def test_an_excluded_contact_gets_back_neither_its_readings_nor_its_telemetry_po
     history = History.open(path)
     assert history is not None
     bus = FakeBus()
-    observer = Observer(bus, TOPICS, history=history, exclusions=TelemetryExclusions(
-        tmp_path / EXCLUSIONS_FILE), wall_clock=lambda: NOW + 60)  # fmt: skip
+    observer = Observer(
+        bus,
+        TOPICS,
+        history=history,
+        exclusions=TelemetryExclusions(tmp_path / EXCLUSIONS_FILE),
+        wall_clock=lambda: NOW + 60,
+    )
     observer.radio_event(ContactsRead(table(GREENHOUSE, ALICE), NOW + 60))
     document = last(bus, f"{ROOT}/contacts/{greenhouse}")
     assert (document["battery_v"], document["readings"], document["readings_at"]) == (
-        None, {}, None,
-    )  # fmt: skip
+        None,
+        {},
+        None,
+    )
     assert (document["position_source"], document["latitude"]) == ("advert", 53.56)
     assert (document["telemetry_state"], document["telemetry_excluded"]) == ("excluded", True)
     assert last(bus, f"{ROOT}/contacts/{alice}")["readings"] == BME280_READINGS  # not excluded
@@ -947,16 +1009,17 @@ def test_with_an_unreadable_exclusions_file_no_contact_gets_back_its_readings_or
     exclusions = TelemetryExclusions(path)
     assert exclusions.unreadable
     bus = FakeBus()
-    observer = Observer(bus, TOPICS, history=history, exclusions=exclusions,
-                        wall_clock=lambda: NOW)  # fmt: skip
+    observer = Observer(bus, TOPICS, history=history, exclusions=exclusions, wall_clock=lambda: NOW)
     for key in (greenhouse, alice):
         observer.restore_position_received(key, NOW - 20)  # from the saved schedule
     observer.radio_event(ContactsRead(table(GREENHOUSE, ALICE), NOW))
     for key in (greenhouse, alice):
         document = last(bus, f"{ROOT}/contacts/{key}")
         assert (document["battery_v"], document["readings"], document["readings_at"]) == (
-            None, {}, None,
-        )  # fmt: skip
+            None,
+            {},
+            None,
+        )
         assert document["position_received_at"] is None
     document = last(bus, f"{ROOT}/contacts/{greenhouse}")
     assert (document["position_source"], document["latitude"]) == ("advert", 53.56)  # its record
@@ -979,8 +1042,7 @@ def test_an_excluded_contact_whose_record_holds_no_position_gets_no_advert_posit
     exclusions = TelemetryExclusions(None)
     exclusions.exclude(key)
     bus = FakeBus()
-    observer = Observer(bus, TOPICS, history=history, exclusions=exclusions,
-                        wall_clock=lambda: NOW)  # fmt: skip
+    observer = Observer(bus, TOPICS, history=history, exclusions=exclusions, wall_clock=lambda: NOW)
     observer.radio_event(ContactsRead(table(ALICE), NOW))  # its record has no position
     document = last(bus, f"{ROOT}/contacts/{key}")
     position = ("latitude", "longitude", "altitude_m", "position_at", "position_source")
@@ -1011,8 +1073,10 @@ def test_an_exclusion_forgets_the_values_and_puts_the_advert_position_back(
     assert observer.telemetry_excluded(greenhouse, True) is None  # no forget asked
     document = last(bus, f"{ROOT}/contacts/{greenhouse}")
     assert (document["battery_v"], document["mcu_temperature_c"], document["readings"]) == (
-        None, None, {},
-    )  # fmt: skip
+        None,
+        None,
+        {},
+    )
     assert (document["readings_at"], document["position_received_at"]) == (None, None)
     assert (document["position_source"], document["latitude"]) == ("advert", 53.56)
     assert (document["telemetry_state"], document["telemetry_excluded"]) == ("excluded", True)
@@ -1152,11 +1216,22 @@ def on_disk(store: JsonStateFile) -> dict[str, dict[str, Any]]:
 
 
 FORGOTTEN = {
-    "telemetry_state": "excluded", "telemetry_excluded": True, "telemetry_current": False,
-    "position_current": None, "readings_at": None, "battery_v": None, "mcu_temperature_c": None,
-    "readings": {}, "latitude": None, "longitude": None, "altitude_m": None, "position_at": None,
-    "position_source": None, "position_accuracy_m": None, "position_received_at": None,
-}  # fmt: skip
+    "telemetry_state": "excluded",
+    "telemetry_excluded": True,
+    "telemetry_current": False,
+    "position_current": None,
+    "readings_at": None,
+    "battery_v": None,
+    "mcu_temperature_c": None,
+    "readings": {},
+    "latitude": None,
+    "longitude": None,
+    "altitude_m": None,
+    "position_at": None,
+    "position_source": None,
+    "position_accuracy_m": None,
+    "position_received_at": None,
+}
 
 
 def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_path: Path) -> None:
@@ -1218,8 +1293,11 @@ def test_a_position_expiry_the_broker_missed_is_published_at_the_next_connect(
     observer.flush()  # the stop, before the broker connected
     observer, bus = restarted(store, states)
     observer.publish_all()
-    expired = {"telemetry_state": "no_position", "telemetry_current": True,
-               "position_current": False}  # fmt: skip
+    expired = {
+        "telemetry_state": "no_position",
+        "telemetry_current": True,
+        "position_current": False,
+    }
     assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **expired}
 
 
@@ -1267,8 +1345,12 @@ def test_an_exclusion_and_an_inclusion_once_it_expired_are_published_and_stored_
     observer.exclusions.include(key)
     states[key] = "waiting"  # the poller forgot her answers
     observer.telemetry_excluded(key, False)
-    included = {**before[key], **FORGOTTEN, "telemetry_state": "waiting",
-                "telemetry_excluded": False}  # fmt: skip
+    included = {
+        **before[key],
+        **FORGOTTEN,
+        "telemetry_state": "waiting",
+        "telemetry_excluded": False,
+    }
     assert last(bus, f"{ROOT}/contacts/{key}") == included
     assert on_disk(store) == {key: included}
 
@@ -1351,17 +1433,28 @@ class Air:
         return self.seq
 
     def log(
-        self, contact: EmulatedContact, timestamp: int, position: tuple[int, int] | None = None,
-        *, hops: int = 0, snr_db: float = 6.0,
-    ) -> None:  # fmt: skip
+        self,
+        contact: EmulatedContact,
+        timestamp: int,
+        position: tuple[int, int] | None = None,
+        *,
+        hops: int = 0,
+        snr_db: float = 6.0,
+    ) -> None:
         rx = codec.RxLog(snr_db, -96, advert_packet(contact, timestamp, position, hops=hops))
         self.observer.radio_event(PacketLogged(rx, self.clock.now, self.frame(), self.serial))
 
     def advert(
-        self, contact: EmulatedContact, position: tuple[int, int] | None = None, *,
-        timestamp: int | None = None, logged: bool = True, pushed: bool = True,
-        between: bool = False, delay_s: float = 0.0,
-    ) -> int:  # fmt: skip
+        self,
+        contact: EmulatedContact,
+        position: tuple[int, int] | None = None,
+        *,
+        timestamp: int | None = None,
+        logged: bool = True,
+        pushed: bool = True,
+        between: bool = False,
+        delay_s: float = 0.0,
+    ) -> int:
         """An advert of a contact the radio takes: its log, the record (lat/lon only with the
         flag), the push `delay_s` later. Returns its time (default: a minute after the record's)."""
         record = self.records[contact.public_key]
@@ -1383,9 +1476,13 @@ class Air:
         self.observer.radio_event(AdvertHeard(advert, self.clock.now, self.frame(), self.serial))
 
     def heard(
-        self, node: EmulatedContact, position: tuple[int, int] | None = None, *, timestamp: int,
+        self,
+        node: EmulatedContact,
+        position: tuple[int, int] | None = None,
+        *,
+        timestamp: int,
         logged: bool = True,
-    ) -> None:  # fmt: skip
+    ) -> None:
         """An advert of a node the radio does not hold: its log, then NEW_ADVERT with the record
         made from this advert alone (BaseChatMesh.cpp:108-120, 156-179)."""
         if logged:
@@ -1400,9 +1497,12 @@ class Air:
 
 
 def checking(
-    tmp_path: Path, *contacts: EmulatedContact, tuning: codec.TuningParams | None = NO_DELAY,
-    current: bool = False, **options: Any,
-) -> tuple[Observer, FakeBus, Air]:  # fmt: skip
+    tmp_path: Path,
+    *contacts: EmulatedContact,
+    tuning: codec.TuningParams | None = NO_DELAY,
+    current: bool = False,
+    **options: Any,
+) -> tuple[Observer, FakeBus, Air]:
     """An observer that keeps its checks in the state file (and, `current`, the documents of
     the companions whose answers are current), after the radio connected and its first table
     read."""
@@ -1410,8 +1510,7 @@ def checking(
     store = new_run(tmp_path)
     if current:
         options["current"] = CurrentDocuments(store)
-    observer = Observer(bus, TOPICS, advert_checks=AdvertChecks(store), wall_clock=clock,
-                        **options)  # fmt: skip
+    observer = Observer(bus, TOPICS, advert_checks=AdvertChecks(store), wall_clock=clock, **options)
     observer.radio_connected(100, tuning)
     air = Air(observer, clock, *contacts)
     air.read()
@@ -1426,8 +1525,9 @@ def restarted_on(
     bus, store = FakeBus(), new_run(tmp_path, crash=crash)
     if current:
         options["current"] = CurrentDocuments(store)
-    air.observer = Observer(bus, TOPICS, advert_checks=AdvertChecks(store), wall_clock=air.clock,
-                            **options)  # fmt: skip
+    air.observer = Observer(
+        bus, TOPICS, advert_checks=AdvertChecks(store), wall_clock=air.clock, **options
+    )
     return bus
 
 
@@ -1475,10 +1575,18 @@ def test_an_advert_that_carries_the_position_is_checked_then_announced(
     assert checked(bus, key) == (True, iso(shared), 50.123456, "advert")
     index = last(bus, f"{ROOT}/contacts")
     assert (index["advert_carries_position"], index["advert_carries_position_total"]) == ([key], 1)
-    assert bus.payloads(f"{ROOT}/contact") == [{
-        "event_type": "position_in_advert", "key": key, "prefix": key[:12], "name": "Alice",
-        "type": "chat", "request": None, "id": None, "reason": None,
-    }]  # fmt: skip
+    assert bus.payloads(f"{ROOT}/contact") == [
+        {
+            "event_type": "position_in_advert",
+            "key": key,
+            "prefix": key[:12],
+            "name": "Alice",
+            "type": "chat",
+            "request": None,
+            "id": None,
+            "reason": None,
+        }
+    ]
     assert before_the_event(bus, f"{ROOT}/contacts/{key}")["advert_carries_position"] is True
     assert before_the_event(bus, f"{ROOT}/contacts")["advert_carries_position"] == [key]
     assert stored_checks(tmp_path) == {key: {"advert_at": shared, "carries": True}}
@@ -1709,8 +1817,9 @@ def test_a_heard_companions_advert_without_its_log_is_logged_once_when_it_comes(
     air.read()
     document = last(bus, f"{ROOT}/contacts/{key}")
     assert (document["advert_checked_at"], document["last_advert_at"]) == (
-        iso(first), iso(unlogged),
-    )  # fmt: skip
+        iso(first),
+        iso(unlogged),
+    )
     assert caplog.text.count("was not checked") == 1
 
 
@@ -1760,9 +1869,11 @@ def test_a_table_read_older_than_the_advert_waits_for_the_next_one(tmp_path: Pat
     ids=["stop", "start", "0,0"],
 )
 def test_a_read_that_sent_her_record_before_her_next_advert_waits_for_the_next_one(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
-    positions: tuple[tuple[int, int] | None, ...], expected: tuple[Any, ...],
-) -> None:  # fmt: skip
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    positions: tuple[tuple[int, int] | None, ...],
+    expected: tuple[Any, ...],
+) -> None:
     """The radio writes one record per pass and handles the mesh between them (MyMesh.cpp:
     2388-2410): a read can show her record from before the advert whose push came during it,
     while the log of her advert before is still in the window. The read waits, the next read
@@ -2028,8 +2139,10 @@ def test_a_contact_that_leaves_keeps_its_check_only_as_a_heard_node(tmp_path: Pa
     assert stored_checks(tmp_path) == {}
     tracked = observer.mesh.nodes[key]
     assert (tracked.advert, tracked.node.position, tracked.fix) == (
-        AdvertCheck(shared, True), None, None,
-    )  # fmt: skip
+        AdvertCheck(shared, True),
+        None,
+        None,
+    )
     assert "latitude" not in json.dumps(last(bus, f"{ROOT}/nodes"))
     air.records[ALICE.public_key] = record  # added back
     air.read()
@@ -2063,9 +2176,12 @@ def test_an_exclusion_brings_back_no_position_the_adverts_no_longer_carry(tmp_pa
     ids=["a check without", "0,0", "telemetry", "telemetry, then 0,0"],
 )
 def test_a_kept_document_that_loses_its_advert_position_is_stored_at_once(
-    tmp_path: Path, state: TelemetryState, data: bytes, then: tuple[int, int] | None,
+    tmp_path: Path,
+    state: TelemetryState,
+    data: bytes,
+    then: tuple[int, int] | None,
     expected: tuple[Any, ...],
-) -> None:  # fmt: skip
+) -> None:
     """Alice's answers are current, so her document is kept for a restart, with the position from
     her adverts. When that goes (a check that carries none, an advert that shares 0, 0, or a
     position from telemetry), the document is stored at once, not at the tick: after a stop
@@ -2139,9 +2255,11 @@ def test_a_companion_heard_before_it_is_added_starts_checked(
     air.heard(gail, SHARED, timestamp=times[3], logged=False)  # too long for a frame
     nodes = [observer.mesh.nodes[node.public_key.hex()] for node in (DAVE, erin, hill, gail)]
     assert [tracked.advert for tracked in nodes] == [
-        AdvertCheck(times[0], True), AdvertCheck(times[1], False), None,
+        AdvertCheck(times[0], True),
+        AdvertCheck(times[1], False),
+        None,
         AdvertCheck(times[3], True),  # the position in her record tells, without a log
-    ]  # fmt: skip
+    ]
     assert [tracked.node.position for tracked in nodes] == [None, None, None, None]
     assert caplog.text.count("node ") == 1  # Erin's copy only
     for node, at in ((DAVE, times[0]), (erin, times[1]), (gail, times[3])):  # added by the gateway
@@ -2153,9 +2271,12 @@ def test_a_companion_heard_before_it_is_added_starts_checked(
     assert checked(bus, gail_key) == (True, iso(times[3]), None, None)
     events = [(e["event_type"], e["key"]) for e in bus.payloads(f"{ROOT}/contact")]
     assert events == [
-        ("added", dave), ("added", erin_key), ("added", gail_key),
-        ("position_in_advert", dave), ("position_in_advert", gail_key),
-    ]  # fmt: skip
+        ("added", dave),
+        ("added", erin_key),
+        ("added", gail_key),
+        ("position_in_advert", dave),
+        ("position_in_advert", gail_key),
+    ]
     copy = f"node {erin_key[:12]}: a logged copy of its advert differs from the one the radio took"
     assert copy in caplog.text
     assert "WARNING" not in caplog.text
@@ -2288,8 +2409,10 @@ def test_a_companion_shares_its_position_in_adverts_then_stops(
     async def main() -> None:
         config = make_config(telemetry=telemetry)
         async with running(config, radio, tmp_path, observer=with_checks(tmp_path)) as (
-            _, bus, _notes,
-        ):  # fmt: skip
+            _,
+            bus,
+            _notes,
+        ):
             shared = radio.send_advert(ALICE, position=SHARED)
             await position_in_advert(bus, key)
             assert checked(bus, key) == (True, iso(shared), 50.123456, "advert")
@@ -2299,8 +2422,9 @@ def test_a_companion_shares_its_position_in_adverts_then_stops(
                 f"{ROOT}/contacts/{key}", lambda d: d["advert_checked_at"] == iso(stopped)
             )
             assert (document["advert_carries_position"], document["advert_position"]) == (
-                False, True,
-            )  # fmt: skip
+                False,
+                True,
+            )
             assert document["latitude"] is None
             assert last(bus, f"{ROOT}/contacts")["advert_carries_position_total"] == 0
             assert contact_events(bus) == [key]
@@ -2318,15 +2442,19 @@ def test_the_buttons_advert_of_a_companion_that_never_had_a_position(tmp_path: P
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=with_checks(tmp_path)) as (
-            _, bus, _notes,
-        ):  # fmt: skip
+            _,
+            bus,
+            _notes,
+        ):
             never = radio.send_advert(GREENHOUSE, position=(0, 0), zero_hop=True)
             await position_in_advert(bus, key)
             assert checked(bus, key) == (True, iso(never), None, None)
             document = last(bus, f"{ROOT}/contacts/{key}")
             assert (document["advert_position"], document["hops"], document["snr_db"]) == (
-                False, None, 6.0,
-            )  # fmt: skip
+                False,
+                None,
+                6.0,
+            )
 
     scenario(main)
     assert EXPORT_CONTACT not in radio.commands()
@@ -2343,8 +2471,10 @@ def test_a_forged_copy_logged_before_the_real_advert(tmp_path: Path, delay: int)
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=with_checks(tmp_path)) as (
-            _, bus, _notes,
-        ):  # fmt: skip
+            _,
+            bus,
+            _notes,
+        ):
             same = alice.last_advert + 60
             radio.log_advert(alice, timestamp=same)
             radio.send_advert(alice, timestamp=same, position=SHARED)
@@ -2372,8 +2502,10 @@ def test_with_a_frame_between_log_and_push_the_logs_of_the_advert_decide(tmp_pat
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=with_checks(tmp_path)) as (
-            _, bus, _notes,
-        ):  # fmt: skip
+            _,
+            bus,
+            _notes,
+        ):
             radio.send_advert(ALICE, position=SHARED)
             await position_in_advert(bus, key)
             path = bytes([Push.PATH_UPDATED]) + BOB.public_key
@@ -2396,8 +2528,10 @@ def test_an_advert_whose_push_was_dropped_counts_only_by_a_new_position(tmp_path
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=with_checks(tmp_path)) as (
-            _, bus, _notes,
-        ):  # fmt: skip
+            _,
+            bus,
+            _notes,
+        ):
             stopped = radio.send_advert(ALICE, pushed=False)
             radio.advertise(BOB)  # a table read follows
             document = await bus.wait_for(
@@ -2424,8 +2558,10 @@ def test_an_advert_too_long_for_the_packet_log_is_checked_by_the_record(tmp_path
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=with_checks(tmp_path)) as (
-            _, bus, _notes,
-        ):  # fmt: skip
+            _,
+            bus,
+            _notes,
+        ):
             shared = radio.send_advert(ALICE, position=SHARED, hops=58)
             await position_in_advert(bus, key)
             assert checked(bus, key) == (True, iso(shared), 50.123456, "advert")
@@ -2462,10 +2598,22 @@ def test_restarts_raise_nothing_and_an_advert_while_stopped_errs_to_warn(tmp_pat
                 await bus.wait_for(f"{ROOT}/contacts/{key}", lambda _d: True)
                 await asyncio.sleep(0.1)  # the table reads of the start
             documents.append(last(bus, f"{ROOT}/contacts/{key}"))
-            assert bus.payloads(f"{ROOT}/contact") == ([{
-                "event_type": "position_in_advert", "key": key, "prefix": key[:12],
-                "name": "Alice", "type": "chat", "request": None, "id": None, "reason": None,
-            }] if advert else [])  # fmt: skip
+            assert bus.payloads(f"{ROOT}/contact") == (
+                [
+                    {
+                        "event_type": "position_in_advert",
+                        "key": key,
+                        "prefix": key[:12],
+                        "name": "Alice",
+                        "type": "chat",
+                        "request": None,
+                        "id": None,
+                        "reason": None,
+                    }
+                ]
+                if advert
+                else []
+            )
         radios.append(EmulatedRadio(contacts=radio.contacts))  # the radio keeps its records
 
     scenario(lambda: run(advert=True))
@@ -2490,8 +2638,10 @@ def test_a_companion_heard_and_then_added_is_checked_at_the_add(tmp_path: Path) 
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path, observer=with_checks(tmp_path)) as (
-            _, bus, _notes,
-        ):  # fmt: skip
+            _,
+            bus,
+            _notes,
+        ):
             heard = radio.send_advert(DAVE, position=SHARED)
             await bus.wait_for(f"{ROOT}/nodes", lambda d: [n["key"] for n in d["nodes"]] == [key])
             request = json.dumps({"contact": key, "id": "t1"}).encode()

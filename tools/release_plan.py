@@ -47,9 +47,13 @@ _UNRELEASED = re.compile(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## |\Z)", re.MULTI
 _STAGES = ("a", "b", "rc", "")  # in order; "" is the release
 KINDS = ("patch", "minor", "major")
 _KIND_OF = {
-    "added": "minor", "changed": "minor", "deprecated": "minor",
-    "fixed": "patch", "security": "patch", "removed": "major",
-}  # fmt: skip
+    "added": "minor",
+    "changed": "minor",
+    "deprecated": "minor",
+    "fixed": "patch",
+    "security": "patch",
+    "removed": "major",
+}
 _HEADINGS = "Added, Changed, Deprecated, Removed, Fixed, Security"
 _ENTRY = re.compile(r"\s*[-*] ")
 _BREAKING = re.compile(r"\s*[-*] \*\*Breaking:\*\*")
@@ -129,7 +133,7 @@ def tags() -> dict[Version, str]:
     found = {}
     listing = git(
         "tag", "--list", "v*", "--format=%(refname:lstrip=2) %(objectname) %(*objectname)"
-    )  # fmt: skip
+    )
     for line in listing.splitlines():
         name, obj, *peeled = line.split()
         try:

@@ -51,9 +51,13 @@ def poll(s: Scheduler, candidates: Sequence[Candidate], now: float) -> Poll:
 
 
 def ask(
-    s: Scheduler, candidates: Sequence[Candidate], now: float, *,
-    cells: tuple[int, int] | None = HOME, answer: bool = True,
-) -> Poll:  # fmt: skip
+    s: Scheduler,
+    candidates: Sequence[Candidate],
+    now: float,
+    *,
+    cells: tuple[int, int] | None = HOME,
+    answer: bool = True,
+) -> Poll:
     """Decide, send as planned, then the answer 2 s later or the timeout after 5 s."""
     p = poll(s, candidates, now)
     s.sent(p, flood=p.flood, now=now)
@@ -240,10 +244,12 @@ def test_a_due_flood_does_not_wait_forever_behind_direct_polls(heard_every_s: fl
     both lanes full. After 10 minutes (the first decision after it: 603.4 s) the flood goes
     first and waits for the mesh lane, which holds 8.88 of its 20.41 s by then: at 1064.7 s, with
     no direct poll in between. Hearing the contact again does not restart the wait."""
-    saved = Saved({
-        k: SavedContact(0.0, answered_age_s=10.0, polled_age_s=10.0, located=True, still=0)
-        for k in (A, B)
-    })  # fmt: skip
+    saved = Saved(
+        {
+            k: SavedContact(0.0, answered_age_s=10.0, polled_age_s=10.0, located=True, still=0)
+            for k in (A, B)
+        }
+    )
     s = Scheduler(0.0, saved=saved)
     now, polls, answers = 0.0, [], {A: 0, B: 0}
     while now < 1500.0:
@@ -447,9 +453,13 @@ def test_the_schedule_survives_a_restart_without_a_burst() -> None:
     assert not s.urgent
     assert saved.floods_age_s == (80.0,)
     assert saved.contacts[A] == SavedContact(
-        800.0, answered_age_s=98.0, polled_age_s=100.0, located=True, lpp_bytes=19,
+        800.0,
+        answered_age_s=98.0,
+        polled_age_s=100.0,
+        located=True,
+        lpp_bytes=19,
         located_age_s=98.0,
-    )  # fmt: skip
+    )
     assert saved.contacts[B].failures == 1
     assert saved.contacts[B].flood_age_s == 80.0
     # 60 s later, empty lanes: nothing sent at once
@@ -477,9 +487,18 @@ def test_after_the_clock_went_back_a_restored_answer_counts_as_a_day_old(
     """How long the gateway was stopped is unknown when the clock went back (elapsed None): a
     contact that answered 22 h before the save may have been silent for more than a day, so it
     gets one flood a day, not the doubling gaps of one that answered within the day."""
-    saved = Saved({A: SavedContact(
-        0.0, failures=1, answered_age_s=22 * HOUR, polled_age_s=10.0, flood_age_s=10.0, floods=1,
-    )})  # fmt: skip
+    saved = Saved(
+        {
+            A: SavedContact(
+                0.0,
+                failures=1,
+                answered_age_s=22 * HOUR,
+                polled_age_s=10.0,
+                flood_age_s=10.0,
+                floods=1,
+            )
+        }
+    )
     r = Scheduler(0.0, saved=saved, elapsed_s=elapsed, lanes=wide)
     floods, now = [], 0.0
     while now < 6 * HOUR:
@@ -873,10 +892,12 @@ def test_no_path_for_a_candidate_without_a_path_not_heard_lately() -> None:
 
 
 def test_state_of_restored_and_parked_contacts() -> None:
-    saved = Saved({
-        A: SavedContact(0.0, answered_age_s=100.0, located=True),
-        B: SavedContact(0.0, failures=2, answered_age_s=7200.0, parked_age_s=50.0),
-    })  # fmt: skip
+    saved = Saved(
+        {
+            A: SavedContact(0.0, answered_age_s=100.0, located=True),
+            B: SavedContact(0.0, failures=2, answered_age_s=7200.0, parked_age_s=50.0),
+        }
+    )
     r = Scheduler(1000.0, saved=saved, elapsed_s=10.0, lanes=wide)
     assert r.state(A, 1000.0) == "answering"  # restored, not yet compared with a table
     assert r.state(B, 1000.0) == "away"  # parked
@@ -939,10 +960,20 @@ def test_forget_drops_the_answers_and_keeps_the_flood_limits() -> None:
     assert p.export(60.0).contacts[A].parked_age_s == 50.0  # still parked since it left
     assert poll(p, [direct(A)], 100.0).key == A  # back: due at once, not at 900 s
     # restored, not yet compared with a table
-    saved = Saved({A: SavedContact(
-        500.0, answered_age_s=10.0, polled_age_s=12.0, flood_age_s=20.0, floods=2, located=True,
-        current_s=7200.0, located_age_s=10.0,
-    )})  # fmt: skip
+    saved = Saved(
+        {
+            A: SavedContact(
+                500.0,
+                answered_age_s=10.0,
+                polled_age_s=12.0,
+                flood_age_s=20.0,
+                floods=2,
+                located=True,
+                current_s=7200.0,
+                located_age_s=10.0,
+            )
+        }
+    )
     r = Scheduler(0.0, saved=saved, lanes=wide)
     r.forget(A, 0.0)
     assert r.state(A, 0.0) == "waiting"
@@ -1012,13 +1043,18 @@ def test_a_file_without_the_new_fields_reads_as_an_hour_and_no_located_time(
     """A schedule saved by 1.1.0a1: its answers count an hour, its positions as the answer
     said (`located`), never longer."""
     store = JsonStateFile(tmp_path / "state.json")
-    store.save({"telemetry": {
-        "version": 1, "saved_at": 1000.0,
-        "contacts": {
-            A: {"due_in_s": 600.0, "answered_age_s": 100.0, "located": True},
-            B: {"due_in_s": 600.0, "answered_age_s": 100.0, "located": False},
-        },
-    }})  # fmt: skip
+    store.save(
+        {
+            "telemetry": {
+                "version": 1,
+                "saved_at": 1000.0,
+                "contacts": {
+                    A: {"due_in_s": 600.0, "answered_age_s": 100.0, "located": True},
+                    B: {"due_in_s": 600.0, "answered_age_s": 100.0, "located": False},
+                },
+            }
+        }
+    )
     saved, elapsed = TelemetryRecords(store).load(1000.0)
     assert saved is not None
     assert saved.contacts[A].current_s == telemetry.CURRENT_MIN_S
@@ -1033,14 +1069,33 @@ def test_a_file_without_the_new_fields_reads_as_an_hour_and_no_located_time(
 
 
 def test_the_lists_are_the_literal_types() -> None:
-    assert telemetry.STATES == get_args(TelemetryState) == (
-        "waiting", "answering", "no_position", "away", "no_answer", "no_path", "look_alike",
-        "excluded", "off",
-    )  # fmt: skip
+    assert (
+        telemetry.STATES
+        == get_args(TelemetryState)
+        == (
+            "waiting",
+            "answering",
+            "no_position",
+            "away",
+            "no_answer",
+            "no_path",
+            "look_alike",
+            "excluded",
+            "off",
+        )
+    )
     assert telemetry.STATUSES == get_args(TelemetryStatus) == ("off", "on", "paused", "unsupported")
-    assert telemetry.PAUSE_REASONS == get_args(PauseReason) == (
-        "first_start", "no_radio", "exclusions_unreadable", "auto_add", "radio_airtime",
-    )  # fmt: skip
+    assert (
+        telemetry.PAUSE_REASONS
+        == get_args(PauseReason)
+        == (
+            "first_start",
+            "no_radio",
+            "exclusions_unreadable",
+            "auto_add",
+            "radio_airtime",
+        )
+    )
     assert telemetry.EVENTS == get_args(TelemetryEvent) == ("answered", "unanswered")
     assert {"answering", "no_position"} == telemetry.CURRENT
     assert set(telemetry.EVENT_STATES) <= set(telemetry.STATES)

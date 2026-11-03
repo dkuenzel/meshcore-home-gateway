@@ -131,8 +131,18 @@ def test_config_render_puts_the_password_into_a_file_of_its_own(tmp_path: Path) 
     group = grp.getgrgid(os.getgid()).gr_name
     login = "mqtt.username=bridge\nmqtt.password=s3cret=x\n"
     answers.write_text(RENDER_ANSWERS + login, encoding="utf-8")
-    render = ["config", "render", "--answers", str(answers), "--output", str(output),
-              "--group", group, "--password-file", str(secret)]  # fmt: skip
+    render = [
+        "config",
+        "render",
+        "--answers",
+        str(answers),
+        "--output",
+        str(output),
+        "--group",
+        group,
+        "--password-file",
+        str(secret),
+    ]
     assert main(render) == EX_OK
     assert secret.read_text(encoding="utf-8") == "s3cret=x\n"
     assert stat.S_IMODE(secret.stat().st_mode) == 0o640
@@ -304,13 +314,16 @@ def test_probe_leaves_waiting_messages_in_the_radio(capsys: pytest.CaptureFixtur
         ),
         (
             EmulatedRadio(manual_add=False, unknown={Command.GET_AUTOADD_CONFIG}),
-            {"manual": False, "types": ["chat", "repeater", "room", "sensor"],
-             "overwrite_oldest": None},
+            {
+                "manual": False,
+                "types": ["chat", "repeater", "room", "sensor"],
+                "overwrite_oldest": None,
+            },
             "all added automatically",
         ),
     ],
     ids=["manual-with-types", "unknown-type", "older-firmware"],
-)  # fmt: skip
+)
 def test_probe_reports_how_the_radio_adds_contacts(
     capsys: pytest.CaptureFixture[str], radio: EmulatedRadio, auto_add: dict[str, Any], line: str
 ) -> None:
@@ -329,9 +342,13 @@ def test_probe_reports_position_telemetry_airtime_and_contact_flags(
     flags): a contact with the remote CLI flag can run the radio's CLI over the air."""
     admin = EmulatedContact(bytes.fromhex("c3" * 32), "Admin", flags=0x10 | 0x01 | 0x40)
     radio = EmulatedRadio(
-        contacts=[admin], latitude_e6=53_550_000, longitude_e6=9_990_000, advert_location=1,
-        telemetry_modes=0x26, tuning=(0, 9000),
-    )  # fmt: skip
+        contacts=[admin],
+        latitude_e6=53_550_000,
+        longitude_e6=9_990_000,
+        advert_location=1,
+        telemetry_modes=0x26,
+        tuning=(0, 9000),
+    )
     with TcpRadioServer(radio) as server:
         address = f"127.0.0.1:{server.port}"
         assert main(["probe", "--tcp", address, "--json"]) == EX_OK
@@ -339,8 +356,10 @@ def test_probe_reports_position_telemetry_airtime_and_contact_flags(
         assert report["position"] == {"latitude": 53.55, "longitude": 9.99}
         assert report["advert_location"] == "share"
         assert report["telemetry"] == {
-            "base": "allow_all", "location": "by_contact", "environment": "allow_all",
-        }  # fmt: skip
+            "base": "allow_all",
+            "location": "by_contact",
+            "environment": "allow_all",
+        }
         assert report["airtime_factor"] == 9.0
         assert report["contacts"][0]["flags"] == ["favourite", "remote_cli", "0x40"]
         assert main(["probe", "--tcp", address]) == EX_OK
@@ -433,9 +452,11 @@ def test_probe_follows_what_the_service_stored(
         assert main(["probe", "--tcp", address, *args, "--json"]) == EX_OK
         changes = json.loads(capsys.readouterr().out)["profile"]["changes"]
         assert {name: change["action"] for name, change in changes.items()} == {
-            "manual_add": "given_up", "duty_cycle_percent": "unsupported", "name": "kept",
+            "manual_add": "given_up",
+            "duty_cycle_percent": "unsupported",
+            "name": "kept",
             "autoadd": "disabled",
-        }  # fmt: skip
+        }
         assert main(["probe", "--tcp", address, *args]) == EX_OK
         out = capsys.readouterr().out
         assert "profile    differs from the configured profile:\n" in out
@@ -617,8 +638,13 @@ def test_listen_follows_telemetry_events(
     publisher = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
     publisher.connect(broker.host, broker.port)
     publisher.loop_start()
-    event = {"event_type": "unanswered", "key": "a1" * 32, "prefix": "a1" * 6, "name": "Alice",
-             "state": "away"}  # fmt: skip
+    event = {
+        "event_type": "unanswered",
+        "key": "a1" * 32,
+        "prefix": "a1" * 6,
+        "name": "Alice",
+        "state": "away",
+    }
     done = threading.Event()
 
     def publish() -> None:  # once the listener has subscribed: events are not retained
@@ -728,8 +754,9 @@ def test_listen_ends_when_its_reader_goes_away(tmp_path: Path, broker: Broker) -
     config = broker_config(tmp_path, broker)
     process = subprocess.Popen(  # noqa: S603 - our own command line
         [sys.executable, "-m", "meshcore_home_gateway", "listen", "--config", str(config)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )  # fmt: skip
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     assert process.stdout is not None
     process.stdout.close()  # the reader is gone before the first event
     publisher = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
@@ -769,10 +796,21 @@ def test_listen_prints_a_payload_it_cannot_decode_as_text(tmp_path: Path, broker
     output = tmp_path / "output"  # a file: the long line would fill a pipe nobody reads yet
     with output.open("wb") as out:
         process = subprocess.Popen(  # noqa: S603 - our own command line
-            [sys.executable, "-m", "meshcore_home_gateway", "listen", "--config", str(config),
-             "--topic", "received", "--count", "2"],
-            stdout=out, stderr=subprocess.PIPE,
-        )  # fmt: skip
+            [
+                sys.executable,
+                "-m",
+                "meshcore_home_gateway",
+                "listen",
+                "--config",
+                str(config),
+                "--topic",
+                "received",
+                "--count",
+                "2",
+            ],
+            stdout=out,
+            stderr=subprocess.PIPE,
+        )
     try:
         for _ in range(100):  # until listen has subscribed and printed both
             publisher.publish("meshcore/radio1/received", b"{}", qos=1).wait_for_publish(2)
@@ -940,9 +978,11 @@ class _Answering:
 
 @pytest.mark.parametrize("anonymous", [True, False], ids=["accepted", "refused"])
 def test_check_config_tries_the_broker_without_credentials(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
     anonymous: bool,
-) -> None:  # fmt: skip
+) -> None:
     """With a user name configured, a second login without one shows whether the broker takes
     anyone (SEC-004): then only its ACL, which no client can see, keeps them off the topics."""
     logins: list[str | None] = []
@@ -1113,10 +1153,11 @@ def test_send_wait_knows_its_text_by_the_random_suffix() -> None:
     for nonce in (True, False):
         watch = cli_module._DeliveryWatch("alice", "Smoke", {"confirmed"}, nonce=nonce)
         for kind, event_id, text in (
-            ("queued", "other", "Smoke alarm #0a1b2c3d"), ("queued", "mine", "Smoke #0a1b2c3d"),
+            ("queued", "other", "Smoke alarm #0a1b2c3d"),
+            ("queued", "mine", "Smoke #0a1b2c3d"),
             ("confirmed", "other", "Smoke alarm #0a1b2c3d"),
             ("confirmed", "mine", "Smoke #0a1b2c3d"),
-        ):  # fmt: skip
+        ):
             body = {"target": "alice", "event_type": kind, "id": event_id, "text": text}
             watch.on_message(None, None, SimpleNamespace(payload=json.dumps(body).encode()))
         assert (watch.result or {}).get("id") == ("mine" if nonce else None)
@@ -1289,8 +1330,10 @@ def test_probe_shows_the_plan_of_a_configuration(
         reported = {"action": "reported", "reason": None}
         assert profile["changes"]["name"] == {"live": "Bridge", "profile": "Gateway", **reported}
         assert profile["changes"]["duty_cycle_percent"] == {
-            "live": 50.0, "profile": 25.0, **reported,
-        }  # fmt: skip
+            "live": 50.0,
+            "profile": 25.0,
+            **reported,
+        }
         assert main(["probe", "--tcp", address, *args]) == EX_OK
         assert "  (only reported: radio.profile.manage = observe)\n" in capsys.readouterr().out
 

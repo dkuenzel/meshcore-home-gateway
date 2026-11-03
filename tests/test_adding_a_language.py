@@ -79,8 +79,10 @@ def checkout(target: Path) -> dict[str, bytes]:
     their contents."""
     listed = subprocess.run(  # noqa: S603 - git with fixed arguments in the checkout
         [GIT, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        cwd=ROOT, capture_output=True, check=False,
-    )  # fmt: skip
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    )
     if listed.returncode != 0:
         pytest.skip("not a git checkout")
     files = {}
@@ -117,9 +119,14 @@ def run(copy: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE")}
     env["PYTHONPATH"] = str(copy / "src")
     return subprocess.run(  # noqa: S603 - this Python on the copy's tools and tests
-        [sys.executable, *args], cwd=copy, env=env, capture_output=True, text=True, check=False,
+        [sys.executable, *args],
+        cwd=copy,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
         timeout=600,
-    )  # fmt: skip
+    )
 
 
 def test_a_language_needs_its_catalogs_its_line_and_what_the_tools_write(tmp_path: Path) -> None:

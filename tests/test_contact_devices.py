@@ -94,9 +94,12 @@ def mesh_of(*nodes: Node, mesh: Mesh | None = None) -> Mesh:
 
 
 def devices(
-    tmp_path: Path, limit: int = 50, clock: Clock | None = None, config: Config = CONFIG,
+    tmp_path: Path,
+    limit: int = 50,
+    clock: Clock | None = None,
+    config: Config = CONFIG,
     **options: Any,
-) -> tuple[ContactDevices, Recorder]:  # fmt: skip
+) -> tuple[ContactDevices, Recorder]:
     """A run of the gateway on the state in `tmp_path`; another call is its restart, after the
     stop has written the state (as the bridge does)."""
     config = replace(config, homeassistant=replace(config.homeassistant, contact_devices=limit))
@@ -121,9 +124,14 @@ def topic(key: str) -> str:
 
 
 def answered(
-    key: str, name: str, readings: Mapping[str, float] = LPP_ALL_READINGS, *,
-    battery: float | None = 4.12, mcu: float | None = 23.4, node_type: int = NodeType.CHAT,
-) -> Tracked:  # fmt: skip
+    key: str,
+    name: str,
+    readings: Mapping[str, float] = LPP_ALL_READINGS,
+    *,
+    battery: float | None = 4.12,
+    mcu: float | None = 23.4,
+    node_type: int = NodeType.CHAT,
+) -> Tracked:
     """A contact with the readings of a telemetry answer."""
     named = Named(battery, mcu, readings)
     return Tracked(node(key, name, node_type), readings=Readings(NOW, named))
@@ -135,11 +143,17 @@ def answered(
 @pytest.mark.parametrize(
     ("name", "slug"),
     [
-        ("Alice", "alice"), ("Jürgen's Handy", "jurgen_s_handy"), ("Łódź 2", "lodz_2"),
-        ("Groß", "gross"), ("  --Bob--  ", "bob"), ("🙂", ""), ("Ærø", "aero"),
-        ("x" * 40, "x" * 32), ("a" * 31 + " b", "a" * 31),
+        ("Alice", "alice"),
+        ("Jürgen's Handy", "jurgen_s_handy"),
+        ("Łódź 2", "lodz_2"),
+        ("Groß", "gross"),
+        ("  --Bob--  ", "bob"),
+        ("🙂", ""),
+        ("Ærø", "aero"),
+        ("x" * 40, "x" * 32),
+        ("a" * 31 + " b", "a" * 31),
     ],
-)  # fmt: skip
+)
 def test_slugs_are_valid_entity_id_parts(name: str, slug: str) -> None:
     assert slugify(name) == slug
     assert re.fullmatch(r"([a-z0-9]+(_[a-z0-9]+)*)?", slug)
@@ -149,9 +163,12 @@ def test_topics_sit_below_the_gateway_device() -> None:
     assert topic(ALICE) == f"homeassistant/device/{GATEWAY}/contact_{ALICE}/config"
     assert contact_discovery_subscription(CONFIG) == f"homeassistant/device/{GATEWAY}/+/config"
     assert key_from_discovery_topic(CONFIG, topic(ALICE)) == ALICE
-    for other in (f"homeassistant/device/{GATEWAY}/config", topic(ALICE)[:-7] + "/state",
-                  f"homeassistant/device/{GATEWAY}/contact_{ALICE.upper()}/config",
-                  f"homeassistant/device/{GATEWAY}/contact_a1/config"):  # fmt: skip
+    for other in (
+        f"homeassistant/device/{GATEWAY}/config",
+        topic(ALICE)[:-7] + "/state",
+        f"homeassistant/device/{GATEWAY}/contact_{ALICE.upper()}/config",
+        f"homeassistant/device/{GATEWAY}/contact_a1/config",
+    ):
         assert key_from_discovery_topic(CONFIG, other) is None
 
 
@@ -160,9 +177,16 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
     document = contact_payload(CONFIG, TOPICS, tracked, "alice")
     cmps = document["cmps"]
     assert set(cmps) == {
-        "last_heard", "hops", "snr", "message", "send", "remove", "telemetry", "telemetry_state",
+        "last_heard",
+        "hops",
+        "snr",
+        "message",
+        "send",
+        "remove",
+        "telemetry",
+        "telemetry_state",
         "advert_position",
-    }  # fmt: skip
+    }
     assert cmps["send"]["name"] is None  # named like the device
     assert cmps["send"]["command_topic"] == f"meshcore/radio1/contacts/{ALICE}/send"
     assert cmps["message"]["state_topic"] == f"meshcore/radio1/contacts/{ALICE}/received"
@@ -171,17 +195,26 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
     assert all("enabled_by_default" not in c for c in cmps.values())
     assert "name" not in cmps["snr"]  # Home Assistant names it after its class, translated
     assert {c["default_entity_id"] for c in cmps.values()} == {
-        "sensor.mesh_alice_last_heard", "sensor.mesh_alice_hops", "sensor.mesh_alice_snr",
-        "event.mesh_alice_message", "notify.mesh_alice", "button.mesh_alice_remove",
-        "switch.mesh_alice_telemetry", "sensor.mesh_alice_telemetry_state",
+        "sensor.mesh_alice_last_heard",
+        "sensor.mesh_alice_hops",
+        "sensor.mesh_alice_snr",
+        "event.mesh_alice_message",
+        "notify.mesh_alice",
+        "button.mesh_alice_remove",
+        "switch.mesh_alice_telemetry",
+        "sensor.mesh_alice_telemetry_state",
         "binary_sensor.mesh_alice_advert_position",
-    }  # fmt: skip
+    }
     for key, component in cmps.items():
         assert component["unique_id"] == f"{GATEWAY}_contact_{ALICE}_{key}"
     assert document["dev"] == {
-        "ids": [f"{GATEWAY}_contact_{ALICE}"], "name": "Alice", "mf": "MeshCore",
-        "mdl": "Companion", "sn": ALICE, "via_device": GATEWAY,
-    }  # fmt: skip
+        "ids": [f"{GATEWAY}_contact_{ALICE}"],
+        "name": "Alice",
+        "mf": "MeshCore",
+        "mdl": "Companion",
+        "sn": ALICE,
+        "via_device": GATEWAY,
+    }
     assert document["availability"] == [{"topic": "meshcore/radio1/availability"}]
 
 
@@ -195,9 +228,10 @@ def test_the_remove_button_is_available_only_while_a_request_would_be_taken() ->
     assert button["command_topic"] == f"meshcore/radio1/contacts/{ALICE}/remove"
     assert button["availability_mode"] == "all"
     assert [a["topic"] for a in button["availability"]] == [
-        "meshcore/radio1/availability", "meshcore/radio1/state",
+        "meshcore/radio1/availability",
+        "meshcore/radio1/state",
         f"meshcore/radio1/contacts/{ALICE}",
-    ]  # fmt: skip
+    ]
     for entry in button["availability"][1:]:
         assert entry["value_template"].startswith("{{ 'online' if value_json is defined and ")
     assert "value_json.removable is true" in button["availability"][2]["value_template"]
@@ -289,7 +323,7 @@ def test_every_template_reads_the_document_only_when_it_is_json() -> None:
             (component.get("state_topic"), component.get("value_template", "")),
             (component.get("json_attributes_topic"), component.get("json_attributes_template", "")),
             *((a["topic"], a.get("value_template", "")) for a in component.get("availability", [])),
-        ]  # fmt: skip
+        ]
         for topic, template in templates:
             if topic == DOCUMENT and "value_json" in template:
                 assert "value_json is defined" in template, (key, template)
@@ -320,18 +354,27 @@ def test_a_companion_gets_the_telemetry_switch_and_state_at_once(config: Config)
     needs no radio: both share the device's availability."""
     cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
     assert cmps["telemetry"] == {
-        "p": "switch", "unique_id": f"{GATEWAY}_contact_{ALICE}_telemetry",
-        "default_entity_id": "switch.mesh_alice_telemetry", "name": "Telemetry",
-        "entity_category": "config", "command_topic": f"{DOCUMENT}/telemetry",
-        "payload_on": "on", "payload_off": "off", "state_topic": DOCUMENT,
+        "p": "switch",
+        "unique_id": f"{GATEWAY}_contact_{ALICE}_telemetry",
+        "default_entity_id": "switch.mesh_alice_telemetry",
+        "name": "Telemetry",
+        "entity_category": "config",
+        "command_topic": f"{DOCUMENT}/telemetry",
+        "payload_on": "on",
+        "payload_off": "off",
+        "state_topic": DOCUMENT,
         "value_template": TELEMETRY_SWITCH,
-    }  # fmt: skip
+    }
     assert cmps["telemetry_state"] == {
-        "p": "sensor", "unique_id": f"{GATEWAY}_contact_{ALICE}_telemetry_state",
-        "default_entity_id": "sensor.mesh_alice_telemetry_state", "name": "Telemetry state",
-        "device_class": "enum", "options": list(STATES), "state_topic": DOCUMENT,
+        "p": "sensor",
+        "unique_id": f"{GATEWAY}_contact_{ALICE}_telemetry_state",
+        "default_entity_id": "sensor.mesh_alice_telemetry_state",
+        "name": "Telemetry state",
+        "device_class": "enum",
+        "options": list(STATES),
+        "state_topic": DOCUMENT,
         "value_template": TELEMETRY_STATE,
-    }  # fmt: skip
+    }
 
 
 @pytest.mark.parametrize("config", [TELEMETRY_ON, TELEMETRY_OFF], ids=["on", "off"])
@@ -341,11 +384,14 @@ def test_every_companion_shows_whether_its_adverts_carry_its_position(config: Co
     entity category: a trigger aimed at the device skips entities that have one."""
     cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
     assert cmps["advert_position"] == {
-        "p": "binary_sensor", "unique_id": f"{GATEWAY}_contact_{ALICE}_advert_position",
+        "p": "binary_sensor",
+        "unique_id": f"{GATEWAY}_contact_{ALICE}_advert_position",
         "default_entity_id": "binary_sensor.mesh_alice_advert_position",
-        "name": "Position in adverts", "device_class": "problem", "state_topic": DOCUMENT,
+        "name": "Position in adverts",
+        "device_class": "problem",
+        "state_topic": DOCUMENT,
         "value_template": ADVERT_POSITION,
-    }  # fmt: skip
+    }
 
 
 def test_position_in_adverts_reads_the_check_and_knows_no_value_without_one() -> None:
@@ -378,20 +424,32 @@ def test_the_readings_get_their_sensors_with_their_data() -> None:
         "availability_mode": "all",
     }
     assert cmps["battery"] == {
-        "p": "sensor", "unique_id": f"{GATEWAY}_contact_{ALICE}_battery",
-        "default_entity_id": "sensor.mesh_alice_battery", "name": "Battery",
-        "device_class": "voltage", "unit_of_measurement": "V", "state_class": "measurement",
-        "suggested_display_precision": 2, "state_topic": DOCUMENT,
-        "value_template": number_at("battery_v"), **availability,
-    }  # fmt: skip
+        "p": "sensor",
+        "unique_id": f"{GATEWAY}_contact_{ALICE}_battery",
+        "default_entity_id": "sensor.mesh_alice_battery",
+        "name": "Battery",
+        "device_class": "voltage",
+        "unit_of_measurement": "V",
+        "state_class": "measurement",
+        "suggested_display_precision": 2,
+        "state_topic": DOCUMENT,
+        "value_template": number_at("battery_v"),
+        **availability,
+    }
     assert cmps["mcu_temperature"] == {
-        "p": "sensor", "unique_id": f"{GATEWAY}_contact_{ALICE}_mcu_temperature",
-        "default_entity_id": "sensor.mesh_alice_mcu_temperature", "name": "MCU temperature",
-        "device_class": "temperature", "unit_of_measurement": "°C",
-        "state_class": "measurement", "suggested_display_precision": 1,
-        "entity_category": "diagnostic", "state_topic": DOCUMENT,
-        "value_template": number_at("mcu_temperature_c"), **availability,
-    }  # fmt: skip
+        "p": "sensor",
+        "unique_id": f"{GATEWAY}_contact_{ALICE}_mcu_temperature",
+        "default_entity_id": "sensor.mesh_alice_mcu_temperature",
+        "name": "MCU temperature",
+        "device_class": "temperature",
+        "unit_of_measurement": "°C",
+        "state_class": "measurement",
+        "suggested_display_precision": 1,
+        "entity_category": "diagnostic",
+        "state_topic": DOCUMENT,
+        "value_template": number_at("mcu_temperature_c"),
+        **availability,
+    }
     readings = [name for name in cmps if name.startswith("ch")]
     assert readings == [lpp.component_of(key) for key in LPP_ALL_READINGS]  # the answer's order
     for key in LPP_ALL_READINGS:
@@ -401,20 +459,29 @@ def test_the_readings_get_their_sensors_with_their_data() -> None:
         assert parsed is not None
         entity = READING_ENTITIES[parsed[1]]
         expected = {
-            "p": "sensor", "unique_id": f"{GATEWAY}_contact_{ALICE}_{component}",
+            "p": "sensor",
+            "unique_id": f"{GATEWAY}_contact_{ALICE}_{component}",
             "default_entity_id": f"sensor.mesh_alice_{component}",
-            "name": cmps[component]["name"], "device_class": entity.device_class,
-            "unit_of_measurement": entity.unit, "state_class": "measurement",
-            "suggested_display_precision": entity.precision, "state_topic": DOCUMENT,
-            "value_template": number_at("readings", key), **availability,
-        }  # fmt: skip
+            "name": cmps[component]["name"],
+            "device_class": entity.device_class,
+            "unit_of_measurement": entity.unit,
+            "state_class": "measurement",
+            "suggested_display_precision": entity.precision,
+            "state_topic": DOCUMENT,
+            "value_template": number_at("readings", key),
+            **availability,
+        }
         assert cmps[component] == {k: v for k, v in expected.items() if v is not None}
-    names = {k: cmps[k]["name"] for k in ("ch1_temperature", "ch2_temperature_2",
-                                          "ch2_barometric_pressure", "ch2_altitude")}  # fmt: skip
+    names = {
+        k: cmps[k]["name"]
+        for k in ("ch1_temperature", "ch2_temperature_2", "ch2_barometric_pressure", "ch2_altitude")
+    }
     assert names == {
-        "ch1_temperature": "Temperature 1", "ch2_temperature_2": "Temperature 2 (2)",
-        "ch2_barometric_pressure": "Pressure 2", "ch2_altitude": "Altitude 2",
-    }  # fmt: skip
+        "ch1_temperature": "Temperature 1",
+        "ch2_temperature_2": "Temperature 2 (2)",
+        "ch2_barometric_pressure": "Pressure 2",
+        "ch2_altitude": "Altitude 2",
+    }
     # no class and no unit, also no null: lux on most boards, 0-100 on the T1000-E
     assert not {"device_class", "unit_of_measurement"} & set(cmps["ch1_luminosity"])
 
@@ -441,9 +508,11 @@ def test_data_stays_data_in_every_language(language: str, monkeypatch: pytest.Mo
     config = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, language=language))
     ha_name = i18n.translator(language).ha_name
     for node_type, model in (
-        (NodeType.CHAT, ha_name("Companion")), (NodeType.SENSOR, ha_name("Sensor")),
-        (NodeType.NONE, "type_0"), (7, "type_7"),
-    ):  # fmt: skip
+        (NodeType.CHAT, ha_name("Companion")),
+        (NodeType.SENSOR, ha_name("Sensor")),
+        (NodeType.NONE, "type_0"),
+        (7, "type_7"),
+    ):
         tracked = Tracked(node(ALICE, "Jürgen's Handy", node_type))
         device = contact_payload(config, TOPICS, tracked, "alice")["dev"]
         assert (device["name"], device["mdl"]) == ("Jürgen's Handy", model)
@@ -461,15 +530,20 @@ def test_the_reading_entities_are_those_of_the_published_types() -> None:
         for lpp_type, entity in READING_ENTITIES.items()
     }
     assert entities == {
-        116: ("Voltage", "voltage", "V", 2), 117: ("Current", "current", "A", 3),
-        128: ("Power", "power", "W", 0), 103: ("Temperature", "temperature", "°C", 1),
+        116: ("Voltage", "voltage", "V", 2),
+        117: ("Current", "current", "A", 3),
+        128: ("Power", "power", "W", 0),
+        103: ("Temperature", "temperature", "°C", 1),
         104: ("Humidity", "humidity", "%", 1),
         115: ("Pressure", "atmospheric_pressure", "hPa", 1),
-        121: ("Altitude", "distance", "m", 0), 101: ("Luminosity", None, None, 0),
-        100: ("Generic", None, None, 0), 2: ("Analog input", None, None, 2),
-        120: ("Percentage", None, "%", 0), 118: ("Frequency", "frequency", "Hz", 0),
+        121: ("Altitude", "distance", "m", 0),
+        101: ("Luminosity", None, None, 0),
+        100: ("Generic", None, None, 0),
+        2: ("Analog input", None, None, 2),
+        120: ("Percentage", None, "%", 0),
+        118: ("Frequency", "frequency", "Hz", 0),
         130: ("Distance", "distance", "m", 3),
-    }  # fmt: skip
+    }
     assert set(READING_ENTITIES) == set(lpp.UNITS)
 
 
@@ -483,8 +557,9 @@ def test_at_most_16_reading_sensors_those_announced_first() -> None:
     kept = ["ch18_temperature", "ch17_temperature"]
     cmps = contact_payload(CONFIG, TOPICS, tracked, "alice", keep=kept)["cmps"]
     assert [n for n in cmps if n.startswith("ch")] == [
-        *kept, *(f"ch{c}_temperature" for c in range(1, 15))
-    ]  # fmt: skip
+        *kept,
+        *(f"ch{c}_temperature" for c in range(1, 15)),
+    ]
 
 
 def test_kept_components_are_announced_as_before_without_data() -> None:
@@ -501,7 +576,7 @@ def test_the_tracker_is_available_while_its_position_is_current() -> None:
     assert tracker["availability"] == [
         {"topic": "meshcore/radio1/availability"},
         {"topic": DOCUMENT, "value_template": POSITION_AVAILABLE},
-    ]  # fmt: skip
+    ]
     assert "value_json.position_current is not false" in POSITION_AVAILABLE
 
 
@@ -518,8 +593,12 @@ def test_templates_of_keys_newer_than_the_documents_log_nothing() -> None:
         "else None }}"
     )
     for template in (
-        TELEMETRY_CURRENT, POSITION_AVAILABLE, TELEMETRY_STATE, TELEMETRY_SWITCH, ADVERT_POSITION,
-    ):  # fmt: skip
+        TELEMETRY_CURRENT,
+        POSITION_AVAILABLE,
+        TELEMETRY_STATE,
+        TELEMETRY_SWITCH,
+        ADVERT_POSITION,
+    ):
         assert template.count("value_json is defined and ") == 1
     assert "telemetry_current is false" in TELEMETRY_CURRENT  # online for an older document
     assert "telemetry_excluded is true" in TELEMETRY_SWITCH  # on: it excluded nobody
@@ -528,9 +607,11 @@ def test_templates_of_keys_newer_than_the_documents_log_nothing() -> None:
 
 def test_a_removed_contact_takes_its_telemetry_entities() -> None:
     components = {
-        "telemetry": "switch", "telemetry_state": "sensor", "battery": "sensor",
+        "telemetry": "switch",
+        "telemetry_state": "sensor",
+        "battery": "sensor",
         "ch2_temperature": "sensor",
-    }  # fmt: skip
+    }
     stand_ins = removal_payload(CONFIG, TOPICS, ALICE, components)["cmps"]
     assert set(stand_ins) == set(components)
     assert stand_ins["telemetry"]["command_topic"] == "meshcore/radio1/removed"
@@ -568,8 +649,9 @@ def test_a_reading_beyond_the_limit_is_logged_once(
     beyond = [r.getMessage() for r in caplog.records if "readings" in r.getMessage()]
     assert beyond == [
         f"Home Assistant: contact {ALICE[:12]} sends more than 16 readings: "
-        f"{key} only in its document" for key in ("ch17_temperature_c", "ch18_temperature_c")
-    ]  # fmt: skip
+        f"{key} only in its document"
+        for key in ("ch17_temperature_c", "ch18_temperature_c")
+    ]
     caplog.clear()
     repeater, _ = devices(tmp_path / "again")
     mesh = mesh_of(node(ALICE, "Alice", NodeType.REPEATER), mesh=mesh)  # flashed: never asked
@@ -641,9 +723,16 @@ def test_a_removed_contact_loses_its_device(tmp_path: Path) -> None:
     assert bind_topic == empty_topic == topic(ALICE)
     assert empty is None
     assert set(bind["cmps"]) == {
-        "last_heard", "hops", "snr", "message", "send", "remove", "telemetry", "telemetry_state",
+        "last_heard",
+        "hops",
+        "snr",
+        "message",
+        "send",
+        "remove",
+        "telemetry",
+        "telemetry_state",
         "advert_position",
-    }  # fmt: skip
+    }
     assert all("enabled_by_default" not in c for c in bind["cmps"].values())
     assert bind["cmps"]["send"]["unique_id"] == f"{GATEWAY}_contact_{ALICE}_send"
     switch = bind["cmps"]["telemetry"]
@@ -801,8 +890,12 @@ def test_a_component_stays_when_its_data_goes(tmp_path: Path) -> None:
 def test_the_household_comes_first_when_there_are_too_many(tmp_path: Path) -> None:
     contacts, bus = devices(tmp_path, limit=2, protected=frozenset({CAROL}))
     favourite = node(BOB, "Bob", flags=ContactFlag.FAVOURITE)
-    mesh = mesh_of(node(ALICE, "Alice"), favourite, node(HILL, "Hill", NodeType.REPEATER),
-                   node(CAROL, "Carol", last_advert=int(NOW)))  # fmt: skip
+    mesh = mesh_of(
+        node(ALICE, "Alice"),
+        favourite,
+        node(HILL, "Hill", NodeType.REPEATER),
+        node(CAROL, "Carol", last_advert=int(NOW)),
+    )
     contacts.update(mesh)
     assert {t for t, _ in bus.take()} == {topic(CAROL), topic(BOB)}
 
@@ -814,8 +907,9 @@ def test_a_protected_contact_gets_its_device_with_its_first_advert(tmp_path: Pat
     mesh = mesh_of(node(ALICE, "Alice"), node(CAROL, "Carol"))
     contacts.update(mesh)
     assert [t for t, _ in bus.take()] == [topic(ALICE)]
-    contacts.update(mesh_of(node(ALICE, "Alice"), node(CAROL, "Carol", last_advert=int(NOW)),
-                            mesh=mesh))  # fmt: skip
+    contacts.update(
+        mesh_of(node(ALICE, "Alice"), node(CAROL, "Carol", last_advert=int(NOW)), mesh=mesh)
+    )
     assert [t for t, _ in bus.take()] == [topic(CAROL)]
     contacts.update(mesh_of(node(ALICE, "Alice"), node(CAROL, "Carol"), mesh=mesh))
     assert bus.take() == []  # once it has a device, it keeps it
@@ -857,12 +951,22 @@ def test_a_device_keeps_its_place_and_the_recently_heard_come_next(tmp_path: Pat
     contacts.update(mesh)
     bus.take()
     mesh.contact_heard(BOB, Heard(NOW, "advert"))  # not yet a contact: no effect
-    mesh = mesh_of(node(ALICE, "Alice"), node(HILL, "Hill", NodeType.REPEATER),
-                   node(BOB, "Bob", flags=ContactFlag.FAVOURITE), mesh=mesh)  # fmt: skip
+    mesh = mesh_of(
+        node(ALICE, "Alice"),
+        node(HILL, "Hill", NodeType.REPEATER),
+        node(BOB, "Bob", flags=ContactFlag.FAVOURITE),
+        mesh=mesh,
+    )
     contacts.update(mesh)
     assert bus.take() == []  # no slot free: Bob waits
-    contacts.update(mesh_of(node(ALICE, "Alice"), node(BOB, "Bob", flags=ContactFlag.FAVOURITE),
-                            node(CAROL, "Carol"), mesh=mesh))  # fmt: skip
+    contacts.update(
+        mesh_of(
+            node(ALICE, "Alice"),
+            node(BOB, "Bob", flags=ContactFlag.FAVOURITE),
+            node(CAROL, "Carol"),
+            mesh=mesh,
+        )
+    )
     sent = bus.take()  # Hill left: Bob before Carol
     assert [t for t, _ in sent] == [topic(HILL), topic(HILL), topic(BOB)]
 
@@ -890,8 +994,16 @@ def test_a_device_deleted_in_home_assistant_stays_hidden(tmp_path: Path) -> None
     contacts.discovery_message(topic(ALICE), b"", retained=False)  # the user deleted it
     ((event_topic, event),) = bus.take()
     assert event_topic == "meshcore/radio1/contact"
-    assert event == {"event_type": "hidden", "key": ALICE, "prefix": ALICE[:12], "name": "Alice",
-                     "type": "chat", "request": None, "id": None, "reason": None}  # fmt: skip
+    assert event == {
+        "event_type": "hidden",
+        "key": ALICE,
+        "prefix": ALICE[:12],
+        "name": "Alice",
+        "type": "chat",
+        "request": None,
+        "id": None,
+        "reason": None,
+    }
     contacts.update(mesh)
     contacts.announce_all()
     assert bus.take() == []

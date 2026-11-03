@@ -265,15 +265,35 @@ def test_a_percent_is_text_outside_argparse() -> None:
 @pytest.mark.parametrize(
     ("language", "forms", "plural_forms", "expected"),
     [
-        ("de", ("{count} Absender", "{count} Absender"), "nplurals=2; plural=(n != 1);",
-         {0: "0 Absender", 1: "1 Absender", 2: "2 Absender"}),
-        ("fr", ("{count} expéditeur", "{count} expéditeurs"), FRENCH,
-         {0: "0 expéditeur", 1: "1 expéditeur", 2: "2 expéditeurs"}),
-        ("pl", ("{count} nadawca", "{count} nadawców (2-4)", "{count} nadawców"), POLISH,
-         {1: "1 nadawca", 2: "2 nadawców (2-4)", 5: "5 nadawców", 12: "12 nadawców",
-          22: "22 nadawców (2-4)", 25: "25 nadawców", 101: "101 nadawców", 111: "111 nadawców"}),
+        (
+            "de",
+            ("{count} Absender", "{count} Absender"),
+            "nplurals=2; plural=(n != 1);",
+            {0: "0 Absender", 1: "1 Absender", 2: "2 Absender"},
+        ),
+        (
+            "fr",
+            ("{count} expéditeur", "{count} expéditeurs"),
+            FRENCH,
+            {0: "0 expéditeur", 1: "1 expéditeur", 2: "2 expéditeurs"},
+        ),
+        (
+            "pl",
+            ("{count} nadawca", "{count} nadawców (2-4)", "{count} nadawców"),
+            POLISH,
+            {
+                1: "1 nadawca",
+                2: "2 nadawców (2-4)",
+                5: "5 nadawców",
+                12: "12 nadawców",
+                22: "22 nadawców (2-4)",
+                25: "25 nadawców",
+                101: "101 nadawców",
+                111: "111 nadawców",
+            },
+        ),
     ],
-)  # fmt: skip
+)
 def test_plural_fills_count(
     language: str, forms: tuple[str, ...], plural_forms: str, expected: dict[int, str]
 ) -> None:

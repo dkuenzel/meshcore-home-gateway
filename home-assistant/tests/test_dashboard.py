@@ -66,7 +66,7 @@ from test_contact_devices import (
     Broker,
     Ticking,
     mesh_of,
-)  # fmt: skip
+)
 
 # what anyone in radio range may write: markup, links, images, autolinks, a forged alert, Jinja
 ATTACKS = [
@@ -92,22 +92,80 @@ URL = "mesh-radio1"
 # the types of the frontend Home Assistant 2026.10.0 pins (20260930.2): cards in
 # src/panels/lovelace/create-element/create-card-element.ts lines 20-108, views in
 # create-view-element.ts, sections in create-section-element.ts
-CARDS = frozenset({
-    "entity", "entities", "button", "entity-button", "glance", "grid", "section", "light",
-    "sensor", "thermostat", "weather-forecast", "tile", "heading", "alarm-panel", "area",
-    "calendar", "conditional", "empty-state", "energy-compare", "energy-carbon-consumed-gauge",
-    "energy-date-selection", "energy-devices-graph", "energy-devices-detail-graph",
-    "energy-distribution", "energy-gas-graph", "energy-water-graph",
-    "energy-grid-neutrality-gauge", "energy-grid-balance", "energy-solar-consumed-gauge",
-    "energy-self-sufficiency-gauge", "energy-solar-graph", "energy-sources-table",
-    "energy-usage-graph", "energy-sankey", "water-sankey", "water-flow-sankey",
-    "power-sources-graph", "power-sankey", "entity-filter", "error", "home-summary", "shortcut",
-    "discovered-devices", "repairs", "alert", "updates", "gauge", "history-graph",
-    "horizontal-stack", "distribution", "humidifier", "iframe", "logbook", "map", "markdown",
-    "clock", "media-control", "picture-elements", "picture-entity", "picture-glance", "picture",
-    "plant-status", "recovery-mode", "toggle-group", "todo-list", "shopping-list", "starting",
-    "statistics-graph", "statistic", "vertical-stack",
-})  # fmt: skip
+CARDS = frozenset(
+    {
+        "entity",
+        "entities",
+        "button",
+        "entity-button",
+        "glance",
+        "grid",
+        "section",
+        "light",
+        "sensor",
+        "thermostat",
+        "weather-forecast",
+        "tile",
+        "heading",
+        "alarm-panel",
+        "area",
+        "calendar",
+        "conditional",
+        "empty-state",
+        "energy-compare",
+        "energy-carbon-consumed-gauge",
+        "energy-date-selection",
+        "energy-devices-graph",
+        "energy-devices-detail-graph",
+        "energy-distribution",
+        "energy-gas-graph",
+        "energy-water-graph",
+        "energy-grid-neutrality-gauge",
+        "energy-grid-balance",
+        "energy-solar-consumed-gauge",
+        "energy-self-sufficiency-gauge",
+        "energy-solar-graph",
+        "energy-sources-table",
+        "energy-usage-graph",
+        "energy-sankey",
+        "water-sankey",
+        "water-flow-sankey",
+        "power-sources-graph",
+        "power-sankey",
+        "entity-filter",
+        "error",
+        "home-summary",
+        "shortcut",
+        "discovered-devices",
+        "repairs",
+        "alert",
+        "updates",
+        "gauge",
+        "history-graph",
+        "horizontal-stack",
+        "distribution",
+        "humidifier",
+        "iframe",
+        "logbook",
+        "map",
+        "markdown",
+        "clock",
+        "media-control",
+        "picture-elements",
+        "picture-entity",
+        "picture-glance",
+        "picture",
+        "plant-status",
+        "recovery-mode",
+        "toggle-group",
+        "todo-list",
+        "shopping-list",
+        "starting",
+        "statistics-graph",
+        "statistic",
+        "vertical-stack",
+    }
+)
 VIEWS = frozenset({"masonry", "panel", "sidebar", "sections"})
 SECTIONS = frozenset({"grid"})
 # the Markdown cards, by a part of their content or visibility
@@ -326,8 +384,10 @@ def visible(hass: HomeAssistant, found: dict[str, Any]) -> bool:
         value = (
             "unknown"
             if state is None or (attribute and state.attributes.get(attribute) is None)
-            else str(state.attributes[attribute]) if attribute else state.state
-        )  # fmt: skip
+            else str(state.attributes[attribute])
+            if attribute
+            else state.state
+        )
         positive = condition.get("state") is not None
         wanted = condition["state"] if positive else condition["state_not"]
         values = [*wanted] if isinstance(wanted, list) else [wanted]
@@ -365,9 +425,15 @@ async def test_a_component_set_up_after_the_websocket_client_still_registers_its
 
 @pytest.mark.parametrize("language", LANGUAGES)
 async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, language: str,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
     """For a node ID with and without '-'; in xx every title is the catalog's."""
     files = {}
     for node_id in ("radio1", "radio-2"):
@@ -383,9 +449,12 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
         assert len(own) > 15
         assert all(f".meshcore_home_gateway_{gw}_" in e for e in own)
         titles = [loaded[f"mesh-{node_id}"]["title"], *(v["title"] for v in views)]
-        titles += [c.get("heading") or c.get("title") or c["name"] for v in views
-                   for c in walk(v["sections"])
-                   if c["type"] == "heading" or "title" in c or "name" in c]  # fmt: skip
+        titles += [
+            c.get("heading") or c.get("title") or c["name"]
+            for v in views
+            for c in walk(v["sections"])
+            if c["type"] == "heading" or "title" in c or "name" in c
+        ]
         assert len(titles) == 16
         for title in titles:
             if language == "xx":
@@ -401,9 +470,15 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
 
 @pytest.mark.parametrize("language", LANGUAGES)
 async def test_the_dashboard_names_only_entities_that_exist(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, language: str,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
     """The gateway's entities, its controls, the trackers and the guide's script; the same in
     English and in xx, with the household discovered in `language`."""
     offer("xx", monkeypatch, XX)
@@ -427,9 +502,13 @@ async def test_the_dashboard_names_only_entities_that_exist(
 
 
 async def test_the_dashboard_uses_only_the_frontends_cards(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     text, _ = dashboard.dashboard(make_config(), tmp_path)
     views = (await load(hass, hass_ws_client, {URL: text}))[URL]["views"]
     assert {v["type"] for v in views} <= VIEWS
@@ -446,9 +525,15 @@ async def test_the_dashboard_uses_only_the_frontends_cards(
 
 @pytest.mark.parametrize("language", LANGUAGES)
 async def test_every_card_renders_in_every_situation(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, language: str,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
     """Strictly and without a warning, with the status line's alert of each situation; no card
     listens to a domain or to every state, the contacts table to the time also with no contact."""
     config = speaking(language, monkeypatch)
@@ -492,10 +577,15 @@ async def test_every_card_renders_in_every_situation(
     await situation("another version", "TIP", "Gateway ready.")
     assert render(hass, card(loaded, VERSION)) == (
         '<div><ha-alert alert-type="warning">'
-        + said(config, "This dashboard was made for version {version}; the gateway runs "
-               "{running}. Generate it again.", version=dashboard.__version__, running="9.9.9")
+        + said(
+            config,
+            "This dashboard was made for version {version}; the gateway runs "
+            "{running}. Generate it again.",
+            version=dashboard.__version__,
+            running="9.9.9",
+        )
         + "</ha-alert></div>"
-    )  # fmt: skip
+    )
     for name, outputs in seen.items():
         assert form_findings(outputs) == [], name
     assert problems(caplog) == []
@@ -503,9 +593,15 @@ async def test_every_card_renders_in_every_situation(
 
 @pytest.mark.parametrize("language", LANGUAGES)
 async def test_the_contacts_table_lists_fifty_contacts_newest_first(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, language: str,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
     """Each with the time since it was heard, as the card's text, or no time."""
     config = speaking(language, monkeypatch)
     loaded = await made(hass, hass_ws_client, config, tmp_path)
@@ -521,8 +617,10 @@ async def test_the_contacts_table_lists_fifty_contacts_newest_first(
     outputs = rendered(hass, loaded)
     table = render(hass, card(loaded, TABLE))
     assert table.count("<tr>") == 51
-    times = [said(config, text, n=n) for text, n in
-             (("{n} min ago", "5"), ("{n} h ago", "3"), ("{n} d ago", "2"))]  # fmt: skip
+    times = [
+        said(config, text, n=n)
+        for text, n in (("{n} min ago", "5"), ("{n} h ago", "3"), ("{n} d ago", "2"))
+    ]
     found = [table.find(f"<td>{t}</td>") for t in times]
     assert -1 not in found
     assert found == sorted(found)  # newest first
@@ -534,9 +632,15 @@ async def test_the_contacts_table_lists_fifty_contacts_newest_first(
 
 @pytest.mark.parametrize("language", LANGUAGES)
 async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, language: str,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
     """Each hostile name in turn as a contact's (device and tracker) name, a message's sender, a
     delivery's target, the name of a contact event, a heard node (raw and labelled), the version
     and the contact link; each text as a message's and a delivery's: every card shows it escaped
@@ -551,10 +655,15 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
     devices.update(mesh)
     await deliver(hass, config, broker, mesh, telemetry_state="no_position")
     places = {
-        MESSAGE: "sender and text", SENT: "target and text", EVENT: "name", TABLE: "device name",
-        HEARD: "a heard node's label", HINT: "tracker not on the map", VERSION: "version",
+        MESSAGE: "sender and text",
+        SENT: "target and text",
+        EVENT: "name",
+        TABLE: "device name",
+        HEARD: "a heard node's label",
+        HINT: "tracker not on the map",
+        VERSION: "version",
         QR: "contact link",
-    }  # fmt: skip
+    }
     every: dict[str, str] = {}
     for i, (key, name, text) in enumerate(zip(KEYS, NAMES, TEXTS, strict=True)):
         message = InboundMessage(
@@ -563,13 +672,28 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
         await fire(hass, topics.received, received_payload(message, Contact(key, name), None))
         failed = DeliveryEvent(f"m{i}", name, DeliveryState.FAILED, text, 1, "no_acknowledgement")
         await fire(hass, topics.delivery, delivery_payload(failed))
-        await fire(hass, topics.contact_event, contact_event(
-            "refused", key, name=name, node_type=COMPANION, request="add", request_id=f"r{i}",
-            reason="look_alike",
-        ))  # fmt: skip
-        await fire(hass, topics.state, state_document(known=True) | {
-            "version": name, "contact_link": name,
-        })  # fmt: skip
+        await fire(
+            hass,
+            topics.contact_event,
+            contact_event(
+                "refused",
+                key,
+                name=name,
+                node_type=COMPANION,
+                request="add",
+                request_id=f"r{i}",
+                reason="look_alike",
+            ),
+        )
+        await fire(
+            hass,
+            topics.state,
+            state_document(known=True)
+            | {
+                "version": name,
+                "contact_link": name,
+            },
+        )
         outputs = rendered(hass, loaded)
         every |= {f"{i} {where}": output for where, output in outputs.items()}
         assert form_findings(outputs, [name, text]) == [], (i, name)
@@ -585,9 +709,13 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
 
 
 async def test_cards_show_only_while_their_state_says_so(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """The version card only while the gateway runs another version; the script's tile only
     with the script, its hint only without; a problem's tile only while it is on."""
     config = make_config()
@@ -595,9 +723,10 @@ async def test_cards_show_only_while_their_state_says_so(
     version, hint = card(loaded, VERSION), card(loaded, WRITE)
     (tile,) = [c for c in walk(loaded) if c["type"] == "tile" and c["entity"] == WRITE]
     problem = {
-        c["entity"]: c for c in walk(loaded)
+        c["entity"]: c
+        for c in walk(loaded)
         if c["type"] == "tile" and c["entity"].startswith("binary_sensor.") and "visibility" in c
-    }  # fmt: skip
+    }
     assert len(problem) == 4  # look-alikes, a remote CLI, a position in adverts, degraded
     assert not visible(hass, version)  # no gateway
     assert (visible(hass, tile), visible(hass, hint)) == (False, True)
@@ -613,8 +742,14 @@ async def test_cards_show_only_while_their_state_says_so(
     assert {e for e, c in problem.items() if visible(hass, c)} == {
         "binary_sensor.meshcore_home_gateway_radio1_look_alike"
     }
-    contacts = {"total": 1, "max": 350, "remote_cli": [BOB], "remote_cli_total": 1,
-                "advert_carries_position": [BOB], "advert_carries_position_total": 1}  # fmt: skip
+    contacts = {
+        "total": 1,
+        "max": 350,
+        "remote_cli": [BOB],
+        "remote_cli_total": 1,
+        "advert_carries_position": [BOB],
+        "advert_carries_position_total": 1,
+    }
     await fire(hass, topics.contacts, contacts, retain=True)
     degraded = state_document(known=True) | {"health": {"degraded": True}}
     await fire(hass, topics.state, degraded)
@@ -628,9 +763,13 @@ async def test_cards_show_only_while_their_state_says_so(
 
 
 async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """The trackers known when the dashboard was made; without a state file a note instead of
     the map; the hint names this gateway's contacts with a position that the map lacks, by key:
     for Alice shared with gateway radio-2, radio-2's dashboard lists radio1's tracker of her and
@@ -650,9 +789,11 @@ async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others
         household(Node(ALICE, "Alice", COMPANION, position=HOME))
     )
     files = {
-        "mesh-early": early, URL: full, "mesh-none": dashboard.dashboard(config, tmp_path)[0],
+        "mesh-early": early,
+        URL: full,
+        "mesh-none": dashboard.dashboard(config, tmp_path)[0],
         "mesh-radio-2": dashboard.dashboard(other, tmp_path / "radio-2")[0],
-    }  # fmt: skip
+    }
     loaded = await load(hass, hass_ws_client, files)
     await gateway(hass, config)
     await deliver(hass, config, broker, mesh)
@@ -666,8 +807,10 @@ async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others
     assert (shown_map["hours_to_show"], shown_map["theme_mode"]) == (24, "auto")
     assert render(hass, card(loaded[URL], HINT)) == ""
     assert not [c for c in walk(loaded["mesh-none"]) if c["type"] == "map"]
-    note = said(config, "No contact had a position when this dashboard was made. Generate it "
-                "again once one has.")  # fmt: skip
+    note = said(
+        config,
+        "No contact had a position when this dashboard was made. Generate it again once one has.",
+    )
     assert note in json.dumps(loaded["mesh-none"], ensure_ascii=False)
     hint = render(hass, card(loaded["mesh-early"], HINT))
     assert hint.startswith('<div><ha-alert alert-type="info">Not on this map: ')
@@ -686,9 +829,13 @@ async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others
 
 
 async def test_a_dashboard_shows_only_its_own_gateways_contacts(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """Zed, a contact of gateway radio-2 with a position, is in neither radio1's contacts table
     nor its map's hint, and in both of radio-2's."""
     config, other = make_config(), make_config(node_id="radio-2")
@@ -696,8 +843,10 @@ async def test_a_dashboard_shows_only_its_own_gateways_contacts(
     contacts_of(config, tmp_path / "radio1", first).update(household(ALICE_NODE))
     zed = household(Node(ZED, "Zed", COMPANION, position=HOME))
     contacts_of(other, tmp_path / "radio-2", second).update(zed)
-    files = {URL: dashboard.dashboard(config, tmp_path / "radio1")[0],
-             "mesh-radio-2": dashboard.dashboard(other, tmp_path)[0]}  # fmt: skip
+    files = {
+        URL: dashboard.dashboard(config, tmp_path / "radio1")[0],
+        "mesh-radio-2": dashboard.dashboard(other, tmp_path)[0],
+    }
     loaded = await load(hass, hass_ws_client, files)
     await gateway(hass, config)
     await deliver(hass, config, first, household(ALICE_NODE))
@@ -714,9 +863,13 @@ async def test_a_dashboard_shows_only_its_own_gateways_contacts(
 
 
 async def test_the_guides_script_is_a_form_that_sends_for_a_household_user(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """Its more-info dialog shows a form of its fields (the frontend reads them from the services'
     descriptions): `To` picks a notify entity of MQTT, a target or a contact. A user who is no
     administrator sends with it to a contact and to a target, each one publish with QoS 1."""
@@ -748,13 +901,23 @@ async def test_the_guides_script_is_a_form_that_sends_for_a_household_user(
 
     alice, alerts = "notify.mesh_alice", "notify.meshcore_home_gateway_radio1_send_alerts"
     # also texts Home Assistant would read as numbers or None, and spaces it would strip
-    for to, text in ((alice, "Dinner <b>now</b>"), (alerts, "Gate open"), (alice, "+493023125000"),
-                     (alice, "1.10"), (alerts, "None"), (alice, "  spaced  ")):  # fmt: skip
+    for to, text in (
+        (alice, "Dinner <b>now</b>"),
+        (alerts, "Gate open"),
+        (alice, "+493023125000"),
+        (alice, "1.10"),
+        (alerts, "None"),
+        (alice, "  spaced  "),
+    ):
         mqtt.async_publish.reset_mock()
-        await client.send_json_auto_id({
-            "type": "call_service", "domain": "script", "service": "mesh_message",
-            "service_data": {"to": to, "message": text},
-        })  # fmt: skip
+        await client.send_json_auto_id(
+            {
+                "type": "call_service",
+                "domain": "script",
+                "service": "mesh_message",
+                "service_data": {"to": to, "message": text},
+            }
+        )
         answer = await client.receive_json()
         assert answer["success"], answer
         await hass.async_block_till_done()
@@ -767,20 +930,35 @@ async def test_the_guides_script_is_a_form_that_sends_for_a_household_user(
 # --- machine values as texts --------------------------------------------------------------------
 
 STEPS = {
-    "queued": "queued", "sent": "sent", "confirmed": "confirmed", "failed": "failed",
-    "expired": "expired", "duplicate": "not sent again: a duplicate", "rejected": "rejected",
-}  # fmt: skip
+    "queued": "queued",
+    "sent": "sent",
+    "confirmed": "confirmed",
+    "failed": "failed",
+    "expired": "expired",
+    "duplicate": "not sent again: a duplicate",
+    "rejected": "rejected",
+}
 STATES = {
-    "waiting": "waiting", "answering": "answering", "no_position": "no position", "away": "away",
-    "no_answer": "no answer", "no_path": "no path", "look_alike": "look-alike",
-    "excluded": "excluded", "off": "off",
-}  # fmt: skip
+    "waiting": "waiting",
+    "answering": "answering",
+    "no_position": "no position",
+    "away": "away",
+    "no_answer": "no answer",
+    "no_path": "no path",
+    "look_alike": "look-alike",
+    "excluded": "excluded",
+    "off": "off",
+}
 
 
 async def test_steps_states_and_contact_events_show_as_texts(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, tmp_path: Path,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+) -> None:
     """A delivery step, a telemetry state and a contact event as the dashboard's text, a reason
     as its code: the codes are an open list (docs/mqtt-api.md)."""
     assert set(STEPS) == {s.value for s in DeliveryState}
@@ -794,10 +972,19 @@ async def test_steps_states_and_contact_events_show_as_texts(
     event, sent, table = card(loaded, EVENT), card(loaded, SENT), card(loaded, TABLE)
 
     assert render(hass, event) == "No contact event yet."
-    await fire(hass, topics.contact_event, contact_event(
-        "refused", BOB, name="Bob", node_type=COMPANION, request="add", request_id="r1",
-        reason="look_alike",
-    ))  # fmt: skip
+    await fire(
+        hass,
+        topics.contact_event,
+        contact_event(
+            "refused",
+            BOB,
+            name="Bob",
+            node_type=COMPANION,
+            request="add",
+            request_id="r1",
+            reason="look_alike",
+        ),
+    )
     refused = "<div><b>Bob</b> request refused <code>look_alike</code> "
     assert render(hass, event).startswith(refused)
     await fire(hass, topics.contact_event, contact_event("added", ALICE, ALICE_NODE))
@@ -830,9 +1017,14 @@ async def test_steps_states_and_contact_events_show_as_texts(
 
 
 async def test_the_cards_say_how_long_ago(
-    hass: HomeAssistant, mqtt: Any, hass_ws_client: Any, *, tmp_path: Path,
-    freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture,
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """The last message, the last contact event and a contact's last heard time, minutes, hours
     and days later: each card counts on its own."""
     config = make_config()
@@ -849,8 +1041,11 @@ async def test_the_cards_say_how_long_ago(
     await fire(hass, topics.contact_event, contact_event("added", ALICE, ALICE_NODE))
     document = contact_document(mesh.contacts[ALICE], telemetry_state="answering")
     await fire(hass, topics.contact(ALICE), document | {"heard_at": iso(now)})
-    for seconds, text, n in ((330, "{n} min ago", "5"), (3.5 * 3600 - 330, "{n} h ago", "3"),
-                             (2 * 86400, "{n} d ago", "2")):  # fmt: skip
+    for seconds, text, n in (
+        (330, "{n} min ago", "5"),
+        (3.5 * 3600 - 330, "{n} h ago", "3"),
+        (2 * 86400, "{n} d ago", "2"),
+    ):
         freezer.tick(timedelta(seconds=seconds))
         ago = said(config, text, n=n)
         assert render(hass, card(loaded, MESSAGE)) == f"<div><b>Alice</b> {ago}<br>Dinner</div>"

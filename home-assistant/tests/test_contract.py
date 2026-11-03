@@ -94,19 +94,42 @@ RADIO = RadioInfo(
 def state_document(*, known: bool) -> dict[str, Any]:
     """A state document as Bridge.state_payload writes it, before and after the radio connects."""
     state: dict[str, Any] = {
-        "radio": "disconnected", "battery_v": None, "airtime_1h_s": 0.0,
-        "airtime_available_s": 36.0, "airtime_budget_s_per_hour": 36.0, "queue": 0,
-        "radio_name": None, "public_key": None, "model": None, "firmware": None,
-        "frequency_mhz": None, "bandwidth_khz": None, "spreading_factor": None,
-        "coding_rate": None, "tx_power_dbm": None, "contact_link": None, "version": __version__,
-    }  # fmt: skip
+        "radio": "disconnected",
+        "battery_v": None,
+        "airtime_1h_s": 0.0,
+        "airtime_available_s": 36.0,
+        "airtime_budget_s_per_hour": 36.0,
+        "queue": 0,
+        "radio_name": None,
+        "public_key": None,
+        "model": None,
+        "firmware": None,
+        "frequency_mhz": None,
+        "bandwidth_khz": None,
+        "spreading_factor": None,
+        "coding_rate": None,
+        "tx_power_dbm": None,
+        "contact_link": None,
+        "version": __version__,
+    }
     if known:
         state.update(
-            radio="connected", battery_v=4.012, airtime_1h_s=3.2, airtime_available_s=9.4,
-            queue=2, radio_name="Gateway", public_key=RADIO_KEY, model="Heltec V3",
-            firmware="v1.18.0", frequency_mhz=869.618, bandwidth_khz=62.5, spreading_factor=8,
-            coding_rate=8, tx_power_dbm=22, contact_link=contact_link("Gateway", RADIO_KEY),
-        )  # fmt: skip
+            radio="connected",
+            battery_v=4.012,
+            airtime_1h_s=3.2,
+            airtime_available_s=9.4,
+            queue=2,
+            radio_name="Gateway",
+            public_key=RADIO_KEY,
+            model="Heltec V3",
+            firmware="v1.18.0",
+            frequency_mhz=869.618,
+            bandwidth_khz=62.5,
+            spreading_factor=8,
+            coding_rate=8,
+            tx_power_dbm=22,
+            contact_link=contact_link("Gateway", RADIO_KEY),
+        )
     return state
 
 
@@ -168,9 +191,10 @@ async def test_discovery_creates_the_documented_entities(
     ids = entity_ids(hass)
     assert len(ids) == len(document["cmps"]) + len(controls["cmps"])
     documented = {
-        name for name in re.findall(rf"\b[a-z_]+\.{PREFIX}_\w+", GUIDE.read_text(encoding="utf-8"))
+        name
+        for name in re.findall(rf"\b[a-z_]+\.{PREFIX}_\w+", GUIDE.read_text(encoding="utf-8"))
         if not name.endswith("_")  # `..._send_<alias>` and `..._rx_snr` written as a pattern
-    }  # fmt: skip
+    }
     assert documented <= ids
     assert f"notify.{PREFIX}_send_my_target" in ids  # '-' in an alias becomes '_'
     registry = er.async_get(hass)
@@ -379,9 +403,15 @@ async def test_a_degraded_gateway_is_a_problem_with_its_health_as_attributes(
     sensor = f"binary_sensor.{PREFIX}_degraded"
     assert hass.states.get(sensor).state == "unknown"
     health = {
-        "degraded": True, "history": "broken", "state_file": "ok", "exclusions": "ok",
-        "errors_1h": 2, "loop_lag_max_s": 0.012, "events_dropped_1h": 0, "disk_free_mb": 5120,
-    }  # fmt: skip
+        "degraded": True,
+        "history": "broken",
+        "state_file": "ok",
+        "exclusions": "ok",
+        "errors_1h": 2,
+        "loop_lag_max_s": 0.012,
+        "events_dropped_1h": 0,
+        "disk_free_mb": 5120,
+    }
     await fire(hass, TOPICS.state, state_document(known=True) | {"health": health})
     degraded = hass.states.get(sensor)
     assert degraded.state == "on"
@@ -418,20 +448,34 @@ async def test_the_radio_profile_shows_its_status_and_settings(
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
     report = ProfileReport(
-        "auto", 14, True, False, live={"manual_add": True, "name": "Kitchen radio"},
-        desired={"manual_add": True, "name": "Gateway"}, drift={"name": "Kitchen radio"},
-    )  # fmt: skip
+        "auto",
+        14,
+        True,
+        False,
+        live={"manual_add": True, "name": "Kitchen radio"},
+        desired={"manual_add": True, "name": "Gateway"},
+        drift={"name": "Kitchen radio"},
+    )
     await fire(hass, TOPICS.settings, settings_document(report, 1_800_000_000.0), retain=True)
     sensor = hass.states.get(f"sensor.{PREFIX}_profile")
     assert sensor.state == "drift"
     assert sensor.attributes["settings"]["name"] == {
-        "live": "Kitchen radio", "desired": "Gateway", "state": "drift",
-    }  # fmt: skip
+        "live": "Kitchen radio",
+        "desired": "Gateway",
+        "state": "drift",
+    }
     assert sensor.attributes["options"] == ["ok", "written", "drift", "differs", "problem"]
-    await fire(hass, TOPICS.setting_event, {
-        "event_type": "written", "setting": "manual_add", "reason": "drift", "live": False,
-        "desired": True,
-    })  # fmt: skip
+    await fire(
+        hass,
+        TOPICS.setting_event,
+        {
+            "event_type": "written",
+            "setting": "manual_add",
+            "reason": "drift",
+            "live": False,
+            "desired": True,
+        },
+    )
     event = hass.states.get(f"event.{PREFIX}_setting")
     assert (event.attributes["event_type"], event.attributes["setting"]) == (
         "written",
@@ -475,9 +519,13 @@ async def test_the_documented_automations_work(
 
     for message_id in ("a", "b"):  # two equal events in a row: both must trigger
         failed = DeliveryEvent(
-            id=message_id, target="alerts", state=DeliveryState.FAILED, text="x", attempt=1,
+            id=message_id,
+            target="alerts",
+            state=DeliveryState.FAILED,
+            text="x",
+            attempt=1,
             reason="no_acknowledgement",
-        )  # fmt: skip
+        )
         await fire(hass, TOPICS.delivery, delivery_payload(failed))
     notifications = persistent_notification._async_get_or_create_notifications(hass)
     messages = [n["message"] for n in notifications.values()]
@@ -493,9 +541,12 @@ async def test_the_documented_automations_work(
     ids=["gateway", "radio"],
 )
 async def test_the_outage_automation_tells_after_five_minutes(
-    hass: HomeAssistant, mqtt: Any, freezer: FrozenDateTimeFactory,
-    caplog: pytest.LogCaptureFixture, case: tuple[str, str],
-) -> None:  # fmt: skip
+    hass: HomeAssistant,
+    mqtt: Any,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+    case: tuple[str, str],
+) -> None:
     """OPS-003: the gateway offline (its last will) or its radio away for five minutes."""
     topic, message = case
     await announce(hass, discovery_payload(CONFIG, TOPICS))
@@ -599,8 +650,14 @@ async def test_the_markdown_card_keeps_a_hostile_text_inert(
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
     card = Template(guide_block("type: markdown\ntitle: Last mesh message")["content"], hass)
-    message = InboundMessage(kind, text, 1_760_000_000, 1_760_000_001.0, sender_prefix=SENDER[:12],
-                             channel_index=1 if kind is MessageKind.CHANNEL else None)  # fmt: skip
+    message = InboundMessage(
+        kind,
+        text,
+        1_760_000_000,
+        1_760_000_001.0,
+        sender_prefix=SENDER[:12],
+        channel_index=1 if kind is MessageKind.CHANNEL else None,
+    )
     await fire(hass, TOPICS.received, received_payload(message, sender, "alerts"))
     output = card.async_render(parse_result=False)
     assert not re.search(r"\n[ \t]*\n.*!\[", output, re.DOTALL)  # no image after a blank line
@@ -633,8 +690,10 @@ async def test_the_actions_of_the_first_steps_send_a_message(
         await hass.async_block_till_done()
         (send,) = [c.args for c in mqtt.async_publish.call_args_list]
         assert (send[0], send[1], send[2]) == (
-            "meshcore/radio1/send/alerts", "Test from Home Assistant", 1,
-        )  # fmt: skip
+            "meshcore/radio1/send/alerts",
+            "Test from Home Assistant",
+            1,
+        )
     assert problems(caplog) == []
 
 

@@ -39,9 +39,20 @@ TELEMETRY_T_MS = 410  # time on air of the request at EU/UK Narrow, as the radio
 
 # bytes of each single-value type the documents publish (CayenneLPP.h:27-111 of 1.6.1)
 _LPP_SIZES = {
-    2: 2, 100: 4, 101: 2, 103: 2, 104: 1, 115: 2, 116: 2, 117: 2, 118: 4, 120: 1, 121: 2,
-    128: 2, 130: 4,
-}  # fmt: skip
+    2: 2,
+    100: 4,
+    101: 2,
+    103: 2,
+    104: 1,
+    115: 2,
+    116: 2,
+    117: 2,
+    118: 4,
+    120: 1,
+    121: 2,
+    128: 2,
+    130: 4,
+}
 
 
 def lpp_entry(channel: int, lpp_type: int, raw: int) -> bytes:
@@ -55,20 +66,45 @@ def lpp_entry(channel: int, lpp_type: int, raw: int) -> bytes:
 LPP_ALL = b"".join(
     lpp_entry(channel, lpp_type, raw)
     for channel, lpp_type, raw in (
-        (1, 116, 412), (1, 103, 215), (1, 101, 50), (2, 116, 330), (2, 117, -125), (2, 128, 12),
-        (2, 103, 213), (2, 104, 111), (2, 115, 10132), (2, 121, 120), (2, 101, 300), (2, 100, 7),
-        (2, 2, 123), (2, 120, 80), (2, 118, 868), (2, 130, 1500), (2, 103, 198), (1, 103, 234),
+        (1, 116, 412),
+        (1, 103, 215),
+        (1, 101, 50),
+        (2, 116, 330),
+        (2, 117, -125),
+        (2, 128, 12),
+        (2, 103, 213),
+        (2, 104, 111),
+        (2, 115, 10132),
+        (2, 121, 120),
+        (2, 101, 300),
+        (2, 100, 7),
+        (2, 2, 123),
+        (2, 120, 80),
+        (2, 118, 868),
+        (2, 130, 1500),
+        (2, 103, 198),
+        (1, 103, 234),
     )
-)  # fmt: skip
+)
 # LPP_ALL's readings besides the battery (4.12 V) and the MCU temperature (23.4 °C)
 LPP_ALL_READINGS = {
-    "ch1_temperature_c": 21.5, "ch1_luminosity": 50.0, "ch2_voltage_v": 3.3,
-    "ch2_current_a": -0.125, "ch2_power_w": 12.0, "ch2_temperature_c": 21.3,
-    "ch2_humidity_percent": 55.5, "ch2_barometric_pressure_hpa": 1013.2, "ch2_altitude_m": 120.0,
-    "ch2_luminosity": 300.0, "ch2_generic": 7.0, "ch2_analog_input": 1.23,
-    "ch2_percentage_percent": 80.0, "ch2_frequency_hz": 868.0, "ch2_distance_m": 1.5,
+    "ch1_temperature_c": 21.5,
+    "ch1_luminosity": 50.0,
+    "ch2_voltage_v": 3.3,
+    "ch2_current_a": -0.125,
+    "ch2_power_w": 12.0,
+    "ch2_temperature_c": 21.3,
+    "ch2_humidity_percent": 55.5,
+    "ch2_barometric_pressure_hpa": 1013.2,
+    "ch2_altitude_m": 120.0,
+    "ch2_luminosity": 300.0,
+    "ch2_generic": 7.0,
+    "ch2_analog_input": 1.23,
+    "ch2_percentage_percent": 80.0,
+    "ch2_frequency_hz": 868.0,
+    "ch2_distance_m": 1.5,
     "ch2_temperature_2_c": 19.8,
-}  # fmt: skip
+}
 
 
 def frame(payload: bytes) -> bytes:
@@ -91,11 +127,15 @@ class EmulatedContact:
         """The contact layout (MyMesh.cpp:171-192), also of the NEW_ADVERT push."""
         name = self.name.encode()[:31].ljust(32, b"\x00")
         return (
-            bytes([code]) + self.public_key + bytes([self.node_type, self.flags, self.out_path_len])
-            + self.out_path.ljust(64, b"\x00") + name
-            + struct.pack("<IiiI", self.last_advert, self.latitude_e6, self.longitude_e6,
-                          START_TIME - 60)
-        )  # fmt: skip
+            bytes([code])
+            + self.public_key
+            + bytes([self.node_type, self.flags, self.out_path_len])
+            + self.out_path.ljust(64, b"\x00")
+            + name
+            + struct.pack(
+                "<IiiI", self.last_advert, self.latitude_e6, self.longitude_e6, START_TIME - 60
+            )
+        )
 
 
 @dataclass
@@ -230,9 +270,17 @@ class EmulatedRadio:
         self._out.put_nowait(ClosedByRadioError("emulated radio: closed by the radio"))
 
     def queue_direct_message(
-        self, prefix: bytes, text: str, timestamp: int, *, v3: bool = True, snr_q: int = 24,
-        path_len: int = 0xFF, text_type: int = 0, push: bool = True,
-    ) -> None:  # fmt: skip
+        self,
+        prefix: bytes,
+        text: str,
+        timestamp: int,
+        *,
+        v3: bool = True,
+        snr_q: int = 24,
+        path_len: int = 0xFF,
+        text_type: int = 0,
+        push: bool = True,
+    ) -> None:
         body = prefix + bytes([path_len, text_type]) + struct.pack("<I", timestamp) + text.encode()
         payload = bytes([0x10, snr_q & 0xFF, 0, 0]) + body if v3 else bytes([0x07]) + body
         self._queue(payload, push)
@@ -259,11 +307,19 @@ class EmulatedRadio:
             self.emit(contact.record(Push.NEW_ADVERT))
 
     def send_advert(
-        self, contact: bytes | EmulatedContact, *, timestamp: int | None = None,
-        position: tuple[int, int] | None = None, hops: int = 0, hash_bytes: int = 1,
-        transport: bool = False, zero_hop: bool = False, logged: bool = True, pushed: bool = True,
+        self,
+        contact: bytes | EmulatedContact,
+        *,
+        timestamp: int | None = None,
+        position: tuple[int, int] | None = None,
+        hops: int = 0,
+        hash_bytes: int = 1,
+        transport: bool = False,
+        zero_hop: bool = False,
+        logged: bool = True,
+        pushed: bool = True,
         between: bytes | None = None,
-    ) -> int:  # fmt: skip
+    ) -> int:
         """An advert as companion firmware 1.18 handles it: LOG_RX_DATA first, only if the frame
         fits (raw + 3 <= 176, MyMesh.cpp:292: no log when path > 71 - app data, 67 - app data with
         transport codes); `between`, a frame the radio writes between log and push (a receive
@@ -282,9 +338,14 @@ class EmulatedRadio:
         if timestamp is None:
             timestamp = (held or sender).last_advert + 60
         raw = advert_packet(
-            sender, timestamp, position, hops=hops, hash_bytes=hash_bytes, transport=transport,
+            sender,
+            timestamp,
+            position,
+            hops=hops,
+            hash_bytes=hash_bytes,
+            transport=transport,
             zero_hop=zero_hop,
-        )  # fmt: skip
+        )
         if logged:
             self._log(raw)
         if between is not None:
@@ -304,9 +365,13 @@ class EmulatedRadio:
         return timestamp
 
     def log_advert(
-        self, contact: bytes | EmulatedContact, *, timestamp: int,
-        position: tuple[int, int] | None = None, hops: int = 0,
-    ) -> None:  # fmt: skip
+        self,
+        contact: bytes | EmulatedContact,
+        *,
+        timestamp: int,
+        position: tuple[int, int] | None = None,
+        hops: int = 0,
+    ) -> None:
         """Only the log: a copy the radio does not take (forged, a replay, a later flood copy)."""
         self._log(advert_packet(self._sender(contact)[0], timestamp, position, hops=hops))
 
@@ -561,21 +626,32 @@ class EmulatedRadio:
 
     def _self_info(self) -> bytes:
         return (
-            bytes([Response.SELF_INFO, 1, 22, 22]) + SELF_KEY
+            bytes([Response.SELF_INFO, 1, 22, 22])
+            + SELF_KEY
             + struct.pack("<ii", self.latitude_e6, self.longitude_e6)
             + bytes([0, self.advert_location, self.telemetry_modes, int(self.manual_add)])
-            + struct.pack("<IIBB", self.frequency_khz, 62_500, self.spreading_factor,
-                          self.coding_rate)
+            + struct.pack(
+                "<IIBB", self.frequency_khz, 62_500, self.spreading_factor, self.coding_rate
+            )
             + self.name.encode()
-        )  # fmt: skip
+        )
 
     def _device_info(self) -> bytes:
         return (
-            bytes([Response.DEVICE_INFO, self.firmware_code, self.max_contacts // 2,
-                   self.max_channels]) + bytes(4)
-            + b"15 Oct 2026".ljust(12, b"\x00") + b"Example Radio".ljust(40, b"\x00")
-            + b"v1.18.0".ljust(20, b"\x00") + bytes([0, 0])
-        )  # fmt: skip
+            bytes(
+                [
+                    Response.DEVICE_INFO,
+                    self.firmware_code,
+                    self.max_contacts // 2,
+                    self.max_channels,
+                ]
+            )
+            + bytes(4)
+            + b"15 Oct 2026".ljust(12, b"\x00")
+            + b"Example Radio".ljust(40, b"\x00")
+            + b"v1.18.0".ljust(20, b"\x00")
+            + bytes([0, 0])
+        )
 
 
 def telemetry_push(key: bytes, data: bytes) -> bytes:
@@ -584,9 +660,15 @@ def telemetry_push(key: bytes, data: bytes) -> bytes:
 
 
 def advert_packet(
-    contact: EmulatedContact, timestamp: int, position: tuple[int, int] | None = None, *,
-    hops: int = 0, hash_bytes: int = 1, transport: bool = False, zero_hop: bool = False,
-) -> bytes:  # fmt: skip
+    contact: EmulatedContact,
+    timestamp: int,
+    position: tuple[int, int] | None = None,
+    *,
+    hops: int = 0,
+    hash_bytes: int = 1,
+    transport: bool = False,
+    zero_hop: bool = False,
+) -> bytes:
     """An advert of `contact` as the radio receives it (Mesh.cpp:404-438, Packet.cpp:52-63):
     route flood with `hops` zero hashes of `hash_bytes` each, or direct without a path
     (`zero_hop`); two zero transport codes with `transport`; the key, the timestamp, 64 zero
@@ -600,11 +682,17 @@ def advert_packet(
     flags = contact.node_type | 0x80 | (0x10 if position is not None else 0)
     location = b"" if position is None else struct.pack("<ii", *position)
     return (
-        bytes([PAYLOAD_TYPE_ADVERT << 2 | route]) + bytes(4 * transport)
-        + bytes([hops | (hash_bytes - 1) << 6]) + bytes(hops * hash_bytes)
-        + contact.public_key + struct.pack("<I", timestamp) + bytes(SIGNATURE_BYTES)
-        + bytes([flags]) + location + advert_name(contact.name, position).encode()
-    )  # fmt: skip
+        bytes([PAYLOAD_TYPE_ADVERT << 2 | route])
+        + bytes(4 * transport)
+        + bytes([hops | (hash_bytes - 1) << 6])
+        + bytes(hops * hash_bytes)
+        + contact.public_key
+        + struct.pack("<I", timestamp)
+        + bytes(SIGNATURE_BYTES)
+        + bytes([flags])
+        + location
+        + advert_name(contact.name, position).encode()
+    )
 
 
 def advert_name(name: str, position: tuple[int, int] | None) -> str:
@@ -614,10 +702,14 @@ def advert_name(name: str, position: tuple[int, int] | None) -> str:
     return name.encode()[:room].decode(errors="ignore")
 
 
-_SETTERS = frozenset({
-    Command.SET_OTHER_PARAMS, Command.SET_AUTOADD_CONFIG, Command.SET_TUNING_PARAMS,
-    Command.SET_ADVERT_NAME,
-})  # fmt: skip
+_SETTERS = frozenset(
+    {
+        Command.SET_OTHER_PARAMS,
+        Command.SET_AUTOADD_CONFIG,
+        Command.SET_TUNING_PARAMS,
+        Command.SET_ADVERT_NAME,
+    }
+)
 
 
 class WifiFrameParser:

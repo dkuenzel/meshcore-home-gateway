@@ -208,9 +208,17 @@ class Barrier:
 
 
 RadioEvent = (
-    MessageReceived | AckReceived | PacketLogged | AdvertHeard | ContactsRead | StatsRead
-    | TelemetryReceived | PathChanged | PathReset | Barrier
-)  # fmt: skip
+    MessageReceived
+    | AckReceived
+    | PacketLogged
+    | AdvertHeard
+    | ContactsRead
+    | StatsRead
+    | TelemetryReceived
+    | PathChanged
+    | PathReset
+    | Barrier
+)
 
 
 @dataclass
@@ -295,17 +303,24 @@ class CompanionSession:
         self.info = RadioInfo(self_info, device)
         log.info(
             "radio %s: %s, firmware %s (code %d), %s",
-            self._transport.description, self_info.name, device.version,
-            device.firmware_code, device.model,
-        )  # fmt: skip
+            self._transport.description,
+            self_info.name,
+            device.version,
+            device.firmware_code,
+            device.model,
+        )
         self.autoadd = await self._optional(
-            codec.get_autoadd_config(), Response.AUTOADD_CONFIG, codec.AutoAddConfig,
+            codec.get_autoadd_config(),
+            Response.AUTOADD_CONFIG,
+            codec.AutoAddConfig,
             "get auto-add settings",
-        )  # fmt: skip
+        )
         self.tuning = await self._optional(
-            codec.get_tuning_params(), Response.TUNING_PARAMS, codec.TuningParams,
+            codec.get_tuning_params(),
+            Response.TUNING_PARAMS,
+            codec.TuningParams,
             "get tuning parameters",
-        )  # fmt: skip
+        )
         await self._apply_profile("before_contacts")  # the policy holds before a message is judged
         _warn_about_contact_adding(self.info.self_info, self.autoadd)
         await self._sync_clock()
@@ -360,13 +375,17 @@ class CompanionSession:
         )
         self.info = RadioInfo(self_info, info.device)
         self.autoadd = await self._optional(
-            codec.get_autoadd_config(), Response.AUTOADD_CONFIG, codec.AutoAddConfig,
+            codec.get_autoadd_config(),
+            Response.AUTOADD_CONFIG,
+            codec.AutoAddConfig,
             "get auto-add settings",
-        )  # fmt: skip
+        )
         self.tuning = await self._optional(
-            codec.get_tuning_params(), Response.TUNING_PARAMS, codec.TuningParams,
+            codec.get_tuning_params(),
+            Response.TUNING_PARAMS,
+            codec.TuningParams,
             "get tuning parameters",
-        )  # fmt: skip
+        )
 
     async def wait_closed(self) -> None:
         """Return when the session ends; re-raise the error that ended it."""
@@ -792,8 +811,11 @@ class CompanionSession:
             reported is not None and now - reported < MALFORMED_REPORT_S
         ):
             return
-        log.warning("radio: malformed pushes ignored: %d%s", self._malformed_unreported,
-                    f" (the last: {last})" if last else "")  # fmt: skip
+        log.warning(
+            "radio: malformed pushes ignored: %d%s",
+            self._malformed_unreported,
+            f" (the last: {last})" if last else "",
+        )
         self._malformed_reported_at, self._malformed_unreported = now, 0
 
     def _report_key(self, public_key: bytes, *, held: bool = True) -> None:

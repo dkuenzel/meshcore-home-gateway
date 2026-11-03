@@ -38,9 +38,20 @@ Outcome = Literal["received", "collided", "deaf", "lost"]
 # src/Packet.h: the route in bits 0-1 of the header, the payload type in bits 2-5
 ROUTES = {0: "TF", 1: "F", 2: "D", 3: "TD"}  # (transport) flood, (transport) direct
 TYPES = {
-    0: "REQ", 1: "RESPONSE", 2: "TXT_MSG", 3: "ACK", 4: "ADVERT", 5: "GRP_TXT", 6: "GRP_DATA",
-    7: "ANON_REQ", 8: "PATH", 9: "TRACE", 10: "MULTIPART", 11: "CONTROL", 15: "RAW_CUSTOM",
-}  # fmt: skip
+    0: "REQ",
+    1: "RESPONSE",
+    2: "TXT_MSG",
+    3: "ACK",
+    4: "ADVERT",
+    5: "GRP_TXT",
+    6: "GRP_DATA",
+    7: "ANON_REQ",
+    8: "PATH",
+    9: "TRACE",
+    10: "MULTIPART",
+    11: "CONTROL",
+    15: "RAW_CUSTOM",
+}
 HELLO = struct.Struct("<cBIIBBb")  # 'H', node, frequency kHz, bandwidth Hz, SF, CR, dBm
 TRANSMIT = struct.Struct("<cBI")  # 'T', node, airtime in ms; the packet follows
 WAIT_S = 5.0  # for an answer of the air's thread
@@ -56,8 +67,10 @@ class RadioSettings:
 
     def hears(self, other: RadioSettings) -> bool:
         return (self.frequency_khz, self.bandwidth_hz, self.spreading_factor) == (
-            other.frequency_khz, other.bandwidth_hz, other.spreading_factor,
-        )  # fmt: skip
+            other.frequency_khz,
+            other.bandwidth_hz,
+            other.spreading_factor,
+        )
 
 
 EU_NARROW = RadioSettings(869_618, 62_500, 8, 8, 20)
@@ -156,9 +169,16 @@ class Air:
         await self.close()
 
     def link(
-        self, a: int, b: int, snr: float = 8.0, rssi: int | None = None, *, both: bool = True,
-        loss: float = 0.0, delay_s: float = 0.0,
-    ) -> None:  # fmt: skip
+        self,
+        a: int,
+        b: int,
+        snr: float = 8.0,
+        rssi: int | None = None,
+        *,
+        both: bool = True,
+        loss: float = 0.0,
+        delay_s: float = 0.0,
+    ) -> None:
         """Let b hear a (and a hear b) with this SNR; the RSSI follows from it unless given. A
         packet already on its way keeps the link it left with."""
         if not 0.0 <= loss <= 1.0 or delay_s < 0.0:
@@ -331,9 +351,16 @@ class AirThread:
         return self._wait(run())
 
     def link(
-        self, a: int, b: int, snr: float = 8.0, rssi: int | None = None, *, both: bool = True,
-        loss: float = 0.0, delay_s: float = 0.0,
-    ) -> None:  # fmt: skip
+        self,
+        a: int,
+        b: int,
+        snr: float = 8.0,
+        rssi: int | None = None,
+        *,
+        both: bool = True,
+        loss: float = 0.0,
+        delay_s: float = 0.0,
+    ) -> None:
         self.call(lambda air: air.link(a, b, snr, rssi, both=both, loss=loss, delay_s=delay_s))
 
     def unlink(self, a: int, b: int, *, both: bool = True) -> None:
@@ -405,11 +432,16 @@ class StandIn:
     def hello(self, settings: RadioSettings) -> None:
         self.socket.sendto(
             HELLO.pack(
-                b"H", self.node_id, settings.frequency_khz, settings.bandwidth_hz,
-                settings.spreading_factor, settings.coding_rate, settings.tx_power_dbm,
+                b"H",
+                self.node_id,
+                settings.frequency_khz,
+                settings.bandwidth_hz,
+                settings.spreading_factor,
+                settings.coding_rate,
+                settings.tx_power_dbm,
             ),
             self._air,
-        )  # fmt: skip
+        )
 
     def transmit(self, packet: bytes, airtime_ms: int) -> None:
         self.socket.sendto(TRANSMIT.pack(b"T", self.node_id, airtime_ms) + packet, self._air)

@@ -199,8 +199,9 @@ class Observer:
         readings = self._history.last_readings()
         self._heard_rows = self._history.nodes()
         for row in self._heard_rows:
-            self._restore_contact(row.key, row.heard, fixes.pop(row.key, None),
-                                  readings.pop(row.key, None))  # fmt: skip
+            self._restore_contact(
+                row.key, row.heard, fixes.pop(row.key, None), readings.pop(row.key, None)
+            )
         for key, fix in fixes.items():
             self._restore_contact(key, None, fix, readings.pop(key, None))
         for key, kept in readings.items():
@@ -249,17 +250,28 @@ class Observer:
             *(("written", k, report.reasons.get(k)) for k in report.written),
             *(("failed", k, report.reasons.get(k)) for k in report.failed),
             *(("not_taken", k, report.reasons.get(k)) for k in report.not_taken),
-            *(("not_converging", k, None) for k in report.not_converging
-              if before is None or k not in before.not_converging),
-            *(("drift", k, None) for k, v in report.drift.items()
-              if before is None or before.drift.get(k) != v),
-        ]  # fmt: skip
+            *(
+                ("not_converging", k, None)
+                for k in report.not_converging
+                if before is None or k not in before.not_converging
+            ),
+            *(
+                ("drift", k, None)
+                for k, v in report.drift.items()
+                if before is None or before.drift.get(k) != v
+            ),
+        ]
         for kind, key, reason in events:
-            self._event(self._topics.setting_event, {
-                "event_type": kind, "setting": SETTING_NAMES[key], "reason": reason,
-                "live": setting_value(key, report.live.get(key)),
-                "desired": setting_value(key, report.desired.get(key)),
-            })  # fmt: skip
+            self._event(
+                self._topics.setting_event,
+                {
+                    "event_type": kind,
+                    "setting": SETTING_NAMES[key],
+                    "reason": reason,
+                    "live": setting_value(key, report.live.get(key)),
+                    "desired": setting_value(key, report.desired.get(key)),
+                },
+            )
 
     def radio_event(self, event: RadioEvent) -> None:
         if isinstance(event, ContactsRead):
@@ -382,17 +394,23 @@ class Observer:
         elif sender is not None:
             heard = Heard(message.received_at, "message", signal)
             if self.mesh.contact_heard(sender.public_key, heard):
-                self._store_heard(sender.public_key, self.mesh.contacts[sender.public_key].node,
-                                  heard)  # fmt: skip
+                self._store_heard(
+                    sender.public_key, self.mesh.contacts[sender.public_key].node, heard
+                )
                 self._publish_contact(sender.public_key)
         self._record(
             HistoryEntry(
-                message.received_at, "in", message.kind.value, text,
+                message.received_at,
+                "in",
+                message.kind.value,
+                text,
                 contact_key=sender.public_key if sender else None,
-                channel_index=message.channel_index, name=name, hops=message.hops,
+                channel_index=message.channel_index,
+                name=name,
+                hops=message.hops,
                 snr_db=message.snr_db,
             )
-        )  # fmt: skip
+        )
 
     def delivery(self, event: DeliveryEvent, target: Target | None) -> None:
         """A delivery event; final ones of messages that may have left go into the history."""
@@ -404,11 +422,16 @@ class Observer:
         contact = self.mesh.contacts.get(key) if key else None
         self._record(
             HistoryEntry(
-                self._wall(), "out", target.kind.value, event.text, contact_key=key,
+                self._wall(),
+                "out",
+                target.kind.value,
+                event.text,
+                contact_key=key,
                 channel_index=target.channel_index,
-                name=contact.node.name if contact else target.alias, state=event.state.value,
+                name=contact.node.name if contact else target.alias,
+                state=event.state.value,
             )
-        )  # fmt: skip
+        )
 
     def publish_all(self) -> None:
         """Publish every document again, and clear the topics of contacts removed: the broker
@@ -539,8 +562,9 @@ class Observer:
                 node = tracked.node if tracked else before.get(key)
                 request, request_id = self._expected.pop((kind, key), (None, None))
                 on_request = f" on request {request_id}" if request_id else ""
-                log.info("contact %s %r %s%s", key[:12], node.name if node else None, kind,
-                         on_request)  # fmt: skip
+                log.info(
+                    "contact %s %r %s%s", key[:12], node.name if node else None, kind, on_request
+                )
                 event = contact_event(kind, key, node, request=request, request_id=request_id)
                 self._event(self._topics.contact_event, event)
 
@@ -565,27 +589,44 @@ class Observer:
             if not result.wait:
                 self._pending.pop(key, None)
             if result.problem in ("copies_differ", "record_differs"):
-                log.warning("contact %s: a logged copy of its advert differs from the one the "
-                            "radio took", key[:12])  # fmt: skip
+                log.warning(
+                    "contact %s: a logged copy of its advert differs from the one the radio took",
+                    key[:12],
+                )
             # for hardware row 44: every advert the radio took that the gateway could not check.
             # The radio reported a heard node's newest advert in its NEW_ADVERT (its line then).
             held = tracked.advert
             since = previous.last_advert if previous else heard.get(key, held.at if held else None)
-            if result.check is None and not result.wait and (
-                result.problem == "not_logged"
-                or (pending is None and since is not None and tracked.node.last_advert > since)
-            ):  # fmt: skip
+            if (
+                result.check is None
+                and not result.wait
+                and (
+                    result.problem == "not_logged"
+                    or (pending is None and since is not None and tracked.node.last_advert > since)
+                )
+            ):
                 reason = "not logged" if pending is not None else "no report from the radio"
-                log.debug("contact %s: its advert at %s was not checked (%s)", key[:12],
-                          iso(tracked.node.last_advert), reason)  # fmt: skip
+                log.debug(
+                    "contact %s: its advert at %s was not checked (%s)",
+                    key[:12],
+                    iso(tracked.node.last_advert),
+                    reason,
+                )
             check = result.check
             if check is None or check == held or (held is not None and check.at < held.at):
                 continue
             self.mesh.advert_checked(key, check, at, previous)  # the documents and devices follow
-            kept = "" if check.carries or tracked.node.position is None else (
-                " (the radio's record keeps an older one)")  # fmt: skip
-            log.info("contact %s: its advert carries %s%s", key[:12],
-                     "its position" if check.carries else "no position", kept)  # fmt: skip
+            kept = (
+                ""
+                if check.carries or tracked.node.position is None
+                else (" (the radio's record keeps an older one)")
+            )
+            log.info(
+                "contact %s: its advert carries %s%s",
+                key[:12],
+                "its position" if check.carries else "no position",
+                kept,
+            )
             if check.carries and not (held is not None and held.carries):
                 started.append(key)
         return started
@@ -673,26 +714,38 @@ class Observer:
             if found.check is not None:
                 self.mesh.advert_heard(key, found.check)
             if found.problem in ("copies_differ", "record_differs"):  # no household matter
-                log.debug("node %s: a logged copy of its advert differs from the one the radio "
-                          "took", key[:12])  # fmt: skip
+                log.debug(
+                    "node %s: a logged copy of its advert differs from the one the radio took",
+                    key[:12],
+                )
             elif found.problem == "not_logged":  # the read that adds it logs no second line
-                log.debug("node %s: its advert at %s was not checked (not logged)", key[:12],
-                          iso(node.last_advert))  # fmt: skip
+                log.debug(
+                    "node %s: its advert at %s was not checked (not logged)",
+                    key[:12],
+                    iso(node.last_advert),
+                )
         # the newest advert's record: a replayed older one does not replace it, also not in the
         # history (its advert time comes back with it after a restart)
         self._store_heard(key, self.mesh.nodes[key].node, heard)
         self._publish_nodes()
         if new and self.heard_nodes != "off" and self._node_events.allow(at):
             full = self.heard_nodes == "full"  # else the key and the type (SEC-015)
-            self._event(self._topics.node_event, {
-                "event_type": "new", "key": key, "prefix": key[:12],
-                "name": node.name if full else None, "type": type_name(node.node_type),
-                "hops": signal.hops if full else None, "snr_db": signal.snr_db if full else None,
-                "rssi_dbm": signal.rssi_dbm if full else None,
-                "heard_at": iso(at) if full else None,
-                "look_alike": key in look_alike_nodes(self.mesh, self._protected),
-                "name_taken": key in name_taken_nodes(self.mesh, self._names),
-            })  # fmt: skip
+            self._event(
+                self._topics.node_event,
+                {
+                    "event_type": "new",
+                    "key": key,
+                    "prefix": key[:12],
+                    "name": node.name if full else None,
+                    "type": type_name(node.node_type),
+                    "hops": signal.hops if full else None,
+                    "snr_db": signal.snr_db if full else None,
+                    "rssi_dbm": signal.rssi_dbm if full else None,
+                    "heard_at": iso(at) if full else None,
+                    "look_alike": key in look_alike_nodes(self.mesh, self._protected),
+                    "name_taken": key in name_taken_nodes(self.mesh, self._names),
+                },
+            )
 
     def _own_log(self, near: adverts.Logged, advert: codec.Advert) -> bool:
         """Whether the log directly before a push can be its advert's own (ADR 0025). For a
@@ -720,9 +773,17 @@ class Observer:
         self._logged = {k: v for k, v in self._logged.items() if at - v[0] <= LOGGED_ADVERT_S}
         self._logged[key] = (at, signal)
         self._prune_adverts(at)
-        self._logged_adverts.append(adverts.Logged(
-            key, at, frame, advert.timestamp, advert.shares_position, advert.position, signal,
-        ))  # fmt: skip
+        self._logged_adverts.append(
+            adverts.Logged(
+                key,
+                at,
+                frame,
+                advert.timestamp,
+                advert.shares_position,
+                advert.position,
+                signal,
+            )
+        )
 
     def _store_heard(self, key: str, node: Node, heard: Heard) -> None:
         """Of a node not added, only what `heard_nodes` publishes, and when it was heard (for the
@@ -750,9 +811,12 @@ class Observer:
         tracked = self.mesh.contacts.get(key)
         if tracked is not None:
             document = contact_document(
-                tracked, protected=key in self._protected, manage=self.manage,
-                telemetry_state=self._state_of(tracked), excluded=key in self.exclusions,
-            )  # fmt: skip
+                tracked,
+                protected=key in self._protected,
+                manage=self.manage,
+                telemetry_state=self._state_of(tracked),
+                excluded=key in self.exclusions,
+            )
             self._publish(self._topics.contact(key), document)
             self._keep(key, document)
         elif key in self._current:  # before the first table read: later each kept is a contact
@@ -810,8 +874,13 @@ class Observer:
     def _publish_index(self) -> None:
         # the keys not asked: those excluded, and with `ask = household` the contacts not included
         excluded = self.exclusions.keys | {k for k in self.mesh.contacts if k in self.exclusions}
-        index = contacts_document(self.mesh, protected=self._protected, manage=self.manage,
-                                  excluded=excluded, manage_reason=self.manage_reason)  # fmt: skip
+        index = contacts_document(
+            self.mesh,
+            protected=self._protected,
+            manage=self.manage,
+            excluded=excluded,
+            manage_reason=self.manage_reason,
+        )
         self._publish(self._topics.contacts, index)
 
     def _publish_nodes(self, *, read: bool = False) -> None:
@@ -895,10 +964,13 @@ def _values(readings: Readings | None) -> dict[str, float]:
     named = readings.named
     return {
         **({lpp.BATTERY_V: named.battery_v} if named.battery_v is not None else {}),
-        **({lpp.MCU_TEMPERATURE_C: named.mcu_temperature_c}
-           if named.mcu_temperature_c is not None else {}),
+        **(
+            {lpp.MCU_TEMPERATURE_C: named.mcu_temperature_c}
+            if named.mcu_temperature_c is not None
+            else {}
+        ),
         **named.readings,
-    }  # fmt: skip
+    }
 
 
 def _node(record: codec.ContactRecord) -> Node:

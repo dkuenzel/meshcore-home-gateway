@@ -213,8 +213,11 @@ class MqttBus:
                 return
             if self._queued >= MAX_QUEUED_EVENTS:
                 if not self._dropped:
-                    log.warning("MQTT: broker unreachable, %d events queued; dropping events "
-                                "until the connection is back", self._queued)  # fmt: skip
+                    log.warning(
+                        "MQTT: broker unreachable, %d events queued; dropping events "
+                        "until the connection is back",
+                        self._queued,
+                    )
                 self._dropped += 1
                 self._drops.add(time.monotonic())
                 return
@@ -250,14 +253,20 @@ class MqttBus:
             # Mosquitto answers 'Not authorized' for a wrong password, an unknown user and
             # missing credentials alike: the user name tells the user what was sent
             user = f"user {self._config.username!r}" if self._config.username else "no user name"
-            log.warning("MQTT: connection refused: %s (%s; test the login with: "
-                        "meshcore-home-gateway check-config --broker)", reason, user)  # fmt: skip
+            log.warning(
+                "MQTT: connection refused: %s (%s; test the login with: "
+                "meshcore-home-gateway check-config --broker)",
+                reason,
+                user,
+            )
             return
         subscriptions = [
-            (self._topics.send_subscription, 1), (self._topics.contact_send_subscription, 1),
-            (self._topics.add_contact, 1), (self._topics.contact_remove_subscription, 1),
+            (self._topics.send_subscription, 1),
+            (self._topics.contact_send_subscription, 1),
+            (self._topics.add_contact, 1),
+            (self._topics.contact_remove_subscription, 1),
             (self._topics.contact_telemetry_subscription, 1),
-        ]  # fmt: skip
+        ]
         # the gateway's retained topics, to undo what other clients write there
         subscriptions += [(topic, 1) for topic in self._retained.filters]
         if self._ha_status:
@@ -276,13 +285,16 @@ class MqttBus:
         if mid != expected:
             return
         refused = [
-            topic for topic, reason in zip(topics, reasons, strict=False)
+            topic
+            for topic, reason in zip(topics, reasons, strict=False)
             if getattr(reason, "is_failure", False)
-        ]  # fmt: skip
+        ]
         if refused:  # a broker that checks a SUBSCRIBE against its ACL (not an acl_file)
-            log.warning("MQTT: the broker refused the subscription to %s (the gateway's user "
-                        "needs read access to them: docs/mqtt-api.md, Securing the broker)",
-                        ", ".join(refused))  # fmt: skip
+            log.warning(
+                "MQTT: the broker refused the subscription to %s (the gateway's user "
+                "needs read access to them: docs/mqtt-api.md, Securing the broker)",
+                ", ".join(refused),
+            )
 
     def _paho_connect_failed(self, _c: Any, _u: Any) -> None:
         # no answer from a broker (name, address, port, TLS): paho calls this while it handles
@@ -326,8 +338,9 @@ class MqttBus:
             self._cancel_echo_check()
             self._echo_check = self._loop.call_later(ECHO_WAIT_S, self._check_echo)
         if self._dropped:
-            log.warning("MQTT: %d events were dropped while the broker was unreachable",
-                        self._dropped)  # fmt: skip
+            log.warning(
+                "MQTT: %d events were dropped while the broker was unreachable", self._dropped
+            )
         self._queued = self._dropped = 0
         for callback in self.on_connected:
             callback()
@@ -336,8 +349,12 @@ class MqttBus:
         if self.connected and not self._stopping:
             log.warning("MQTT: disconnected (%s), reconnecting", reason)
         elif not answered and not self._stopping:  # e.g. TLS expected, or a refused feature
-            log.warning("MQTT: %s:%d closed the connection without answering (%s)",
-                        self._config.host, self._config.port, reason)  # fmt: skip
+            log.warning(
+                "MQTT: %s:%d closed the connection without answering (%s)",
+                self._config.host,
+                self._config.port,
+                reason,
+            )
         self.connected = False
 
     def _check_echo(self) -> None:
@@ -345,10 +362,13 @@ class MqttBus:
         read: then the gateway's own messages never come back, and nothing is restored."""
         self._echo_check = None
         if self.connected and not self._heard_back:
-            log.warning("MQTT: the gateway's `online` on %s did not come back within %d s: its "
-                        "user may not read its own topics, so what other clients write there is "
-                        "not undone (docs/mqtt-api.md, Securing the broker)",
-                        self._topics.availability, ECHO_WAIT_S)  # fmt: skip
+            log.warning(
+                "MQTT: the gateway's `online` on %s did not come back within %d s: its "
+                "user may not read its own topics, so what other clients write there is "
+                "not undone (docs/mqtt-api.md, Securing the broker)",
+                self._topics.availability,
+                ECHO_WAIT_S,
+            )
 
     def _cancel_echo_check(self) -> None:
         if self._echo_check is not None:

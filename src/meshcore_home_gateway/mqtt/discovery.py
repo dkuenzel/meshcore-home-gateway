@@ -52,9 +52,14 @@ STATS_ATTRIBUTES = (
 )
 # the health section (ARC-012), which a document of an earlier version lacks
 HEALTH_KEYS = (
-    "history", "state_file", "exclusions", "errors_1h", "loop_lag_max_s", "events_dropped_1h",
+    "history",
+    "state_file",
+    "exclusions",
+    "errors_1h",
+    "loop_lag_max_s",
+    "events_dropped_1h",
     "disk_free_mb",
-)  # fmt: skip
+)
 HEALTH_ATTRIBUTES = (
     "{% set h = value_json.get('health') or {} %}{{ {"
     + ", ".join(f"'{key}': h.get('{key}')" for key in HEALTH_KEYS)
@@ -112,45 +117,76 @@ def discovery_payload(
 
     diagnostic = {"entity_category": "diagnostic", "state_topic": topics.state}
     lane = {  # the telemetry lanes: each would write a row a minute, so off until wanted
-        "device_class": "duration", "unit_of_measurement": "s", "state_class": "measurement",
-        "suggested_display_precision": 1, "enabled_by_default": False, **diagnostic,
-    }  # fmt: skip
+        "device_class": "duration",
+        "unit_of_measurement": "s",
+        "state_class": "measurement",
+        "suggested_display_precision": 1,
+        "enabled_by_default": False,
+        **diagnostic,
+    }
     components: dict[str, dict[str, Any]] = {
         "radio": component(
+            "radio",
+            "binary_sensor",
             # Translators: binary sensor (connectivity) of the gateway: its USB or TCP link to
             # its own radio, not a link over the air. Home Assistant shows the device name first.
-            "radio", "binary_sensor", ha_name("Radio link"), device_class="connectivity",
-            value_template="{{ value_json.radio }}", payload_on="connected",
-            payload_off="disconnected", json_attributes_topic=topics.state,
-            json_attributes_template=RADIO_ATTRIBUTES, **diagnostic,
+            ha_name("Radio link"),
+            device_class="connectivity",
+            value_template="{{ value_json.radio }}",
+            payload_on="connected",
+            payload_off="disconnected",
+            json_attributes_topic=topics.state,
+            json_attributes_template=RADIO_ATTRIBUTES,
+            **diagnostic,
         ),
         "battery": component(
+            "battery",
+            "sensor",
             # Translators: sensor (voltage) of the gateway: the battery of its own radio
-            "battery", "sensor", ha_name("Battery"), device_class="voltage",
+            ha_name("Battery"),
+            device_class="voltage",
             unit_of_measurement="V",
-            state_class="measurement", suggested_display_precision=2,
-            value_template="{{ value_json.battery_v }}", **diagnostic,
+            state_class="measurement",
+            suggested_display_precision=2,
+            value_template="{{ value_json.battery_v }}",
+            **diagnostic,
         ),
         "radio_clock_offset": component(
+            "radio_clock_offset",
+            "sensor",
             # Translators: sensor (duration) of the gateway: how far its own radio's clock is
             # ahead of the gateway's clock (negative: behind)
-            "radio_clock_offset", "sensor", ha_name("Radio clock offset"),
-            device_class="duration", unit_of_measurement="s", state_class="measurement",
+            ha_name("Radio clock offset"),
+            device_class="duration",
+            unit_of_measurement="s",
+            state_class="measurement",
             icon="mdi:clock-alert-outline",
-            value_template="{{ value_json.get('radio_clock_offset_s') }}", **diagnostic,
+            value_template="{{ value_json.get('radio_clock_offset_s') }}",
+            **diagnostic,
         ),
         "airtime": component(
+            "airtime",
+            "sensor",
             # Translators: sensor (duration) of the gateway: how long it transmitted in the
             # last hour (airtime: the time on air, as in Home Assistant's own words)
-            "airtime", "sensor", ha_name("Airtime last hour"), device_class="duration",
-            unit_of_measurement="s", state_class="measurement", suggested_display_precision=1,
-            value_template="{{ value_json.airtime_1h_s }}", **diagnostic,
+            ha_name("Airtime last hour"),
+            device_class="duration",
+            unit_of_measurement="s",
+            state_class="measurement",
+            suggested_display_precision=1,
+            value_template="{{ value_json.airtime_1h_s }}",
+            **diagnostic,
         ),
         "airtime_available": component(
+            "airtime_available",
+            "sensor",
             # Translators: sensor (duration) of the gateway: the transmit time left in its
             # hourly budget
-            "airtime_available", "sensor", ha_name("Airtime available"), device_class="duration",
-            unit_of_measurement="s", state_class="measurement", suggested_display_precision=1,
+            ha_name("Airtime available"),
+            device_class="duration",
+            unit_of_measurement="s",
+            state_class="measurement",
+            suggested_display_precision=1,
             value_template="{{ value_json.airtime_available_s }}",
             json_attributes_topic=topics.state,
             json_attributes_template=(
@@ -159,94 +195,137 @@ def discovery_payload(
             **diagnostic,
         ),
         "queue": component(
+            "queue",
+            "sensor",
             # Translators: sensor of the gateway: the messages waiting to be sent
-            "queue", "sensor", ha_name("Queue"), state_class="measurement", icon="mdi:tray-full",
-            value_template="{{ value_json.queue }}", **diagnostic,
+            ha_name("Queue"),
+            state_class="measurement",
+            icon="mdi:tray-full",
+            value_template="{{ value_json.queue }}",
+            **diagnostic,
         ),
         "degraded": component(
+            "degraded",
+            "binary_sensor",
             # Translators: binary sensor (problem) of the gateway: on while a part of it is in
             # trouble (its history, its state file, a bug it caught, a host that holds it up);
             # the log tells which
-            "degraded", "binary_sensor", ha_name("Gateway degraded"), device_class="problem",
+            ha_name("Gateway degraded"),
+            device_class="problem",
             icon="mdi:heart-pulse",
             value_template=(
                 "{{ ('ON' if value_json.health.degraded else 'OFF') "
                 "if value_json.get('health') is not none else None }}"
             ),
-            json_attributes_topic=topics.state, json_attributes_template=HEALTH_ATTRIBUTES,
+            json_attributes_topic=topics.state,
+            json_attributes_template=HEALTH_ATTRIBUTES,
             **diagnostic,
         ),
         "message": component(
+            "message",
+            "event",
             # Translators: event entity of the gateway: a message received from a contact or on
             # a channel
-            "message", "event", ha_name("Message"), state_topic=topics.received,
+            ha_name("Message"),
+            state_topic=topics.received,
             event_types=["contact", "channel"],
         ),
         "delivery": component(
+            "delivery",
+            "event",
             # Translators: event entity of the gateway: how far a message it sent has come
             # (queued, sent, confirmed, failed)
-            "delivery", "event", ha_name("Delivery"), state_topic=topics.delivery,
+            ha_name("Delivery"),
+            state_topic=topics.delivery,
             event_types=[state.value for state in DeliveryState],
         ),
         # also with telemetry off: a disabled component that goes takes the whole device away
         "telemetry_status": component(
+            "telemetry_status",
+            "sensor",
             # Translators: sensor (enum) of the gateway: whether it asks the household's
             # companions for telemetry; keep it apart from "Telemetry state" of a contact
-            "telemetry_status", "sensor", ha_name("Telemetry status"), device_class="enum",
-            options=list(telemetry.STATUSES), icon="mdi:satellite-uplink",
-            value_template=TELEMETRY_STATUS, json_attributes_topic=topics.state,
-            json_attributes_template=TELEMETRY_REASON, **diagnostic,
+            ha_name("Telemetry status"),
+            device_class="enum",
+            options=list(telemetry.STATUSES),
+            icon="mdi:satellite-uplink",
+            value_template=TELEMETRY_STATUS,
+            json_attributes_topic=topics.state,
+            json_attributes_template=TELEMETRY_REASON,
+            **diagnostic,
         ),
         "telemetry_airtime": component(
+            "telemetry_airtime",
+            "sensor",
             # Translators: sensor (duration) of the gateway: its own transmit time for
             # telemetry requests in the last hour
-            "telemetry_airtime", "sensor", ha_name("Telemetry airtime last hour"),
-            value_template="{{ value_json.get('telemetry_airtime_1h_s') }}", **lane,
+            ha_name("Telemetry airtime last hour"),
+            value_template="{{ value_json.get('telemetry_airtime_1h_s') }}",
+            **lane,
         ),
         "telemetry_mesh_airtime": component(
+            "telemetry_mesh_airtime",
+            "sensor",
             # Translators: sensor (duration) of the gateway: the airtime its telemetry requests
             # caused in the whole mesh in the last hour, as estimated
-            "telemetry_mesh_airtime", "sensor", ha_name("Telemetry mesh airtime last hour"),
-            value_template="{{ value_json.get('telemetry_mesh_airtime_1h_s') }}", **lane,
+            ha_name("Telemetry mesh airtime last hour"),
+            value_template="{{ value_json.get('telemetry_mesh_airtime_1h_s') }}",
+            **lane,
         ),
         "telemetry": component(
+            "telemetry",
+            "event",
             # Translators: event entity of the gateway: a companion answered a telemetry
             # request, or did not
-            "telemetry", "event", ha_name("Telemetry"), state_topic=topics.telemetry_event,
+            ha_name("Telemetry"),
+            state_topic=topics.telemetry_event,
             event_types=list(telemetry.EVENTS),
         ),
-    }  # fmt: skip
+    }
     if config.commands.words:
         components["command"] = component(
+            "command",
+            "event",
             # Translators: event entity of the gateway: a command word from an allowed sender
-            "command", "event", ha_name("Command"), state_topic=topics.command,
+            ha_name("Command"),
+            state_topic=topics.command,
             event_types=sorted(config.commands.words),
-        )  # fmt: skip
+        )
     if config.radio.transport == "tcp":  # USB has no other client
         components["radio_link_contested"] = component(
+            "radio_link_contested",
+            "binary_sensor",
             # Translators: binary sensor (problem) of the gateway: on for an hour after another
             # client took over the TCP link to its own radio, which lets that client control the
             # radio and read its private key
-            "radio_link_contested", "binary_sensor", ha_name("Radio link taken over"),
-            device_class="problem", icon="mdi:lan-disconnect",
+            ha_name("Radio link taken over"),
+            device_class="problem",
+            icon="mdi:lan-disconnect",
             value_template=(
                 "{{ ('ON' if value_json.radio_link_contested else 'OFF') "
                 "if value_json.get('radio_link_contested') is not none else None }}"
             ),
             **diagnostic,
-        )  # fmt: skip
+        )
     components.update(_mesh_components(component, topics, ha_name))
     if config.homeassistant.contact_devices:
         off = controls_off(config, topics)
         components["show_hidden"] = component(
+            "show_hidden",
+            "button",
             # Translators: button of the gateway: brings back the contacts' devices the user
             # deleted in Home Assistant
-            "show_hidden", "button", ha_name("Show hidden contacts"),
+            ha_name("Show hidden contacts"),
             command_topic=topics.show_hidden,
-            payload_press="show", entity_category="config", icon="mdi:eye",
-            **({"availability": [{"topic": topics.availability}, *off],
-                "availability_mode": "all"} if off else {}),
-        )  # fmt: skip
+            payload_press="show",
+            entity_category="config",
+            icon="mdi:eye",
+            **(
+                {"availability": [{"topic": topics.availability}, *off], "availability_mode": "all"}
+                if off
+                else {}
+            ),
+        )
     if config.diagnostics.publish_rx_log:  # one recorder row per packet: off until enabled
         rx = {"entity_category": "diagnostic", "state_topic": topics.rx}
         components["rx_rssi"] = component(
@@ -324,9 +403,14 @@ def gateway_names(config: Config) -> frozenset[str]:
 
 
 def with_removed(
-    components: dict[str, dict[str, Any]], uid: str, topics: Topics,
-    removed: Mapping[str, str] | None, ha_name: Callable[..., str], *, bind: bool,
-) -> None:  # fmt: skip
+    components: dict[str, dict[str, Any]],
+    uid: str,
+    topics: Topics,
+    removed: Mapping[str, str] | None,
+    ha_name: Callable[..., str],
+    *,
+    bind: bool,
+) -> None:
     """Add the removed components (key -> platform) to a document: as placeholders with `bind`,
     else as `{"p": platform}`, which removes them."""
     for key, platform in (removed or {}).items():
@@ -345,62 +429,99 @@ def _mesh_components(
     contacts = {"state_topic": topics.contacts, "json_attributes_topic": topics.contacts}
     return {
         "noise_floor": component(
+            "noise_floor",
+            "sensor",
             # Translators: sensor (signal strength) of the gateway: the noise its radio hears
             # when nobody transmits
-            "noise_floor", "sensor", ha_name("Noise floor"), device_class="signal_strength",
-            unit_of_measurement="dBm", state_class="measurement",
-            value_template="{{ value_json.noise_floor_dbm }}", **stats,
+            ha_name("Noise floor"),
+            device_class="signal_strength",
+            unit_of_measurement="dBm",
+            state_class="measurement",
+            value_template="{{ value_json.noise_floor_dbm }}",
+            **stats,
         ),
         "radio_airtime": component(
+            "radio_airtime",
+            "sensor",
             # Translators: sensor (duration) of the gateway: what its radio itself counted as
             # sent in the last hour, adverts and acknowledgements included
-            "radio_airtime", "sensor", ha_name("Radio transmit time last hour"),
+            ha_name("Radio transmit time last hour"),
             device_class="duration",
-            unit_of_measurement="s", state_class="measurement", suggested_display_precision=1,
-            value_template="{{ value_json.tx_airtime_1h_s }}", json_attributes_topic=topics.stats,
-            json_attributes_template=STATS_ATTRIBUTES, **stats,
+            unit_of_measurement="s",
+            state_class="measurement",
+            suggested_display_precision=1,
+            value_template="{{ value_json.tx_airtime_1h_s }}",
+            json_attributes_topic=topics.stats,
+            json_attributes_template=STATS_ATTRIBUTES,
+            **stats,
         ),
         "uptime": component(
+            "uptime",
+            "sensor",
             # Translators: sensor (duration) of the gateway: the time since its radio started
-            "uptime", "sensor", ha_name("Radio uptime"), device_class="duration",
+            ha_name("Radio uptime"),
+            device_class="duration",
             unit_of_measurement="s",
-            enabled_by_default=False, value_template="{{ value_json.uptime_s }}", **stats,
+            enabled_by_default=False,
+            value_template="{{ value_json.uptime_s }}",
+            **stats,
         ),
         "packets_received": component(
+            "packets_received",
+            "sensor",
             # Translators: sensor of the gateway: a counter of the packets its radio received
-            "packets_received", "sensor", ha_name("Packets received"),
+            ha_name("Packets received"),
             icon="mdi:download-network",
-            value_template="{{ value_json.packets_received }}", **counter,
+            value_template="{{ value_json.packets_received }}",
+            **counter,
         ),
         "packets_sent": component(
+            "packets_sent",
+            "sensor",
             # Translators: sensor of the gateway: a counter of the packets its radio sent
-            "packets_sent", "sensor", ha_name("Packets sent"), icon="mdi:upload-network",
-            value_template="{{ value_json.packets_sent }}", **counter,
+            ha_name("Packets sent"),
+            icon="mdi:upload-network",
+            value_template="{{ value_json.packets_sent }}",
+            **counter,
         ),
         "receive_errors": component(
+            "receive_errors",
+            "sensor",
             # Translators: sensor of the gateway: a counter of the packets its radio could not
             # read
-            "receive_errors", "sensor", ha_name("Receive errors"),
+            ha_name("Receive errors"),
             icon="mdi:alert-circle-outline",
-            value_template="{{ value_json.receive_errors }}", **counter,
+            value_template="{{ value_json.receive_errors }}",
+            **counter,
         ),
         "contacts": component(
+            "contacts",
+            "sensor",
             # Translators: sensor of the gateway: the number of contacts on its radio
-            "contacts", "sensor", ha_name("Contacts"), icon="mdi:account-multiple",
-            state_class="measurement", value_template="{{ value_json.total }}",
-            json_attributes_template="{{ {'max': value_json.max} | tojson }}", **contacts,
+            ha_name("Contacts"),
+            icon="mdi:account-multiple",
+            state_class="measurement",
+            value_template="{{ value_json.total }}",
+            json_attributes_template="{{ {'max': value_json.max} | tojson }}",
+            **contacts,
         ),
         "nodes": component(
+            "nodes",
+            "sensor",
             # Translators: sensor of the gateway: the number of nodes its radio heard lately
             # (node: any MeshCore station)
-            "nodes", "sensor", ha_name("Nodes heard"), icon="mdi:radio-tower",
+            ha_name("Nodes heard"),
+            icon="mdi:radio-tower",
             state_class="measurement",
-            state_topic=topics.nodes, value_template="{{ value_json.total }}",
+            state_topic=topics.nodes,
+            value_template="{{ value_json.total }}",
         ),
         "remote_cli": component(
+            "remote_cli",
+            "binary_sensor",
             # Translators: binary sensor (problem) of the gateway: on while a contact may use its
             # radio's command line over the air
-            "remote_cli", "binary_sensor", ha_name("Contact with remote access"),
+            ha_name("Contact with remote access"),
             device_class="problem",
             entity_category="diagnostic",
             value_template="{{ 'ON' if value_json.remote_cli_total else 'OFF' }}",
@@ -413,11 +534,14 @@ def _mesh_components(
         # the household's companions whose newest advert carries their position (ADR 0018);
         # an index of 1.1.0a2 lacks the keys: `is number` and .get log nothing
         "advert_position": component(
+            "advert_position",
+            "binary_sensor",
             # Translators: binary sensor (problem) of the gateway: on while a companion of the
             # household sends its position in its adverts, which every node hears (companion: a
             # person's radio; advert: the packet a node announces itself with)
-            "advert_position", "binary_sensor", ha_name("Companion position in adverts"),
-            device_class="problem", entity_category="diagnostic",
+            ha_name("Companion position in adverts"),
+            device_class="problem",
+            entity_category="diagnostic",
             value_template=(
                 "{{ ('ON' if value_json.advert_carries_position_total > 0 else 'OFF') if "
                 "value_json is defined and value_json.advert_carries_position_total is number "
@@ -430,11 +554,14 @@ def _mesh_components(
             **contacts,
         ),
         "look_alike": component(
+            "look_alike",
+            "binary_sensor",
             # Translators: binary sensor (problem) of the gateway: on while it hears a node
             # whose key begins like a protected contact's, which may pose as that contact
-            "look_alike", "binary_sensor", ha_name("Look-alike node heard"),
+            ha_name("Look-alike node heard"),
             device_class="problem",
-            entity_category="diagnostic", state_topic=topics.nodes,
+            entity_category="diagnostic",
+            state_topic=topics.nodes,
             value_template=(
                 "{{ 'ON' if value_json.look_alike_total is defined "
                 "and value_json.look_alike_total > 0 else 'OFF' }}"
@@ -446,36 +573,57 @@ def _mesh_components(
             ),
         ),
         "contact": component(
+            "contact",
+            "event",
             # Translators: event entity of the gateway: a contact was added, removed, hidden,
             # shown, refused, excluded or included
-            "contact", "event", ha_name("Contact"), state_topic=topics.contact_event,
+            ha_name("Contact"),
+            state_topic=topics.contact_event,
             event_types=[
-                "added", "removed", "hidden", "shown", "refused", "failed", "excluded", "included",
+                "added",
+                "removed",
+                "hidden",
+                "shown",
+                "refused",
+                "failed",
+                "excluded",
+                "included",
                 "position_in_advert",
             ],
         ),
         "node": component(
+            "node",
+            "event",
             # Translators: event entity of the gateway: its radio heard a node for the first
             # time
-            "node", "event", ha_name("New node"), state_topic=topics.node_event,
+            ha_name("New node"),
+            state_topic=topics.node_event,
             event_types=["new"],
         ),
         "profile": component(  # the whole settings document as attributes
+            "profile",
+            "sensor",
             # Translators: sensor (enum) of the gateway: whether its radio's settings match the
             # profile the gateway keeps on it
-            "profile", "sensor", ha_name("Radio profile"), device_class="enum",
+            ha_name("Radio profile"),
+            device_class="enum",
             options=PROFILE_STATES,
-            icon="mdi:shield-check-outline", entity_category="diagnostic",
-            state_topic=topics.settings, value_template="{{ value_json.status }}",
+            icon="mdi:shield-check-outline",
+            entity_category="diagnostic",
+            state_topic=topics.settings,
+            value_template="{{ value_json.status }}",
             json_attributes_topic=topics.settings,
         ),
         "setting": component(
+            "setting",
+            "event",
             # Translators: event entity of the gateway: it wrote a setting of the profile to its
             # radio, or could not
-            "setting", "event", ha_name("Radio setting"), state_topic=topics.setting_event,
+            ha_name("Radio setting"),
+            state_topic=topics.setting_event,
             event_types=["written", "failed", "not_taken", "not_converging", "drift"],
         ),
-    }  # fmt: skip
+    }
 
 
 # the options each platform requires; nothing is ever published to or read from these topics
@@ -509,8 +657,11 @@ def placeholder(
         for name, value in required.items()
     }
     return {
-        "p": platform, "unique_id": unique_id, "default_entity_id": f"{platform}.{unique_id}",
+        "p": platform,
+        "unique_id": unique_id,
+        "default_entity_id": f"{platform}.{unique_id}",
         # Translators: the name of an entity that exists only for a moment, while the gateway
         # removes it from Home Assistant
-        "name": ha_name("Removed"), **options,
-    }  # fmt: skip
+        "name": ha_name("Removed"),
+        **options,
+    }

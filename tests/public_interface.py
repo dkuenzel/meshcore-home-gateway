@@ -504,9 +504,16 @@ ADVERT_RAW = advert_packet(EmulatedContact(bytes.fromhex(KEY), "Alice"), TA, AT_
 
 def _record(key: str, name: str, node_type: int) -> codec.ContactRecord:
     return codec.ContactRecord(
-        bytes.fromhex(key), node_type, 0x01, 2, name, TA, TA,
-        latitude_e6=AT_E6[0], longitude_e6=AT_E6[1],
-    )  # fmt: skip
+        bytes.fromhex(key),
+        node_type,
+        0x01,
+        2,
+        name,
+        TA,
+        TA,
+        latitude_e6=AT_E6[0],
+        longitude_e6=AT_E6[1],
+    )
 
 
 async def _refused_write() -> None:
@@ -542,9 +549,12 @@ async def _published(tmp: Path) -> _Paho:
     topics = Topics(BASE, NODE)
     config = maximal()
     bus = mqtt_client.MqttBus(
-        config.mqtt, topics, config.homeassistant.status_topic,
-        client_factory=lambda _: client, ha_devices=ha_device_topics(config),
-    )  # fmt: skip
+        config.mqtt,
+        topics,
+        config.homeassistant.status_topic,
+        client_factory=lambda _: client,
+        ha_devices=ha_device_topics(config),
+    )
     await bus.start()
     client.on_connect(client, None, None, SimpleNamespace(is_failure=False), None)  # as paho
     await asyncio.sleep(0)  # the connection reaches the event loop
@@ -552,9 +562,14 @@ async def _published(tmp: Path) -> _Paho:
     records = ContactDeviceRecords(store)
     devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: T)
     bridge = Bridge(
-        config, bus, _no_radio, CommandLedger(store), notifier=lambda _: True,
-        wall_clock=lambda: T, devices=devices,
-    )  # fmt: skip
+        config,
+        bus,
+        _no_radio,
+        CommandLedger(store),
+        notifier=lambda _: True,
+        wall_clock=lambda: T,
+        devices=devices,
+    )
     observer = bridge.observer
     alice, bob = _record(KEY, "Alice", NodeType.CHAT), _record(KEY_B, "Bob", NodeType.CHAT)
     observer.radio_connected(350, codec.TuningParams(0, 9000))
@@ -572,23 +587,38 @@ async def _published(tmp: Path) -> _Paho:
     observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY_N), True, relay), T + 1))
     observer.radio_event(
         StatsRead(
-            codec.Battery(4000, 1, 2), codec.CoreStats(4000, 1, 1, 0),
-            codec.RadioStats(-118, -97, 6.5, 1, 2), codec.PacketStats(1, 2, 3, 4, 5, 6, 7), T,
+            codec.Battery(4000, 1, 2),
+            codec.CoreStats(4000, 1, 1, 0),
+            codec.RadioStats(-118, -97, 6.5, 1, 2),
+            codec.PacketStats(1, 2, 3, 4, 5, 6, 7),
+            T,
         )
-    )  # fmt: skip
+    )
     live: dict[str, profile.Value | None] = {
-        profile.MANUAL_ADD: False, profile.AUTOADD: 0, profile.TELEMETRY: 0,
-        profile.ADVERT_LOCATION: 0, profile.AIRTIME_FACTOR: 9000, profile.NAME: "Old",
-    }  # fmt: skip
+        profile.MANUAL_ADD: False,
+        profile.AUTOADD: 0,
+        profile.TELEMETRY: 0,
+        profile.ADVERT_LOCATION: 0,
+        profile.AIRTIME_FACTOR: 9000,
+        profile.NAME: "Old",
+    }
     wanted = cast(dict[str, profile.Value], {**live, profile.MANUAL_ADD: True, profile.NAME: "New"})
     observer.profile_applied(  # the first connect: an event of each kind
         ProfileReport(
-            "auto", 14, True, False, live, wanted,
-            written={profile.MANUAL_ADD: True}, reasons={profile.MANUAL_ADD: "initial"},
-            failed=(profile.NAME,), not_taken=(profile.AUTOADD,),
-            not_converging=(profile.TELEMETRY,), drift={profile.ADVERT_LOCATION: 1},
+            "auto",
+            14,
+            True,
+            False,
+            live,
+            wanted,
+            written={profile.MANUAL_ADD: True},
+            reasons={profile.MANUAL_ADD: "initial"},
+            failed=(profile.NAME,),
+            not_taken=(profile.AUTOADD,),
+            not_converging=(profile.TELEMETRY,),
+            drift={profile.ADVERT_LOCATION: 1},
         )
-    )  # fmt: skip
+    )
     bridge._deliver_event(DeliveryEvent("id", ALIAS, DeliveryState.CONFIRMED, text="Hello"))
     bridge._publish_announcements()  # discovery, the controls, the contacts' devices; state
     bridge._radio_ready.set()
@@ -628,19 +658,34 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     emitted = {
         name: _declared(name, values, declared)
         for name, values, declared in (
-            ("state:radio", _emitted(published, "state", "radio"),
-             [radio["payload_on"], radio["payload_off"]]),
-            ("contact:event_type", _emitted(published, "contact", "event_type"),
-             gateway["contact"]["event_types"]),
-            ("node:event_type", _emitted(published, "node", "event_type"),
-             gateway["node"]["event_types"]),
-            ("setting:event_type", _emitted(published, "setting", "event_type"),
-             gateway["setting"]["event_types"]),
-            ("telemetry:event_type", _emitted(published, "telemetry", "event_type"),
-             gateway["telemetry"]["event_types"]),
+            (
+                "state:radio",
+                _emitted(published, "state", "radio"),
+                [radio["payload_on"], radio["payload_off"]],
+            ),
+            (
+                "contact:event_type",
+                _emitted(published, "contact", "event_type"),
+                gateway["contact"]["event_types"],
+            ),
+            (
+                "node:event_type",
+                _emitted(published, "node", "event_type"),
+                gateway["node"]["event_types"],
+            ),
+            (
+                "setting:event_type",
+                _emitted(published, "setting", "event_type"),
+                gateway["setting"]["event_types"],
+            ),
+            (
+                "telemetry:event_type",
+                _emitted(published, "telemetry", "event_type"),
+                gateway["telemetry"]["event_types"],
+            ),
             ("settings:status", _statuses(), gateway["profile"]["options"]),
         )
-    }  # fmt: skip
+    }
     every_type = sum(AutoAdd)  # the overwrite flag and every node type
     telemetry = [views.setting_value(profile.TELEMETRY, modes) for modes in range(4)]
     texts = [InboundMessage(MessageKind.CONTACT, "", 0, T, text_type=kind) for kind in TextType]
@@ -1042,9 +1087,11 @@ def _command_line(tmp: Path, commands: dict[str, Any]) -> dict[str, Any]:
     paths = {"config": str(cli.DEFAULT_CONFIG), **_state_directory(tmp, report)}
     keyed_by_data = ("profile.changes", "profile.contacts")
     exit_codes = {
-        "ok": cli.EX_OK, "failure": cli.EX_FAILURE, "usage": cli.EX_USAGE,
+        "ok": cli.EX_OK,
+        "failure": cli.EX_FAILURE,
+        "usage": cli.EX_USAGE,
         "config_error": cli.EX_CONFIG,
-    }  # fmt: skip
+    }
     contacts = json.loads(_contacts_list(tmp, "--json", session=_Marked))
     return {
         "commands": commands,
@@ -1175,10 +1222,14 @@ def _probe_report(tmp: Path) -> dict[str, Any]:
     """What `probe` reports: from a WiFi companion (no flush, no wait), with settings the profile
     changes and a protected contact it adds."""
     radio = EmulatedRadio(
-        name="Old", contacts=[EmulatedContact(bytes.fromhex(KEY), "Alice", flags=0x01)],
-        manual_add=False, latitude_e6=1_000_000, longitude_e6=2_000_000, tuning=(0, 9000),
+        name="Old",
+        contacts=[EmulatedContact(bytes.fromhex(KEY), "Alice", flags=0x01)],
+        manual_add=False,
+        latitude_e6=1_000_000,
+        longitude_e6=2_000_000,
+        tuning=(0, 9000),
         needs_flush=False,
-    )  # fmt: skip
+    )
     records = ProfileRecords(JsonStateFile(tmp / "probe.json", read_only=True))
     protected = {KEY_B: "Bob"}
     return asyncio.run(
@@ -1188,8 +1239,12 @@ def _probe_report(tmp: Path) -> dict[str, Any]:
 
 # the key paths of `probe --json` that hold values of a list
 _PROBE_VALUES = (
-    "advert_location", "auto_add.types", "contacts[].flags", "contacts[].type", "telemetry.*",
-)  # fmt: skip
+    "advert_location",
+    "auto_add.types",
+    "contacts[].flags",
+    "contacts[].type",
+    "telemetry.*",
+)
 
 
 def _probe_values(tmp: Path, probe: list[str]) -> dict[str, list[str]]:
@@ -1209,9 +1264,12 @@ def _probe_values(tmp: Path, probe: list[str]) -> dict[str, list[str]]:
     for advert_location in (0, 1):  # the firmware's two: without and with the radio's position
         for mode in TelemetryMode:
             radio = EmulatedRadio(
-                contacts=contacts, manual_add=False, needs_flush=False,
-                advert_location=advert_location, telemetry_modes=mode * 0b010101,  # each kind
-            )  # fmt: skip
+                contacts=contacts,
+                manual_add=False,
+                needs_flush=False,
+                advert_location=advert_location,
+                telemetry_modes=mode * 0b010101,  # each kind
+            )
             report = asyncio.run(
                 cli._probe_radio(radio, ProfileConfig(), records, {}, configured=False)
             )
@@ -1491,16 +1549,27 @@ def _tracked(node_type: int) -> Tracked:
     """A contact with all that it can have: a component that exists only with data is there."""
     position = Position(1.0, 2.0)
     node = Node(
-        KEY, "Alice", node_type, flags=sum(ContactFlag), path_hops=1, last_advert=int(T) - 60,
+        KEY,
+        "Alice",
+        node_type,
+        flags=sum(ContactFlag),
+        path_hops=1,
+        last_advert=int(T) - 60,
         position=position,
-    )  # fmt: skip
+    )
     heard = Heard(T, "message", Signal(hops=1, snr_db=5.0, rssi_dbm=-90))
     fix = Fix(position, T, "advert", altitude_m=10.0)
     tracked = Tracked(
-        node, T - 60, heard, fix, position_received_at=T, restored_heard=heard,
+        node,
+        T - 60,
+        heard,
+        fix,
+        position_received_at=T,
+        restored_heard=heard,
         readings=Readings(T, Named(4.12, 23.4, LPP_ALL_READINGS)),
-        advert=AdvertCheck(int(T) - 60, True), heard_again=True,
-    )  # fmt: skip
+        advert=AdvertCheck(int(T) - 60, True),
+        heard_again=True,
+    )
     _filled(tracked)
     return tracked
 

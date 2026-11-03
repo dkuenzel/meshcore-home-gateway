@@ -81,9 +81,14 @@ def look_alike(key: str, keys: Iterable[str]) -> tuple[str, ...]:
 
 
 def add_refusal(
-    key: str, node_type: int, *, table: Iterable[str], protected: Iterable[str], own_key: str,
+    key: str,
+    node_type: int,
+    *,
+    table: Iterable[str],
+    protected: Iterable[str],
+    own_key: str,
     max_contacts: int,
-) -> str | None:  # fmt: skip
+) -> str | None:
     """Why the key must not be added to the radio's table as read, or None. A protected key may
     be added by hand (it was removed meanwhile); one with another's prefix may not."""
     keys = set(table)

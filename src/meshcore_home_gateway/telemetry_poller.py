@@ -167,8 +167,9 @@ class AnswerWaiter:
             elif self._matches(event):
                 self._resolve(event)
             else:
-                log.debug("telemetry answer from %s dropped: not the contact asked",
-                          event.prefix.hex())  # fmt: skip
+                log.debug(
+                    "telemetry answer from %s dropped: not the contact asked", event.prefix.hex()
+                )
         answered = self._future is not None and self._future.done()
         self._last = None if answered else self._armed
         self._late_until = deadline + core.LATE_ACCEPT_S
@@ -205,9 +206,11 @@ class AnswerWaiter:
     def _matches(self, event: TelemetryReceived) -> bool:
         future, armed = self._future, self._armed
         return (
-            future is not None and not future.done() and armed is not None
+            future is not None
+            and not future.done()
+            and armed is not None
             and event.prefix.hex() == armed[:PREFIX_HEX_DIGITS]
-        )  # fmt: skip
+        )
 
     def _resolve(self, event: TelemetryReceived) -> None:
         if self._future is not None:
@@ -229,11 +232,17 @@ class AnswerWaiter:
 
 class TelemetryPoller:
     def __init__(
-        self, observer: Observer, session: Callable[[], CompanionSession | None],
-        outbox: OutboxActivity, *, records: TelemetryRecords | None, tcp: bool,
+        self,
+        observer: Observer,
+        session: Callable[[], CompanionSession | None],
+        outbox: OutboxActivity,
+        *,
+        records: TelemetryRecords | None,
+        tcp: bool,
         monotonic: Callable[[], float] = time.monotonic,
-        wall_clock: Callable[[], float] = time.time, lanes: LaneFactory | None = None,
-    ) -> None:  # fmt: skip
+        wall_clock: Callable[[], float] = time.time,
+        lanes: LaneFactory | None = None,
+    ) -> None:
         """`session`: the session while the radio is connected. `tcp`: answers can be lost
         while the radio's push queue is full (a table read). No I/O here: the saved schedule is
         read by restore()."""
@@ -436,8 +445,9 @@ class TelemetryPoller:
             return core.STEP_S
         if self._exclusions.unreadable:  # asking nobody rather than everybody
             why = f"the exclusions in {EXCLUSIONS_FILE} cannot be read: fix or delete the file"
-            self._pause(session, "exclusions_unreadable", f"{why} and restart the service",
-                        logging.ERROR)  # fmt: skip
+            self._pause(
+                session, "exclusions_unreadable", f"{why} and restart the service", logging.ERROR
+            )
             return core.STEP_S
         if (left := self._first_start(session)) is not None:
             self._set_status("paused", "first_start")
@@ -464,9 +474,12 @@ class TelemetryPoller:
                 log.exception("telemetry: the status could not be told")
 
     def _pause(
-        self, session: CompanionSession, reason: PauseReason, why: str,
+        self,
+        session: CompanionSession,
+        reason: PauseReason,
+        why: str,
         level: int = logging.WARNING,
-    ) -> None:  # fmt: skip
+    ) -> None:
         self._set_status("paused", reason)
         if self._warned != (session, reason):  # once per session and reason
             self._warned = (session, reason)
@@ -487,8 +500,9 @@ class TelemetryPoller:
                 "telemetry paused: the first requests go out in %d minutes, to %d companions of "
                 "the radio; exclude every one that is not the household's (the Telemetry switch "
                 "on its device, or meshcore-home-gateway contacts telemetry KEY off)",
-                math.ceil(self._hold_left / 60), self._askable(session),
-            )  # fmt: skip
+                math.ceil(self._hold_left / 60),
+                self._askable(session),
+            )
             self._save(at_once=True)
         left = self._hold_until - now
         if left <= 0:
@@ -501,10 +515,11 @@ class TelemetryPoller:
         """The companions of the table as read that would be asked: unique, not excluded."""
         prefixes = _prefixes(session)
         return sum(
-            record.node_type == NodeType.CHAT and prefixes[key[:PREFIX_HEX_DIGITS]] == 1
+            record.node_type == NodeType.CHAT
+            and prefixes[key[:PREFIX_HEX_DIGITS]] == 1
             and key not in self._exclusions
             for key, record in session.contact_records.items()
-        )  # fmt: skip
+        )
 
     async def _poll(self, session: CompanionSession, poll: Poll) -> None:
         sent = await self._send(session, poll)
@@ -518,8 +533,9 @@ class TelemetryPoller:
         if sent.flood:
             self._own_flood, self._reply_watch = (poll.key, until), None
             if not poll.flood:
-                log.warning("telemetry %s: the radio flooded a request planned direct",
-                            poll.key[:12])  # fmt: skip
+                log.warning(
+                    "telemetry %s: the radio flooded a request planned direct", poll.key[:12]
+                )
         else:
             self._reply_watch = (poll.key, until)
             if self._early_path:  # not the path of its own flood after all
@@ -527,8 +543,13 @@ class TelemetryPoller:
             if self._early_reply:
                 self._scheduler.flooded_reply(poll.key, now)
         self._save(at_once=self._scheduler.urgent)  # a flood is stored before the wait
-        log.debug("telemetry %s: %s %s, wait %.1f s", poll.key[:12], poll.purpose,
-                  "flooded" if sent.flood else "direct", wait_s)  # fmt: skip
+        log.debug(
+            "telemetry %s: %s %s, wait %.1f s",
+            poll.key[:12],
+            poll.purpose,
+            "flooded" if sent.flood else "direct",
+            wait_s,
+        )
         commands = session.commands_sent
         self._waiter.sent(deadline=now + wait_s, seq=sent.seq)
         answer = await self._waiter.wait(wait_s)
@@ -594,8 +615,9 @@ class TelemetryPoller:
         reads = max(session.contacts_read_at, session.contacts_read_started_at)
         uncertain = self._tcp and reads > commands
         if uncertain:
-            log.debug("telemetry %s: no answer during a table read: counted only if again",
-                      key[:12])  # fmt: skip
+            log.debug(
+                "telemetry %s: no answer during a table read: counted only if again", key[:12]
+            )
         before = self._scheduler.failures(key)
         after = self._scheduler.unanswered(key, now, uncertain=uncertain)
         self._state_changed(key)
@@ -626,15 +648,24 @@ class TelemetryPoller:
         found = lpp.position(payload)
         now = self._mono()
         back = self._scheduler.answered(
-            key, now, found.cells if found else None, payload.lpp_bytes,
-            route=(record.path_hops, record.path_bytes), late=late,
+            key,
+            now,
+            found.cells if found else None,
+            payload.lpp_bytes,
+            route=(record.path_hops, record.path_bytes),
+            late=late,
             at=now - min(self._wall() - event.received_at, TAKEN_MAX_S),  # when it came
-        )  # fmt: skip
+        )
         self._newest[key] = (event.session_serial, event.seq)
         if self._own_flood is not None and self._own_flood[0] == key:
             self._own_flood = None  # its path came before its answer: later ones are the contact's
-        log.debug("telemetry %s: answer of %d bytes, %d of them readings%s", key[:12],
-                  len(event.data), payload.lpp_bytes, " (late)" if late else "")  # fmt: skip
+        log.debug(
+            "telemetry %s: answer of %d bytes, %d of them readings%s",
+            key[:12],
+            len(event.data),
+            payload.lpp_bytes,
+            " (late)" if late else "",
+        )
         if payload.undecoded:
             log.debug("telemetry %s: %d bytes not decoded", key[:12], len(payload.undecoded))
         self._state_changed(key)
@@ -708,8 +739,9 @@ class TelemetryPoller:
         now = self._mono()
         if reason == "unsupported_cmd":  # firmware without the command
             self._unsupported = session
-            log.warning("telemetry: the radio does not take telemetry requests; off until it "
-                        "reconnects")  # fmt: skip
+            log.warning(
+                "telemetry: the radio does not take telemetry requests; off until it reconnects"
+            )
             self._scheduler.retry(poll.key, now, core.STEP_S)
         elif reason == "not_found":  # the table as read is behind the radio's
             self._absent[poll.key] = session.contacts_read_at

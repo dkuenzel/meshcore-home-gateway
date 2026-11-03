@@ -309,7 +309,10 @@ def test_the_dashboards_texts_are_extracted(tmp_path: Path) -> None:
     )
     assert found == {
         "dashboard\x04Mesh": Entry(
-            "Mesh", ("",), "dashboard", comments=("the dashboard's title", "in the sidebar."),
+            "Mesh",
+            ("",),
+            "dashboard",
+            comments=("the dashboard's title", "in the sidebar."),
             references=reference,
         ),
         "dashboard\x04Overview": Entry("Overview", ("",), "dashboard", references=reference),
@@ -322,7 +325,7 @@ def test_the_dashboards_texts_are_extracted(tmp_path: Path) -> None:
         'dashboard\x04Node "{node}"': Entry(
             'Node "{node}"', ("",), "dashboard", flags=brace, references=reference
         ),
-    }  # fmt: skip
+    }
 
 
 def test_a_dashboard_text_that_is_no_format_string_is_refused(tmp_path: Path) -> None:
@@ -608,10 +611,16 @@ TEMPLATE = [
 OLD = [
     Entry("obsolete", ("veraltet",)),
     Entry("{count} item", ("{count} Ding", "{count} Dinge"), None, "{count} itemz"),
-    Entry("{count} file", ("{count} Datei", "{count} Dateien"), None, "{count} files",
-          ("python-brace-format", "fuzzy"), notes=("check the plural",)),
+    Entry(
+        "{count} file",
+        ("{count} Datei", "{count} Dateien"),
+        None,
+        "{count} files",
+        ("python-brace-format", "fuzzy"),
+        notes=("check the plural",),
+    ),
     Entry("b first", ("B zuerst",), references=("src/old.py",), comments=("old",), notes=("ok",)),
-]  # fmt: skip
+]
 
 
 def test_merge_follows_the_template_and_keeps_translations() -> None:
@@ -620,13 +629,24 @@ def test_merge_follows_the_template_and_keeps_translations() -> None:
     assert header == tool.catalog_header("de", GERMANIC)
     assert "Last-Translator" not in tool.write_po(header, merged)
     assert merged == [
-        Entry("b first", ("B zuerst",), references=("src/a.py",), comments=("new comment",),
-              notes=("ok",)),
-        Entry("{count} file", ("{count} Datei", "{count} Dateien"), None, "{count} files",
-              ("fuzzy", "python-brace-format"), notes=("check the plural",)),
+        Entry(
+            "b first",
+            ("B zuerst",),
+            references=("src/a.py",),
+            comments=("new comment",),
+            notes=("ok",),
+        ),
+        Entry(
+            "{count} file",
+            ("{count} Datei", "{count} Dateien"),
+            None,
+            "{count} files",
+            ("fuzzy", "python-brace-format"),
+            notes=("check the plural",),
+        ),
         Entry("{count} item", ("", ""), None, "{count} items", ("python-brace-format",)),
         Entry("a new text", ("",)),
-    ]  # fmt: skip
+    ]
 
 
 def test_merge_takes_the_plural_count_from_the_language() -> None:
@@ -667,14 +687,28 @@ def test_shipped_catalogs_are_complete(entry: Entry, finding: str) -> None:
         (Entry("got {value!r}", ("erhielt {value}",)), GERMANIC, "{value}"),
         (Entry("at most {duty:.3g} %", ("höchstens {duty} %",)), GERMANIC, "{duty}"),
         (Entry("got {value}", ("erhielt {value",)), GERMANIC, "format"),
-        (Entry("{count} file", ("{count} Datei", "Dateien"), None, "{count} files"),
-         GERMANIC, "Dateien"),
-        (Entry("{count} file", ("{count} plik", "{count} pliki {path}", "{count} plików"), None,
-               "{count} files"), POLISH, "{path}"),
-        (Entry("{count} file", ("un fichier", "{count} fichiers"), None, "{count} files"),
-         FRENCH, "un fichier"),  # n = 0 shows it too
+        (
+            Entry("{count} file", ("{count} Datei", "Dateien"), None, "{count} files"),
+            GERMANIC,
+            "Dateien",
+        ),
+        (
+            Entry(
+                "{count} file",
+                ("{count} plik", "{count} pliki {path}", "{count} plików"),
+                None,
+                "{count} files",
+            ),
+            POLISH,
+            "{path}",
+        ),
+        (
+            Entry("{count} file", ("un fichier", "{count} fichiers"), None, "{count} files"),
+            FRENCH,
+            "un fichier",
+        ),  # n = 0 shows it too
     ],
-)  # fmt: skip
+)
 def test_placeholders_match(entry: Entry, plural_forms: str, finding: str) -> None:
     findings = tool.placeholders("de.po", *catalog(entry, plural_forms=plural_forms))
     assert len(findings) == 1, findings
@@ -686,12 +720,19 @@ def test_placeholders_match(entry: Entry, plural_forms: str, finding: str) -> No
     [
         (Entry("got {value!r}", ("erhielt {value!r}",)), GERMANIC),
         (Entry("{count} file", ("eine Datei", "{count} Dateien"), None, "{count} files"), GERMANIC),
-        (Entry("{count} file", ("jeden plik", "{count} pliki", "{count} plików"), None,
-               "{count} files"), POLISH),
+        (
+            Entry(
+                "{count} file",
+                ("jeden plik", "{count} pliki", "{count} plików"),
+                None,
+                "{count} files",
+            ),
+            POLISH,
+        ),
         (Entry("… at most {duty:.3g} %", ("… höchstens {duty:.3g} % der Zeit",)), GERMANIC),
         (Entry("Removed", ("",)), GERMANIC),
     ],
-)  # fmt: skip
+)
 def test_placeholders_that_match_pass(entry: Entry, plural_forms: str) -> None:
     """A form only n == 1 selects may leave {count} out; a % is text outside argparse."""
     assert tool.placeholders("de.po", *catalog(entry, plural_forms=plural_forms)) == []
@@ -701,14 +742,34 @@ def test_placeholders_that_match_pass(entry: Entry, plural_forms: str) -> None:
 @pytest.mark.parametrize(
     ("entry", "finding"),
     [
-        (Entry("show this help message and exit", ("afficher cette aide à 20 %",),
-               flags=("python-format",)), "%"),
-        (Entry("%(prog)s: error: %(message)s\n", ("erreur : %(message)s\n",),
-               flags=("python-format",)), "%(prog)s"),
-        (Entry("expected %s argument", ("%s argument attendu", "arguments attendus"), None,
-               "expected %s arguments", ("python-format",)), "arguments attendus"),
+        (
+            Entry(
+                "show this help message and exit",
+                ("afficher cette aide à 20 %",),
+                flags=("python-format",),
+            ),
+            "%",
+        ),
+        (
+            Entry(
+                "%(prog)s: error: %(message)s\n",
+                ("erreur : %(message)s\n",),
+                flags=("python-format",),
+            ),
+            "%(prog)s",
+        ),
+        (
+            Entry(
+                "expected %s argument",
+                ("%s argument attendu", "arguments attendus"),
+                None,
+                "expected %s arguments",
+                ("python-format",),
+            ),
+            "arguments attendus",
+        ),
     ],
-)  # fmt: skip
+)
 def test_percent_directives_match_where_argparse_formats(entry: Entry, finding: str) -> None:
     findings = tool.percent("fr.po", *catalog(entry, plural_forms=FRENCH))
     assert len(findings) == 1, findings
@@ -851,8 +912,11 @@ def test_headers_have_exactly_the_fixed_fields() -> None:
     assert tool.fixed_header("de.po", extra) != []
     assert tool.fixed_header("x.pot", tool.catalog_header("de", GERMANIC)) != []
     assert list(tool.TEMPLATE_HEADER) == [
-        "Project-Id-Version", "MIME-Version", "Content-Type", "Content-Transfer-Encoding",
-    ]  # fmt: skip
+        "Project-Id-Version",
+        "MIME-Version",
+        "Content-Type",
+        "Content-Transfer-Encoding",
+    ]
 
 
 PACK_HEAD = (
@@ -887,10 +951,12 @@ def test_a_pack_holds_the_translated_texts_escaped() -> None:
         (Entry("a", ("x\x00y",)), "U+0000"),
         (Entry("a", ("x\ry",)), "U+000D"),
         (Entry("a\x04b", ("x",)), "U+0004"),
-        (Entry("{count} file", ("{count} Datei", "{count} Dateien"), None, "{count} files"),
-         "plural"),
+        (
+            Entry("{count} file", ("{count} Datei", "{count} Dateien"), None, "{count} files"),
+            "plural",
+        ),
     ],
-)  # fmt: skip
+)
 def test_a_pack_refuses_what_it_cannot_hold(entry: Entry, reason: str) -> None:
     """No installer text counts anything; a control character would end or split a line."""
     with pytest.raises(ValueError, match=re.escape(reason)):
@@ -1106,10 +1172,11 @@ def test_update_pins_each_pack_in_the_installer(project: Any) -> None:
     assert tool.stale_pins(project, {"en": "English"}) == []
     german = project.installer_locale / "de.po"
     german.write_text(
-        tool.write_po(tool.catalog_header("de", GERMANIC),
-                      [Entry("cannot read {file}", ("{file} unlesbar",))]),
+        tool.write_po(
+            tool.catalog_header("de", GERMANIC), [Entry("cannot read {file}", ("{file} unlesbar",))]
+        ),
         encoding="utf-8",
-    )  # fmt: skip
+    )
     tool.update(project)
     assert tool.stale_pins(project, GERMAN) == [
         f"{INSTALLER}: the block of language packs is not current: run make translations"
@@ -1146,10 +1213,11 @@ def test_a_release_publishes_each_pack_its_installer_pins(project: Any, tmp_path
     assert tool.release_packs(project, release) == []  # English needs none
     german = project.installer_locale / "de.po"
     german.write_text(
-        tool.write_po(tool.catalog_header("de", GERMANIC),
-                      [Entry("cannot read {file}", ("{file} unlesbar",))]),
+        tool.write_po(
+            tool.catalog_header("de", GERMANIC), [Entry("cannot read {file}", ("{file} unlesbar",))]
+        ),
         encoding="utf-8",
-    )  # fmt: skip
+    )
     tool.update(project, GERMAN)
     shutil.copy(project.installer, published)
     (pack,) = tool.release_packs(project, release)
@@ -1220,9 +1288,11 @@ def test_main_runs_the_commands(
 
 
 def test_main_publishes_the_packs_of_a_release(
-    project: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    project: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
-) -> None:  # fmt: skip
+) -> None:
     monkeypatch.setattr(tool, "ROOT", project.root)
     release = tmp_path / "release"
     release.mkdir()

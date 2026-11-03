@@ -112,15 +112,28 @@ def test_connection_subscribes_and_announces_availability() -> None:
         await asyncio.to_thread(fake.on_connect, fake, None, None, reason, None)
         await asyncio.wait_for(connected.wait(), 1)
         assert dict(fake.calls)["subscribe"] == (
-            [("meshcore/radio1/send/+", 1), ("meshcore/radio1/contacts/+/send", 1),
-             ("meshcore/radio1/add_contact", 1), ("meshcore/radio1/contacts/+/remove", 1),
-             ("meshcore/radio1/contacts/+/telemetry", 1),
-             *[(f"meshcore/radio1/{name}", 1) for name in (
-                "availability", "contacts", "history", "nodes", "settings", "state", "stats",
-                "contacts/+",
-             )],
-             ("homeassistant/status", 1)],
-        )  # fmt: skip
+            [
+                ("meshcore/radio1/send/+", 1),
+                ("meshcore/radio1/contacts/+/send", 1),
+                ("meshcore/radio1/add_contact", 1),
+                ("meshcore/radio1/contacts/+/remove", 1),
+                ("meshcore/radio1/contacts/+/telemetry", 1),
+                *[
+                    (f"meshcore/radio1/{name}", 1)
+                    for name in (
+                        "availability",
+                        "contacts",
+                        "history",
+                        "nodes",
+                        "settings",
+                        "state",
+                        "stats",
+                        "contacts/+",
+                    )
+                ],
+                ("homeassistant/status", 1),
+            ],
+        )
         assert fake.published[-1] == ("meshcore/radio1/availability", b"online", 1, True)
         assert bus.connected
 
@@ -286,11 +299,12 @@ def test_contact_requests_reach_their_own_queue() -> None:
         await asyncio.to_thread(deliver, f"meshcore/radio1/contacts/{key}/telemetry/x", b"off")
         requests = [await asyncio.wait_for(bus.contact_requests.get(), 1) for _ in range(5)]
         assert requests == [
-            ContactRequest("add", key.encode(), False), ContactRequest("add", b"old", True),
+            ContactRequest("add", key.encode(), False),
+            ContactRequest("add", b"old", True),
             ContactRequest("remove", b"remove", False, key),
             ContactRequest("telemetry", b"off", False, key),
             ContactRequest("telemetry", b"on", True, "x"),  # the manager refuses the level
-        ]  # fmt: skip
+        ]
         await asyncio.sleep(0.05)
         assert bus.contact_requests.empty()  # a level with a "/" names no contact
         assert bus.requests.empty()
@@ -323,9 +337,11 @@ def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         subscriptions = dict(fake.calls)["subscribe"][0]
         assert subscriptions[-4:] == [
-            (own, 1), (watch, 1), ("meshcore/radio1/homeassistant/show_hidden", 1),
+            (own, 1),
+            (watch, 1),
+            ("meshcore/radio1/homeassistant/show_hidden", 1),
             ("meshcore/radio1/homeassistant/add_node", 1),
-        ]  # fmt: skip
+        ]
 
         def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
             fake.on_message(
@@ -351,7 +367,7 @@ def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
         assert picked == [
             ContactRequest("add", label, False, node_label=True),
             ContactRequest("add", b"x", True, node_label=True),  # refused there, with an event
-        ]  # fmt: skip
+        ]
 
     asyncio.run(scenario())
 
@@ -399,9 +415,11 @@ def test_a_refused_subscription_is_named(caplog: pytest.LogCaptureFixture) -> No
     async def scenario() -> None:
         fake = Subscribing()
         bus = MqttBus(
-            MqttConfig(host="h", node_id="radio1"), TOPICS, "homeassistant/status",
+            MqttConfig(host="h", node_id="radio1"),
+            TOPICS,
+            "homeassistant/status",
             client_factory=lambda _: fake,
-        )  # fmt: skip
+        )
         await bus.start()
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         granted, refused = (ReasonCode(PacketTypes.SUBACK, identifier=c) for c in (1, 0x80))
@@ -443,8 +461,9 @@ def test_what_another_client_writes_on_a_retained_topic_is_undone(
         await asyncio.to_thread(deliver, TOPICS.availability, b"offline")
         await asyncio.sleep(0.05)
         assert fake.published[before:] == [
-            (contact, b'{"latitude": 1.0}', 1, True), (TOPICS.availability, b"online", 1, True),
-        ]  # fmt: skip
+            (contact, b'{"latitude": 1.0}', 1, True),
+            (TOPICS.availability, b"online", 1, True),
+        ]
         assert f"another client wrote {contact}" in caplog.text
         assert bus.requests.empty()
         assert bus.contact_requests.empty()
@@ -754,8 +773,9 @@ def test_the_quality_of_service_reaches_paho() -> None:
         bus.publish("meshcore/radio1/command", b"{}", qos=0)
         bus.publish("meshcore/radio1/received", b"{}")
         assert [(p[0], p[2]) for p in fake.published][-2:] == [
-            ("meshcore/radio1/command", 0), ("meshcore/radio1/received", 1),
-        ]  # fmt: skip
+            ("meshcore/radio1/command", 0),
+            ("meshcore/radio1/received", 1),
+        ]
         bus.connected = False
         before = len(fake.published)
         bus.publish("meshcore/radio1/command", b"{}", qos=0)  # nothing to keep for later

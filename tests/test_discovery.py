@@ -74,12 +74,31 @@ RADIO = RadioInfo(
     DeviceInfo(9, 350, 40, "1 Oct 2026", "Heltec V3", "v1.18.0", 0),
 )
 STATE_KEYS = {
-    "radio", "battery_v", "airtime_1h_s", "airtime_available_s", "airtime_budget_s_per_hour",
-    "queue", "radio_name", "public_key", "model", "firmware", "frequency_mhz", "bandwidth_khz",
-    "spreading_factor", "coding_rate", "tx_power_dbm", "contact_link", "version", "telemetry",
-    "telemetry_reason", "telemetry_airtime_1h_s", "telemetry_mesh_airtime_1h_s",
-    "radio_clock_offset_s", "radio_link_contested", "health",
-}  # fmt: skip
+    "radio",
+    "battery_v",
+    "airtime_1h_s",
+    "airtime_available_s",
+    "airtime_budget_s_per_hour",
+    "queue",
+    "radio_name",
+    "public_key",
+    "model",
+    "firmware",
+    "frequency_mhz",
+    "bandwidth_khz",
+    "spreading_factor",
+    "coding_rate",
+    "tx_power_dbm",
+    "contact_link",
+    "version",
+    "telemetry",
+    "telemetry_reason",
+    "telemetry_airtime_1h_s",
+    "telemetry_mesh_airtime_1h_s",
+    "radio_clock_offset_s",
+    "radio_link_contested",
+    "health",
+}
 
 
 def _values(document: Any) -> list[Any]:
@@ -139,13 +158,40 @@ def test_document_has_the_mandatory_parts() -> None:
 def test_entities_and_their_sources() -> None:
     cmps = discovery_payload(CONFIG, TOPICS)["cmps"]
     assert set(cmps) == {
-        "radio", "battery", "airtime", "airtime_available", "queue", "message", "delivery",
-        "command", "send_alerts", "send_alice", "noise_floor", "radio_airtime", "uptime",
-        "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
-        "advert_position", "look_alike", "contact", "node", "show_hidden", "profile", "setting",
-        "telemetry_status", "telemetry_airtime", "telemetry_mesh_airtime", "telemetry",
-        "radio_clock_offset", "radio_link_contested", "degraded",
-    }  # fmt: skip
+        "radio",
+        "battery",
+        "airtime",
+        "airtime_available",
+        "queue",
+        "message",
+        "delivery",
+        "command",
+        "send_alerts",
+        "send_alice",
+        "noise_floor",
+        "radio_airtime",
+        "uptime",
+        "packets_received",
+        "packets_sent",
+        "receive_errors",
+        "contacts",
+        "nodes",
+        "remote_cli",
+        "advert_position",
+        "look_alike",
+        "contact",
+        "node",
+        "show_hidden",
+        "profile",
+        "setting",
+        "telemetry_status",
+        "telemetry_airtime",
+        "telemetry_mesh_airtime",
+        "telemetry",
+        "radio_clock_offset",
+        "radio_link_contested",
+        "degraded",
+    }
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
     assert cmps["battery"]["unit_of_measurement"] == "V"  # "v" would be rejected
@@ -274,12 +320,22 @@ def test_a_degraded_gateway_is_a_problem() -> None:
     state document of an earlier version has none: unknown, without a warning."""
     sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["degraded"]
     assert (sensor["p"], sensor["name"], sensor["device_class"], sensor["entity_category"]) == (
-        "binary_sensor", "Gateway degraded", "problem", "diagnostic",
-    )  # fmt: skip
+        "binary_sensor",
+        "Gateway degraded",
+        "problem",
+        "diagnostic",
+    )
     assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.state
     assert "value_json.get('health') is not none" in sensor["value_template"]
-    for key in ("history", "state_file", "exclusions", "errors_1h", "loop_lag_max_s",
-                "events_dropped_1h", "disk_free_mb"):  # fmt: skip
+    for key in (
+        "history",
+        "state_file",
+        "exclusions",
+        "errors_1h",
+        "loop_lag_max_s",
+        "events_dropped_1h",
+        "disk_free_mb",
+    ):
         assert f"'{key}': h.get('{key}')" in sensor["json_attributes_template"]
 
 
@@ -298,8 +354,11 @@ def test_the_companion_position_sensor_follows_the_households_companions() -> No
     and `.get` log nothing in Home Assistant (home-assistant/tests/test_adverts.py)."""
     sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["advert_position"]
     assert (sensor["p"], sensor["name"], sensor["device_class"], sensor["entity_category"]) == (
-        "binary_sensor", "Companion position in adverts", "problem", "diagnostic",
-    )  # fmt: skip
+        "binary_sensor",
+        "Companion position in adverts",
+        "problem",
+        "diagnostic",
+    )
     assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.contacts
     assert sensor["value_template"] == (
         "{{ ('ON' if value_json.advert_carries_position_total > 0 else 'OFF') if value_json is "
@@ -324,8 +383,10 @@ def test_the_telemetry_entities_are_always_there() -> None:
         cmps = discovery_payload(config, TOPICS)["cmps"]
         status = cmps["telemetry_status"]
         assert (status["p"], status["name"], status["device_class"]) == (
-            "sensor", "Telemetry status", "enum",
-        )  # fmt: skip
+            "sensor",
+            "Telemetry status",
+            "enum",
+        )
         assert status["options"] == list(telemetry.STATUSES)
         assert status["entity_category"] == "diagnostic"
         assert status["state_topic"] == status["json_attributes_topic"] == TOPICS.state
@@ -336,8 +397,10 @@ def test_the_telemetry_entities_are_always_there() -> None:
         assert status["json_attributes_template"] == (
             "{{ {'reason': value_json.get('telemetry_reason')} | tojson }}"
         )
-        lanes = (("telemetry_airtime", "Telemetry airtime last hour"),
-                 ("telemetry_mesh_airtime", "Telemetry mesh airtime last hour"))  # fmt: skip
+        lanes = (
+            ("telemetry_airtime", "Telemetry airtime last hour"),
+            ("telemetry_mesh_airtime", "Telemetry mesh airtime last hour"),
+        )
         for key, name in lanes:
             lane = cmps[key]
             assert (lane["p"], lane["name"], lane["state_topic"]) == ("sensor", name, TOPICS.state)
@@ -353,13 +416,22 @@ def test_the_telemetry_entities_are_always_there() -> None:
         )
         event = cmps["telemetry"]
         assert (event["p"], event["name"], event["state_topic"]) == (
-            "event", "Telemetry", "meshcore/radio-1/telemetry",
-        )  # fmt: skip
+            "event",
+            "Telemetry",
+            "meshcore/radio-1/telemetry",
+        )
         assert event["event_types"] == list(telemetry.EVENTS) == ["answered", "unanswered"]
         assert cmps["contact"]["event_types"] == [
-            "added", "removed", "hidden", "shown", "refused", "failed", "excluded", "included",
+            "added",
+            "removed",
+            "hidden",
+            "shown",
+            "refused",
+            "failed",
+            "excluded",
+            "included",
             "position_in_advert",
-        ]  # fmt: skip
+        ]
 
 
 def test_every_platform_announced_can_be_removed() -> None:
@@ -372,8 +444,9 @@ def test_every_platform_announced_can_be_removed() -> None:
         *manage_payload(CONFIG, TOPICS, [])["cmps"].values(),
     ]
     for node_type in NodeType:
-        tracked = Tracked(Node(KEY, "Alice", node_type), fix=Fix(position, 0.0, "telemetry"),
-                          readings=readings)  # fmt: skip
+        tracked = Tracked(
+            Node(KEY, "Alice", node_type), fix=Fix(position, 0.0, "telemetry"), readings=readings
+        )
         found += contact_payload(CONFIG, TOPICS, tracked, "alice")["cmps"].values()
     platforms = {component["p"] for component in found}
     assert {"switch", "device_tracker", "select", "text", "notify", "button"} <= platforms

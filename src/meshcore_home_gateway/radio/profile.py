@@ -98,8 +98,12 @@ class RadioProfile:
             reason = plan.reasons[key]
             log.log(
                 logging.WARNING if reason == "drift" else logging.INFO,
-                "radio profile: %s %r -> %r (%s)", key, live[key], value, _WHY[reason],
-            )  # fmt: skip
+                "radio profile: %s %r -> %r (%s)",
+                key,
+                live[key],
+                value,
+                _WHY[reason],
+            )
         sent: dict[str, Value] = {}
         for keys, frame in _frames(session, plan.writes):
             # counted as not taken until read back, also if the radio goes away at this setter;
@@ -118,35 +122,57 @@ class RadioProfile:
             k for k, v in plan.writes.items() if k not in failed and not policy.same(k, after[k], v)
         ]
         for key in not_taken:
-            log.warning("radio profile: %s reads back as %r after writing %r",
-                        key, after[key], plan.writes[key])  # fmt: skip
+            log.warning(
+                "radio profile: %s reads back as %r after writing %r",
+                key,
+                after[key],
+                plan.writes[key],
+            )
         for key, value in plan.drift.items():
-            log.info("radio profile: %s is %r on the radio, configured %r; kept",
-                     key, value, want.values[key])  # fmt: skip
+            log.info(
+                "radio profile: %s is %r on the radio, configured %r; kept",
+                key,
+                value,
+                want.values[key],
+            )
         for key in plan.not_converging:
-            log.warning("radio profile: %s does not take %r after %d connects; no longer "
-                        "written", key, want.values[key], policy.NOT_CONVERGING_AFTER)  # fmt: skip
+            log.warning(
+                "radio profile: %s does not take %r after %d connects; no longer written",
+                key,
+                want.values[key],
+                policy.NOT_CONVERGING_AFTER,
+            )
         self._log_observing(plan, info.device.version, firmware)
         self._remember(
             radio, policy.record(applied, want, plan, after, failed, firmware_code=firmware)
         )
         me = session.info.self_info if session.info else info.self_info
-        refused = {kind: {k for k, why in failed.items() if why == kind}
-                   for kind in (policy.UNSUPPORTED, policy.DISABLED)}  # fmt: skip
+        refused = {
+            kind: {k for k, why in failed.items() if why == kind}
+            for kind in (policy.UNSUPPORTED, policy.DISABLED)
+        }
         unsupported = {*plan.unsupported, *refused[policy.UNSUPPORTED]}
         disabled = {*plan.disabled, *refused[policy.DISABLED]}
         skipped = unsupported | disabled
         taken = [k for k in plan.writes if k not in failed and k not in not_taken]
         report = ProfileReport(
-            mode=self._mode.value, firmware_code=firmware,
-            tested=firmware in policy.TESTED_FIRMWARE, observing=plan.observing, live=after,
-            desired=dict(want.values), written={k: plan.writes[k] for k in taken},
+            mode=self._mode.value,
+            firmware_code=firmware,
+            tested=firmware in policy.TESTED_FIRMWARE,
+            observing=plan.observing,
+            live=after,
+            desired=dict(want.values),
+            written={k: plan.writes[k] for k in taken},
             reasons={k: r for k, r in plan.reasons.items() if k not in skipped},
-            failed=tuple(k for k in failed if k not in skipped), not_taken=tuple(not_taken),
-            drift=dict(plan.drift), not_converging=plan.not_converging,
-            unsupported=tuple(sorted(unsupported)), disabled=tuple(sorted(disabled)),
-            own_position=me.position is not None, radio=radio,
-        )  # fmt: skip
+            failed=tuple(k for k in failed if k not in skipped),
+            not_taken=tuple(not_taken),
+            drift=dict(plan.drift),
+            not_converging=plan.not_converging,
+            unsupported=tuple(sorted(unsupported)),
+            disabled=tuple(sorted(disabled)),
+            own_position=me.position is not None,
+            radio=radio,
+        )
         self._keep(report)
 
     async def after_contacts(self, session: CompanionSession) -> bool:
@@ -170,8 +196,12 @@ class RadioProfile:
             others = look_alike(key, {*records, *added})
             if record is None and others:  # the radio could not tell them apart (ADR 0009)
                 refused.append(key)
-                log.warning("radio profile: protected contact %s not added: %s on the radio has "
-                            "the same prefix; remove it", key[:12], others[0][:12])  # fmt: skip
+                log.warning(
+                    "radio profile: protected contact %s not added: %s on the radio has "
+                    "the same prefix; remove it",
+                    key[:12],
+                    others[0][:12],
+                )
                 continue
             try:
                 if record is None:
@@ -188,13 +218,23 @@ class RadioProfile:
             except CommandFailedError as exc:
                 refused.append(key)
                 full = " (the contact table is full)" if exc.reason == "table_full" else ""
-                log.warning("radio profile: protected contact %s not written: %s%s",
-                            key[:12], exc.reason, full)  # fmt: skip
-        self._keep(replace(
-            report, contacts_added=tuple(added), contacts_favoured=tuple(favoured),
-            contacts_missing=tuple(missing), contacts_failed=tuple(refused),
-            contacts_not_favourite=tuple(plain),
-        ), same_connect=True)  # fmt: skip
+                log.warning(
+                    "radio profile: protected contact %s not written: %s%s",
+                    key[:12],
+                    exc.reason,
+                    full,
+                )
+        self._keep(
+            replace(
+                report,
+                contacts_added=tuple(added),
+                contacts_favoured=tuple(favoured),
+                contacts_missing=tuple(missing),
+                contacts_failed=tuple(refused),
+                contacts_not_favourite=tuple(plain),
+            ),
+            same_connect=True,
+        )
         return bool(added or favoured)
 
     def _remember(self, radio: str, applied: Applied) -> None:
@@ -219,8 +259,10 @@ class RadioProfile:
                 "the radio profile is only observed, and contact add and remove requests are "
                 "refused (untested_firmware), until a version tested with it is installed; "
                 "radio.profile.manage = always allows both (docs/deployment.md, "
-                "Troubleshooting)", version, firmware,
-            )  # fmt: skip
+                "Troubleshooting)",
+                version,
+                firmware,
+            )
         elif plan.observing:
             log.info("radio profile: observed only (radio.profile.manage = observe)")
 
@@ -239,14 +281,16 @@ def _frames(
     other = [key for key in _OTHER if key in writes]
     if other:
         current = {
-            policy.MANUAL_ADD: me.manual_add_contacts, policy.TELEMETRY: me.telemetry_modes,
+            policy.MANUAL_ADD: me.manual_add_contacts,
+            policy.TELEMETRY: me.telemetry_modes,
             policy.ADVERT_LOCATION: me.advert_location,
-        }  # fmt: skip
+        }
         values = {**current, **{key: writes[key] for key in other}}
         frame = codec.set_other_params(
-            bool(values[policy.MANUAL_ADD]), int(values[policy.TELEMETRY]),
+            bool(values[policy.MANUAL_ADD]),
+            int(values[policy.TELEMETRY]),
             int(values[policy.ADVERT_LOCATION]),
-        )  # fmt: skip
+        )
         frames.append((other, frame))
     if policy.AUTOADD in writes:
         frames.append(([policy.AUTOADD], codec.set_autoadd_config(int(writes[policy.AUTOADD]))))

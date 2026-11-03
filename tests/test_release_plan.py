@@ -48,11 +48,15 @@ class Repo:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.env = {
-            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.org",
-            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.org",
-            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
-            "HOME": str(path), "PATH": os.environ.get("PATH", ""),
-        }  # fmt: skip
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@example.org",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@example.org",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+            "HOME": str(path),
+            "PATH": os.environ.get("PATH", ""),
+        }
         self.git("init", "-q", "-b", "main")
 
     def git(self, *args: str) -> str:
@@ -321,8 +325,12 @@ def test_the_tool_runs_isolated_as_ci_runs_it(tmp_path: Path) -> None:
     repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
     run = subprocess.run(  # noqa: S603 - the tool with fixed arguments
         [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check"],
-        cwd=tmp_path, env=repo.env, capture_output=True, text=True, check=False,
-    )  # fmt: skip
+        cwd=tmp_path,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert (run.returncode, run.stdout) == (0, f"releases v1.0.0rc1 as a pre-release\n{NONE}\n"), (
         run.stderr
     )
@@ -645,8 +653,12 @@ def _clone(origin: Repo, path: Path, *options: str) -> None:
 def _checked(path: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - the tool with fixed arguments
         [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check", "--base", "HEAD"],
-        cwd=path, env=env, capture_output=True, text=True, check=False,
-    )  # fmt: skip
+        cwd=path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def test_a_shallow_clone_is_told_to_fetch_the_history(tmp_path: Path) -> None:
@@ -824,8 +836,12 @@ def test_the_isolated_tool_loads_the_comparator(tmp_path: Path) -> None:
     repo.commit("1.0.0", unreleased("Changed", "No rx."), interface=snapshot(NEW))
     run = subprocess.run(  # noqa: S603 - the tool with fixed arguments
         [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check"],
-        cwd=tmp_path, env=repo.env, capture_output=True, text=True, check=False,
-    )  # fmt: skip
+        cwd=tmp_path,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert run.returncode == 1
     assert REMOVED in run.stderr
 
@@ -837,7 +853,11 @@ def test_a_malformed_snapshot_is_refused_not_a_traceback(tmp_path: Path) -> None
     repo.commit("1.0.0", unreleased("Changed", "x."), interface=snapshot(bad))
     run = subprocess.run(  # noqa: S603 - the tool with fixed arguments
         [sys.executable, "-I", str(ROOT / "tools" / "release_plan.py"), "check"],
-        cwd=tmp_path, env=repo.env, capture_output=True, text=True, check=False,
-    )  # fmt: skip
+        cwd=tmp_path,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     expected = f'{plan.INTERFACE} at HEAD: config > mqtt.port > min: expected a number, got "1"'
     assert (run.returncode, run.stderr) == (1, f"release_plan: {expected}\n")

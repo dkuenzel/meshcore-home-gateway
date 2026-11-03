@@ -30,44 +30,59 @@ class LppType:
 
 GPS = 136
 SELF_CHANNEL = 1  # TELEM_CHANNEL_SELF: the companion's own readings, its position among them
-TYPES: Mapping[int, LppType] = MappingProxyType({
-    0: LppType("digital_input", (1,), (1,), False),
-    1: LppType("digital_output", (1,), (1,), False),
-    2: LppType("analog_input", (2,), (100,), True),
-    3: LppType("analog_output", (2,), (100,), True),
-    100: LppType("generic", (4,), (1,), False),
-    101: LppType("luminosity", (2,), (1,), False),
-    102: LppType("presence", (1,), (1,), False),
-    103: LppType("temperature", (2,), (10,), True),
-    104: LppType("humidity", (1,), (2,), False),
-    113: LppType("accelerometer", (2, 2, 2), (1000, 1000, 1000), True),
-    115: LppType("barometric_pressure", (2,), (10,), False),
-    116: LppType("voltage", (2,), (100,), True),
-    117: LppType("current", (2,), (1000,), True),
-    118: LppType("frequency", (4,), (1,), False),
-    120: LppType("percentage", (1,), (1,), False),
-    121: LppType("altitude", (2,), (1,), True),  # barometric, never the position's altitude
-    125: LppType("concentration", (2,), (1,), False),
-    128: LppType("power", (2,), (1,), False),
-    130: LppType("distance", (4,), (1000,), False),
-    131: LppType("energy", (4,), (1000,), False),
-    132: LppType("direction", (2,), (1,), False),
-    133: LppType("unix_time", (4,), (1,), False),
-    134: LppType("gyrometer", (2, 2, 2), (100, 100, 100), True),
-    135: LppType("colour", (1, 1, 1), (1, 1, 1), False),
-    GPS: LppType("gps", (3, 3, 3), (10000, 10000, 100), True),
-    142: LppType("switch", (1,), (1,), False),
-})  # fmt: skip
+TYPES: Mapping[int, LppType] = MappingProxyType(
+    {
+        0: LppType("digital_input", (1,), (1,), False),
+        1: LppType("digital_output", (1,), (1,), False),
+        2: LppType("analog_input", (2,), (100,), True),
+        3: LppType("analog_output", (2,), (100,), True),
+        100: LppType("generic", (4,), (1,), False),
+        101: LppType("luminosity", (2,), (1,), False),
+        102: LppType("presence", (1,), (1,), False),
+        103: LppType("temperature", (2,), (10,), True),
+        104: LppType("humidity", (1,), (2,), False),
+        113: LppType("accelerometer", (2, 2, 2), (1000, 1000, 1000), True),
+        115: LppType("barometric_pressure", (2,), (10,), False),
+        116: LppType("voltage", (2,), (100,), True),
+        117: LppType("current", (2,), (1000,), True),
+        118: LppType("frequency", (4,), (1,), False),
+        120: LppType("percentage", (1,), (1,), False),
+        121: LppType("altitude", (2,), (1,), True),  # barometric, never the position's altitude
+        125: LppType("concentration", (2,), (1,), False),
+        128: LppType("power", (2,), (1,), False),
+        130: LppType("distance", (4,), (1000,), False),
+        131: LppType("energy", (4,), (1000,), False),
+        132: LppType("direction", (2,), (1,), False),
+        133: LppType("unix_time", (4,), (1,), False),
+        134: LppType("gyrometer", (2, 2, 2), (100, 100, 100), True),
+        135: LppType("colour", (1, 1, 1), (1, 1, 1), False),
+        GPS: LppType("gps", (3, 3, 3), (10000, 10000, 100), True),
+        142: LppType("switch", (1,), (1,), False),
+    }
+)
 MAX_LATITUDE_CELLS, MAX_LONGITUDE_CELLS = 900_000, 1_800_000
 BATTERY_V, MCU_TEMPERATURE_C = "battery_v", "mcu_temperature_c"  # document keys, history quantities
 VOLTAGE, TEMPERATURE = 116, 103
 # the single-value types 1.18 companions send and the unit their key ends in ("" for none); GPS is
 # the position, never a reading; other types are decoded, not published. Luminosity has no unit:
 # the T1000-E sends 0-100 in it, other boards lux.
-UNITS: Mapping[int, str] = MappingProxyType({
-    116: "v", 117: "a", 128: "w", 103: "c", 104: "percent", 115: "hpa", 121: "m",
-    101: "", 100: "", 2: "", 120: "percent", 118: "hz", 130: "m",
-})  # fmt: skip
+UNITS: Mapping[int, str] = MappingProxyType(
+    {
+        116: "v",
+        117: "a",
+        128: "w",
+        103: "c",
+        104: "percent",
+        115: "hpa",
+        121: "m",
+        101: "",
+        100: "",
+        2: "",
+        120: "percent",
+        118: "hz",
+        130: "m",
+    }
+)
 MAX_CHANNEL = 255
 _BY_NAME = {TYPES[code].name: code for code in UNITS}
 _COMPONENT = re.compile(

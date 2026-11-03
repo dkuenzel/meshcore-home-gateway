@@ -29,15 +29,27 @@ SERIAL = 7  # the session's number
 
 
 def log(
-    seq: int, timestamp: int = TA, position: Position | None = HOME, *, carries: bool = True,
-    at: float = T, key: str = KEY, serial: int = SERIAL, hops: int = 0,
-) -> Logged:  # fmt: skip
+    seq: int,
+    timestamp: int = TA,
+    position: Position | None = HOME,
+    *,
+    carries: bool = True,
+    at: float = T,
+    key: str = KEY,
+    serial: int = SERIAL,
+    hops: int = 0,
+) -> Logged:
     """An advert as the radio logged it, frame `seq` of the session; `position` None with the
     flag: 0, 0."""
     return Logged(
-        key, at, (serial, seq), timestamp, carries, position if carries else None,
+        key,
+        at,
+        (serial, seq),
+        timestamp,
+        carries,
+        position if carries else None,
         Signal(hops, 6.0, -96),
-    )  # fmt: skip
+    )
 
 
 def record(last_advert: int = TA, position: Position | None = HOME) -> Node:
@@ -246,9 +258,12 @@ def test_a_new_record_position_wins_over_a_log_without_the_flag() -> None:
 def test_candidates_are_the_keys_logs_within_the_window() -> None:
     """A flood is handled at most 32 s after its log (Dispatcher.cpp:11): LOGGED_S covers it."""
     logs = [
-        log(1, at=T - LOGGED_S - 0.5), log(2, at=T - LOGGED_S), log(3, at=T - 5, key=OTHER),
-        log(4, at=T), log(6, at=T + 1),
-    ]  # fmt: skip
+        log(1, at=T - LOGGED_S - 0.5),
+        log(2, at=T - LOGGED_S),
+        log(3, at=T - 5, key=OTHER),
+        log(4, at=T),
+        log(6, at=T + 1),
+    ]
     assert candidates(logs, KEY, T) == (logs[1], logs[3])
     assert LOGGED_S == 40.0
 
@@ -260,23 +275,35 @@ def test_outcome_is_total() -> None:
 
     def any_log(seq: int) -> Logged:
         return Logged(
-            rng.choice((KEY, OTHER)), T - rng.uniform(-5, 50), (rng.randrange(3), seq),
-            rng.choice(times), rng.random() < 0.5, rng.choice(places), Signal(),
-        )  # fmt: skip
+            rng.choice((KEY, OTHER)),
+            T - rng.uniform(-5, 50),
+            (rng.randrange(3), seq),
+            rng.choice(times),
+            rng.random() < 0.5,
+            rng.choice(places),
+            Signal(),
+        )
 
     def any_node() -> Node:
         return Node(
-            KEY, "Alice", rng.choice((1, 2)), last_advert=rng.choice(times),
+            KEY,
+            "Alice",
+            rng.choice((1, 2)),
+            last_advert=rng.choice(times),
             position=rng.choice(places),
-        )  # fmt: skip
+        )
 
     for _ in range(20_000):
         logs = [any_log(seq) for seq in range(rng.randrange(5))]
         near = adjacent(logs[-1] if logs else None, KEY, (rng.randrange(3), rng.randrange(6)))
         pushed = Pushed(T + rng.uniform(-5, 5), near, candidates(logs, KEY, T))
         node = any_node()
-        result = outcome(rng.choice((pushed, None)), node, rng.choice((any_node(), None)),
-                         T + rng.uniform(-10, 80))  # fmt: skip
+        result = outcome(
+            rng.choice((pushed, None)),
+            node,
+            rng.choice((any_node(), None)),
+            T + rng.uniform(-10, 80),
+        )
         assert result.check is None or result.check.at == node.last_advert
         assert result.problem in (None, "not_logged", "copies_differ", "record_differs")
         found = heard(pushed, node)

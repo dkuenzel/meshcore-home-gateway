@@ -103,9 +103,13 @@ def test_placeholders_never_meet_real_names() -> None:
 def _python(code: str) -> subprocess.CompletedProcess[str]:
     """`code` in a fresh interpreter: no cache or patch of this run reaches it."""
     return subprocess.run(  # noqa: S603 - the interpreter with a fixed program
-        [sys.executable, "-c", code], cwd=interface.ROOT, capture_output=True, text=True,
-        check=False, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-    )  # fmt: skip
+        [sys.executable, "-c", code],
+        cwd=interface.ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
 
 
 def test_the_configuration_is_recorded_in_a_fresh_state() -> None:
@@ -881,10 +885,20 @@ COMPATIBLE: dict[str, Mutation] = {
 }
 # compatible, but users notice them: listed under Changed; the others are additions
 CHANGED = {
-    "maximum raised", "minimum lowered", "bound dropped", "integer to number", "choices dropped",
-    "no longer required", "default changed", "cli default", "cli type dropped", "now optional",
-    "one or more", "exactly one, as a list", "option maximum raised",
-}  # fmt: skip
+    "maximum raised",
+    "minimum lowered",
+    "bound dropped",
+    "integer to number",
+    "choices dropped",
+    "no longer required",
+    "default changed",
+    "cli default",
+    "cli type dropped",
+    "now optional",
+    "one or more",
+    "exactly one, as a list",
+    "option maximum raised",
+}
 
 
 def mutated(change: Mutation) -> dict[str, Any]:
@@ -1072,7 +1086,7 @@ GROUPS: dict[str, tuple[Mutation, set[tuple[str, str]]]] = {
         ),
         {("added", f"{C}trace: new")},
     ),
-}  # fmt: skip
+}
 
 
 @pytest.mark.parametrize(("change", "expected"), GROUPS.values(), ids=GROUPS.keys())

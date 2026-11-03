@@ -47,11 +47,13 @@ def test_messages_survive_a_restart_newest_first(tmp_path: Path) -> None:
     path = tmp_path / "history.sqlite3"
     history = opened(path)
     entries = [
-        HistoryEntry(T, "in", "contact", "Hello", contact_key=KEY, name="Alice", hops=2,
-                     snr_db=6.25),
-        HistoryEntry(T + 1, "out", "channel", "Gate open", channel_index=0, name="alerts",
-                     state="sent"),
-    ]  # fmt: skip
+        HistoryEntry(
+            T, "in", "contact", "Hello", contact_key=KEY, name="Alice", hops=2, snr_db=6.25
+        ),
+        HistoryEntry(
+            T + 1, "out", "channel", "Gate open", channel_index=0, name="alerts", state="sent"
+        ),
+    ]
     for entry in entries:
         history.add_message(entry)
     history.close()
@@ -84,8 +86,9 @@ def test_nodes_keep_their_first_and_newest_sighting(tmp_path: Path) -> None:
 
 def test_retention_by_age_and_by_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(history_module, "MAX_MESSAGES", 3)
-    history = opened(tmp_path / "h.sqlite3", Retention(messages_days=2, positions_days=1,
-                                                      nodes_days=1))  # fmt: skip
+    history = opened(
+        tmp_path / "h.sqlite3", Retention(messages_days=2, positions_days=1, nodes_days=1)
+    )
     for day in range(5):
         history.add_message(HistoryEntry(T + day * DAY, "in", "channel", f"day {day}"))
     history.add_position(KEY, Fix(Position(1, 1), T, "advert"))
@@ -283,18 +286,33 @@ def test_the_newest_answer_of_each_contact_comes_back_in_the_order_written(tmp_p
     history = opened(path)
     history.add_readings(KEY, T, {"battery_v": 4.1, "ch2_temperature_c": 20.0})
     history.add_readings(
-        KEY, T + 900,
-        {"battery_v": 4.12, "ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5,
-         "ch1_temperature_c": 19.5, "mcu_temperature_c": 23.4},
-    )  # fmt: skip
+        KEY,
+        T + 900,
+        {
+            "battery_v": 4.12,
+            "ch2_temperature_c": 21.3,
+            "ch2_humidity_percent": 55.5,
+            "ch1_temperature_c": 19.5,
+            "mcu_temperature_c": 23.4,
+        },
+    )
     history.add_readings(BOB, T + 60, {"ch1_luminosity": 50.0, "ch3_weather": 1.0})
     history.close()
     assert opened(path).last_readings() == {
-        KEY: Readings(T + 900, Named(4.12, 23.4, {
-            "ch2_temperature_c": 21.3, "ch2_humidity_percent": 55.5, "ch1_temperature_c": 19.5,
-        })),
+        KEY: Readings(
+            T + 900,
+            Named(
+                4.12,
+                23.4,
+                {
+                    "ch2_temperature_c": 21.3,
+                    "ch2_humidity_percent": 55.5,
+                    "ch1_temperature_c": 19.5,
+                },
+            ),
+        ),
         BOB: Readings(T + 60, Named(None, None, {"ch1_luminosity": 50.0})),  # a later version's
-    }  # fmt: skip
+    }
     readings = opened(path).last_readings()[KEY].named.readings
     assert list(readings) == ["ch2_temperature_c", "ch2_humidity_percent", "ch1_temperature_c"]
 
@@ -339,9 +357,12 @@ def test_the_reading_cap_keeps_the_newest_answer_of_every_contact(
     }
     rows = history._db.execute("SELECT contact_key, at, quantity FROM reading ORDER BY id")
     assert list(rows) == [
-        (BOB, T, "battery_v"), (BOB, T, "mcu_temperature_c"), (KEY, T + 240, "ch2_power_w"),
-        (KEY, T + 300, "battery_v"), (KEY, T + 300, "ch2_power_w"),
-    ]  # fmt: skip
+        (BOB, T, "battery_v"),
+        (BOB, T, "mcu_temperature_c"),
+        (KEY, T + 240, "ch2_power_w"),
+        (KEY, T + 300, "battery_v"),
+        (KEY, T + 300, "ch2_power_w"),
+    ]
 
 
 def test_forgetting_a_contact_deletes_its_readings_and_telemetry_positions(tmp_path: Path) -> None:

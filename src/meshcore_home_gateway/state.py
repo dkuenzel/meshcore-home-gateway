@@ -84,9 +84,12 @@ class JsonStateFile:
         except OSError as exc:
             if not self._warned:
                 self._warned = True
-                log.warning("cannot write the state file %s (%s): its changes are kept in "
-                            "memory and written once it can be", self.path,
-                            exc.strerror or exc)  # fmt: skip
+                log.warning(
+                    "cannot write the state file %s (%s): its changes are kept in "
+                    "memory and written once it can be",
+                    self.path,
+                    exc.strerror or exc,
+                )
             return False
         self._changed = False
         if self._warned:
@@ -217,9 +220,10 @@ class AnnouncedComponents:
             if key not in current:
                 removed.setdefault(key, {"p": platform, "since": now})
         removed = {
-            key: entry for key, entry in removed.items()
+            key: entry
+            for key, entry in removed.items()
             if key not in current and now - entry["since"] < REMOVAL_KEEP_S
-        }  # fmt: skip
+        }
         if previous != current or data.get(self._removed, {}) != removed:
             # pending removals also come back from `previous` while the file cannot be written
             self._store.put(self._key, dict(current))
@@ -274,9 +278,10 @@ class ContactDeviceRecords:
         )
         left = data.get("left")  # key -> when the contact left the table (unix time)
         self.left: dict[str, float] = {
-            key: float(at) for key, at in (left.items() if isinstance(left, dict) else ())
+            key: float(at)
+            for key, at in (left.items() if isinstance(left, dict) else ())
             if key in self.slugs and _finite(at)
-        }  # fmt: skip
+        }
         self._saved = self._data()
 
     def prune(self, present: Collection[str], now: float) -> None:
@@ -351,9 +356,10 @@ class CurrentDocuments:
         self._store = store
         raw = store.load().get(self._KEY)
         self._documents = {
-            key: document for key, document in (raw.items() if isinstance(raw, dict) else ())
+            key: document
+            for key, document in (raw.items() if isinstance(raw, dict) else ())
             if isinstance(key, str) and is_key(key) and isinstance(document, dict)
-        }  # fmt: skip
+        }
 
     @property
     def documents(self) -> dict[str, dict[str, Any]]:
@@ -386,8 +392,11 @@ class AdvertChecks:
             key: check for key, entry in entries if (check := _advert_check(key, entry)) is not None
         }
         if not isinstance(raw, dict) or len(self._checks) < len(raw):
-            log.warning("state file %s: invalid advert checks skipped, %d kept", store.path,
-                        len(self._checks))  # fmt: skip
+            log.warning(
+                "state file %s: invalid advert checks skipped, %d kept",
+                store.path,
+                len(self._checks),
+            )
 
     @property
     def checks(self) -> dict[str, AdvertCheck]:
@@ -398,10 +407,13 @@ class AdvertChecks:
         not come back after a crash (ADR 0025); a failed write is the state file's to log and to
         try again."""
         if checks != self._checks:
-            self._store.put(self._KEY, {
-                key: {"advert_at": check.at, "carries": check.carries}
-                for key, check in checks.items()
-            })  # fmt: skip
+            self._store.put(
+                self._KEY,
+                {
+                    key: {"advert_at": check.at, "carries": check.carries}
+                    for key, check in checks.items()
+                },
+            )
             self._checks = dict(checks)
             self._store.flush()
 
@@ -427,9 +439,12 @@ class TelemetryExclusions:
     _INCLUDED = "included"
 
     def __init__(
-        self, path: Path | None, *, household: bool = False,
+        self,
+        path: Path | None,
+        *,
+        household: bool = False,
         protected: frozenset[str] = frozenset(),
-    ) -> None:  # fmt: skip
+    ) -> None:
         """Loads at once. A missing file: none excluded. An OSError stops the service (as
         state.json). A file that cannot be parsed, or holds no list under "excluded" (or something
         else than a list under "included"), is left in place: `unreadable` is set, an error is
@@ -504,8 +519,9 @@ class TelemetryExclusions:
             return True  # nothing to store
         why = self._write(rest, included)
         if why is not None:
-            log.warning("cannot write the telemetry exclusions (%s): %s stays excluded", why,
-                        key[:12])  # fmt: skip
+            log.warning(
+                "cannot write the telemetry exclusions (%s): %s stays excluded", why, key[:12]
+            )
             return False
         self._keys, self._included = rest, included
         self._stored_again()
@@ -563,9 +579,11 @@ class TelemetryExclusions:
         included = data.get(self._INCLUDED, []) if isinstance(data, dict) else None
         if not isinstance(entries, list) or not isinstance(included, list):
             self.unreadable = True
-            log.error("telemetry exclusions %s cannot be read: telemetry paused, nothing "
-                      "written to the file; fix or delete it and restart the service",
-                      path)  # fmt: skip
+            log.error(
+                "telemetry exclusions %s cannot be read: telemetry paused, nothing "
+                "written to the file; fix or delete it and restart the service",
+                path,
+            )
             return
         self._keys = self._valid(path, entries, "excluded")
         self._included = self._valid(path, included, "included") - self._keys
@@ -575,11 +593,19 @@ class TelemetryExclusions:
         keys = sorted({e for e in entries if isinstance(e, str) and is_key(e)})
         skipped = sum(not (isinstance(e, str) and is_key(e)) for e in entries)
         if skipped:
-            log.warning("telemetry exclusions %s: %d entries that are no contact keys skipped",
-                        path, skipped)  # fmt: skip
+            log.warning(
+                "telemetry exclusions %s: %d entries that are no contact keys skipped",
+                path,
+                skipped,
+            )
         if len(keys) > self.LIMIT:
-            log.warning("telemetry exclusions %s: %d %s contacts, %d kept", path, len(keys),
-                        what, self.LIMIT)  # fmt: skip
+            log.warning(
+                "telemetry exclusions %s: %d %s contacts, %d kept",
+                path,
+                len(keys),
+                what,
+                self.LIMIT,
+            )
         return set(keys[: self.LIMIT])
 
 
@@ -614,13 +640,13 @@ class ProfileRecords:
             if _setting(value) and _count(connects) and _count(firmware):
                 tried[key] = Attempt(value, connects, firmware)
         return Applied(
-            values={
-                k: v for k, v in values.items() if _setting(v)
-            } if isinstance(values, dict) else {},
+            values={k: v for k, v in values.items() if _setting(v)}
+            if isinstance(values, dict)
+            else {},
             attempts=tried,
             unsupported=_int_map(entry.get("unsupported")),
             disabled=_int_map(entry.get("disabled")),
-        )  # fmt: skip
+        )
 
     def save(self, radio_key: str, applied: Applied) -> None:
         """Store the result at once (the attempts before the setters go out), with the time
@@ -641,20 +667,25 @@ class ProfileRecords:
             log.warning("cannot store the radio profile: %s", exc)
             return
         others = {
-            key: other for key, other in (raw.items() if isinstance(raw, dict) else ())
+            key: other
+            for key, other in (raw.items() if isinstance(raw, dict) else ())
             if key != radio_key and isinstance(other, dict)
-        }  # fmt: skip
+        }
         stored = raw.get(radio_key) if isinstance(raw, dict) else None
-        unchanged = isinstance(stored, dict) and {
-            key: value for key, value in stored.items() if key != "at"
-        } == entry  # fmt: skip
+        unchanged = (
+            isinstance(stored, dict)
+            and {key: value for key, value in stored.items() if key != "at"} == entry
+        )
         if unchanged and len(others) < PROFILE_RADIOS:
             return
         kept = sorted(others, key=lambda key: (-_time(others[key].get("at")), key))
-        self._store.put(self._KEY, {
-            **{key: others[key] for key in kept[: PROFILE_RADIOS - 1]},
-            radio_key: stored if unchanged else {**entry, "at": self._wall()},
-        })  # fmt: skip
+        self._store.put(
+            self._KEY,
+            {
+                **{key: others[key] for key in kept[: PROFILE_RADIOS - 1]},
+                radio_key: stored if unchanged else {**entry, "at": self._wall()},
+            },
+        )
         self._store.flush()
 
 
@@ -694,16 +725,17 @@ class TelemetryRecords:
             tuple(sorted(a for a in ages if _age(a) and a < telemetry.HOUR_S))
             if isinstance(ages, list)
             else ()
-        )  # fmt: skip
+        )
         own, mesh = raw.get("own_debt_s", 0.0), raw.get("mesh_debt_s", 0.0)
         hold = raw.get("hold_left_s")
         return Saved(
-            contacts, floods[: telemetry.FLOODS_PER_HOUR],
+            contacts,
+            floods[: telemetry.FLOODS_PER_HOUR],
             min(own, telemetry.HOUR_S) if _age(own) else 0.0,
             min(mesh, telemetry.HOUR_S) if _age(mesh) else 0.0,
             min(hold, telemetry.MAX_DUE_S) if _age(hold) else None,
             raw.get("hold_pending") is True,
-        ), elapsed  # fmt: skip
+        ), elapsed
 
     def ran_before(self) -> bool:
         """The state file has a telemetry record (any version): telemetry ran on this
@@ -723,11 +755,18 @@ class TelemetryRecords:
             "saved_at": wall_now,
             "contacts": {
                 key: {
-                    "due_in_s": c.due_in_s, "failures": c.failures,
-                    "answered_age_s": c.answered_age_s, "polled_age_s": c.polled_age_s,
-                    "flood_age_s": c.flood_age_s, "floods": c.floods, "located": c.located,
-                    "still": c.still, "lpp_bytes": c.lpp_bytes, "parked_age_s": c.parked_age_s,
-                    "current_s": c.current_s, "located_age_s": c.located_age_s,
+                    "due_in_s": c.due_in_s,
+                    "failures": c.failures,
+                    "answered_age_s": c.answered_age_s,
+                    "polled_age_s": c.polled_age_s,
+                    "flood_age_s": c.flood_age_s,
+                    "floods": c.floods,
+                    "located": c.located,
+                    "still": c.still,
+                    "lpp_bytes": c.lpp_bytes,
+                    "parked_age_s": c.parked_age_s,
+                    "current_s": c.current_s,
+                    "located_age_s": c.located_age_s,
                 }
                 for key, c in saved.contacts.items()
             },
@@ -736,7 +775,7 @@ class TelemetryRecords:
             "mesh_debt_s": saved.mesh_debt_s,
             "hold_left_s": saved.hold_left_s,
             "hold_pending": saved.hold_pending,
-        }  # fmt: skip
+        }
         try:
             self._store.put(self._KEY, entry)
         except OSError as exc:
@@ -758,10 +797,15 @@ class TelemetryRecords:
         entry = entries.get(key) if isinstance(entries, dict) else None
         if isinstance(raw, dict) and isinstance(entries, dict) and isinstance(entry, dict):
             forgotten = {
-                **entry, "due_in_s": 0.0, "failures": 0, "answered_age_s": None,
-                "located": False, "still": telemetry.STILL_POLLS,
-                "current_s": telemetry.CURRENT_MIN_S, "located_age_s": None,
-            }  # fmt: skip
+                **entry,
+                "due_in_s": 0.0,
+                "failures": 0,
+                "answered_age_s": None,
+                "located": False,
+                "still": telemetry.STILL_POLLS,
+                "current_s": telemetry.CURRENT_MIN_S,
+                "located_age_s": None,
+            }
             self._store.put(self._KEY, {**raw, "contacts": {**entries, key: forgotten}})
 
 
@@ -838,14 +882,24 @@ class OutboxRecords:
         if not messages:
             self._store.drop(self._KEY)
             return
-        self._store.put(self._KEY, {
-            "saved_at": wall_now,
-            "messages": [
-                {"id": m.id, "target": m.target, "text": m.text, "raw": m.raw, "age_s": m.age_s,
-                 "timestamp": m.timestamp, "sent": m.sent}
-                for m in messages
-            ],
-        })  # fmt: skip
+        self._store.put(
+            self._KEY,
+            {
+                "saved_at": wall_now,
+                "messages": [
+                    {
+                        "id": m.id,
+                        "target": m.target,
+                        "text": m.text,
+                        "raw": m.raw,
+                        "age_s": m.age_s,
+                        "timestamp": m.timestamp,
+                        "sent": m.sent,
+                    }
+                    for m in messages
+                ],
+            },
+        )
 
     def take(self, wall_now: float) -> tuple[list[SavedMessage], float | None]:
         """The messages kept and the seconds since (None if the clock went back); the file
@@ -863,12 +917,16 @@ class OutboxRecords:
         entries = raw.get("messages") if isinstance(raw, dict) else None
         saved_at = raw.get("saved_at") if isinstance(raw, dict) else None
         messages = [
-            m for m in map(_saved_message, entries if isinstance(entries, list) else [])
+            m
+            for m in map(_saved_message, entries if isinstance(entries, list) else [])
             if m is not None
-        ][: self.LIMIT]  # fmt: skip
+        ][: self.LIMIT]
         if not isinstance(entries, list) or len(messages) < len(entries):
-            log.warning("state file %s: invalid messages of the last stop skipped, %d kept",
-                        self._store.path, len(messages))  # fmt: skip
+            log.warning(
+                "state file %s: invalid messages of the last stop skipped, %d kept",
+                self._store.path,
+                len(messages),
+            )
         elapsed = wall_now - saved_at if _finite(saved_at) and wall_now >= saved_at else None
         return messages, elapsed
 
@@ -884,10 +942,14 @@ def _saved_message(entry: object) -> SavedMessage | None:
         entry.get("sent", 0),
     )
     if (
-        _short(ident) and _short(target) and _text(text) and (raw is None or _text(raw))
-        and _age(age) and (timestamp is None or _small(timestamp, 0xFFFFFFFF))
+        _short(ident)
+        and _short(target)
+        and _text(text)
+        and (raw is None or _text(raw))
+        and _age(age)
+        and (timestamp is None or _small(timestamp, 0xFFFFFFFF))
         and _small(sent, 4)
-    ):  # fmt: skip
+    ):
         return SavedMessage(ident, target, text, raw, float(age), timestamp, sent)
     return None
 
@@ -911,17 +973,34 @@ def _saved_contact(entry: object) -> SavedContact | None:
     current = entry.get("current_s", telemetry.CURRENT_MIN_S)
     located_age = entry.get("located_age_s")
     if (
-        _age(due) and _small(failures, telemetry.MAX_FAILURES)
-        and _small(floods, telemetry.MAX_FAILURES) and _age_or_none(answered)
-        and _age_or_none(polled) and _age_or_none(flood) and _age_or_none(parked)
+        _age(due)
+        and _small(failures, telemetry.MAX_FAILURES)
+        and _small(floods, telemetry.MAX_FAILURES)
+        and _age_or_none(answered)
+        and _age_or_none(polled)
+        and _age_or_none(flood)
+        and _age_or_none(parked)
         and isinstance(located, bool)
-        and _small(still, telemetry.STILL_POLLS) and _small(lpp_bytes, telemetry.MAX_LPP_BYTES)
-        and lpp_bytes >= 1 and _age(current) and _age_or_none(located_age)
-    ):  # fmt: skip
+        and _small(still, telemetry.STILL_POLLS)
+        and _small(lpp_bytes, telemetry.MAX_LPP_BYTES)
+        and lpp_bytes >= 1
+        and _age(current)
+        and _age_or_none(located_age)
+    ):
         return SavedContact(
-            min(due, telemetry.MAX_DUE_S), failures, answered, polled, flood, floods, located,
-            still, lpp_bytes, parked, min(current, telemetry.MAX_DUE_S), located_age,
-        )  # fmt: skip
+            min(due, telemetry.MAX_DUE_S),
+            failures,
+            answered,
+            polled,
+            flood,
+            floods,
+            located,
+            still,
+            lpp_bytes,
+            parked,
+            min(current, telemetry.MAX_DUE_S),
+            located_age,
+        )
     return None
 
 
@@ -963,9 +1042,10 @@ def _int_map(raw: object) -> dict[str, int]:
     if not isinstance(raw, dict):
         return {}
     return {
-        key: value for key, value in raw.items()
+        key: value
+        for key, value in raw.items()
         if isinstance(value, int) and not isinstance(value, bool)
-    }  # fmt: skip
+    }
 
 
 def _string_map(raw: object) -> dict[str, str]:

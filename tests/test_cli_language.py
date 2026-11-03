@@ -516,20 +516,88 @@ SUMMARIES = {  # between them, every kind of line of check-config's summary
 # what the tests put into the texts: names, addresses, settings, the system's and paho's own
 # texts, and the command line's own names, which argparse's errors show
 VALUES = (
-    "tcp", "serial", "192.0.2.10", "broker.example.org", "/dev/ttyACM0", "gateway",
-    "meshcore/radio1/delivery", "meshcore/radio1", "homeassistant", "English", "alerts", "gate",
-    "nowhere", "open", "status", "Not authorized", "no route to the broker",
-    "the client is not connected", "the radio went away", "No such file or directory",
-    "Not a directory", "File exists", "no-such-group", "invalid_link", "Alice", "Bob", "Radio",
-    "v1.18.0", "X1", "2026-01-01", "chat", "repeater", "room", "sensor", "deny", "base",
-    "location", "environment", "Public", "name", "manual_add", "duty_cycle_percent", "autoadd",
-    "telemetry", "Old", "New", "true", "false", "hello", "off", "readings_days",
-    "positions_days", "None", "radio.device", "systemctl reload mosquitto",
-    "docs/deployment.md, troubleshooting", "meshcore-home-gateway listen --topic contact",
-    "meshcore-home-gateway", "command", "bogus", "maybe", "run", "check-config", "probe", "send",
-    "listen", "contacts", "dashboard", "config", "state", "on", "--serial", "--tcp", "--wait",
-    "--count", "--bogus", KEY, TWIN, OTHER, NODE, NODE_TWIN,
-)  # fmt: skip
+    "tcp",
+    "serial",
+    "192.0.2.10",
+    "broker.example.org",
+    "/dev/ttyACM0",
+    "gateway",
+    "meshcore/radio1/delivery",
+    "meshcore/radio1",
+    "homeassistant",
+    "English",
+    "alerts",
+    "gate",
+    "nowhere",
+    "open",
+    "status",
+    "Not authorized",
+    "no route to the broker",
+    "the client is not connected",
+    "the radio went away",
+    "No such file or directory",
+    "Not a directory",
+    "File exists",
+    "no-such-group",
+    "invalid_link",
+    "Alice",
+    "Bob",
+    "Radio",
+    "v1.18.0",
+    "X1",
+    "2026-01-01",
+    "chat",
+    "repeater",
+    "room",
+    "sensor",
+    "deny",
+    "base",
+    "location",
+    "environment",
+    "Public",
+    "name",
+    "manual_add",
+    "duty_cycle_percent",
+    "autoadd",
+    "telemetry",
+    "Old",
+    "New",
+    "true",
+    "false",
+    "hello",
+    "off",
+    "readings_days",
+    "positions_days",
+    "None",
+    "radio.device",
+    "systemctl reload mosquitto",
+    "docs/deployment.md, troubleshooting",
+    "meshcore-home-gateway listen --topic contact",
+    "meshcore-home-gateway",
+    "command",
+    "bogus",
+    "maybe",
+    "run",
+    "check-config",
+    "probe",
+    "send",
+    "listen",
+    "contacts",
+    "dashboard",
+    "config",
+    "state",
+    "on",
+    "--serial",
+    "--tcp",
+    "--wait",
+    "--count",
+    "--bogus",
+    KEY,
+    TWIN,
+    OTHER,
+    NODE,
+    NODE_TWIN,
+)
 # absolute paths, and keys, parts of keys and request ids as the command line shows them
 _MACHINE = re.compile(
     r"(?<![\w/])/[\w.@/-]*|cli-[0-9a-f]{8}|(?:[0-9a-f]{4} ){15}[0-9a-f]{4}"
@@ -690,14 +758,28 @@ def _delivered(_topic: str, payload: bytes) -> list[tuple[str, Any]]:
 
 def _report(**changes: Any) -> dict[str, Any]:
     """What probe reports, with these values changed."""
-    actions = {"name": "set", "manual_add": "kept", "duty_cycle_percent": "given_up",
-               "autoadd": "unsupported", "telemetry": "reported"}  # fmt: skip
+    actions = {
+        "name": "set",
+        "manual_add": "kept",
+        "duty_cycle_percent": "given_up",
+        "autoadd": "unsupported",
+        "telemetry": "reported",
+    }
     report = {
-        "name": "Radio", "public_key": KEY, "firmware": "v1.18.0", "firmware_code": 14,
-        "model": "X1", "build_date": "2026-01-01", "frequency_mhz": 869.618,
-        "bandwidth_khz": 62.5, "spreading_factor": 8, "coding_rate": 8, "tx_power_dbm": 22,
+        "name": "Radio",
+        "public_key": KEY,
+        "firmware": "v1.18.0",
+        "firmware_code": 14,
+        "model": "X1",
+        "build_date": "2026-01-01",
+        "frequency_mhz": 869.618,
+        "bandwidth_khz": 62.5,
+        "spreading_factor": 8,
+        "coding_rate": 8,
+        "tx_power_dbm": 22,
         "auto_add": {"manual": True, "types": [], "overwrite_oldest": None},
-        "position": None, "advert_location": "none",
+        "position": None,
+        "advert_location": "none",
         "telemetry": {"base": "deny", "location": "deny", "environment": "deny"},
         "airtime_factor": 9.0,
         "contacts": [
@@ -706,7 +788,10 @@ def _report(**changes: Any) -> dict[str, Any]:
         ],
         "channels": [{"index": 0, "name": "Public"}],
         "profile": {
-            "manage": "observe", "configured": True, "firmware_tested": True, "writes": False,
+            "manage": "observe",
+            "configured": True,
+            "firmware_tested": True,
+            "writes": False,
             "changes": {
                 name: {"live": "Old", "profile": "New", "action": action, "reason": None}
                 for name, action in actions.items()
@@ -720,7 +805,7 @@ def _report(**changes: Any) -> dict[str, Any]:
                 )
             },
         },
-    }  # fmt: skip
+    }
     return report | changes
 
 
@@ -735,8 +820,10 @@ REPORTS = [
     _report(),
     _report(
         auto_add={"manual": True, "types": ["chat", "room"], "overwrite_oldest": True},
-        position={"latitude": 53.55, "longitude": 9.99}, advert_location="share",
-        airtime_factor=None, profile=_profile("auto", False, changes=False),
+        position={"latitude": 53.55, "longitude": 9.99},
+        advert_location="share",
+        airtime_factor=None,
+        profile=_profile("auto", False, changes=False),
     ),
     _report(
         auto_add={"manual": True, "types": ["sensor"], "overwrite_oldest": False},
@@ -748,9 +835,10 @@ REPORTS = [
         profile=_profile("always", False, changes=True),
     ),
     _report(
-        auto_add={"manual": False, "types": [], "overwrite_oldest": None}, advert_location="share",
+        auto_add={"manual": False, "types": [], "overwrite_oldest": None},
+        advert_location="share",
     ),
-]  # fmt: skip
+]
 
 
 def _probed(monkeypatch: pytest.MonkeyPatch, report: dict[str, Any] | None) -> None:
@@ -797,10 +885,15 @@ def _send(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     send = ["send", "--config", _written(tmp, "config.toml", SUMMARIES["tcp"])]
     printed = [_main([*send, "nowhere", "hello"]).err, _main([*send, "alerts", "\udcff"]).err]
     for behaviour in (
-        {"unreachable": True}, {"refusal": "Not authorized"}, {"silent": True},
-        {"subscription": "Not authorized"}, {"subscription": None},
-        {"sending": "the client is not connected"}, {"sending": None}, {},
-    ):  # fmt: skip
+        {"unreachable": True},
+        {"refusal": "Not authorized"},
+        {"silent": True},
+        {"subscription": "Not authorized"},
+        {"subscription": None},
+        {"sending": "the client is not connected"},
+        {"sending": None},
+        {},
+    ):
         _broker(monkeypatch, **behaviour)
         printed.append(_main([*send, "alerts", "hello", "--wait", "0.01"]).err)
     _broker(monkeypatch, unreachable=True)
@@ -820,33 +913,50 @@ def _contacts(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
         ({"documents": _online(nodes=_listed("nodes"))}, ["add", NODE_LABEL]),
         ({"documents": _online(nodes=_listed("nodes", truncated=True))}, ["add", NODE_LABEL]),
         ({"documents": _online(nodes=_listed("nodes", NODE, NODE_TWIN))}, ["add", NODE_LABEL]),
-        ({"documents": _online(nodes=nodes), "answer": _contact_result("added")},
-         ["add", NODE_LABEL]),
+        (
+            {"documents": _online(nodes=nodes), "answer": _contact_result("added")},
+            ["add", NODE_LABEL],
+        ),
         ({"documents": _online()}, ["add", link, "--wait", "0.01"]),
         ({"documents": _online(), "sending": "the client is not connected"}, ["add", NODE]),
         ({}, ["remove", "xyz"]),
         ({"documents": _online(contacts=_listed("contacts"))}, ["remove", NODE_LABEL]),
-        ({"documents": _online(contacts=_listed("contacts", truncated=True))},
-         ["remove", NODE_LABEL]),
-        ({"documents": _online(contacts=contacts), "answer": _contact_result("removed")},
-         ["remove", KEY]),
+        (
+            {"documents": _online(contacts=_listed("contacts", truncated=True))},
+            ["remove", NODE_LABEL],
+        ),
+        (
+            {"documents": _online(contacts=contacts), "answer": _contact_result("removed")},
+            ["remove", KEY],
+        ),
         ({}, ["telemetry", KEY, "on", "--forget"]),
         ({"documents": _online(contacts=_listed("contacts"))}, [*telemetry, "off"]),
         ({"documents": _online(contacts=contacts)}, [*telemetry, "off", "--forget"]),
         ({"documents": _online(contacts=contacts)}, [*telemetry, "on"]),
         ({"unreachable": True}, ["list"]),
         ({"documents": _online()}, ["list"]),
-        ({"documents": {
-            TOPICS.availability: "offline", TOPICS.contacts: _listed("contacts", truncated=True),
-            TOPICS.nodes: _listed("nodes", NODE) | {"truncated": True, "total": 2},
-        }}, ["list"]),
-        ({"documents": _online(
-            contacts=_listed("contacts", truncated=True) | {"total": 1},
-            nodes=_listed("nodes", NODE, truncated=True) | {"total": None},
-        )}, ["list"]),
+        (
+            {
+                "documents": {
+                    TOPICS.availability: "offline",
+                    TOPICS.contacts: _listed("contacts", truncated=True),
+                    TOPICS.nodes: _listed("nodes", NODE) | {"truncated": True, "total": 2},
+                }
+            },
+            ["list"],
+        ),
+        (
+            {
+                "documents": _online(
+                    contacts=_listed("contacts", truncated=True) | {"total": 1},
+                    nodes=_listed("nodes", NODE, truncated=True) | {"total": None},
+                )
+            },
+            ["list"],
+        ),
         ({"unreachable": True}, ["link"]),
         ({"documents": _online()}, ["link"]),
-    ]  # fmt: skip
+    ]
     printed = []
     for behaviour, command in runs:
         _broker(monkeypatch, **behaviour)
@@ -879,11 +989,17 @@ def _usage(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """argparse's errors: the last line names the error; the usage line before it is names."""
     printed = []
     for argv in (
-        [], ["bogus"], ["probe"], ["probe", "--tcp", "[::1"], ["probe", "--tcp", ":1"],
-        ["probe", "--tcp", "192.0.2.10:0"], ["send", "--wait", "999999", "alerts", "hello"],
-        ["listen", "--count", "-1"], ["contacts", "telemetry", KEY, "maybe"],
+        [],
+        ["bogus"],
+        ["probe"],
+        ["probe", "--tcp", "[::1"],
+        ["probe", "--tcp", ":1"],
+        ["probe", "--tcp", "192.0.2.10:0"],
+        ["send", "--wait", "999999", "alerts", "hello"],
+        ["listen", "--count", "-1"],
+        ["contacts", "telemetry", KEY, "maybe"],
         ["check-config", "--bogus"],
-    ):  # fmt: skip
+    ):
         lines = _main(argv).err.splitlines()
         assert re.match("‹[^‹›]+›meshcore-home-gateway", lines[0])  # usage: the names
         printed.append(lines[-1])
@@ -900,9 +1016,14 @@ def _dashboard(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 SCENARIOS = {
-    "check-config": _check_config, "probe": _probe, "send": _send, "contacts": _contacts,
-    "render": _render, "usage": _usage, "dashboard": _dashboard,
-}  # fmt: skip
+    "check-config": _check_config,
+    "probe": _probe,
+    "send": _send,
+    "contacts": _contacts,
+    "render": _render,
+    "usage": _usage,
+    "dashboard": _dashboard,
+}
 
 
 def _unmarked(line: str) -> str:
@@ -1073,9 +1194,11 @@ def _machine_outputs(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[R
     ran = [_main([*probe, "--list", listing]) for listing in ("channels", "contacts", "profile")]
     ran.append(_main([*probe, "--json"]))
     requests = [
-        ("added", ["contacts", "add", NODE]), ("removed", ["contacts", "remove", KEY]),
-        ("excluded", ["contacts", "telemetry", KEY, "off"]), ("refused", ["contacts", "add", NODE]),
-    ]  # fmt: skip
+        ("added", ["contacts", "add", NODE]),
+        ("removed", ["contacts", "remove", KEY]),
+        ("excluded", ["contacts", "telemetry", KEY, "off"]),
+        ("refused", ["contacts", "add", NODE]),
+    ]
     for event_type, command in requests:
         _broker(monkeypatch, documents=documents, answer=_contact_result(event_type))
         ran.append(_main([*command, "--config", config, "--wait", "1"]))
@@ -1280,8 +1403,11 @@ def test_contacts_keep_their_english_notes(tmp_path: Path, monkeypatch: pytest.M
     """Every note and error of the contacts commands in the English it had before
     (design §6.12); the program's name before the errors, not before the notes on the contact."""
     by_id = re.compile(r"cli-[0-9a-f]{8}")
-    lines = [by_id.sub("cli-<id>", line) for text in _contacts(tmp_path, monkeypatch)
-             for line in text.splitlines()]  # fmt: skip
+    lines = [
+        by_id.sub("cli-<id>", line)
+        for text in _contacts(tmp_path, monkeypatch)
+        for line in text.splitlines()
+    ]
     assert [line.removeprefix(PREFIX) for line in lines] == CONTACTS_NOTES
     unnamed = ("key ", "warning: ", "the radio drops", "the gateway stops", "not on the radio")
     assert [line.startswith(PREFIX) for line in lines] == [
@@ -1367,8 +1493,10 @@ def test_no_translation_in_log_calls() -> None:
     }
     assert found == {}
     for logged in (
-        'log.warning(tr("x"))', 'logging.info("%s", cli.trn("a", "b", 2))',
-        'log.error("%s", i18n.translator(x).text("y"))', 'log.debug(m, extra=render(t))',
-    ):  # fmt: skip
+        'log.warning(tr("x"))',
+        'logging.info("%s", cli.trn("a", "b", 2))',
+        'log.error("%s", i18n.translator(x).text("y"))',
+        "log.debug(m, extra=render(t))",
+    ):
         assert _translated_in_log_calls(ast.parse(logged)) == [1]
     assert _translated_in_log_calls(ast.parse('log.warning("%s", warning)')) == []

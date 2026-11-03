@@ -78,9 +78,16 @@ LOCATED_S = 3600.0  # a position counts while an answer this recent carried one
 # The value lists of the interface: the constants, the Home Assistant options and the snapshot
 # are built from these types, so a producer cannot write another value (mypy).
 TelemetryState = Literal[
-    "waiting", "answering", "no_position", "away", "no_answer", "no_path", "look_alike",
-    "excluded", "off",
-]  # fmt: skip
+    "waiting",
+    "answering",
+    "no_position",
+    "away",
+    "no_answer",
+    "no_path",
+    "look_alike",
+    "excluded",
+    "off",
+]
 STATES: tuple[TelemetryState, ...] = get_args(TelemetryState)  # Home Assistant's options, in order
 CURRENT: frozenset[TelemetryState] = frozenset({"answering", "no_position"})
 TelemetryStatus = Literal["off", "on", "paused", "unsupported"]  # state.telemetry
@@ -201,17 +208,28 @@ def _fresh(t: float | None, now: float) -> bool:
 def _forgotten(s: _Contact, now: float) -> _Contact:
     """The schedule without its answers, due at once; when it was asked and flooded stays."""
     return _Contact(
-        due_at=now, polled_at=s.polled_at, flood_at=s.flood_at, floods=s.floods,
-        lpp_bytes=s.lpp_bytes, hops=s.hops, path_bytes=s.path_bytes, heard_at=s.heard_at,
-        tried_at=s.tried_at, last_flood=s.last_flood,
-    )  # fmt: skip
+        due_at=now,
+        polled_at=s.polled_at,
+        flood_at=s.flood_at,
+        floods=s.floods,
+        lpp_bytes=s.lpp_bytes,
+        hops=s.hops,
+        path_bytes=s.path_bytes,
+        heard_at=s.heard_at,
+        tried_at=s.tried_at,
+        last_flood=s.last_flood,
+    )
 
 
 class Scheduler:
     def __init__(
-        self, now: float, *, saved: Saved | None = None, elapsed_s: float | None = 0.0,
+        self,
+        now: float,
+        *,
+        saved: Saved | None = None,
+        elapsed_s: float | None = 0.0,
         lanes: LaneFactory | None = None,
-    ) -> None:  # fmt: skip
+    ) -> None:
         """`saved` and `elapsed_s`: the schedule of the last run and the time since it was
         saved; None if unknown (the clock went back), counted as nothing except for the last
         answers, which then count as more than a day old (fewer requests, never more).
@@ -440,10 +458,16 @@ class Scheduler:
         self.version += 1
 
     def answered(
-        self, key: str, now: float, cells: tuple[int, int] | None, lpp_bytes: int, *,
-        route: tuple[int | None, int | None] | None = None, late: bool = False,
+        self,
+        key: str,
+        now: float,
+        cells: tuple[int, int] | None,
+        lpp_bytes: int,
+        *,
+        route: tuple[int | None, int | None] | None = None,
+        late: bool = False,
         at: float | None = None,
-    ) -> bool:  # fmt: skip
+    ) -> bool:
         """An answer of the contact asked; `late`: after its wait, before the next request.
         `route`: hops and path bytes in the table the answer was accepted on. `at`: when it
         came (None: now); its answer and position count from then. True when it is back: its
@@ -585,9 +609,11 @@ class Scheduler:
         if _recent(s, now):
             return "away"
         if (
-            key in self._contacts and s.path_bytes is None and s.flood_waiting_since is None
+            key in self._contacts
+            and s.path_bytes is None
+            and s.flood_waiting_since is None
             and not _fresh(s.heard_at, now)
-        ):  # fmt: skip
+        ):
             return "no_path"
         return "no_answer" if s.failures else "waiting"
 
@@ -606,15 +632,17 @@ class Scheduler:
         and parked)."""
         return {
             key: max(0.0, now - s.located_at)
-            for key, s in self._everyone().items() if s.located_at is not None
-        }  # fmt: skip
+            for key, s in self._everyone().items()
+            if s.located_at is not None
+        }
 
     def answered_ages(self, now: float) -> dict[str, float]:
         """How long ago each contact's newest answer came (candidates, restored and parked)."""
         return {
             key: max(0.0, now - s.answered_at)
-            for key, s in self._everyone().items() if s.answered_at is not None
-        }  # fmt: skip
+            for key, s in self._everyone().items()
+            if s.answered_at is not None
+        }
 
     # --- persistence ----------------------------------------------------------------------------
 
@@ -630,14 +658,21 @@ class Scheduler:
 
         contacts = {
             key: SavedContact(
-                due_in_s=min(MAX_DUE_S, max(0.0, s.due_at - now)), failures=s.failures,
-                answered_age_s=age(s.answered_at), polled_age_s=age(s.polled_at),
-                flood_age_s=age(s.flood_at), floods=s.floods, located=s.located,
-                still=s.still, lpp_bytes=s.lpp_bytes, parked_age_s=age(since),
-                current_s=s.current_s, located_age_s=age(s.located_at),
+                due_in_s=min(MAX_DUE_S, max(0.0, s.due_at - now)),
+                failures=s.failures,
+                answered_age_s=age(s.answered_at),
+                polled_age_s=age(s.polled_at),
+                flood_age_s=age(s.flood_at),
+                floods=s.floods,
+                located=s.located,
+                still=s.still,
+                lpp_bytes=s.lpp_bytes,
+                parked_age_s=age(since),
+                current_s=s.current_s,
+                located_age_s=age(s.located_at),
             )
             for key, (since, s) in everyone.items()
-        }  # fmt: skip
+        }
         floods = tuple(now - t for t in self._floods if 0 <= now - t < HOUR_S)
         if self._own is not None and self._mesh is not None:
             own, mesh = _debt(self._own, now), _debt(self._mesh, now)
@@ -662,11 +697,17 @@ class Scheduler:
         for key, c in saved.contacts.items():
             s = _Contact(
                 due_at=now + max(0.0, min(MAX_DUE_S, c.due_in_s) - elapsed),
-                failures=c.failures, answered_at=answered(c.answered_age_s),
-                polled_at=at(c.polled_age_s), flood_at=at(c.flood_age_s), floods=c.floods,
-                located=c.located, still=c.still, lpp_bytes=c.lpp_bytes, current_s=c.current_s,
+                failures=c.failures,
+                answered_at=answered(c.answered_age_s),
+                polled_at=at(c.polled_age_s),
+                flood_at=at(c.flood_age_s),
+                floods=c.floods,
+                located=c.located,
+                still=c.still,
+                lpp_bytes=c.lpp_bytes,
+                current_s=c.current_s,
                 located_at=located(c.located_age_s),
-            )  # fmt: skip
+            )
             since = at(c.parked_age_s)
             if since is None:  # a candidate when saved: until compared with the next table
                 self._restored[key] = s

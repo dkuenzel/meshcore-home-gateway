@@ -229,9 +229,11 @@ def read_password(path: Path) -> str:
         ) from exc
     except UnicodeDecodeError as exc:
         raise ConfigError(
-            "{key}: cannot read {path}: not valid UTF-8 (byte {byte})", key=key, path=path,
+            "{key}: cannot read {path}: not valid UTF-8 (byte {byte})",
+            key=key,
+            path=path,
             byte=exc.start,
-        ) from exc  # fmt: skip
+        ) from exc
     password = text.removesuffix("\n").removesuffix("\r")
     if not password:
         raise ConfigError("{key}: {path} holds no password", key=key, path=path)
@@ -460,8 +462,11 @@ def _radio(s: _Section) -> RadioConfig:
             value=transport,
         )
     for name, used_by in (
-        ("device", "serial"), ("host", "tcp"), ("port", "tcp"), ("tcp_unauthenticated", "tcp"),
-    ):  # fmt: skip
+        ("device", "serial"),
+        ("host", "tcp"),
+        ("port", "tcp"),
+        ("tcp_unauthenticated", "tcp"),
+    ):
         if s.has(name) and transport != used_by:  # it would have no effect
             raise ConfigError(
                 "{key}: only used with transport = {transport!r}",
@@ -655,8 +660,9 @@ def _homeassistant(s: _Section) -> HomeAssistantConfig:
         raise ConfigError(
             "{key}: lower-case letters and digits, words joined by single underscores, at most "
             "20 characters, got {value!r}",
-            key=s.key("contact_entity_prefix"), value=entity_prefix,
-        )  # fmt: skip
+            key=s.key("contact_entity_prefix"),
+            value=entity_prefix,
+        )
     return HomeAssistantConfig(
         discovery=s.boolean("discovery", True),
         prefix=prefix,
@@ -772,33 +778,68 @@ def _diagnostics(s: _Section) -> DiagnosticsConfig:
 # --- rendering from installer answers -------------------------------------------------------
 
 _ANSWER_TYPES: dict[str, type] = {
-    "radio.transport": str, "radio.device": str, "radio.host": str, "radio.port": int,
+    "radio.transport": str,
+    "radio.device": str,
+    "radio.host": str,
+    "radio.port": int,
     "radio.tcp_unauthenticated": bool,
-    "radio.set_clock": bool, "radio.set_clock_max_days": int, "radio.profile.manage": str,
+    "radio.set_clock": bool,
+    "radio.set_clock_max_days": int,
+    "radio.profile.manage": str,
     "radio.profile.name": str,
-    "radio.profile.duty_cycle_percent": float, "radio.profile.protect_contacts": bool,
-    "mqtt.host": str, "mqtt.port": int, "mqtt.username": str, "mqtt.password": str,
+    "radio.profile.duty_cycle_percent": float,
+    "radio.profile.protect_contacts": bool,
+    "mqtt.host": str,
+    "mqtt.port": int,
+    "mqtt.username": str,
+    "mqtt.password": str,
     "mqtt.password_file": str,
-    "mqtt.tls": bool, "mqtt.ca_file": str, "mqtt.cert_file": str, "mqtt.key_file": str,
-    "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
+    "mqtt.tls": bool,
+    "mqtt.ca_file": str,
+    "mqtt.cert_file": str,
+    "mqtt.key_file": str,
+    "mqtt.client_id": str,
+    "mqtt.keepalive_s": int,
+    "mqtt.base_topic": str,
+    "mqtt.node_id": str,
     "mqtt.insecure": bool,
-    "homeassistant.discovery": bool, "homeassistant.prefix": str,
-    "homeassistant.device_name": str, "homeassistant.status_topic": str,
-    "homeassistant.contact_devices": int, "homeassistant.language": str,
-    "homeassistant.controls": bool, "homeassistant.hidden_targets": list,
+    "homeassistant.discovery": bool,
+    "homeassistant.prefix": str,
+    "homeassistant.device_name": str,
+    "homeassistant.status_topic": str,
+    "homeassistant.contact_devices": int,
+    "homeassistant.language": str,
+    "homeassistant.controls": bool,
+    "homeassistant.hidden_targets": list,
     "homeassistant.contact_entity_prefix": str,
-    "messages.ascii_only": bool, "messages.truncate": bool, "messages.dedup_window_s": float,
-    "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
-    "messages.flood_after": int, "messages.ignore_channels": list,
-    "messages.publish_channels": str, "messages.clean_received": bool,
-    "messages.confirm_nonce": bool, "messages.alert_targets": list,
-    "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
-    "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
-    "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,
-    "history.readings_days": float, "contacts.manage": bool, "contacts.heard_nodes": str,
-    "telemetry.enabled": bool, "telemetry.ask": str,
-    "diagnostics.publish_rx_log": bool, "diagnostics.log_level": str,
-}  # fmt: skip
+    "messages.ascii_only": bool,
+    "messages.truncate": bool,
+    "messages.dedup_window_s": float,
+    "messages.queue_size": int,
+    "messages.queue_ttl_s": float,
+    "messages.max_attempts": int,
+    "messages.flood_after": int,
+    "messages.ignore_channels": list,
+    "messages.publish_channels": str,
+    "messages.clean_received": bool,
+    "messages.confirm_nonce": bool,
+    "messages.alert_targets": list,
+    "airtime.budget_s_per_hour": float,
+    "airtime.burst_s": float,
+    "commands.senders": list,
+    "commands.words": list,
+    "commands.max_age_s": float,
+    "history.enabled": bool,
+    "history.messages_days": float,
+    "history.positions_days": float,
+    "history.readings_days": float,
+    "contacts.manage": bool,
+    "contacts.heard_nodes": str,
+    "telemetry.enabled": bool,
+    "telemetry.ask": str,
+    "diagnostics.publish_rx_log": bool,
+    "diagnostics.log_level": str,
+}
 
 HEADER = """\
 # meshcore-home-gateway configuration, written by the installer.

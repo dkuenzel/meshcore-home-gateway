@@ -69,9 +69,11 @@ def test_signed_voltage_and_current() -> None:
 def test_repeated_channel_and_type_stay_apart() -> None:
     payload = lpp.decode(LPP_T1000E)  # two temperatures on one channel
     assert payload.readings == (
-        Reading(1, 116, 0, (412,)), Reading(1, 103, 0, (234,)), Reading(1, 101, 0, (50,)),
+        Reading(1, 116, 0, (412,)),
+        Reading(1, 103, 0, (234,)),
+        Reading(1, 101, 0, (50,)),
         Reading(1, 103, 1, (200,)),
-    )  # fmt: skip
+    )
 
 
 def test_an_answer_without_location() -> None:
@@ -143,10 +145,33 @@ def test_every_fixed_size_type_is_known_with_its_size() -> None:
     """Sizes from CayenneLPP.h:27-111; polyline (240) has no fixed size and stops the decoder."""
     sizes = {code: sum(kind.sizes) for code, kind in lpp.TYPES.items()}
     assert sizes == {
-        0: 1, 1: 1, 2: 2, 3: 2, 100: 4, 101: 2, 102: 1, 103: 2, 104: 1, 113: 6, 115: 2, 116: 2,
-        117: 2, 118: 4, 120: 1, 121: 2, 125: 2, 128: 2, 130: 4, 131: 4, 132: 2, 133: 4, 134: 6,
-        135: 3, 136: 9, 142: 1,
-    }  # fmt: skip
+        0: 1,
+        1: 1,
+        2: 2,
+        3: 2,
+        100: 4,
+        101: 2,
+        102: 1,
+        103: 2,
+        104: 1,
+        113: 6,
+        115: 2,
+        116: 2,
+        117: 2,
+        118: 4,
+        120: 1,
+        121: 2,
+        125: 2,
+        128: 2,
+        130: 4,
+        131: 4,
+        132: 2,
+        133: 4,
+        134: 6,
+        135: 3,
+        136: 9,
+        142: 1,
+    }
     assert 240 not in lpp.TYPES
     assert lpp.decode(h("01 68 7d")).readings[0].values == (62.5,)  # humidity in half percent
 
@@ -174,9 +199,11 @@ def test_named_bme280() -> None:
     named = lpp.named(lpp.decode(LPP_BME280))
     assert (named.battery_v, named.mcu_temperature_c) == (4.12, 23.4)
     assert list(named.readings.items()) == [  # in the answer's order
-        ("ch2_temperature_c", 21.3), ("ch2_humidity_percent", 55.5),
-        ("ch2_barometric_pressure_hpa", 1013.2), ("ch2_altitude_m", 120.0),
-    ]  # fmt: skip
+        ("ch2_temperature_c", 21.3),
+        ("ch2_humidity_percent", 55.5),
+        ("ch2_barometric_pressure_hpa", 1013.2),
+        ("ch2_altitude_m", 120.0),
+    ]
 
 
 def test_the_t1000e_keeps_its_board_temperature_apart_from_the_mcu() -> None:
@@ -186,10 +213,15 @@ def test_the_t1000e_keeps_its_board_temperature_apart_from_the_mcu() -> None:
 
 
 def test_no_mcu_when_the_last_entry_is_no_channel_1_temperature() -> None:
-    assert lpp.named(lpp.decode(LPP_WIO_E5)) == Named(4.12, None, {
-        "ch1_temperature_c": 21.3, "ch1_humidity_percent": 55.5,
-        "ch1_barometric_pressure_hpa": 1013.2,
-    })  # fmt: skip
+    assert lpp.named(lpp.decode(LPP_WIO_E5)) == Named(
+        4.12,
+        None,
+        {
+            "ch1_temperature_c": 21.3,
+            "ch1_humidity_percent": 55.5,
+            "ch1_barometric_pressure_hpa": 1013.2,
+        },
+    )
     last_on_channel_2 = lpp.decode(h("01 74 01 9c 02 67 00 d5"))
     assert lpp.named(last_on_channel_2) == Named(4.12, None, {"ch2_temperature_c": 21.3})
 
@@ -205,20 +237,32 @@ def test_no_mcu_when_bytes_after_it_were_not_decoded() -> None:
 
 def test_no_battery_when_the_first_entry_is_no_channel_1_voltage() -> None:
     payload = lpp.decode(h("01 67 00 ea 01 74 01 9c 01 67 00 c8"))
-    assert lpp.named(payload) == Named(None, 20.0, {
-        "ch1_temperature_c": 23.4, "ch1_voltage_v": 4.12,
-    })  # fmt: skip
+    assert lpp.named(payload) == Named(
+        None,
+        20.0,
+        {
+            "ch1_temperature_c": 23.4,
+            "ch1_voltage_v": 4.12,
+        },
+    )
     first_on_channel_2 = lpp.decode(h("02 74 01 4a 01 74 01 9c"))
-    assert lpp.named(first_on_channel_2) == Named(None, None, {
-        "ch2_voltage_v": 3.3, "ch1_voltage_v": 4.12,
-    })  # fmt: skip
+    assert lpp.named(first_on_channel_2) == Named(
+        None,
+        None,
+        {
+            "ch2_voltage_v": 3.3,
+            "ch1_voltage_v": 4.12,
+        },
+    )
 
 
 def test_further_occurrences_are_numbered_from_2() -> None:
     payload = lpp.decode(h("01 74 01 9c 02 67 00 d5 02 67 00 d6 02 67 00 d7 01 67 00 ea"))
     assert lpp.named(payload).readings == {
-        "ch2_temperature_c": 21.3, "ch2_temperature_2_c": 21.4, "ch2_temperature_3_c": 21.5,
-    }  # fmt: skip
+        "ch2_temperature_c": 21.3,
+        "ch2_temperature_2_c": 21.4,
+        "ch2_temperature_3_c": 21.5,
+    }
     # counted after the battery and the MCU temperature are taken out
     again = lpp.decode(h("01 74 01 9c 01 74 01 4a 01 67 00 d5 01 67 00 ea"))
     assert lpp.named(again) == Named(4.12, 23.4, {"ch1_voltage_v": 3.3, "ch1_temperature_c": 21.3})
@@ -226,10 +270,12 @@ def test_further_occurrences_are_numbered_from_2() -> None:
 
 def test_gps_and_unpublished_types_are_no_readings() -> None:
     # battery, GPS on channel 2, presence, accelerometer, a temperature
-    payload = lpp.decode(h(
-        "01 74 01 9c 02 88 07 a5 f2 01 4e ad 00 2f 12 02 66 01 02 71 00 01 00 02 00 03"
-        " 02 67 00 d5"
-    ))  # fmt: skip
+    payload = lpp.decode(
+        h(
+            "01 74 01 9c 02 88 07 a5 f2 01 4e ad 00 2f 12 02 66 01 02 71 00 01 00 02 00 03"
+            " 02 67 00 d5"
+        )
+    )
     assert len(payload.readings) == 5
     assert lpp.named(payload) == Named(4.12, None, {"ch2_temperature_c": 21.3})
 
@@ -237,8 +283,10 @@ def test_gps_and_unpublished_types_are_no_readings() -> None:
 def test_types_without_a_unit_have_no_suffix() -> None:
     payload = lpp.decode(h("02 65 01 2c 02 64 00 00 00 07 02 02 00 7b"))
     assert lpp.named(payload).readings == {
-        "ch2_luminosity": 300.0, "ch2_generic": 7.0, "ch2_analog_input": 1.23,
-    }  # fmt: skip
+        "ch2_luminosity": 300.0,
+        "ch2_generic": 7.0,
+        "ch2_analog_input": 1.23,
+    }
 
 
 def test_the_vector_of_every_key() -> None:
@@ -287,11 +335,22 @@ def test_no_key_for_what_is_not_published(channel: int, lpp_type: int, n: int) -
 @pytest.mark.parametrize(
     "component",
     [
-        "ch0_temperature", "ch256_temperature", "ch02_temperature", "ch2_temperature_1",
-        "ch2_temperature_02", "ch2_temperature_c", "ch2_gps", "ch2_presence", "battery", "ch2_",
-        "ch_temperature", "ch2temperature", "ch\u0662_temperature", "",
+        "ch0_temperature",
+        "ch256_temperature",
+        "ch02_temperature",
+        "ch2_temperature_1",
+        "ch2_temperature_02",
+        "ch2_temperature_c",
+        "ch2_gps",
+        "ch2_presence",
+        "battery",
+        "ch2_",
+        "ch_temperature",
+        "ch2temperature",
+        "ch\u0662_temperature",
+        "",
     ],
-)  # fmt: skip
+)
 def test_parse_component_refuses_what_component_of_never_makes(component: str) -> None:
     assert lpp.parse_component(component) is None
 
@@ -299,10 +358,17 @@ def test_parse_component_refuses_what_component_of_never_makes(component: str) -
 @pytest.mark.parametrize(
     "key",
     [
-        lpp.BATTERY_V, lpp.MCU_TEMPERATURE_C, "ch2_temperature", "ch2_temperature_2",
-        "ch2_luminosity_lx", "ch2_voltage_c", "ch0_temperature_c", "ch2_gps", "",
+        lpp.BATTERY_V,
+        lpp.MCU_TEMPERATURE_C,
+        "ch2_temperature",
+        "ch2_temperature_2",
+        "ch2_luminosity_lx",
+        "ch2_voltage_c",
+        "ch0_temperature_c",
+        "ch2_gps",
+        "",
     ],
-)  # fmt: skip
+)
 def test_component_of_refuses_what_reading_key_never_makes(key: str) -> None:
     assert lpp.component_of(key) is None
 
