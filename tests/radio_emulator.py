@@ -22,6 +22,7 @@ from meshcore_home_gateway.protocol.packet import (
     PAYLOAD_TYPE_ADVERT,
     SIGNATURE_BYTES,
 )
+from meshcore_home_gateway.radio.transport import ClosedByRadioError
 
 SELF_KEY = bytes(range(0x10, 0x30))
 START_TIME = 1_800_000_000
@@ -138,6 +139,7 @@ class EmulatedRadio:
     stats: bool = True  # firmware with GET_STATS (1.11 and later)
     packets_received: int = 120
     tx_airtime_s: int = 41  # the radio's own time on air, as GET_STATS counts it
+    uptime_s: int = 3600  # since the radio started, as GET_STATS reports it
     remotes: dict[bytes, RemoteCompanion] = field(default_factory=dict)  # key -> its companion
     auto_ack: bool = True
     ack_round_trip_ms: int = 1500
@@ -222,6 +224,10 @@ class EmulatedRadio:
 
     def disconnect(self) -> None:
         self._out.put_nowait(ConnectionError("emulated radio: unplugged"))
+
+    def close_link(self) -> None:
+        """The radio ends the TCP connection, as when another client connects (SEC-003)."""
+        self._out.put_nowait(ClosedByRadioError("emulated radio: closed by the radio"))
 
     def queue_direct_message(
         self, prefix: bytes, text: str, timestamp: int, *, v3: bool = True, snr_q: int = 24,
@@ -543,7 +549,7 @@ class EmulatedRadio:
     def _stats(self, kind: int) -> None:
         """GET_STATS (MyMesh.cpp:1914-1964)."""
         if kind == 0:
-            body = struct.pack("<HIHB", 4012, 3600, 0, 0)
+            body = struct.pack("<HIHB", 4012, self.uptime_s, 0, 0)
         elif kind == 1:
             body = struct.pack("<hbbII", -118, -97, 26, self.tx_airtime_s, 300)
         elif kind == 2:

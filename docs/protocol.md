@@ -54,8 +54,18 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
   continuously.
 * **TCP** (WiFi companion builds, `src/helpers/wifi/SerialWifiInterface.cpp`): same framing on port
   5000 (`examples/companion_radio/main.cpp:46-48`), **no authentication**, one client at a time (a
-  new connection replaces the old one, :57-70), and a 4-frame send queue that drops frames when
-  full (`SerialWifiInterface.h:27`, :21-40).
+  new connection replaces the old one, which the radio closes, :57-70), and a 4-frame send queue
+  that drops frames when full (`SerialWifiInterface.h:27`, :21-40). Every command is open to any
+  client, also these: the release firmware sets `ENABLE_PRIVATE_KEY_IMPORT=1` and
+  `ENABLE_PRIVATE_KEY_EXPORT=1` in the common `build_flags` of `platformio.ini` at
+  `companion-v1.18.0` (lines 33-34, "NOTE: comment these out for more secure firmware"; no variant
+  removes them, two set them again), so `EXPORT_PRIVATE_KEY` (23) answers with the radio's 64-byte
+  private key and `IMPORT_PRIVATE_KEY` (24) replaces it (`MyMesh.cpp:1528-1556`; a build without
+  the flags answers `DISABLED`). MeshCore's direct messages have **no forward secrecy**: the
+  secret of a pair is a static ECDH of the two identity keys (`ed25519_key_exchange` of the keys
+  transposed to Curve25519, cached per contact; `src/Identity.cpp:155-157`, `src/Identity.h:70-81`,
+  `ContactInfo::getSharedSecret`), so whoever holds the radio's key decrypts every direct message,
+  request and answer of the radio, also those recorded from the air before.
 * **Several interfaces at once** (`src/helpers/MultiSerialInterface.h:160-198`): every response and
   push goes to all interfaces, and whichever client sends `SYNC_NEXT_MESSAGE` first takes the
   message from the shared queue. The gateway should be the radio's only client.
@@ -212,6 +222,11 @@ booted:
 | 0 core | 9 | battery uint16 mV, uptime uint32 s, error flags uint16 (0x01 send queue full, 0x02 channel activity detection timed out, 0x04 receive start timed out; `src/Dispatcher.h:110-112`), packets waiting to be sent uint8 |
 | 1 radio | 12 | noise floor int16 dBm, last RSSI int8 dBm, last SNR int8 × 4, time on air sent and received uint32 s each (everything the radio sent: messages, acknowledgements, adverts, repeats) |
 | 2 packets | 28 | packets received, sent, sent flood, sent direct, received flood, received direct, receive errors, uint32 each; the last one from 1.18 on (24 bytes before) |
+
+The uptime is `millis() / 1000` (`MyMesh.cpp:1921-1924`): it starts again only when the radio
+restarts, and wraps after 49.7 days with `millis()`. A TCP link that ends while the uptime goes on
+was closed by something else than a restart: over TCP, as the radio closes the link itself, by
+another client that connected (`core.link`).
 
 **`CHANNEL_INFO`** (18), 50 bytes: index (1), name (2–33, NUL-terminated; **the bytes after the NUL
 are stale buffer contents**), secret (34–49) (`MyMesh.cpp:1752-1766`). The gateway does not keep

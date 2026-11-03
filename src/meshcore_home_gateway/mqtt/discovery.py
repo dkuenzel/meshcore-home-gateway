@@ -188,6 +188,19 @@ def discovery_payload(
             "command", "event", ha_name("Command"), state_topic=topics.command,
             event_types=sorted(config.commands.words),
         )  # fmt: skip
+    if config.radio.transport == "tcp":  # USB has no other client
+        components["radio_link_contested"] = component(
+            # Translators: binary sensor (problem) of the gateway: on for an hour after another
+            # client took over the TCP link to its own radio, which lets that client control the
+            # radio and read its private key
+            "radio_link_contested", "binary_sensor", ha_name("Radio link taken over"),
+            device_class="problem", icon="mdi:lan-disconnect",
+            value_template=(
+                "{{ ('ON' if value_json.radio_link_contested else 'OFF') "
+                "if value_json.get('radio_link_contested') is not none else None }}"
+            ),
+            **diagnostic,
+        )  # fmt: skip
     components.update(_mesh_components(component, topics, ha_name))
     if config.homeassistant.contact_devices:
         components["show_hidden"] = component(

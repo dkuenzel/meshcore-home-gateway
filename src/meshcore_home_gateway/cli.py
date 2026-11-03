@@ -532,7 +532,11 @@ def _summary(config: Config, login: str) -> list[str]:
     # Translators: a line of check-config's summary. Its value starts in the column where the
     # other lines start theirs (12 in English): pad the label with spaces to keep one column.
     return [
-        tr("  radio      {transport} {where}", transport=radio.transport, where=where),
+        tr("  radio      {transport} {where}", transport=radio.transport, where=where)
+        if radio.transport == "serial"
+        # Translators: the radio's TCP interface has no authentication (SEC-003)
+        else tr("  radio      tcp {where}, unauthenticated: anyone who reaches it controls the "
+                "radio", where=where),
         tr("  broker     {host}:{port} (TLS), {login}, topics {root}/...", **broker)
         if mqtt.tls
         else tr("  broker     {host}:{port}, {login}, topics {root}/...", **broker),

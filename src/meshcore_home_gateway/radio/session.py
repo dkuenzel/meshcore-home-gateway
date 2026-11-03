@@ -37,7 +37,7 @@ from meshcore_home_gateway.core.model import InboundMessage
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import PUSH_MIN, AutoAdd, Push, Response, StatsType
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
-from meshcore_home_gateway.radio.transport import Transport
+from meshcore_home_gateway.radio.transport import ClosedByRadioError, Transport
 
 log = logging.getLogger(__name__)
 
@@ -262,6 +262,7 @@ class CompanionSession:
         self.tuning: codec.TuningParams | None = None  # None: not known to the firmware
         self.stats: StatsRead | None = None
         self._stats_supported = True
+        self.closed_by_radio = False  # the radio ended the TCP connection (core.link)
 
     # --- life cycle -----------------------------------------------------------------------------
 
@@ -704,6 +705,7 @@ class CompanionSession:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - any failure ends the session
+            self.closed_by_radio = isinstance(exc, ClosedByRadioError)
             self._end(exc if isinstance(exc, RadioError) else RadioError(str(exc) or repr(exc)))
 
     async def _dispatch(self, frame: bytes) -> None:

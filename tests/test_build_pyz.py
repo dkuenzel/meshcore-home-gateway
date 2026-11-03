@@ -107,7 +107,7 @@ msgstr "Entfernt"
 
 
 CONFIG = (
-    '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
+    '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n'
     '[mqtt]\nhost = "broker.example.org"\nnode_id = "radio1"\n'
 )
 

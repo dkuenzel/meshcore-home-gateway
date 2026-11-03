@@ -175,6 +175,7 @@ node_id = "{NODE}"
 MAXIMAL_TEXT = f"""
 [radio]
 transport = "tcp"
+tcp_unauthenticated = true
 host = "192.0.2.10"
 [radio.profile]
 duty_cycle_percent = 20
@@ -202,6 +203,7 @@ enabled = true
 ANSWERED = f"""
 [radio]
 transport = "tcp"
+tcp_unauthenticated = true
 host = "192.0.2.10"
 port = 5000
 set_clock = false
@@ -741,15 +743,19 @@ def _literal(dataclass_type: type, name: str) -> list[str]:
     return list(typing.get_args(annotation))
 
 
-def _transport(value: str) -> dict[str, str | None]:
-    """What a file with this transport sets besides: its device or its host, not the other."""
+def _transport(value: str) -> dict[str, str | bool | None]:
+    """What a file with this transport sets besides: its device or its host, not the other, and
+    over TCP the acknowledgement that the interface has no authentication (SEC-003)."""
     return {
         "radio.device": "/dev/ttyACM0" if value == "serial" else None,
         "radio.host": "192.0.2.10" if value == "tcp" else None,
+        "radio.tcp_unauthenticated": True if value == "tcp" else None,
     }
 
 
-def _choice_keys() -> dict[str, tuple[Sequence[str], Callable[[str], dict[str, str | None]]]]:
+def _choice_keys() -> dict[
+    str, tuple[Sequence[str], Callable[[str], dict[str, str | bool | None]]]
+]:
     """The strings that the parser checks against a list after reading them: the candidates (a
     Literal of the dataclass, or the module's list), and what a file sets besides each value."""
     return {
@@ -847,7 +853,7 @@ def _setting(method: str, arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _choices(
-    key: str, candidates: Sequence[str], besides: Callable[[str], dict[str, str | None]]
+    key: str, candidates: Sequence[str], besides: Callable[[str], dict[str, str | bool | None]]
 ) -> list[str]:
     """The candidates that the parser takes for `key`; it must refuse any other value."""
 

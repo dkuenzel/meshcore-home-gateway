@@ -194,6 +194,9 @@ msgid ""
 "After re-plugging the radio: {command}"
 msgstr ""
 
+msgid "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again."
+msgstr ""
+
 msgid ""
 "The radio's firmware is not tested: the service only reports what differs\n"
 "(radio.profile.manage = always sets it anyway):"
@@ -206,6 +209,9 @@ msgid "Use TLS for the broker connection? Without it the password, the messages,
 msgstr ""
 
 msgid "With radio.profile.manage = observe the service only reports what differs:"
+msgstr ""
+
+msgid "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container"
 msgstr ""
 
 msgid "all settings: container, network, topics, Home Assistant"

@@ -499,6 +499,7 @@ SCENARIOS = {
     "advanced, a gateway, a radio over TCP": Scenario(
         lambda h: ["xx", "advanced", "106", "meshcore-home-gateway", "local-lvm", "4", "512",
                    "vmbr1", "192.0.2.20/24", "192.0.2.1", "local", "tcp", "192.0.2.30", "5000",
+                   "yes",
                    "broker.example.org", "yes", "8883", "bridge", "pw", "meshcore", "gw1", "yes",
                    "Mesh radio", "en", "yes", "yes", "1", "", "", "x" * 32, "Mesh gateway"],
         {},

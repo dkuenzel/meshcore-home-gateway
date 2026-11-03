@@ -50,6 +50,7 @@ CONFIG = parse_config(
     f"""
 [radio]
 transport = "tcp"
+tcp_unauthenticated = true
 host = "192.0.2.10"
 [mqtt]
 host = "broker.example.org"
@@ -77,7 +78,7 @@ STATE_KEYS = {
     "queue", "radio_name", "public_key", "model", "firmware", "frequency_mhz", "bandwidth_khz",
     "spreading_factor", "coding_rate", "tx_power_dbm", "contact_link", "version", "telemetry",
     "telemetry_reason", "telemetry_airtime_1h_s", "telemetry_mesh_airtime_1h_s",
-    "radio_clock_offset_s",
+    "radio_clock_offset_s", "radio_link_contested",
 }  # fmt: skip
 
 
@@ -143,7 +144,7 @@ def test_entities_and_their_sources() -> None:
         "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
         "advert_position", "look_alike", "contact", "node", "show_hidden", "profile", "setting",
         "telemetry_status", "telemetry_airtime", "telemetry_mesh_airtime", "telemetry",
-        "radio_clock_offset",
+        "radio_clock_offset", "radio_link_contested",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -196,9 +197,26 @@ def test_show_hidden_only_with_contact_devices() -> None:
 
 def test_command_entity_only_with_command_words() -> None:
     plain = parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
     )
     assert "command" not in discovery_payload(plain, Topics("meshcore", "n"))["cmps"]
+
+
+def test_a_taken_tcp_link_is_a_problem_only_over_tcp() -> None:
+    """SEC-003: another client took the radio's TCP link; over USB there is no other client."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["radio_link_contested"]
+    assert (sensor["p"], sensor["device_class"]) == ("binary_sensor", "problem")
+    assert (sensor["entity_category"], sensor["state_topic"]) == ("diagnostic", TOPICS.state)
+    # unknown (null, or a state document of an earlier version): neither on nor off
+    assert (
+        "value_json.get('radio_link_contested') is not none else None" in (sensor["value_template"])
+    )
+    usb = parse_config(
+        '[radio]\ntransport = "serial"\ndevice = "/dev/ttyACM0"\n'
+        '[mqtt]\nhost = "h"\nnode_id = "n"\n'
+    )
+    assert "radio_link_contested" not in discovery_payload(usb, Topics("meshcore", "n"))["cmps"]
 
 
 def test_the_device_shows_the_radio_once_it_is_known() -> None:
@@ -260,7 +278,8 @@ def test_the_companion_position_sensor_follows_the_households_companions() -> No
 def test_the_telemetry_entities_are_always_there() -> None:
     """Also with telemetry off: a disabled component that goes takes the whole device away."""
     off = parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "radio-1"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "radio-1"\n'
         "[telemetry]\nenabled = false\n"
     )
     for config in (CONFIG, off):
@@ -342,7 +361,8 @@ def test_select_and_text_components_can_be_removed() -> None:
 def test_packet_sensors_only_with_the_rx_log_and_disabled_by_default() -> None:
     assert not {"rx_rssi", "rx_snr"} & set(discovery_payload(CONFIG, TOPICS)["cmps"])
     rx = parse_config(
-        '[radio]\ntransport = "tcp"\nhost = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "[diagnostics]\npublish_rx_log = true\n"
     )
     topics = Topics("meshcore", "n")

@@ -115,6 +115,12 @@ msgstr ""
 msgid "  login      accepted by {host}:{port}"
 msgstr ""
 
+#. the radio's TCP interface has no authentication (SEC-003)
+#: src/meshcore_home_gateway/cli.py
+#, python-brace-format
+msgid "  radio      tcp {where}, unauthenticated: anyone who reaches it controls the radio"
+msgstr ""
+
 #. a line of check-config's summary. Its value starts in the column where the
 #. other lines start theirs (12 in English): pad the label with spaces to keep one column.
 #: src/meshcore_home_gateway/cli.py
@@ -1016,6 +1022,12 @@ msgstr ""
 msgid "{key}: set exactly one of 'channel' or 'contact'"
 msgstr ""
 
+#. tcp_unauthenticated = true is a setting; keep it as it is.
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: the radio's TCP interface has no authentication: anyone who reaches it controls the radio and can read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use USB, or set tcp_unauthenticated = true for a radio in a network that only the gateway reaches (docs/configuration.md, [radio])"
+msgstr ""
+
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: unknown answer"
@@ -1776,6 +1788,14 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Radio link"
+msgstr ""
+
+#. binary sensor (problem) of the gateway: on for an hour after another
+#. client took over the TCP link to its own radio, which lets that client control the
+#. radio and read its private key
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Radio link taken over"
 msgstr ""
 
 #. sensor (enum) of the gateway: whether its radio's settings match the

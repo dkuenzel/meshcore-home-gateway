@@ -17,7 +17,7 @@ from meshcore_home_gateway.protocol.codes import NodeType
 from tests.test_contact_devices import ALICE, BOB, HILL, Clock, devices, mesh_of, node
 
 CONFIG = (
-    '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
+    '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n'
     '[mqtt]\nhost = "broker.example.org"\nnode_id = "radio-1"\n'
 )
 HERE = Position(52.1, 9.2)

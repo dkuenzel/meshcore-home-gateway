@@ -16,13 +16,26 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | --- | --- | --- |
 | `transport` | required | `serial` (USB) or `tcp` (WiFi companion firmware) |
 | `device` | – | serial device, an absolute path; use the stable `/dev/serial/by-id/...` path. Required for `serial`, an error with `tcp` |
-| `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial`. The TCP interface has no authentication |
+| `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial` |
 | `port` | `5000` | TCP port; only with `tcp` |
+| `tcp_unauthenticated` | `false` | required as `true` with `tcp`, an error with `serial`: says that you know what the TCP interface exposes (below) |
 | `set_clock` | `true` | move the radio clock forward to the host's clock at connect, when the host's clock is plausible (`set_clock_max_days`); it cannot be moved back |
 | `set_clock_max_days` | `30` | the largest step, in days, by which `set_clock` moves a radio clock that was set, 0–3650; a host clock further ahead, before the gateway's release or more than ten years after it is not written (a warning says why). A radio without a clock chip restarts at the newest time it wrote to a contact, so a radio that lay unused needs a larger step once. `0`: no limit (the behaviour of earlier versions) |
 
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it
 would put nRF52 radios into their bootloader.
+
+The TCP interface of the WiFi companion firmware has no authentication: whoever reaches the
+radio's port controls the radio. The release firmware also hands out the radio's private key to
+any client and takes a new one (`ENABLE_PRIVATE_KEY_EXPORT` and `_IMPORT` in its build flags), and
+MeshCore's direct messages have no forward secrecy: with the key, every direct message of the
+radio can be decrypted, also those recorded from the air before; the household's commands, the
+alerts and the companions' positions are direct messages. Prefer USB. For TCP, put the radio in a
+network that only the gateway's host reaches (a VLAN of its own, or a second SSID with client
+isolation), never the household's WiFi, and if you build the firmware yourself, leave the two
+flags out, as their own comment in `platformio.ini` suggests. The gateway tells when another
+client took the link (`radio_link_contested` in [`state`](mqtt-api.md#state-state);
+[deployment.md](deployment.md#5-troubleshooting) says what to do then).
 
 ## `[radio.profile]`
 

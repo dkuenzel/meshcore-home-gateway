@@ -64,6 +64,8 @@ class RadioConfig:
     device: str | None = None
     host: str | None = None
     port: int = 5000
+    # the TCP interface has no authentication: anyone who reaches it owns the radio (SEC-003)
+    tcp_unauthenticated: bool = False
     set_clock: bool = True
     set_clock_max_days: int = 30  # 0: no limit
     profile: ProfileConfig = field(default_factory=ProfileConfig)
@@ -370,7 +372,9 @@ def _radio(s: _Section) -> RadioConfig:
             key=s.key("transport"),
             value=transport,
         )
-    for name, used_by in (("device", "serial"), ("host", "tcp"), ("port", "tcp")):
+    for name, used_by in (
+        ("device", "serial"), ("host", "tcp"), ("port", "tcp"), ("tcp_unauthenticated", "tcp"),
+    ):  # fmt: skip
         if s.has(name) and transport != used_by:  # it would have no effect
             raise ConfigError(
                 "{key}: only used with transport = {transport!r}",
@@ -383,11 +387,23 @@ def _radio(s: _Section) -> RadioConfig:
         raise ConfigError("{key}: required for the serial transport", key=s.key("device"))
     if transport == "tcp" and host is None:
         raise ConfigError("{key}: required for the tcp transport", key=s.key("host"))
+    unauthenticated = s.boolean("tcp_unauthenticated", False)
+    if transport == "tcp" and not unauthenticated:
+        # Translators: tcp_unauthenticated = true is a setting; keep it as it is.
+        raise ConfigError(
+            "{key}: the radio's TCP interface has no authentication: anyone who reaches it "
+            "controls the radio and can read its private key, which decrypts every direct "
+            "message of the radio, also earlier ones recorded from the air. Use USB, or set "
+            "tcp_unauthenticated = true for a radio in a network that only the gateway reaches "
+            "(docs/configuration.md, [radio])",
+            key=s.key("tcp_unauthenticated"),
+        )
     return RadioConfig(
         transport=cast(Literal["serial", "tcp"], transport),
         device=device,
         host=host,
         port=s.integer("port", 5000, 1, 65535),
+        tcp_unauthenticated=unauthenticated,
         set_clock=s.boolean("set_clock", True),
         set_clock_max_days=s.integer("set_clock_max_days", 30, 0, 3650),
         profile=_checked(s.section("profile"), _profile),
@@ -641,6 +657,7 @@ def _diagnostics(s: _Section) -> DiagnosticsConfig:
 
 _ANSWER_TYPES: dict[str, type] = {
     "radio.transport": str, "radio.device": str, "radio.host": str, "radio.port": int,
+    "radio.tcp_unauthenticated": bool,
     "radio.set_clock": bool, "radio.set_clock_max_days": int, "radio.profile.manage": str,
     "radio.profile.name": str,
     "radio.profile.duty_cycle_percent": float, "radio.profile.protect_contacts": bool,

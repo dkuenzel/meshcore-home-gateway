@@ -33,6 +33,7 @@ node_id = "radio1"
 FULL = f"""
 [radio]
 transport = "tcp"
+tcp_unauthenticated = true
 host = "192.0.2.10"
 port = 5000
 set_clock = false
@@ -120,6 +121,7 @@ def test_full_configuration_is_read_completely() -> None:
         "192.0.2.10",
         5000,
     )
+    assert config.radio.tcp_unauthenticated is True
     assert config.radio.set_clock is False
     assert config.radio.set_clock_max_days == 7
     assert config.mqtt.password == 's3cret "quoted"'
@@ -156,7 +158,7 @@ COMMANDS = f'[commands]\nsenders = ["{KEY}"]\nwords = ["status"]\n'
 
 def _broker(host: str, login: str = "", tls: bool = False) -> str:
     return (
-        '[radio]\ntransport = "tcp"\nhost = "192.0.2.10"\n'
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n'
         f'[mqtt]\nhost = "{host}"\nnode_id = "radio1"\n{login}' + ("tls = true\n" if tls else "")
     )
 
@@ -227,6 +229,22 @@ def test_the_history_is_on_by_default_and_bounded() -> None:
         (
             '[radio]\ntransport = "tcp"\nhost = "192.0.2.1"\ndevice = "/dev/ttyACM0"',
             "radio.device: only used with transport = 'serial'",
+        ),
+        (  # SEC-003: anyone who reaches the interface owns the radio and its key
+            '[radio]\ntransport = "tcp"\nhost = "192.0.2.1"',
+            "radio.tcp_unauthenticated: the radio's TCP interface has no authentication: anyone",
+        ),
+        (
+            '[radio]\ntransport = "tcp"\nhost = "192.0.2.1"\ntcp_unauthenticated = false',
+            "radio.tcp_unauthenticated: the radio's TCP interface has no authentication",
+        ),
+        (
+            '[radio]\ntransport = "tcp"\nhost = "192.0.2.1"\ntcp_unauthenticated = "yes"',
+            "radio.tcp_unauthenticated: expected true or false",
+        ),
+        (
+            '[radio]\ntransport = "serial"\ndevice = "/dev/ttyACM0"\ntcp_unauthenticated = true',
+            "radio.tcp_unauthenticated: only used with transport = 'tcp'",
         ),
         ('[mqtt]\nnode_id = "n"', "mqtt.host: required"),
         ('[mqtt]\nhost = "h"\nnode_id = "Bad Name"', "mqtt.node_id"),
@@ -355,6 +373,16 @@ def test_rendering_names_the_offending_answer(answer: str, message: str) -> None
 def test_rendering_rejects_lines_without_an_equals_sign() -> None:
     with pytest.raises(ConfigError, match="line 1"):
         render_config("no equals sign")
+
+
+def test_a_tcp_radio_is_answered_with_its_acknowledgement() -> None:
+    """The installer writes `radio.tcp_unauthenticated` once the user accepted the risk."""
+    serial = "radio.transport=serial\nradio.device=/dev/serial/by-id/usb-Example_Radio-if00\n"
+    tcp = ANSWERS.replace(serial, "radio.transport=tcp\nradio.host=192.0.2.10\n")
+    accepted = parse_config(render_config(tcp + "radio.tcp_unauthenticated=true\n"))
+    assert accepted.radio.tcp_unauthenticated is True
+    with pytest.raises(ConfigError, match=r"radio\.tcp_unauthenticated: the radio's TCP"):
+        parse_config(render_config(tcp))
 
 
 def test_rendering_escapes_control_characters() -> None:
