@@ -43,7 +43,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SEC-005 | fix | The gateway subscribes to its own documents and restores any it finds changed by another client (rate-limited, with a warning); the integrity model is stated. Stamps (`published_at`) are not added: they would change every document at every publish and a forger copies them | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | SEC-006 | fix | Announcements after a birth are never postponed past the first due time and come at most every 30 s; repeated births are logged; the default client id gets a random suffix per start (**Breaking**) | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | SEC-007 | fix | `name_taken` in the `nodes` document and the `node` event, a mark in the select's labels, contact devices of the same name disambiguated by their key digits; names compared after NFKC and case folding | pending: names |
-| SEC-008 | fix | `[homeassistant] controls = false` separates Home Assistant's controls from the function (MQTT and the command line keep working): they stay announced but always unavailable, which Home Assistant leaves out of its actions, because removing a disabled entity takes its whole device away; `[homeassistant] hidden_targets` (instead of a per-target `expose`, which the installer's answers could not carry) hides a target's notify entity; the guide explains Home Assistant's user model | pending: ha-exposure |
+| SEC-008 | fix | `[homeassistant] controls = false` separates Home Assistant's controls from the function (MQTT and the command line keep working): they stay announced but always unavailable, which Home Assistant leaves out of its actions, because removing a disabled entity takes its whole device away; `[homeassistant] hidden_targets` (instead of a per-target `expose`, which the installer's answers could not carry) hides a target's notify entity; the guide explains Home Assistant's user model | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | SEC-009 | fix | `[mqtt] password_file` keeps the secret out of `config.toml` and out of `config answers`; the installer writes it; a systemd credential is documented | pending: password |
 | SEC-010 | fix | The history keeps node rows only for the contacts and the heard nodes the gateway keeps (the finding's option 3, tighter than a row cap), for 7 days as ADR 0016 says. No `[history] nodes_days` setting, as first planned: beyond the 7 days of the memory it would change nothing | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | SEC-011 | fix | The `nodes` document coalesced (at most every 30 s while only heard nodes change); no table read after a `NEW_ADVERT` on firmware that never uses it for a contact; once-heard nodes evicted before nodes heard again | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
@@ -72,7 +72,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ARC-012 | fix | A `health` section in `state` and a *Gateway degraded* problem sensor; observer errors counted and their log rate-limited | pending: robustness |
 | ARC-013 | fix | The outgoing queue is kept across restarts and drained on stop within a longer stop timeout (ADR 0029 supersedes the non-goal) | pending: outbox |
 | ARC-014 | fix | `[mqtt] protocol = "5"` as an option: message expiry, correlation data and user properties; 3.1.1 stays the default | pending: mqtt5 |
-| ARC-015 | fix | `[homeassistant] contact_entity_prefix` for a second gateway; the guide shows one `person` for two trackers | pending: ha-exposure |
+| ARC-015 | fix | `[homeassistant] contact_entity_prefix` for a second gateway; the guide shows one `person` for two trackers | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | ARC-016 | fix | A "tested with" table in `docs/home-assistant.md`, kept per release, and a checklist step against the newest Home Assistant. A CI job against an unpinned Home Assistant is rejected: it would install releases inside the cooldown the dependency policy keeps out | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-017 | fix | The eight choices recorded as paragraphs of design §11 | pending: threat-model |
 
@@ -143,7 +143,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | --- | --- | --- | --- |
 | OPS-001 | fix | The installer installs `unattended-upgrades`; the guide says that the container is a Debian system that needs updates | pending: ops |
 | OPS-002 | fix | The published installer pins the digests of the zipapp and the unit; the verified path comes first in the README; examples pin `--ref` by commit | pending: installer-integrity |
-| OPS-003 | fix | A Home Assistant example that notifies when the gateway is unavailable (IMP-025). The host-side udev rule is deferred: it cannot be verified without a Proxmox host, and ADR 0006 keeps the host free of the gateway's files | pending: ha-exposure |
+| OPS-003 | fix | A Home Assistant example that notifies when the gateway is unavailable (IMP-025). The host-side udev rule is deferred: it cannot be verified without a Proxmox host, and ADR 0006 keeps the host free of the gateway's files | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | OPS-004 | fix | The unit restarts with a growing delay instead of giving up after 20 failures; the guide's example detects the outage. An `OnFailure=` unit is rejected: the gateway itself is the channel it would need | pending: ops |
 | OPS-005 | fix | `After=time-sync.target`, `MemoryMax=`, `@obsolete` in the system call filter; `IPAddressAllow=` documented as an option | pending: ops |
 | OPS-006 | fix | Through ARC-013 | pending: outbox |
@@ -190,7 +190,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-008 | fix | Through SEC-005 (healing); stamps rejected there, an HMAC signature deferred until a consumer can verify it (EXT-012) | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | IMP-009 | fix | Through SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | IMP-010 | fix | Through SEC-007 | pending: names |
-| IMP-011 | fix | Through SEC-008 | pending: ha-exposure |
+| IMP-011 | fix | Through SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-012 | fix | Through SEC-009 | pending: password |
 | IMP-013 | fix | Through ARC-012 | pending: robustness |
 | IMP-014 | fix | Through ARC-013 | pending: outbox |
@@ -204,7 +204,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-022 | fix | Through ARC-003, ARC-009 and CODE-005 | pending: structure |
 | IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | pending: ops, installer-integrity |
 | IMP-024 | fix | Through OPS-004 and OPS-005 | pending: ops |
-| IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | pending: ha-exposure |
+| IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-026 | fix | Through ARC-001 | pending: threat-model |
 | IMP-027 | fix | Through SUP-001 (code owners, checklist); identity and cooldown deferred to the maintainer | pending: supply-chain |
 | IMP-028 | fix | Through SUP-002 | pending: supply-chain |
@@ -270,7 +270,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-009 | accept | Acknowledged; turned into a test (CODE-001) | pending: robustness |
 | RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
-| RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | pending: ha-exposure |
+| RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | pending: installer-integrity |
 | RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | pending: ops |
 | RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | pending: mqtt5 |
