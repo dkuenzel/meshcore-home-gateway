@@ -139,9 +139,11 @@ pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
 
 # The release workflow runs this on the tagged commit after `make check`; locally it is a dry run.
 # Wheel and sdist get the commit time as their timestamps, so a rebuild gives the same bytes.
-# The installer is published with the release's version written in: run from the release's URL,
-# it installs that release's zipapp and unit, checked against SHA256SUMS inside the container, and
-# fetches the language pack it shows its dialogs in from beside it (each checked against its pin).
+# The installer is published with the release's version and the digests of its zipapp and unit
+# written in: run from the release's URL, it installs that release's zipapp and unit, checked
+# inside the container against SHA256SUMS and against those digests (so the installer's
+# attestation covers them), and fetches the language pack it shows its dialogs in from beside it
+# (each checked against its pin).
 # The unit names the release's version in its comment line: after a rollback, which keeps the
 # newer unit, `head -2` of the installed unit says which version it came with.
 release: venv ## Release files in dist/release: zipapp, unit, installer and its language packs, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
@@ -160,10 +162,17 @@ release: venv ## Release files in dist/release: zipapp, unit, installer and its 
 	  grep -qx "# Version: $$version" dist/release/meshcore-home-gateway.service \
 	    || { echo "release: the unit names no version" >&2; exit 1; }; \
 	  chmod 0644 dist/release/meshcore-home-gateway.service; \
-	  sed "s/^RELEASE=\"\"/RELEASE=\"$$version\"/" deploy/proxmox/meshcore-home-gateway-lxc.sh \
-	    >dist/release/meshcore-home-gateway-lxc.sh; \
+	  pyz_sha256=$$(sha256sum "dist/release/meshcore-home-gateway-$$version.pyz" | cut -d' ' -f1); \
+	  unit_sha256=$$(sha256sum dist/release/meshcore-home-gateway.service | cut -d' ' -f1); \
+	  sed -e "s/^RELEASE=\"\"/RELEASE=\"$$version\"/" \
+	    -e "s/^RELEASE_PYZ_SHA256=\"\"$$/RELEASE_PYZ_SHA256=\"$$pyz_sha256\"/" \
+	    -e "s/^RELEASE_UNIT_SHA256=\"\"$$/RELEASE_UNIT_SHA256=\"$$unit_sha256\"/" \
+	    deploy/proxmox/meshcore-home-gateway-lxc.sh >dist/release/meshcore-home-gateway-lxc.sh; \
 	  grep -q "^RELEASE=\"$$version\" " dist/release/meshcore-home-gateway-lxc.sh \
 	    || { echo "release: the installer names no release" >&2; exit 1; }; \
+	  grep -qx "RELEASE_PYZ_SHA256=\"$$pyz_sha256\"" dist/release/meshcore-home-gateway-lxc.sh \
+	    && grep -qx "RELEASE_UNIT_SHA256=\"$$unit_sha256\"" dist/release/meshcore-home-gateway-lxc.sh \
+	    || { echo "release: the installer pins no digests" >&2; exit 1; }; \
 	  chmod 0755 dist/release/meshcore-home-gateway-lxc.sh; \
 	  $(BIN)/python tools/i18n.py release-packs dist/release >/dev/null; \
 	  if ! $(BIN)/python tools/release_notes.py "$$version" >dist/release-notes.md; then \

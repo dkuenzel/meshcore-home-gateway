@@ -69,6 +69,7 @@ One line per fact, by section.
 * `gh attestation verify` with only the repository given accepts an attestation from any workflow and any ref of that repository.
 * `actions/attest-build-provenance` v4 is only a wrapper around `actions/attest`, and `actions/attest` needs `artifact-metadata: write` only for registry storage records.
 * `github.com/OWNER/REPO/archive/REF.tar.gz` serves the source of a branch, tag or commit under one top-level directory; a missing release file or raw path answers 404.
+* Whoever may write to a repository can replace the files of a published release without touching its tag, unless the repository makes its releases immutable; this one does.
 
 **[whiptail](#whiptail)**
 
@@ -598,6 +599,19 @@ One line per fact, by section.
   only `src/meshcore_home_gateway/`, `tools/build_pyz.py` and the unit from below the top
   directory, with `filter="data"`; a failed download stops with `cannot download URL: ...`.
   *Check:* `curl -sSfL https://github.com/OWNER/REPO/archive/main.tar.gz | tar tz | sed -n 1,3p`.
+* **Whoever may write to a repository can replace the files of a published release without
+  touching its tag, unless the repository makes its releases immutable; this one does.** The REST
+  API uploads assets to an existing release and deletes them; a tag ruleset protects the tag's
+  ref, not the release's files. With immutable releases, a release's files and tag are locked once
+  it is published. *Verified:* GitHub REST API, *Release assets* (upload and delete) and
+  *Check if immutable releases are enabled for a repository*
+  (<https://docs.github.com/en/rest/repos/repos>); on 2026-11-03
+  `gh api repos/dkuenzel/meshcore-home-gateway/immutable-releases` answered
+  `{"enabled":true,"enforced_by_owner":false}`. Whether `gh release create` with files still
+  publishes into an immutable repository was not seen yet: no release was made since the setting.
+  *Here:* the published installer carries the SHA-256 of its release's zipapp and unit and installs
+  only those ([deployment.md](deployment.md#install)), so a replaced file is refused even with
+  the setting off. *Check:* the same `gh api` call.
 
 ## whiptail
 

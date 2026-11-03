@@ -20,7 +20,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0010](0010-home-assistant-through-mqtt-device-discovery.md) | Home Assistant integration through MQTT device discovery | accepted |
 | [0011](0011-neutral-english-language-project-under-mit.md) | A neutral, English-language project under the MIT license | accepted |
 | [0012](0012-project-name-meshcore-home-gateway.md) | The project is named meshcore-home-gateway | accepted; amended 2026-11-03 (the client identifier) |
-| [0013](0013-signed-releases-with-github-artifact-attestations.md) | Signed releases with GitHub artifact attestations | accepted; amended by 0022 |
+| [0013](0013-signed-releases-with-github-artifact-attestations.md) | Signed releases with GitHub artifact attestations | accepted; amended by 0022; amended 2026-11-03 (the installer pins the program) |
 | [0014](0014-the-gateway-as-the-households-mesh-observer.md) | The gateway as the household's mesh observer: positions, telemetry, contacts and dashboards | accepted |
 | [0015](0015-provider-neutral-documents-on-the-bus.md) | Provider-neutral documents on the bus; front ends are adapters | accepted; amended 2026-11-03 (the integrity model) |
 | [0016](0016-history-in-a-local-sqlite-database.md) | History in a local SQLite database | accepted; amended 2026-11-03 (the purge in a thread; the state file held in memory) |

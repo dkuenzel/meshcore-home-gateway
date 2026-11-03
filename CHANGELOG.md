@@ -193,6 +193,12 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Security
 
+- The installer published with a release carries the SHA-256 of that release's zipapp and unit
+  and installs only those files: whoever could replace them in the release could replace its
+  `SHA256SUMS` too, but not the installer's attestation, so verifying the installer now verifies
+  the program it installs. `--release` with another version checks against that release's
+  `SHA256SUMS` alone. The README and the guide put the verified installation first
+  ([deployment.md](docs/deployment.md#install)).
 - The installer keeps the broker password in `/etc/meshcore-home-gateway/mqtt-password` (0640
   `root:meshcore-home-gateway`) instead of the configuration, and `--reconfigure` moves a
   password that is still in the configuration there: `config answers`, which the

@@ -104,6 +104,12 @@ pass.
 * Amended on 2026-10-25 by [ADR 0022](0022-releases-tagged-by-ci-on-main.md): CI on `main` tags
   the commit that changed the version and starts the workflow on the tag (`workflow_dispatch`); a
   run on a tag releases, pushed or dispatched. The tag ruleset forbids moving and deleting tags.
+* Amended on 2026-11-03 (security and architecture review, OPS-002 and SUP-003): the attestation
+  of the installer covers the program it installs. `make release` writes the SHA-256 of the
+  release's zipapp and unit into the published installer, which installs only those files; the
+  release's `SHA256SUMS`, from the same place as the files, cannot vouch for them alone. The
+  verified installation comes first in the README and the guide, and the repository's releases
+  are immutable once published (repository settings, 2026-11-02).
 * `actions/attest`: <https://github.com/actions/attest>
 * Using artifact attestations:
   <https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds>

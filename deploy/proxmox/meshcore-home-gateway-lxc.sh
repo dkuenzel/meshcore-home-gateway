@@ -16,6 +16,10 @@ set -Eeuo pipefail
 REPOSITORY=dkuenzel/meshcore-home-gateway
 RELEASES=https://github.com/$REPOSITORY/releases
 RELEASE=""     # the copy published with a release names its version here (make release)
+# and the SHA-256 of that release's zipapp and unit (make release): this copy installs only those
+# files of its release, so verifying its attestation verifies the program too (OPS-002)
+RELEASE_PYZ_SHA256=""
+RELEASE_UNIT_SHA256=""
 SCRIPT=${BASH_SOURCE[0]-}   # unset when the script comes from a URL: bash -c "$(wget ...)"
 SOURCE=""      # where the program comes from: checkout, release or ref (detect_source)
 REPO_DIR=""    # SOURCE=checkout: the checkout
@@ -701,7 +705,8 @@ check_device_group() {  # dev0 used Debian's dialout GID; pass the device again 
 }
 
 # Runs in the container: downloads the program into a directory, given last on the command line.
-#   release URL VERSION DIR: the zipapp and the unit of a release, checked against its SHA256SUMS
+#   release URL VERSION PYZ_SHA256 UNIT_SHA256 DIR: the zipapp and the unit of a release, checked
+#     against its SHA256SUMS and the digests this copy of the installer pins (- for none)
 #   source URL DIR: the source archive of a branch, tag or commit (HTTPS only, nothing to check)
 FETCH_PY='import hashlib, io, os, shutil, sys, tarfile, urllib.request
 
@@ -727,18 +732,23 @@ def put(path, data):
 mode, url, target = sys.argv[1], sys.argv[2], sys.argv[-1]
 shutil.rmtree(target, ignore_errors=True)
 if mode == "release":
-    version, sums = sys.argv[3], {}
+    version, pins, sums, checked = sys.argv[3], sys.argv[4:6], {}, {}
     for line in get(url + "SHA256SUMS").decode("utf-8").splitlines():
         digest, _, name = line.partition(" ")
         sums[name.strip().lstrip("*")] = digest
     files = {
-        f"meshcore-home-gateway-{version}.pyz": "meshcore-home-gateway.pyz",
-        os.path.basename(UNIT): UNIT,
+        f"meshcore-home-gateway-{version}.pyz": ("meshcore-home-gateway.pyz", pins[0]),
+        os.path.basename(UNIT): (UNIT, pins[1]),
     }
-    for name, path in files.items():
+    for name, (path, pin) in files.items():  # every file checked before any is written
         data = get(url + name)
-        if sums.get(name) != hashlib.sha256(data).hexdigest():
+        digest = hashlib.sha256(data).hexdigest()
+        if sums.get(name) != digest:
             sys.exit(f"{name} does not match the SHA256SUMS of the release: not installed")
+        if pin not in ("-", digest):
+            sys.exit(f"{name} is not the file this installer was published with: not installed")
+        checked[path] = data
+    for path, data in checked.items():
         put(os.path.join(target, path), data)
 else:
     try:
@@ -756,7 +766,7 @@ else:
         sys.exit(f"{url}: not a usable source archive ({exc})")'
 
 stage_program() {  # stage_program CTID: the program to install, in $STAGE in the container
-  local ctid=$1 base
+  local ctid=$1 base pins
   case $SOURCE in
     checkout)  # packed on the fly: no file on the host
       tar -C "$REPO_DIR" -cz --exclude=__pycache__ src/meshcore_home_gateway tools/build_pyz.py \
@@ -766,7 +776,11 @@ stage_program() {  # stage_program CTID: the program to install, in $STAGE in th
           ctid "$ctid" ;;
     release)
       base=$RELEASES/download/v$PICKED/
-      in_ct "$ctid" python3 -I -c "$FETCH_PY" release "$base" "$PICKED" "$STAGE" >&2 \
+      pins=(- -)   # another release than this copy's: its SHA256SUMS alone
+      if [[ $PICKED == "$RELEASE" ]]; then
+        pins=("${RELEASE_PYZ_SHA256:--}" "${RELEASE_UNIT_SHA256:--}")
+      fi
+      in_ct "$ctid" python3 -I -c "$FETCH_PY" release "$base" "$PICKED" "${pins[@]}" "$STAGE" >&2 \
         || die 'cannot download release {version} into container {ctid} (see above)' \
           version "$PICKED" ctid "$ctid" ;;
     ref)
