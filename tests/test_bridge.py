@@ -201,7 +201,7 @@ async def running(
         notes.append(message)
         return True
 
-    store = JsonStateFile(tmp_path / "state.json")
+    store = new_run(tmp_path)
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
     contact_devices = None
     if devices:
@@ -227,6 +227,24 @@ async def running(
 
 def scenario(coro: Callable[[], Any]) -> None:
     asyncio.run(asyncio.wait_for(coro(), 20))
+
+
+_RUNS: dict[Path, JsonStateFile] = {}  # the state file of the last run per directory
+
+
+def new_run(tmp_path: Path, *, crash: bool = False) -> JsonStateFile:
+    """The state file of a run that starts on `tmp_path`, one for all its sections as the
+    service has (cli._serve), after the last run there stopped and wrote its state; after a
+    `crash` what it had not written yet is lost."""
+    if (last := _RUNS.pop(tmp_path, None)) is not None and not crash:
+        assert last.flush()
+    store = _RUNS[tmp_path] = JsonStateFile(tmp_path / "state.json")
+    return store
+
+
+def run_state(tmp_path: Path) -> JsonStateFile:
+    """The state file of the run on `tmp_path`, which an observer built for it shares."""
+    return _RUNS[tmp_path]
 
 
 FINAL = {"confirmed", "failed", "expired", "rejected", "duplicate"}
@@ -2012,7 +2030,7 @@ def test_components_of_an_earlier_configuration_are_removed(tmp_path: Path) -> N
                 assert document["cmps"]["radio"]["p"] == "binary_sensor"
 
     scenario(main)
-    data = store.load()
+    data = JsonStateFile(tmp_path / "state.json").load()  # as the run left it
     assert "send_old" not in data["ha_components"]
     assert data["ha_components"]["radio"] == "binary_sensor"
     assert data["ha_removed"]["send_old"]["p"] == "notify"  # pending, in case nobody got it
@@ -2483,6 +2501,53 @@ def test_contacts_get_their_devices_in_home_assistant(
     scenario(main)
 
 
+def test_the_state_file_is_written_at_the_status_tick_and_at_the_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ARC-004: what the sections change (here the contact devices) waits in memory for the
+    bridge's next status tick, and its stop writes what is left; no write per change."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.01)
+    path = tmp_path / "state.json"
+
+    def stored() -> set[str]:
+        devices = JsonStateFile(path).load().get("ha_contact_devices", {})
+        return set(devices.get("announced", {}))
+
+    async def until(check: Callable[[], bool]) -> None:
+        async def poll() -> None:
+            while True:
+                if check():
+                    return
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(poll(), 3)
+
+    def announced(bus: FakeBus, contact: EmulatedContact) -> bool:
+        key = contact.public_key.hex()
+        topic = f"homeassistant/device/meshcore_home_gateway_radio1/contact_{key}/config"
+        return any(t == topic for t, _, _ in bus.published)
+
+    async def first() -> None:  # a status tick every minute: none in this run
+        radio = EmulatedRadio(contacts=[ALICE], manual_add=False)
+        async with running(make_config(), radio, tmp_path, devices=True) as (_, bus, _n):
+            await until(lambda: announced(bus, ALICE))
+            await asyncio.sleep(0.1)
+            assert stored() == set()
+
+    async def second() -> None:
+        radio = EmulatedRadio(contacts=[ALICE], manual_add=False)  # after the restart
+        async with running(make_config(), radio, tmp_path, devices=True) as (_, bus, _n):
+            radio.contacts.append(BOB)
+            radio.emit(bytes([Push.ADVERT]) + BOB.public_key)
+            await until(lambda: announced(bus, BOB))
+            await until(lambda: BOB.public_key.hex() in stored())
+
+    scenario(first)
+    assert stored() == {ALICE.public_key.hex()}
+    monkeypatch.setattr(bridge_module, "STATUS_INTERVAL_S", 0.05)
+    scenario(second)
+
+
 def test_a_device_home_assistant_clears_is_announced_again(tmp_path: Path) -> None:
     """Home Assistant clears the gateway's discovery topic when it removes a disabled entity
     (or the user deletes the device): the entities come back with an announcement."""
@@ -2559,7 +2624,7 @@ def test_a_control_of_an_earlier_version_is_removed_by_the_service(tmp_path: Pat
             assert "add_node" not in gateway  # the main document takes nothing of the other
 
     scenario(main)
-    data = store.load()
+    data = JsonStateFile(tmp_path / "state.json").load()  # as the run left it
     assert data["ha_components_manage_contacts"] == {"add_node": "select", "add_contact": "text"}
     assert "add_group" in data["ha_removed_manage_contacts"]
     assert "add_node" not in data["ha_components"]

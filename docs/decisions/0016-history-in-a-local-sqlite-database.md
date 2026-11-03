@@ -119,6 +119,13 @@ Tests cover schema creation and migration, retention by age and count, a corrupt
   write whose cost grows with the tables and the disk, runs in a thread on a connection of its
   own, in one transaction; the writes that come meanwhile wait in memory and follow it. The other
   writes stay short and in the loop, which the `health` section's `loop_lag_max_s` now measures.
+* Amended on 2026-11-03 (security and architecture review, ARC-004): `state.json` stays the
+  small, atomically replaced file beside the history, now read once and held in memory as one
+  store for all its sections, which are written together at the status tick and at the stop;
+  what a crash must not lose (the replay ledger above all) is written at once. Its growth is
+  bounded: the slugs of contacts that left are kept for 90 days and at most 1 000, the radio
+  profile's memory for three radios. A second SQLite file for the state was weighed and not
+  taken: the writes are few once batched, and the file stays readable and restorable as it is.
 * File lists: <https://packages.debian.org/bookworm/amd64/libpython3.11-stdlib/filelist>,
   <https://packages.debian.org/trixie/amd64/libpython3.13-stdlib/filelist>; versions of
   `libsqlite3-0` on <https://packages.debian.org/bookworm/libsqlite3-0> and

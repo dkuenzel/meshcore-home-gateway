@@ -84,6 +84,15 @@ def store(tmp_path: Path) -> JsonStateFile:
     return JsonStateFile(tmp_path / "state.json")
 
 
+class Ticking(JsonStateFile):
+    """A state file written after every change, for a test that reads it from the disk (a
+    restart, the dashboard): the service writes it at its status tick (ARC-004)."""
+
+    def put(self, key: str, value: Any) -> None:
+        super().put(key, value)
+        assert self.flush()
+
+
 def gateway_devices(broker: Broker, store: JsonStateFile) -> ContactDevices:
     return ContactDevices(
         CONFIG, TOPICS, broker, ContactDeviceRecords(store), wall_clock=lambda: NOW

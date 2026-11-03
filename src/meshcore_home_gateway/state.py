@@ -1,4 +1,4 @@
-"""Small persistent state in one JSON file, written atomically.
+"""Small persistent state in one JSON file, held in memory and written atomically.
 
 It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
 Home Assistant components of the last discovery document and the contact devices announced
@@ -16,7 +16,8 @@ import logging
 import math
 import os
 import tempfile
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -34,14 +35,66 @@ EXCLUSIONS_FILE = "telemetry-excluded.json"
 
 
 class JsonStateFile:
+    """The state file (`state.json`), the one store of the sections below (ARC-004): read once,
+    held in memory and written whole and atomically. The sections read and change their part
+    here, never in the file: `put()` changes one, which the next `flush()` writes, with every
+    other change; the bridge flushes at its status tick and at its stop. What must survive a
+    crash is written at once (`flush()` after `put()`, or `save()` for the command ledger, which
+    must be on disk before a command is published). A file replaced while the service runs is
+    overwritten with every section by the next write: restore one with the service stopped."""
+
     def __init__(self, path: Path, *, read_only: bool = False) -> None:
         """`read_only`: for a look at the service's state (probe): an unreadable file reads as
         empty and stays where it is; saving is refused."""
         self.path = path
         self.read_only = read_only
         self.failed = False  # the last write failed (the health section, ARC-012)
+        self._data: dict[str, Any] | None = None  # the document, once read
+        self._changed = False  # put() since the last write
+        self._warned = False  # a flush failed, and the log said so
 
     def load(self) -> dict[str, Any]:
+        """The document (a copy of its top level). The file is read at the first call only; an
+        OSError then is raised, and the next call reads again."""
+        return dict(self._document())
+
+    def put(self, key: str, value: Any) -> None:
+        """Change one section; the next flush() writes it."""
+        self._document()[key] = value
+        self._changed = True
+
+    def save(self, data: dict[str, Any]) -> None:
+        """Make `data` the document and write it at once, with the changes put() before. An
+        OSError if it cannot be written: the document stays as it was."""
+        self._write(data)
+        self._data, self._changed = data, False
+
+    def flush(self) -> bool:
+        """Write the changes put() since the last write. Never raises an OSError: False while
+        the file cannot be written, with a warning once, and an info line once it is again."""
+        if not self._changed or self._data is None:
+            return True
+        try:
+            self._write(self._data)
+        except OSError as exc:
+            if not self._warned:
+                self._warned = True
+                log.warning("cannot write the state file %s (%s): its changes are kept in "
+                            "memory and written once it can be", self.path,
+                            exc.strerror or exc)  # fmt: skip
+            return False
+        self._changed = False
+        if self._warned:
+            self._warned = False
+            log.info("state file %s written again", self.path)
+        return True
+
+    def _document(self) -> dict[str, Any]:
+        if self._data is None:
+            self._data = self._read()
+        return self._data
+
+    def _read(self) -> dict[str, Any]:
         try:
             raw = self.path.read_bytes()
         except FileNotFoundError:
@@ -64,7 +117,7 @@ class JsonStateFile:
             return {}
         return data
 
-    def save(self, data: dict[str, Any]) -> None:
+    def _write(self, data: dict[str, Any]) -> None:
         """Write to a temporary file in the same directory, fsync, then rename over the old one."""
         if self.read_only:
             msg = f"{self.path} is opened read-only"
@@ -163,12 +216,9 @@ class AnnouncedComponents:
             if key not in current and now - entry["since"] < REMOVAL_KEEP_S
         }  # fmt: skip
         if previous != current or data.get(self._removed, {}) != removed:
-            data[self._key] = dict(current)
-            data[self._removed] = removed
-            try:
-                self._store.save(data)
-            except OSError as exc:  # pending removals come back from `previous` next time
-                log.warning("cannot store the Home Assistant components: %s", exc)
+            # pending removals also come back from `previous` while the file cannot be written
+            self._store.put(self._key, dict(current))
+            self._store.put(self._removed, removed)
         return {key: entry["p"] for key, entry in removed.items()}
 
 
@@ -193,7 +243,8 @@ class RemovedDevice:
 class ContactDeviceRecords:
     """The contact devices announced to Home Assistant, the removals still pending (until Home
     Assistant's next start), the contacts the user deleted there, which stay hidden, and the slug
-    of every contact that had a device, so that its entity IDs stay when it comes back."""
+    of every contact that had a device, so that its entity IDs stay when it comes back: for
+    SLUG_KEEP_S after it left the radio's table, at most SLUGS_LEFT of those (CODE-003)."""
 
     _KEY = "ha_contact_devices"
 
@@ -216,22 +267,32 @@ class ContactDeviceRecords:
         self.hidden = (
             {k for k in hidden if isinstance(k, str)} if isinstance(hidden, list) else set()
         )
+        left = data.get("left")  # key -> when the contact left the table (unix time)
+        self.left: dict[str, float] = {
+            key: float(at) for key, at in (left.items() if isinstance(left, dict) else ())
+            if key in self.slugs and _finite(at)
+        }  # fmt: skip
         self._saved = self._data()
 
+    def prune(self, present: Collection[str], now: float) -> None:
+        """Forget the slugs of contacts that left the table (are not `present`) SLUG_KEEP_S ago,
+        and of those beyond the SLUGS_LEFT that left last."""
+        present = set(present)
+        for key in present & self.left.keys():
+            del self.left[key]
+        for key in self.slugs.keys() - present - self.left.keys():
+            self.left[key] = now
+        newest = sorted(self.left, key=lambda key: (-self.left[key], key))
+        for rank, key in enumerate(newest):
+            if rank >= SLUGS_LEFT or now - self.left[key] >= SLUG_KEEP_S:
+                del self.slugs[key], self.left[key]
+
     def save(self) -> None:
-        """Store the records if they changed; a failed write is logged (the next change tries
-        again, and pending removals are sent again at the next start)."""
+        """Hand the records to the state file if they changed (its next flush writes them)."""
         data = self._data()
-        if data == self._saved:
-            return
-        stored = self._store.load()
-        stored[self._KEY] = data
-        try:
-            self._store.save(stored)
-        except OSError as exc:
-            log.warning("cannot store the Home Assistant contact devices: %s", exc)
-            return
-        self._saved = data
+        if data != self._saved:
+            self._store.put(self._KEY, data)
+            self._saved = data
 
     def _data(self) -> dict[str, Any]:
         return {
@@ -245,7 +306,12 @@ class ContactDeviceRecords:
             },
             "hidden": sorted(self.hidden),
             "slugs": dict(sorted(self.slugs.items())),
+            "left": dict(sorted(self.left.items())),
         }
+
+
+SLUG_KEEP_S = 90 * 86_400.0
+SLUGS_LEFT = 1000
 
 
 class RetainedKeys:
@@ -263,17 +329,10 @@ class RetainedKeys:
         return frozenset(self._keys)
 
     def replace(self, keys: set[str]) -> None:
-        """Store the published keys; a failed write is logged (the next change tries again)."""
-        if keys == self._keys:
-            return
-        data = self._store.load()
-        data[self._name] = sorted(keys)
-        try:
-            self._store.save(data)
-        except OSError as exc:
-            log.warning("cannot store the published %s: %s", self._name, exc)
-            return
-        self._keys = set(keys)
+        """Hand the published keys to the state file if they changed."""
+        if keys != self._keys:
+            self._store.put(self._name, sorted(keys))
+            self._keys = set(keys)
 
 
 class CurrentDocuments:
@@ -296,18 +355,13 @@ class CurrentDocuments:
         return dict(self._documents)
 
     def replace(self, documents: Mapping[str, dict[str, Any]]) -> None:
-        """Store the documents if they changed; a failed write is logged (the next call tries
-        again)."""
-        if documents == self._documents:
-            return
-        try:
-            data = self._store.load()
-            data[self._KEY] = dict(documents)
-            self._store.save(data)
-        except OSError as exc:
-            log.warning("cannot store the current contact documents: %s", exc)
-            return
-        self._documents = dict(documents)
+        """Store the documents at once if they changed (the observer stores them when a crash
+        must not lose the change, else at its tick); a failed write is the state file's to
+        log and to try again."""
+        if documents != self._documents:
+            self._store.put(self._KEY, dict(documents))
+            self._documents = dict(documents)
+            self._store.flush()
 
 
 class AdvertChecks:
@@ -335,20 +389,16 @@ class AdvertChecks:
         return dict(self._checks)
 
     def replace(self, checks: Mapping[str, AdvertCheck]) -> None:
-        """Store them if they changed; a failed write is logged (the next change tries again)."""
-        if checks == self._checks:
-            return
-        try:
-            data = self._store.load()
-            data[self._KEY] = {
+        """Store them at once if they changed: a check that no longer carries a position must
+        not come back after a crash (ADR 0025); a failed write is the state file's to log and to
+        try again."""
+        if checks != self._checks:
+            self._store.put(self._KEY, {
                 key: {"advert_at": check.at, "carries": check.carries}
                 for key, check in checks.items()
-            }
-            self._store.save(data)
-        except OSError as exc:
-            log.warning("cannot store the advert checks: %s", exc)
-            return
-        self._checks = dict(checks)
+            })  # fmt: skip
+            self._checks = dict(checks)
+            self._store.flush()
 
 
 def _advert_check(key: object, entry: object) -> AdvertCheck | None:
@@ -530,12 +580,16 @@ class TelemetryExclusions:
 
 class ProfileRecords:
     """What the managed radio profile last wrote (ADR 0020), per radio key: a replaced radio
-    starts afresh."""
+    starts afresh. Kept for PROFILE_RADIOS radios, the current one and those last saved before
+    (CODE-003)."""
 
     _KEY = "radio_profile"
 
-    def __init__(self, store: JsonStateFile) -> None:
+    def __init__(
+        self, store: JsonStateFile, *, wall_clock: Callable[[], float] = time.time
+    ) -> None:
         self._store = store
+        self._wall = wall_clock
 
     def load(self, radio_key: str) -> Applied:
         raw = self._store.load().get(self._KEY)
@@ -563,9 +617,10 @@ class ProfileRecords:
         )  # fmt: skip
 
     def save(self, radio_key: str, applied: Applied) -> None:
-        """Store the result; a failed write is logged (the profile keeps its memory of this run,
-        and the next change tries again)."""
-        entry = {
+        """Store the result at once (the attempts before the setters go out), with the time
+        (`at`) that ranks the radios; a file that cannot be read or written is logged (the
+        profile keeps its memory of this run)."""
+        entry: dict[str, Any] = {
             "values": dict(applied.values),
             "attempts": {
                 key: {"value": a.value, "connects": a.connects, "firmware": a.firmware_code}
@@ -574,15 +629,29 @@ class ProfileRecords:
             "unsupported": dict(applied.unsupported),
         }
         try:
-            data = self._store.load()
-            raw = data.get(self._KEY)
-            radios = raw if isinstance(raw, dict) else {}
-            if radios.get(radio_key) == entry:
-                return
-            data[self._KEY] = {**radios, radio_key: entry}
-            self._store.save(data)
+            raw = self._store.load().get(self._KEY)
         except OSError as exc:
             log.warning("cannot store the radio profile: %s", exc)
+            return
+        others = {
+            key: other for key, other in (raw.items() if isinstance(raw, dict) else ())
+            if key != radio_key and isinstance(other, dict)
+        }  # fmt: skip
+        stored = raw.get(radio_key) if isinstance(raw, dict) else None
+        unchanged = isinstance(stored, dict) and {
+            key: value for key, value in stored.items() if key != "at"
+        } == entry  # fmt: skip
+        if unchanged and len(others) < PROFILE_RADIOS:
+            return
+        kept = sorted(others, key=lambda key: (-_time(others[key].get("at")), key))
+        self._store.put(self._KEY, {
+            **{key: others[key] for key in kept[: PROFILE_RADIOS - 1]},
+            radio_key: stored if unchanged else {**entry, "at": self._wall()},
+        })  # fmt: skip
+        self._store.flush()
+
+
+PROFILE_RADIOS = 3
 
 
 class TelemetryRecords:
@@ -638,8 +707,10 @@ class TelemetryRecords:
         except Exception:  # noqa: BLE001 - load() logs nothing here; the hold is the safe side
             return False
 
-    def save(self, saved: Saved, wall_now: float) -> None:
-        """Replace this key only; a failed write is logged and the schedule stays in memory."""
+    def save(self, saved: Saved, wall_now: float, *, at_once: bool = False) -> None:
+        """Hand this key to the state file, which writes it at its next flush or, `at_once`,
+        now (after a flood, so that a crash cannot repeat it); a file that cannot be read is
+        logged and the schedule stays in memory."""
         entry = {
             "version": self.VERSION,
             "saved_at": wall_now,
@@ -660,31 +731,31 @@ class TelemetryRecords:
             "hold_pending": saved.hold_pending,
         }  # fmt: skip
         try:
-            data = self._store.load()
-            data[self._KEY] = entry
-            self._store.save(data)
+            self._store.put(self._KEY, entry)
         except OSError as exc:
             log.warning("telemetry: cannot store the schedule: %s", exc)
+            return
+        if at_once:
+            self._store.flush()
 
     def forget(self, key: str) -> None:
         """The contact was excluded, included or added again while telemetry was off (D13): as
         Scheduler.forget, its saved answers are gone and it is due at once; when it was asked
-        and flooded stays. Never raises: a failed write is logged."""
+        and flooded stays. Never raises: a file that cannot be read is logged."""
         try:
-            data = self._store.load()
-            raw = data.get(self._KEY)
-            entries = raw.get("contacts") if isinstance(raw, dict) else None
-            entry = entries.get(key) if isinstance(entries, dict) else None
-            if not isinstance(entry, dict):
-                return
-            entry.update({
-                "due_in_s": 0.0, "failures": 0, "answered_age_s": None, "located": False,
-                "still": telemetry.STILL_POLLS, "current_s": telemetry.CURRENT_MIN_S,
-                "located_age_s": None,
-            })  # fmt: skip
-            self._store.save(data)
+            raw = self._store.load().get(self._KEY)
         except OSError as exc:
             log.warning("telemetry: cannot forget the answers of %s: %s", key[:12], exc)
+            return
+        entries = raw.get("contacts") if isinstance(raw, dict) else None
+        entry = entries.get(key) if isinstance(entries, dict) else None
+        if isinstance(raw, dict) and isinstance(entries, dict) and isinstance(entry, dict):
+            forgotten = {
+                **entry, "due_in_s": 0.0, "failures": 0, "answered_age_s": None,
+                "located": False, "still": telemetry.STILL_POLLS,
+                "current_s": telemetry.CURRENT_MIN_S, "located_age_s": None,
+            }  # fmt: skip
+            self._store.put(self._KEY, {**raw, "contacts": {**entries, key: forgotten}})
 
 
 def _saved_contact(entry: object) -> SavedContact | None:
@@ -723,6 +794,11 @@ def _finite(value: object) -> TypeGuard[float]:
 
 def _age(value: object) -> TypeGuard[float]:
     return _finite(value) and value >= 0
+
+
+def _time(value: object) -> float:
+    """A stored time; one missing or invalid counts as the oldest."""
+    return float(value) if _finite(value) else 0.0
 
 
 def _age_or_none(value: object) -> TypeGuard[float | None]:

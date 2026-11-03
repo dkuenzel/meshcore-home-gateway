@@ -487,6 +487,7 @@ class ContactDevices:
             k: r for k, r in records.removed.items()
             if k not in records.announced and now - r.since < REMOVAL_KEEP_S
         }  # fmt: skip
+        records.prune(mesh.contacts.keys(), now)
         records.save()
 
     def announce_all(self, *, birth: bool = False) -> None:
@@ -655,7 +656,7 @@ class ContactDevices:
 
     def _new_slug(self, tracked: Tracked) -> str:
         """The contact's name as slug, made unique with the key's start among every slug given
-        (also to contacts that left: they get theirs back)."""
+        (also to contacts that left, for a while: they get theirs back)."""
         key = tracked.node.public_key
         slug = slugify(tracked.node.name) or key[:8]
         taken = {s for k, s in self._records.slugs.items() if k != key}

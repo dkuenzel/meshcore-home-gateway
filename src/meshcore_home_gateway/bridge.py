@@ -473,6 +473,7 @@ class Bridge:
                 await self._session.close()
             self._radio_ready.clear()
             self._observe(self.observer.flush)  # what changed since its last tick
+            self._ledger.store.flush()
             self._publish_state()
             await self._bus.stop()
 
@@ -1127,6 +1128,7 @@ class Bridge:
             self._contacts.report_unpublished()
             self._observe(self.observer.exclusions.flush)  # an exclusion not stored yet
             self._observe(self.observer.tick)
+            self._ledger.store.flush()  # what the sections changed since the last tick (ARC-004)
             if self._mono() >= next_state:
                 self._publish_state()
                 next_state = self._mono() + STATUS_INTERVAL_S

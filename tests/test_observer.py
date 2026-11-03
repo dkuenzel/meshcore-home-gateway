@@ -60,6 +60,8 @@ from tests.test_bridge import (
     FakeBus,
     fast_timers,  # noqa: F401 - autouse: an advert's read in 50 ms
     make_config,
+    new_run,
+    run_state,
     running,
     scenario,
 )
@@ -1130,6 +1132,12 @@ def restarted(
     return observer, bus
 
 
+def on_disk(store: JsonStateFile) -> dict[str, dict[str, Any]]:
+    """The documents the state file holds on the disk, as a crash would leave them: the
+    observer stores them at once or at its tick, never only in memory."""
+    return CurrentDocuments(JsonStateFile(store.path)).documents
+
+
 FORGOTTEN = {
     "telemetry_state": "excluded", "telemetry_excluded": True, "telemetry_current": False,
     "position_current": None, "readings_at": None, "battery_v": None, "mcu_temperature_c": None,
@@ -1153,7 +1161,7 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
     observer.tick()
     expired = {"telemetry_state": "away", "telemetry_current": False, "position_current": False}
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **expired}
-    assert CurrentDocuments(store).documents == {key: {**before[key], **expired}}  # at once
+    assert on_disk(store) == {key: {**before[key], **expired}}  # at once
     observer.tick()
     assert len(retained(bus, f"{ROOT}/contacts/{key}")) == 2
     observer.publish_all()  # the broker connected again
@@ -1162,7 +1170,7 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
     observer.telemetry_state_changed(key)
     waiting = {**before[key], **expired, "telemetry_state": "waiting"}
     assert last(bus, f"{ROOT}/contacts/{key}") == waiting
-    assert CurrentDocuments(store).documents == {key: waiting}
+    assert on_disk(store) == {key: waiting}
 
 
 def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: Path) -> None:
@@ -1211,7 +1219,7 @@ def test_with_telemetry_off_a_document_of_the_last_run_is_off_at_the_connect(
     observer.publish_all()
     off = {"telemetry_state": "off", "telemetry_current": False, "position_current": False}
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **off}
-    assert CurrentDocuments(store).documents == {key: {**before[key], **off}}
+    assert on_disk(store) == {key: {**before[key], **off}}
 
 
 def test_an_exclusion_before_the_first_table_read_forgets_the_stored_values_at_once(
@@ -1224,7 +1232,7 @@ def test_an_exclusion_before_the_first_table_read_forgets_the_stored_values_at_o
     observer.telemetry_excluded(alice, True)
     assert last(bus, f"{ROOT}/contacts/{alice}") == {**before[alice], **FORGOTTEN}
     stored = {alice: {**before[alice], **FORGOTTEN}, bob: before[bob]}
-    assert CurrentDocuments(store).documents == stored  # gone from the disk at once
+    assert on_disk(store) == stored  # gone from the disk at once
     assert retained(bus, f"{ROOT}/contacts/{bob}") == []
 
 
@@ -1242,14 +1250,14 @@ def test_an_exclusion_and_an_inclusion_once_it_expired_are_published_and_stored_
     observer.exclusions.exclude(key)
     observer.telemetry_excluded(key, True)
     assert last(bus, f"{ROOT}/contacts/{key}") == {**before[key], **FORGOTTEN}
-    assert CurrentDocuments(store).documents == {key: {**before[key], **FORGOTTEN}}
+    assert on_disk(store) == {key: {**before[key], **FORGOTTEN}}
     observer.exclusions.include(key)
     states[key] = "waiting"  # the poller forgot her answers
     observer.telemetry_excluded(key, False)
     included = {**before[key], **FORGOTTEN, "telemetry_state": "waiting",
                 "telemetry_excluded": False}  # fmt: skip
     assert last(bus, f"{ROOT}/contacts/{key}") == included
-    assert CurrentDocuments(store).documents == {key: included}
+    assert on_disk(store) == {key: included}
 
 
 def test_the_first_table_read_replaces_the_documents_of_the_last_run(tmp_path: Path) -> None:
@@ -1257,15 +1265,15 @@ def test_the_first_table_read_replaces_the_documents_of_the_last_run(tmp_path: P
     alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
     observer, bus = restarted(store, {alice: "answering", bob: "answering"})
     observer.radio_event(ContactsRead(table(ALICE), NOW + 60))  # Bob left the radio meanwhile
-    assert CurrentDocuments(store).documents.keys() == {alice}  # at once
+    assert on_disk(store).keys() == {alice}  # at once
     observer.tick()
-    assert CurrentDocuments(store).documents == {alice: last(bus, f"{ROOT}/contacts/{alice}")}
+    assert on_disk(store) == {alice: last(bus, f"{ROOT}/contacts/{alice}")}
     published = len(bus.published)
     observer.telemetry_state = lambda _key: "away"
     observer.tick()  # the poller reports the states of the table's contacts now
     assert len(bus.published) == published
     observer.radio_event(ContactsRead({}, NOW + 120))  # and Alice now
-    assert CurrentDocuments(store).documents == {}
+    assert on_disk(store) == {}
 
 
 def test_at_the_first_table_read_an_expired_document_of_the_last_run_is_dropped(
@@ -1276,9 +1284,9 @@ def test_at_the_first_table_read_an_expired_document_of_the_last_run_is_dropped(
     alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
     observer, _bus = restarted(store, {alice: "away", bob: "answering"})
     observer.publish_all()
-    assert CurrentDocuments(store).documents.keys() == {alice, bob}
+    assert on_disk(store).keys() == {alice, bob}
     observer.radio_event(ContactsRead(table(ALICE, BOB), NOW + 60))
-    assert CurrentDocuments(store).documents.keys() == {bob}  # at once
+    assert on_disk(store).keys() == {bob}  # at once
 
 
 def test_a_document_is_stored_at_once_when_it_turns_current_or_not_else_at_the_tick(
@@ -1291,17 +1299,17 @@ def test_a_document_is_stored_at_once_when_it_turns_current_or_not_else_at_the_t
     states: dict[str, TelemetryState] = {key: "waiting"}
     observer.telemetry_state = states.get
     observer.radio_event(ContactsRead(table(ALICE, CAROL), NOW))
-    assert CurrentDocuments(store).documents == {}  # not current; Carol is no companion
+    assert on_disk(store) == {}  # not current; Carol is no companion
     states[key] = "answering"
     observer.telemetry_state_changed(key)
-    assert CurrentDocuments(store).documents == {key: last(bus, f"{ROOT}/contacts/{key}")}
+    assert on_disk(store) == {key: last(bus, f"{ROOT}/contacts/{key}")}
     observer.telemetry(key, answer(NOW + 10, LPP_BME280))
-    assert CurrentDocuments(store).documents[key]["readings"] == {}  # until the tick
+    assert on_disk(store)[key]["readings"] == {}  # until the tick
     observer.tick()
-    assert CurrentDocuments(store).documents == {key: last(bus, f"{ROOT}/contacts/{key}")}
+    assert on_disk(store) == {key: last(bus, f"{ROOT}/contacts/{key}")}
     states[key] = "away"
     observer.telemetry_state_changed(key)
-    assert CurrentDocuments(store).documents == {}
+    assert on_disk(store) == {}
 
 
 # --- the check for positions in adverts (ADR 0018, design 6c) ----------------------------------
@@ -1380,24 +1388,33 @@ class Air:
 
 def checking(
     tmp_path: Path, *contacts: EmulatedContact, tuning: codec.TuningParams | None = NO_DELAY,
-    **options: Any,
+    current: bool = False, **options: Any,
 ) -> tuple[Observer, FakeBus, Air]:  # fmt: skip
-    """An observer that keeps its checks in the state file, after the radio connected and its
-    first table read."""
+    """An observer that keeps its checks in the state file (and, `current`, the documents of
+    the companions whose answers are current), after the radio connected and its first table
+    read."""
     bus, clock = FakeBus(), Clock(NOW)
-    checks = AdvertChecks(JsonStateFile(tmp_path / "state.json"))
-    observer = Observer(bus, TOPICS, advert_checks=checks, wall_clock=clock, **options)
+    store = new_run(tmp_path)
+    if current:
+        options["current"] = CurrentDocuments(store)
+    observer = Observer(bus, TOPICS, advert_checks=AdvertChecks(store), wall_clock=clock,
+                        **options)  # fmt: skip
     observer.radio_connected(100, tuning)
     air = Air(observer, clock, *contacts)
     air.read()
     return observer, bus, air
 
 
-def restarted_on(tmp_path: Path, air: Air, **options: Any) -> FakeBus:
-    """The next run of the observer on the same state file; the radio keeps its records."""
-    bus = FakeBus()
-    checks = AdvertChecks(JsonStateFile(tmp_path / "state.json"))
-    air.observer = Observer(bus, TOPICS, advert_checks=checks, wall_clock=air.clock, **options)
+def restarted_on(
+    tmp_path: Path, air: Air, *, current: bool = False, crash: bool = False, **options: Any
+) -> FakeBus:
+    """The next run of the observer on the same state file, after a stop that wrote it (or a
+    `crash`); the radio keeps its records."""
+    bus, store = FakeBus(), new_run(tmp_path, crash=crash)
+    if current:
+        options["current"] = CurrentDocuments(store)
+    air.observer = Observer(bus, TOPICS, advert_checks=AdvertChecks(store), wall_clock=air.clock,
+                            **options)  # fmt: skip
     return bus
 
 
@@ -2041,20 +2058,19 @@ def test_a_kept_document_that_loses_its_advert_position_is_stored_at_once(
     position from telemetry), the document is stored at once, not at the tick: after a stop
     without a tick (a crash), the next start brings back no place she stopped sharing, also while
     the radio stays away (design 6c D12, ADR 0024)."""
-    store = JsonStateFile(tmp_path / "state.json")
     key = ALICE.public_key.hex()
-    _observer, bus, air = checking(tmp_path, ALICE, current=CurrentDocuments(store))
+    _observer, bus, air = checking(tmp_path, ALICE, current=True)
     air.observer.telemetry_state = lambda _key: state
     air.advert(ALICE, SHARED)
     air.read()
     air.observer.tick()
-    assert CurrentDocuments(store).documents[key]["position_source"] == "advert"
+    assert CurrentDocuments(run_state(tmp_path)).documents[key]["position_source"] == "advert"
     air.clock.now += 30
     air.observer.telemetry(key, answer(air.clock.now, data))
     air.advert(ALICE, then)  # she stopped sharing, or shares 0, 0
     air.read()
     assert checked(bus, key)[0] is (then is not None)
-    bus = restarted_on(tmp_path, air, current=CurrentDocuments(store))
+    bus = restarted_on(tmp_path, air, current=True, crash=True)
     air.observer.telemetry_state = lambda _key: state
     air.observer.publish_all()  # the broker connected; the radio is away
     document = last(bus, f"{ROOT}/contacts/{key}")
@@ -2067,25 +2083,25 @@ def test_a_kept_document_that_keeps_its_advert_position_is_stored_at_the_tick(
     """Alice answers without GPS, and her adverts carry her position. A change that keeps a
     position from adverts (an answer, an advert from another place) waits for the tick, as for
     every kept document: no write of the state file per answer or per advert."""
-    store = JsonStateFile(tmp_path / "state.json")
     key = ALICE.public_key.hex()
-    _observer, bus, air = checking(tmp_path, ALICE, current=CurrentDocuments(store))
+    _observer, bus, air = checking(tmp_path, ALICE, current=True)
+    store = run_state(tmp_path)
     air.observer.telemetry_state = lambda _key: "no_position"
     air.advert(ALICE, SHARED)
     air.read()
     air.observer.tick()
-    stored = CurrentDocuments(store).documents[key]
+    stored = on_disk(store)[key]
     air.clock.now += 30
     air.observer.telemetry(key, answer(air.clock.now, LPP_T1000E))
     assert last(bus, f"{ROOT}/contacts/{key}") != stored
-    assert CurrentDocuments(store).documents[key] == stored  # until the tick
+    assert on_disk(store)[key] == stored  # until the tick
     air.advert(ALICE, MOVED)
     air.read()
     document = last(bus, f"{ROOT}/contacts/{key}")
     assert (document["latitude"], document["position_source"]) == (50.124, "advert")
-    assert CurrentDocuments(store).documents[key] == stored
+    assert on_disk(store)[key] == stored
     air.observer.tick()
-    assert CurrentDocuments(store).documents[key] == document
+    assert on_disk(store)[key] == document
 
 
 def test_a_companion_heard_before_it_is_added_starts_checked(
@@ -2233,7 +2249,7 @@ def with_checks(
             history = History.open(tmp_path / "history.sqlite3")
             assert history is not None
             histories.append(history)
-        checks = AdvertChecks(JsonStateFile(tmp_path / "state.json"))
+        checks = AdvertChecks(run_state(tmp_path))
         return Observer(bus, TOPICS, history=history, advert_checks=checks, wall_clock=lambda: NOW)
 
     return observer

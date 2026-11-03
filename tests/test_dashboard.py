@@ -25,7 +25,18 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
 from tests.i18n_helpers import compiled, pseudo, speaking
-from tests.test_contact_devices import ALICE, BOB, CAROL, HILL, Clock, devices, mesh_of, node, topic
+from tests.test_contact_devices import (
+    ALICE,
+    BOB,
+    CAROL,
+    HILL,
+    Clock,
+    devices,
+    mesh_of,
+    node,
+    stopped,
+    topic,
+)  # fmt: skip
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "src" / "meshcore_home_gateway" / "dashboard.yaml"
@@ -224,6 +235,7 @@ def test_the_map_lists_the_contacts_announced_with_a_position(tmp_path: Path) ->
     contacts.update(mesh)
     contacts.discovery_message(topic(CAROL), b"", retained=False)  # the user deleted it
     contacts.update(mesh_of(*nodes[:4], mesh=mesh))  # Dave left the radio
+    stopped(tmp_path)  # the service stopped and wrote its state
     records = ContactDeviceRecords(JsonStateFile(tmp_path / "state.json", read_only=True))
     assert set(records.announced) == {HILL, ALICE, BOB}
     assert dashboard.trackers(records) == [

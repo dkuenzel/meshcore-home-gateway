@@ -546,10 +546,36 @@ def test_what_was_applied_survives_a_restart(tmp_path: Path) -> None:
         attempts={policy.AIRTIME_FACTOR: policy.Attempt(9000, 2, 14)},
         unsupported={policy.AUTOADD: 14},
     )
-    ProfileRecords(JsonStateFile(tmp_path / "state.json")).save("aa" * 32, applied)
+    store = JsonStateFile(tmp_path / "state.json")
+    ProfileRecords(store).save("aa" * 32, applied)
+    assert store.flush()
     records = ProfileRecords(JsonStateFile(tmp_path / "state.json"))
     assert records.load("aa" * 32) == applied
     assert records.load("bb" * 32) == Applied()  # another radio starts afresh
+
+
+def test_the_profile_is_kept_for_the_current_radio_and_the_two_before(tmp_path: Path) -> None:
+    """CODE-003: a fourth radio drops the memory of the radio saved longest ago; an unchanged
+    result keeps its time. A file of an earlier version (no times) shrinks at the next save."""
+    now = [100.0]
+    store = JsonStateFile(tmp_path / "state.json")
+    records = ProfileRecords(store, wall_clock=lambda: now[0])
+    for n, key in enumerate(("aa", "bb", "cc", "dd")):
+        now[0] = 100.0 + n
+        records.save(key * 32, Applied(values={policy.NAME: key}))
+    stored = store.load()["radio_profile"]
+    assert sorted(stored) == ["bb" * 32, "cc" * 32, "dd" * 32]
+    assert stored["dd" * 32]["at"] == 103.0
+    now[0] = 200.0
+    records.save("bb" * 32, Applied(values={policy.NAME: "bb"}))  # unchanged
+    assert store.load()["radio_profile"]["bb" * 32]["at"] == 101.0
+    records.save("aa" * 32, Applied(values={policy.NAME: "aa"}))  # back after it was dropped
+    assert sorted(store.load()["radio_profile"]) == ["aa" * 32, "cc" * 32, "dd" * 32]
+    assert records.load("aa" * 32) == Applied(values={policy.NAME: "aa"})
+    entry = {"values": {policy.NAME: "old"}, "attempts": {}, "unsupported": {}}
+    store.save({"radio_profile": {key * 32: entry for key in ("11", "22", "33", "44")}})
+    records.save("44" * 32, Applied(values={policy.NAME: "old"}))
+    assert sorted(store.load()["radio_profile"]) == ["11" * 32, "22" * 32, "44" * 32]
 
 
 @pytest.mark.parametrize(
@@ -575,15 +601,16 @@ def test_a_malformed_attempt_is_dropped(tmp_path: Path, attempt: object) -> None
 
 
 def test_a_radio_that_goes_away_after_a_setter_counts_as_an_attempt(tmp_path: Path) -> None:
-    """The attempt is stored before the setters: a radio that resets at the setter cannot keep the
-    gateway writing forever."""
+    """The attempt is stored before the setters, on the disk: a radio that resets at the setter
+    cannot keep the gateway writing forever, also when the gateway goes down with it."""
     radio = factory_radio(drop_on={Command.SET_TUNING_PARAMS})
     records = ProfileRecords(JsonStateFile(tmp_path / "state.json"))
 
     async def main() -> None:
         with pytest.raises(RadioError):  # the connection is gone
             await connect(radio, RadioProfile(ProfileConfig(), records))
-        attempts = records.load(SELF_KEY.hex()).attempts
+        restarted = ProfileRecords(JsonStateFile(tmp_path / "state.json"))  # after a crash
+        attempts = restarted.load(SELF_KEY.hex()).attempts
         assert attempts[policy.AIRTIME_FACTOR] == policy.Attempt(9000, 1, 14)
         sent = [policy.MANUAL_ADD, policy.TELEMETRY, policy.ADVERT_LOCATION, policy.AUTOADD,
                 policy.AIRTIME_FACTOR]  # fmt: skip
@@ -591,9 +618,9 @@ def test_a_radio_that_goes_away_after_a_setter_counts_as_an_attempt(tmp_path: Pa
             sent, 1
         )  # not read back
         radio.opened = False
-        await connect(radio, RadioProfile(ProfileConfig(), records))  # a restart, the radio back
+        await connect(radio, RadioProfile(ProfileConfig(), restarted))  # the radio back
         assert radio.tuning == (250, 9000)
-        assert records.load(SELF_KEY.hex()).attempts == {}
+        assert restarted.load(SELF_KEY.hex()).attempts == {}
 
     asyncio.run(main())
 
@@ -703,30 +730,36 @@ def test_a_connect_without_its_own_report_writes_no_contacts(
     asyncio.run(main())
 
 
-def test_a_state_file_that_cannot_be_read_does_not_stop_the_profile(
+def test_a_state_file_that_cannot_be_written_does_not_stop_the_profile(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """At the radio's second connect of a run, its memory is in the process: the file is read
-    only to store, and a file that cannot be read is logged; the connect keeps its report."""
+    """At the radio's second connect of a run, its memory is in the process and the file is
+    neither read nor written: the state file's flush logs that it cannot be written, and the
+    connect keeps its report. One that cannot be read when the profile stores is logged too."""
     radio = factory_radio()
     state = tmp_path / "state.json"
-    manager = RadioProfile(ProfileConfig(), ProfileRecords(JsonStateFile(state)),
+    store = JsonStateFile(state)
+    manager = RadioProfile(ProfileConfig(), ProfileRecords(store),
                            protected={"b2" * 32: "operator"})  # fmt: skip
 
     async def main() -> None:
         await connect(radio, manager)
         assert len(manager.take_reports()) == 1
+        assert store.flush()
         state.unlink()
-        state.mkdir()  # cannot be read as a file any more
+        state.mkdir()  # can be neither read nor replaced as a file any more
         radio.telemetry_modes, radio.contacts = 0x15, []  # something to write
         await connect(radio, manager)
 
     asyncio.run(main())
-    assert "cannot store the radio profile" in caplog.text
+    assert not store.flush()
+    assert "cannot write the state file" in caplog.text
     assert "before_contacts failed" not in caplog.text
     (report,) = manager.take_reports()
     assert report.written == {policy.TELEMETRY: 0}
     assert report.contacts_added == ("b2" * 32,)
+    ProfileRecords(JsonStateFile(state)).save("aa" * 32, Applied())
+    assert "cannot store the radio profile" in caplog.text
 
 
 def test_a_name_is_cut_between_characters() -> None:

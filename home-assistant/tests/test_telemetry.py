@@ -52,6 +52,7 @@ from test_contact_devices import (
     COMPANION,
     NOW,
     Broker,
+    Ticking,
     contact_entities,
     gateway_devices,
     mesh_of,
@@ -114,7 +115,7 @@ async def with_alice(
     her retained document as the broker sends it to the new subscriptions."""
     await with_gateway(hass)
     broker, mesh = Broker(), mesh_of(ALICE_NODE)
-    devices = gateway_devices(broker, JsonStateFile(tmp_path / "state.json"))
+    devices = gateway_devices(broker, Ticking(tmp_path / "state.json"))
     if entries:
         answer(mesh, NOW, *entries)
     await announce_alice(hass, mesh, devices, broker, state if entries else "waiting")

@@ -11,6 +11,8 @@ from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
+    SLUG_KEEP_S,
+    SLUGS_LEFT,
     AdvertChecks,
     AnnouncedComponents,
     CommandLedger,
@@ -42,6 +44,110 @@ def test_corrupt_file_is_kept_aside_and_reads_as_empty(tmp_path: Path) -> None:
     path.write_text("{not json", encoding="utf-8")
     assert JsonStateFile(path).load() == {}
     assert (tmp_path / "state.json.corrupt").read_text(encoding="utf-8") == "{not json"
+
+
+def read_only_disk(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Every write of a state file fails from now on; returns the log of the attempts."""
+    attempts: list[str] = []
+
+    def fail(_src: object, dst: object) -> None:
+        attempts.append(Path(str(dst)).name)
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(os, "replace", fail)  # the rename of the temporary file
+    return attempts
+
+
+def counted_writes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Records every write of a state file, which still happens."""
+    writes: list[str] = []
+    replace = os.replace
+
+    def counted(src: str, dst: str) -> None:
+        writes.append(Path(dst).name)
+        replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", counted)
+    return writes
+
+
+def test_the_state_file_is_read_once_and_the_sections_written_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ARC-004: the sections change the document in memory, and a flush writes them in one go;
+    a section written at once (the advert checks, the ledger) takes the others' changes with
+    it. A file replaced meanwhile (a backup restored while the service runs) is overwritten
+    with every section (CODE-004)."""
+    path = tmp_path / "state.json"
+    JsonStateFile(path).save({"retained_contacts": ["aa" * 32], "other": 1})
+    store = JsonStateFile(path)
+    keys, records = RetainedKeys(store, "contacts"), ContactDeviceRecords(store)
+    writes = counted_writes(monkeypatch)
+    path.write_text("{}", encoding="utf-8")  # replaced on disk: never read again
+    keys.replace({"bb" * 32})
+    records.hidden.add("cc" * 32)
+    records.save()
+    assert (writes, path.read_text(encoding="utf-8")) == ([], "{}")
+    assert RetainedKeys(store, "contacts").keys == {"bb" * 32}  # a section reads the memory
+    assert store.flush()
+    assert writes == ["state.json"]
+    assert store.flush()  # nothing changed since
+    assert writes == ["state.json"]
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written["other"] == 1
+    assert written["retained_contacts"] == ["bb" * 32]
+    assert ContactDeviceRecords(JsonStateFile(path)).hidden == {"cc" * 32}
+    keys.replace({"cc" * 32})
+    AdvertChecks(store).replace(CHECKED)  # at once, and the keys with it
+    assert writes == ["state.json"] * 2
+    assert RetainedKeys(JsonStateFile(path), "contacts").keys == {"cc" * 32}
+    keys.replace({"dd" * 32})
+    CommandLedger(store).record("a1" * 32, 5)  # at once too
+    assert writes == ["state.json"] * 3
+    assert RetainedKeys(JsonStateFile(path), "contacts").keys == {"dd" * 32}
+    assert store.flush()
+    assert writes == ["state.json"] * 3
+
+
+def test_a_state_file_that_cannot_be_written_is_written_once_it_can(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The changes stay in memory and in effect; a warning once, `failed` for the health
+    section, and an info line once the file is written again."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    keys = RetainedKeys(store, "contacts")
+    keys.replace({"aa" * 32})
+    with monkeypatch.context() as patch:
+        attempts = read_only_disk(patch)
+        assert not store.flush()
+        assert not store.flush()
+        assert attempts == ["state.json"] * 2
+        assert (store.failed, keys.keys) == (True, frozenset({"aa" * 32}))
+    assert caplog.text.count("cannot write the state file") == 1
+    assert "Read-only file system" in caplog.text
+    assert not path.exists()
+    assert [p.name for p in tmp_path.iterdir()] == []  # no temporary file left
+    with caplog.at_level(logging.INFO):
+        assert store.flush()
+    assert not store.failed
+    assert "state file" in caplog.records[-1].message
+    assert "written again" in caplog.records[-1].message
+    assert RetainedKeys(JsonStateFile(path), "contacts").keys == {"aa" * 32}
+
+
+def test_a_corrupt_state_file_is_moved_aside_once_for_every_section(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text("{not json", encoding="utf-8")
+    store = JsonStateFile(path)
+    keys = RetainedKeys(store, "contacts")
+    path.write_text('{"advert_checks": {}}', encoding="utf-8")  # never read: the file is read once
+    assert (keys.keys, AdvertChecks(store).checks, CurrentDocuments(store).documents) == (
+        frozenset(),
+        {},
+        {},
+    )
+    assert [p.name for p in tmp_path.iterdir()] == sorted(["state.json", "state.json.corrupt"])
 
 
 def test_ledger_remembers_the_newest_timestamp_per_sender(tmp_path: Path) -> None:
@@ -106,17 +212,17 @@ def test_a_component_that_comes_back_is_no_longer_removed(tmp_path: Path) -> Non
 
 
 def test_announced_components_survive_an_unwritable_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store = JsonStateFile(tmp_path / "state.json")
-    store.save({"ha_components": {"send_a": "notify"}})
-
-    def fail(_data: object) -> None:
-        raise OSError("read-only file system")
-
-    monkeypatch.setattr(store, "save", fail)
+    """A removal that was never written comes back at the next start from the components
+    stored before."""
+    path = tmp_path / "state.json"
+    JsonStateFile(path).save({"ha_components": {"send_a": "notify"}})
+    store = JsonStateFile(path)
     assert AnnouncedComponents(store).replace({}, now=0.0) == {"send_a": "notify"}
-    assert "read-only file system" in caplog.text
+    read_only_disk(monkeypatch)
+    assert not store.flush()
+    assert AnnouncedComponents(JsonStateFile(path)).replace({}, now=0.0) == {"send_a": "notify"}
 
 
 def test_a_failed_save_leaves_no_temporary_file_and_keeps_the_ledger(
@@ -136,10 +242,13 @@ def test_a_failed_save_leaves_no_temporary_file_and_keeps_the_ledger(
     assert ledger.last("aa" * 32) == 100
     assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
     assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100
+    RetainedKeys(ledger.store, "contacts").replace({"bb" * 32})  # another section's write
+    assert ledger.store.flush()
+    assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100  # not the refused one
 
 
 def test_retained_keys_are_remembered_and_survive_an_unwritable_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     keys = RetainedKeys(store, "contacts")
@@ -148,19 +257,19 @@ def test_retained_keys_are_remembered_and_survive_an_unwritable_state(
     assert RetainedKeys(store, "contacts").keys == {"aa" * 32}
     store.save({**store.load(), "retained_contacts": ["bb" * 32, 7]})  # foreign entries skipped
     assert RetainedKeys(store, "contacts").keys == {"bb" * 32}
-
-    def fail(_data: object) -> None:
-        raise OSError("read-only file system")
-
     keys = RetainedKeys(store, "contacts")
-    monkeypatch.setattr(store, "save", fail)
-    keys.replace({"cc" * 32})
-    assert keys.keys == {"bb" * 32}  # unchanged: the next change tries again
-    assert "cannot store the published retained_contacts: read-only file system" in caplog.text
+    with monkeypatch.context() as patch:
+        read_only_disk(patch)
+        keys.replace({"cc" * 32})
+        assert not store.flush()
+    assert keys.keys == {"cc" * 32}  # in effect, and written once it can be
+    assert RetainedKeys(JsonStateFile(store.path), "contacts").keys == {"bb" * 32}
+    assert store.flush()
+    assert RetainedKeys(JsonStateFile(store.path), "contacts").keys == {"cc" * 32}
 
 
 def test_current_documents_are_written_on_change_and_survive_an_unwritable_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     current = CurrentDocuments(store)
@@ -170,20 +279,21 @@ def test_current_documents_are_written_on_change_and_survive_an_unwritable_state
     current.replace(documents)
     documents["bb" * 32] = {**alice, "key": "bb" * 32}  # a change after the call is one
     current.replace(documents)
-    assert CurrentDocuments(store).documents == documents
-    saves: list[object] = []
+    assert store.flush()
+    assert CurrentDocuments(JsonStateFile(store.path)).documents == documents
     with monkeypatch.context() as patch:
-        patch.setattr(store, "save", saves.append)
+        writes = counted_writes(patch)
         current.replace(dict(documents))
-    assert saves == []  # unchanged: nothing written
-
-    def fail(_data: object) -> None:
-        raise OSError("read-only file system")
-
-    monkeypatch.setattr(store, "save", fail)
-    current.replace({})
-    assert current.documents == documents  # unchanged: the next call tries again
-    assert "cannot store the current contact documents: read-only file system" in caplog.text
+        assert store.flush()
+    assert writes == []  # unchanged: nothing written
+    with monkeypatch.context() as patch:
+        read_only_disk(patch)
+        current.replace({})
+        assert not store.flush()
+    assert current.documents == {}  # in effect, and written once it can be
+    assert CurrentDocuments(JsonStateFile(store.path)).documents == documents
+    assert store.flush()
+    assert CurrentDocuments(JsonStateFile(store.path)).documents == {}
 
 
 def test_current_documents_of_another_shape_read_as_empty(tmp_path: Path) -> None:
@@ -197,8 +307,8 @@ def test_current_documents_of_another_shape_read_as_empty(tmp_path: Path) -> Non
         "bb" * 32: good, "BB" * 32: good, "bb": good, "cc" * 32: [], "dd" * 32: None,
     }})  # fmt: skip
     assert CurrentDocuments(store).documents == {"bb" * 32: good}
-    store.path.write_bytes(b'{"current_contacts": {')  # unreadable: moved aside
-    assert CurrentDocuments(store).documents == {}
+    store.path.write_bytes(b'{"current_contacts": {')  # unreadable: moved aside at the start
+    assert CurrentDocuments(JsonStateFile(store.path)).documents == {}
 
 
 # --- advert checks (ADR 0018) -------------------------------------------------------------------
@@ -231,13 +341,18 @@ def test_advert_checks_round_trip_with_a_time_and_a_flag_only(tmp_path: Path) ->
 def test_unchanged_advert_checks_write_nothing(tmp_path: Path) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     AdvertChecks(store).replace({})  # none checked yet: nothing to store
+    assert store.flush()
     assert not store.path.exists()
     AdvertChecks(store).replace(CHECKED)
+    assert store.flush()
     os.utime(store.path, ns=(0, 0))
-    checks = AdvertChecks(store)  # what the file holds counts as stored
+    checks = AdvertChecks(JsonStateFile(store.path))  # what the file holds counts as stored
     checks.replace(dict(CHECKED))
+    assert store.flush()
     assert store.path.stat().st_mtime_ns == 0
+    checks = AdvertChecks(store)
     checks.replace({**CHECKED, "aa" * 32: AdvertCheck(1_768_464_060, True)})
+    assert store.flush()
     assert store.path.stat().st_mtime_ns != 0
 
 
@@ -282,28 +397,25 @@ def test_invalid_advert_checks_are_skipped_with_one_warning(
 
 
 def test_advert_checks_survive_an_unwritable_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The observer keeps its checks in memory; what is stored stays until a write succeeds."""
+    """The observer's checks are in effect at once; what is stored stays until a write
+    succeeds."""
     store = JsonStateFile(tmp_path / "state.json")
     checks = AdvertChecks(store)
     checks.replace(CHECKED)
-
-    def fail(_data: object) -> None:
-        raise OSError("read-only file system")
-
+    assert store.flush()
     with monkeypatch.context() as patch:
-        patch.setattr(store, "save", fail)
+        read_only_disk(patch)
         checks.replace({})
-    assert checks.checks == CHECKED  # unchanged: the next call tries again
-    assert "cannot store the advert checks: read-only file system" in caplog.text
-    checks.replace({})
-    assert AdvertChecks(store).checks == {}
+        assert not store.flush()
+    assert checks.checks == {}
+    assert AdvertChecks(JsonStateFile(store.path)).checks == CHECKED
+    assert store.flush()
+    assert AdvertChecks(JsonStateFile(store.path)).checks == {}
 
 
-def test_contact_device_records_survive_and_skip_foreign_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_contact_device_records_survive_and_skip_foreign_entries(tmp_path: Path) -> None:
     store = JsonStateFile(tmp_path / "state.json")
     records = ContactDeviceRecords(store)
     assert (records.announced, records.removed, records.hidden) == ({}, {}, set())
@@ -311,25 +423,47 @@ def test_contact_device_records_survive_and_skip_foreign_entries(
     records.removed["bb" * 32] = RemovedDevice({"hops": "sensor"}, 1.5)
     records.hidden.add("cc" * 32)
     records.save()
-    again = ContactDeviceRecords(store)
+    assert store.flush()
+    again = ContactDeviceRecords(JsonStateFile(store.path))
     assert again.announced == {"aa" * 32: DeviceRecord("alice", {"send": "notify"})}
     assert again.removed == {"bb" * 32: RemovedDevice({"hops": "sensor"}, 1.5)}
     assert again.hidden == {"cc" * 32}
     store.save({**store.load(), "ha_contact_devices": {
         "announced": {"dd" * 32: {"slug": 7}, "ee" * 32: {"slug": "e", "cmps": {"x": 1}}},
         "removed": {"ff" * 32: {"since": "never"}}, "hidden": ["11" * 32, None],
+        "left": {"ee" * 32: "yesterday", "99" * 32: 5.0},
     }})  # fmt: skip
     foreign = ContactDeviceRecords(store)
     assert foreign.announced == {"ee" * 32: DeviceRecord("e", {})}
-    assert (foreign.removed, foreign.hidden) == ({}, {"11" * 32})
+    assert (foreign.removed, foreign.hidden, foreign.left) == ({}, {"11" * 32}, {})
 
-    def fail(_data: object) -> None:
-        raise OSError("read-only file system")
 
-    monkeypatch.setattr(store, "save", fail)
-    foreign.hidden.clear()
-    foreign.save()
-    assert "cannot store the Home Assistant contact devices: read-only file system" in caplog.text
+def test_the_slugs_of_contacts_that_left_are_kept_for_a_while(tmp_path: Path) -> None:
+    """CODE-003: 2,000 contacts passing through the table leave at most SLUGS_LEFT slugs
+    behind, the newest; one that left SLUG_KEEP_S ago is forgotten, one in the table never."""
+    store = JsonStateFile(tmp_path / "state.json")
+    records = ContactDeviceRecords(store)
+    household = "ab" * 32
+    records.slugs[household] = "home"
+    for n in range(2000):
+        key = f"{n:064x}"
+        records.slugs[key] = f"node_{n}"
+        records.prune({household, key}, float(n))
+    assert len(records.slugs) == SLUGS_LEFT + 2  # those that left, the household, the last one
+    assert records.slugs[household] == "home"
+    assert f"{998:064x}" not in records.slugs
+    assert records.slugs[f"{999:064x}"] == "node_999"
+    records.save()
+    assert store.flush()
+    again = ContactDeviceRecords(JsonStateFile(store.path))
+    assert (again.slugs, again.left) == (records.slugs, records.left)
+    assert again.left[f"{1998:064x}"] == 1999.0  # when the read found it gone
+    again.prune({household}, 1999.0 + SLUG_KEEP_S)
+    assert again.slugs == {household: "home", f"{1999:064x}": "node_1999"}
+    assert again.left == {f"{1999:064x}": 1999.0 + SLUG_KEEP_S}  # it left only now
+    again.prune({household, f"{1999:064x}"}, 1999.0 + 2 * SLUG_KEEP_S)  # back in the table
+    assert again.slugs == {household: "home", f"{1999:064x}": "node_1999"}
+    assert again.left == {}
 
 
 # --- telemetry schedule (ADR 0018) --------------------------------------------------------------

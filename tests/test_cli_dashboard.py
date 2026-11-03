@@ -14,7 +14,7 @@ from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
 from meshcore_home_gateway.config import load_config
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.protocol.codes import NodeType
-from tests.test_contact_devices import ALICE, BOB, HILL, Clock, devices, mesh_of, node
+from tests.test_contact_devices import ALICE, BOB, HILL, Clock, devices, mesh_of, node, stopped
 
 CONFIG = (
     '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n'
@@ -38,6 +38,7 @@ def _state(directory: Path, *located: str) -> Path:
         node(BOB, "Bob"),
         *(node(key, names[key], NodeType.REPEATER, position=HERE) for key in located),
     ))  # fmt: skip
+    stopped(directory)  # the service stopped and wrote its state
     return directory
 
 

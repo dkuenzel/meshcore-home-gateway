@@ -55,9 +55,18 @@ from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_to
 from meshcore_home_gateway.mqtt.manage_entities import manage_payload, manage_topic
 from meshcore_home_gateway.mqtt.payloads import delivery_payload, received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
+from meshcore_home_gateway.state import ContactDeviceRecords
 from meshcore_home_gateway.views import contact_document, contact_event, iso
-from test_contact_devices import ALICE, ALICE_NODE, COMPANION, HILL_NODE, NOW, Broker, mesh_of
+from test_contact_devices import (
+    ALICE,
+    ALICE_NODE,
+    COMPANION,
+    HILL_NODE,
+    NOW,
+    Broker,
+    Ticking,
+    mesh_of,
+)  # fmt: skip
 
 # what anyone in radio range may write: markup, links, images, autolinks, a forged alert, Jinja
 ATTACKS = [
@@ -138,7 +147,7 @@ def topics_of(config: Config) -> Topics:
 
 def contacts_of(config: Config, store: Path, broker: Broker) -> ContactDevices:
     """The contacts' devices as the gateway announces them; its state file in `store`."""
-    records = ContactDeviceRecords(JsonStateFile(store / "state.json"))
+    records = ContactDeviceRecords(Ticking(store / "state.json"))
     return ContactDevices(config, topics_of(config), broker, records, wall_clock=lambda: NOW)
 
 

@@ -173,7 +173,7 @@ flowchart TB
 | `mqtt.discovery` | Home Assistant device discovery document. |
 | `mqtt.client` | paho-mqtt adapter: connection, last will, subscriptions, hand-over to the event loop. |
 | `config` | TOML loading with strict validation; rendering from installer answers. |
-| `state` | Atomic JSON state file; ledger of accepted command timestamps. |
+| `state` | The state file, read once and held in memory, its sections written together and atomically (§5.2); ledger of accepted command timestamps. |
 | `systemd` | Readiness, watchdog and status notifications. |
 | `cli` | Command-line entry points. |
 
@@ -193,7 +193,8 @@ Long-running tasks on the loop, supervised by a task group:
   for a fresh read of the radio's contact table, §7.3, without delaying acknowledgements);
 * **request reader**: turns MQTT send requests into queue entries or rejections;
 * **status reporter**: publishes the state document on change and every 60 s, pings the systemd
-  watchdog and writes an exclusion from telemetry that could not be stored yet (§6.11);
+  watchdog, writes an exclusion from telemetry that could not be stored yet (§6.11) and writes
+  the state file (below);
 * **telemetry poller** (only with `[telemetry] enabled`, the default): one request to a companion
   at a time (§6.11). Its saved schedule is restored before any task starts;
 * **lag probe**: sleeps a second at a time and measures how late it wakes. A host that gives the
@@ -208,6 +209,20 @@ session. The radio events and the message
 handler then finish the messages the radio has already handed over, for at most 2 s (a command
 waiting for its table read is rejected, `sender_unverified`); then the other tasks are cancelled.
 Messages still waiting in the radio are fetched at the next start.
+
+The state file (`state.json`, `state.py`) is one store for every part that keeps something
+across a restart (ARC-004): read once at the start, held in memory, and written whole and
+atomically (a temporary file, `fsync`, rename). A part changes its section in memory; the status
+reporter writes what changed at its tick (every 30 s under systemd's watchdog, else every
+minute) and at the stop, so a
+table read that changes the contact devices, the published keys and the components costs one
+write. What a crash must not lose is written at once: the newest accepted command time per sender
+before the command is published (§6.4), the observer's kept documents and advert checks when they
+change (a place a companion stopped sharing must not come back, §6.6), the telemetry schedule
+after a flood and at the first-start hour (§6.11) and the radio profile's attempts before its
+setters. A crash loses at most the other changes since the last tick, which the next table read
+makes again. A file replaced on disk while the service runs is overwritten with every section by
+the next write; a backup is restored with the service stopped (§9).
 
 Each radio session runs two tasks of its own: a **reader** that routes frames, and a
 **maintenance** task that re-reads the contact table after adverts and contact pushes, drains the
@@ -297,7 +312,8 @@ sequenceDiagram
 * **Managed profile** ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)).
   After the auto-add and tuning settings are read and before the contact table is read, the
   session hands itself to the profile (`radio/profile.py`): a three-way reconcile of desired
-  (configuration), last applied (state file, per radio key) and live (the radio) in
+  (configuration), last applied (state file, per radio key, for the current radio and the two
+  saved before it, CODE-003) and live (the radio) in
   `core/profile.py` names what to write; one setter per command, then the settings are read back.
   After the table read, protected contacts are added or made favourites. A bug there is logged and
   the connection goes on. When the profile only observes, the session warns if the radio adds
@@ -657,7 +673,8 @@ are never removed one by one; only the tracker has coordinates. The tracker of a
 telemetry and the telemetry sensors are available only while the answers are current
 ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the device and state
 classes are interface and recorded in the snapshot. Entity IDs use a slug of the contact's name kept from its first appearance, also when
-it comes back. The gateway subscribes to these topics: an empty document it did not send is the user
+it comes back within 90 days of leaving the table (at most 1 000 slugs of contacts that left are
+kept, the newest; CODE-003). The gateway subscribes to these topics: an empty document it did not send is the user
 deleting the device in Home Assistant, and the contact stays hidden there until it leaves the table
 or is shown again. At most `homeassistant.contact_devices` contacts get a device; one keeps its
 device while it stays in the table, and free places go to protected contacts, favourites,
@@ -1227,8 +1244,8 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects; the events of refused requests are limited to 20 per second (bursts of 100), so they cannot push other events out of a subscriber's queue on the broker | `delivery: duplicate` / `rejected`; a log warning counts the events left out |
 | A flood of adverts from strangers (invented keys, or a busy mesh) | none: each advert is valid | bounded (§7.2): heard nodes heard once make room first; the `nodes` document at most every 30 s; `node` events rate-limited; no table read per advert on firmware 1.12 and newer; the history keeps only the nodes the gateway keeps | *Nodes heard* at 50 with unknown names; the *Add heard node* select offers them |
 | A flood of messages from a contact or on a channel | rate limit per sender and per channel | judged as commands, then published and kept in the history up to a burst of 10 per sender (then one every 2 s) and of 20 per channel (then one a second); an accepted command always goes out | fewer `received` events; a log warning counts those left out, at most once a minute |
-| State file corrupt | JSON error at start | moved aside, start empty | log warning |
-| State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
+| State file corrupt | JSON error at start | moved aside, start empty (read once: every part starts empty) | log warning |
+| State file not writable | error on write | the command is rejected, the service carries on; the other sections stay in effect in memory and are written once the file can be | `received`: `state_unwritable`; `health.state_file = unwritable`; a log warning once, an info line when written again |
 | Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |
 | Companion silent (away, switched off, no permission) | no telemetry answer within the wait | one retry after 30 s, then a back-off: at least every `max(30 min, its interval)` for a day on its stored path, then up to 6 h; never a flood unless heard | log info per state change |
 | Telemetry answer from another contact or a look-alike | prefix, table | dropped; with a look-alike in the table nobody with that prefix is asked | log debug or warning |
@@ -1256,7 +1273,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | A table read that started before the radio took the advert (its push came during the read) | the push's own log is newer than the record, the record is no newer than at the read before, or no log has the record's time while a newer one is in the window | the read waits for the next one, at most 30 s, which decides | – |
 | Logged copies of one advert that differ, or a log against the record | comparison | nothing learned; the last check stays | log warning |
 | A receive delay above 0, or firmware that reports no tuning | the tuning read at connect | the frame before the push does not decide; all logs of the key with the advert's time must agree | – |
-| Advert checks in the state file invalid or not writable | validation, error on save | invalid entries skipped; the checks are kept in memory, and the next change writes them again | log warning |
+| Advert checks in the state file invalid or not writable | validation, error on write | invalid entries skipped; the checks are in effect in memory and written once the file can be | log warning |
 
 ## 9 Deployment and operations
 

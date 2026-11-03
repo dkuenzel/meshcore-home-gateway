@@ -367,7 +367,8 @@ English. The service's log is always English.
   the household's companions and message texts, and the history also other people's names, keys
   and channel texts
   ([what the gateway keeps](privacy.md)). Restore the three state files together and with the
-  service stopped: the service rewrites `state.json` while it runs, an older `state.json` beside
+  service stopped: the service holds `state.json` in memory and writes it whole while it runs,
+  over a copy restored meanwhile; an older `state.json` beside
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
   older `telemetry-excluded.json` asks companions excluded since.
   * `state.json` holds the newest accepted command time per sender (without it a restored system

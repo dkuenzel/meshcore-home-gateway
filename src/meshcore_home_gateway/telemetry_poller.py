@@ -353,8 +353,8 @@ class TelemetryPoller:
             log.exception("telemetry: recovery failed")
 
     def _save(self, *, at_once: bool = False) -> None:
-        """Every 5 minutes after a change, at once after a flood (so a restart cannot repeat
-        it) and at the stop. Never raises."""
+        """Every 5 minutes after a change (written with the state file's next flush), at once
+        after a flood (so a restart cannot repeat it) and at the stop. Never raises."""
         if self._records is None:
             return
         try:
@@ -365,10 +365,11 @@ class TelemetryPoller:
             ):
                 return
             pending = self._hold_left is not None and self._hold_until is None
+            now = at_once or scheduler.urgent  # the export clears `urgent`
             saved = replace(
                 scheduler.export(mono), hold_left_s=self._hold_rest(mono), hold_pending=pending
             )
-            self._records.save(saved, self._wall())
+            self._records.save(saved, self._wall(), at_once=now)
             self._saved_version, self._saved_mono = scheduler.version, mono
         except Exception:
             log.exception("telemetry: the schedule could not be saved")
