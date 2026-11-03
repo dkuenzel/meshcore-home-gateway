@@ -360,7 +360,9 @@ def test_acknowledgement_arriving_before_a_retry_ends_the_delivery(tmp_path: Pat
         async with running(config, radio, tmp_path) as (bridge, bus, _notes):
             bus.send("bob", "early")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
-            bridge._budget._tokens, bridge._budget._rate = 0.0, 2.0  # attempt 2 waits ~0.3 s
+            # attempt 2 waits ~1.2 s for airtime: the acknowledgement comes long before it, also on
+            # a loaded CI runner (a margin of 50 ms once was not enough on Python 3.11)
+            bridge._budget._tokens, bridge._budget._rate = 0.0, 0.5
             await asyncio.sleep(0.25)
             from meshcore_home_gateway.protocol.codec import expected_ack
             from tests.radio_emulator import SELF_KEY
