@@ -44,7 +44,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SEC-006 | fix | Announcements after a birth are never postponed past the first due time and come at most every 30 s; repeated births are logged; the default client id gets a random suffix per start (**Breaking**) | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | SEC-007 | fix | `name_taken` in the `nodes` document and the `node` event, a mark in the select's labels, contact devices of the same name disambiguated by their key digits; names compared after NFKC and case folding, with invisible characters left out and Cyrillic and Greek look-alike letters read as the Latin ones | [#47](https://github.com/dkuenzel/meshcore-home-gateway/pull/47) |
 | SEC-008 | fix | `[homeassistant] controls = false` separates Home Assistant's controls from the function (MQTT and the command line keep working): they stay announced but always unavailable, which Home Assistant leaves out of its actions, because removing a disabled entity takes its whole device away; `[homeassistant] hidden_targets` (instead of a per-target `expose`, which the installer's answers could not carry) hides a target's notify entity; the guide explains Home Assistant's user model | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
-| SEC-009 | fix | `[mqtt] password_file` keeps the secret out of `config.toml` and out of `config answers`; the installer writes it; a systemd credential is documented | pending: password |
+| SEC-009 | fix | `[mqtt] password_file` keeps the secret out of `config.toml` and out of `config answers`; the installer writes it; a systemd credential is documented | [#46](https://github.com/dkuenzel/meshcore-home-gateway/pull/46) |
 | SEC-010 | fix | The history keeps node rows only for the contacts and the heard nodes the gateway keeps (the finding's option 3, tighter than a row cap), for 7 days as ADR 0016 says. No `[history] nodes_days` setting, as first planned: beyond the 7 days of the memory it would change nothing | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | SEC-011 | fix | The `nodes` document coalesced (at most every 30 s while only heard nodes change); no table read after a `NEW_ADVERT` on firmware that never uses it for a contact; once-heard nodes evicted before nodes heard again | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | SEC-012 | fix | `[messages] publish_channels = "targets"` publishes only the channels the household configured (new installations get it; the default stays `all` until the 2.0.0 decision); a rate limit per channel; documented | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43), [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
@@ -191,7 +191,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-009 | fix | Through SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | IMP-010 | fix | Through SEC-007 | [#47](https://github.com/dkuenzel/meshcore-home-gateway/pull/47) |
 | IMP-011 | fix | Through SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
-| IMP-012 | fix | Through SEC-009 | pending: password |
+| IMP-012 | fix | Through SEC-009 | [#46](https://github.com/dkuenzel/meshcore-home-gateway/pull/46) |
 | IMP-013 | fix | Through ARC-012 | pending: robustness |
 | IMP-014 | fix | Through ARC-013 | pending: outbox |
 | IMP-015 | fix | Through ARC-014 | pending: mqtt5 |
