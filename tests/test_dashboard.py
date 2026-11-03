@@ -251,6 +251,19 @@ def test_the_trackers_are_sorted_and_only_valid_entity_ids(tmp_path: Path) -> No
     state.write_text(json.dumps({"ha_contact_devices": {"announced": announced}}), encoding="utf-8")
     records = ContactDeviceRecords(JsonStateFile(state, read_only=True))
     assert dashboard.trackers(records) == ["device_tracker.mesh_alice", "device_tracker.mesh_zed"]
+    # ARC-015: a second gateway's contacts begin otherwise, on the map and in the contacts card
+    assert dashboard.trackers(records, "mesh_2")[0] == "device_tracker.mesh_2_alice"
+
+
+def test_the_contacts_card_finds_the_contacts_by_the_configured_prefix() -> None:
+    """ARC-015: `[homeassistant] contact_entity_prefix` reaches the card's entity patterns."""
+    template = (Path(dashboard.__file__).parent / dashboard.TEMPLATE).read_text(encoding="utf-8")
+    yaml = dashboard.render(
+        template, node_id="radio1", version="1.0", trackers=[], text=lambda m, v: m,
+        contact_prefix="mesh_2",
+    )  # fmt: skip
+    assert "sensor\\\\.mesh_2_.+_last_heard" in yaml
+    assert "sensor\\\\.mesh_.+_last_heard" not in yaml
 
 
 @pytest.mark.parametrize("state", ["missing", "a directory", "not json"])
@@ -342,7 +355,7 @@ _INTEGER = re.compile(
     r".*\|\s*(?:int|count)(?:\(\s*-?\d*\s*\))?|\[?\s*(\w+)\s*//\s*\d+(?:\s*,\s*\d+\s*\]\s*\|\s*max)?"
 )
 _YAML_11 = re.compile(r"(?i)y|n|yes|no|on|off|\d+(?:\.\d+)+\w*")
-_PLACEHOLDERS = {"@gw@", "@node@", "@version@", "@trackers@"}
+_PLACEHOLDERS = {"@gw@", "@contact@", "@node@", "@version@", "@trackers@"}
 _JINJA_NOTE = re.compile(r"\{#-?\s*Translators:.*-?#\}")
 _OPENS = {"<div>": "</div>", "<table>": "</table>", "<ha-qr-code": "</ha-qr-code>"}
 

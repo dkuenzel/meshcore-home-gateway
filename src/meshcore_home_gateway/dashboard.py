@@ -5,8 +5,9 @@ out: no YAML parser at run time (ADR 0005).
 
 The template is YAML as it stands, both branches of its conditional included:
 
-* `@gw@` (the gateway's part of its entity IDs), `@node@`, `@version@` and `["@trackers@"]` (the
-  map's trackers, a JSON list) are filled in.
+* `@gw@` (the gateway's part of its entity IDs), `@contact@` (how its contacts' entity IDs
+  begin), `@node@`, `@version@` and `["@trackers@"]` (the map's trackers, a JSON list) are
+  filled in.
 * The lines between `# @if trackers` and `# @else` stay while the map lists a tracker, those
   between `# @else` and `# @end` while it lists none.
 * `_("…")`, a JSON string inside, marks a text (msgctxt "dashboard"; tools/i18n.py extracts it).
@@ -71,12 +72,13 @@ def unsafe(text: str) -> str | None:
     return None
 
 
-def trackers(records: ContactDeviceRecords) -> list[str]:
-    """The trackers of the contacts announced with a position, sorted. A contact deleted in Home
-    Assistant is hidden, not announced; a slug that is no part of an entity ID never came from
-    the gateway."""
+def trackers(records: ContactDeviceRecords, prefix: str = "mesh") -> list[str]:
+    """The trackers of the contacts announced with a position, sorted; `prefix`: how the
+    contacts' entity IDs begin (`[homeassistant] contact_entity_prefix`). A contact deleted in
+    Home Assistant is hidden, not announced; a slug that is no part of an entity ID never came
+    from the gateway."""
     return sorted(
-        f"device_tracker.mesh_{record.slug}"
+        f"device_tracker.{prefix}_{record.slug}"
         for record in records.announced.values()
         if record.components.get("position") == "device_tracker" and _SLUG.fullmatch(record.slug)
     )
@@ -89,9 +91,10 @@ def render(
     version: str,
     trackers: Sequence[str],
     text: Callable[[str, Mapping[str, str]], str],
+    contact_prefix: str = "mesh",
 ) -> str:
     """The template filled in; `text(msgid, values)` gives a text in the dashboard's language,
-    filled with the values."""
+    filled with the values; `contact_prefix` begins the contacts' entity IDs."""
     lines = _kept(template.split("\n"), {"trackers": bool(trackers)})
     filled = (
         "\n".join(lines)
@@ -99,6 +102,7 @@ def render(
         .replace("@gw@", "meshcore_home_gateway_" + node_id.replace("-", "_"))
         .replace("@node@", node_id)
         .replace("@version@", version)
+        .replace("@contact@", contact_prefix)
     )
     for line in filled.split("\n"):  # before any text goes in: no translation can trip it
         if '_("' in MARKER.sub("", line) or _PLACEHOLDER.search(line):
@@ -120,7 +124,8 @@ def dashboard(config: Config, state_dir: Path) -> tuple[str, int]:
     """The YAML for this gateway, and how many contacts its map lists, from the service's state
     in state_dir, read only: without it, none."""
     records = ContactDeviceRecords(JsonStateFile(state_dir / "state.json", read_only=True))
-    listed = trackers(records)
+    prefix = config.homeassistant.contact_entity_prefix
+    listed = trackers(records, prefix)
     translator = i18n.translator(config.homeassistant.language)
 
     def text(msgid: str, values: Mapping[str, str]) -> str:
@@ -128,8 +133,9 @@ def dashboard(config: Config, state_dir: Path) -> tuple[str, int]:
 
     template = (resources.files(__package__ or __name__) / TEMPLATE).read_text(encoding="utf-8")
     yaml = render(
-        template, node_id=config.mqtt.node_id, version=__version__, trackers=listed, text=text
-    )
+        template, node_id=config.mqtt.node_id, version=__version__, trackers=listed, text=text,
+        contact_prefix=prefix,
+    )  # fmt: skip
     return yaml, len(listed)
 
 
