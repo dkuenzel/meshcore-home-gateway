@@ -776,7 +776,10 @@ mosquitto -c m.conf & broker=$!
   ACL subscription strings."). *Here:* `send --wait` checks only the SUBACK (`_subscribe()` in
   `cli.py`), so a missing read grant on `delivery` ends in `no delivery result in time` rather
   than an error. The gateway needs `read` on `homeassistant/status` to see Home Assistant's birth
-  message, as in the ACL in [mqtt-api.md](mqtt-api.md#securing-the-broker). *Check:*
+  message, as in the ACL in [mqtt-api.md](mqtt-api.md#securing-the-broker). Without `read` on its
+  own topics, its own messages never come back: the gateway warns when its `online` does not
+  within 10 seconds (`_check_echo()` in `mqtt/client.py`), as nothing it would restore arrives.
+  *Check:*
   `mosquitto_sub -d -p 18830 -u mhg -P s3cret -q 1 -t homeassistant/status -E` prints
   `Subscribed (mid: 1): 1`, that is, granted with QoS 1.
 * **Mosquitto checks a will against the ACL only when it publishes it, not at CONNECT.** A client
@@ -797,8 +800,11 @@ mosquitto -c m.conf & broker=$!
   `test_with_broker_a_retained_request_is_flagged_only_when_replayed`
   ([`tests/test_mqtt_client.py`](../tests/test_mqtt_client.py)); MQTT 3.1.1, section 3.3.1.3.
   *Here:* [mqtt-api.md](mqtt-api.md#sending-sendalias): a retained send request is sent once,
-  and its replays are rejected with `retained`. *Check:* `.venv/bin/pytest tests/test_mqtt_client.py
-  -k retained_request` (needs `mosquitto`; `make test` runs it too).
+  and its replays are rejected with `retained`; the gateway compares only the live messages on
+  its retained topics with what it wrote, and restores what another client wrote
+  (`mqtt/retained.py`, `test_with_broker_a_forged_document_is_restored`). *Check:*
+  `.venv/bin/pytest tests/test_mqtt_client.py -k "retained_request or forged_document"` (needs
+  `mosquitto`; `make test` runs it too).
 * **A password file written by `mosquitto_passwd` 2.1 loses users on a 2.0 broker.** 2.0 writes
   `$7$` entries (PBKDF2-HMAC-SHA512) with 101 iterations and a 12-byte salt, 2.1 with 1000
   iterations and a 64-byte salt. 2.0 drops any entry whose salt is not 12 bytes ("Error: Unable to

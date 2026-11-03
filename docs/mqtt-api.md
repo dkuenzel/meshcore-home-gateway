@@ -40,9 +40,11 @@ Times are ISO 8601 in UTC with seconds. Unknown values are `null`; keys are alwa
 The retained JSON topics are the gateway's *documents* ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)):
 every front end (Home Assistant through discovery, other home automation systems through their
 MQTT bindings, later dashboards) reads the same ones. A document is published when it changes
-and again after every reconnect to the broker. Units are in the key names, machine values are in
-lower case, and texts from the mesh (names, messages) are plain data: never interpret them as
-markup. Lists are bounded in size and carry `total` and `truncated`.
+and again after every reconnect to the broker. The gateway also reads its retained topics, to
+undo what another client writes there ([securing the broker](#securing-the-broker)). Units are in
+the key names, machine values are in lower case, and texts from the mesh (names, messages) are
+plain data: never interpret them as markup. Lists are bounded in size and carry `total` and
+`truncated`.
 
 Within a major version topics, keys and values are only added. Ignore topics and keys you do not
 know, and expect new values in every list of values below (`event_type`, `reason`, `state`,
@@ -715,6 +717,19 @@ Without an ACL every client of the broker can do what the gateway does: publish 
 events, write a contact's document with any position, send to every target and read every
 message and position. The gateway cannot tell: it sees neither the broker's ACL nor who else
 writes below its topics.
+
+The documents carry no origin, no time of publication by the gateway and no signature: Home
+Assistant and every other consumer trust them because only the gateway may write them. The
+gateway subscribes to its retained topics (`availability`, `state` and the documents) and undoes
+what another client writes there: it publishes its own payload again, or an empty one where it
+has published nothing in this run, at once and then at most every 10 seconds per topic, and the
+log names the topic (once a minute). Its own messages come back too and are dropped. A forged
+document, a forged position for a presence automation for example, so stands only until its copy
+reaches the gateway, at most 10 seconds against a client that keeps writing, but as long as the
+forger likes while the gateway is offline. The gateway's user needs read access to its topics
+for this, as the ACL above gives it. Mosquitto's `acl_file` grants every subscription and leaves
+out what the user may not read: the log says so when the gateway's `online` does not come back
+within 10 seconds, and when a broker refuses one of its subscriptions.
 
 What the gateway can see, it says: at start and in `check-config` it warns when it logs in
 without a user name, or without TLS to a broker that is not on its host or the link (then the

@@ -1972,6 +1972,15 @@
    "<base_topic>/<node_id>/add_contact": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/availability": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/contacts": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/contacts/+": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/contacts/+/remove": {
     "qos": 1
    },
@@ -1981,13 +1990,28 @@
    "<base_topic>/<node_id>/contacts/+/telemetry": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/history": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/homeassistant/add_node": {
     "qos": 1
    },
    "<base_topic>/<node_id>/homeassistant/show_hidden": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/nodes": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/send/+": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/settings": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/state": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/stats": {
     "qos": 1
    },
    "<prefix>/device/<device>/+/config": {

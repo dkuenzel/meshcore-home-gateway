@@ -6,6 +6,8 @@ import asyncio
 import re
 import socket
 import threading
+import time
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -17,6 +19,7 @@ from paho.mqtt.reasoncodes import ReasonCode
 
 from meshcore_home_gateway.config import MqttConfig
 from meshcore_home_gateway.mqtt import client as client_module
+from meshcore_home_gateway.mqtt import retained as retained_module
 from meshcore_home_gateway.mqtt.client import ContactRequest, MqttBus, SendRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from tests.conftest import Broker
@@ -111,7 +114,12 @@ def test_connection_subscribes_and_announces_availability() -> None:
         assert dict(fake.calls)["subscribe"] == (
             [("meshcore/radio1/send/+", 1), ("meshcore/radio1/contacts/+/send", 1),
              ("meshcore/radio1/add_contact", 1), ("meshcore/radio1/contacts/+/remove", 1),
-             ("meshcore/radio1/contacts/+/telemetry", 1), ("homeassistant/status", 1)],
+             ("meshcore/radio1/contacts/+/telemetry", 1),
+             *[(f"meshcore/radio1/{name}", 1) for name in (
+                "availability", "contacts", "history", "nodes", "settings", "state", "stats",
+                "contacts/+",
+             )],
+             ("homeassistant/status", 1)],
         )  # fmt: skip
         assert fake.published[-1] == ("meshcore/radio1/availability", b"online", 1, True)
         assert bus.connected
@@ -374,6 +382,132 @@ def test_disconnect_is_tracked() -> None:
     asyncio.run(scenario())
 
 
+def deliver_to(fake: FakePaho) -> Callable[..., None]:
+    def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
+        fake.on_message(fake, None, SimpleNamespace(topic=topic, payload=payload, retain=retain))
+
+    return deliver
+
+
+def test_a_refused_subscription_is_named(caplog: pytest.LogCaptureFixture) -> None:
+    """An ACL without read access would lose requests and leave forged documents unseen."""
+
+    class Subscribing(FakePaho):
+        def subscribe(self, topic: list[tuple[str, int]]) -> tuple[int, int]:
+            return 0, 7
+
+    async def scenario() -> None:
+        fake = Subscribing()
+        bus = MqttBus(
+            MqttConfig(host="h", node_id="radio1"), TOPICS, "homeassistant/status",
+            client_factory=lambda _: fake,
+        )  # fmt: skip
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        granted, refused = (ReasonCode(PacketTypes.SUBACK, identifier=c) for c in (1, 0x80))
+        fake.on_subscribe(fake, None, 6, [refused] * 14, None)  # another subscription's answer
+        assert "refused the subscription" not in caplog.text
+        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 8 + [granted], None)
+        assert (
+            "refused the subscription to meshcore/radio1/availability, meshcore/radio1/contacts,"
+        ) in caplog.text
+        assert "meshcore/radio1/contacts/+ (the gateway's user needs read access" in caplog.text
+        assert "homeassistant/status" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_what_another_client_writes_on_a_retained_topic_is_undone(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """SEC-005: a forged document (here a position) or a cleared one stands only until its copy
+    comes back to the gateway; its own copies, and the broker's for the new subscription, do
+    nothing."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        deliver = deliver_to(fake)
+        contact = TOPICS.contact("ab" * 32)
+        await asyncio.to_thread(deliver, contact, b"stale", True)  # the broker's copy
+        bus.publish(contact, b'{"latitude": 1.0}', retain=True)
+        await asyncio.to_thread(deliver, TOPICS.availability, b"online")  # copies come back
+        await asyncio.to_thread(deliver, contact, b'{"latitude": 1.0}')
+        await asyncio.sleep(0.05)
+        assert fake.published[-1] == (contact, b'{"latitude": 1.0}', 1, True)
+        before = len(fake.published)
+
+        await asyncio.to_thread(deliver, contact, b'{"latitude": 47.0}')
+        await asyncio.to_thread(deliver, TOPICS.availability, b"offline")
+        await asyncio.sleep(0.05)
+        assert fake.published[before:] == [
+            (contact, b'{"latitude": 1.0}', 1, True), (TOPICS.availability, b"online", 1, True),
+        ]  # fmt: skip
+        assert f"another client wrote {contact}" in caplog.text
+        assert bus.requests.empty()
+        assert bus.contact_requests.empty()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("comes_back", [True, False])
+def test_own_messages_that_never_come_back_are_reported(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, comes_back: bool
+) -> None:
+    """Mosquitto's acl_file grants every subscription and leaves out what may not be read: the
+    gateway notices only that its `online` does not come back."""
+    monkeypatch.setattr(client_module, "ECHO_WAIT_S", 0.05)
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        if comes_back:
+            await asyncio.to_thread(deliver_to(fake), TOPICS.availability, b"online")
+        await asyncio.sleep(0.1)
+        assert ("did not come back within" in caplog.text) is not comes_back
+        caplog.clear()
+        fake.on_disconnect(fake, None, None, "lost", None)  # a check due after a loss: none
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        fake.on_disconnect(fake, None, None, "lost", None)
+        await asyncio.sleep(0.1)
+        assert "did not come back" not in caplog.text
+
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        await bus.stop()  # before the check is due
+        await asyncio.sleep(0.1)
+        assert "did not come back" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_a_stopping_gateway_restores_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Its `offline` must stay the last word, also with a restore waiting for its interval."""
+    monkeypatch.setattr(retained_module, "HEAL_INTERVAL_S", 0.05)
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        bus.publish(TOPICS.state, b"{}", retain=True)
+        for forged in (b"forged", b"again"):  # the second restore waits
+            await asyncio.to_thread(deliver_to(fake), TOPICS.state, forged)
+        await asyncio.sleep(0.01)
+        await bus.stop()
+        await asyncio.to_thread(deliver_to(fake), TOPICS.availability, b"offline")
+        await asyncio.to_thread(deliver_to(fake), TOPICS.state, b"forged")
+        await asyncio.sleep(0.1)
+        assert fake.published[-1] == (TOPICS.availability, b"offline", 1, True)
+
+    asyncio.run(scenario())
+
+
 def test_events_are_bounded_while_the_broker_is_unreachable(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -546,6 +680,49 @@ def test_with_broker_a_retained_request_is_flagged_only_when_replayed(broker: Br
         finally:
             await bus.stop()
             observer.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.broker
+def test_with_broker_a_forged_document_is_restored(broker: Broker) -> None:
+    """SEC-005 against Mosquitto: the forged state comes back to the gateway unflagged, the
+    gateway writes its own again, and the broker keeps that one."""
+    own, forged = b'{"radio": "connected"}', b'{"radio": "forged"}'
+
+    async def scenario() -> None:
+        config = MqttConfig(host=broker.host, port=broker.port, node_id="radio1", keepalive_s=10)
+        bus = MqttBus(config, TOPICS, None)
+        connected = asyncio.Event()
+        bus.on_connected.append(connected.set)
+        forger = Observer(broker)
+        await bus.start()
+        try:
+            await asyncio.wait_for(connected.wait(), 5)
+            bus.publish(TOPICS.state, own, retain=True)
+            await asyncio.to_thread(forger.wait_for, TOPICS.state, own)
+            forger.client.publish(TOPICS.state, forged, qos=1, retain=True)
+
+            def restored() -> bool:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    states = [p for t, p, _ in forger.messages if t == TOPICS.state]
+                    if forged in states and states[-1] == own:
+                        return True
+                    forger.event.wait(0.05)
+                    forger.event.clear()
+                return False
+
+            assert await asyncio.to_thread(restored), forger.messages
+        finally:
+            await bus.stop()
+            forger.close()
+        late = Observer(broker)  # subscribes after the fact: sees what the broker keeps
+        try:
+            await asyncio.to_thread(late.wait_for, TOPICS.state, own)
+            assert (TOPICS.state, forged, True) not in late.messages
+        finally:
+            late.close()
 
     asyncio.run(scenario())
 

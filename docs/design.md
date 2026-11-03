@@ -469,6 +469,12 @@ there).
 * On reconnect the bridge republishes availability, discovery and state; when Home Assistant
   announces itself on `homeassistant.status_topic` (default `homeassistant/status`), discovery and
   state (availability is retained, so Home Assistant receives it with its subscription).
+* The adapter subscribes to the gateway's retained topics as well (`availability`, `state` and the
+  documents; module `mqtt.retained`). Its own payloads come back and are dropped (MQTT 3.1.1 has no
+  option to leave them out); what another client writes there is undone, at once and then at most
+  every 10 seconds per topic, with a warning (§7.2). The copies the broker sends for the new
+  subscription at a connect are not compared: the connect publishes every document after it
+  (they carry the retain flag, live messages do not: [platform notes](platform-notes.md#mosquitto)).
 
 ### 6.6 Observer: documents and history
 
@@ -1023,6 +1029,7 @@ gateways share a name.
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
 | Retained send request re-sent on every reconnect | A retained request published while the bridge is connected arrives without the flag (MQTT 3.1.1) and is sent once; the copy the broker keeps arrives flagged at every later connection (reconnect or restart) and is rejected (`reason: retained`), not sent. Clear it with an empty retained message on the same topic. |
 | Forged events on the bridge's topics by another broker client (a fake `command` event triggers automations as if an allowlisted sender had sent it) | Topic ACLs: only the bridge user may publish below `<base>/<node>/`, except `send/`. Required when commands are configured (mqtt-api.md, last section); the sender check protects only the radio side. The gateway cannot see the ACL; it warns at start and in `check-config` when it logs in without a user name, or without TLS to a broker beyond its host or link, and with commands configured either is a configuration error until `[mqtt] insecure = true` accepts it. `check-config --broker` logs in once more without credentials and warns when the broker takes that client. |
+| A forged, cleared or stale retained document by another broker client (a forged position in `contacts/<key>` steers a presence automation; an empty one makes the contact's entities unknown) | Topic ACLs, as above: the documents carry no origin, so their consumers trust them because only the gateway may write them ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md), amendment). The gateway subscribes to its retained topics and undoes what another client writes there: its own payload again, or an empty one where it has published nothing in this run, at once and then at most every 10 seconds per topic; the log names the topic once a minute, and says when the gateway cannot read its topics (a refused subscription, or its `online` not back within 10 seconds, as Mosquitto's `acl_file` grants every subscription). A forgery stands until then, and while the gateway is offline (§7.4). |
 | Another broker client takes the gateway's client id, or floods Home Assistant's status topic with birth messages | The default client id has a random part per start, so it cannot be read off the topics (a broker drops a client when another connects with its id). Announcements after birth messages and discovery clears are never postponed by a later one and come at most every 30 s; more than 5 births a minute are logged with the topic. |
 | Unauthenticated TCP companion interface | Prefer USB. With WiFi firmware, put the radio in an isolated network that only the bridge reaches: any client controls the radio, and can for example create temporary contacts that the contact list never shows. Nor does the bridge authenticate the radio: a host that takes the radio's address (ARP or DNS spoofing, or while the radio is off) can present an allowlisted key as a contact and forge accepted commands, and it receives the outgoing messages. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
@@ -1103,6 +1110,12 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
+* A client that may write the gateway's topics can show Home Assistant a forged document until
+  the gateway restores it: a round trip, up to 10 seconds if it keeps writing, and as long as it
+  likes while the gateway is offline, as it can write `online` to `availability` too. Only the
+  broker's ACL prevents it (mqtt-api.md, *Securing the broker*). The documents carry no stamp of
+  the time the gateway published them, as a forger copies one, and no signature until a consumer
+  can check one; Home Assistant's templates cannot.
 * Telemetry (§6.11) asks every chat contact of the radio that is not excluded, and the gateway
   cannot read a companion's permissions: a contact that answers everyone ("Allow All") is tracked
   like a household member until it is excluded. An update nobody looks at within the first-start

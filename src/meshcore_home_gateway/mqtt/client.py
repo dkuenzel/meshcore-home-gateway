@@ -4,7 +4,9 @@ paho runs its network loop in its own thread (`loop_start`) and reconnects by it
 only hand data to the event loop with `call_soon_threadsafe`; `publish` is safe to call from the
 event loop because paho guards its outgoing queue with a lock. While the broker is unreachable,
 events stay queued in paho and go out after the reconnect, at most MAX_QUEUED_EVENTS of them;
-retained documents are skipped then, because the reconnect publishes them again.
+retained documents are skipped then, because the reconnect publishes them again. The adapter
+subscribes to the gateway's retained topics too, and undoes what other clients write there
+(`mqtt.retained`).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import logging
 import secrets
 import ssl
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -22,6 +25,7 @@ import paho.mqtt.client as paho
 from paho.mqtt.enums import CallbackAPIVersion, MQTTProtocolVersion
 
 from meshcore_home_gateway.config import ConfigError, MqttConfig
+from meshcore_home_gateway.mqtt.retained import RetainedTopics
 from meshcore_home_gateway.mqtt.topics import Topics
 
 log = logging.getLogger(__name__)
@@ -30,6 +34,7 @@ ONLINE = b"online"
 OFFLINE = b"offline"
 MAX_QUEUED_EVENTS = 1000  # events kept for the broker while it is unreachable
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1, 60
+ECHO_WAIT_S = 10  # the gateway's `online` comes back within this, or it cannot read its topics
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +66,7 @@ class PahoLike(Protocol):
     on_connect_fail: Any
     on_disconnect: Any
     on_message: Any
+    on_subscribe: Any
 
     def username_pw_set(self, username: str | None, password: str | None = None) -> None: ...
     def tls_set_context(self, context: ssl.SSLContext | None = None) -> None: ...
@@ -149,6 +155,9 @@ class MqttBus:
         self._ha_devices = tuple(ha_devices)
         self._client = client_factory(config)
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._retained = RetainedTopics(
+            topics, self._publish_retained, self._call_later, time.monotonic
+        )
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
         self.contact_requests: asyncio.Queue[ContactRequest] = asyncio.Queue()
         self.connected = False
@@ -156,6 +165,10 @@ class MqttBus:
         self._dropped = 0
         self._stopping = False
         self._answered = False  # paho thread: the broker answered the current attempt
+        # paho thread: the message id of the connect's subscription, and its topics
+        self._subscribing: tuple[int | None, list[str]] = (None, [])
+        self._heard_back = False  # a message on the retained topics came since the connect
+        self._echo_check: asyncio.TimerHandle | None = None
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
         self.on_ha_offline: list[Callable[[], None]] = []
@@ -178,6 +191,7 @@ class MqttBus:
         client.on_connect_fail = self._paho_connect_failed
         client.on_disconnect = self._paho_disconnected
         client.on_message = self._paho_message
+        client.on_subscribe = self._paho_subscribed
         client.connect_async(config.host, config.port, config.keepalive_s)
         client.loop_start()
         log.info("MQTT: connecting to %s:%d", config.host, config.port)
@@ -185,6 +199,8 @@ class MqttBus:
     def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
         """QoS 1 events are queued while the broker is unreachable; QoS 0 events (commands) are
         not, so they can never arrive late."""
+        if retain and self._retained.covers(topic):
+            self._retained.sent(topic, payload, published=self.connected)
         if not self.connected:
             if retain or qos == 0:  # retained: the reconnect publishes the current documents
                 return
@@ -202,6 +218,8 @@ class MqttBus:
 
     async def stop(self, timeout_s: float = 2.0) -> None:
         self._stopping = True
+        self._retained.close()
+        self._cancel_echo_check()
         info = self._client.publish(self._topics.availability, OFFLINE, qos=1, retain=True)
         wait = getattr(info, "wait_for_publish", None)
         if self.connected and callable(wait):
@@ -232,14 +250,31 @@ class MqttBus:
             (self._topics.add_contact, 1), (self._topics.contact_remove_subscription, 1),
             (self._topics.contact_telemetry_subscription, 1),
         ]  # fmt: skip
+        # the gateway's retained topics, to undo what other clients write there
+        subscriptions += [(topic, 1) for topic in self._retained.filters]
         if self._ha_status:
             subscriptions.append((self._ha_status, 1))
         if self._ha_devices:  # the requests of Home Assistant's controls, with its topics
             ha_requests = (self._topics.show_hidden, self._topics.add_node)
             subscriptions += [(topic, 1) for topic in (*self._ha_devices, *ha_requests)]
-        client.subscribe(subscriptions)
+        info = client.subscribe(subscriptions)
+        mid = info[1] if isinstance(info, tuple) else None  # its answer comes after this returns
+        self._subscribing = (mid, [topic for topic, _ in subscriptions])
         client.publish(self._topics.availability, ONLINE, qos=1, retain=True)
         self._call(self._handle_connected)
+
+    def _paho_subscribed(self, _c: Any, _u: Any, mid: int, reasons: Any, _p: Any) -> None:
+        expected, topics = self._subscribing
+        if mid != expected:
+            return
+        refused = [
+            topic for topic, reason in zip(topics, reasons, strict=False)
+            if getattr(reason, "is_failure", False)
+        ]  # fmt: skip
+        if refused:  # a broker that checks a SUBSCRIBE against its ACL (not an acl_file)
+            log.warning("MQTT: the broker refused the subscription to %s (the gateway's user "
+                        "needs read access to them: docs/mqtt-api.md, Securing the broker)",
+                        ", ".join(refused))  # fmt: skip
 
     def _paho_connect_failed(self, _c: Any, _u: Any) -> None:
         # no answer from a broker (name, address, port, TLS): paho calls this while it handles
@@ -263,9 +298,25 @@ class MqttBus:
 
     # --- event loop ----------------------------------------------------------------------------
 
+    def _call_later(self, delay_s: float, callback: Callable[[], None]) -> asyncio.TimerHandle:
+        assert self._loop is not None  # noqa: S101 - messages arrive only after start()
+        return self._loop.call_later(delay_s, callback)
+
+    def _publish_retained(self, topic: str, payload: bytes) -> None:
+        """A restore of a retained topic (`mqtt.retained`); the next connect publishes all."""
+        if self.connected:
+            self._client.publish(topic, payload, qos=1, retain=True)
+
     def _handle_connected(self) -> None:
         self.connected = True
         log.info("MQTT: connected")
+        self._retained.connected()
+        # published by the paho thread before this ran, so before its copy can come back
+        self._retained.sent(self._topics.availability, ONLINE, published=True)
+        self._heard_back = False
+        if self._loop is not None:
+            self._cancel_echo_check()
+            self._echo_check = self._loop.call_later(ECHO_WAIT_S, self._check_echo)
         if self._dropped:
             log.warning("MQTT: %d events were dropped while the broker was unreachable",
                         self._dropped)  # fmt: skip
@@ -281,15 +332,36 @@ class MqttBus:
                         self._config.host, self._config.port, reason)  # fmt: skip
         self.connected = False
 
+    def _check_echo(self) -> None:
+        """Mosquitto's `acl_file` grants every subscription and leaves out what the user may not
+        read: then the gateway's own messages never come back, and nothing is restored."""
+        self._echo_check = None
+        if self.connected and not self._heard_back:
+            log.warning("MQTT: the gateway's `online` on %s did not come back within %d s: its "
+                        "user may not read its own topics, so what other clients write there is "
+                        "not undone (docs/mqtt-api.md, Securing the broker)",
+                        self._topics.availability, ECHO_WAIT_S)  # fmt: skip
+
+    def _cancel_echo_check(self) -> None:
+        if self._echo_check is not None:
+            self._echo_check.cancel()
+            self._echo_check = None
+
     def _handle_message(self, topic: str, payload: bytes, retained: bool) -> None:
-        if self._ha_status and topic == self._ha_status:
+        if self._retained.covers(topic):
+            self._heard_back = True
+            if not self._stopping:
+                self._retained.received(topic, payload, retained)
+        elif self._ha_status and topic == self._ha_status:
             for callback in {ONLINE: self.on_ha_online, OFFLINE: self.on_ha_offline}.get(
                 payload, []
             ):
                 callback()
-            return
-        if self._ha_devices and self._ha_message(topic, payload, retained):
-            return
+        elif not (self._ha_devices and self._ha_message(topic, payload, retained)):
+            self._request(topic, payload, retained)
+
+    def _request(self, topic: str, payload: bytes, retained: bool) -> None:
+        """A request on one of the gateway's request topics; any other topic is ignored."""
         alias = self._topics.alias_from_send_topic(topic)
         if alias is not None:
             self.requests.put_nowait(SendRequest(alias, payload, retained))
