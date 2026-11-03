@@ -17,6 +17,10 @@ TOLERANCE_MILLI = 1  # values stored as float32 come back within a thousandth
 # the sub-band with a 10 % duty cycle (ERC Recommendation 70-03, annex 1, band h1.6)
 TEN_PERCENT_BAND_KHZ = (869_400, 869_650)
 MAX_AIRTIME_FACTOR_MILLI = 9000  # the firmware clamps the factor to 0..9 at boot
+# why the radio refused a setter, when it is not written to that firmware again: the firmware
+# does not know the command, or the command is compiled out of its build (IMP-050)
+UNSUPPORTED = "unsupported"
+DISABLED = "disabled"
 
 
 class Mode(Enum):
@@ -98,16 +102,17 @@ class Attempt:
 class Applied:
     """The state file's memory, per radio: the configured value the radio last took per key
     (written and read back, or found there), the value being tried without effect, and the keys
-    a firmware answered with 'unsupported' (key -> firmware code)."""
+    a firmware answered with 'unsupported' or 'disabled' (key -> firmware code)."""
 
     values: dict[str, Value] = field(default_factory=dict)
     attempts: dict[str, Attempt] = field(default_factory=dict)
     unsupported: dict[str, int] = field(default_factory=dict)
+    disabled: dict[str, int] = field(default_factory=dict)
 
     @property
     def empty(self) -> bool:
         """Nothing stored: the first connect of this radio (or of the profile)."""
-        return not (self.values or self.attempts or self.unsupported)
+        return not (self.values or self.attempts or self.unsupported or self.disabled)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +125,7 @@ class Plan:
     not_converging: tuple[str, ...]  # written at the last connects without effect: given up
     unsupported: tuple[str, ...]
     observing: bool  # nothing may be written (mode, untested firmware)
+    disabled: tuple[str, ...] = ()  # compiled out of the firmware
 
 
 def plan(
@@ -134,7 +140,7 @@ def plan(
     writes: dict[str, Value] = {}
     reasons: dict[str, str] = {}
     drift: dict[str, Value] = {}
-    stuck, unsupported = [], []
+    stuck, unsupported, disabled = [], [], []
     observing = mode is Mode.OBSERVE or (mode is Mode.AUTO and firmware_code not in TESTED_FIRMWARE)
     for key, value in want.values.items():
         current = live.get(key)
@@ -142,6 +148,9 @@ def plan(
             continue
         if applied.unsupported.get(key) == firmware_code:
             unsupported.append(key)
+            continue
+        if applied.disabled.get(key) == firmware_code:
+            disabled.append(key)
             continue
         changed = key not in applied.values or not same(key, applied.values[key], value)
         if not changed and KINDS[key] is Kind.SEED:
@@ -159,6 +168,7 @@ def plan(
         not_converging=tuple(stuck),
         unsupported=tuple(unsupported),
         observing=observing,
+        disabled=tuple(disabled),
     )
 
 
@@ -186,33 +196,41 @@ def pending(applied: Applied, sent: Mapping[str, Value], *, firmware_code: int) 
     attempts = dict(applied.attempts)
     for key, value in sent.items():
         attempts[key] = _tried(applied.attempts, key, value, firmware_code)
-    return Applied(dict(applied.values), attempts, dict(applied.unsupported))
+    return Applied(
+        dict(applied.values), attempts, dict(applied.unsupported), dict(applied.disabled)
+    )
 
 
 def record(
     applied: Applied, want: Desired, done: Plan, live_after: Mapping[str, Value | None],
-    failed: Mapping[str, bool], *, firmware_code: int,
+    failed: Mapping[str, str | None], *, firmware_code: int,
 ) -> Applied:  # fmt: skip
     """The state after the writes: `live_after` is read back, `failed` names the writes the
-    radio refused (True: as unsupported)."""
+    radio refused, with UNSUPPORTED or DISABLED when it is not to be written to that firmware
+    again."""
     values = dict(applied.values)
     attempts = dict(applied.attempts)
     unsupported = dict(applied.unsupported)
+    disabled = dict(applied.disabled)
     for key, value in want.values.items():
         took = key not in failed and same(key, live_after.get(key), value)
         if took:  # written and read back, or found on the radio
             values[key] = value
             attempts.pop(key, None)
         elif key in done.writes:
-            if failed.get(key):  # the firmware does not know the command
+            refused = failed.get(key)
+            if refused == UNSUPPORTED:  # the firmware does not know the command
                 unsupported[key] = firmware_code
+                continue
+            if refused == DISABLED:  # the command is compiled out of the firmware
+                disabled[key] = firmware_code
                 continue
             # refused or not kept: counted per value, so a new configured value starts afresh
             attempts[key] = _tried(applied.attempts, key, value, firmware_code)
     for key in [k for k in (*values, *attempts) if k not in want.values]:
         values.pop(key, None)  # no longer managed: a later configuration starts afresh
         attempts.pop(key, None)
-    return Applied(values, attempts, unsupported)
+    return Applied(values, attempts, unsupported, disabled)
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,11 +245,12 @@ class ProfileReport:
     desired: Mapping[str, Value]
     written: Mapping[str, Value] = field(default_factory=dict)  # and read back
     reasons: Mapping[str, str] = field(default_factory=dict)  # of the writes: initial, ...
-    failed: tuple[str, ...] = ()  # refused by the radio at this connect (unsupported aside)
+    failed: tuple[str, ...] = ()  # refused at this connect (unsupported and disabled aside)
     not_taken: tuple[str, ...] = ()  # accepted, but read back otherwise
     drift: Mapping[str, Value] = field(default_factory=dict)  # kept as the radio has it
     not_converging: tuple[str, ...] = ()
     unsupported: tuple[str, ...] = ()
+    disabled: tuple[str, ...] = ()  # compiled out of the firmware (IMP-050)
     contacts_added: tuple[str, ...] = ()
     contacts_favoured: tuple[str, ...] = ()
     contacts_missing: tuple[str, ...] = ()  # protected, but not on the radio (observing)

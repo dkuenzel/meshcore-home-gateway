@@ -240,7 +240,7 @@ def test_management_off_refuses_and_names_the_key(tmp_path: Path) -> None:
             event = await result(bus, "off")
             assert (event["reason"], event["key"]) == ("management_off", dave)
             index = bus.payloads(f"{ROOT}/contacts")[-1]
-            assert index["manage"] is False
+            assert (index["manage"], index["manage_reason"]) == (False, "management_off")
             bob = bus.payloads(f"{ROOT}/contacts/{BOB.public_key.hex()}")[-1]
             assert bob["removable"] is False
 
@@ -284,15 +284,18 @@ def test_untested_firmware_is_not_written_unless_the_profile_says_always(tmp_pat
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
             request(bus, "add", {"contact": dave, "id": "untested"})
             assert (await result(bus, "untested"))["reason"] == "untested_firmware"
-            # the documents say that no request is taken, and Home Assistant's controls follow
-            assert bus.payloads(f"{ROOT}/contacts")[-1]["manage"] is False
+            # the documents say that no request is taken, and why (OPS-007); Home Assistant's
+            # controls follow
+            index = bus.payloads(f"{ROOT}/contacts")[-1]
+            assert (index["manage"], index["manage_reason"]) == (False, "untested_firmware")
             assert bus.payloads(f"{ROOT}/contacts/{bob}")[-1]["removable"] is False
         radio = EmulatedRadio(contacts=[ALICE, BOB], firmware_code=15)
         config = make_config('[radio.profile]\nmanage = "always"')
         async with running(config, radio, tmp_path) as (_, bus, _n):
             request(bus, "add", {"contact": dave, "id": "always"})
             assert (await result(bus, "always"))["event_type"] == "added"
-            assert bus.payloads(f"{ROOT}/contacts")[-1]["manage"] is True
+            index = bus.payloads(f"{ROOT}/contacts")[-1]
+            assert (index["manage"], index["manage_reason"]) == (True, None)
 
     scenario(main)
 
@@ -332,8 +335,16 @@ def test_without_the_radio_nothing_is_tried(tmp_path: Path) -> None:
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            assert bus.payloads(f"{ROOT}/contacts")[-1]["manage_reason"] is None
+            since = len(bus.payloads(f"{ROOT}/contacts"))
             radio.disconnect()
             await bus.wait_for(f"{ROOT}/state", lambda s: s["radio"] == "disconnected")
+            # OPS-007: the index says why a request sent now is refused; the controls follow
+            # the radio's state, and the switch and the firmware still allow requests
+            index = await bus.wait_for(
+                f"{ROOT}/contacts", lambda d: d["manage_reason"] is not None, since=since
+            )
+            assert (index["manage"], index["manage_reason"]) == (True, "no_radio")
             request(bus, "add", {"contact": DAVE.public_key.hex(), "id": "away"})
             assert (await result(bus, "away"))["reason"] == "no_radio"
 

@@ -334,7 +334,8 @@ The radio's contact table, as the gateway last read it: an index, and one docume
 empty retained message, also if that happened while the gateway was stopped.
 
 ```json
-{"total": 2, "max": 350, "manage": true, "remote_cli": [], "remote_cli_total": 0,
+{"total": 2, "max": 350, "manage": true, "manage_reason": null, "remote_cli": [],
+ "remote_cli_total": 0,
  "advert_position": [], "advert_position_total": 0, "advert_carries_position": [],
  "advert_carries_position_total": 0, "telemetry_excluded": ["c3d4…"],
  "telemetry_excluded_total": 1, "truncated": false,
@@ -344,7 +345,11 @@ empty retained message, also if that happened while the gateway was stopped.
 
 The index lists the contacts most recently heard first, up to 32 KiB. `max` is the radio's table
 size; `manage` whether the gateway takes add and remove requests: `[contacts] manage`, and,
-once the radio is known, firmware the gateway is tested with or `radio.profile.manage = "always"`. `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
+once the radio is known, firmware the gateway is tested with or `radio.profile.manage = "always"`.
+`manage_reason` says why a request sent now would be refused, `null` while they are taken:
+`management_off`, `no_radio` (the radio is not connected; `manage` keeps its value meanwhile)
+or `untested_firmware`, the reasons of [the request's result](#managing-contacts-add_contact-and-contactskeyremove);
+Home Assistant shows it as an attribute of *Contacts*. `remote_cli` lists (up to 16) contacts that may run the radio's command line over the air
 (flag 0x10; the gateway never sets it, remove such contacts), `advert_position` companions whose
 record on the radio holds a position from their adverts. `advert_carries_position` lists (up to
 16, sorted) the companions not excluded from telemetry whose `advert_carries_position` is `true`:
@@ -747,9 +752,9 @@ What the managed profile found and did at the last connect
 
 | Key | Meaning |
 | --- | --- |
-| `status` | `ok` (the radio has the profile), `written` (set at this connect), `drift` (the name was changed on the radio and is kept), `differs` (a setting or a protected contact differs, but the profile only observes), `problem` (a setting or a protected contact was refused, a setting did not read back as written or does not take, or is unsupported); when several apply, the first of `problem`, `differs`, `drift`, `written`, `ok` |
+| `status` | `ok` (the radio has the profile), `written` (set at this connect), `drift` (the name was changed on the radio and is kept), `differs` (a setting or a protected contact differs, but the profile only observes), `problem` (a setting or a protected contact was refused, a setting did not read back as written or does not take, or is unsupported or disabled); when several apply, the first of `problem`, `differs`, `drift`, `written`, `ok` |
 | `settings.<name>.live`, `.desired` | after the writes; `desired` is `null` for a setting left as found, `live` `null` for one the firmware does not report |
-| `settings.<name>.state` | `ok`, `written` (set and read back), `drift`, `differs`, `failed` (refused by the radio), `not_taken` (written, but reads back otherwise), `not_converging` (no longer written: it did not take at three connects in a row), `unsupported`, `unmanaged` (left as found), `unknown` (the firmware does not report it) |
+| `settings.<name>.state` | `ok`, `written` (set and read back), `drift`, `differs`, `failed` (refused by the radio), `not_taken` (written, but reads back otherwise), `not_converging` (no longer written: it did not take at three connects in a row), `unsupported` (the firmware does not know the command: not written to that firmware again), `disabled` (the command is compiled out of the radio's firmware: not written to it again either), `unmanaged` (left as found), `unknown` (the firmware does not report it) |
 | `autoadd` | `overwrite_oldest` and the contact types the radio adds by itself |
 | `own_position` | the radio keeps a position of its own (reported, never cleared by the gateway) |
 | `protected_contacts` | keys added to the radio, made favourites, refused by the radio (`failed`, usually a full table), and while only observing: missing from the radio, or on it but no favourite (`not_favourite`) |

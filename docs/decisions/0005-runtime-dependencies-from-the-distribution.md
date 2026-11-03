@@ -73,3 +73,8 @@ imports no I/O modules (ADR 0007).
 * paho-mqtt 2.0 introduced `CallbackAPIVersion`; 2.1.0 (2024-04-29) is the latest release and
   ships type information (`py.typed`).
 * Revisit if the bridge needs a library that the distribution does not package.
+* Amended on 2026-11-03 (security and architecture review, OPS-001): Debian's security updates
+  reach the container only if something installs them. The installer installs
+  `unattended-upgrades`, which installs them every day; a running service takes an updated
+  Python or paho-mqtt at its next restart
+  ([deployment.md](../deployment.md#4-operations), *Updates of the container*).

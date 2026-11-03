@@ -94,6 +94,25 @@ format, the command line and Home Assistant discovery are public interfaces
   goes between two attempts of a message in flight, which continues after it. A request chooses
   by its target, so a second target for the same recipient gives a client both
   ([configuration.md](docs/configuration.md#messages)).
+- `manage_reason` in the `contacts` index, and as an attribute of *Contacts* in Home Assistant:
+  why requests to add or remove contacts are refused now (`management_off`, `no_radio`,
+  `untested_firmware`), `null` while they are taken; `contacts list` says it after the lists. After
+  a firmware update of the radio, Home Assistant's controls turn unavailable until a version of
+  the gateway tested with that firmware is installed: this says why
+  ([mqtt-api.md](docs/mqtt-api.md#contacts-contacts-and-contactskey),
+  [deployment.md](docs/deployment.md#5-troubleshooting)).
+- `disabled` as the state of a setting in the `settings` document, apart from `unsupported`: the
+  radio answered that the command is compiled out of its firmware. Like an unsupported one, it is
+  not written to that firmware again; `probe` and the installer's plan name it.
+- The installer installs `unattended-upgrades` in the container, which installs Debian's
+  security and point-release updates every day; `--update` installs it in an older
+  installation. It limits the journal to 100 MB, empties the package cache after installing,
+  refuses a radio that another container of the host already passes through, and its final
+  message names how the broker connection is secured (TLS or not, the user name or none) and, for
+  a radio over TCP, that the radio is reached without authentication
+  ([deployment.md](docs/deployment.md#what-the-script-does)).
+- A release's unit names its version in its second line, which tells after a rollback which
+  version it came with.
 
 ### Changed
 
@@ -152,6 +171,15 @@ format, the command line and Home Assistant discovery are public interfaces
   stopped, but at least what a long direct message needs, so that the first alert after a restart
   goes out at once. Before, every start began with a full burst, so a crash loop could spend a
   burst per restart ([ADR 0008](docs/decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)).
+- The unit no longer gives up after 20 failed starts in 10 minutes, after which only
+  `systemctl reset-failed` started the service again: each automatic restart waits longer, from
+  5 s up to 5 minutes, and a start by hand begins at 5 s again. The service may use 192 MB of
+  memory (`MemoryMax=`), and its system call filter also refuses the obsolete calls. These need
+  systemd 254 or newer (Debian 13 has 257); an older systemd ignores them with a warning
+  ([deployment.md](docs/deployment.md#4-operations)).
+- The warning at every connect to firmware the gateway is not tested with names what it switches
+  off (the radio profile's writes and contact requests) and comes also with
+  `radio.profile.manage = "observe"`.
 
 ### Fixed
 

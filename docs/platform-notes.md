@@ -47,6 +47,10 @@ One line per fact, by section.
 * `PrivateDevices=` would hide the radio, and `DeviceAllow=` is not enforced in an unprivileged container.
 * Debian's `dialout` group has the fixed GID 20.
 * Root on the host can open a serial port that another process locked with `TIOCEXCL`; root in an unprivileged container cannot.
+* With `StartLimitIntervalSec=0`, `RestartSteps=` and `RestartMaxDelaySec=`, systemd 257 restarts a failing service for ever, each automatic restart later than the one before; only a start by hand counts from the beginning again.
+* journald keeps up to a tenth of the file system and drops a service's lines above 10,000 in 30 s.
+* `unattended-upgrades` in Debian 13 switches itself on when it is installed without dialogs, and installs the updates of the release and of the security archive, without a reboot.
+* `IPAddressDeny=` and `IPAddressAllow=` need a cgroup BPF program; where systemd cannot load one, it starts the service without the filter and says so only at debug level.
 
 **[Python](#python)**
 
@@ -436,6 +440,56 @@ One line per fact, by section.
   and as a normal user,
   `python3 -c 'import fcntl,os,pty,termios as t; m,s=pty.openpty(); fcntl.ioctl(s,t.TIOCEXCL); os.open(os.ttyname(s),2)'`
   succeeds for root on the host and fails with `EBUSY` otherwise.
+* **With `StartLimitIntervalSec=0`, `RestartSteps=` and `RestartMaxDelaySec=`, systemd 257 restarts
+  a failing service for ever, each automatic restart later than the one before; only a start by
+  hand counts from the beginning again.** Debian 13 ships systemd 257, Debian 12 systemd 252, which
+  lacks both settings (they came with 254). The delay of the n-th automatic restart is
+  `RestartSec` × (`RestartMaxDelaySec` / `RestartSec`)^((n − 1) / `RestartSteps`), and
+  `RestartMaxDelaySec` once n exceeds `RestartSteps`; the count is not reset by a long healthy run.
+  An interval of 0 switches the start limit off, so the unit never enters `failed` for starting
+  too often. *Verified:* Debian QA madison on 2026-11-03 (systemd 252.39-1~deb12u2 in bookworm,
+  257.13-1~deb13u1 in trixie); systemd `v257` `src/core/service.c:329-361`
+  (`service_restart_usec_next()`), `:2674` (counted at each restart job), `:2879-2880` (a start
+  that is not an automatic restart flushes the count) and `:5129` (`reset-failed`),
+  `src/basic/ratelimit.h:21-23` and `src/basic/ratelimit.c:11-17` (an interval of 0 is no
+  limit), `man/systemd.unit.xml` at `StartLimitIntervalSec=` ("set to 0 to disable any kind of
+  rate limiting"), `man/systemd.service.xml` at `RestartSteps=`. Read in the source, not run in a
+  container. *Here:* the unit (5 s, 5 min from the seventh restart), [deployment.md](deployment.md#4-operations),
+  *Service*. *Check:* in the container, `systemctl show -p NRestarts,RestartUSecNext
+  meshcore-home-gateway` (`RestartUSecNext`: `src/core/dbus-service.c:332`).
+* **journald keeps up to a tenth of the file system and drops a service's lines above 10,000 in
+  30 s.** Without `SystemMaxUse=`, the journal may grow to 10 % of its file system, at least
+  1 MiB and at most 4 GiB: 200 MB of the container's 2 GB disk. The rate limit
+  (`RateLimitIntervalSec=30s`, `RateLimitBurst=10000`) is raised with the free disk space, and
+  journald logs how many lines it dropped. Drop-ins in `/etc/systemd/journald.conf.d/*.conf`
+  change the settings. *Verified:* systemd `v257`
+  `src/libsystemd/sd-journal/journal-file.c:56-57` and `:3984-3991`,
+  `src/journal/journald-server.c:72-73`, `src/journal/journald-rate-limit.c:147-165`,
+  `man/journald.conf.xml` (the drop-in directories). *Here:* the installer writes
+  `SystemMaxUse=100M` ([deployment.md](deployment.md#4-operations), *Disk*). *Check:*
+  `journalctl --disk-usage` and `systemd-analyze cat-config systemd/journald.conf`.
+* **`unattended-upgrades` in Debian 13 switches itself on when it is installed without dialogs,
+  and installs the updates of the release and of the security archive, without a reboot.** Its
+  debconf question (`enable_auto_updates`, priority low) defaults to yes, and the package then
+  writes `/etc/apt/apt.conf.d/20auto-upgrades` with `APT::Periodic::Unattended-Upgrade "1"`;
+  `Automatic-Reboot` is off. *Verified:* unattended-upgrades 2.12 (Debian QA madison on
+  2026-11-03: the version in trixie), source on sources.debian.org: `debian/templates:10-12`,
+  `debian/config:19`, `debian/postinst:47-52`, `data/50unattended-upgrades.Debian:23-44`
+  (`Origins-Pattern`) and `:116`. Read in the source; whether Proxmox's Debian 13 template ships
+  the package already was not checked. *Here:* the installer installs it
+  ([deployment.md](deployment.md#4-operations), *Updates of the container*). *Check:*
+  `pct exec 105 -- apt-config dump APT::Periodic::Unattended-Upgrade` says `"1"`.
+* **`IPAddressDeny=` and `IPAddressAllow=` need a cgroup BPF program; where systemd cannot load
+  one, it starts the service without the filter and says so only at debug level.** Loading needs
+  `CAP_BPF` in the initial user namespace while `kernel.unprivileged_bpf_disabled` is set, which
+  root in an unprivileged container does not have. *Verified:* systemd `v257`
+  `src/core/bpf-firewall.c:835-884` (the check, debug messages only) and `:559-562` ("proceeding
+  without"); Linux `v6.14` `kernel/bpf/syscall.c:2782` and `:2797` and `kernel/bpf/token.c:16-22`.
+  Read in the source, not run in a container; the sysctl's value on Proxmox VE hosts was not
+  checked. *Here:* the unit does not set them; [deployment.md](deployment.md#4-operations),
+  *Hardening further*, offers them with this check. *Check:* in the container,
+  `systemd-run --wait -p IPAddressDeny=any python3 -c "import socket;
+  socket.create_connection(('deb.debian.org', 80), 5)"` fails where the filter holds.
 
 ## Python
 

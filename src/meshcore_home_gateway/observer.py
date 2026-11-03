@@ -139,6 +139,7 @@ class Observer:
         # have), before its document is published: the poller
         self.on_contact_added: list[Callable[[str], None]] = []
         self.manage = manage
+        self.manage_reason: str | None = None  # why requests are refused now (set_manage)
         self._names = names
         # what is published and kept of the nodes heard but not added (SEC-015)
         self.heard_nodes: HeardNodes = "full"
@@ -223,15 +224,17 @@ class Observer:
         self._publish_index()
         self._publish(self._topics.stats, stats_document(self._readings, self._meter, tuning))
 
-    def set_manage(self, manage: bool) -> None:
+    def set_manage(self, manage: bool, reason: str | None = None) -> None:
         """Whether add and remove requests are taken now (`[contacts] manage`, and the radio's
-        firmware): the documents say so, and Home Assistant's controls follow them. Before the
-        first table read the documents of the last run stay as they are."""
-        if manage == self.manage:
+        firmware), and why one sent now is refused (`reason`, OPS-007; also while the radio is
+        away): the documents say so, and Home Assistant's controls follow them. Before the first
+        table read the documents of the last run stay as they are."""
+        if (manage, reason) == (self.manage, self.manage_reason):
             return
-        self.manage = manage
+        changed = manage != self.manage
+        self.manage, self.manage_reason = manage, reason
         if not self._first_read:
-            for key in self.mesh.contacts:
+            for key in self.mesh.contacts if changed else ():
                 self._publish_contact(key)
             self._publish_index()
 
@@ -808,7 +811,7 @@ class Observer:
         # the keys not asked: those excluded, and with `ask = household` the contacts not included
         excluded = self.exclusions.keys | {k for k in self.mesh.contacts if k in self.exclusions}
         index = contacts_document(self.mesh, protected=self._protected, manage=self.manage,
-                                  excluded=excluded)  # fmt: skip
+                                  excluded=excluded, manage_reason=self.manage_reason)  # fmt: skip
         self._publish(self._topics.contacts, index)
 
     def _publish_nodes(self, *, read: bool = False) -> None:

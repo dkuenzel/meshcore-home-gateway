@@ -410,7 +410,7 @@ def test_probe_follows_what_the_service_stored(
 ) -> None:
     """The service's own reconcile: a name renamed on the radio is kept, a setting that did not
     take effect is given up, one the firmware refused is left; the state file stays as it is."""
-    radio = EmulatedRadio(manual_add=False, tuning=(0, 1000), name="Renamed")
+    radio = EmulatedRadio(manual_add=False, tuning=(0, 1000), name="Renamed", autoadd_config=0x02)
     config = tmp_path / "config.toml"
     config.write_text(
         '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
@@ -421,6 +421,7 @@ def test_probe_follows_what_the_service_stored(
         "values": {"name": "Gateway", "telemetry": 0, "autoadd": 0, "advert_location": 0},
         "attempts": {"manual_add": {"value": True, "connects": 3, "firmware": 14}},
         "unsupported": {"airtime_factor_milli": 14},
+        "disabled": {"autoadd": 14},  # IMP-050
     }
     state = tmp_path / "state" / "state.json"
     state.parent.mkdir()
@@ -433,6 +434,7 @@ def test_probe_follows_what_the_service_stored(
         changes = json.loads(capsys.readouterr().out)["profile"]["changes"]
         assert {name: change["action"] for name, change in changes.items()} == {
             "manual_add": "given_up", "duty_cycle_percent": "unsupported", "name": "kept",
+            "autoadd": "disabled",
         }  # fmt: skip
         assert main(["probe", "--tcp", address, *args]) == EX_OK
         out = capsys.readouterr().out
@@ -441,6 +443,7 @@ def test_probe_follows_what_the_service_stored(
         given_up = "(did not take effect at 3 connects; no longer set)"
         assert f"  manual_add: false -> true  {given_up}\n" in out
         assert "  duty_cycle_percent: 50.0 -> 10.0  (the firmware does not support it)\n" in out
+        assert '  autoadd: ["chat"] -> []  (compiled out of the radio\'s firmware)\n' in out
     assert state.read_bytes() == before
 
 

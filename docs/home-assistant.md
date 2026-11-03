@@ -60,7 +60,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
-| `sensor.meshcore_home_gateway_radio1_contacts` | count | contacts in the radio's table; attribute `max` |
+| `sensor.meshcore_home_gateway_radio1_contacts` | count | contacts in the radio's table; attribute `max`, and `manage_reason`: why requests to add or remove contacts are refused now (`management_off`, `no_radio`, `untested_firmware`), `null` while they are taken |
 | `sensor.meshcore_home_gateway_radio1_nodes` | count | nodes heard in the last 7 days that are not contacts |
 | `event.meshcore_home_gateway_radio1_contact` | event: `added`, `removed`, `hidden`, `shown`, `refused`, `failed`, `excluded`, `included`, `position_in_advert` | a contact added to or removed from the radio, the result of a contact request (`refused`, `failed`, with `request`, `id` and `reason`), a contact excluded from telemetry or included again, a device hidden in Home Assistant and shown again, or a household companion whose adverts carry its position ([example](#examples)) |
 | `event.meshcore_home_gateway_radio1_node` | event: `new` | a node heard for the first time |
@@ -188,7 +188,9 @@ neither a phone app nor a PC
 ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)). With
 `[contacts] manage = false` the controls stay and are `unavailable`, and so they are while the
 radio runs firmware the gateway is not tested with (as for the managed profile;
-`radio.profile.manage = "always"` allows any). Every request ends in an
+`radio.profile.manage = "always"` allows any): after a firmware update of the radio, until a
+version of the gateway tested with it is installed. The attribute `manage_reason` of *Contacts*
+says which ([deployment.md](deployment.md#5-troubleshooting)). Every request ends in an
 event of *Contact* (`event.meshcore_home_gateway_radio1_contact`): `added` or `removed`, or
 `refused` or `failed` with a `reason` ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
 

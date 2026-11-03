@@ -396,7 +396,8 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     ):
         (dist / name).write_text("", encoding="utf-8")
     (tmp_path / "deploy" / "systemd").mkdir(parents=True)
-    (tmp_path / "deploy" / "systemd" / "meshcore-home-gateway.service").write_text("", "utf-8")
+    unit = "deploy/systemd/meshcore-home-gateway.service"
+    shutil.copy(ROOT / unit, tmp_path / unit)
     locale = tmp_path / "deploy" / "proxmox" / "locale"
     locale.mkdir(parents=True)
     pack = "# meshcore-home-gateway installer messages, xx\nmsg\tYes\t‹Yes›\n"
@@ -423,9 +424,22 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     assert f"[xx]={digest}" in (dist / "release" / "meshcore-home-gateway-lxc.sh").read_text(
         encoding="utf-8"
     )
+    # OPS-016: the unit names the release it came with, also once a rollback keeps it
+    released = (dist / "release" / "meshcore-home-gateway.service").read_text(encoding="utf-8")
+    source = (ROOT / unit).read_text(encoding="utf-8").split("\n")
+    assert released.split("\n") == [source[0], "# Version: 9.9.9", *source[2:]]
+    assert "  meshcore-home-gateway.service\n" in sums
 
     (locale / "xx.messages").write_text(pack + "msg\tNo\t‹No›\n", encoding="utf-8")
     refused = release()
     assert refused.returncode != 0
     assert "deploy/proxmox/locale/xx.messages: not the pack the installer pins" in refused.stderr
+    assert not (dist / "release" / "SHA256SUMS").exists()
+
+    (locale / "xx.messages").write_text(pack, encoding="utf-8")
+    text = (tmp_path / unit).read_text(encoding="utf-8")
+    (tmp_path / unit).write_text(text.replace("# Version:", "# Release:"), encoding="utf-8")
+    unnamed = release()
+    assert unnamed.returncode != 0
+    assert "release: the unit names no version" in unnamed.stderr
     assert not (dist / "release" / "SHA256SUMS").exists()

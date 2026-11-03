@@ -206,6 +206,14 @@ and of the air's; `--log-file=gateway.log --log-file-level=DEBUG` keeps the gate
    with the release and is an addition to the public interface
    ([development.md](development.md#compatibility)).
 
+**How soon** (EXT-020). A radio updated to a release the gateway is not tested with keeps
+working, but the gateway writes nothing to it: the radio profile is only observed, and requests
+to add or remove contacts are refused, so Home Assistant's controls for them turn unavailable
+([deployment.md](deployment.md#5-troubleshooting)). The target is to run these steps within two
+weeks of a MeshCore companion release and to publish a pre-release that counts it as tested
+once the hardware checklist passed with it. A release that changes what the gateway relies on
+(a frame, a command, the contact record) takes longer; the pull request that adds it says why.
+
 ## Installer dialogs with the real whiptail
 
 The installer tests use a whiptail stub. After changing dialogs, run them once with the real

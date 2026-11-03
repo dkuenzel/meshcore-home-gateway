@@ -142,6 +142,8 @@ pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
 # The installer is published with the release's version written in: run from the release's URL,
 # it installs that release's zipapp and unit, checked against SHA256SUMS inside the container, and
 # fetches the language pack it shows its dialogs in from beside it (each checked against its pin).
+# The unit names the release's version in its comment line: after a rollback, which keeps the
+# newer unit, `head -2` of the installed unit says which version it came with.
 release: venv ## Release files in dist/release: zipapp, unit, installer and its language packs, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
 	version=$$($(BIN)/python -c 'import meshcore_home_gateway; print(meshcore_home_gateway.__version__)'); \
 	  if [ -n "$(RELEASE_TAG)" ] && [ "$(RELEASE_TAG)" != "v$$version" ]; then \
@@ -153,7 +155,11 @@ release: venv ## Release files in dist/release: zipapp, unit, installer and its 
 	  $(BIN)/python tools/build_pyz.py --interpreter '/usr/bin/python3 -I' \
 	    --output "dist/release/meshcore-home-gateway-$$version.pyz" >/dev/null; \
 	  "dist/release/meshcore-home-gateway-$$version.pyz" --version; \
-	  install -m 0644 deploy/systemd/meshcore-home-gateway.service dist/release/; \
+	  sed "s/^# Version: .*/# Version: $$version/" deploy/systemd/meshcore-home-gateway.service \
+	    >dist/release/meshcore-home-gateway.service; \
+	  grep -qx "# Version: $$version" dist/release/meshcore-home-gateway.service \
+	    || { echo "release: the unit names no version" >&2; exit 1; }; \
+	  chmod 0644 dist/release/meshcore-home-gateway.service; \
 	  sed "s/^RELEASE=\"\"/RELEASE=\"$$version\"/" deploy/proxmox/meshcore-home-gateway-lxc.sh \
 	    >dist/release/meshcore-home-gateway-lxc.sh; \
 	  grep -q "^RELEASE=\"$$version\" " dist/release/meshcore-home-gateway-lxc.sh \

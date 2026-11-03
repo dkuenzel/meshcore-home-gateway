@@ -389,6 +389,35 @@ def test_list_says_when_a_document_is_cut(
     assert "the gateway lists 2 of 300 contacts" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("reason", "said"),
+    [
+        ("untested_firmware", "it is not tested with the radio's firmware"),
+        ("no_radio", "while its radio is not connected"),
+        ("management_off", "[contacts] manage = false"),
+        ("a_reason_of_a_newer_gateway", "(a_reason_of_a_newer_gateway)"),
+        (None, None),
+    ],
+)
+def test_list_says_why_requests_are_refused(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str], reason: str | None,
+    said: str | None,
+) -> None:  # fmt: skip
+    """OPS-007: after a firmware update of the radio the controls turn unavailable; the list
+    says why, after the lists."""
+    gateway = FakeGateway(broker, documents={"contacts": contacts_index(manage_reason=reason)})
+    try:
+        assert run(tmp_path, broker, "list") == EX_OK
+    finally:
+        gateway.stop()
+    err = capsys.readouterr().err
+    if said is None:
+        assert "takes no add or remove requests" not in err
+    else:
+        assert "meshcore-home-gateway: the gateway takes no add or remove requests" in err
+        assert said in err
+
+
 # --- telemetry (ADR 0018) ------------------------------------------------------------------------
 
 

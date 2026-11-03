@@ -433,6 +433,7 @@ PLAN_ALL = (
     'change\\tname\\t"Renamed"\\t"Gateway"\\tkept\\n'
     "change\\tautoadd\\t0\\t1\\tgiven_up\\n"
     "change\\tduty_cycle_percent\\t50\\t10\\tunsupported\\n"
+    "change\\tmanual_add\\tfalse\\ttrue\\tdisabled\\n"
     f"contact\\t{ALICE}\\tfavourite\\tAlice Example\\n"
     f"contact\\t{RELAY}\\tadd\\t\\n"
     f"contact\\t{ALICE}\\tmissing\\tAlice\\n"
@@ -990,8 +991,8 @@ def test_every_state_of_the_login_has_its_words(
     result = run(host, script, *args, dialog=dialog, env=env)
     assert result.returncode == 0, result.stderr
     (summary,) = [c[-3] for c in host.calls("whiptail") if c[-2:] == ["22", "78"]]
-    assert f"Broker:       {words}\n" in result.stderr
-    assert f"Broker:       ‹{words}›\n" in summary
+    assert f"Broker:       {words} (no TLS, user 'bridge')\n" in result.stderr
+    assert f"Broker:       ‹{words}› (‹no TLS, user 'bridge'›)\n" in summary
     assert summary.startswith("‹meshcore-home-gateway 1.2.3 runs in container 105.")
 
 

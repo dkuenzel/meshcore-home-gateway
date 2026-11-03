@@ -619,6 +619,7 @@ class ProfileRecords:
             } if isinstance(values, dict) else {},
             attempts=tried,
             unsupported=_int_map(entry.get("unsupported")),
+            disabled=_int_map(entry.get("disabled")),
         )  # fmt: skip
 
     def save(self, radio_key: str, applied: Applied) -> None:
@@ -632,6 +633,7 @@ class ProfileRecords:
                 for key, a in applied.attempts.items()
             },
             "unsupported": dict(applied.unsupported),
+            "disabled": dict(applied.disabled),
         }
         try:
             raw = self._store.load().get(self._KEY)

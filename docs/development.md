@@ -398,7 +398,8 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    tagged, the release plan of every other change refuses ("no tag vX.Y.Z here"): run it again
    once the tag is there.
 4. The workflow runs `make check`, refuses a tag that differs from `__version__`, builds the
-   zipapp, wheel and sdist reproducibly, adds the systemd unit and the Proxmox installer with the
+   zipapp, wheel and sdist reproducibly, adds the systemd unit (its second line names the
+   version: `# Version: X.Y.Z`, refused without it) and the Proxmox installer with the
    version written in (`RELEASE="X.Y.Z"`: run from the release's address, it installs this
    release) and, beside it, the language pack of each language it offers
    (`meshcore-home-gateway-lxc.<language>.messages`, refused unless it is the pack the installer

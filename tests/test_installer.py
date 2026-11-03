@@ -53,12 +53,20 @@ ANSWERS = "/root/meshcore-home-gateway-answers"
 STUBS = {
     "pct": r"""
         log pct "$@"
-        state="$STUB/ct-$2"
+        state="$STUB/ct-${2-}"
         case $1 in
           status)
             [[ -f $state ]] || { echo "Configuration file does not exist" >&2; exit 2; }
             echo "status: $(cat "$state")" ;;
           create) echo stopped >"$state" ;;
+          list)  # the containers of the host, as pve-container prints them
+            printf '%-10s %-10s %-12s %-20s\n' VMID Status Lock Name
+            for file in "$STUB"/ct-*; do
+              [[ -e $file ]] || continue
+              id=${file##*/ct-}
+              printf '%-10s %-10s %-12s %-20s\n' "$id" "$(cat "$file")" "" "ct$id"
+            done ;;
+          config) [[ ! -f $STUB/config-$2 ]] || cat "$STUB/config-$2" ;;
           start|reboot) echo running >"$state" ;;
           push) mkdir -p "$STUB/pushed"; cp "$3" "$STUB/pushed/$(basename "$4")" ;;
           exec)
@@ -516,7 +524,12 @@ def test_unattended_install_creates_and_configures_the_container(host: Host) -> 
     assert not host.pct("push")  # files go through the input of commands: none on the host
 
     inside = host.inside()
-    assert any("apt-get install" in c and "python3-paho-mqtt" in c for c in inside)
+    (packages,) = [c for c in inside if "apt-get install" in c]
+    assert "python3-paho-mqtt" in packages
+    # Debian's security updates (OPS-001); the downloaded packages are not kept (OPS-013)
+    assert "unattended-upgrades" in packages
+    assert packages.endswith("&& apt-get clean")
+    assert any("SystemMaxUse=100M" in c for c in inside)  # OPS-009
     assert any("build_pyz.py" in c and "/usr/bin/python3 -I" in c for c in inside)
     assert any("config render" in c and "--group meshcore-home-gateway" in c for c in inside)
     assert inside[-2:] == [
@@ -576,6 +589,36 @@ def test_radio_over_tcp_needs_no_device(host: Host) -> None:
         "tcp", "192.0.2.30", 5001,
     )  # fmt: skip
     assert config.radio.tcp_unauthenticated is True
+    # the summary says what was chosen (OPS-010), in place of the note on re-plugging a USB radio
+    assert (
+        "The radio is reached over TCP (192.0.2.30:5001) without authentication: whoever "
+        "reaches it can control it and read its private key."
+    ) in result.stderr
+    assert "re-plugging" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("login", "posture"),
+    [
+        ("mqtt.tls=true\nmqtt.username=bridge\nmqtt.password=pw\n", "TLS, user 'bridge'"),
+        ("mqtt.tls=false\nmqtt.username=bridge\nmqtt.password=pw\n", "no TLS, user 'bridge'"),
+        ("mqtt.tls=true\n", "TLS, no user name"),
+        ("mqtt.tls=false\n", "no TLS, no user name"),
+    ],
+)
+def test_the_summary_names_how_the_broker_connection_is_secured(
+    host: Host, login: str, posture: str
+) -> None:
+    """OPS-010: "login accepted" alone does not say that the messages cross the network in
+    the clear, or that the broker may let anyone in."""
+    answers = answers_file(
+        host,
+        f"radio.choice={host.serial}\nmqtt.host=broker.example.org\n{login}targets.channels=1\n",
+    )
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    assert f"Broker:       login accepted ({posture})\n" in result.stderr
+    assert "After re-plugging the radio: pct reboot 105" in result.stderr
 
 
 def test_a_radio_over_tcp_needs_the_acknowledgement(host: Host) -> None:
@@ -632,6 +675,86 @@ def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     assert any("probe --tcp [2001:db8::30]:5001 --list channels" in c for c in host.inside())
     assert host.config().radio.host == "2001:db8::30"
+    assert "The radio is reached over TCP ([2001:db8::30]:5001) without" in result.stderr
+
+
+def other_container(host: Host, ctid: str, line: str) -> None:
+    """Another container of the host, with `line` in its configuration."""
+    (host.root / f"ct-{ctid}").write_text("running", encoding="utf-8")
+    config = f"arch: amd64\ncores: 1\nhostname: ct{ctid}\n{line}\nmemory: 512\n"
+    (host.root / f"config-{ctid}").write_text(config, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "dev0: path={serial},gid=20,mode=0660",
+        "dev1: {serial},mode=0666",  # path= is the default key
+        "dev0: path={link},gid=20,mode=0660",  # another name of the same device
+        "lxc.mount.entry: {serial} dev/ttyACM0 none bind,optional,create=file",
+    ],
+)
+def test_a_radio_another_container_passes_through_is_refused(host: Host, line: str) -> None:
+    """OPS-021: a radio takes one client at a time; two containers would compete for it."""
+    link = host.root / "ttyACM0"
+    link.symlink_to(host.serial)
+    other_container(host, "104", line.format(serial=host.serial, link=link))
+    result = run_installer(host, "--answers", str(answers_file(host)))
+    assert result.returncode == 1
+    assert f"{host.serial} is already passed through to another container (ID 104)" in (
+        result.stderr
+    )
+    assert not host.pct("create")
+
+
+def test_a_radio_passed_through_under_its_kernel_name_is_refused(host: Host) -> None:
+    """The menu offers /dev/serial/by-id/..., a link to the device node that another container
+    may name directly (/dev/ttyACM0); both containers would get the same radio."""
+    node = host.root / "ttyACM0"
+    node.write_text("", encoding="utf-8")
+    by_id = host.serial.parent / "usb-Example_Radio_0002-if00"
+    by_id.symlink_to(node)
+    other_container(host, "104", f"dev0: path={node},gid=20,mode=0660")
+    other_container(host, "108", f"dev0: path={by_id}")
+    answers = answers_file(host)
+    answers.write_text(
+        answers.read_text(encoding="utf-8").replace(str(host.serial), str(by_id)), encoding="utf-8"
+    )
+    result = run_installer(host, "--answers", str(answers))
+    assert result.returncode == 1
+    assert f"{by_id} is already passed through to another container (ID 104, 108)" in (
+        result.stderr
+    )
+    assert not host.pct("create")
+
+
+def test_a_radio_in_use_offers_the_radios_again(host: Host) -> None:
+    other_container(host, "104", "dev0: /dev/ttyS0")  # another device: not in the way
+    other_container(host, "107", f"dev0: path={host.serial},gid=20,mode=0660")
+    second = host.serial.parent / "usb-Example_Radio_0002-if00"
+    second.write_text("", encoding="utf-8")
+    dialog = [
+        "default", str(host.serial),  # the radio of container 107: a box, then the menu again
+        str(second), "broker.example.org", "no", "bridge", "pw", "yes", "1", "", "",
+    ]  # fmt: skip
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    assert len(host.dialogs()) == len(dialog)
+    (box,) = [c for c in host.calls("whiptail") if any("already passed" in a for a in c)]
+    assert "--msgbox" in box
+    assert any(
+        a.startswith(f"{host.serial} is already passed through to another container (ID 107).")
+        for a in box
+    )
+    assert host.config().radio.device == str(second)
+    assert ["pct", "set", "105", "--dev0", f"path={second},gid=20,mode=0660"] in host.calls()
+
+
+def test_the_devices_of_other_containers_do_not_count(host: Host) -> None:
+    other_container(host, "104", "dev0: path=/dev/ttyUSB7,gid=20,mode=0660")
+    result = run_installer(host, "--answers", str(answers_file(host)))
+    assert result.returncode == 0, result.stderr
+    assert [c[2] for c in host.pct("config")] == ["104"]  # not the header line of pct list
 
 
 def test_interactive_default_setup_asks_only_what_has_no_default(host: Host) -> None:
@@ -1139,6 +1262,26 @@ def test_update_keeps_the_active_version_when_the_configuration_does_not_pass(
     assert sorted(p.name for p in lib.iterdir()) == ["current.pyz", active.name]  # no .new
     assert not list(container.path("/root").iterdir())
     assert container.calls("systemctl") == []
+
+
+def test_the_journal_keeps_at_most_100_mb(host: Host, container: Container) -> None:
+    """OPS-009: the journal shares the container's 2 GB with the history and the state file;
+    Debian's default lets it take a tenth. An update sets the limit on an older installation."""
+    existing_container(host)
+    assert run_installer(host, "--update", "105").returncode == 0
+    script = host.script("SystemMaxUse")
+    assert host.inside().index(f"bash -c {script}") < host.inside().index(
+        f"bash -c {host.script('build_pyz.py')}"
+    )
+    run = container.run(script)
+    assert run.returncode == 0, run.stderr
+    conf = container.path("/etc/systemd/journald.conf.d/meshcore-home-gateway.conf")
+    assert conf.read_text(encoding="utf-8").split("\n")[1:] == [
+        "[Journal]", "SystemMaxUse=100M", "",
+    ]  # fmt: skip
+    assert stat.S_IMODE(conf.stat().st_mode) == 0o644
+    assert container.calls("systemctl") == ["try-restart systemd-journald"]
+    assert container.run(script).returncode == 0  # again at the next update
 
 
 def test_update_needs_no_whiptail(host: Host) -> None:
@@ -2058,6 +2201,7 @@ def test_the_plan_names_what_the_service_leaves_alone(host: Host) -> None:
         'change\\tname\\t"Renamed"\\t"Gateway"\\tkept\\n'
         "change\\tautoadd\\t0\\t1\\tgiven_up\\n"
         "change\\tduty_cycle_percent\\t50\\t10\\tunsupported\\n"
+        "change\\tmanual_add\\tfalse\\ttrue\\tdisabled\\n"  # IMP-050
     )
     result = run_installer(host, "--answers", str(answers_file(host)), env={"PROBE_PLAN": plan})
     assert result.returncode == 0, result.stderr
@@ -2066,6 +2210,7 @@ def test_the_plan_names_what_the_service_leaves_alone(host: Host) -> None:
     assert '  name: "Renamed" (changed on the radio; kept)' in result.stderr
     assert "  autoadd: 0, not 1 (did not take effect; no longer set)" in result.stderr
     assert "  duty_cycle_percent: 50, not 10 (the firmware does not support it)" in result.stderr
+    assert "  manual_add: false, not true (compiled out of the radio's firmware)" in result.stderr
 
 
 def test_a_radio_with_the_profile_needs_no_plan(host: Host) -> None:

@@ -100,7 +100,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-018 | fix | Through SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | CODE-019 | accept | The adapter's own bound is the documented design | – |
 | CODE-020 | accept | Deciding the language before parsing is required for English service logs; Ctrl-C as exit 1 is the documented failure | – |
-| CODE-021 | fix | A comment in the installer that only constants and validated values may be interpolated into `bash -c` | pending: ops |
+| CODE-021 | fix | A comment in the installer that only constants and validated values may be interpolated into `bash -c` | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | CODE-022 | fix | `docs/development.md` names the release-critical tools and that they are reviewed as such | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | CODE-023 | fix | `tests/firmware/README.md` names each stand-in and why it exists | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | CODE-024 | accept | The reasoning in comments stays; new code refers to the design where the paragraph exists | – |
@@ -141,27 +141,27 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| OPS-001 | fix | The installer installs `unattended-upgrades`; the guide says that the container is a Debian system that needs updates | pending: ops |
+| OPS-001 | fix | The installer installs `unattended-upgrades`; the guide says that the container is a Debian system that needs updates | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-002 | fix | The published installer pins the digests of the zipapp and the unit; the verified path comes first in the README; examples pin `--ref` by commit | pending: installer-integrity |
 | OPS-003 | fix | A Home Assistant example that notifies when the gateway is unavailable (IMP-025). The host-side udev rule is deferred: it cannot be verified without a Proxmox host, and ADR 0006 keeps the host free of the gateway's files | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
-| OPS-004 | fix | The unit restarts with a growing delay instead of giving up after 20 failures; the guide's example detects the outage. An `OnFailure=` unit is rejected: the gateway itself is the channel it would need | pending: ops |
-| OPS-005 | fix | `After=time-sync.target`, `MemoryMax=`, `@obsolete` in the system call filter; `IPAddressAllow=` documented as an option | pending: ops |
+| OPS-004 | fix | The unit restarts with a growing delay instead of giving up after 20 failures; the guide's example detects the outage. An `OnFailure=` unit is rejected: the gateway itself is the channel it would need | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
+| OPS-005 | fix | `After=time-sync.target`, `MemoryMax=`, `@obsolete` in the system call filter; `IPAddressAllow=` documented as an option | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-006 | fix | Through ARC-013 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
-| OPS-007 | fix | A troubleshooting row, a warning at every connect on untested firmware, `manage_reason` in the `contacts` index, a turnaround target for new firmware (EXT-020) | pending: ops |
+| OPS-007 | fix | A troubleshooting row, a warning at every connect on untested firmware, `manage_reason` in the `contacts` index, a turnaround target for new firmware (EXT-020) | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: cli-ops |
-| OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: ops |
-| OPS-010 | fix | Message boxes before a TCP radio and before a broker without credentials or TLS; the summary names the posture | pending: ops |
+| OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
+| OPS-010 | fix | A radio over TCP and a broker without a user name need a confirmation, and the TLS question says what crosses the network in the clear (SEC-003, SEC-004); the final message names the posture: TLS or not, the user name or none, a TCP radio without authentication | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-011 | fix | The health section (ARC-012) and a `status` command (IMP-016) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: cli-ops |
 | OPS-012 | accept | An installation needs Debian's mirror; an offline installation is a feature nobody asked for | – |
-| OPS-013 | fix | `apt-get clean` after the installation | pending: ops |
+| OPS-013 | fix | `apt-get clean` after the installation | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-014 | fix | A sentence on time zones in the operations section | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | OPS-015 | accept | Nothing to fix; the reconfigure section notes the radio's queue | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| OPS-016 | fix | The released unit names its version in a comment | pending: ops |
+| OPS-016 | fix | The released unit names its version in a comment | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-017 | fix | A warning at start when the log level is `debug` | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | OPS-018 | accept | Documented in the unit; only the passed-through device exists in the container | – |
 | OPS-019 | accept | Documented with the full path | – |
 | OPS-020 | accept | Nothing to change | – |
-| OPS-021 | fix | The installer refuses a device another container already passes through | pending: ops |
+| OPS-021 | fix | The installer refuses a device another container already passes through | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-022 | fix | A `retire` command (IMP-016) | pending: cli-ops |
 
 ## Supply chain and release
@@ -202,8 +202,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-020 | fix | Through CODE-001 and CODE-002 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-021 | fix | Through ARC-004 | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | IMP-022 | fix | Through ARC-003, ARC-009 and CODE-005 | pending: structure |
-| IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | pending: ops, installer-integrity |
-| IMP-024 | fix | Through OPS-004 and OPS-005 | pending: ops |
+| IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52), pending: installer-integrity |
+| IMP-024 | fix | Through OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-026 | fix | Through ARC-001 | pending: threat-model |
 | IMP-027 | fix | Through SUP-001 (code owners, checklist); identity and cooldown deferred to the maintainer | pending: supply-chain |
@@ -212,8 +212,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | pending: threat-model, code-quality |
 | IMP-031 | fix | Through ARC-005 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-032 | fix | `[messages] alert_targets`: alerts overtake the queue and go between two attempts of a message in flight. Per target, not per request: a JSON envelope would change what a text that looks like JSON means, and the installer's answers carry no per-target setting (as for `hidden_targets`, SEC-008); a second target for the same recipient gives a request the choice | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
-| IMP-033 | fix | Through OPS-007 | pending: ops |
-| IMP-034 | fix | Through OPS-007 | pending: ops |
+| IMP-033 | fix | Through OPS-007 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
+| IMP-034 | fix | Through OPS-007 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-035 | reject | Superseded by IMP-014: an update keeps the queue, waiting for it to empty is no longer needed | – |
 | IMP-036 | fix | Through OPS-017 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-037 | fix | Through SEC-010 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
@@ -227,9 +227,9 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-045 | fix | Through CODE-007 | pending: code-quality |
 | IMP-046 | fix | Through DOC-026 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-047 | fix | `history export` as JSON lines or CSV | pending: cli-ops |
-| IMP-048 | fix | Through OPS-013 | pending: ops |
+| IMP-048 | fix | Through OPS-013 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-049 | fix | Reason codes as texts and the remove and telemetry controls on the dashboard. Heard repeaters on the map are rejected: the gateway keeps no stranger's position (ADR 0016) | pending: extensions |
-| IMP-050 | fix | A setting compiled out of the firmware is reported as `disabled`, apart from `unsupported` | pending: ops |
+| IMP-050 | fix | A setting compiled out of the firmware is reported as `disabled`, apart from `unsupported` | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 
 ## Extension opportunities
 
@@ -254,7 +254,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | EXT-017 | fix | `[targets.<alias>] prefix` and `suffix` | pending: extensions |
 | EXT-018 | fix | A script in the guide that sends and waits for `confirmed` | pending: extensions |
 | EXT-019 | fix | `make firmware-play` | pending: extensions |
-| EXT-020 | fix | A documented turnaround for a new firmware release | pending: ops |
+| EXT-020 | fix | A documented turnaround for a new firmware release | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 
 ## Research notes
 
@@ -272,14 +272,14 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | pending: installer-integrity |
-| RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | pending: ops |
+| RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | pending: mqtt5 |
 | RES-015 | accept | Acknowledged; moves to `docs/protocol.md` §2 (IMP-003 deferred) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-016 | accept | Acknowledged; verified, moves to `docs/protocol.md` (DOC-022) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-017 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-018 | accept | Acknowledged; moves to `docs/protocol.md` §3 with IMP-041 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-019 | accept | Acknowledged; resolved by SUP-004 | pending: supply-chain |
-| RES-020 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-009 | pending: ops |
+| RES-020 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-009 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | RES-021 | accept | Acknowledged; `docs/platform-notes.md` covers these | – |
 | RES-022 | accept | Acknowledged; nothing to change | – |
 | RES-023 | accept | Acknowledged; the firmware tests show at each firmware update whether the upstream documentation changed | – |

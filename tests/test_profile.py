@@ -162,10 +162,30 @@ def test_a_configured_name_the_radio_already_has_is_remembered() -> None:
 def test_unsupported_is_remembered_per_firmware() -> None:
     want, live = policy.desired(868_100), {**OBSERVER, policy.AUTOADD: 0x1F}
     plan = plan_for(want, live)
-    applied = policy.record(Applied(), want, plan, live, {policy.AUTOADD: True}, firmware_code=14)
+    applied = policy.record(
+        Applied(), want, plan, live, {policy.AUTOADD: policy.UNSUPPORTED}, firmware_code=14
+    )
     assert applied.unsupported == {policy.AUTOADD: 14}
     assert plan_for(want, live, applied).unsupported == (policy.AUTOADD,)
     assert plan_for(want, live, applied, firmware=15, mode=Mode.ALWAYS).writes  # newer firmware
+
+
+def test_a_setting_compiled_out_is_remembered_per_firmware_apart_from_unsupported() -> None:
+    """IMP-050: a DISABLED answer (the command compiled out of the build) is not written to
+    that firmware again either, and reported as such."""
+    want, live = policy.desired(868_100), {**OBSERVER, policy.AUTOADD: 0x1F}
+    plan = plan_for(want, live)
+    applied = policy.record(
+        Applied(), want, plan, live, {policy.AUTOADD: policy.DISABLED}, firmware_code=14
+    )
+    assert (applied.disabled, applied.unsupported, applied.attempts) == (
+        {policy.AUTOADD: 14}, {}, {},
+    )  # fmt: skip
+    assert not Applied(disabled={policy.AUTOADD: 14}).empty  # a radio known, not a first connect
+    again = plan_for(want, live, applied)
+    assert (again.disabled, again.unsupported, again.writes) == ((policy.AUTOADD,), (), {})
+    assert plan_for(want, live, applied, firmware=15, mode=Mode.ALWAYS).writes  # another build
+    assert policy.pending(applied, {}, firmware_code=14).disabled == {policy.AUTOADD: 14}
 
 
 def test_a_refused_write_counts_towards_the_guard() -> None:
@@ -173,7 +193,7 @@ def test_a_refused_write_counts_towards_the_guard() -> None:
     applied = Applied()
     for _ in range(policy.NOT_CONVERGING_AFTER):
         plan = plan_for(want, live, applied)
-        applied = policy.record(applied, want, plan, live, {policy.TELEMETRY: False},
+        applied = policy.record(applied, want, plan, live, {policy.TELEMETRY: None},
                                 firmware_code=14)  # fmt: skip
     assert plan_for(want, live, applied).not_converging == (policy.TELEMETRY,)
     assert policy.TELEMETRY not in applied.values  # never taken
@@ -359,7 +379,13 @@ def test_untested_firmware_is_only_observed(caplog: pytest.LogCaptureFixture) ->
     manager = RadioProfile(ProfileConfig())
     asyncio.run(connect(radio, manager))
     assert setters(radio) == []
-    assert "is not tested; observed only" in caplog.text
+    # OPS-007: at every connect, with what it switches off and where the guide explains it
+    (warning,) = [r for r in caplog.records if "is not tested" in r.getMessage()]
+    assert warning.levelno == logging.WARNING
+    assert "contact add and remove requests are refused (untested_firmware)" in (
+        warning.getMessage()
+    )
+    assert "Troubleshooting" in warning.getMessage()
     assert manager.report is not None
     document = settings_document(manager.report, START_TIME)
     assert (document["status"], document["observing"]) == ("differs", True)
@@ -373,6 +399,34 @@ def test_untested_firmware_is_only_observed(caplog: pytest.LogCaptureFixture) ->
     }  # fmt: skip
 
 
+@pytest.mark.parametrize(
+    ("manage", "firmware", "level"),
+    [
+        ("observe", 15, logging.WARNING),  # contact requests are refused all the same
+        ("observe", 14, logging.INFO),
+        ("always", 15, None),  # written and taken anyway: the setting says so
+        ("auto", 14, None),
+    ],
+)
+def test_the_firmware_gate_is_logged_at_every_connect(
+    caplog: pytest.LogCaptureFixture, manage: str, firmware: int, level: int | None
+) -> None:
+    radio = factory_radio(firmware_code=firmware)
+    manager = RadioProfile(ProfileConfig(manage=manage))  # type: ignore[arg-type]
+
+    async def main() -> None:
+        for _ in range(2):
+            await connect(radio, manager)
+
+    with caplog.at_level(logging.INFO):
+        asyncio.run(main())
+    said = [
+        r.levelno for r in caplog.records
+        if "is not tested" in r.getMessage() or "observed only" in r.getMessage()
+    ]  # fmt: skip
+    assert said == ([level] * 2 if level else [])
+
+
 def test_a_setter_the_firmware_lacks_is_marked_unsupported(tmp_path: Path) -> None:
     radio = factory_radio(unknown={Command.SET_AUTOADD_CONFIG})
     records = ProfileRecords(JsonStateFile(tmp_path / "state.json"))
@@ -384,6 +438,32 @@ def test_a_setter_the_firmware_lacks_is_marked_unsupported(tmp_path: Path) -> No
         assert manager.report.unsupported == (policy.AUTOADD,)
         await connect(radio, RadioProfile(ProfileConfig(), records))
         assert setters(radio) == []  # not tried again on this firmware
+
+    asyncio.run(main())
+
+
+def test_a_setter_compiled_out_of_the_firmware_is_marked_disabled(tmp_path: Path) -> None:
+    """IMP-050: the radio answers DISABLED; the settings document tells it from unsupported."""
+    radio = factory_radio(disabled={Command.SET_AUTOADD_CONFIG})
+    records = ProfileRecords(JsonStateFile(tmp_path / "state.json"))
+    manager = RadioProfile(ProfileConfig(), records)
+
+    async def main() -> None:
+        await connect(radio, manager)
+        report = manager.report
+        assert report is not None
+        assert (report.disabled, report.unsupported, report.failed) == ((policy.AUTOADD,), (), ())
+        assert policy.AUTOADD not in report.reasons
+        document = settings_document(report, START_TIME)
+        assert (document["status"], document["settings"]["autoadd"]["state"]) == (
+            "problem", "disabled",
+        )  # fmt: skip
+        assert records.load(SELF_KEY.hex()).disabled == {policy.AUTOADD: 14}
+        restarted = RadioProfile(ProfileConfig(), records)
+        await connect(radio, restarted)
+        assert setters(radio) == []  # not tried again on this firmware
+        assert restarted.report is not None
+        assert restarted.report.disabled == (policy.AUTOADD,)
 
     asyncio.run(main())
 
@@ -545,6 +625,7 @@ def test_what_was_applied_survives_a_restart(tmp_path: Path) -> None:
         values={policy.MANUAL_ADD: True, policy.NAME: "Gateway"},
         attempts={policy.AIRTIME_FACTOR: policy.Attempt(9000, 2, 14)},
         unsupported={policy.AUTOADD: 14},
+        disabled={policy.TELEMETRY: 14},
     )
     store = JsonStateFile(tmp_path / "state.json")
     ProfileRecords(store).save("aa" * 32, applied)

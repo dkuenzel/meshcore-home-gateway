@@ -137,6 +137,15 @@ class ContactManager:
         says `always`. Without a radio, the switch alone."""
         return self.manage and (info is None or self._firmware_allowed(info))
 
+    def refusal(self, info: RadioInfo | None) -> str | None:
+        """Why an add or remove request would be refused now, None while they are taken: the
+        switch, no radio (`info` None), or firmware the gateway is not tested with (OPS-007)."""
+        if not self.manage:
+            return "management_off"
+        if info is None:
+            return "no_radio"
+        return None if self._firmware_allowed(info) else "untested_firmware"
+
     def _firmware_allowed(self, info: RadioInfo) -> bool:
         tested = info.device.firmware_code in policy.TESTED_FIRMWARE
         return tested or self._config.radio.profile.manage == "always"

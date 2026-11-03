@@ -165,6 +165,13 @@ msgstr ""
 msgid "Storage for the container disk"
 msgstr ""
 
+msgid "TLS, no user name"
+msgstr ""
+
+#, python-brace-format
+msgid "TLS, user '{user}'"
+msgstr ""
+
 #. {what} is "no user name" or "no TLS".
 #, python-brace-format
 msgid "The broker connection has {what}: any client that reaches the broker could publish command events as if an allowed contact had sent them. Accept it (insecure = true)? No: no commands."
@@ -192,6 +199,10 @@ msgstr ""
 msgid ""
 "The container starts only while the radio is plugged in.\n"
 "After re-plugging the radio: {command}"
+msgstr ""
+
+#, python-brace-format
+msgid "The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key."
 msgstr ""
 
 msgid "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again."
@@ -365,6 +376,10 @@ msgstr ""
 msgid "invalid settings: {reason}"
 msgstr ""
 
+#, python-brace-format
+msgid "limiting the journal in container {ctid} failed (see above)"
+msgstr ""
+
 msgid "login accepted"
 msgstr ""
 
@@ -378,12 +393,13 @@ msgstr ""
 msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)"
 msgstr ""
 
-#. the values start in one column; they are commands to copy, but {login}.
+#. the values start in one column; they are commands to copy, but {login} and
+#. {posture} (how the broker connection is secured).
 #, python-brace-format
 msgid ""
 "meshcore-home-gateway {version} runs in container {ctid}.\n"
 "\n"
-"Broker:       {login}\n"
+"Broker:       {login} ({posture})\n"
 "Logs:         {logs}\n"
 "Check:        {check}\n"
 "Reconfigure:  {reconfigure}\n"
@@ -395,6 +411,13 @@ msgid "meshcore-home-gateway {version} was not installed in container {ctid} (se
 msgstr ""
 
 msgid "no TLS"
+msgstr ""
+
+msgid "no TLS, no user name"
+msgstr ""
+
+#, python-brace-format
+msgid "no TLS, user '{user}'"
 msgstr ""
 
 msgid "no active storage for container disks"
@@ -498,9 +521,21 @@ msgstr ""
 msgid "{bridge}, {ip}, gateway {gateway}"
 msgstr ""
 
+#, python-brace-format
+msgid "{device} is already passed through to another container (ID {ctids}). A radio takes one client at a time: whichever opens it second cannot use it. Choose another radio, or take it out of that container first."
+msgstr ""
+
+#, python-brace-format
+msgid "{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time"
+msgstr ""
+
 #. a setting of the radio and its value, as the radio names them.
 #, python-brace-format
 msgid "{setting}: {live} (changed on the radio; kept)"
+msgstr ""
+
+#, python-brace-format
+msgid "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)"
 msgstr ""
 
 #. a setting of the radio, its value and the one the service had set.
