@@ -85,6 +85,9 @@ jobs:
           python-version: "3.13"
       - name: Static checks
         run: make lint shellcheck workflows
+      # needs the network: the Python Packaging Advisory Database (SUP-005)
+      - name: Known vulnerabilities in the lock files
+        run: make audit
       # One invocation: unit-check takes the zipapp that dist builds.
       - name: Build wheel, sdist and zipapp, verify the systemd unit and its exposure score
         run: make dist unit-check

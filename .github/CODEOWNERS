@@ -1,0 +1,22 @@
+# Code owners (SUP-001, CONTRIBUTING.md): every change needs the maintainer's review. The paths
+# below are the security-relevant ones, which the pull request template's review checklist asks
+# to read line by line: what the radio and the broker send in, what the service runs, how a
+# release is built and what installs it.
+*                                                   @dkuenzel
+
+/src/meshcore_home_gateway/core/commands.py         @dkuenzel
+/src/meshcore_home_gateway/core/contacts.py         @dkuenzel
+/src/meshcore_home_gateway/bridge.py                @dkuenzel
+/src/meshcore_home_gateway/contact_manager.py       @dkuenzel
+/src/meshcore_home_gateway/config.py                @dkuenzel
+/src/meshcore_home_gateway/state.py                 @dkuenzel
+/src/meshcore_home_gateway/radio/                   @dkuenzel
+/src/meshcore_home_gateway/protocol/                @dkuenzel
+/src/meshcore_home_gateway/mqtt/client.py           @dkuenzel
+/deploy/                                            @dkuenzel
+/.github/                                           @dkuenzel
+/Makefile                                           @dkuenzel
+/requirements/                                      @dkuenzel
+/tools/build_pyz.py                                 @dkuenzel
+/tools/release_plan.py                              @dkuenzel
+/tools/i18n.py                                      @dkuenzel

@@ -172,9 +172,9 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SUP-002 | fix | The release workflow builds in a job with a minimal, hash-pinned environment, a rebuild on another runner image must give the same `SHA256SUMS`, and only then is it attested | pending: supply-chain |
 | SUP-003 | fix | The installer's pinned digests (OPS-002); immutable releases switched on for the repository | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53); immutable releases: repository settings, 2026-11-02 |
 | SUP-004 | fix | `make lock` and Dependabot write the same form | pending: supply-chain |
-| SUP-005 | fix | `pip-audit` against both lock files in CI (the Home Assistant lock warns); code scanning switched on; the 43 open alerts of the Home Assistant lock resolved | pending: supply-chain, github |
+| SUP-005 | fix | `pip-audit` against every lock file in CI (`make audit`; the Home Assistant lock warns); code scanning switched on; the 43 open alerts of the Home Assistant lock resolved by overrides (Pillow 13.0.0, certifi 2026.10.19, uv 0.13.4) | pending: supply-chain; code scanning: repository settings, 2026-11-02 |
 | SUP-006 | fix | Translations reviewed by a second speaker; security-relevant texts carry a translators' note | pending: supply-chain |
-| SUP-007 | fix | The rulesets exported to `.github/rulesets/`; `SECURITY.md` names the repository's security settings | pending: supply-chain |
+| SUP-007 | fix | The tag ruleset exported to `.github/rulesets/`; `SECURITY.md` names the repository's security settings; branch protection of `main` stays with the maintainer | pending: supply-chain |
 
 ## Improvement opportunities
 

@@ -1,0 +1,4 @@
+# `make audit` (CI): pip-audit checks the lock files against the Python packaging advisory
+# database (SUP-005). Its own environment: it runs only in CI and needs the network. Compile with
+# `make lock`; the lock file requirements/audit.txt pins every package by hash.
+pip-audit

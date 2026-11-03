@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -16,6 +17,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -300,7 +302,94 @@ def test_jobs_that_run_the_tests_install_their_tools() -> None:
             assert any(
                 re.search(r"\bmosquitto\b", c) and re.search(r"\bgettext\b", c) for c in installs
             ), f"{testing[-1]} installs {installs}"
-    assert testing == ["ci.yml: test", "release.yml: build"]
+    assert testing == ["ci.yml: test", "release.yml: check"]
+
+
+def workflow_jobs(name: str) -> dict[str, str]:
+    """The jobs of a workflow by their id, each with its text."""
+    workflow = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+    jobs = re.split(r"^  (?=[\w-]+:$)", workflow.split("\njobs:\n", 1)[1], flags=re.MULTILINE)
+    return {job.split(":", 1)[0]: job for job in jobs[1:]}
+
+
+def test_the_release_is_built_where_no_test_or_lint_tool_runs() -> None:
+    """SUP-002: a test or lint tool (or one of their dependencies) cannot touch the release files.
+    They are made in an environment of the build tools alone, made again on another runner and
+    compared byte for byte, and published only after the checks, the build and the rebuild."""
+    jobs = workflow_jobs("release.yml")
+    release = "make release VENV=.venv-release REQUIREMENTS=requirements/release.txt"
+    assert [job for job, text in jobs.items() if release in job_commands(text)] == [
+        "build",
+        "rebuild",
+    ]
+    assert job_commands(jobs["check"])[-1] == "make check"
+    releasing = [job for job, text in jobs.items() if "release" in set().union(
+        *map(make_targets, job_commands(text)))]  # fmt: skip
+    assert releasing == ["build", "rebuild"]
+    assert "diff built/release/SHA256SUMS dist/release/SHA256SUMS" in job_commands(jobs["rebuild"])
+    assert "    needs: [check, build, rebuild]\n" in jobs["publish"]
+    lock = (ROOT / "requirements" / "release.txt").read_text(encoding="utf-8")
+    locked = set(re.findall(r"^([\w.-]+)==", lock, flags=re.MULTILINE))
+    assert {"build", "flit-core"} <= locked
+    assert not locked & {"pytest", "coverage", "ruff", "mypy", "zizmor", "shellcheck-py"}
+    environment = make("--dry-run", "VENV=.venv-x", "REQUIREMENTS=requirements/release.txt",
+                       ".venv-x/.locked")  # fmt: skip
+    assert "--require-hashes --no-deps -r requirements/release.txt" in environment.stdout
+
+
+@pytest.mark.parametrize(
+    "lock",
+    [
+        "requirements/dev.txt",
+        "requirements/release.txt",
+        "requirements/audit.txt",
+        "home-assistant/requirements.txt",
+    ],
+)
+def test_a_lock_file_has_the_form_dependabot_writes(lock: str) -> None:
+    """SUP-004: resolved for Linux alone and from inside its directory, as `make lock` and
+    `make ha-lock` write it; a pull request of Dependabot then changes versions and hashes only."""
+    text = (ROOT / lock).read_text(encoding="utf-8")
+    command = text.splitlines()[1]
+    assert command.startswith(f"#    uv pip compile {Path(lock).with_suffix('.in').name} ")
+    assert "--python-platform linux --no-strip-extras --generate-hashes" in command
+    assert "--universal" not in command
+    assert not re.findall(r"^\S+==\S+ ;", text, flags=re.MULTILINE)  # no environment markers
+    assert not re.findall(r"# via -r \S+/", text)
+
+
+def test_every_lock_file_is_audited_and_the_tool_chains_fail_the_audit() -> None:
+    """SUP-005: CI looks up each lock file in the advisory database. A vulnerability in a tool
+    chain fails it; in the Home Assistant test environment, whose versions the pinned Home
+    Assistant decides, it warns (home-assistant/overrides.txt raises a version past one)."""
+    dry_run = make("--dry-run", "audit")
+    assert dry_run.returncode == 0, dry_run.stderr
+    lines = dry_run.stdout.replace("\\\n", " ").splitlines()  # a command with its continuations
+    audits = [line for line in lines if "/pip-audit " in line]
+    locks = [*sorted(ROOT.glob("requirements/*.txt")), ROOT / "home-assistant/requirements.txt"]
+    for lock in locks:
+        name = lock.relative_to(ROOT).as_posix()
+        [audit] = [line for line in audits if f"-r {name}" in line]
+        assert ("||" in audit) is name.startswith("home-assistant/"), audit
+    assert all("--require-hashes --strict" in audit for audit in audits)
+    ci = job_commands(workflow_jobs("ci.yml")["check"])
+    assert "audit" in set().union(*map(make_targets, ci))
+
+
+def ruleset(name: str) -> dict[str, Any]:
+    """A ruleset as exported from the repository's settings to .github/rulesets (SECURITY.md)."""
+    path = ROOT / ".github" / "rulesets" / f"{name}.json"
+    exported: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return exported
+
+
+def test_release_tags_cannot_be_moved_or_deleted() -> None:
+    """ADR 0022 relies on it and SUP-007 asks to show it: the tag ruleset keeps every release tag
+    on the commit CI tagged."""
+    tags = ruleset("v-star")
+    assert (tags["target"], tags["enforcement"]) == ("tag", "active")
+    assert tags["conditions"]["ref_name"]["include"] == ["refs/tags/v*"]
+    assert {"deletion", "non_fast_forward", "update"} <= {rule["type"] for rule in tags["rules"]}
 
 
 def test_make_targets_are_read_from_commands() -> None:

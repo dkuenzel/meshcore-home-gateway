@@ -1,0 +1,7 @@
+# Versions the Home Assistant release that requirements.in pins asks for, raised past known
+# vulnerabilities (SUP-005; `make ha-lock` passes this file to uv as overrides). Only the test
+# environment of the contract tests uses them. Remove a line once the pinned Home Assistant
+# release asks for that version or a newer one itself.
+pillow>=13.0.0
+certifi>=2026.10.18
+uv>=0.13.4

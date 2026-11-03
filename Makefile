@@ -9,7 +9,14 @@ PYTHON ?= python3
 PYTHONS ?= python3.11 python3.12 python3.13 python3.14
 VENV ?= .venv
 BIN := $(VENV)/bin
+# The lock file VENV is made from. The release workflow builds with the build tools alone:
+# `make release VENV=.venv-release REQUIREMENTS=requirements/release.txt` (another VENV for another
+# lock: an environment is made again only when its lock file changes).
+REQUIREMENTS ?= requirements/dev.txt
 COOLDOWN_DAYS ?= 14
+# `make lock UPGRADE=` writes the lock files again with the versions they pin
+UPGRADE ?= --upgrade
+AUDIT_VENV ?= .venv-audit
 # Home Assistant contract tests: their own environment, pinned in home-assistant/requirements.txt
 HA_PYTHON ?= python3.14
 HA_VENV ?= .venv-homeassistant
@@ -24,7 +31,8 @@ FIRMWARE_BUILD ?= build/firmware
 FIRMWARE_TESTS ?= tests/firmware
 
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
-  translations firmware-fetch firmware firmware-test dist pyz release release-plan check hooks clean
+  translations firmware-fetch firmware firmware-test dist pyz release release-plan check hooks \
+  clean audit
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -33,9 +41,9 @@ venv: $(VENV)/.installed ## Development environment from the hash-pinned lock fi
 
 # A changed lock gives a fresh environment, as in CI: --clear drops the packages it no longer has.
 # Only an existing environment is cleared, never another directory that VENV names by mistake.
-$(VENV)/.locked: requirements/dev.txt
+$(VENV)/.locked: $(REQUIREMENTS)
 	$(PYTHON) -m venv $(if $(wildcard $(VENV)/pyvenv.cfg),--clear) $(VENV)
-	$(BIN)/python -m pip install --quiet --require-hashes --no-deps -r requirements/dev.txt
+	$(BIN)/python -m pip install --quiet --require-hashes --no-deps -r $(REQUIREMENTS)
 	touch $@
 
 # Another pyproject.toml (tool settings, metadata) only reinstalls the package itself.
@@ -43,15 +51,34 @@ $(VENV)/.installed: $(VENV)/.locked pyproject.toml
 	$(BIN)/python -m pip install --quiet --no-deps --no-build-isolation --editable .
 	touch $@
 
-lock: ## Re-resolve requirements/dev.txt with uv: the newest releases older than COOLDOWN_DAYS
-	uv pip compile requirements/dev.in --universal --python-version 3.11 --generate-hashes --upgrade \
-	  --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
-	  --output-file requirements/dev.txt
+# For Linux alone (ADR 0005), and from inside the directory: the form Dependabot writes too, so that
+# its pull requests change versions and hashes only (SUP-004).
+lock: ## Re-resolve the lock files in requirements/: the newest releases older than COOLDOWN_DAYS
+	cd requirements && for name in dev release audit; do \
+	  uv pip compile "$$name.in" --python-version 3.11 --python-platform linux --no-strip-extras \
+	    --generate-hashes $(UPGRADE) \
+	    --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
+	    --output-file "$$name.txt"; \
+	done
 
+# home-assistant/overrides.txt raises versions the pinned Home Assistant asks for (SUP-005).
 ha-lock: ## Re-resolve home-assistant/requirements.txt, only releases older than COOLDOWN_DAYS
-	uv pip compile home-assistant/requirements.in --universal --python-version 3.14.2 \
-	  --generate-hashes --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
-	  --output-file home-assistant/requirements.txt
+	cd home-assistant && uv pip compile requirements.in --python-version 3.14.2 \
+	  --python-platform linux --no-strip-extras --generate-hashes --overrides overrides.txt \
+	  --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
+	  --output-file requirements.txt
+
+# Known vulnerabilities, from the Python Packaging Advisory Database (CI runs it; SUP-005). One in
+# the tool chains fails; one in the test environment of Home Assistant, whose versions its pinned
+# release decides, warns: home-assistant/overrides.txt raises a version past it.
+audit: ## Known vulnerabilities in the lock files (pip-audit; needs the network)
+	$(MAKE) --no-print-directory VENV=$(AUDIT_VENV) REQUIREMENTS=requirements/audit.txt \
+	  $(AUDIT_VENV)/.locked
+	$(AUDIT_VENV)/bin/pip-audit --progress-spinner off --disable-pip --require-hashes --strict \
+	  -r requirements/dev.txt -r requirements/release.txt -r requirements/audit.txt
+	$(AUDIT_VENV)/bin/pip-audit --progress-spinner off --disable-pip --require-hashes --strict \
+	  -r home-assistant/requirements.txt \
+	  || echo "audit: warning: home-assistant/requirements.txt has the vulnerabilities above" >&2
 
 lint: venv ## ruff lint and format check, mypy --strict
 	$(BIN)/ruff check .

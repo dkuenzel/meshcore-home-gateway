@@ -33,3 +33,14 @@ has a waiver. -->
 - [ ] Public interface: `make interface` if it changed; a `**Breaking:**` entry for a removal or
   narrowing of what the last release had, an Added or Changed entry for an addition or change
 - [ ] No personal data, site names, keys or network details (CONTRIBUTING.md)
+
+## Review
+
+<!-- For the reviewer, above all of a change an agent wrote (CONTRIBUTING.md, SUP-001): a green
+CI proves the change matches its own tests, not that it is right. -->
+
+- [ ] I read the diff of every changed file below a path that `.github/CODEOWNERS` names
+- [ ] One of the new tests fails with the change reverted (I ran it)
+- [ ] No new network access, subprocess, file path, permission or dependency; or the description
+  above names each and why
+- [ ] A translation was read by a second speaker of the language (docs/translations.md)

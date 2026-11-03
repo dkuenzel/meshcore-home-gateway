@@ -64,6 +64,21 @@ the same without the other tests).
 A translation that breaks a rule is refused by `make check`; at run time the program shows the
 English text instead.
 
+## Review of a translation
+
+The checks keep a translation from breaking a field, a template or a value; they cannot judge
+what it says. A translated installer dialog could ask for the host's root password where the
+English one asks for the broker's, or leave out what a warning warns of, and a translation comes
+as data from someone the maintainer may not know, in a language the maintainer may not read
+(SUP-006). So a new or changed translation is read by a second speaker of the language before it
+is merged; where none is found, the maintainer translates it back by machine and reads that.
+Texts whose note says *security text* get the closest reading: they warn of a risk (the radio's
+TCP interface, a broker without a user name or TLS, a confirmation that may be forged, a
+look-alike key), say how a connection is secured, or ask for a secret, and the translation must
+say all of it and nothing more. A new text that names such things (TLS, a password, a user name,
+authentication) needs the note, or a place in the test's list of texts that are none
+(`tests/test_translations.py`).
+
 ## Home Assistant names
 
 `msgctxt "home assistant"`: entity names, the models of the contacts' devices, the reading types
@@ -117,7 +132,8 @@ For a language `ll` (its ISO 639-1 code, two lower-case letters):
    and removes nothing).
 6. Run `make check` and `make ha-test`; they check every listed language.
 7. In the pull request, add the language to the *Added* entries of `CHANGELOG.md` and to the
-   choices of `language` in [configuration.md](configuration.md#homeassistant).
+   choices of `language` in [configuration.md](configuration.md#homeassistant). A second speaker
+   of the language reviews the pull request ([Review of a translation](#review-of-a-translation)).
 
 Nothing else changes for a language: `tests/test_adding_a_language.py` adds a pseudo-language to a
 copy of the checkout through exactly these steps and runs the checks that read the languages in

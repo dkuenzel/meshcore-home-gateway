@@ -256,6 +256,7 @@ def _parser() -> argparse.ArgumentParser:
         "--password-file",
         type=Path,
         default=None,
+        # Translators: security text (docs/translations.md): where the broker's password goes
         help=tr_help(
             "write the broker password into this file (mode 0640) instead of the configuration"
         ),
@@ -517,6 +518,7 @@ def _probe_anonymous(mqtt: MqttConfig) -> None:
         client.disconnect()
         client.loop_stop()
     if error is None:
+        # Translators: security text (docs/translations.md): translate all of it, add nothing
         warning = tr(
             "the broker accepts clients without a user name: unless its ACL keeps them off the "
             "gateway's topics, any client that reaches it can read messages and positions and "
@@ -531,9 +533,12 @@ def _probe_anonymous(mqtt: MqttConfig) -> None:
 def _login(mqtt: MqttConfig) -> str:
     """Who logs in to the broker, as check-config names it; never the password."""
     if not mqtt.username:
+        # Translators: security text (docs/translations.md)
         return tr("no user name")
     if mqtt.password:
+        # Translators: security text (docs/translations.md)
         return tr("user {user!r} with a password", user=mqtt.username)
+    # Translators: security text (docs/translations.md)
     return tr("user {user!r} without a password", user=mqtt.username)
 
 
@@ -550,11 +555,14 @@ def _summary(config: Config, login: str) -> list[str]:
     return [
         tr("  radio      {transport} {where}", transport=radio.transport, where=where)
         if radio.transport == "serial"
-        # Translators: the radio's TCP interface has no authentication (SEC-003)
+        # Translators: security text (docs/translations.md): the radio's TCP interface has no
+        # authentication (SEC-003)
         else tr("  radio      tcp {where}, unauthenticated: anyone who reaches it controls the "
                 "radio", where=where),
+        # Translators: security text (docs/translations.md): the broker connection uses TLS
         tr("  broker     {host}:{port} (TLS), {login}, topics {root}/...", **broker)
         if mqtt.tls
+        # Translators: security text (docs/translations.md): the broker connection has no TLS
         else tr("  broker     {host}:{port}, {login}, topics {root}/...", **broker),
         tr("  discovery  on, prefix {prefix}, names in {language}", prefix=ha.prefix,
            language=language)
@@ -1161,8 +1169,8 @@ def _send(args: argparse.Namespace) -> int:
         print(_json_text(watch.result))
         suspect = bool(watch.result.get("suspect"))
         if suspect:
-            # Translators: the recipient's acknowledgement came sooner than the message's way
-            # through the mesh allows
+            # Translators: security text (docs/translations.md): the recipient's
+            # acknowledgement came sooner than the message's way through the mesh allows
             warning = tr("confirmed sooner than the path allows: the acknowledgement may be forged")
             print(PREFIX + warning, file=sys.stderr)
         delivered = watch.result["event_type"] in {"sent", "confirmed"} and not suspect
@@ -1484,6 +1492,7 @@ def _contacts_add(args: argparse.Namespace) -> int:
         assert key is not None  # noqa: S101 - one of the branches above
         _print_key(key, name if isinstance(name, str) else None, claimed=claimed)
         if _looks_alike(key, nodes):
+            # Translators: security text (docs/translations.md): translate all of it, add nothing
             print(tr("warning: another node has the same first 12 key digits: compare the full "
                      "key above with the node's own screen; the one added first keeps them"),
                   file=sys.stderr)  # fmt: skip

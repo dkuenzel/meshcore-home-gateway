@@ -597,10 +597,13 @@ ask_container() {
 login_text() {  # the broker login, for the confirmation; never the password
   local user=${OUT[mqtt.username]-}
   if [[ -z $user ]]; then
+    # Translators: security text (docs/translations.md).
     t 'none (no user name)'
   elif [[ -n ${OUT[mqtt.password]-} || -n ${OUT[mqtt.password_file]-} ]]; then
+    # Translators: security text (docs/translations.md).
     t "user '{user}' with a password" user "$user"
   else
+    # Translators: security text (docs/translations.md).
     t "user '{user}' without a password" user "$user"
   fi
 }
@@ -613,7 +616,8 @@ confirm_install() {
     network=$(t '{bridge}, {ip}, gateway {gateway}' bridge "${CT[bridge]}" ip "${CT[ip]}" \
       gateway "${CT[gateway]}")
   fi
-  # Translators: the values start in one column; {tls} is true or false.
+  # Translators: security text (docs/translations.md): the values start in one column; {tls} is
+  # true or false.
   text=$(t 'Create container {id} ({hostname}) now?
 
 Disk:     {storage}, {disk} GB
@@ -863,6 +867,7 @@ ask_radio() {
     choices+=("$path" "$(basename -- "$path")")
   done
   shopt -u nullglob
+  # Translators: security text (docs/translations.md): translate all of it, add nothing.
   choices+=("tcp" "$(t 'radio with WiFi firmware (TCP, no authentication)')")
   if (( ! INTERACTIVE )) && [[ ! -v "ANSWERS[radio.choice]" ]]; then
     die "no answer for radio.choice: name the radio's device path, or tcp"  # never guess one
@@ -928,6 +933,7 @@ accept_tcp() {  # a radio over TCP: whoever reaches it owns it (SEC-003). False:
     fi
     return 0
   fi
+  # Translators: security text (docs/translations.md): translate all of it, add nothing.
   [[ $(show_dialog yesno "$(t "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again.")" false) == true ]] \
     || return 1
   OUT[radio.tcp_unauthenticated]=true
@@ -935,6 +941,7 @@ accept_tcp() {  # a radio over TCP: whoever reaches it owns it (SEC-003). False:
 
 no_user_confirmed() {  # without a user name the broker is open to everyone it does not refuse
   (( INTERACTIVE )) || return 0
+  # Translators: security text (docs/translations.md): translate all of it, add nothing.
   [[ $(show_dialog yesno "$(t 'No user name: unless the broker refuses clients without one, anyone who reaches it can read the messages and the positions and send commands to the gateway. Continue without a user name?')" false) == true ]]
 }
 
@@ -943,6 +950,7 @@ ask_broker() {  # address and login
   OUT[mqtt.host]=$(ask_required mqtt.host \
     "$(t 'MQTT broker: host name or IP address (no mqtt://)')" "")
   # also in the default setup: without TLS the password and every message cross the network
+  # Translators: security text (docs/translations.md): translate all of it, add nothing.
   tls=$(ask mqtt.tls yesno "$(t 'Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear.')" "false")
   OUT[mqtt.tls]=$tls
   OUT[mqtt.port]=$(ask_advanced mqtt.port input "$(t 'MQTT broker port')" \
@@ -960,12 +968,14 @@ ask_broker() {  # address and login
     [[ -v "ANSWERS[mqtt.password]" ]] || unset 'OUT[mqtt.password]'
     [[ -v "ANSWERS[mqtt.password_file]" ]] || unset 'OUT[mqtt.password_file]'
   elif has_password && [[ $user == "${CURRENT[mqtt.username]-}" ]]; then
+    # Translators: security text (docs/translations.md): asks for the broker's password.
     password=$(ask mqtt.password password \
       "$(t "Password of MQTT user '{user}' (empty: keep the current one)" user "$user")" "")
     if [[ -n $password ]]; then new_password "$password"; fi
   else  # a new user name: a current password belongs to the old one
     password=""
     if (( INTERACTIVE )) || [[ -v "ANSWERS[mqtt.password]" ]]; then
+      # Translators: security text (docs/translations.md): asks for the broker's password.
       password=$(ask mqtt.password password \
         "$(t "Password of MQTT user '{user}' (empty: none)" user "$user")" "")
     fi
@@ -991,6 +1001,7 @@ ask_broker_again() {  # after a refused login, with dialogs: every broker settin
     OUT[mqtt.host]=$(show_dialog input \
       "$(t 'MQTT broker: host name or IP address (no mqtt://)')" "$host")
   done
+  # Translators: security text (docs/translations.md): translate all of it, add nothing.
   tls=$(show_dialog yesno "$(t 'Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear.')" "$previous")
   OUT[mqtt.tls]=$tls
   port=${OUT[mqtt.port]-}
@@ -1012,6 +1023,7 @@ ask_broker_again() {  # after a refused login, with dialogs: every broker settin
   if [[ -z $user ]]; then
     unset 'OUT[mqtt.password]' 'OUT[mqtt.password_file]'
   elif has_password && [[ $user == "${CURRENT[mqtt.username]-}" ]]; then
+    # Translators: security text (docs/translations.md): asks for the broker's password.
     password=$(show_dialog password \
       "$(t "Password of MQTT user '{user}' (empty: keep the installed one)" user "$user")" "")
     unset 'OUT[mqtt.password]' 'OUT[mqtt.password_file]'
@@ -1023,6 +1035,7 @@ ask_broker_again() {  # after a refused login, with dialogs: every broker settin
       OUT[mqtt.password]=${CURRENT[mqtt.password]}
     fi
   else
+    # Translators: security text (docs/translations.md): asks for the broker's password.
     password=$(show_dialog password \
       "$(t "Password of MQTT user '{user}' (empty: none)" user "$user")" "")
     unset 'OUT[mqtt.password]' 'OUT[mqtt.password_file]'
@@ -1114,15 +1127,18 @@ accept_insecure() {  # commands over a broker connection without a user name or 
   knows_insecure || return 0   # an older program has no such rule
   [[ ${OUT[mqtt.insecure]-} != true ]] || return 0
   if [[ -z ${OUT[mqtt.username]-} ]]; then
+    # Translators: security text (docs/translations.md).
     what=$(t 'no user name')
   elif [[ ${OUT[mqtt.tls]-false} != true ]] && ! local_broker "${OUT[mqtt.host]-}"; then
+    # Translators: security text (docs/translations.md).
     what=$(t 'no TLS')
   else
     return 0
   fi
   # without dialogs and without the answer, the settings check names the setting
   if (( ! INTERACTIVE )) && [[ ! -v "ANSWERS[mqtt.insecure]" ]]; then return 0; fi
-  # Translators: {what} is "no user name" or "no TLS".
+  # Translators: security text (docs/translations.md): translate all of it, add nothing.
+  # {what} is "no user name" or "no TLS".
   if [[ $(ask mqtt.insecure yesno "$(t 'The broker connection has {what}: any client that reaches the broker could publish command events as if an allowed contact had sent them. Accept it (insecure = true)? No: no commands.' what "$what")" false) == true ]]; then
     OUT[mqtt.insecure]=true
   else
@@ -1417,9 +1433,13 @@ summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _f
   # the connection's security as chosen (OPS-010): without TLS everything crosses the network
   # in the clear, and without a user name the broker may let anyone in
   case ${OUT[mqtt.tls]-false}/${user:+user} in
+    # Translators: security text (docs/translations.md).
     true/user) posture=$($say "TLS, user '{user}'" user "$user") ;;
+    # Translators: security text (docs/translations.md).
     true/) posture=$($say 'TLS, no user name') ;;
+    # Translators: security text (docs/translations.md).
     */user) posture=$($say "no TLS, user '{user}'" user "$user") ;;
+    # Translators: security text (docs/translations.md).
     *) posture=$($say 'no TLS, no user name') ;;
   esac
   update="$(invocation) --update $ctid"
@@ -1445,6 +1465,7 @@ Update:       {update}' \
 After re-plugging the radio: {command}' command "pct reboot $ctid")
   else
     probe_args   # the address as probe takes it: an IPv6 address in brackets
+    # Translators: security text (docs/translations.md): translate all of it, add nothing.
     text+=$'\n\n'$($say 'The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key.' \
       address "${PROBE[1]}")
   fi

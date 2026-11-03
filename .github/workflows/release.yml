@@ -3,9 +3,14 @@
 # provenance, verifiable with `gh attestation verify`) and publishes them with SHA256SUMS as a
 # GitHub release. CI tags a commit on main that changed the version and starts this workflow on
 # the tag (a tag its token creates starts no workflow); a tag pushed by hand starts it too. A run
-# on a branch is a dry run: it builds and keeps the files as a workflow artifact, without
-# attestation or release.
-# The build job only reads; the publish job alone gets the permissions to sign and to release.
+# on a branch is a dry run: it checks, builds and rebuilds, and keeps the files as a workflow
+# artifact, without attestation or release.
+# The jobs (SUP-002): check runs everything CI checks, with the development tools; build makes the
+# release files in an environment of the build tools alone (requirements/release.txt), so that no
+# test or lint tool runs where they are made; rebuild makes them again on another runner image
+# (arm64) and compares them byte for byte; publish, on a tag and after all three, attests and
+# releases. Only publish gets the permissions to sign and to release. SLSA Build Level 2
+# (docs/development.md).
 name: Release
 
 on:
@@ -21,8 +26,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: check and build
+  check:
+    name: check
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -36,10 +41,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends mosquitto gettext
       - name: Everything CI checks
         run: make check
-      - name: Release files, checked against the tag
+
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Release files from the build tools alone, checked against the tag
         env:
           RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-        run: make release
+        run: make release VENV=.venv-release REQUIREMENTS=requirements/release.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release
@@ -48,10 +65,33 @@ jobs:
             dist/release-notes.md
           if-no-files-found: error
 
+  rebuild:
+    name: rebuild and compare
+    needs: build
+    runs-on: ubuntu-24.04-arm # another runner image: the files depend on no architecture
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: The release files again, on the arm64 runner
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: make release VENV=.venv-release REQUIREMENTS=requirements/release.txt
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: built
+      - name: The same bytes as the build job's
+        run: diff built/release/SHA256SUMS dist/release/SHA256SUMS
+
   publish:
     name: attest and publish
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [check, build, rebuild]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
