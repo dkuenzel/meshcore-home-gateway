@@ -356,6 +356,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.history import History, Retention  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.contact_devices import ContactDevices  # noqa: PLC0415
+    from meshcore_home_gateway.mqtt.discovery import gateway_names  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.manage_entities import OBJECT_ID  # noqa: PLC0415
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
     from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
@@ -398,7 +399,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     observer = Observer(
         bus, topics, history=history, retained=RetainedKeys(store, "contacts"),
         protected=protected, exclusions=exclusions, current=CurrentDocuments(store),
-        advert_checks=AdvertChecks(store),
+        advert_checks=AdvertChecks(store), names=gateway_names(config),
     )  # fmt: skip
     profile = RadioProfile(
         config.radio.profile, ProfileRecords(store), protected=protected_names(config)

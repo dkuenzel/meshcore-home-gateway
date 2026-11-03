@@ -35,6 +35,7 @@ from meshcore_home_gateway.views import (
     flag_names,
     history_document,
     iso,
+    name_taken_nodes,
     nodes_document,
     restated,
     stats_document,
@@ -221,6 +222,25 @@ def test_look_alike_nodes_are_flagged() -> None:
     assert flagged == {twin, other, third, "c3" * 6 + "00" * 26}
     assert document["look_alike"] == sorted(flagged)
     assert document["look_alike_total"] == 4
+
+
+def test_a_heard_node_with_a_taken_name_is_flagged() -> None:
+    """SEC-007: a heard node whose name, as a person reads it, a contact has, the gateway goes by
+    or another heard node has: in each entry, and the keys at the top, also with
+    `heard_nodes = off`."""
+    mesh = Mesh()
+    mesh.contacts_read([Node(KEY, "Alice", 1)], T)
+    impostor, gateway, twin_a, twin_b, plain = (f"{n:064x}" for n in range(1, 6))
+    for key, name in ((impostor, "\u0430lice"), (gateway, "MESH radio"), (twin_a, "Hill"),
+                      (twin_b, "hill"), (plain, "Dave")):  # fmt: skip
+        mesh.node_heard(Node(key, name, 1), Heard(T, "advert"))
+    document = nodes_document(mesh, reserved={"Mesh radio"})
+    taken = {impostor, gateway, twin_a, twin_b}
+    assert {n["key"] for n in document["nodes"] if n["name_taken"]} == taken
+    assert (document["name_taken"], document["name_taken_total"]) == (sorted(taken), 4)
+    off = nodes_document(mesh, reserved={"Mesh radio"}, heard="off")
+    assert (off["nodes"], off["name_taken"]) == ([], sorted(taken))
+    assert name_taken_nodes(mesh) == {impostor, twin_a, twin_b}  # nothing reserved
 
 
 def test_heard_nodes_keys_or_off_publish_less_of_strangers() -> None:

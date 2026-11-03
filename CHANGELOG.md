@@ -63,6 +63,10 @@ format, the command line and Home Assistant discovery are public interfaces
   and the settings above), *A second gateway* (one `person` for two trackers), and an automation
   that tells when the gateway or its radio has been away for five minutes
   ([home-assistant.md](docs/home-assistant.md#shared-households)).
+- `name_taken` in the `nodes` document (each entry, and the keys at the top) and in the `node`
+  event: the node's name, as a person reads it (NFKC, case folded, Cyrillic and Greek letters that
+  look Latin as those), is a contact's, the gateway's or another heard node's
+  ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)).
 
 ### Changed
 
@@ -83,6 +87,9 @@ format, the command line and Home Assistant discovery are public interfaces
   connects with its id, and the fixed one could be read off the topics. A broker ACL or
   `clientid_prefixes` that names the id can use the prefix `meshcore-home-gateway-`; set
   `[mqtt] client_id` to keep a fixed one.
+- The select *Add heard node* (and the dashboard's table of the nodes heard) marks a node with a
+  taken name ` (name taken)`; a contact whose name the gateway's device or a contact added before
+  has gets a device named with its key's first 8 digits, such as *Bob (b0b0b0b0)*.
 - The clock of the radio is read also without `set_clock`, to show its offset.
 - The service starts after `time-sync.target` where a service provides it (`systemd-timesyncd`,
   `chrony`): the radio's clock is set from the host's.

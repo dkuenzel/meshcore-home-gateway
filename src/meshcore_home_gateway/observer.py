@@ -79,6 +79,7 @@ from meshcore_home_gateway.views import (
     history_document,
     iso,
     look_alike_nodes,
+    name_taken_nodes,
     nodes_document,
     restated,
     setting_value,
@@ -117,8 +118,10 @@ class Observer:
         exclusions: TelemetryExclusions | None = None,
         current: CurrentDocuments | None = None,
         advert_checks: AdvertChecks | None = None,
+        names: frozenset[str] = frozenset(),
     ) -> None:
-        """`manage`: contact add and remove requests are taken (ADR 0017). `exclusions`: the
+        """`manage`: contact add and remove requests are taken (ADR 0017). `names`: those the
+        gateway goes by, which a heard node's name is compared with (SEC-007). `exclusions`: the
         contacts excluded from telemetry; the contact manager and the poller read these.
         `current`: the documents of the companions whose answers are current, kept across a
         restart. `advert_checks`: the last checked advert of each companion, kept across a
@@ -134,6 +137,7 @@ class Observer:
         # have), before its document is published: the poller
         self.on_contact_added: list[Callable[[str], None]] = []
         self.manage = manage
+        self._names = names
         # what is published and kept of the nodes heard but not added (SEC-015)
         self.heard_nodes: HeardNodes = "full"
         self._bus = bus
@@ -677,6 +681,7 @@ class Observer:
                 "rssi_dbm": signal.rssi_dbm if full else None,
                 "heard_at": iso(at) if full else None,
                 "look_alike": key in look_alike_nodes(self.mesh, self._protected),
+                "name_taken": key in name_taken_nodes(self.mesh, self._names),
             })  # fmt: skip
 
     def _own_log(self, near: adverts.Logged, advert: codec.Advert) -> bool:
@@ -823,7 +828,9 @@ class Observer:
         self._nodes_sent_at = now
         self._publish(
             self._topics.nodes,
-            nodes_document(self.mesh, protected=self._protected, heard=self.heard_nodes),
+            nodes_document(
+                self.mesh, protected=self._protected, heard=self.heard_nodes, reserved=self._names
+            ),
         )
 
     # --- radio ----------------------------------------------------------------------------------

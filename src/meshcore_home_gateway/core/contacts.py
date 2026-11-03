@@ -110,12 +110,32 @@ def remove_refusal(key: str, *, table: Iterable[str]) -> str | None:
 LABEL_SUFFIX_HEX_DIGITS = 8
 LABEL_TYPES = frozenset({1, 3, 4})  # chat, room server, sensor: the heard nodes offered by label
 _LABEL_TYPE = {3: " (room)", 4: " (sensor)"}
+NAME_TAKEN = " (name taken)"  # after a label whose node has a name another has (SEC-007)
 _LABEL = re.compile(r"([0-9a-fA-F]{12})(?:…|\.\.\.)([0-9a-fA-F]{8})(?: |\Z)")
 _UNSAFE = frozenset({"Cc", "Cf", "Zl", "Zp"})  # control, format (direction), line breaks
+# Cyrillic and Greek letters that look like Latin ones (SEC-007): a small table, not Unicode's
+# confusables (UTS #39), against the common imitations of a name; mapped before case folding
+_LOOK_ALIKE_LETTERS = str.maketrans(
+    "АВЕКМНОРСТХУЅІЈаеорсухѕіјһԁԛԝΑΒΕΖΗΙΚΜΝΟΡΤΥΧαοικνρυχ",
+    "ABEKMHOPCTXYSIJaeopcyxsijhdqwABEZHIKMNOPTYXaoikvpux",
+)
 
 
-def node_label(key: str, name: str, node_type: int) -> str:
-    """`<first 12 digits>…<last 8 digits> <name>`, with ` (room)` or ` (sensor)`: the key comes
+def name_key(name: str) -> str:
+    """A name as compared with others: NFKC, case-folded, Cyrillic and Greek look-alikes as the
+    Latin letters, without the invisible format characters (zero-width, direction), control
+    characters and line breaks as spaces, single spaces (SEC-007). Empty for a name that is
+    none."""
+    plain = "".join(
+        "" if (kind := unicodedata.category(ch)) == "Cf" else " " if kind in _UNSAFE else ch
+        for ch in unicodedata.normalize("NFKC", name)
+    )
+    return " ".join(plain.translate(_LOOK_ALIKE_LETTERS).casefold().split())
+
+
+def node_label(key: str, name: str, node_type: int, *, name_taken: bool = False) -> str:
+    """`<first 12 digits>…<last 8 digits> <name>`, with ` (room)` or ` (sensor)`, and ` (name
+    taken)` for a name another node or the gateway has: the key comes
     first, so no name can push it aside or imitate it. A person compares both parts with the
     node's own screen; an attacker can copy the first 6 bytes of a key, not the rest (ADR 0009)."""
     plain = " ".join(
@@ -123,7 +143,8 @@ def node_label(key: str, name: str, node_type: int) -> str:
     )
     named = f" {plain}" if plain else ""
     start, end = key[:PREFIX_HEX_DIGITS], key[-LABEL_SUFFIX_HEX_DIGITS:]
-    return f"{start}…{end}{named}{_LABEL_TYPE.get(node_type, '')}"
+    mark = NAME_TAKEN if name_taken else ""
+    return f"{start}…{end}{named}{_LABEL_TYPE.get(node_type, '')}{mark}"
 
 
 def key_from_label(label: str, keys: Iterable[str]) -> str | None:

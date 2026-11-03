@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from meshcore_home_gateway.core import profile
-from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, HeardNodes
+from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, HeardNodes, name_key
 from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh, Node, Tracked, type_name
 from meshcore_home_gateway.core.telemetry import CURRENT, TelemetryEvent, TelemetryState
 from meshcore_home_gateway.protocol import codec
@@ -246,13 +246,30 @@ def look_alike_nodes(mesh: Mesh, protected: Iterable[str] = ()) -> set[str]:
     return {key for key in mesh.nodes if counts[key[:PREFIX_HEX_DIGITS]] > 1}
 
 
+def name_taken_nodes(mesh: Mesh, reserved: Iterable[str] = ()) -> set[str]:
+    """Heard nodes whose name, as `name_key` compares names, a contact has, a name the gateway
+    goes by (`reserved`: its device in Home Assistant, its radio's configured name) or another
+    heard node: someone may pass for them (SEC-007). Empty names are no names."""
+    counts: dict[str, int] = {}
+    names = [t.node.name for t in (*mesh.contacts.values(), *mesh.nodes.values())]
+    for compared in (*map(name_key, names), *{name_key(n) for n in reserved}):
+        if compared:
+            counts[compared] = counts.get(compared, 0) + 1
+    return {
+        key for key, t in mesh.nodes.items()
+        if (compared := name_key(t.node.name)) and counts[compared] > 1
+    }  # fmt: skip
+
+
 def nodes_document(
-    mesh: Mesh, *, protected: Iterable[str] = (), heard: HeardNodes = "full"
-) -> dict[str, Any]:
+    mesh: Mesh, *, protected: Iterable[str] = (), heard: HeardNodes = "full",
+    reserved: Iterable[str] = (),
+) -> dict[str, Any]:  # fmt: skip
     """`nodes`: nodes the radio heard but did not add, most recently heard first; no positions.
     `heard` (`[contacts] heard_nodes`, SEC-015): with `keys` without their names, times and
-    signal; with `off` none of them, only the look-alikes' keys."""
+    signal; with `off` none of them, only the look-alikes' and the taken names' keys."""
     flagged = look_alike_nodes(mesh, protected)
+    taken = name_taken_nodes(mesh, reserved)
     full = heard == "full"
     listed = [] if heard == "off" else list(reversed(mesh.nodes.values()))
     entries = (
@@ -263,14 +280,16 @@ def nodes_document(
             "type": type_name(t.node.node_type),
             "first_heard_at": iso(t.first_heard) if full else None,
             "look_alike": t.node.public_key in flagged,
+            "name_taken": t.node.public_key in taken,
             **(_heard(t) if full else dict.fromkeys(_HEARD_FIELDS)),
         }
         for t in listed
     )
-    warning = sorted(flagged)
+    warning, names = sorted(flagged), sorted(taken)
     head = {
         "total": len(listed), "truncated": True, "look_alike": warning[:WARNING_KEYS],
-        "look_alike_total": len(warning), "nodes": [],
+        "look_alike_total": len(warning), "name_taken": names[:WARNING_KEYS],
+        "name_taken_total": len(names), "nodes": [],
     }  # fmt: skip
     kept, total = bounded(entries, ATTRIBUTE_LIMIT_BYTES - len(encode(head)))  # all within it
     return {**head, "total": total, "truncated": len(kept) < total, "nodes": kept}

@@ -304,6 +304,18 @@ def test_heard_nodes_come_back_after_a_restart_and_expire(tmp_path: Path) -> Non
     history.close()
 
 
+def test_a_new_node_named_like_the_gateway_is_flagged() -> None:
+    """SEC-007: the `node` event and the `nodes` document say that a node's name is taken."""
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=lambda: NOW, names=frozenset({"CAROL"}))
+    observer.radio_event(ContactsRead({}, NOW))
+    carol = contact_record(CAROL)
+    observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW))
+    (event,) = bus.payloads(f"{ROOT}/node")
+    assert event["name_taken"] is True
+    assert last(bus, f"{ROOT}/nodes")["name_taken"] == [CAROL.public_key.hex()]
+
+
 def test_with_heard_nodes_keys_a_stranger_has_no_name_times_or_signal(tmp_path: Path) -> None:
     """`[contacts] heard_nodes = "keys"` (SEC-015): the `node` event, the `nodes` document and
     the history carry a stranger's key and type, not its name, times or signal."""

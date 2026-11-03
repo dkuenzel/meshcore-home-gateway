@@ -197,7 +197,11 @@ the last 8 digits of his key, then his name; room servers and sensors end in ` (
 radio gets his record as it heard it, signed by his key; his device appears within seconds, with
 `notify.mesh_bob`. The select offers the 20 most recently heard companions, room servers and
 sensors, ordered by name; repeaters only by key or link. Nodes whose first 6 key bytes another
-node has are not offered: *Look-alike node heard* names them. The select shows nothing chosen
+node has are not offered: *Look-alike node heard* names them. A node whose name a contact, the
+gateway or another heard node has ends in ` (name taken)`: anyone can name a node anything, so
+compare its digits with the screen of the person it claims to be. A contact whose name, as a
+person reads it, the gateway's device or a contact added before has gets a device named with its
+key's first 8 digits, such as *Bob (b0b0b0b0)*. The select shows nothing chosen
 after a pick, so the same choice can be made again.
 
 **Add by key or link.** Paste a public key (64 hex digits) or a contact link

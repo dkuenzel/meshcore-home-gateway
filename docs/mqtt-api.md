@@ -414,10 +414,11 @@ change, at most every 30 seconds (up to a minute later than the advert).
 
 ```json
 {"total": 1, "truncated": false, "look_alike": [], "look_alike_total": 0,
+ "name_taken": [], "name_taken_total": 0,
  "nodes": [{"key": "c3d4…", "prefix": "c3d4e5f6a7b8", "name": "Hilltop", "type": "repeater",
             "first_heard_at": "2026-10-17T20:00:00+00:00", "look_alike": false,
-            "heard_at": "2026-10-18T09:00:00+00:00", "heard_via": "advert", "hops": 3,
-            "snr_db": 5.5, "rssi_dbm": -95}]}
+            "name_taken": false, "heard_at": "2026-10-18T09:00:00+00:00", "heard_via": "advert",
+            "hops": 3, "snr_db": 5.5, "rssi_dbm": -95}]}
 ```
 
 `look_alike` marks a node whose 6-byte prefix another node has: a contact, a protected key or
@@ -428,6 +429,13 @@ added first keeps it and the other is refused from then on, so compare the full 
 node's own screen before adding a flagged one. The top-level list names up to 16 of them,
 `look_alike_total` counts them all. An older advert of a heard node does not replace the record
 of its newest one, also not after a restart.
+
+`name_taken` marks a node whose name a contact has, a name the gateway goes by (its device in
+Home Assistant, its radio's name when `[radio.profile] name` sets it) or another heard node, as a
+person reads names: compared after NFKC normalisation and case folding, Cyrillic and Greek letters
+that look Latin taken as those, invisible format characters left out. Anyone can name a node
+anything: a stranger may pass for a member of the household. The top-level list names up to 16 of
+them, `name_taken_total` counts them all, also with `heard_nodes = "keys"` or `"off"`.
 
 `hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert: while its receive
 delay is 0, only from the advert's own log, `null` without it; with a delay above 0, or one the
@@ -468,7 +476,7 @@ outgoing messages the recipient. `state` is the final delivery state of an outgo
  "type": "chat", "request": null, "id": null, "reason": null}
 {"event_type": "new", "key": "c3d4…", "prefix": "c3d4e5f6a7b8", "name": "Hilltop",
  "type": "repeater", "hops": 3, "snr_db": 5.5, "rssi_dbm": -95,
- "heard_at": "2026-10-18T09:00:00+00:00", "look_alike": false}
+ "heard_at": "2026-10-18T09:00:00+00:00", "look_alike": false, "name_taken": false}
 ```
 
 `contact` reports a contact that appeared in or left the radio's table (`added`, `removed`), and
@@ -492,6 +500,7 @@ stops, or at a restart. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
 adverts with invented keys does not flood the bus. With `[contacts] heard_nodes = "keys"` its
 `name`, `hops`, `snr_db`, `rssi_dbm` and `heard_at` are `null`; with `"off"` there is none.
+`look_alike` and `name_taken` are as in [`nodes`](#nodes-heard-nodes).
 
 ## Managing contacts: `add_contact` and `contacts/<key>/remove`
 
@@ -508,7 +517,8 @@ gateway is offline is lost (clean session), and a stop drops those still queued.
 * a contact card: `meshcore://` and the hex of an advert packet, as the app exports a contact.
 
 `homeassistant/add_node` takes the label of a heard node, `<first 12 key digits>…<last 8> <name>`
-(room servers and sensors with ` (room)` or ` (sensor)` added; with `heard_nodes = "keys"`
+(room servers and sensors with ` (room)` or ` (sensor)` added, and ` (name taken)` for a
+[taken name](#nodes-heard-nodes); with `heard_nodes = "keys"`
 without the name, with `"off"` none), as the select *Add heard node* of
 Home Assistant offers it; the gateway resolves the digits among
 the nodes it heard and the contacts (the name is not compared), and adds the node with its own
