@@ -30,6 +30,7 @@ backups private and encrypted ([state and backup](deployment.md#4-operations)).
 | Contacts: key, name, type, path, when and how they were last heard, the checks of their adverts | the contacts' documents (retained), `state.json`, the history | while they are contacts; the history's row 7 days after the last time heard | remove the contact |
 | Companions' positions and readings, from telemetry and from adverts | the contacts' documents (retained), `state.json` while current, the history | 30 days (`positions_days`, `readings_days`) | `[telemetry] ask = "household"` asks only the companions included; exclude a companion from telemetry; `contacts telemetry --forget KEY off` deletes what the history has of it ([companions](companions.md#privacy)) |
 | The newest accepted command time of each sender | `state.json` | while the sender is one | — |
+| Messages waiting to be sent when the service stops: target and text | `state.json` | until the next start queues them again | — |
 
 ## Other people
 

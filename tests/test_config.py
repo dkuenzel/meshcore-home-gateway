@@ -74,6 +74,7 @@ ignore_channels = [0]
 publish_channels = "targets"
 clean_received = true
 confirm_nonce = true
+alert_targets = ["alerts"]
 
 [airtime]
 budget_s_per_hour = 72
@@ -137,6 +138,7 @@ def test_full_configuration_is_read_completely() -> None:
     assert config.messages.publish_channels == "targets"
     assert config.messages.clean_received is True
     assert config.messages.confirm_nonce is True
+    assert config.messages.alert_targets == frozenset({"alerts"})
     assert config.commands.senders == frozenset({KEY})
     assert config.commands.words == frozenset({"status", "arm"})
     alerts, alice = sorted(config.targets, key=lambda t: t.alias)
@@ -706,6 +708,15 @@ def test_telemetry_asks_every_companion_unless_only_the_households() -> None:
     assert household.telemetry.ask == "household"
     with pytest.raises(ConfigError, match=r"telemetry\.ask: one of all, household, got 'some'"):
         parse_config(MINIMAL + '\n[telemetry]\nask = "some"\n')
+
+
+def test_alert_targets_must_be_targets() -> None:
+    """IMP-032: the targets whose messages go first."""
+    alerting = MINIMAL + '[targets.alarm]\nchannel = 2\n[messages]\nalert_targets = ["alarm"]\n'
+    assert parse_config(alerting).messages.alert_targets == frozenset({"alarm"})
+    assert parse_config(MINIMAL).messages.alert_targets == frozenset()
+    with pytest.raises(ConfigError, match=r"messages\.alert_targets: 'siren' is not a target"):
+        parse_config(alerting.replace('["alarm"]', '["alarm", "siren"]'))
 
 
 def test_home_assistant_controls_hidden_targets_and_entity_prefix() -> None:

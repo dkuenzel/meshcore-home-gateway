@@ -63,6 +63,11 @@ class JsonStateFile:
         self._document()[key] = value
         self._changed = True
 
+    def drop(self, key: str) -> None:
+        """Remove one section, if there is one; the next flush() writes it."""
+        if self._document().pop(key, None) is not None:
+            self._changed = True
+
     def save(self, data: dict[str, Any]) -> None:
         """Make `data` the document and write it at once, with the changes put() before. An
         OSError if it cannot be written: the document stays as it was."""
@@ -756,6 +761,141 @@ class TelemetryRecords:
                 "current_s": telemetry.CURRENT_MIN_S, "located_age_s": None,
             }  # fmt: skip
             self._store.put(self._KEY, {**raw, "contacts": {**entries, key: forgotten}})
+
+
+class AirtimeLevel:
+    """The level of the message budget (ADR 0008), kept across restarts so that a restart adds
+    no burst (ARC-005), and the airtime of a long direct message at the radio's settings, which
+    a start gets at least, so that the first alert after it goes out at once: `airtime` =
+    {"level_s", "longest_s", "saved_at"}. Written at once: a crash must not give the next start
+    more than the last one left."""
+
+    _KEY = "airtime"
+
+    def __init__(self, store: JsonStateFile) -> None:
+        self._store = store
+        self.longest_s: float | None = None  # unknown until the radio is known
+
+    def load(self, wall_now: float) -> tuple[float, float | None] | None:
+        """The level and the seconds since it was saved (None if the clock went back); None
+        if none was saved, or the file cannot be read (a full budget, as before). Sets
+        `longest_s` from the file."""
+        try:
+            raw = self._store.load().get(self._KEY)
+        except OSError as exc:
+            log.warning("cannot read the airtime budget's level: %s", exc)
+            return None
+        if not isinstance(raw, dict):
+            return None
+        level, longest, saved_at = raw.get("level_s"), raw.get("longest_s"), raw.get("saved_at")
+        if _age(longest):
+            self.longest_s = float(longest)
+        if not (_finite(level) and _finite(saved_at)):
+            return None
+        return float(level), wall_now - saved_at if wall_now >= saved_at else None
+
+    def save(self, level_s: float, wall_now: float) -> None:
+        """At once; a failed write is the state file's to log and to try again."""
+        try:
+            self._store.put(
+                self._KEY, {"level_s": level_s, "longest_s": self.longest_s, "saved_at": wall_now}
+            )
+        except OSError as exc:
+            log.warning("cannot store the airtime budget's level: %s", exc)
+            return
+        self._store.flush()
+
+
+@dataclass(frozen=True, slots=True)
+class SavedMessage:
+    """A message the outgoing queue held when the service stopped (ARC-013)."""
+
+    id: str
+    target: str  # the alias, or the key of a contact
+    text: str
+    raw: str | None  # a channel text accepted before the radio's name was known
+    age_s: float  # how long it had waited
+    timestamp: int | None  # the radio timestamp of its attempts, once one was sent
+    sent: int  # attempts sent
+
+
+class OutboxRecords:
+    """The messages a stop left in the outgoing queue, until the next start takes them:
+    `outbox` = {"saved_at": time, "messages": [...]}. The texts are the household's, as in the
+    history, and stay only until that start."""
+
+    _KEY = "outbox"
+    LIMIT = 1001  # the largest queue and the message in flight
+    MAX_TEXT_BYTES = 1024  # a request's limit
+
+    def __init__(self, store: JsonStateFile) -> None:
+        self._store = store
+
+    def save(self, messages: list[SavedMessage], wall_now: float) -> None:
+        """Hand them to the state file (the stop writes it); none: the section goes."""
+        if not messages:
+            self._store.drop(self._KEY)
+            return
+        self._store.put(self._KEY, {
+            "saved_at": wall_now,
+            "messages": [
+                {"id": m.id, "target": m.target, "text": m.text, "raw": m.raw, "age_s": m.age_s,
+                 "timestamp": m.timestamp, "sent": m.sent}
+                for m in messages
+            ],
+        })  # fmt: skip
+
+    def take(self, wall_now: float) -> tuple[list[SavedMessage], float | None]:
+        """The messages kept and the seconds since (None if the clock went back); the file
+        then holds none, at once, so that a crash after the start does not bring them back a
+        second time. Invalid entries are skipped with a warning; never raises."""
+        try:
+            raw = self._store.load().get(self._KEY)
+        except OSError as exc:
+            log.warning("cannot read the messages kept at the last stop: %s", exc)
+            return [], None
+        if raw is None:
+            return [], None
+        self._store.drop(self._KEY)
+        self._store.flush()
+        entries = raw.get("messages") if isinstance(raw, dict) else None
+        saved_at = raw.get("saved_at") if isinstance(raw, dict) else None
+        messages = [
+            m for m in map(_saved_message, entries if isinstance(entries, list) else [])
+            if m is not None
+        ][: self.LIMIT]  # fmt: skip
+        if not isinstance(entries, list) or len(messages) < len(entries):
+            log.warning("state file %s: invalid messages of the last stop skipped, %d kept",
+                        self._store.path, len(messages))  # fmt: skip
+        elapsed = wall_now - saved_at if _finite(saved_at) and wall_now >= saved_at else None
+        return messages, elapsed
+
+
+def _saved_message(entry: object) -> SavedMessage | None:
+    if not isinstance(entry, dict):
+        return None
+    ident, target, text = entry.get("id"), entry.get("target"), entry.get("text")
+    raw, age, timestamp, sent = (
+        entry.get("raw"),
+        entry.get("age_s"),
+        entry.get("timestamp"),
+        entry.get("sent", 0),
+    )
+    if (
+        _short(ident) and _short(target) and _text(text) and (raw is None or _text(raw))
+        and _age(age) and (timestamp is None or _small(timestamp, 0xFFFFFFFF))
+        and _small(sent, 4)
+    ):  # fmt: skip
+        return SavedMessage(ident, target, text, raw, float(age), timestamp, sent)
+    return None
+
+
+def _short(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and 0 < len(value) <= 64
+
+
+def _text(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and len(value.encode()) <= OutboxRecords.MAX_TEXT_BYTES
 
 
 def _saved_contact(entry: object) -> SavedContact | None:

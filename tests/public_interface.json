@@ -24,6 +24,7 @@
     "homeassistant.language",
     "homeassistant.prefix",
     "homeassistant.status_topic",
+    "messages.alert_targets",
     "messages.ascii_only",
     "messages.clean_received",
     "messages.confirm_nonce",
@@ -762,6 +763,10 @@
   },
   "messages": {
    "type": "table"
+  },
+  "messages.alert_targets": {
+   "answer": "list",
+   "type": "list[string]"
   },
   "messages.ascii_only": {
    "answer": "bool",

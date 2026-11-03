@@ -90,6 +90,10 @@ format, the command line and Home Assistant discovery are public interfaces
   [deployment.md](docs/deployment.md#5-troubleshooting)).
 - A warning at the start and in `check-config` when `[diagnostics] log_level` is `debug`, which
   puts texts, positions and keys into the journal.
+- `[messages] alert_targets`: the targets whose messages leave before the others; an alert also
+  goes between two attempts of a message in flight, which continues after it. A request chooses
+  by its target, so a second target for the same recipient gives a client both
+  ([configuration.md](docs/configuration.md#messages)).
 
 ### Changed
 
@@ -137,6 +141,17 @@ format, the command line and Home Assistant discovery are public interfaces
 - The slugs of the entity IDs of contacts that left the radio's table are kept for 90 days and
   at most 1 000, the newest; the radio profile's memory for the current radio and the two saved
   before it. Both grew with every contact and radio there ever was.
+- A stop keeps the outgoing queue in `state.json` and the next start sends it: each message is
+  `queued` again with its `id`, or gets the final event it would have had meanwhile. Before, a
+  stop or restart, also an update or a reconfiguration by the installer, dropped the queued
+  messages without a final event. A message whose acknowledgement is awaited gets it for up to a
+  minute (the unit's `TimeoutStopSec` is 90 s instead of 20 s); one that needs another attempt
+  continues after the start with the next one and the same timestamp
+  ([ADR 0028](docs/decisions/0028-outgoing-queue-kept-across-restarts.md)).
+- The airtime budget's level is kept across restarts: a start takes it back, refilled for the time
+  stopped, but at least what a long direct message needs, so that the first alert after a restart
+  goes out at once. Before, every start began with a full burst, so a crash loop could spend a
+  burst per restart ([ADR 0008](docs/decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)).
 
 ### Fixed
 

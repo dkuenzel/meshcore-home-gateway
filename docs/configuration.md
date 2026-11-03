@@ -132,7 +132,7 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `ascii_only` | `false` | transliterate to ASCII (ä → ae, typographic quotes, accents); for handhelds without Unicode fonts |
 | `truncate` | `true` | cut texts above the radio limit between whole characters (flags and emoji sequences included) and mark them with `...`; `false` rejects them |
 | `dedup_window_s` | `300` | the same text to the same target is sent once per window, 0–86400; `0` disables |
-| `queue_size` | `20` | waiting messages, 1–1000; more are rejected |
+| `queue_size` | `20` | waiting messages, 1–1000; more are rejected. A stop keeps the waiting messages in `state.json` for the next start, which queues them again with their `id` ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)) |
 | `queue_ttl_s` | `600` | time to live of a message, 1–86400: no attempt starts after it. Never sent within it, it expires; sent but not acknowledged, it fails when the acknowledgement wait of its last attempt ends (up to 60 s after the time to live) |
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
@@ -140,6 +140,7 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `publish_channels` | `all` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's. The installer writes `targets` on a new installation |
 | `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones; off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
 | `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes; the events and the history carry it as sent, duplicates are judged without the suffix |
+| `alert_targets` | `[]` | [targets](#targetsalias) whose messages leave before the others: an alert overtakes the waiting messages and goes between two attempts of one in flight, which continues after it. A request chooses by its target, so a second target for the same recipient gives a client both ([design §6.2](design.md#62-outbound-path)) |
 
 ## `[airtime]`
 
@@ -148,12 +149,13 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `budget_s_per_hour` | `36` | seconds of transmission per hour for the gateway's messages (1 % of the hour), 0.001–3600; telemetry has its own lanes (`[telemetry]`) |
 | `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
 
-Within one run of the service, the airtime the gateway counts over any interval *T* stays below
+The airtime the gateway counts over any interval *T* stays below
 `burst_s + budget_s_per_hour × T / 3600`. The count is exact for direct sends and for flooded
 sends to recipients up to 4 path bytes away; a flooded attempt to a more distant recipient takes
-up to about 1 s more at EU/UK Narrow ([protocol.md §6](protocol.md#6-on-air-sizes)). The budget is
-not stored: each start begins with a full burst, so every restart within *T* adds up to
-`burst_s`.
+up to about 1 s more at EU/UK Narrow ([protocol.md §6](protocol.md#6-on-air-sizes)). The budget's
+level is kept in `state.json` across restarts: a start takes it back, refilled for the time
+stopped, but at least what a long direct message needs at the radio's settings, so that the first
+alert after a restart goes out at once; a restart adds at most that much, not a burst.
 The radio's own traffic (acknowledgements it sends, adverts) is not counted; in the EU band
 869.40–869.65 MHz the device limit is 10 % of every hour. The radio has its own limiter, the
 *airtime factor*, which the firmware sets to 50 % and the managed profile to 10 % in that band

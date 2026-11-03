@@ -41,6 +41,7 @@ from meshcore_home_gateway.core.airtime import (
     time_on_air_s,
 )
 from meshcore_home_gateway.core.budget import (
+    HOUR_S,
     AirtimeBudget,
     Deduplicator,
     KeyedRateLimit,
@@ -69,6 +70,7 @@ from meshcore_home_gateway.core.text import (
     clean_received,
     prepare_text,
     with_nonce,
+    without_nonce,
 )
 from meshcore_home_gateway.health import (
     DISK_LOW_MB,
@@ -93,6 +95,7 @@ from meshcore_home_gateway.mqtt.payloads import (
 )
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.outbox import Outbox, Outgoing
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES, radio_name
 from meshcore_home_gateway.protocol.codes import NodeType
@@ -113,7 +116,14 @@ from meshcore_home_gateway.radio.session import (
     TelemetryReceived,
 )
 from meshcore_home_gateway.radio.transport import Transport
-from meshcore_home_gateway.state import AnnouncedComponents, CommandLedger, TelemetryRecords
+from meshcore_home_gateway.state import (
+    AirtimeLevel,
+    AnnouncedComponents,
+    CommandLedger,
+    OutboxRecords,
+    SavedMessage,
+    TelemetryRecords,
+)
 from meshcore_home_gateway.systemd import notify, watchdog_interval_s
 from meshcore_home_gateway.telemetry_poller import OutboxActivity, TelemetryPoller
 from meshcore_home_gateway.texts import Text
@@ -125,6 +135,9 @@ MAX_REQUEST_BYTES = 1024
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1.0, 60.0
 STATUS_INTERVAL_S = 60.0
 STOP_DRAIN_S = 2.0  # on stop, received messages already out of the radio are handled this long
+# on stop, the acknowledgement of the message in flight is awaited this long, the longest wait of
+# an attempt; within the unit's TimeoutStopSec (90 s) with the rest of the stop (ARC-013)
+STOP_OUTBOX_S = 60.0
 ACK_TIMEOUT_FACTOR = 1.2  # like the MeshCore Python client
 ACK_TIMEOUT_MIN_S, ACK_TIMEOUT_MAX_S = 5.0, 60.0
 RECENT_ACK_S = 120.0
@@ -184,29 +197,13 @@ def default_session_factory(
 
 
 @dataclass
-class Outgoing:
-    id: str
-    target: Target
-    text: str
-    created: float  # monotonic
-    raw: str | None = None  # a channel text accepted before the radio's name was known
+class _Flight:
+    """The message the outbox delivers, for the stop (ARC-013)."""
 
-
-@dataclass
-class _Expected:
-    """The acknowledgement codes of a message's attempts, and the shortest round trip a genuine
-    acknowledgement of any of them takes (SEC-001): 0 where it cannot be told."""
-
-    codes: list[bytes] = field(default_factory=list)
-    shortest_ms: float | None = None  # None: no attempt sent yet
-
-    def add(self, code: bytes, shortest_ms: float) -> None:
-        self.codes.append(code)
-        if self.shortest_ms is None or shortest_ms < self.shortest_ms:
-            self.shortest_ms = shortest_ms
-
-    def suspect(self, round_trip_ms: int) -> bool:
-        return self.shortest_ms is not None and round_trip_ms < self.shortest_ms
+    item: Outgoing | None = None
+    acking: bool = False  # its attempt waits for the acknowledgement
+    stopping: bool = False  # the service stops: no attempt starts any more
+    idle: asyncio.Event = field(default_factory=asyncio.Event)  # set while none is delivered
 
 
 @dataclass
@@ -370,16 +367,14 @@ class Bridge:
         # key -> when last seen; only these are kept, so the memory stays small (ADR 0009)
         self._watched = frozenset(key[:PREFIX_HEX_DIGITS] for key in config.commands.senders)
         self._seen: dict[str, float] = {}
-        self._queue: asyncio.Queue[Outgoing] = asyncio.Queue(maxsize=config.messages.queue_size)
+        self._queue = Outbox(config.messages.queue_size)  # alerts first (IMP-032)
         self._activity = OutboxActivity(monotonic, self._queue.qsize)  # telemetry yields to it
         self._telemetry = self._telemetry_poller(telemetry_records, telemetry_lanes)
         if self._telemetry is None and (records := telemetry_records) is not None:
             # D13 holds when telemetry is on again: the saved schedule forgets the answers
             self.observer.on_telemetry_exclusion.append(lambda key, _: records.forget(key))
             self.observer.on_contact_added.append(records.forget)
-        self._budget = AirtimeBudget(
-            config.airtime.budget_s_per_hour, config.airtime.burst_s, now=monotonic()
-        )
+        self._budget, self._airtime = self._message_budget(ledger)
         self._dedup = Deduplicator(config.messages.dedup_window_s)
         self._refusals = RateLimit(REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, now=monotonic())
         # events of refused requests left out since the last report, and when the next is due
@@ -397,7 +392,7 @@ class Bridge:
         self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
         self._removed: dict[str, str] | None = None  # earlier components, removed in this run
         self._announcing = _Announcing()
-        self._radio_ready = asyncio.Event()
+        self._radio_ready, self._flight = asyncio.Event(), _Flight()
         self._tasks: list[asyncio.Task[None]] = []
         self._telemetry_task: asyncio.Task[None] | None = None
         self._health = _Health(state_dir)
@@ -420,6 +415,21 @@ class Bridge:
         poller.on_status = self._publish_state
         return poller
 
+    def _message_budget(self, ledger: CommandLedger) -> tuple[AirtimeBudget, AirtimeLevel]:
+        """The budget at the level the last run left (ARC-005), refilled since; at least what a
+        long message needs, so that the first alert after a restart goes out at once."""
+        airtime, level = self.config.airtime, AirtimeLevel(ledger.store)
+        saved, tokens = level.load(self._wall()), None
+        if saved is not None:
+            stored, elapsed = saved
+            refilled = stored + (elapsed or 0.0) * airtime.budget_s_per_hour / HOUR_S
+            floor = airtime.burst_s if level.longest_s is None else level.longest_s
+            tokens = max(refilled, min(floor, airtime.burst_s))
+        budget = AirtimeBudget(
+            airtime.budget_s_per_hour, airtime.burst_s, now=self._mono(), tokens=tokens
+        )
+        return budget, level
+
     # --- life cycle -----------------------------------------------------------------------------
 
     async def run(self, stop: asyncio.Event) -> None:
@@ -441,6 +451,7 @@ class Bridge:
             self._bus.on_ha_offline.append(lambda: self._observe(devices.ha_offline))
             self._bus.on_show_hidden.append(lambda: self._observe(devices.show_hidden))
         await self._bus.start()
+        self._restore_outbox()
         self._notify("READY=1")
         try:
             async with asyncio.TaskGroup() as group:
@@ -465,6 +476,7 @@ class Bridge:
                 if self._telemetry_task is not None:  # no request after this; it saves its schedule
                     self._telemetry_task.cancel()
                     await asyncio.wait([self._telemetry_task])
+                await self._finish_outbox()  # before the radio's task: it may await an ack
                 await self._finish_inbound(self._tasks[0])  # the radio task
                 for task in self._tasks:
                     task.cancel()
@@ -473,9 +485,67 @@ class Bridge:
                 await self._session.close()
             self._radio_ready.clear()
             self._observe(self.observer.flush)  # what changed since its last tick
+            self._airtime.save(self._budget.available_s(self._mono()), self._wall())
             self._ledger.store.flush()
             self._publish_state()
             await self._bus.stop()
+
+    async def _finish_outbox(self) -> None:
+        """No attempt starts any more; one that waits for its acknowledgement gets it, for at
+        most STOP_OUTBOX_S. The messages still queued, that one too if it needs another attempt,
+        are kept for the next start (ARC-013): requests are taken until then."""
+        flight = self._flight
+        flight.stopping = True
+        if flight.acking:
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(STOP_OUTBOX_S):
+                    await flight.idle.wait()
+        outbox = [task for task in self._tasks if task.get_name() == "outbox"]
+        for task in outbox:
+            task.cancel()
+        await asyncio.wait(outbox)
+        now, kept = self._mono(), self._queue.take_all()
+        OutboxRecords(self._ledger.store).save(
+            [
+                SavedMessage(item.id, item.target.alias, item.text, item.raw, now - item.created,
+                             item.timestamp, item.sent)
+                for item in kept
+            ],
+            self._wall(),
+        )  # fmt: skip
+        if kept:
+            log.info("%d messages kept for the next start", len(kept))
+
+    def _restore_outbox(self) -> None:
+        """The messages the last stop kept: those with time left are queued again, `queued`
+        again with their `id`; the others end as they would have (ARC-013). Their texts count as
+        sent for the duplicate check."""
+        messages, elapsed = OutboxRecords(self._ledger.store).take(self._wall())
+        config, now, queued = self.config.messages, self._mono(), 0
+        for saved in messages:
+            target = self._target_of(saved.target)
+            age = saved.age_s + elapsed if elapsed is not None else config.queue_ttl_s
+            if target is None:  # its target left the configuration
+                event = DeliveryEvent(saved.id, saved.target, DeliveryState.FAILED,
+                                      text=saved.text, attempt=saved.sent,
+                                      reason="unknown_target")  # fmt: skip
+                self._deliver_event(event)
+                continue
+            item = Outgoing(saved.id, target, saved.text, now - age, saved.raw,
+                            alert=target.alias in config.alert_targets,
+                            timestamp=saved.timestamp, sent=saved.sent)  # fmt: skip
+            if age >= config.queue_ttl_s:  # it would have expired meanwhile
+                self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))
+                continue
+            nonce = target.kind is MessageKind.CONTACT and config.confirm_nonce
+            self._dedup.is_duplicate((target.alias, without_nonce(item.text) if nonce else
+                                      item.text), now)  # fmt: skip
+            self._queue.restore(item)
+            queued += 1
+            self._deliver_event(self._event(item, DeliveryState.QUEUED, attempt=item.sent))
+        if messages:
+            log.info("messages kept by the last stop: %d queued again, %d at an end", queued,
+                     len(messages) - queued)  # fmt: skip
 
     async def _finish_inbound(self, radio: asyncio.Task[None]) -> None:
         """Stop the radio first, then handle the messages it has already handed over, for at most
@@ -561,6 +631,7 @@ class Bridge:
         info = session.info
         if info is not None:
             longest = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, info.lora)
+            self._airtime.longest_s = longest  # the least a restart gets (ARC-005)
             if longest > self._budget.capacity_s:
                 log.warning(
                     "a long direct message takes %.1f s of airtime at the radio's settings, more "
@@ -629,8 +700,9 @@ class Bridge:
         else:
             nonce = target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
             sent = with_nonce(text) if nonce else text  # duplicates are judged without it
+            alert = target.alias in self.config.messages.alert_targets
             try:
-                self._queue.put_nowait(Outgoing(event_id, target, sent, self._mono(), raw))
+                self._queue.put(Outgoing(event_id, target, sent, self._mono(), raw, alert=alert))
                 self._activity.touch()
                 text = sent
             except asyncio.QueueFull:
@@ -717,18 +789,28 @@ class Bridge:
     # --- outbox ---------------------------------------------------------------------------------
 
     async def _outbox_loop(self) -> None:
+        flight = self._flight
+        flight.idle.set()
         while True:
             item = await self._queue.get()
+            if flight.stopping:  # no attempt starts any more: kept for the next start
+                self._queue.put_back(item)
+                return
+            flight.item = item
+            flight.idle.clear()
             self._activity.delivering(True)  # no await before: telemetry sees it at once
             try:
                 await self._deliver(item)
             except asyncio.CancelledError:
+                self._queue.put_back(item)  # the stop: kept for the next start
                 raise
             except Exception:
                 log.exception("delivery %s failed unexpectedly", item.id)
                 failed = self._event(item, DeliveryState.FAILED, reason="internal_error")
                 self._deliver_event(failed)
             finally:
+                flight.item = None
+                flight.idle.set()
                 self._activity.delivering(False)
 
     async def _deliver(self, item: Outgoing) -> None:
@@ -737,37 +819,43 @@ class Bridge:
         `expired` means the message never left: once an attempt reached the radio, running out
         of time or airtime ends it as `failed` (no acknowledgement). An attempt interrupted by a
         radio error is repeated, with the same number, when the radio is back. `attempt` in a
-        final event counts the transmissions so far.
+        final event counts the transmissions so far. Between two attempts the message is put
+        back, with its progress, when an alert waits behind it (IMP-032) or the service stops
+        (ARC-013).
         """
         messages = self.config.messages
         deadline = item.created + messages.queue_ttl_s
-        timestamp = int(self._wall())  # one timestamp for all attempts: retries stay recognisable
+        if item.timestamp is None:  # one timestamp for all attempts: retries stay recognisable
+            item.timestamp = int(self._wall())
         direct = item.target.kind is MessageKind.CONTACT
         attempts = messages.max_attempts if direct else 1
-        acks = _Expected()
-        sent = 0
-        while sent < attempts:
+        while item.sent < attempts:
+            if item.sent and (self._flight.stopping or (
+                not item.alert and self._queue.alert_waiting
+            )):  # fmt: skip
+                log.info("delivery %s: paused after attempt %d", item.id, item.sent)
+                self._queue.put_back(item)
+                return
             session = await self._radio_until(deadline)
             if session is None:
-                self._deliver_event(self._out_of_time(item, sent))
+                self._deliver_event(self._out_of_time(item, item.sent))
                 return
             try:
-                outcome = await self._attempt(
-                    session, item, attempt=sent, timestamp=timestamp, deadline=deadline, acks=acks
-                )
+                outcome = await self._attempt(session, item, deadline=deadline)
             except _FinalError as exc:
-                outcome = self._final(item, exc.state, exc.reason, sent)
+                outcome = self._final(item, exc.state, exc.reason, item.sent)
             except CommandFailedError as exc:
-                outcome = self._final(item, DeliveryState.FAILED, exc.reason, sent)
+                outcome = self._final(item, DeliveryState.FAILED, exc.reason, item.sent)
             except RadioError as exc:
-                log.info("delivery %s: attempt %d interrupted (%s)", item.id, sent + 1, exc)
-                acks.shortest_ms = 0.0  # its repeat has the same code: which copy is answered?
+                log.info("delivery %s: attempt %d interrupted (%s)", item.id, item.sent + 1, exc)
+                item.acks.shortest_ms = 0.0  # its repeat has the same code: which copy is answered?
                 continue
             if outcome is not None:
                 self._deliver_event(outcome)
                 return
-            sent += 1
-        failed = self._event(item, DeliveryState.FAILED, attempt=sent, reason="no_acknowledgement")
+        failed = self._event(
+            item, DeliveryState.FAILED, attempt=item.sent, reason="no_acknowledgement"
+        )
         self._deliver_event(failed)
 
     def _final(self, item: Outgoing, state: DeliveryState, reason: str, sent: int) -> DeliveryEvent:
@@ -775,12 +863,15 @@ class Bridge:
             state, reason = DeliveryState.FAILED, "no_acknowledgement"
         return self._event(item, state, attempt=sent, reason=reason)
 
-    def _out_of_time(self, item: Outgoing, sent: int) -> DeliveryEvent:
+    def _out_of_time(
+        self, item: Outgoing, sent: int, *, reason: str | None = None
+    ) -> DeliveryEvent:
         if sent:
             return self._event(
                 item, DeliveryState.FAILED, attempt=sent, reason="no_acknowledgement"
             )
-        reason = "queue_ttl" if self._radio_ready.is_set() else "no_radio"
+        if reason is None:
+            reason = "queue_ttl" if self._radio_ready.is_set() else "no_radio"
         return self._event(item, DeliveryState.EXPIRED, reason=reason)
 
     async def _read_changed_contacts(self, session: CompanionSession, target: Target) -> bool:
@@ -794,16 +885,17 @@ class Bridge:
         return True
 
     async def _attempt(
-        self, session: CompanionSession, item: Outgoing, *, attempt: int, timestamp: int,
-        deadline: float, acks: _Expected,
-    ) -> DeliveryEvent | None:  # fmt: skip
-        """One transmission. Returns the final event, or None when another attempt should follow."""
+        self, session: CompanionSession, item: Outgoing, *, deadline: float
+    ) -> DeliveryEvent | None:
+        """One transmission, the attempt numbered `item.sent`. Returns the final event, or None
+        when another attempt should follow."""
         info = session.info
         if info is None:
             raise RadioError("radio not identified")
+        attempt, acks = item.sent, item.acks
         await self._read_changed_contacts(session, item.target)
         airtime, reset_path = self._plan(session, item, attempt, info)
-        target, text = item.target, item.text  # after planning, which may limit the text
+        target = item.target
         if airtime > self._budget.capacity_s:
             raise _FinalError(DeliveryState.FAILED, "exceeds_airtime_burst")
         wait = self._budget.wait_s(airtime, self._mono())
@@ -819,32 +911,46 @@ class Bridge:
         if acks.codes and round_trip is None:
             round_trip = self._acks.take(acks.codes)
         if round_trip is not None:  # an earlier attempt arrived after all: send nothing more
-            return self._confirmed(item, attempt, round_trip, acks)
+            return self._confirmed(item, round_trip)
         if wait > 0 and await self._read_changed_contacts(session, target):
             self._resolve(session, target)  # a look-alike may have come while waiting
         if reset_path is not None:
             await session.reset_path(reset_path)  # only now: this attempt will be sent and flood
         self._budget.consume(airtime, self._mono())
+        # at once: a crash before the next start must not give it this airtime again (ARC-005)
+        self._airtime.save(self._budget.available_s(self._mono()), self._wall())
+        return await self._transmit(session, item, airtime, info)
+
+    async def _transmit(
+        self, session: CompanionSession, item: Outgoing, airtime: float, info: RadioInfo
+    ) -> DeliveryEvent | None:
+        """Hand the attempt to the radio; a direct message's waits for its acknowledgement."""
+        target, text, timestamp = item.target, item.text, item.timestamp or int(self._wall())
         if target.channel_index is not None:
             await session.send_channel_text(target.channel_index, text, timestamp)
+            item.sent = 1
             return self._event(item, DeliveryState.SENT, attempt=1, airtime_s=airtime)
         prefix = bytes.fromhex(_key(target)[:PREFIX_HEX_DIGITS])
         record = session.contact_records.get(_key(target))  # the path the radio will take
-        sent = await session.send_text(prefix, text, timestamp, attempt)
-        sent_event = self._event(item, DeliveryState.SENT, attempt=attempt + 1, airtime_s=airtime)
+        sent = await session.send_text(prefix, text, timestamp, item.sent)
+        item.sent += 1
+        sent_event = self._event(item, DeliveryState.SENT, attempt=item.sent, airtime_s=airtime)
         self._deliver_event(sent_event)
-        acks.add(sent.expected_ack, _shortest_ms(session, record, sent, text, info))
+        item.acks.add(sent.expected_ack, _shortest_ms(session, record, sent, text, info))
         timeout = sent.timeout_ms / 1000 * ACK_TIMEOUT_FACTOR
         timeout = min(max(timeout, ACK_TIMEOUT_MIN_S), ACK_TIMEOUT_MAX_S)
-        round_trip = await self._acks.wait(acks.codes, timeout)
+        self._flight.acking = True  # a stop waits for it (ARC-013)
+        try:
+            round_trip = await self._acks.wait(item.acks.codes, timeout)
+        finally:
+            self._flight.acking = False
         if round_trip is None:
             return None
-        return self._confirmed(item, attempt + 1, round_trip, acks)
+        return self._confirmed(item, round_trip)
 
-    def _confirmed(
-        self, item: Outgoing, attempt: int, round_trip: int, acks: _Expected
-    ) -> DeliveryEvent:
+    def _confirmed(self, item: Outgoing, round_trip: int) -> DeliveryEvent:
         """`suspect` if the acknowledgement came sooner than a genuine one can (SEC-001)."""
+        acks = item.acks
         suspect = acks.suspect(round_trip)
         if suspect:
             log.warning(
@@ -853,7 +959,7 @@ class Bridge:
                 item.id, round_trip, acks.shortest_ms,
             )  # fmt: skip
         return self._event(
-            item, DeliveryState.CONFIRMED, attempt=attempt, rtt_ms=round_trip, suspect=suspect
+            item, DeliveryState.CONFIRMED, attempt=item.sent, rtt_ms=round_trip, suspect=suspect
         )
 
     def _plan(

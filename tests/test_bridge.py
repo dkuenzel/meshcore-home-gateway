@@ -374,6 +374,225 @@ def test_acknowledgement_arriving_before_a_retry_ends_the_delivery(tmp_path: Pat
     scenario(main)
 
 
+# --- the queue across a stop (ARC-013), alerts first (IMP-032), the budget's level (ARC-005) ---
+
+
+def test_a_stop_keeps_the_queue_and_the_next_start_sends_it(tmp_path: Path) -> None:
+    """What waits for the radio at a stop is in the state file; the next start queues it again
+    with its id (`queued` again) and sends it, and keeps none any more."""
+    path = tmp_path / "state.json"
+    ids: dict[str, str] = {}
+
+    async def stopped() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path, Unreachable) as (_, bus, _n):
+            bus.send("alerts", "Gate open")
+            bus.send("bob", "Pump stopped")
+            await bus.wait_for("/delivery", lambda d: d["target"] == "bob")
+            ids.update({d["target"]: d["id"] for d in bus.payloads("/delivery")})
+
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def started() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            events = [(d["id"], d["event_type"]) for d in bus.payloads("/delivery")]
+            assert events[:2] == [(ids["alerts"], "queued"), (ids["bob"], "queued")]
+            assert events[2:] == [
+                (ids["alerts"], "sent"), (ids["bob"], "sent"), (ids["bob"], "confirmed"),
+            ]  # fmt: skip
+            bus.send("alerts", "Gate open")  # its client sends it again: it was sent
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
+
+    scenario(stopped)
+    kept = JsonStateFile(path).load()["outbox"]["messages"]
+    assert [(m["id"], m["target"], m["text"], m["sent"]) for m in kept] == [
+        (ids["alerts"], "alerts", "Gate open", 0), (ids["bob"], "bob", "Pump stopped", 0),
+    ]  # fmt: skip
+    scenario(started)
+    assert radio.channel_texts == [(0, "Gate open", NOW)]
+    assert "outbox" not in JsonStateFile(path).load()
+
+
+def test_kept_messages_whose_time_ran_out_or_whose_target_left_end_at_the_start(
+    tmp_path: Path,
+) -> None:
+    """With the same final event as had the gateway run on; nothing is sent."""
+
+    def kept(ident: str, target: str, age_s: float, sent: int = 0) -> dict[str, Any]:
+        timestamp = NOW - 600 if sent else None
+        return {"id": ident, "target": target, "text": "x", "age_s": age_s, "sent": sent,
+                "timestamp": timestamp}  # fmt: skip
+
+    JsonStateFile(tmp_path / "state.json").save({"outbox": {"saved_at": NOW - 30, "messages": [
+        kept("old", "alerts", 590.0), kept("tried", "bob", 590.0, sent=1),
+        kept("gone", "porch", 1.0), kept("fresh", "alerts", 1.0),
+    ]}})  # fmt: skip
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            await bus.wait_for(
+                "/delivery", lambda d: d["id"] == "fresh" and d["event_type"] == "sent"
+            )
+            events = [(d["id"], d["event_type"], d["reason"], d["attempt"])
+                      for d in bus.payloads("/delivery")]  # fmt: skip
+            assert events == [
+                ("old", "expired", "queue_ttl", 0), ("tried", "failed", "no_acknowledgement", 1),
+                ("gone", "failed", "unknown_target", 0), ("fresh", "queued", None, 0),
+                ("fresh", "sent", None, 1),
+            ]  # fmt: skip
+            assert radio.texts == []
+
+    scenario(main)
+
+
+def test_a_stop_waits_for_the_acknowledgement_of_the_message_in_flight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The radio stays open until it comes (for at most STOP_OUTBOX_S): a message that left is
+    not repeated after the restart for want of a minute."""
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 5.0)
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 5.0)
+    monkeypatch.setattr(bridge_module, "STOP_OUTBOX_S", 3.0)
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    buses: list[FakeBus] = []
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            buses.append(bus)
+            bus.send("bob", "Still there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            bus.send("alice", "Next")  # waits behind it, and is kept
+            await bus.wait_for("/delivery", lambda d: d["target"] == "alice")
+            from meshcore_home_gateway.protocol.codec import expected_ack
+
+            ack = expected_ack(NOW, 0, "Still there?", SELF_KEY)
+            asyncio.get_running_loop().call_later(0.3, radio.acknowledge, ack, 800)
+
+    scenario(main)
+    events = [(d["target"], d["event_type"], d["attempt"]) for d in buses[0].payloads("/delivery")]
+    assert events == [
+        ("bob", "queued", 0), ("bob", "sent", 1), ("alice", "queued", 0), ("bob", "confirmed", 1),
+    ]  # fmt: skip
+    assert [t.text for t in radio.texts] == ["Still there?"]  # no attempt starts in the stop
+    (kept,) = JsonStateFile(tmp_path / "state.json").load()["outbox"]["messages"]
+    assert (kept["target"], kept["sent"]) == ("alice", 0)
+
+
+def test_a_message_unacknowledged_in_the_stop_is_kept_for_its_next_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its wait ends within the stop without an acknowledgement: the next attempt is the next
+    start's."""
+    monkeypatch.setattr(bridge_module, "STOP_OUTBOX_S", 3.0)
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            bus.send("bob", "Still there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+
+    scenario(main)
+    assert [t.attempt for t in radio.texts] == [0]
+    (kept,) = JsonStateFile(tmp_path / "state.json").load()["outbox"]["messages"]
+    assert (kept["target"], kept["sent"]) == ("bob", 1)
+
+
+def test_a_message_whose_acknowledgement_misses_the_stop_goes_on_after_the_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kept with its attempts and its timestamp: the next start sends the next attempt, which
+    the recipient takes for a retry."""
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 5.0)
+    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 5.0)
+    monkeypatch.setattr(bridge_module, "STOP_OUTBOX_S", 0.2)
+    path = tmp_path / "state.json"
+
+    async def stopped() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            bus.send("bob", "Still there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+
+    second = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def started() -> None:
+        async with running(make_config(), second, tmp_path) as (_, bus, _n):
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert done["attempt"] == 2
+            assert bus.payloads("/delivery")[0]["event_type"] == "queued"
+
+    scenario(stopped)
+    state = JsonStateFile(path).load()
+    (kept,) = state["outbox"]["messages"]
+    assert (kept["sent"], kept["timestamp"]) == (1, NOW)
+    kept["timestamp"] = NOW - 100  # sent by an earlier clock: the next attempt keeps it
+    JsonStateFile(path).save(state)
+    scenario(started)
+    assert [(t.attempt, t.timestamp, t.text) for t in second.texts] == [
+        (1, NOW - 100, "Still there?")
+    ]
+
+
+def test_an_alert_goes_before_the_queue_and_between_the_attempts_of_a_message(
+    tmp_path: Path,
+) -> None:
+    """IMP-032: Bob's message is in flight and Alice's waits when the alert comes: it goes
+    after Bob's first attempt, before his second and before Alice's."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    config = make_config(messages='alert_targets = ["alerts"]',
+                         airtime="budget_s_per_hour = 3600\nburst_s = 60")  # fmt: skip
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _n):
+            bus.send("bob", "first")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            bus.send("alice", "second")
+            bus.send("alerts", "Smoke")
+            await bus.wait_for(
+                "/delivery", lambda d: d["target"] == "alice" and d["event_type"] == "failed"
+            )
+
+    scenario(main)
+    sends = [
+        c for c in radio.commands() if c in (Command.SEND_TXT_MSG, Command.SEND_CHANNEL_TXT_MSG)
+    ]
+    assert sends[:3] == [Command.SEND_TXT_MSG, Command.SEND_CHANNEL_TXT_MSG, Command.SEND_TXT_MSG]
+    assert [(t.text, t.attempt) for t in radio.texts] == [
+        ("first", 0), ("first", 1), ("first", 2), ("second", 0), ("second", 1), ("second", 2),
+    ]  # fmt: skip
+
+
+def test_the_budget_level_survives_a_restart_and_a_long_message_still_goes_out(
+    tmp_path: Path,
+) -> None:
+    """ARC-005: a restart adds no burst; it gives what the longest direct message needs at the
+    radio's settings, so that the first alert after it is not held up."""
+    path = tmp_path / "state.json"
+    levels: list[float] = []
+
+    async def drained() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, bus, _n):
+            levels.append(bridge._budget.available_s(time.monotonic()))
+            bus.send("alerts", "Gate open")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            on_disk = JsonStateFile(path).load()["airtime"]["level_s"]  # at once, not at the stop
+            assert on_disk == pytest.approx(bridge._budget.available_s(time.monotonic()), abs=0.01)
+            assert on_disk < 10.0
+            bridge._budget._tokens = 0.0
+
+    async def restarted() -> None:
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, _bus, _n):
+            levels.append(bridge._budget.available_s(time.monotonic()))
+
+    scenario(drained)
+    saved = JsonStateFile(path).load()["airtime"]
+    assert saved["level_s"] == pytest.approx(0.0, abs=0.01)
+    assert 0.0 < saved["longest_s"] < 10.0
+    scenario(restarted)
+    assert levels == [10.0, pytest.approx(saved["longest_s"], abs=0.01)]
+
+
 def test_confirm_nonce_makes_a_direct_text_unguessable(tmp_path: Path) -> None:
     """SEC-001: with `confirm_nonce` a direct text leaves with 8 random hex digits, the same on
     every attempt; every event carries the text as sent, duplicates are judged without them, and

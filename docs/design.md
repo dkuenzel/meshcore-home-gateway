@@ -73,8 +73,6 @@ documents for Home Assistant and later front ends (§13).
   ([ADR 0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md)).
 * BLE as a transport (possible later as another adapter).
 * Several radios in one process: run one instance per radio (topics are per node).
-* Persisting the outgoing queue across restarts: a restart drops queued messages without a final
-  delivery event (see §8).
 * Guaranteed delivery. Radio is best effort; the bridge reports what happened.
 
 ## 4 Requirements and constraints
@@ -86,7 +84,7 @@ documents for Home Assistant and later front ends (§13).
 | F1 | A UTF-8 text published to `<base>/<node>/send/<alias>` is sent to the target `<alias>`. Unknown aliases are rejected with a delivery event. |
 | F2 | Texts are cleaned (control characters, spaces), optionally transliterated to ASCII, and limited to the byte limit of the target type; too long texts are truncated (marked `...`) or rejected. |
 | F3 | Direct messages are retried until acknowledged, up to `max_attempts`; after `flood_after` unacknowledged attempts the stored path is reset so the next attempt floods. |
-| F4 | Messages wait in a bounded queue for the radio and for airtime; after `queue_ttl_s` they expire. |
+| F4 | Messages wait in a bounded queue for the radio and for airtime, alerts first; after `queue_ttl_s` they expire. A stop keeps them for the next start ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). |
 | F5 | The same text to the same target within `dedup_window_s` is sent once. |
 | F6 | Every received message is published on `received`, with sender, channel, signal and the command verdict. |
 | F7 | A received message is a command only under the rules of §7.3; accepted commands are published on `command` with the word as `event_type`. |
@@ -204,7 +202,10 @@ Long-running tasks on the loop, supervised by a task group:
   has not handed on yet (CODE-001).
 
 On stop the telemetry poller is cancelled first, so no request goes out after it, and saves its
-schedule; an answer that arrives later is dropped. Then the radio supervisor ends and closes the
+schedule; an answer that arrives later is dropped. The outbox worker starts no attempt any more:
+one that waits for its acknowledgement gets it for at most 60 s (the unit's `TimeoutStopSec` is
+90 s), and the messages still queued, that one too if it needs another attempt, are kept in the
+state file for the next start (§6.2). Then the radio supervisor ends and closes the
 session. The radio events and the message
 handler then finish the messages the radio has already handed over, for at most 2 s (a command
 waiting for its table read is rejected, `sender_unverified`); then the other tasks are cancelled.
@@ -381,7 +382,12 @@ sequenceDiagram
 4. **Duplicates.** Same alias and same final text within `dedup_window_s` → `duplicate`. A
    request rejected because the queue is full does not count, so its retry is accepted.
 5. **Queue.** Bounded (`queue_size`); a full queue rejects. Each entry carries its arrival time and
-   a time to live of `queue_ttl_s`. A message that never left within that time is `expired`:
+   a time to live of `queue_ttl_s`. The messages to `[messages] alert_targets` leave before the
+   others (IMP-032); each kind leaves in arrival order. At a stop the queue goes to the state
+   file (`outbox`, with each message's time waited, radio timestamp and attempts sent); the next
+   start queues those with time left again and publishes `queued` again with their `id`, ends
+   the others as they would have ended, and counts their texts for the duplicate check
+   ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A message that never left within that time is `expired`:
    `no_radio` (radio disconnected), `queue_ttl` (waited behind other messages) or
    `airtime_budget`. A message that left at least once and runs out of time is `failed` with
    `no_acknowledgement`. No attempt starts after the time to live, but the acknowledgement wait of
@@ -410,9 +416,11 @@ sequenceDiagram
    attempt may show up at the recipient as a second message. The radio's own refusals (ERR,
    `disabled`) end the delivery as `failed` with the error name.
 
-Messages leave strictly in arrival order, one at a time. A message waiting for an acknowledgement
-delays the next one; this keeps the protocol simple and the channel calm (the radio tracks at most
-8 acknowledgements anyway).
+Messages leave one at a time, alerts first, each kind in arrival order. A message waiting for an
+acknowledgement delays the next one; this keeps the protocol simple and the channel calm (the radio
+tracks at most 8 acknowledgements anyway). Between two attempts of a message an alert that waits
+goes first: the message keeps its timestamp and attempt count and continues after it, as it does
+after a restart that kept it.
 
 ### 6.3 Airtime estimate and budget
 
@@ -435,8 +443,11 @@ The budget is a token bucket over seconds of airtime
 ([ADR 0008](decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)): it holds at
 most `burst_s` (default 10 s) and refills at `budget_s_per_hour` (default 36 s, 1 % of an hour).
 Over any interval *T* the airtime the bridge counts for its own transmissions is bounded by
-`burst_s + budget × T / 3600` per run of the service: the bucket is not stored, each start begins
-with a full burst. The count is exact except for a flooded attempt to a recipient more than 4 path
+`burst_s + budget × T / 3600`, plus at most one long message per restart: the bucket's level is
+written to the state file at once after each transmission and at the stop, and a start takes it
+back, refilled for the time stopped, but at least what a direct message of 160 bytes needs at the
+radio's settings when it was last connected, so that the first alert after a restart goes out at
+once (ARC-005). The count is exact except for a flooded attempt to a recipient more than 4 path
 bytes away, whose returned path packet is longer than estimated (protocol.md §6).
 Each attempt of a direct message counts. The radio's other transmissions (acknowledgements it
 sends, adverts, path returns) are not counted; the default leaves 9 percentage points of the 10 %
@@ -1238,7 +1249,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Host clock wrong | sender timestamps vs host clock; the release date and the step from the radio's clock | commands outside `max_age_s` rejected; a host clock before the release, more than ten years after it or more than `set_clock_max_days` ahead of the radio's is not written to the radio | command rejections `too_old` / `from_the_future`; log warning `radio clock left ... behind` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
-| Bridge crashes or restarts | systemd | restart after 5 s; queued outgoing messages are lost; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; no delivery state for lost messages |
+| Bridge crashes or restarts | systemd | restart after 5 s; a stop keeps the queued outgoing messages for the next start, which queues them again (§6.2), a crash loses them; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; `queued` again for a kept message, no delivery state for a lost one |
 | Airtime budget exhausted | token bucket | messages wait, then expire | `delivery: expired`; airtime entity |
 | Recipient out of range | no acknowledgement | retries, flood, then give up | `delivery: failed` |
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects; the events of refused requests are limited to 20 per second (bursts of 100), so they cannot push other events out of a subscriber's queue on the broker | `delivery: duplicate` / `rejected`; a log warning counts the events left out |
@@ -1378,7 +1389,6 @@ version, like the CI matrix, and fails if one is missing.
 ## 12 Open questions and future work
 
 * BLE transport as a further adapter, for radios without USB data or WiFi.
-* Priorities in the outgoing queue (an alert overtaking a status message).
 * MQTT 5 features: message expiry for send requests, response topics for correlation.
 
 ## 13 Roadmap: the mesh observer
