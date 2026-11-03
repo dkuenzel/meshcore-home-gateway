@@ -35,6 +35,7 @@ from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.airtime import (
     channel_message_bytes,
     direct_attempt_airtime_s,
+    shortest_acknowledgement_s,
     time_on_air_s,
 )
 from meshcore_home_gateway.core.budget import (
@@ -60,10 +61,12 @@ from meshcore_home_gateway.core.model import (
 )
 from meshcore_home_gateway.core.telemetry import LaneFactory, TelemetryStatus
 from meshcore_home_gateway.core.text import (
+    CONFIRM_NONCE_BYTES,
     TextPolicy,
     TextRejectedError,
     clean_received,
     prepare_text,
+    with_nonce,
 )
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
@@ -176,6 +179,23 @@ class Outgoing:
     text: str
     created: float  # monotonic
     raw: str | None = None  # a channel text accepted before the radio's name was known
+
+
+@dataclass
+class _Expected:
+    """The acknowledgement codes of a message's attempts, and the shortest round trip a genuine
+    acknowledgement of any of them takes (SEC-001): 0 where it cannot be told."""
+
+    codes: list[bytes] = field(default_factory=list)
+    shortest_ms: float | None = None  # None: no attempt sent yet
+
+    def add(self, code: bytes, shortest_ms: float) -> None:
+        self.codes.append(code)
+        if self.shortest_ms is None or shortest_ms < self.shortest_ms:
+            self.shortest_ms = shortest_ms
+
+    def suspect(self, round_trip_ms: int) -> bool:
+        return self.shortest_ms is not None and round_trip_ms < self.shortest_ms
 
 
 @dataclass
@@ -583,9 +603,12 @@ class Bridge:
         if self._dedup.is_duplicate(key, self._mono()):
             state = DeliveryState.DUPLICATE
         else:
+            nonce = target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
+            sent = with_nonce(text) if nonce else text  # duplicates are judged without it
             try:
-                self._queue.put_nowait(Outgoing(event_id, target, text, self._mono(), raw))
+                self._queue.put_nowait(Outgoing(event_id, target, sent, self._mono(), raw))
                 self._activity.touch()
+                text = sent
             except asyncio.QueueFull:
                 self._dedup.forget(key)  # not taken, so a retry must not count as duplicate
                 state, reason = DeliveryState.REJECTED, "queue_full"
@@ -656,12 +679,15 @@ class Bridge:
         return target
 
     def _text_policy(self, target: Target, info: RadioInfo | None) -> TextPolicy:
-        """Without the radio's name, a channel text gets the limit of the shortest one."""
+        """Without the radio's name, a channel text gets the limit of the shortest one. A direct
+        text leaves room for the random suffix of `confirm_nonce` (SEC-001)."""
         limit = MAX_TEXT_BYTES
+        messages = self.config.messages
         if target.kind is MessageKind.CHANNEL:
             name = len(info.name.encode()) if info else 0
             limit = MAX_TEXT_BYTES - name - 2  # the firmware prepends "<name>: "
-        messages = self.config.messages
+        elif messages.confirm_nonce:
+            limit = MAX_TEXT_BYTES - CONFIRM_NONCE_BYTES
         return TextPolicy(limit, ascii_only=messages.ascii_only, truncate=messages.truncate)
 
     # --- outbox ---------------------------------------------------------------------------------
@@ -694,7 +720,7 @@ class Bridge:
         timestamp = int(self._wall())  # one timestamp for all attempts: retries stay recognisable
         direct = item.target.kind is MessageKind.CONTACT
         attempts = messages.max_attempts if direct else 1
-        acks: list[bytes] = []
+        acks = _Expected()
         sent = 0
         while sent < attempts:
             session = await self._radio_until(deadline)
@@ -711,6 +737,7 @@ class Bridge:
                 outcome = self._final(item, DeliveryState.FAILED, exc.reason, sent)
             except RadioError as exc:
                 log.info("delivery %s: attempt %d interrupted (%s)", item.id, sent + 1, exc)
+                acks.shortest_ms = 0.0  # its repeat has the same code: which copy is answered?
                 continue
             if outcome is not None:
                 self._deliver_event(outcome)
@@ -744,7 +771,7 @@ class Bridge:
 
     async def _attempt(
         self, session: CompanionSession, item: Outgoing, *, attempt: int, timestamp: int,
-        deadline: float, acks: list[bytes],
+        deadline: float, acks: _Expected,
     ) -> DeliveryEvent | None:  # fmt: skip
         """One transmission. Returns the final event, or None when another attempt should follow."""
         info = session.info
@@ -761,14 +788,14 @@ class Bridge:
         round_trip = None
         if wait > 0:
             log.info("delivery %s waits %.1f s for airtime", item.id, wait)
-            if acks:  # an earlier attempt may still be acknowledged meanwhile
-                round_trip = await self._acks.wait(acks, wait)
+            if acks.codes:  # an earlier attempt may still be acknowledged meanwhile
+                round_trip = await self._acks.wait(acks.codes, wait)
             else:
                 await asyncio.sleep(wait)
-        if acks and round_trip is None:
-            round_trip = self._acks.take(acks)
+        if acks.codes and round_trip is None:
+            round_trip = self._acks.take(acks.codes)
         if round_trip is not None:  # an earlier attempt arrived after all: send nothing more
-            return self._event(item, DeliveryState.CONFIRMED, attempt=attempt, rtt_ms=round_trip)
+            return self._confirmed(item, attempt, round_trip, acks)
         if wait > 0 and await self._read_changed_contacts(session, target):
             self._resolve(session, target)  # a look-alike may have come while waiting
         if reset_path is not None:
@@ -778,16 +805,32 @@ class Bridge:
             await session.send_channel_text(target.channel_index, text, timestamp)
             return self._event(item, DeliveryState.SENT, attempt=1, airtime_s=airtime)
         prefix = bytes.fromhex(_key(target)[:PREFIX_HEX_DIGITS])
+        record = session.contact_records.get(_key(target))  # the path the radio will take
         sent = await session.send_text(prefix, text, timestamp, attempt)
         sent_event = self._event(item, DeliveryState.SENT, attempt=attempt + 1, airtime_s=airtime)
         self._deliver_event(sent_event)
-        acks.append(sent.expected_ack)
+        acks.add(sent.expected_ack, _shortest_ms(session, record, sent, text, info))
         timeout = sent.timeout_ms / 1000 * ACK_TIMEOUT_FACTOR
         timeout = min(max(timeout, ACK_TIMEOUT_MIN_S), ACK_TIMEOUT_MAX_S)
-        round_trip = await self._acks.wait(acks, timeout)
+        round_trip = await self._acks.wait(acks.codes, timeout)
         if round_trip is None:
             return None
-        return self._event(item, DeliveryState.CONFIRMED, attempt=attempt + 1, rtt_ms=round_trip)
+        return self._confirmed(item, attempt + 1, round_trip, acks)
+
+    def _confirmed(
+        self, item: Outgoing, attempt: int, round_trip: int, acks: _Expected
+    ) -> DeliveryEvent:
+        """`suspect` if the acknowledgement came sooner than a genuine one can (SEC-001)."""
+        suspect = acks.suspect(round_trip)
+        if suspect:
+            log.warning(
+                "delivery %s: acknowledged after %d ms, sooner than the %.0f ms a genuine "
+                "acknowledgement takes over the path at least: it may be forged (SEC-001)",
+                item.id, round_trip, acks.shortest_ms,
+            )  # fmt: skip
+        return self._event(
+            item, DeliveryState.CONFIRMED, attempt=attempt, rtt_ms=round_trip, suspect=suspect
+        )
 
     def _plan(
         self, session: CompanionSession, item: Outgoing, attempt: int, info: RadioInfo
@@ -836,11 +879,12 @@ class Bridge:
 
     def _event(
         self, item: Outgoing, state: DeliveryState, *, attempt: int = 0, reason: str | None = None,
-        rtt_ms: int | None = None, airtime_s: float | None = None,
+        rtt_ms: int | None = None, airtime_s: float | None = None, suspect: bool | None = None,
     ) -> DeliveryEvent:  # fmt: skip
         return DeliveryEvent(
             item.id, item.target.alias, state, text=item.text, attempt=attempt, reason=reason,
             rtt_ms=rtt_ms, airtime_ms=None if airtime_s is None else round(airtime_s * 1000),
+            suspect=suspect,
         )  # fmt: skip
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
@@ -1333,3 +1377,16 @@ def _key(target: Target) -> str:
     if target.public_key is None:
         raise ValueError(f"target {target.alias} has no public key")
     return target.public_key
+
+
+def _shortest_ms(
+    session: CompanionSession, record: codec.ContactRecord | None, sent: codec.Sent, text: str,
+    info: RadioInfo,
+) -> float:  # fmt: skip
+    """The shortest round trip of a genuine acknowledgement of an attempt the radio sent over a
+    path through repeaters (SEC-001). 0 if it cannot be told: a flood or a neighbour, which a
+    forger in range answers as soon, or a table that changed since it was read."""
+    if record is None or sent.flood or not record.path_hops or session.contacts_outdated:
+        return 0.0
+    hops, path_bytes = record.path_hops, record.path_bytes or 0
+    return 1000 * shortest_acknowledgement_s(len(text.encode()), hops, path_bytes, info.lora)

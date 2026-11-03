@@ -166,7 +166,8 @@ views:
               _("Nothing sent yet.")
               {%- else -%}
               {%- set reason = state_attr(e, 'reason') -%}
-              <div><b>{{ m(state_attr(e, 'target') or '?') }}</b> {{ said(step) }}{% if reason %} <code>{{ m(reason) }}</code>{% endif %}<br>{{ m(state_attr(e, 'text')) }}</div>
+              {#- Translators: after "confirmed": the acknowledgement came sooner than the message's way through the mesh allows -#}
+              <div><b>{{ m(state_attr(e, 'target') or '?') }}</b> {{ said(step) }}{% if state_attr(e, 'suspect') %} _("(sooner than the path allows: maybe forged)"){% endif %}{% if reason %} <code>{{ m(reason) }}</code>{% endif %}<br>{{ m(state_attr(e, 'text')) }}</div>
               {%- endif %}
   - title: _("Contacts")
     path: contacts

@@ -84,6 +84,7 @@ def delivery_payload(event: DeliveryEvent) -> dict[str, Any]:
         "reason": event.reason,
         "rtt_ms": event.rtt_ms,
         "airtime_ms": event.airtime_ms,
+        "suspect": event.suspect,
     }
 
 

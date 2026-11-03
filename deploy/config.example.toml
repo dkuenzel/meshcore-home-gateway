@@ -47,6 +47,7 @@ queue_ttl_s = 600                                      # give up on messages old
 max_attempts = 3                                       # direct messages: sends until acknowledged
 flood_after = 2                                        # unanswered sends, then path reset (flood)
 ignore_channels = []                                   # channel indices not to publish
+confirm_nonce = false                                  # true: random suffix, acks hard to forge
 
 [airtime]
 budget_s_per_hour = 36                                 # 1 % of an hour for this gateway's messages

@@ -209,7 +209,10 @@ def _parser() -> argparse.ArgumentParser:
     send.add_argument("text")
     send.add_argument(
         "--wait", type=_wait_seconds, default=0.0, metavar="SECONDS",
-        help=tr_help("wait for the delivery result; exit 1 unless sent or confirmed"),
+        help=tr_help(
+            "wait for the delivery result; exit 1 unless sent or confirmed, also when confirmed "
+            "sooner than the path allows"
+        ),
     )  # fmt: skip
 
     listen = command("listen", tr_help("print events from the broker as JSON lines"), _listen)
@@ -1069,14 +1072,24 @@ def _matches(event_text: Any, wanted: str) -> bool:
 
 class _DeliveryWatch:
     """Follows the delivery events of one send request. The bridge names the request in its first
-    event (queued, duplicate or rejected) with its own id and the final text; the result is the
-    final event with that id. Events of other requests to the same target are ignored."""
+    event (queued, duplicate or rejected) with its own id and the final text, with `nonce` the
+    random suffix included; the result is the final event with that id. Events of other requests
+    to the same target are ignored."""
 
-    def __init__(self, alias: str, wanted: str, final: set[str]) -> None:
-        self._alias, self._wanted, self._final = alias, wanted, final
+    def __init__(self, alias: str, wanted: str, final: set[str], *, nonce: bool = False) -> None:
+        self._alias, self._wanted, self._final, self._nonce = alias, wanted, final, nonce
         self._id: str | None = None
         self.result: dict[str, Any] | None = None
         self.done = threading.Event()
+
+    def _named(self, event_text: Any) -> bool:
+        from meshcore_home_gateway.core.text import without_nonce  # noqa: PLC0415
+
+        if _matches(event_text, self._wanted):
+            return True
+        return self._nonce and isinstance(event_text, str) and (
+            _matches(without_nonce(event_text), self._wanted)
+        )  # fmt: skip
 
     def on_message(self, _c: Any, _u: Any, message: Any) -> None:
         try:
@@ -1088,7 +1101,7 @@ class _DeliveryWatch:
         if self._id is None:
             first = event.get("event_type") in {"queued", "duplicate", "rejected"}
             unnamed_rejection = event.get("event_type") == "rejected" and event.get("text") is None
-            if not first or not (_matches(event.get("text"), self._wanted) or unnamed_rejection):
+            if not first or not (self._named(event.get("text")) or unnamed_rejection):
                 return
             self._id = str(event.get("id"))
         if event.get("id") == self._id and event.get("event_type") in self._final:
@@ -1122,7 +1135,10 @@ def _send(args: argparse.Namespace) -> int:
         wanted = prepare_text(args.text, policy)
     except TextRejectedError:
         wanted = args.text
-    watch = _DeliveryWatch(args.alias, wanted, final)
+    watch = _DeliveryWatch(
+        args.alias, wanted, final,
+        nonce=config.messages.confirm_nonce and target.public_key is not None,
+    )  # fmt: skip
     client = _mqtt_client(config.mqtt, "send")
     client.on_message = watch.on_message
     try:
@@ -1140,7 +1156,14 @@ def _send(args: argparse.Namespace) -> int:
             print(PREFIX + tr("no delivery result in time"), file=sys.stderr)
             return EX_FAILURE
         print(_json_text(watch.result))
-        return EX_OK if watch.result["event_type"] in {"sent", "confirmed"} else EX_FAILURE
+        suspect = bool(watch.result.get("suspect"))
+        if suspect:
+            # Translators: the recipient's acknowledgement came sooner than the message's way
+            # through the mesh allows
+            warning = tr("confirmed sooner than the path allows: the acknowledgement may be forged")
+            print(PREFIX + warning, file=sys.stderr)
+        delivered = watch.result["event_type"] in {"sent", "confirmed"} and not suspect
+        return EX_OK if delivered else EX_FAILURE
     finally:
         client.disconnect()  # first: loop_stop() alone may wait 120 s for unacknowledged messages
         client.loop_stop()

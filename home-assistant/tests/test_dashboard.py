@@ -799,6 +799,12 @@ async def test_steps_states_and_contact_events_show_as_texts(
         await fire(hass, topics.delivery, delivery_payload(delivered))
         code = " <code>no_acknowledgement</code>" if reason else ""
         assert render(hass, sent) == f"<div><b>alerts</b> {text}{code}<br>Gate open</div>", step
+    forged = DeliveryEvent(
+        "m2", "alerts", DeliveryState.CONFIRMED, "Gate open", 1, rtt_ms=400, suspect=True
+    )
+    await fire(hass, topics.delivery, delivery_payload(forged))
+    mark = "confirmed (sooner than the path allows: maybe forged)"  # SEC-001
+    assert render(hass, sent) == f"<div><b>alerts</b> {mark}<br>Gate open</div>"
 
     alice = "<tr><td>Alice</td><td>Companion</td><td>0 min ago</td><td>{}</td></tr>"
     for state, text in STATES.items():

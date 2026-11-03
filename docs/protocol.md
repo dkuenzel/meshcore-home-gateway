@@ -356,6 +356,20 @@ fail when one does not:
 * **ACK code** (`BaseChatMesh.cpp:451-471`):
   `SHA-256(timestamp uint32 ‖ attempt & 3 ‖ text ‖ sender's own public key)[0:4]`. Attempts 0–3
   give four different codes; attempt 4 repeats attempt 0.
+* **The acknowledgement proves knowledge of the text, not receipt.** The recipient computes the
+  same hash (`BaseChatMesh.cpp:244-245`; since 1.18 an attempt byte and a random byte follow it,
+  `:247-248`) and sends it as a `PAYLOAD_TYPE_ACK` packet whose payload is the hash itself,
+  neither encrypted nor signed (`src/Mesh.cpp:560-571`). The sender's radio takes the first
+  4 bytes of any such packet it has not seen before (`src/Mesh.cpp:117-128`) and pushes
+  `SEND_CONFIRMED` for the first entry of its table they match (`MyMesh.cpp:424-434`). The key is
+  public and the timestamp and attempt take a few guesses, so whoever knows or guesses the text
+  can confirm a message nobody received, and the retries stop. The gateway's mitigations, a
+  random suffix and the `suspect` flag, are in
+  [mqtt-api.md](mqtt-api.md#what-confirmed-proves).
+* **Round trip** in `SEND_CONFIRMED`: from when the radio queued the attempt (`MyMesh.cpp:1161`,
+  right after `sendMessage` returned, before the packet went on air) to when the acknowledgement
+  was handled (`MyMesh.cpp:428`). A recipient waits `TXT_ACK_DELAY`, 200 ms by default and a build
+  option (`BaseChatMesh.cpp:8-10`), before it answers.
 * **Retries:** the radio does not retry and sends no timeout push (`BaseChatMesh.cpp:989-993`). A
   retry with the same timestamp and a higher attempt number is a new packet, and the receiving
   radio does not deduplicate it, so it can show up twice *(inferred)*; a retry with the same attempt

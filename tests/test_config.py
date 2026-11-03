@@ -73,6 +73,7 @@ flood_after = 3
 ignore_channels = [0]
 publish_channels = "targets"
 clean_received = true
+confirm_nonce = true
 
 [airtime]
 budget_s_per_hour = 72
@@ -113,6 +114,7 @@ def test_minimal_configuration_gets_safe_defaults() -> None:
     assert config.homeassistant.discovery is True
     assert config.airtime.budget_s_per_hour == 36.0
     assert config.messages.max_attempts == 3
+    assert config.messages.confirm_nonce is False  # opt-in: the recipient sees the suffix
     assert config.commands.senders == frozenset()
     assert config.targets == ()
 
@@ -134,6 +136,7 @@ def test_full_configuration_is_read_completely() -> None:
     assert config.messages.ignore_channels == frozenset({0})
     assert config.messages.publish_channels == "targets"
     assert config.messages.clean_received is True
+    assert config.messages.confirm_nonce is True
     assert config.commands.senders == frozenset({KEY})
     assert config.commands.words == frozenset({"status", "arm"})
     alerts, alice = sorted(config.targets, key=lambda t: t.alias)

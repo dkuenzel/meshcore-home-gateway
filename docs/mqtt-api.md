@@ -60,7 +60,8 @@ is breaking.
 The payload is the text, UTF-8, at most 1 KiB. Only aliases from `[targets.*]` in the
 configuration exist. The gateway cleans the text (control characters, direction overrides, repeated spaces), optionally
 transliterates it to ASCII, and truncates or rejects texts above the radio's limit: 160 bytes for a
-direct message, `160 − (radio name length + 2)` for a channel message. Before the radio has
+direct message (150 with `[messages] confirm_nonce`, whose suffix takes the rest), `160 − (radio
+name length + 2)` for a channel message. Before the radio has
 connected once, its name is unknown: a channel text is then accepted up to 158 bytes and limited
 when it is sent (truncated, or `failed` with `too_long`).
 
@@ -97,14 +98,14 @@ the send topics gets no event for the excess, which the log counts (at most once
 
 ```json
 {"event_type": "confirmed", "id": "7f3a91c2", "target": "operator", "text": "Back online",
- "attempt": 2, "reason": null, "rtt_ms": 2300, "airtime_ms": null}
+ "attempt": 2, "reason": null, "rtt_ms": 2300, "airtime_ms": null, "suspect": false}
 ```
 
 | `event_type` | Meaning | `reason` values |
 | --- | --- | --- |
 | `queued` | accepted, waiting for the radio and for airtime | – |
 | `sent` | handed to the radio; `attempt` numbers this transmission from 1, `airtime_ms` is the estimate | – |
-| `confirmed` | the recipient acknowledged; `rtt_ms` from the radio | – |
+| `confirmed` | the radio received the acknowledgement of an attempt, which proves less than it sounds ([below](#what-confirmed-proves)); `rtt_ms` is its round trip as the radio measured it, `suspect` `true` when that was shorter than the message's path allows (`null` in other events) | – |
 | `failed` | given up | `no_acknowledgement` (sent, but not acknowledged in time), `unknown_contact`, `ambiguous_target`, `channel_not_configured`, `too_long`, `exceeds_airtime_burst`, `internal_error` (a bug; see the log), the radio's refusals: `disabled` or an error name such as `not_found`, `table_full`, `error_<code>` |
 | `expired` | never sent within `queue_ttl_s` | `no_radio`, `queue_ttl` (waited behind other messages), `airtime_budget` |
 | `duplicate` | same target and text within `dedup_window_s` | – |
@@ -116,6 +117,36 @@ timestamp, so a recipient that got the message but whose acknowledgement was los
 twice. An attempt that a radio disconnect interrupted after the radio had sent it is repeated as
 the identical packet: nodes that saw the first copy drop it, so it earns no acknowledgement, and
 the next attempt may show the message twice the same way.
+
+### What `confirmed` proves
+
+The recipient's radio answers a direct message with an acknowledgement: the first 4 bytes of a
+SHA-256 hash of the message's timestamp, its attempt number, its text and the gateway radio's
+public key, sent in the clear ([protocol.md §5](protocol.md#5-semantics)). `confirmed` means
+that a packet with this code reached the gateway's radio. That proves that the recipient got the
+message only if nobody else could compute the code: the key is public, the timestamp and the
+attempt take a few guesses, and so does the text of an automation, usually a fixed one such as
+"Smoke in the kitchen". A stranger in radio range who knows or guesses the text can send the
+acknowledgement while the recipient is away or jammed: the gateway reports `confirmed` and sends
+no further attempt. The weakness is the firmware's, which would have to authenticate the
+acknowledgement with the secret the two radios share; the gateway can narrow it:
+
+* **`[messages] confirm_nonce = true`** ([configuration.md](configuration.md#messages)) ends
+  every direct message with ` #` and 8 random hex digits, the same on each attempt, which the
+  recipient sees: 32 bits, as many as the code, so that guessing the text is no easier than
+  guessing the code. Even sending nothing but guesses at the fastest LoRa settings during the
+  longest wait, four attempts of 60 s, a forger succeeds about once in 160,000 messages.
+* **`suspect`** is `true` in a `confirmed` event whose round trip is shorter than a genuine
+  acknowledgement takes over the path the radio stored: the message on every hop through the
+  repeaters and the acknowledgement on one, at the radio's modulation, without preamble so that
+  any firmware's is longer. A forger beside the gateway's radio who answers at once is that fast,
+  and the log warns. One who waits is not caught, nor anything sent to a neighbour or flooded,
+  which a genuine acknowledgement can answer as fast as a forged one; nor an attempt repeated
+  after the radio's link broke. `meshcore-home-gateway send --wait` exits 1 on it.
+* **An answer** is the proof an alert that must arrive deserves: the recipient sends a word back
+  as a [command](#commands-command), which the gateway checks
+  ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)), and the automation
+  escalates when it does not come, not only on `failed`.
 
 ## Received messages: `received`
 

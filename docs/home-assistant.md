@@ -556,7 +556,11 @@ used in the same way: `entity_id: notify.mesh_alice`.
 
 **See whether it arrived.** *Delivery* shows each step as an event: `queued`, then `sent` (final
 for a channel) and `confirmed` when the recipient of a direct message acknowledged it, or `failed`
-or `expired` with a `reason` attribute ([mqtt-api.md](mqtt-api.md#delivery-delivery)). The same
+or `expired` with a `reason` attribute ([mqtt-api.md](mqtt-api.md#delivery-delivery)). `confirmed`
+says that the acknowledgement's code arrived, which a stranger who guesses a fixed text can send
+too: for alerts, set `[messages] confirm_nonce` and let the recipient answer
+([what it proves](mqtt-api.md#what-confirmed-proves)). The dashboard marks a confirmation that
+came sooner than the path allows (the attribute `suspect`). The same
 test without Home Assistant, in the gateway's container:
 `meshcore-home-gateway send --wait 60 alerts "test"`.
 

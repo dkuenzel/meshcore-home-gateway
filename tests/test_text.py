@@ -1,18 +1,41 @@
 """Rules for outgoing text: cleaning, byte limit, optional ASCII transliteration."""
 
+import re
+
 import pytest
 
 from meshcore_home_gateway.core.text import (
+    CONFIRM_NONCE_BYTES,
     TextPolicy,
     TextRejectedError,
     clean_received,
     contact_name,
     cut_utf8,
     prepare_text,
+    with_nonce,
+    without_nonce,
 )
 
 UTF8 = TextPolicy(max_bytes=20)
 ASCII = TextPolicy(max_bytes=40, ascii_only=True)
+
+
+def test_a_nonce_is_eight_random_hex_digits_after_the_text() -> None:
+    """`[messages] confirm_nonce` (SEC-001): 32 bits nobody can guess, in ASCII."""
+    sent = {with_nonce("Smoke in the kitchen") for _ in range(20)}
+    assert len(sent) > 1  # all 20 alike: never in practice
+    for text in sent:
+        assert re.fullmatch(r"Smoke in the kitchen #[0-9a-f]{8}", text)
+        assert len(text.encode()) == len("Smoke in the kitchen") + CONFIRM_NONCE_BYTES == 30
+        assert without_nonce(text) == "Smoke in the kitchen"
+
+
+def test_only_one_nonce_comes_off() -> None:
+    assert without_nonce("Gate #0a1b2c3d #4e5f6a7b") == "Gate #0a1b2c3d"
+    for text in (
+        "Gate open", "Gate #0A1B2C3D", "Gate #0a1b2c3", "Gate#0a1b2c3d", "Gate #0a1b2c3d ",
+    ):  # fmt: skip
+        assert without_nonce(text) == text
 
 
 def test_a_received_text_is_cleaned_like_an_outgoing_one() -> None:

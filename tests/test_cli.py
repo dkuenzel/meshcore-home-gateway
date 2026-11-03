@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import paho.mqtt.client as paho
@@ -1083,6 +1084,48 @@ def test_send_wait_reports_a_rejection(
         fake.stop()
     assert code == EX_FAILURE
     assert json.loads(capsys.readouterr().out)["event_type"] == "rejected"
+
+
+def test_send_wait_knows_its_text_by_the_random_suffix() -> None:
+    """`confirm_nonce` (SEC-001): the bridge names a direct request with the text as sent, the
+    suffix included; a text that only begins like it is another request."""
+    for nonce in (True, False):
+        watch = cli_module._DeliveryWatch("alice", "Smoke", {"confirmed"}, nonce=nonce)
+        for kind, event_id, text in (
+            ("queued", "other", "Smoke alarm #0a1b2c3d"), ("queued", "mine", "Smoke #0a1b2c3d"),
+            ("confirmed", "other", "Smoke alarm #0a1b2c3d"),
+            ("confirmed", "mine", "Smoke #0a1b2c3d"),
+        ):  # fmt: skip
+            body = {"target": "alice", "event_type": kind, "id": event_id, "text": text}
+            watch.on_message(None, None, SimpleNamespace(payload=json.dumps(body).encode()))
+        assert (watch.result or {}).get("id") == ("mine" if nonce else None)
+
+
+@pytest.mark.broker
+def test_send_wait_fails_on_a_suspect_confirmation(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SEC-001: a confirmation sooner than the path allows may be forged, so the script that
+    waits for it falls back as on a failure."""
+
+    def answer(bridge: FakeBridge, text: str) -> None:
+        sent = f"{text} #0a1b2c3d"
+        bridge.event(event_type="queued", id="mine", text=sent, target="alice")
+        bridge.event(event_type="confirmed", id="mine", text=sent, target="alice", suspect=True)
+
+    path = broker_config(tmp_path, broker)
+    key = "a1" * 32
+    with path.open("a", encoding="utf-8") as config:
+        config.write(f'[targets.alice]\ncontact = "{key}"\n[messages]\nconfirm_nonce = true\n')
+    fake = FakeBridge(broker, answer)
+    try:
+        code = main(["send", "--config", str(path), "--wait", "5", "alice", "Smoke"])
+    finally:
+        fake.stop()
+    captured = capsys.readouterr()
+    assert code == EX_FAILURE
+    assert json.loads(captured.out)["suspect"] is True
+    assert "confirmed sooner than the path allows" in captured.err
 
 
 class ScriptedBroker:

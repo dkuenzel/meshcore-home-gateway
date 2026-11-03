@@ -351,7 +351,8 @@ sequenceDiagram
    the prefix, so a look-alike it has just added would get the message; a change whose push was
    lost (over TCP) remains unseen until the next read. A channel target must be a named channel
    slot on the radio (`channel_not_configured`).
-3. **Text.** `core.text` applies the policy. Limits: 160 bytes for a direct message; for a channel
+3. **Text.** `core.text` applies the policy. Limits: 160 bytes for a direct message, 150 with
+   `confirm_nonce`, whose random suffix the message gets once it is queued; for a channel
    message the firmware prepends `"<radio name>: "`, so the limit shrinks by that prefix. Before
    the radio has connected once, the name is unknown: a channel text is checked against the
    shortest prefix and limited again when it is sent; one that may not be truncated then fails
@@ -376,9 +377,12 @@ sequenceDiagram
    timestamp** and the next attempt number (0..3; the acknowledgement code depends on both); after
    `flood_after` unanswered attempts it first resets the stored path, so the next attempt floods.
    Late acknowledgements of earlier attempts still count. After `max_attempts` the state is
-   `failed`. A recipient whose acknowledgement got lost receives the retry as a second message;
-   the firmware does not deduplicate it. An attempt interrupted by a radio error (disconnect,
-   timeout) is repeated with the same number once the radio is back, within the time to live. If the
+   `failed`. A `confirmed` event says whether its round trip was shorter than the stored path
+   allows (`suspect`, §7.2); with `confirm_nonce` every attempt carries the same suffix, which
+   step 4 left out. A recipient whose acknowledgement got lost receives the retry as a second
+   message; the firmware does not deduplicate it. An attempt interrupted by a radio error
+   (disconnect, timeout) is repeated with the same number once the radio is back, within the time
+   to live. If the
    radio had already sent it, the repeat is the identical packet, and nodes that saw the first copy
    drop it ([`protocol.md`](protocol.md#5-semantics)): a channel message arrives once; a direct
    message's repeat earns no acknowledgement, so the bridge waits out its timeout and the next
@@ -682,7 +686,7 @@ the file.
 | `meshcore-home-gateway run` | Run the bridge (systemd service). |
 | `meshcore-home-gateway check-config` | Validate the configuration (and load the TLS files) and print a summary. |
 | `meshcore-home-gateway probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
-| `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or `confirmed`. |
+| `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or a `confirmed` that is not `suspect`. |
 | `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines (`received`, `command`, `delivery`, `state`, `contact`, `node`, `telemetry`). |
 | `meshcore-home-gateway contacts list [--json]` | The radio's contacts and the heard nodes, from the retained documents (tab-separated: kind, key, type, `protected`/`removable`/`look_alike`, heard, name). |
 | `meshcore-home-gateway contacts add [--wait S] CONTACT` | Add a contact: a full key, a heard node as `KEY12…KEY8` (a name may follow, as Home Assistant's select lists it), a contact link or card; prints the full key to compare. Exit 0 on `added` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline, 2 when the text is no key, link or card, or a label names no single node. |
@@ -1048,6 +1052,7 @@ gateways share a name.
 | A forged advert in the packet log (the radio logs every packet before it checks the signature) | A log counts only for an advert the radio pushed and whose timestamp the next table read shows as `last_advert`. While the receive delay is 0, the log that is the frame directly before the push decides, and a forged copy is never there; otherwise all logs of the key with that time must agree, and differing copies decide nothing. A flagged log must hold the position the record took. A forged position is never shown: positions come from the record. |
 | A flood of adverts with invented keys (a new key costs microseconds; any board in range) | Memory, documents and history stay bounded: 50 heard nodes, of which those heard again stay longest; the `nodes` document at most every 30 seconds while only heard nodes change; `node` events at most one every 5 seconds on average; the history keeps only the nodes the gateway keeps. A stranger's advert reads no contact table (firmware 1.12 and newer). The airtime the flood takes is the mesh's problem, not the gateway's (§8). |
 | A flood of messages from a contact, or on a channel (anyone who knows its key: the *Public* channel's is in the firmware) | What messages produce is rate-limited per sender and per channel: beyond a burst of 10 direct messages one every 2 s, beyond a burst of 20 channel messages one a second, are published and kept in the history; the others are judged as commands (an accepted command always goes out) and counted in the log, at most once a minute. The radio acknowledges each direct message of a contact before the bridge sees it (§7.4). Keep the contact table to the household; `ignore_channels` keeps a busy channel out. |
+| A forged acknowledgement: anyone in range who knows or guesses a direct message's text (an alarm's is fixed) computes its code and sends it in the clear; the delivery reads `confirmed` and the retries stop | The firmware's weakness, which only an acknowledgement authenticated with the pair's secret would close (§7.4). `[messages] confirm_nonce` ends direct messages with 8 random hex digits, so the code is as hard to guess as itself; a `confirmed` event is `suspect`, and the log warns, when its round trip is shorter than the stored path through repeaters allows (`core.airtime.shortest_acknowledgement_s`); `send --wait` exits 1 on it. The documentation says what `confirmed` proves and recommends an answer from the recipient for alerts ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). |
 
 ### 7.3 Command authorisation in detail
 
@@ -1129,6 +1134,14 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
+* `confirmed` proves that the acknowledgement's code arrived, which anyone who knows the text
+  can compute (§7.2). Without `confirm_nonce` a stranger in range can confirm a fixed alert text
+  nobody received; with it, the odds are those of guessing 32 bits within the acknowledgement
+  wait. `suspect` catches only a forger beside the gateway who answers at once over a path
+  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. The
+  history keeps such a message as `confirmed`; the event and the log tell. The fix belongs in the
+  firmware: an acknowledgement authenticated with the secret the two radios share, for the
+  maintainer to raise with the MeshCore project.
 * A client that may write the gateway's topics can show Home Assistant a forged document until
   the gateway restores it: a round trip, up to 10 seconds if it keeps writing, and as long as it
   likes while the gateway is offline, as it can write `online` to `availability` too. Only the

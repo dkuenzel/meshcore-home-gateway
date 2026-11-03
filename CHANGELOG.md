@@ -72,6 +72,15 @@ format, the command line and Home Assistant discovery are public interfaces
   credential named like the file (`LoadCredential=`) is read instead, so the file may be root's
   alone. `config render --password-file <path>` writes the answer `mqtt.password` there
   ([configuration.md](docs/configuration.md#mqtt), [deployment.md](docs/deployment.md#4-operations)).
+- `[messages] confirm_nonce` (default `false`): direct messages end with ` #` and 8 random hex
+  digits, the same on every attempt, so that their acknowledgement, a hash of the text, cannot be
+  computed by a stranger who guesses a fixed text; direct texts are then limited to 150 bytes,
+  and the events and the history carry the text as sent
+  ([configuration.md](docs/configuration.md#messages)).
+- `suspect` in `delivery` events: `true` in a `confirmed` one whose round trip was shorter than
+  the message's path through repeaters allows, as a forger beside the gateway's radio answers;
+  the log warns, the dashboard marks it and `send --wait` exits 1
+  ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)).
 
 ### Changed
 
@@ -111,6 +120,12 @@ format, the command line and Home Assistant discovery are public interfaces
   `root:meshcore-home-gateway`) instead of the configuration, and `--reconfigure` moves a
   password that is still in the configuration there: `config answers`, which the
   reconfiguration reads through `pct exec`, then prints only the path.
+- The documentation says what `confirmed` proves: that a packet with the message's
+  acknowledgement code arrived, which MeshCore sends in the clear and anyone who knows or guesses
+  the text computes, so a stranger can confirm an alert nobody received and stop its retries.
+  For alerts it recommends `confirm_nonce` and an answer from the recipient
+  ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves), [protocol.md](docs/protocol.md),
+  [design §7.4](docs/design.md#74-residual-risks)).
 - The documentation says what the TCP interface exposes, as verified in the firmware: the
   release build exports and imports the radio's private key to and from any client, MeshCore's
   direct messages have no forward secrecy, and a client can send any packet or move the radio
