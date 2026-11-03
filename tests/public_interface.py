@@ -51,6 +51,11 @@ from meshcore_home_gateway import __version__, cli, i18n, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.announcer import ha_device_topics
+from meshcore_home_gateway.cli import broker as cli_broker
+from meshcore_home_gateway.cli import common as cli_common
+from meshcore_home_gateway.cli import contacts as cli_contacts
+from meshcore_home_gateway.cli import probe as cli_probe
+from meshcore_home_gateway.cli import run as cli_run
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.contact_manager import Job
 from meshcore_home_gateway.core import lpp, profile
@@ -1071,7 +1076,7 @@ def command_line(tmp: Path, language: str = "en") -> dict[str, Any]:
     built in that language, where a name translated by mistake would show, and its commands run in
     an environment that asks for it (tests/test_public_interface.py)."""
     commands: dict[str, Any] = {}
-    with cli._speaking(i18n.translator(language)):
+    with cli_common._speaking(i18n.translator(language)):
         _commands(cli._parser(), "", commands)
     with mock.patch.dict(os.environ, {"LANGUAGE": language}):
         return _command_line(tmp, commands)
@@ -1086,7 +1091,7 @@ def _command_line(tmp: Path, commands: dict[str, Any]) -> dict[str, Any]:
             f"probe --list {listing}": _printed([*probe, "--list", listing])
             for listing in commands["probe"]["options"]["--list"]["choices"]
         }
-    paths = {"config": str(cli.DEFAULT_CONFIG), **_state_directory(tmp, report)}
+    paths = {"config": str(cli_common.DEFAULT_CONFIG), **_state_directory(tmp, report)}
     keyed_by_data = ("profile.changes", "profile.contacts")
     exit_codes = {
         "ok": cli.EX_OK,
@@ -1235,7 +1240,9 @@ def _probe_report(tmp: Path) -> dict[str, Any]:
     records = ProfileRecords(JsonStateFile(tmp / "probe.json", read_only=True))
     protected = {KEY_B: "Bob"}
     return asyncio.run(
-        cli._probe_radio(radio, ProfileConfig(name="New"), records, protected, configured=True)
+        cli_probe._probe_radio(
+            radio, ProfileConfig(name="New"), records, protected, configured=True
+        )
     )
 
 
@@ -1273,7 +1280,7 @@ def _probe_values(tmp: Path, probe: list[str]) -> dict[str, list[str]]:
                 telemetry_modes=mode * 0b010101,  # each kind
             )
             report = asyncio.run(
-                cli._probe_radio(radio, ProfileConfig(), records, {}, configured=False)
+                cli_probe._probe_radio(radio, ProfileConfig(), records, {}, configured=False)
             )
             with _probing(report):
                 printed = json.loads(_printed([*probe, "--json"]))
@@ -1308,7 +1315,7 @@ def _probing(report: dict[str, Any]) -> Iterator[None]:
     async def probed(*_: Any, **__: Any) -> dict[str, Any]:
         return report
 
-    with mock.patch.object(cli, "_probe_radio", probed):
+    with mock.patch.object(cli_probe, "_probe_radio", probed):
         yield
 
 
@@ -1350,8 +1357,8 @@ def _state_directory(tmp: Path, report: dict[str, Any]) -> dict[str, str]:
             os.environ.pop(_STATE_DIRECTORY, None)
             if named:
                 os.environ[_STATE_DIRECTORY] = str(named)
-            patches.enter_context(mock.patch.object(cli, "setup_logging"))
-            patches.enter_context(mock.patch.object(cli, "_serve", serve))
+            patches.enter_context(mock.patch.object(cli_run, "setup_logging"))
+            patches.enter_context(mock.patch.object(cli_run, "_serve", serve))
             patches.enter_context(_probing(report))
             patches.enter_context(mock.patch("meshcore_home_gateway.state.JsonStateFile", store))
             used.clear()
@@ -1406,7 +1413,7 @@ class _Marked(_Documents):
 
 def _contacts_list(tmp: Path, *more: str, session: type[_Documents] = _Documents) -> str:
     config = _written(tmp / "contacts.toml", MINIMAL)
-    with mock.patch.object(cli, "_ContactSession", session):
+    with mock.patch.object(cli_contacts, "_ContactSession", session):
         return _printed(["contacts", "list", "--config", str(config), *more])
 
 
@@ -1425,7 +1432,7 @@ class _Broker(_Paho):
 def _listened(tmp: Path) -> Any:
     """The line `listen` prints for a message."""
     config = _written(tmp / "listen.toml", MINIMAL)
-    with mock.patch.object(cli, "_mqtt_client", return_value=_Broker()):
+    with mock.patch.object(cli_broker, "mqtt_client", return_value=_Broker()):
         return json.loads(_printed(["listen", "--config", str(config), "--count", "1"]))
 
 

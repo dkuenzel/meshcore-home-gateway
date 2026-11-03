@@ -267,7 +267,7 @@ One line per fact, by section.
   umask too (read in the sources, not run on a host). *Here:* `install_service()` and
   `configure()` set `umask 022` in the container, and `configure()` writes only the answers file
   under 077; `config render` creates missing directories with mode 0755 whatever the umask
-  (`_make_directory()` in `src/meshcore_home_gateway/cli.py`); `tests/test_installer.py` and
+  (`_make_directory()` in `src/meshcore_home_gateway/cli/config_cmd.py`); `tests/test_installer.py` and
   `tests/test_cli.py` run these steps under umask 077. The manual steps in
   [deployment.md](deployment.md#what-the-script-does) run `mkdir -p` inside `pct enter` without
   setting a umask. *Check:*
@@ -531,7 +531,7 @@ One line per fact, by section.
   3.12.3, 3.13.16 and 3.14.6, a script that builds a parser each way and formats its help.
   *Here:* `tr_help` marks our help and description texts; a translation of one, and of
   argparse's own words, is used only with the `%` directives of the English text
-  ([design §6.12](design.md#612-translations)); `cli._speaking()` sets argparse's words for one
+  ([design §6.12](design.md#612-translations)); `common._speaking()` (`cli/`) sets argparse's words for one
   command and restores them. *Check:* `python3 -c "import argparse; p =
   argparse.ArgumentParser(); p.add_argument('--x', help='10 % of it'); p.print_help()"` raises.
 
@@ -806,8 +806,8 @@ mosquitto -c m.conf & broker=$!
   `meshcore-home-gateway-<node_id>-` and 8 random hex digits unless `client_id` is set
   (`make_paho_client()`), the commands
   `check-config --broker`, `send` and `listen` as `meshcore-home-gateway-check-<pid>`,
-  `-send-<pid>` and `-listen-<pid>` (`_mqtt_client()` in
-  [`cli.py`](../src/meshcore_home_gateway/cli.py)). The prefix `meshcore-home-gateway-` admits
+  `-send-<pid>` and `-listen-<pid>` (`mqtt_client()` in
+  [`cli/broker.py`](../src/meshcore_home_gateway/cli/broker.py)). The prefix `meshcore-home-gateway-` admits
   both; `meshcore-home-gateway-<node_id>-` locks the commands out. *Check:* add
   `clientid_prefixes meshcore-gw-`; `mosquitto_sub -p 18830 -i meshcore-home-gateway-radio1 -u mhg
   -P s3cret -t x -E` exits with 5, and the log reads `Client <unknown> disconnected, not
@@ -834,15 +834,15 @@ mosquitto -c m.conf & broker=$!
   MQTT 5 carries the reason (135, "Not authorized"); the broker logs `Denied PUBLISH` only with
   `log_type debug` or `all`. *Verified:* 2.0.18, with paho-mqtt 2.1.0 (`on_publish` reports
   `Success`, `is_published()` is true) and `mosquitto_pub`. *Here:* the gateway speaks MQTT 3.1.1
-  (`make_paho_client()`), so `MqttBus.publish()` and `send` (`_publish()` in `cli.py`) take a denied
+  (`make_paho_client()`), so `MqttBus.publish()` and `send` (`publish()` in `cli/broker.py`) take a denied
   message as delivered; only the broker's log shows the denial. *Check:* `mosquitto_pub -p 18830 -u
   mhg -P s3cret -q 1 -t meshcore/radio1/availability -m online` exits with 0; with `-V mqttv5` it
   prints `Warning: Publish 1 failed: Not authorized.`.
 * **The `acl_file` check never refuses a SUBSCRIBE.** A subscription to a topic the user may not
   read is granted at the requested QoS; its messages are then not delivered, and nothing is
   logged. *Verified:* 2.0.18, MQTT 3.1.1 and 5; `src/security_default.c:383` ("FIXME - implement
-  ACL subscription strings."). *Here:* `send --wait` checks only the SUBACK (`_subscribe()` in
-  `cli.py`), so a missing read grant on `delivery` ends in `no delivery result in time` rather
+  ACL subscription strings."). *Here:* `send --wait` checks only the SUBACK (`subscribe()` in
+  `cli/broker.py`), so a missing read grant on `delivery` ends in `no delivery result in time` rather
   than an error. The gateway needs `read` on `homeassistant/status` to see Home Assistant's birth
   message, as in the ACL in [mqtt-api.md](mqtt-api.md#securing-the-broker). Without `read` on its
   own topics, its own messages never come back: the gateway warns when its `online` does not
@@ -984,7 +984,8 @@ and of the pin in [`requirements/dev.in`](../requirements/dev.in), with Python 3
   then calls `on_disconnect` with "Unspecified error" (128) and, under `loop_start()`, tries again
   after the reconnect delay: a refusal does not stop it. *Verified:* MQTT 3.1.1 and 5. *Here:*
   `MqttBus._paho_connected()` checks `reason.is_failure` and logs the reason by name, as
-  `_Connection.on_connect()` in [`cli.py`](../src/meshcore_home_gateway/cli.py) does;
+  `Connection.on_connect()` in
+  [`cli/broker.py`](../src/meshcore_home_gateway/cli/broker.py) does;
   `_paho_disconnected()` uses the `_answered` flag to tell a refusal from a connection that was
   closed without an answer. *Check:* connect with a wrong password and print the reason and its
   `.value` in both callbacks: `Not authorized 135`, then `Unspecified error 128`, once per
@@ -1006,13 +1007,13 @@ and of the pin in [`requirements/dev.in`](../requirements/dev.in), with Python 3
   again. *Verified:* with `broker..example.org` and a 64-character label. *Here:* the
   configuration refuses such a host, since `_host_problem()` in
   [`config.py`](../src/meshcore_home_gateway/config.py) requires `host.encode("idna")` to succeed;
-  `_Connection.open()` in `cli.py` also catches `UnicodeError`. *Check:* `python3 -c 'import
+  `Connection.open()` in `cli/broker.py` also catches `UnicodeError`. *Check:* `python3 -c 'import
   socket; socket.getaddrinfo("broker..example.org", 1883)'` raises `UnicodeEncodeError`.
 * **An exception in a callback such as `on_message` ends paho's network thread; the client then
   receives nothing more while the program goes on.** `suppress_exceptions` is false by default
   (line 877). *Verified:* the second message after a raising `on_message` was never handled, and
   the thread had ended. *Here:* the commands' callbacks catch what a payload can raise
-  (`_DeliveryWatch.on_message()` and the `on_message` of `listen` in `cli.py`); `MqttBus` does not
+  (`_DeliveryWatch.on_message()` and the `on_message` of `listen` in `cli/messages.py`); `MqttBus` does not
   parse payloads in paho's thread, it hands them to the event loop (`_call()`). *Check:* raise in
   `on_message` under `loop_start()`: paho prints `Exception in thread paho-mqtt-client-…` and
   handles no further message.

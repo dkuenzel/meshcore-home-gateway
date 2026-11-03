@@ -35,7 +35,7 @@ src/meshcore_home_gateway/
   config.py      configuration loading, validation, rendering
   state.py       persistent state (command ledger)
   systemd.py     sd_notify
-  cli.py         command line
+  cli/           command line: the parser and main, a module per group of commands
   texts.py       Text and TextError: texts made where no language is known (pure)
   catalog.py     the PO reader and the MO writer (pure)
   i18n.py        languages, their choice and the catalogs (Translations, below)
@@ -107,7 +107,7 @@ Texts for people are translated through gettext catalogs
 [translations.md](translations.md). A text is marked where the code holds it, as a string
 literal, so that `make translations` finds it:
 
-* `tr("…", name=value)` in `cli.py`: a text the command line shows, in its language. `trn("…",
+* `tr("…", name=value)` in the command line (`cli/`): a text the command line shows, in its language. `trn("…",
   "…", count, name=value)` for a count; `{count}` is filled in. `tr_help("…")` for a help or
   description text: argparse %-formats it later, so it is never filled.
 * `N_("…")` marks a text in a table that is shown elsewhere (`tr(table[key], …)`); `N_ha("…")`

@@ -199,6 +199,8 @@ format, the command line and Home Assistant discovery are public interfaces
   service together and lists who hears of what
   ([ADR 0007](docs/decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)). Their log
   lines carry the new modules' names, such as `meshcore_home_gateway.outbox` for the deliveries.
+  The command line is a package with a module per group of commands
+  ([development.md](docs/development.md#layout)).
 
 ### Fixed
 

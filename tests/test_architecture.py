@@ -38,7 +38,11 @@ PURE = sorted(
 # The modules that choose a language; every other one makes Texts (texts.py), which these
 # translate where they show them.
 SPEAKING = {
-    "cli.py",
+    "cli/__init__.py",
+    "cli/common.py",
+    "cli/config_cmd.py",
+    "cli/contacts.py",
+    "cli/probe.py",
     "config.py",
     "mqtt/discovery.py",
     "mqtt/manage_entities.py",
@@ -99,7 +103,7 @@ ADAPTERS = {
     "meshcore_home_gateway.radio.transport",
     "meshcore_home_gateway.mqtt.client",
 }
-PUTS_IN_ADAPTERS = ("cli.py", "cli/", "wiring.py", "radio/", "mqtt/client.py")
+PUTS_IN_ADAPTERS = ("cli/", "wiring.py", "radio/", "mqtt/client.py")
 APPLICATION = sorted(
     path
     for path in PACKAGE.rglob("*.py")

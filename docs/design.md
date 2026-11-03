@@ -187,7 +187,7 @@ flowchart TB
 | `config` | TOML loading with strict validation; rendering from installer answers. |
 | `state` | The state file, read once and held in memory, its sections written together and atomically (§5.2); ledger of accepted command timestamps. |
 | `systemd` | Readiness, watchdog and status notifications. |
-| `cli` | Command-line entry points. |
+| `cli` | Command line: the parser and `main` (`cli/__init__.py`), a module per group of commands (`run`, `config_cmd`, `probe`, `messages`, `contacts`, `dashboard`) and what they share (`common`: exit codes, language; `broker`: the commands' MQTT client). |
 
 ### 5.2 Concurrency
 

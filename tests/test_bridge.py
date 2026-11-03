@@ -259,7 +259,7 @@ _RUNS: dict[Path, JsonStateFile] = {}  # the state file of the last run per dire
 
 def new_run(tmp_path: Path, *, crash: bool = False) -> JsonStateFile:
     """The state file of a run that starts on `tmp_path`, one for all its sections as the
-    service has (cli._serve), after the last run there stopped and wrote its state; after a
+    service has (wiring.serve), after the last run there stopped and wrote its state; after a
     `crash` what it had not written yet is lost."""
     if (last := _RUNS.pop(tmp_path, None)) is not None and not crash:
         assert last.flush()
