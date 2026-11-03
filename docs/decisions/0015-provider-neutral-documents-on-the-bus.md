@@ -132,3 +132,14 @@ providers pure.
   (mosquitto.conf(5), Mosquitto 2.0.18).
 * Revisit when a front end needs queries that request/result events cannot serve with acceptable
   latency, or when Homie support is requested.
+* Amended on 2026-11-03 (security and architecture review, SEC-005 and ARC-006), stating the
+  integrity model. The documents carry no origin, no time of publication by the gateway and no
+  signature: their consumers trust them because the broker's ACL lets only the gateway write
+  below `<base>/<node>/` (the request topics aside), which the gateway cannot see. It subscribes
+  to its retained topics and undoes what another client writes there: its own payload again, or
+  an empty one where it has published nothing in this run, at most every 10 seconds per topic,
+  with a warning; it warns when it cannot read them (a refused subscription, or its own `online`
+  that does not come back). A forgery so stands until its copy reaches the gateway, and while
+  the gateway is offline. A stamp of the publication time was left out: it would change every
+  document at every publish, and a forger copies it. A signature over the document waits until a
+  consumer can check one; Home Assistant's templates cannot.

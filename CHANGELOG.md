@@ -24,6 +24,9 @@ format, the command line and Home Assistant discovery are public interfaces
 - `check-config --broker` logs in once more without credentials and warns when the broker takes
   such a client: then only its ACL keeps anyone who reaches it off the gateway's topics
   ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)).
+- The gateway subscribes to its retained topics (`availability`, `state`, `stats`, `contacts`,
+  `contacts/<key>`, `nodes`, `history`, `settings`), to undo what other clients write there
+  (*Security*); its user needs read access to them, as the documented ACL gives it.
 
 ### Changed
 
@@ -72,6 +75,15 @@ format, the command line and Home Assistant discovery are public interfaces
   one already due is kept, and announcements after births and discovery clears come at most
   every 30 seconds. More than 5 births in a minute are logged with the topic
   ([home-assistant.md](docs/home-assistant.md#how-discovery-behaves)).
+- What another broker client writes on the gateway's retained topics, a forged position for a
+  presence automation for example, or an empty message that makes a contact's entities unknown,
+  is undone: the gateway publishes its own payload again, or clears a topic where it has
+  published nothing in this run, at once and then at most every 10 seconds per topic, and the log
+  names the topic. The log also says when the gateway cannot read its own topics: a broker
+  refused a subscription, or its `online` did not come back within 10 seconds (Mosquitto's
+  `acl_file` grants every subscription)
+  ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker),
+  [ADR 0015](docs/decisions/0015-provider-neutral-documents-on-the-bus.md)).
 
 ## [1.1.0a4] - 2026-10-31
 

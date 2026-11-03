@@ -40,7 +40,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SEC-002 | fix | Host clock plausibility bounds before the write (the release date, ten years, and `[radio] set_clock_max_days`, default 30 days, 0 to force, instead of the planned `set_clock = "always"` and an hour: the firmware restarts a radio at its contacts' newest time, so an hour would refuse a radio unplugged for a night), the radio's clock offset in `state`, `After=time-sync.target`, recovery documented | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | SEC-003 | fix | Exact wording of the risk (key export and import, no forward secrecy) everywhere the TCP interface is mentioned; a TCP radio now needs `[radio] tcp_unauthenticated = true` (**Breaking**); detection of a contested link from the radio's uptime; the installer warns | pending: tcp |
 | SEC-004 | fix | Warnings at start and in `check-config` for a broker without credentials or TLS; an anonymous-access probe in `check-config --broker`; commands over such a broker need `[mqtt] insecure = true` (**Breaking**; a broker on the gateway's host or link needs no TLS, as the review proposed); the installer asks for TLS and confirms an empty user name | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
-| SEC-005 | fix | The gateway subscribes to its own documents and restores any it finds changed by another client (rate-limited, with a warning); the integrity model is stated. Stamps (`published_at`) are not added: they would change every document at every publish and a forger copies them | pending: documents |
+| SEC-005 | fix | The gateway subscribes to its own documents and restores any it finds changed by another client (rate-limited, with a warning); the integrity model is stated. Stamps (`published_at`) are not added: they would change every document at every publish and a forger copies them | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | SEC-006 | fix | Announcements after a birth are never postponed past the first due time and come at most every 30 s; repeated births are logged; the default client id gets a random suffix per start (**Breaking**) | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | SEC-007 | fix | `name_taken` in the `nodes` document and the `node` event, a mark in the select's labels, contact devices of the same name disambiguated by their key digits; names compared after NFKC and case folding | pending: names |
 | SEC-008 | fix | `[homeassistant] controls` separates Home Assistant's controls from the function (MQTT and the command line keep working); `[targets.<alias>] expose = false` hides a target's notify entity; the guide explains Home Assistant's user model | pending: ha-exposure |
@@ -63,7 +63,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ARC-003 | fix | A `ports` module with the radio events and the radio port the application uses; the architecture test forbids the application modules to import the adapters | pending: structure |
 | ARC-004 | fix | One state store for `state.json`, loaded once, every section in memory, written once per change set and at once for the ledger | pending: state-store |
 | ARC-005 | fix | The message budget's level is kept across restarts, never below what one long message needs, so the first alert after a restart still goes out at once; ADR 0008 names the radio's own limiter as the regulatory backstop | pending: outbox |
-| ARC-006 | fix | Through SEC-005; the integrity model in ADR 0015 (dated note) and the threat model | pending: documents |
+| ARC-006 | fix | Through SEC-005; the integrity model in ADR 0015 (dated note) and the threat model | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | ARC-007 | fix | Dated notes with today's sizes in ADR 0002 and ADR 0004; a module size that asks for a split in `CONTRIBUTING.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-008 | fix | The amendment practice stated in ADR 0001 and `CONTRIBUTING.md`: dated amendments may narrow or correct a record, a reversal needs a new one | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-009 | fix | Wiring in one module, `bridge.py` split into outbox, inbox and announcer | pending: structure |
@@ -187,7 +187,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-005 | fix | Through SEC-016 | pending: privacy |
 | IMP-006 | fix | Through SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | IMP-007 | fix | Through SEC-004 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
-| IMP-008 | fix | Through SEC-005 (healing); stamps rejected there, an HMAC signature deferred until a consumer can verify it (EXT-012) | pending: documents |
+| IMP-008 | fix | Through SEC-005 (healing); stamps rejected there, an HMAC signature deferred until a consumer can verify it (EXT-012) | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | IMP-009 | fix | Through SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | IMP-010 | fix | Through SEC-007 | pending: names |
 | IMP-011 | fix | Through SEC-008 | pending: ha-exposure |

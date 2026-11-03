@@ -32,6 +32,10 @@ system. The threat model, the trust boundaries and the mitigations are described
   ([ADR 0009](docs/decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 - The gateway never executes anything itself; it publishes events that the home automation
   evaluates.
+- Its events and documents carry no origin: consumers trust them because the broker's ACL lets
+  only the gateway write its topics, which the gateway cannot check
+  ([securing the broker](docs/mqtt-api.md#securing-the-broker)). It undoes what another client
+  writes on its retained documents, but cannot keep a forged event from being delivered.
 - Outbound traffic is limited to configured targets and an airtime budget
   ([ADR 0008](docs/decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)).
 - The MeshCore TCP companion interface has no authentication in either direction: any client
