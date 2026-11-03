@@ -68,6 +68,7 @@ from tests.test_bridge import (
     OfflineBus,
     Unreachable,
     make_config,
+    run_state,
     running,
     scenario,
 )
@@ -194,6 +195,30 @@ def no_path_writes(radio: EmulatedRadio) -> bool:
     """Telemetry never resets or writes a path, nor any contact."""
     writes = {Command.RESET_PATH, Command.ADD_UPDATE_CONTACT, Command.REMOVE_CONTACT}
     return not radio.path_resets and not writes & set(radio.commands())
+
+
+def test_a_flood_is_on_the_disk_at_once(tmp_path: Path) -> None:
+    """So that a crash cannot repeat it: the schedule is written right after the flood, not
+    with the state file's next status tick (a minute here)."""
+    remote = RemoteCompanion(hops=1)
+    radio = EmulatedRadio(contacts=[ALICE], remotes={ALICE.public_key: remote})
+
+    def floods_on_disk() -> int:
+        saved = JsonStateFile(tmp_path / "state.json").load().get("telemetry", {})
+        return len(saved.get("floods_age_s", []))
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (_b, bus, _n):
+            radio.advertise(ALICE)
+            await bus.wait_for(f"/contacts/{ALICE.public_key.hex()}", positioned)
+            assert radio.telemetry_requests == [(ALICE.public_key, True)]
+            for _ in range(300):
+                if floods_on_disk():
+                    break
+                await asyncio.sleep(0.01)
+            assert floods_on_disk() == 1
+
+    scenario(main)
 
 
 def test_a_live_message_lets_a_contact_without_a_path_be_flooded(tmp_path: Path) -> None:
@@ -612,7 +637,7 @@ def keeping(tmp_path: Path, closing: list[History] | None = None) -> Callable[[F
             history = History.open(tmp_path / "history.sqlite3")
             closing.append(cast(History, history))
         exclusions = TelemetryExclusions(tmp_path / EXCLUSIONS_FILE)
-        current = CurrentDocuments(JsonStateFile(tmp_path / "state.json"))
+        current = CurrentDocuments(run_state(tmp_path))
         return Observer(bus, Topics("meshcore", "radio1"), history=history,
                         exclusions=exclusions, wall_clock=lambda: NOW, current=current)  # fmt: skip
 
@@ -1526,7 +1551,8 @@ def rig(
 
 
 def saved_hold(store: JsonStateFile) -> object:
-    return store.load()["telemetry"]["hold_left_s"]
+    """As the disk holds it: what a crash would leave."""
+    return JsonStateFile(store.path).load()["telemetry"]["hold_left_s"]
 
 
 def changes(monkeypatch: pytest.MonkeyPatch, r: Rig) -> list[str]:

@@ -129,12 +129,24 @@ format, the command line and Home Assistant discovery are public interfaces
   ([ADR 0016](docs/decisions/0016-history-in-a-local-sqlite-database.md)).
 - A warning when the event loop was held up for a second or more: the host gives the container
   no CPU, or its disk is slow (a backup, swapping).
+- `state.json` is read once and held in memory as one store for every part of the gateway, and
+  written whole at the status tick (every 30 s) and at the stop, so a table read costs one write
+  instead of one per part; what a crash must not lose is written at once: the newest command time
+  per sender, the kept documents and advert checks, the telemetry schedule after a flood and the
+  radio profile's attempts ([design.md](docs/design.md#52-concurrency)).
+- The slugs of the entity IDs of contacts that left the radio's table are kept for 90 days and
+  at most 1 000, the newest; the radio profile's memory for the current radio and the two saved
+  before it. Both grew with every contact and radio there ever was.
 
 ### Fixed
 
 - A stall of the host longer than a radio command's timeout (5 s), such as a backup of the
   Proxmox host, ended the radio session although the radio's answer had come meanwhile, and the
   gateway reconnected; it now takes the answer.
+- A state file moved aside as unreadable, or replaced while the service ran, lost the sections
+  written only when they change (the contact devices and their slugs, the components, the kept
+  documents) until they changed again, days later; a restart meanwhile announced the devices
+  afresh. Every write now carries every section.
 
 ### Security
 

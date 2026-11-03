@@ -41,7 +41,7 @@ from meshcore_home_gateway.mqtt.contact_devices import (
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import ContactFlag, NodeType
-from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
+from meshcore_home_gateway.state import SLUG_KEEP_S, ContactDeviceRecords, JsonStateFile
 from meshcore_home_gateway.views import contact_document
 from tests.radio_emulator import LPP_ALL_READINGS
 from tests.test_discovery import SPOKEN, STATE_KEYS, speak, template_keys
@@ -97,10 +97,23 @@ def devices(
     tmp_path: Path, limit: int = 50, clock: Clock | None = None, config: Config = CONFIG,
     **options: Any,
 ) -> tuple[ContactDevices, Recorder]:  # fmt: skip
+    """A run of the gateway on the state in `tmp_path`; another call is its restart, after the
+    stop has written the state (as the bridge does)."""
     config = replace(config, homeassistant=replace(config.homeassistant, contact_devices=limit))
     bus = Recorder()
-    records = ContactDeviceRecords(JsonStateFile(tmp_path / "state.json"))
+    store = _RUNNING[tmp_path] = stopped(tmp_path)
+    records = ContactDeviceRecords(store)
     return ContactDevices(config, TOPICS, bus, records, wall_clock=clock or Clock(), **options), bus
+
+
+_RUNNING: dict[Path, JsonStateFile] = {}  # the state file of the last run per directory
+
+
+def stopped(tmp_path: Path) -> JsonStateFile:
+    """The state file as the last run on it left it at its stop."""
+    if (store := _RUNNING.pop(tmp_path, None)) is not None:
+        assert store.flush()
+    return JsonStateFile(tmp_path / "state.json")
 
 
 def topic(key: str) -> str:
@@ -696,6 +709,21 @@ def test_a_contact_that_returns_keeps_its_entity_ids(tmp_path: Path) -> None:
     assert ids == {"Alice phone": "notify.mesh_alice", "Alice": f"notify.mesh_alice_{BOB[:4]}"}
 
 
+def test_a_contact_gone_for_months_is_named_anew(tmp_path: Path) -> None:
+    """CODE-003: a slug stays SLUG_KEEP_S after its contact left the table, then it goes."""
+    clock = Clock()
+    contacts, bus = devices(tmp_path, clock=clock)
+    mesh = mesh_of(node(ALICE, "Alice"))
+    contacts.update(mesh)
+    contacts.update(mesh_of(mesh=mesh))  # Alice left
+    clock.now += SLUG_KEEP_S
+    contacts.update(mesh_of(mesh=mesh))
+    bus.take()
+    contacts.update(mesh_of(node(ALICE, "Alice phone"), mesh=mesh))
+    ((_, document),) = [(t, d) for t, d in bus.take() if t == topic(ALICE) and d]
+    assert document["cmps"]["send"]["default_entity_id"] == "notify.mesh_alice_phone"
+
+
 def test_a_pending_removal_ends_after_a_month(tmp_path: Path) -> None:
     clock = Clock()
     contacts, bus = devices(tmp_path, clock=clock)
@@ -934,7 +962,7 @@ def test_an_empty_document_of_a_device_it_does_not_know_is_ignored(tmp_path: Pat
     contacts.discovery_message(topic(BOB), b"", retained=False)
     contacts.discovery_message(f"homeassistant/device/{GATEWAY}/config", b"", retained=False)
     assert bus.take() == []
-    assert set(ContactDeviceRecords(JsonStateFile(tmp_path / "state.json")).announced) == {ALICE}
+    assert set(ContactDeviceRecords(stopped(tmp_path)).announced) == {ALICE}
 
 
 def test_showing_hidden_contacts_before_the_first_table_read(tmp_path: Path) -> None:
@@ -944,7 +972,7 @@ def test_showing_hidden_contacts_before_the_first_table_read(tmp_path: Path) -> 
     restarted, bus = devices(tmp_path)
     restarted.show_hidden()
     assert [e["event_type"] for _, e in bus.take()] == ["shown"]
-    assert ContactDeviceRecords(JsonStateFile(tmp_path / "state.json")).hidden == set()
+    assert ContactDeviceRecords(stopped(tmp_path)).hidden == set()
 
 
 def test_the_copies_home_assistant_sends_while_it_removes_are_no_deletion(tmp_path: Path) -> None:

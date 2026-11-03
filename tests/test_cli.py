@@ -689,7 +689,8 @@ def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file
     assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
     (bridge,) = bridges
     bridge.observer.publish_all()  # the broker connected: telemetry is off now
-    assert store.load()["current_contacts"]["a1" * 32]["telemetry_state"] == "off"
+    stored = JsonStateFile(tmp_path / "state.json").load()  # written at once
+    assert stored["current_contacts"]["a1" * 32]["telemetry_state"] == "off"
 
 
 def test_the_service_keeps_the_advert_checks_in_its_state_file(

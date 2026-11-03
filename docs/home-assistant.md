@@ -161,7 +161,8 @@ switching sharing off, [companions.md](companions.md#positions-in-adverts)).
 
 * **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
-  IDs, also when the contact leaves the table and comes back. Two contacts with the same name: the second gets the first four digits of its key added.
+  IDs, also when the contact leaves the table and comes back within 90 days (the gateway keeps
+  the names of at most 1 000 contacts that left). Two contacts with the same name: the second gets the first four digits of its key added.
   Home Assistant numbers an ID that is already taken (another gateway with the same contact) with
   `_2`.
 * **Too many contacts**: at most `homeassistant.contact_devices` (default 50) get a device, first
