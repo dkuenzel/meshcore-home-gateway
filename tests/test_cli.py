@@ -34,6 +34,7 @@ from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, JsonStateFile
+from meshcore_home_gateway.wiring import transport_for
 from tests.conftest import Broker
 from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio, TcpRadioServer
 from tests.test_mqtt_client import FakePaho
@@ -510,10 +511,10 @@ def test_probe_tcp_addresses(text: str, address: tuple[str, int]) -> None:
 
 
 def test_the_service_opens_the_configured_radio() -> None:
-    serial = cli_module.transport_for(load_config(EXAMPLE))
+    serial = transport_for(load_config(EXAMPLE))
     assert isinstance(serial, SerialTransport)
     assert serial.device == "/dev/serial/by-id/usb-Example_Radio_0001-if00"
-    tcp = cli_module.transport_for(
+    tcp = transport_for(
         parse_config(
             '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
             'host = "192.0.2.10"\nport = 5001\n'

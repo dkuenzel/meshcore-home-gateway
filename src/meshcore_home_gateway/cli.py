@@ -48,7 +48,6 @@ from meshcore_home_gateway.protocol.codes import ContactFlag, TelemetryMode
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.core.profile import Plan
-    from meshcore_home_gateway.ports import Transport
     from meshcore_home_gateway.state import ProfileRecords
 
 EX_OK, EX_FAILURE, EX_USAGE, EX_CONFIG = 0, 1, 2, 78
@@ -380,107 +379,15 @@ def _run(args: argparse.Namespace) -> int:
 
 
 async def _serve(config: Config, state_dir: Path) -> int:
-    from meshcore_home_gateway.bridge import (  # noqa: PLC0415 - light start
-        Bridge,
-        ha_device_topics,
-        protected_keys,
-        protected_names,
-    )
-    from meshcore_home_gateway.history import History, Retention  # noqa: PLC0415
-    from meshcore_home_gateway.mqtt.client import MqttBus  # noqa: PLC0415
-    from meshcore_home_gateway.mqtt.contact_devices import ContactDevices  # noqa: PLC0415
-    from meshcore_home_gateway.mqtt.discovery import gateway_names  # noqa: PLC0415
-    from meshcore_home_gateway.mqtt.manage_entities import OBJECT_ID  # noqa: PLC0415
-    from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
-    from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
-    from meshcore_home_gateway.radio.profile import RadioProfile  # noqa: PLC0415
-    from meshcore_home_gateway.radio.session import default_session_factory  # noqa: PLC0415
-    from meshcore_home_gateway.state import (  # noqa: PLC0415
-        EXCLUSIONS_FILE,
-        AdvertChecks,
-        AnnouncedComponents,
-        CommandLedger,
-        ContactDeviceRecords,
-        CurrentDocuments,
-        JsonStateFile,
-        ProfileRecords,
-        RetainedKeys,
-        TelemetryExclusions,
-        TelemetryRecords,
-    )
+    from meshcore_home_gateway.wiring import serve  # noqa: PLC0415 - light start
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
-    topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
-    ha = config.homeassistant
-    ha_status = ha.status_topic if ha.discovery else None
-    bus = MqttBus(config.mqtt, topics, ha_status, ha_devices=ha_device_topics(config))
-    store = JsonStateFile(state_dir / "state.json")
-    history = None
-    if config.history.enabled:
-        days = config.history
-        retention = Retention(
-            days.messages_days, days.positions_days, readings_days=days.readings_days
-        )
-        history = History.open(state_dir / "history.sqlite3", retention)
-    protected = protected_keys(config)
-    exclusions = TelemetryExclusions(  # also while telemetry is off
-        state_dir / EXCLUSIONS_FILE,
-        household=config.telemetry.ask == "household",
-        protected=protected,
-    )
-    observer = Observer(
-        bus,
-        topics,
-        history=history,
-        retained=RetainedKeys(store, "contacts"),
-        protected=protected,
-        exclusions=exclusions,
-        current=CurrentDocuments(store),
-        advert_checks=AdvertChecks(store),
-        names=gateway_names(config),
-    )
-    profile = RadioProfile(
-        config.radio.profile, ProfileRecords(store), protected=protected_names(config)
-    )
-    devices = None
-    if ha.discovery:  # also with no devices allowed: those of an earlier run are removed
-        records = ContactDeviceRecords(store)
-        devices = ContactDevices(config, topics, bus, records, protected=protected)
-    bridge = Bridge(
-        config,
-        bus,
-        lambda: transport_for(config),
-        CommandLedger(store),
-        session_factory=default_session_factory,
-        components=AnnouncedComponents(store),
-        observer=observer,
-        devices=devices,
-        profile=profile,
-        manage_components=AnnouncedComponents(store, OBJECT_ID),
-        telemetry_records=TelemetryRecords(store),
-        state_dir=state_dir,
-    )
-    try:
-        await bridge.run(stop)
-    finally:
-        if history is not None:
-            history.close()
+    await serve(config, state_dir, stop)
     log.info("meshcore-home-gateway stopped")
     return EX_OK
-
-
-def transport_for(config: Config) -> Transport:
-    from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
-
-    radio = config.radio
-    if radio.transport == "serial":
-        assert radio.device is not None  # noqa: S101 - validated by the configuration
-        return SerialTransport(radio.device)
-    assert radio.host is not None  # noqa: S101 - validated by the configuration
-    return TcpTransport(radio.host, radio.port)
 
 
 def setup_logging(level: str) -> None:
@@ -508,7 +415,7 @@ def _check_config(args: argparse.Namespace) -> int:
     print(tr("configuration {path}: valid", path=args.config))
     for line in _summary(config, login):
         print(line)
-    from meshcore_home_gateway.bridge import start_warnings  # noqa: PLC0415
+    from meshcore_home_gateway.config_checks import start_warnings  # noqa: PLC0415
 
     for warning in start_warnings(config):
         print(PREFIX + tr("warning: {detail}", detail=warning), file=sys.stderr)
@@ -683,7 +590,7 @@ def _dashboard(args: argparse.Namespace) -> int:
 
 
 def _probe(args: argparse.Namespace) -> int:
-    from meshcore_home_gateway.bridge import protected_names  # noqa: PLC0415
+    from meshcore_home_gateway.config_checks import protected_names  # noqa: PLC0415
     from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport  # noqa: PLC0415
     from meshcore_home_gateway.state import JsonStateFile, ProfileRecords  # noqa: PLC0415
 

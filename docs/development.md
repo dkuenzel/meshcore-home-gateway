@@ -27,7 +27,11 @@ src/meshcore_home_gateway/
   protocol/      companion protocol: framing, codec (pure)
   radio/         transports (serial, TCP) and the companion session
   mqtt/          topics, payloads, Home Assistant discovery, paho adapter
-  bridge.py      application service: outbox, inbox, status, supervision
+  ports.py       the ports: what the application asks of the radio and the bus
+  wiring.py      puts the service together: the adapters, the parts and who hears of what
+  bridge.py      application service: radio supervision, the radio's events, the tasks
+  outbox.py      the outgoing queue and its delivery; inbox.py: received messages, commands
+  announcer.py   announcements to Home Assistant; status.py: the state document
   config.py      configuration loading, validation, rendering
   state.py       persistent state (command ledger)
   systemd.py     sd_notify

@@ -194,8 +194,11 @@ format, the command line and Home Assistant discovery are public interfaces
   each such reference resolving.
 - For developers: the application reaches the radio and the bus through one module of ports
   (`meshcore_home_gateway.ports`), and a test keeps it from importing the companion session, the
-  transports or the MQTT client
-  ([ADR 0007](docs/decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)).
+  transports or the MQTT client. The bridge's outbox, received messages, announcements to Home
+  Assistant and state document are modules of their own, and one module (`wiring.py`) puts the
+  service together and lists who hears of what
+  ([ADR 0007](docs/decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)). Their log
+  lines carry the new modules' names, such as `meshcore_home_gateway.outbox` for the deliveries.
 
 ### Fixed
 

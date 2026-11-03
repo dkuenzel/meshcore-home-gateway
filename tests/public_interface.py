@@ -50,7 +50,7 @@ import paho.mqtt.client as paho
 from meshcore_home_gateway import __version__, cli, i18n, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway import observer as observer_module
-from meshcore_home_gateway.bridge import Bridge, ha_device_topics
+from meshcore_home_gateway.announcer import ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.contact_manager import Job
 from meshcore_home_gateway.core import lpp, profile
@@ -119,6 +119,7 @@ from meshcore_home_gateway.state import (
     JsonStateFile,
     ProfileRecords,
 )
+from meshcore_home_gateway.wiring import gateway
 from tests.radio_emulator import (
     LPP_ALL,
     LPP_ALL_READINGS,
@@ -561,7 +562,7 @@ async def _published(tmp: Path) -> _Paho:
     store = JsonStateFile(tmp / "state.json")
     records = ContactDeviceRecords(store)
     devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: T)
-    bridge = Bridge(
+    bridge = gateway(
         config,
         bus,
         _no_radio,
@@ -620,17 +621,17 @@ async def _published(tmp: Path) -> _Paho:
             drift={profile.ADVERT_LOCATION: 1},
         )
     )
-    bridge._deliver_event(DeliveryEvent("id", ALIAS, DeliveryState.CONFIRMED, text="Hello"))
-    bridge._publish_announcements()  # discovery, the controls, the contacts' devices; state
-    bridge._radio_ready.set()
-    bridge._publish_state()  # the radio connected
-    bridge._radio_ready.clear()
+    bridge.outbox._deliver_event(DeliveryEvent("id", ALIAS, DeliveryState.CONFIRMED, text="Hello"))
+    bridge.announcer.announce()  # discovery, the controls, the contacts' devices; state
+    bridge.radio.ready.set()
+    bridge.status.publish()  # the radio connected
+    bridge.radio.ready.clear()
     devices.discovery_message(contact_discovery_topic(config, KEY), b"", False)  # hidden
     devices.show_hidden()
     message = InboundMessage(MessageKind.CONTACT, f"{WORD} now", int(T), T, sender_prefix=KEY[:12])
     book = ContactBook([Contact(KEY, "Alice")])
     session = cast(CompanionSession, SimpleNamespace(contacts=book, refresh_contacts=_refreshed))
-    await bridge._on_message(MessageReceived(message, session, 0, False))
+    await bridge.inbox._on_message(MessageReceived(message, session, 0, False))
     bridge._contacts.accept(ContactRequest("add", KEY_N.encode(), retained=True))  # refused
     bridge._contacts.accept(ContactRequest("remove", b"", retained=True, key=KEY))  # refused
     for state in (b"off", b"on"):  # excluded, included

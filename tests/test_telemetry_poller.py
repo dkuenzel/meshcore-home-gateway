@@ -17,9 +17,11 @@ from typing import Any, cast
 
 import pytest
 
+from meshcore_home_gateway import announcer as announcer_module
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import health
 from meshcore_home_gateway import observer as observer_module
+from meshcore_home_gateway import outbox as outbox_module
 from meshcore_home_gateway import telemetry_poller as poller_module
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core import lpp, telemetry
@@ -92,10 +94,10 @@ def wide(capacity: Costs, now: float) -> tuple[AirtimeBudget, AirtimeBudget]:
 
 @pytest.fixture(autouse=True)
 def fast(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 0.05)
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 0.15)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 0.05)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 0.15)
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
-    monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
+    monkeypatch.setattr(announcer_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
     monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)
     monkeypatch.setattr(poller_module, "QUIET_S", 0.05)
@@ -154,7 +156,7 @@ def test_a_companion_answers_and_its_position_reaches_its_document_and_tracker(
             device = await bus.wait_for(f"/contact_{KEY}/config", lambda d: "position" in d["cmps"])
             assert device["cmps"]["position"]["p"] == "device_tracker"
             assert radio.telemetry_requests == [(DANA.public_key, False)]
-            state = bridge.state_payload()
+            state = bridge.status.payload()
             assert state["telemetry"] == "on"
             assert state["telemetry_airtime_1h_s"] == pytest.approx(0.378, abs=0.001)
             assert state["telemetry_mesh_airtime_1h_s"] == pytest.approx(0.887, abs=0.001)
@@ -169,7 +171,7 @@ def test_telemetry_is_off_unless_enabled(tmp_path: Path) -> None:
         async with running(make_config(), radio, tmp_path) as (bridge, _bus, _notes):
             await asyncio.sleep(0.3)
             assert requests(radio) == 0
-            state = bridge.state_payload()
+            state = bridge.status.payload()
             assert (state["telemetry"], state["telemetry_airtime_1h_s"]) == ("off", None)
 
     scenario(main)
@@ -277,7 +279,7 @@ def test_a_flood_whose_sent_never_came_counts_as_sent(tmp_path: Path) -> None:
             await bus.wait_for("/state", lambda d: d["radio"] == "connected")
             await asyncio.sleep(0.6)  # three retry times
             assert requests(radio) == 1
-            assert bridge.state_payload()["telemetry_mesh_airtime_1h_s"] > 20
+            assert bridge.status.payload()["telemetry_mesh_airtime_1h_s"] > 20
 
     scenario(main)
 
@@ -445,7 +447,7 @@ def test_telemetry_stops_where_it_cannot_work(
                 assert requests(radio) == 1
                 return
             assert requests(radio) <= 1
-            assert bridge.state_payload()["telemetry"] == status
+            assert bridge.status.payload()["telemetry"] == status
 
     scenario(main)
 
@@ -480,7 +482,7 @@ def test_a_busy_radio_pauses_the_polls(tmp_path: Path) -> None:
             await bus.wait_for(f"/contacts/{eve.public_key.hex()}", positioned)
             assert requests(radio) == 3
             assert times[1] - times[0] >= poller_module.BUSY_PAUSE_S
-            used = bridge.state_payload()["telemetry_airtime_1h_s"]
+            used = bridge.status.payload()["telemetry_airtime_1h_s"]
             assert used == pytest.approx(2 * 0.378, abs=0.01)  # the refused one cost nothing
 
     scenario(main)
@@ -518,7 +520,7 @@ def test_the_radios_own_time_on_air_pauses_telemetry(
     async def main() -> None:
         async with running(config(), radio, tmp_path) as (bridge, _bus, _notes):  # empty lanes
             radio.tx_airtime_s = 41 + 180
-            await until(lambda: bridge.state_payload()["telemetry"] == "paused")
+            await until(lambda: bridge.status.payload()["telemetry"] == "paused")
             radio.tx_airtime_s = 41 + 200
             await asyncio.sleep(0.3)
             assert requests(radio) == 0
@@ -535,14 +537,14 @@ def test_a_message_queued_while_a_request_waits_for_the_radio_withdraws_it(
     async def main() -> None:
         async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _):
             await bus.wait_for(f"/contacts/{KEY}", positioned)  # the first; the next in 0.5 s
-            session, poller = bridge.live_session(), bridge._telemetry
+            session, poller = bridge.radio.live(), bridge._telemetry
             assert session is not None
             assert poller is not None
             assert isinstance(session, CompanionSession)
             async with session._lock:  # another command holds the radio
                 await until(lambda: poller._sending == KEY)
                 bus.send("alerts", "intruder")
-                await until(lambda: bridge._activity.busy)
+                await until(lambda: bridge.outbox.activity.busy)
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
             await until(lambda: requests(radio) == 2)
             commands = radio.commands()
@@ -560,7 +562,7 @@ def test_a_flooded_answer_is_charged_from_the_packet_log(tmp_path: Path, same_wr
     async def main() -> None:
         async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _n):
             await bus.wait_for(f"/contacts/{KEY}", positioned)
-            mesh = bridge.state_payload()["telemetry_mesh_airtime_1h_s"]
+            mesh = bridge.status.payload()["telemetry_mesh_airtime_1h_s"]
             assert mesh == pytest.approx(0.887 + 11.75, abs=0.01)
 
     scenario(main)
@@ -844,12 +846,12 @@ def test_answers_expire_while_telemetry_is_paused_without_an_event(
             await bus.wait_for("/telemetry", lambda e: e["event_type"] == "answered")
             radio.manual_add = False  # the radio adds contacts by itself, from its next start
             radio.disconnect()
-            await until(lambda: bridge.state_payload()["telemetry_reason"] == "auto_add")
+            await until(lambda: bridge.status.payload()["telemetry_reason"] == "auto_add")
             asked = requests(radio)
             await bus.wait_for(f"/contacts/{KEY}", lambda d: d["telemetry_state"] == "away")
             assert requests(radio) == asked
             assert [e["event_type"] for e in events(bus)] == ["answered"]
-            assert bridge.state_payload()["telemetry"] == "paused"
+            assert bridge.status.payload()["telemetry"] == "paused"
 
     scenario(main)
 
@@ -912,7 +914,7 @@ def test_with_telemetry_off_exclusions_are_kept_and_reported(tmp_path: Path) -> 
             ask(bus, b"on")
             await bus.wait_for("/contact", lambda e: e["event_type"] == "included")
             assert bus.payloads(f"/contacts/{KEY}")[-1]["telemetry_state"] == "off"
-            assert (requests(radio), bridge.state_payload()["telemetry"]) == (0, "off")
+            assert (requests(radio), bridge.status.payload()["telemetry"]) == (0, "off")
 
     scenario(main)
 
@@ -932,12 +934,12 @@ def test_by_default_telemetry_asks_after_the_first_start_hold(
             _bus,
             _notes,
         ):
-            await until(lambda: bridge.state_payload()["telemetry_reason"] == "first_start")
+            await until(lambda: bridge.status.payload()["telemetry_reason"] == "first_start")
             held = time.monotonic()
             assert requests(radio) == 0
             await until(lambda: requests(radio) == 1, within_s=5)
             assert time.monotonic() - held > 1.5
-            state = bridge.state_payload()
+            state = bridge.status.payload()
             assert (state["telemetry"], state["telemetry_reason"]) == ("on", None)
 
     scenario(main)
@@ -1225,7 +1227,7 @@ def test_a_direct_request_whose_sent_never_came_counts_and_the_polls_go_on(tmp_p
         async with running(config(), radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _):
             await bus.wait_for(f"/contacts/{KEY}", positioned, within_s=5)  # after the reconnect
             assert requests(radio) == 2
-            used = bridge.state_payload()["telemetry_airtime_1h_s"]
+            used = bridge.status.payload()["telemetry_airtime_1h_s"]
             assert used == pytest.approx(2 * 0.378, abs=0.01)  # the lost one counted
 
     scenario(main)

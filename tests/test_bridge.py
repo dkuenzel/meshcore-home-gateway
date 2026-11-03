@@ -15,11 +15,17 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway import announcer as announcer_module
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import health as health_module
+from meshcore_home_gateway import inbox as inbox_module
 from meshcore_home_gateway import observer as observer_module
-from meshcore_home_gateway.bridge import Bridge, broker_warnings, ha_device_topics, start_warnings
+from meshcore_home_gateway import outbox as outbox_module
+from meshcore_home_gateway import status as status_module
+from meshcore_home_gateway.announcer import ha_device_topics
+from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
+from meshcore_home_gateway.config_checks import broker_warnings, start_warnings
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.core.telemetry import LaneFactory
@@ -29,6 +35,7 @@ from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.outbox import Delivery
 from meshcore_home_gateway.ports import ContactRequest, RadioEvent, SendRequest, Transport
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
@@ -45,6 +52,7 @@ from meshcore_home_gateway.state import (
     TelemetryRecords,
 )
 from meshcore_home_gateway.telemetry_poller import TelemetryPoller
+from meshcore_home_gateway.wiring import gateway
 from tests.radio_emulator import (
     SELF_KEY,
     START_TIME,
@@ -177,11 +185,11 @@ def fast_sessions(
 
 @pytest.fixture(autouse=True)
 def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 0.05)
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 0.15)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 0.05)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 0.15)
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
-    monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
-    monkeypatch.setattr(bridge_module, "ANNOUNCE_MIN_INTERVAL_S", 0)  # its own test has it
+    monkeypatch.setattr(announcer_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
+    monkeypatch.setattr(announcer_module, "ANNOUNCE_MIN_INTERVAL_S", 0)  # its own test has it
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
     # the nodes document follows every change: the tests check its content, not its rate
     monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)
@@ -215,7 +223,7 @@ async def running(
     if devices:
         records = ContactDeviceRecords(store)
         contact_devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: NOW)
-    bridge = Bridge(
+    bridge = gateway(
         config,
         bus,
         transport or (lambda: radio),
@@ -379,7 +387,7 @@ def test_acknowledgement_arriving_before_a_retry_ends_the_delivery(tmp_path: Pat
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
             # attempt 2 waits ~1.2 s for airtime: the acknowledgement comes long before it, also on
             # a loaded CI runner (a margin of 50 ms once was not enough on Python 3.11)
-            bridge._budget._tokens, bridge._budget._rate = 0.0, 0.5
+            bridge.outbox.budget._tokens, bridge.outbox.budget._rate = 0.0, 0.5
             await asyncio.sleep(0.25)
             from meshcore_home_gateway.protocol.codec import expected_ack
             from tests.radio_emulator import SELF_KEY
@@ -492,9 +500,9 @@ def test_a_stop_waits_for_the_acknowledgement_of_the_message_in_flight(
 ) -> None:
     """The radio stays open until it comes (for at most STOP_OUTBOX_S): a message that left is
     not repeated after the restart for want of a minute."""
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 5.0)
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 5.0)
-    monkeypatch.setattr(bridge_module, "STOP_OUTBOX_S", 3.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 5.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 5.0)
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 3.0)
     radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
     buses: list[FakeBus] = []
 
@@ -528,7 +536,7 @@ def test_a_message_unacknowledged_in_the_stop_is_kept_for_its_next_attempt(
 ) -> None:
     """Its wait ends within the stop without an acknowledgement: the next attempt is the next
     start's."""
-    monkeypatch.setattr(bridge_module, "STOP_OUTBOX_S", 3.0)
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 3.0)
     radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
 
     async def main() -> None:
@@ -547,9 +555,9 @@ def test_a_message_whose_acknowledgement_misses_the_stop_goes_on_after_the_start
 ) -> None:
     """Kept with its attempts and its timestamp: the next start sends the next attempt, which
     the recipient takes for a retry."""
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 5.0)
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 5.0)
-    monkeypatch.setattr(bridge_module, "STOP_OUTBOX_S", 0.2)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 5.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 5.0)
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.2)
     path = tmp_path / "state.json"
 
     async def stopped() -> None:
@@ -623,17 +631,19 @@ def test_the_budget_level_survives_a_restart_and_a_long_message_still_goes_out(
 
     async def drained() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, bus, _n):
-            levels.append(bridge._budget.available_s(time.monotonic()))
+            levels.append(bridge.outbox.budget.available_s(time.monotonic()))
             bus.send("alerts", "Gate open")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
             on_disk = JsonStateFile(path).load()["airtime"]["level_s"]  # at once, not at the stop
-            assert on_disk == pytest.approx(bridge._budget.available_s(time.monotonic()), abs=0.01)
+            assert on_disk == pytest.approx(
+                bridge.outbox.budget.available_s(time.monotonic()), abs=0.01
+            )
             assert on_disk < 10.0
-            bridge._budget._tokens = 0.0
+            bridge.outbox.budget._tokens = 0.0
 
     async def restarted() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, _bus, _n):
-            levels.append(bridge._budget.available_s(time.monotonic()))
+            levels.append(bridge.outbox.budget.available_s(time.monotonic()))
 
     scenario(drained)
     saved = JsonStateFile(path).load()["airtime"]
@@ -925,7 +935,7 @@ def test_events_of_a_flood_of_refused_requests_are_limited(
     events out of a subscriber's queue on the broker; the log counts what was left out. Accepted
     requests keep their events."""
     monkeypatch.setattr(bridge_module, "STATUS_INTERVAL_S", 0.05)  # reports the count
-    monkeypatch.setattr(bridge_module, "REFUSED_REPORT_INTERVAL_S", 0.2)
+    monkeypatch.setattr(outbox_module, "REFUSED_REPORT_INTERVAL_S", 0.2)
     caplog.set_level(logging.WARNING)
 
     async def main() -> None:
@@ -974,7 +984,7 @@ def test_airtime_budget_makes_messages_expire(tmp_path: Path) -> None:
                 bus.send("alerts", f"message {i}")
             expired = await bus.wait_for("/delivery", lambda d: d["event_type"] == "expired")
             assert expired["reason"] == "airtime_budget"
-            assert bridge.state_payload()["airtime_1h_s"] <= 5.0
+            assert bridge.status.payload()["airtime_1h_s"] <= 5.0
 
     scenario(main)
 
@@ -1019,8 +1029,8 @@ def test_running_out_of_time_after_sending_is_a_failure(
 ) -> None:
     """`expired` means never sent; a sent but unconfirmed message `failed`. A message that waited
     too long behind another one, with the radio connected, expired because of the queue."""
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 0.6)
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 0.6)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 0.6)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 0.6)
     radio = EmulatedRadio(contacts=[ALICE], auto_ack=False)
 
     async def main() -> None:
@@ -1048,8 +1058,8 @@ def test_last_attempt_waits_for_its_acknowledgement_past_the_time_to_live(
 ) -> None:
     """No attempt starts after `queue_ttl_s`, but the last one still waits for its acknowledgement:
     one that arrives after the time to live confirms the message."""
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 2.0)
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 2.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 2.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 2.0)
     radio = EmulatedRadio(contacts=[ALICE], auto_ack=False)
 
     async def main() -> None:
@@ -1163,7 +1173,10 @@ def test_message_waits_for_airtime_then_is_sent(tmp_path: Path) -> None:
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
-            bridge._budget._tokens, bridge._budget._rate = 0.0, 2.0  # about 0.3 s to wait
+            bridge.outbox.budget._tokens, bridge.outbox.budget._rate = (
+                0.0,
+                2.0,
+            )  # about 0.3 s to wait
             bus.send("alerts", "Smoke")
             event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL | {"sent"})
             assert event["event_type"] == "sent"
@@ -1181,7 +1194,10 @@ def test_airtime_running_out_after_sending_is_a_failure(tmp_path: Path) -> None:
         async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
             bus.send("alice", "x")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
-            bridge._budget._tokens, bridge._budget._rate = 0.0, 1e-6  # nothing for attempt 2
+            bridge.outbox.budget._tokens, bridge.outbox.budget._rate = (
+                0.0,
+                1e-6,
+            )  # nothing for attempt 2
             event = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
             assert (event["event_type"], event["reason"], event["attempt"]) == (
                 "failed",
@@ -1222,8 +1238,8 @@ def test_channel_text_too_long_for_a_renamed_radio_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A text accepted for the radio's old name no longer fits after a rename."""
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MIN_S", 0.3)
-    monkeypatch.setattr(bridge_module, "ACK_TIMEOUT_MAX_S", 0.3)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 0.3)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 0.3)
     radio = EmulatedRadio(contacts=[ALICE], auto_ack=False)
 
     async def main() -> None:
@@ -1249,10 +1265,10 @@ def test_unexpected_errors_lose_one_message_and_the_service_goes_on(
     """A bug while sending fails that delivery (`internal_error`), a bug while handling a received
     message loses that one; both are logged with their traceback."""
     radio = EmulatedRadio(contacts=[ALICE, BOB])
-    plan = Bridge._plan
+    plan = Delivery._plan
     failures = {"plan": 1, "payload": 1}
 
-    def plan_once(self: Bridge, *args: Any) -> Any:
+    def plan_once(self: Delivery, *args: Any) -> Any:
         if failures["plan"]:
             failures["plan"] -= 1
             raise KeyError("bug in planning")
@@ -1264,8 +1280,8 @@ def test_unexpected_errors_lose_one_message_and_the_service_goes_on(
             raise KeyError("bug in the payload")
         return received_payload(*args)
 
-    monkeypatch.setattr(Bridge, "_plan", plan_once)
-    monkeypatch.setattr(bridge_module, "received_payload", payload_once)
+    monkeypatch.setattr(Delivery, "_plan", plan_once)
+    monkeypatch.setattr(inbox_module, "received_payload", payload_once)
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
@@ -1581,7 +1597,7 @@ def test_a_look_alike_the_radio_did_not_add_does_not_block_the_sender(tmp_path: 
 def test_look_alike_counts_for_a_day_after_it_was_last_seen(tmp_path: Path) -> None:
     """A node the radio did not add (NEW_ADVERT) renews a look-alike that is still remembered,
     but does not bring back one that is forgotten (ADR 0009)."""
-    clock, day = [1000.0], bridge_module.LOOK_ALIKE_MEMORY_S
+    clock, day = [1000.0], inbox_module.LOOK_ALIKE_MEMORY_S
     radio = EmulatedRadio(contacts=[ALICE, BOB])
     not_added = bytes([Push.NEW_ADVERT]) + TWIN.public_key + bytes(115)
 
@@ -1884,7 +1900,7 @@ def test_a_storm_of_birth_messages_does_not_postpone_the_announcement(
 ) -> None:
     """Each birth used to restart the delay: births 0.4 s apart kept the entities away for as
     long as they came (SEC-006). Now the first one's delay holds."""
-    monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.2, 0.2))
+    monkeypatch.setattr(announcer_module, "DISCOVERY_DELAY_S", (0.2, 0.2))
 
     async def main() -> None:
         async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _n):
@@ -1902,7 +1918,7 @@ def test_announcements_after_births_come_at_most_every_interval(
 ) -> None:
     """At most one announcement per ANNOUNCE_MIN_INTERVAL_S, also counting the one at start;
     many births in a minute are logged once, naming the topic."""
-    monkeypatch.setattr(bridge_module, "ANNOUNCE_MIN_INTERVAL_S", 0.3)
+    monkeypatch.setattr(announcer_module, "ANNOUNCE_MIN_INTERVAL_S", 0.3)
     caplog.set_level(logging.WARNING)
 
     async def main() -> None:
@@ -1987,7 +2003,7 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
     )
     assert plain.telemetry.enabled is True
     store = JsonStateFile(tmp_path / "state.json")
-    bridge = Bridge(
+    bridge = gateway(
         plain,
         FakeBus(),
         EmulatedRadio,
@@ -1999,7 +2015,7 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
     assert bridge.observer.telemetry_state == poller.state_of
     assert bridge.observer.on_telemetry_exclusion == [poller.exclusion_changed]
     assert bridge.observer.on_contact_added == [poller.contact_added]
-    off = Bridge(
+    off = gateway(
         make_config(),
         FakeBus(),
         EmulatedRadio,
@@ -2020,7 +2036,7 @@ def test_with_telemetry_off_an_exclusion_or_inclusion_forgets_the_saved_answers(
     records = TelemetryRecords(store)
     key = "d4" * 32
     records.save(telemetry.Saved({key: telemetry.SavedContact(812.5, 0, 95.0)}), NOW)
-    off = Bridge(
+    off = gateway(
         make_config(),
         FakeBus(),
         EmulatedRadio,
@@ -2082,10 +2098,10 @@ def test_the_state_says_why_telemetry_waits(
             _bus,
             _notes,
         ):
-            await until(lambda: bridge.state_payload()["telemetry"] == "on")
-            assert bridge.state_payload()["telemetry_reason"] is None
+            await until(lambda: bridge.status.payload()["telemetry"] == "on")
+            assert bridge.status.payload()["telemetry_reason"] is None
         async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, _bus, _notes):
-            state = bridge.state_payload()
+            state = bridge.status.payload()
             assert (state["telemetry"], state["telemetry_reason"]) == ("off", None)
 
     scenario(main)
@@ -2119,7 +2135,7 @@ def test_a_bug_in_the_telemetry_state_leaves_the_rest_of_the_state(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     store = JsonStateFile(tmp_path / "state.json")
-    bridge = Bridge(
+    bridge = gateway(
         make_config(telemetry=True),
         FakeBus(),
         EmulatedRadio,
@@ -2133,7 +2149,7 @@ def test_a_bug_in_the_telemetry_state_leaves_the_rest_of_the_state(
         raise RuntimeError("bug")
 
     poller.used_s = broken  # type: ignore[method-assign]
-    state = bridge.state_payload()
+    state = bridge.status.payload()
     assert (state["telemetry"], state["telemetry_reason"]) == (None, None)
     assert state["telemetry_airtime_1h_s"] is None
     assert state["radio"] == "disconnected"
@@ -2421,7 +2437,10 @@ def test_a_look_alike_added_during_the_airtime_wait_does_not_get_the_message(
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
-            bridge._budget._tokens, bridge._budget._rate = 0.0, 1.0  # waits about its airtime
+            bridge.outbox.budget._tokens, bridge.outbox.budget._rate = (
+                0.0,
+                1.0,
+            )  # waits about its airtime
             bus.send("alice", "Alarm")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
             await asyncio.sleep(0.1)  # the outbox waits for airtime now
@@ -2518,7 +2537,7 @@ def test_a_rejected_command_cannot_be_replayed_while_its_age_window_lasts(
 
     async def main() -> None:
         stop = asyncio.Event()
-        bridge = Bridge(
+        bridge = gateway(
             config,
             bus,
             lambda: radio,
@@ -2662,10 +2681,10 @@ def test_a_flooding_sender_or_channel_is_not_published_beyond_its_rate(
     Assistant's recorder; the log counts what was left out. An accepted command still goes out,
     and other senders have their own rate."""
     caplog.set_level(logging.WARNING)
-    monkeypatch.setattr(bridge_module, "RECEIVED_PER_SENDER_PER_S", 1e-6)  # no refill meanwhile
-    monkeypatch.setattr(bridge_module, "RECEIVED_PER_CHANNEL_PER_S", 1e-6)
+    monkeypatch.setattr(inbox_module, "RECEIVED_PER_SENDER_PER_S", 1e-6)  # no refill meanwhile
+    monkeypatch.setattr(inbox_module, "RECEIVED_PER_CHANNEL_PER_S", 1e-6)
     radio = EmulatedRadio(contacts=[ALICE, BOB])
-    burst = int(bridge_module.RECEIVED_PER_SENDER_BURST)
+    burst = int(inbox_module.RECEIVED_PER_SENDER_BURST)
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
@@ -2692,7 +2711,7 @@ def test_a_flooding_sender_or_channel_is_not_published_beyond_its_rate(
             # the first one left out is logged at once, the others at most a minute later
             assert "not published nor recorded (limit" in caplog.text
             assert ": 1 direct, 0 channel" in caplog.text
-            bridge._received.report(time.monotonic() + 120)
+            bridge.inbox._received.report(time.monotonic() + 120)
             assert ": 4 direct, 5 channel" in caplog.text
 
     scenario(main)
@@ -2817,6 +2836,54 @@ def test_contacts_get_their_devices_in_home_assistant(
                 show()
             await until(lambda: len(sent(alice)) == count + 1)
             assert b.observer.mesh.contacts.keys() == {alice, carol.public_key.hex()}
+
+    bus = FakeBus()
+    scenario(main)
+
+
+def test_a_removal_while_home_assistant_is_offline_is_sent_again_at_its_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Home Assistant's `offline` on its status topic reaches the contacts' devices (wiring.py):
+    a device removed meanwhile is removed once more when Home Assistant starts again, as it may
+    not have taken the removal; one removed while it runs is removed once."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.01)
+    radio = EmulatedRadio(contacts=[ALICE, BOB], manual_add=False)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+
+    def removals(key: str) -> int:
+        topic = f"homeassistant/device/meshcore_home_gateway_radio1/contact_{key}/config"
+        return sum(1 for t, p, _ in bus.published if t == topic and p == b"")
+
+    async def until(check: Callable[[], bool]) -> None:
+        async def poll() -> None:
+            while True:
+                if check():
+                    return
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(poll(), 3)
+
+    async def birth() -> None:
+        count = len(bus.payloads(GATEWAY_DOCUMENT))
+        for online in bus.on_ha_online:
+            online()
+        await until(lambda: len(bus.payloads(GATEWAY_DOCUMENT)) > count)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, bus=bus, devices=True):
+            await birth()  # Home Assistant runs
+            radio.contacts.remove(ALICE)  # removed while it runs: once
+            radio.emit(bytes([Push.ADVERT]) + BOB.public_key)
+            await until(lambda: removals(alice) == 1)
+            for offline in bus.on_ha_offline:
+                offline()
+            radio.contacts.remove(BOB)  # removed while it is away: again at its start
+            radio.emit(bytes([Push.ADVERT]) + BOB.public_key)
+            await until(lambda: removals(bob) == 1)
+            await birth()
+            await until(lambda: removals(bob) == 2)
+            assert removals(alice) == 1
 
     bus = FakeBus()
     scenario(main)
@@ -3063,7 +3130,7 @@ def idle_bridge(
         notes.append(message)
         return True
 
-    bridge = Bridge(
+    bridge = gateway(
         config,
         bus,
         EmulatedRadio,
@@ -3084,7 +3151,7 @@ def test_the_state_tells_the_gateways_health(
     and do not degrade: the broker was away."""
     config = make_config(extra="[history]\nenabled = false")
     bridge, bus, notes = idle_bridge(tmp_path, config)
-    health = bridge.state_payload()["health"]
+    health = bridge.status.payload()["health"]
     free = health["disk_free_mb"]
     assert isinstance(free, int)
     assert free >= 0
@@ -3099,30 +3166,30 @@ def test_the_state_tells_the_gateways_health(
         "disk_free_mb": free,
     }
     bus.dropped = 3
-    bridge._publish_state()
-    assert bridge.state_payload()["health"]["events_dropped_1h"] == 3
+    bridge.status.publish()
+    assert bridge.status.payload()["health"]["events_dropped_1h"] == 3
     assert notes[-1] == "STATUS=radio disconnected, queue 0"
 
     def degraded(**expected: Any) -> None:
-        health = bridge.state_payload()["health"]
+        health = bridge.status.payload()["health"]
         assert health["degraded"]
         assert {key: health[key] for key in expected} == expected
-        bridge._publish_state()
+        bridge.status.publish()
         assert notes[-1] == "STATUS=radio disconnected, queue 0, degraded"
 
     bridge._ledger.store.failed = True  # a write of state.json failed
     degraded(state_file="unwritable")
     bridge._ledger.store.failed = False
-    bridge._health.lag.record(1.5, 100.0)
+    bridge.status.lag.record(1.5, 100.0)
     degraded(loop_lag_max_s=1.5)
-    bridge._health.lag = type(bridge._health.lag)()
+    bridge.status.lag = type(bridge.status.lag)()
     try:
         raise_a_bug()
     except RuntimeError:
         bridge_module.log.exception("observer failed")
     degraded(errors_1h=1)
     health_module.FAILURES.reset()
-    monkeypatch.setattr(bridge_module, "DISK_LOW_MB", free + 1_000_000)
+    monkeypatch.setattr(status_module, "DISK_LOW_MB", free + 1_000_000)
     degraded(disk_free_mb=free)
 
 
@@ -3144,12 +3211,12 @@ def test_the_health_of_the_history_and_the_exclusions(
     assert history is not None
     observer = Observer(FakeBus(), Topics("meshcore", "radio1"), history=history)
     bridge, _, _ = idle_bridge(tmp_path, make_config(), observer=observer)
-    assert bridge.state_payload()["health"]["history"] == "ok"
+    assert bridge.status.payload()["health"]["history"] == "ok"
     history.broken = True
-    assert bridge.state_payload()["health"]["history"] == "broken"
+    assert bridge.status.payload()["health"]["history"] == "broken"
     history.close()
     without, _, _ = idle_bridge(tmp_path, make_config())  # enabled, but none was opened
-    assert without.state_payload()["health"]["history"] == "broken"
+    assert without.status.payload()["health"]["history"] == "broken"
 
     unsaved = TelemetryExclusions(tmp_path / "saved" / EXCLUSIONS_FILE)
     with monkeypatch.context() as patch:
@@ -3164,7 +3231,7 @@ def test_the_health_of_the_history_and_the_exclusions(
         observer = Observer(FakeBus(), Topics("meshcore", "radio1"), exclusions=exclusions)
         config = make_config(extra="[history]\nenabled = false")
         bridge, _, _ = idle_bridge(tmp_path, config, observer=observer)
-        health = bridge.state_payload()["health"]
+        health = bridge.status.payload()["health"]
         assert (health["exclusions"], health["degraded"]) == (expected, True)
 
 
@@ -3173,17 +3240,17 @@ def test_a_stalled_event_loop_is_measured_and_logged(
 ) -> None:
     """CODE-001: the host holds the loop up (here a blocking sleep): the probe measures it, the
     log says what it means, the health section keeps the hour's largest."""
-    monkeypatch.setattr(bridge_module, "LAG_TICK_S", 0.02)
+    monkeypatch.setattr(status_module, "LAG_TICK_S", 0.02)
     caplog.set_level(logging.WARNING)
     radio = EmulatedRadio(contacts=[ALICE])
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (bridge, _bus, _notes):
             await asyncio.sleep(0.1)
-            assert bridge.state_payload()["health"]["loop_lag_max_s"] < 0.5
+            assert bridge.status.payload()["health"]["loop_lag_max_s"] < 0.5
             asyncio.get_running_loop().call_soon(time.sleep, 1.1)
             await asyncio.sleep(0.1)
-            assert bridge.state_payload()["health"]["loop_lag_max_s"] >= 1.0
+            assert bridge.status.payload()["health"]["loop_lag_max_s"] >= 1.0
 
     scenario(main)
     assert "the event loop was held up for 1." in caplog.text

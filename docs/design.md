@@ -135,7 +135,7 @@ flowchart TB
         SD[systemd<br/>sd_notify]
     end
     subgraph app [Application]
-        BR[bridge<br/>outbox · inbox · status]
+        BR[bridge<br/>outbox · inbox · announcer · status]
     end
     subgraph core [Core: pure]
         TX[text] --- AT[airtime] --- BU[budget · dedup]
@@ -170,7 +170,14 @@ flowchart TB
 | `ports` | What the application asks of the radio and the bus and what they give it: the radio port, its events and errors, the transport, the bus and its requests (ARC-003). |
 | `radio.transport` | Serial port (termios) and TCP byte streams. |
 | `radio.session` | Connection handshake, request/response, pushes, message sync, time sync. |
-| `bridge` | Outbound queue with delivery and retries, inbound handling, status reporting, supervision. |
+| `bridge` | Supervises the radio, hands out its events and runs the tasks of all parts on one event loop (§5.2). |
+| `outbox` | The outgoing queue (alerts first, kept across a stop) and its delivery: validation, deduplication, attempts, acknowledgements, retries, a delivery event for each step (§6.2). |
+| `inbox` | Received messages: in order, without copies, commands judged (§6.4, §7.3), each published and handed on; a bounded rate per sender and per channel. |
+| `announcer` | Announcements to Home Assistant: the discovery document, the controls that add contacts, the contacts' devices; again after a birth message or a cleared device (§6.7). |
+| `status` | The state document with its health section, and systemd's status line. |
+| `radio_link` | The radio as the parts see it: the session while connected, what the radio said it is, whether another client took the TCP link. |
+| `config_checks` | What a configuration implies: the contacts it protects, the warnings that the start logs and `check-config` shows. |
+| `wiring` | Puts the service together: the adapters, the parts, and who hears of what (the list in its docstring; ARC-009). |
 | `observer` | Feeds the mesh view and the history from the radio's reports, messages, telemetry answers and deliveries; publishes the documents. |
 | `telemetry_poller` | Asks the companions for telemetry, one at a time, after the messages; takes an answer only for the contact asked (§6.11). |
 | `history` | The local history in SQLite. |

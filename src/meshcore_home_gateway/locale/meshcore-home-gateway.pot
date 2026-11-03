@@ -5,48 +5,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#. security text (docs/translations.md); insecure = true is a setting
-#: src/meshcore_home_gateway/bridge.py
-msgid "MQTT without TLS: the password, the messages, the positions and the command events cross the network in the clear (insecure = true accepts it)"
-msgstr ""
-
-#. security text (docs/translations.md); insecure = true is a setting
-#: src/meshcore_home_gateway/bridge.py
-msgid "MQTT without a user name: unless the broker refuses clients without one, any client that reaches it can read and write the gateway's topics (docs/mqtt-api.md, Securing the broker; insecure = true accepts it)"
-msgstr ""
-
-#: src/meshcore_home_gateway/bridge.py
-msgid "command sender"
-msgstr ""
-
-#: src/meshcore_home_gateway/bridge.py
-msgid "log level debug: the journal gets the texts of the messages, the positions, the keys and every frame of the radio, which journald keeps for weeks; set it back to info after the search (docs/configuration.md, diagnostics)"
-msgstr ""
-
-#. first and second are contacts, each a shortened key and its roles.
-#: src/meshcore_home_gateway/bridge.py
-#, python-brace-format
-msgid "protected contacts {first} and {second} have the same first 6 bytes: the radio names a sender by them only (ADR 0009); the gateway adds neither, and refuses requests to add either"
-msgstr ""
-
-#. first and second are contacts, each a shortened key and its roles;
-#. key is the first one's key. A security warning: the radio may hold the wrong one.
-#: src/meshcore_home_gateway/bridge.py
-#, python-brace-format
-msgid "protected contacts {first} and {second} have the same first 6 bytes: the radio names a sender by them only (ADR 0009); the managed profile, when it writes, adds {key} unless the other is on the radio, never both"
-msgstr ""
-
-#: src/meshcore_home_gateway/bridge.py
-#, python-brace-format
-msgid "target {alias}"
-msgstr ""
-
-#. a contact's key, shortened, and its roles, such as "target gate".
-#: src/meshcore_home_gateway/bridge.py
-#, python-brace-format
-msgid "{key} ({roles})"
-msgstr ""
-
 #. a line of check-config's summary. Its value starts in the column where the
 #. other lines start theirs (12 in English): pad the label with spaces to keep one column.
 #: src/meshcore_home_gateway/cli.py
@@ -1139,6 +1097,48 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: {path} holds no password"
+msgstr ""
+
+#. security text (docs/translations.md); insecure = true is a setting
+#: src/meshcore_home_gateway/config_checks.py
+msgid "MQTT without TLS: the password, the messages, the positions and the command events cross the network in the clear (insecure = true accepts it)"
+msgstr ""
+
+#. security text (docs/translations.md); insecure = true is a setting
+#: src/meshcore_home_gateway/config_checks.py
+msgid "MQTT without a user name: unless the broker refuses clients without one, any client that reaches it can read and write the gateway's topics (docs/mqtt-api.md, Securing the broker; insecure = true accepts it)"
+msgstr ""
+
+#: src/meshcore_home_gateway/config_checks.py
+msgid "command sender"
+msgstr ""
+
+#: src/meshcore_home_gateway/config_checks.py
+msgid "log level debug: the journal gets the texts of the messages, the positions, the keys and every frame of the radio, which journald keeps for weeks; set it back to info after the search (docs/configuration.md, diagnostics)"
+msgstr ""
+
+#. first and second are contacts, each a shortened key and its roles.
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "protected contacts {first} and {second} have the same first 6 bytes: the radio names a sender by them only (ADR 0009); the gateway adds neither, and refuses requests to add either"
+msgstr ""
+
+#. first and second are contacts, each a shortened key and its roles;
+#. key is the first one's key. A security warning: the radio may hold the wrong one.
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "protected contacts {first} and {second} have the same first 6 bytes: the radio names a sender by them only (ADR 0009); the managed profile, when it writes, adds {key} unless the other is on the radio, never both"
+msgstr ""
+
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "target {alias}"
+msgstr ""
+
+#. a contact's key, shortened, and its roles, such as "target gate".
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "{key} ({roles})"
 msgstr ""
 
 #: src/meshcore_home_gateway/core/commands.py

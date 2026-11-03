@@ -1036,8 +1036,8 @@ and of the pin in [`requirements/dev.in`](../requirements/dev.in), with Python 3
   stopped with `SIGSTOP`, keepalive 2 s: `on_disconnect` with "Keep alive timeout" after 4 s;
   after `SIGCONT` the broker logged `Received PUBLISH from … (d1, q1, …)`, and the QoS 0 message
   never arrived; `_check_keepalive()` (line 3261) and `_messages_reconnect_reset_out()` (lines
-  3712-3724). *Here:* command events go out with QoS 0 (`Bridge._on_message()` in
-  [`bridge.py`](../src/meshcore_home_gateway/bridge.py)), so a command is never delivered late;
+  3712-3724). *Here:* command events go out with QoS 0 (`Inbox._on_message()` in
+  [`inbox.py`](../src/meshcore_home_gateway/inbox.py)), so a command is never delivered late;
   [mqtt-api.md](mqtt-api.md#commands-command), reason `broker_unavailable`. *Check:* `kill -STOP`
   the broker while a client with keepalive 2 publishes QoS 0 and QoS 1 messages, wait 5 s, then
   `kill -CONT`.
@@ -1149,13 +1149,13 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   2026-10-23). *Here:* `homeassistant.status_topic` is a setting of its own, default
   `homeassistant/status` ([home-assistant.md, Requirements](home-assistant.md#requirements)); the
   gateway announces a random 0.5–2 s after `online` (`DISCOVERY_DELAY_S` in
-  `src/meshcore_home_gateway/bridge.py`). *Check:*
+  `src/meshcore_home_gateway/announcer.py`). *Check:*
   `src 2026.10.0 components/mqtt/const.py | sed -n 281,282p`.
 * **A later document with changed device fields updates the device page in place and changes no
   entity state; device fields it leaves out keep their stored values.** *Verified:* 2026.10.0,
   `test_the_device_page_shows_the_radio_once_it_is_known`. *Here:* the gateway announces again when
-  the radio's model, firmware or key first becomes known or changes (`Bridge` in
-  `src/meshcore_home_gateway/bridge.py`;
+  the radio's model, firmware or key first becomes known or changes (`Announcer` in
+  `src/meshcore_home_gateway/announcer.py`;
   [home-assistant.md, How discovery behaves](home-assistant.md#how-discovery-behaves)). *Check:*
   `make ha-test`.
 * **A known entity that comes with another name keeps its entity ID and the name a user gave it:
@@ -1275,7 +1275,7 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `components/mqtt/entity.py` lines 758-777 (`async_clear_discovery_topic_if_entity_removed`).
   *Here:* placeholders are enabled; contact devices have no entity disabled by default and never
   lose a single component; the gateway watches its own device's topic and announces again when it
-  is cleared (`Bridge._ha_device_message()`); an empty contact document it did not send within
+  is cleared (`Announcer.device_message()`); an empty contact document it did not send within
   `ECHO_S` of a removal of its own is a deletion by the user
   ([home-assistant.md, Contacts](home-assistant.md#contacts)). *Check:* put
   `"enabled_by_default": False` back into `placeholder()` and run `make ha-test`.
@@ -1427,8 +1427,8 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   document and the one of its controls.** *Verified:* 2026.10.0,
   `test_deleting_the_gateway_device_clears_the_controls_topic_too` (an empty retained payload, QoS
   0, on both topics). *Here:* the gateway watches both topics and announces again; with
-  `contact_devices = 0` it subscribes the controls' topic by itself (`_serve()` in
-  `src/meshcore_home_gateway/cli.py`). *Check:* `make ha-test`.
+  `contact_devices = 0` it subscribes the controls' topic by itself (`ha_device_topics()` in
+  `src/meshcore_home_gateway/announcer.py`). *Check:* `make ha-test`.
 
 * **An MQTT switch with a state topic is not optimistic: it follows only the value its template
   renders from that topic, `on` for `state_on` (else `payload_on`), `off` for `state_off` (else

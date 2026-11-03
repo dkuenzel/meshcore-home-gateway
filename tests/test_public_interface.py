@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
-from meshcore_home_gateway import bridge, cli, i18n, views
+from meshcore_home_gateway import bridge, cli, i18n, status, views
 from meshcore_home_gateway import config as configuration
 from meshcore_home_gateway.core import adverts, lpp, telemetry
 from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
@@ -400,7 +400,7 @@ def test_a_value_outside_its_list_is_refused() -> None:
     interface._within("x", {"a", None}, ("a", "b"))  # null: none
 
 
-def _telemetry_state(_: bridge.Bridge) -> dict[str, Any]:
+def _telemetry_state(_: status.Status) -> dict[str, Any]:
     return {"telemetry": "stopped", "telemetry_reason": None}
 
 
@@ -418,7 +418,7 @@ LIST_GUARDS: dict[str, tuple[Callable[[pytest.MonkeyPatch], None], str]] = {
         "state:telemetry: Home Assistant's options",
     ),
     "a status outside the statuses": (
-        lambda m: m.setattr(bridge.Bridge, "_telemetry_state", _telemetry_state),
+        lambda m: m.setattr(status.Status, "_telemetry_state", _telemetry_state),
         "state:telemetry: values outside the list",
     ),
     "a reason outside the reasons": (

@@ -80,4 +80,12 @@ event loop with `call_soon_threadsafe`. Everything else runs on the event loop.
   `SendRequest` and `ContactRequest`; `MqttBus` declares `Bus`. The clocks are passed in as
   functions, and the state file stays one concrete class, as no second store is planned. A test
   (`tests/test_architecture.py`) checks that no application module imports an adapter; only the
-  adapters themselves and the command line that puts them together do.
+  adapters themselves, the command line and the wiring that puts them together do.
+* Amended on 2026-11-03 (security and architecture review, ARC-009): the application had grown
+  into one module of 1,700 lines, and the bridge's constructor, its start and the command line
+  connected the other parts through lists of callables. It is now parts of their own: the outbox
+  and its delivery (`outbox.py`), the received messages (`inbox.py`), the announcements to Home
+  Assistant (`announcer.py`) and the state document (`status.py`); the bridge (`bridge.py`)
+  supervises the radio, hands out its events and runs the parts' tasks. One module (`wiring.py`)
+  builds the adapters and the parts and connects them, and its docstring lists who hears of what,
+  in order.

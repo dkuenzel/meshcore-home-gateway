@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway import announcer as announcer_module
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import contact_manager as manager_module
 from meshcore_home_gateway import observer as observer_module
@@ -47,7 +48,7 @@ ALICE_TWIN = bytes.fromhex("a1" * 6 + "ee" * 26)
 @pytest.fixture(autouse=True)
 def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
-    monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
+    monkeypatch.setattr(announcer_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
     monkeypatch.setattr(manage_entities, "OPTIONS_INTERVAL_S", 0.05)
     monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)

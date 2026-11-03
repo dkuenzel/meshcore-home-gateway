@@ -14,7 +14,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0004](0004-own-implementation-of-the-companion-protocol-subset.md) | Own implementation of the companion protocol subset | accepted; note 2026-11-02 (sizes) |
 | [0005](0005-runtime-dependencies-from-the-distribution.md) | Runtime dependencies: standard library and the distribution's paho-mqtt | accepted; amended 2026-11-03 (updates installed in the container; the tool chains of the build, the tests and the audit) |
 | [0006](0006-deployment-in-an-unprivileged-proxmox-container.md) | Deployment in an unprivileged Proxmox container by a host script with dialogs | accepted; amended 2026-10-23 |
-| [0007](0007-hexagonal-architecture-with-an-asyncio-core.md) | Ports and adapters around a pure domain core, one asyncio event loop | accepted; amended 2026-11-03 (the ports module) |
+| [0007](0007-hexagonal-architecture-with-an-asyncio-core.md) | Ports and adapters around a pure domain core, one asyncio event loop | accepted; amended 2026-11-03 (the ports module; the parts of the bridge and their wiring) |
 | [0008](0008-outbound-safety-targets-airtime-budget-deduplication.md) | Outbound safety: configured targets, an airtime budget and deduplication | accepted; targets partly superseded by 0017 (every contact a recipient); amended 2026-11-03 (the budget's level kept, 0028) |
 | [0009](0009-inbound-commands-from-allowlisted-contacts.md) | Inbound commands only from allowlisted contacts, with replay protection | accepted; amended 2026-10-19 and 2026-10-23 |
 | [0010](0010-home-assistant-through-mqtt-device-discovery.md) | Home Assistant integration through MQTT device discovery | accepted |

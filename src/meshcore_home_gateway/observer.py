@@ -102,6 +102,15 @@ NODES_DOCUMENT_INTERVAL_S = 30.0
 _KEPT = frozenset({DeliveryState.CONFIRMED, DeliveryState.FAILED, DeliveryState.EXPIRED})
 
 
+def observe(call: Callable[..., None], *args: Any) -> None:
+    """Hand something to the observer or another listener of the service's parts: a bug in the
+    views must not stop messages. It is logged and counted (health.FAILURES)."""
+    try:
+        call(*args)
+    except Exception:
+        log.exception("observer failed")
+
+
 class Publisher(Protocol):
     def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None: ...
 

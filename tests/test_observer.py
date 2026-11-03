@@ -17,7 +17,7 @@ import pytest
 
 from meshcore_home_gateway import history as history_module
 from meshcore_home_gateway import observer as observer_module
-from meshcore_home_gateway.bridge import protected_keys
+from meshcore_home_gateway.config_checks import protected_keys
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.adverts import MAX_LOGGED
 from meshcore_home_gateway.core.mesh import AdvertCheck, Fix, Heard, Signal

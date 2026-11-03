@@ -25,7 +25,6 @@ import pytest
 
 from meshcore_home_gateway import cli, i18n
 from meshcore_home_gateway import config as configuration
-from meshcore_home_gateway.bridge import protected_look_alikes
 from meshcore_home_gateway.catalog import read_po
 from meshcore_home_gateway.cli import EX_CONFIG, EX_OK, EX_USAGE, main
 from meshcore_home_gateway.config import (
@@ -37,6 +36,7 @@ from meshcore_home_gateway.config import (
     parse_config,
     render_config,
 )
+from meshcore_home_gateway.config_checks import protected_look_alikes
 from meshcore_home_gateway.core.commands import CommandRules
 from meshcore_home_gateway.core.contacts import normalise_key
 from meshcore_home_gateway.mqtt.client import tls_context
