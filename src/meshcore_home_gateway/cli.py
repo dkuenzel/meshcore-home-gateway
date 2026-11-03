@@ -41,6 +41,7 @@ from meshcore_home_gateway.config import (
     parse_config,
     read_text,
     render_config,
+    with_password_file,
 )
 from meshcore_home_gateway.i18n import N_
 from meshcore_home_gateway.protocol.codes import ContactFlag, TelemetryMode
@@ -247,6 +248,14 @@ def _parser() -> argparse.ArgumentParser:
     render.add_argument("--output", type=Path, required=True)
     render.add_argument(
         "--group", default=None, help=tr_help("group that may read the file (mode 0640)")
+    )
+    render.add_argument(
+        "--password-file",
+        type=Path,
+        default=None,
+        help=tr_help(
+            "write the broker password into this file (mode 0640) instead of the configuration"
+        ),
     )
     answers = config_commands.add_parser(
         "answers",
@@ -1622,7 +1631,10 @@ def _contacts_link(args: argparse.Namespace) -> int:
 
 
 def _render(args: argparse.Namespace) -> int:
-    text = render_config(read_text(args.answers))
+    answers, password = read_text(args.answers), None
+    if args.password_file is not None:  # the password in a file of its own (SEC-009)
+        answers, password = with_password_file(answers, args.password_file)
+    text = render_config(answers)
     mqtt = parse_config(text).mqtt
     if mqtt.tls:  # the certificate and key files must load, as in check-config and at start-up
         from meshcore_home_gateway.mqtt.client import tls_context  # noqa: PLC0415
@@ -1633,11 +1645,17 @@ def _render(args: argparse.Namespace) -> int:
     except KeyError:
         print(PREFIX + tr("no group {group!r}", group=args.group), file=sys.stderr)
         return EX_FAILURE
+    path = args.password_file
     try:
-        write_private(args.output, text, gid)
+        if password is not None:
+            write_private(path, password + "\n", gid)
+        elif path is not None and mqtt.password_file is None:
+            path.unlink(missing_ok=True)  # a password no longer used stays nowhere
+        path = args.output
+        write_private(path, text, gid)
     except OSError as exc:
         detail = exc.strerror or exc  # the system's text
-        print(PREFIX + tr("cannot write {path}: {detail}", path=args.output, detail=detail),
+        print(PREFIX + tr("cannot write {path}: {detail}", path=path, detail=detail),
               file=sys.stderr)  # fmt: skip
         return EX_FAILURE
     print(tr("wrote {path}", path=args.output))

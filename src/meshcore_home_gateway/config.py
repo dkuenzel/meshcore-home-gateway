@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import ipaddress
 import math
+import os
 import re
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -80,7 +81,8 @@ class MqttConfig:
     node_id: str
     port: int = 1883
     username: str | None = None
-    password: str | None = None
+    password: str | None = None  # as given, or as load_config read it from password_file
+    password_file: str | None = None  # the password in a file of its own (SEC-009)
     tls: bool = False
     ca_file: str | None = None
     cert_file: str | None = None
@@ -198,7 +200,54 @@ class Config:
 
 
 def load_config(path: Path) -> Config:
-    return parse_config(read_text(path))
+    """The configuration in the file, with the broker password read from `password_file`."""
+    config = parse_config(read_text(path))
+    if config.mqtt.password_file is None:
+        return config
+    password = read_password(Path(config.mqtt.password_file))
+    return replace(config, mqtt=replace(config.mqtt, password=password))
+
+
+def read_password(path: Path) -> str:
+    """The broker password in its file: the text without one line break at the end. A file that
+    cannot be read, or holds none, is a configuration error: the service would not log in. A
+    systemd credential of the file's name (`LoadCredential=`) is read instead, so that the file
+    itself may be root's alone (docs/deployment.md)."""
+    key = "mqtt.password_file"
+    credentials = os.environ.get("CREDENTIALS_DIRECTORY")
+    if credentials and (copy := Path(credentials) / path.name).is_file():
+        path = copy
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(
+            "{key}: cannot read {path}: {detail}", key=key, path=path, detail=exc.strerror
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            "{key}: cannot read {path}: not valid UTF-8 (byte {byte})", key=key, path=path,
+            byte=exc.start,
+        ) from exc  # fmt: skip
+    password = text.removesuffix("\n").removesuffix("\r")
+    if not password:
+        raise ConfigError("{key}: {path} holds no password", key=key, path=path)
+    return password
+
+
+def with_password_file(answers: str, path: Path) -> tuple[str, str | None]:
+    """Installer answers whose `mqtt.password` goes into a file of its own (SEC-009): the answers
+    with `mqtt.password_file` = `path` in its place, and the password; the answers as they are
+    and None when they hold no password (an empty answer is none)."""
+    kept, password = [], None
+    for line in answers.split("\n"):
+        key, sep, value = line.removesuffix("\r").partition("=")
+        if sep and key.strip() == "mqtt.password":
+            password = value or password
+        elif not (sep and key.strip() == "mqtt.password_file"):
+            kept.append(line)
+    if password is None:
+        return answers, None
+    return "\n".join([*kept, f"mqtt.password_file={path}", ""]), password
 
 
 def read_text(path: Path) -> str:
@@ -549,8 +598,12 @@ def _mqtt(s: _Section) -> MqttConfig:
     if files["key_file"] is not None and files["cert_file"] is None:
         raise ConfigError("{key}: needs cert_file", key=s.key("key_file"))
     username, password = s.string("username"), s.string("password")
-    if password is not None and username is None:  # the client would not send it
-        raise ConfigError("{key}: needs username", key=s.key("password"))
+    password_file = _absolute_path(s, "password_file")
+    if password is not None and password_file is not None:
+        raise ConfigError("{key}: set password or password_file, not both", key=s.key("password"))
+    secret = "password" if password is not None else "password_file" if password_file else None
+    if secret is not None and username is None:  # the client would not send it
+        raise ConfigError("{key}: needs username", key=s.key(secret))
     if username is not None and username != username.strip():  # copied with a blank, mostly
         raise ConfigError(
             "{key}: no blank at the start or end, got {value!r}",
@@ -563,6 +616,7 @@ def _mqtt(s: _Section) -> MqttConfig:
         port=s.integer("port", 1883, 1, 65535),
         username=username,
         password=password,
+        password_file=password_file,
         tls=tls,
         ca_file=files["ca_file"],
         cert_file=files["cert_file"],
@@ -712,6 +766,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "radio.profile.name": str,
     "radio.profile.duty_cycle_percent": float, "radio.profile.protect_contacts": bool,
     "mqtt.host": str, "mqtt.port": int, "mqtt.username": str, "mqtt.password": str,
+    "mqtt.password_file": str,
     "mqtt.tls": bool, "mqtt.ca_file": str, "mqtt.cert_file": str, "mqtt.key_file": str,
     "mqtt.client_id": str, "mqtt.keepalive_s": int, "mqtt.base_topic": str, "mqtt.node_id": str,
     "mqtt.insecure": bool,

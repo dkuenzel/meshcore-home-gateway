@@ -1190,6 +1190,39 @@ def test_reconfigure_keeps_the_settings_it_does_not_ask_for(host: Host) -> None:
     )
 
 
+def test_the_password_goes_into_a_file_of_its_own(host: Host) -> None:
+    """SEC-009: the program in the container writes it there, where it knows how."""
+    result = run_installer(host, "--answers", str(answers_file(host)))
+    assert result.returncode == 0, result.stderr
+    script = host.script("config render --answers /root/meshcore-home-gateway-answers")
+    assert "grep -q -e --password-file" in script
+    assert "--password-file /etc/meshcore-home-gateway/mqtt-password" in script
+
+
+def test_reconfigure_keeps_a_password_in_its_file(host: Host) -> None:
+    """The answers name the file, never the password; a new password replaces the file's."""
+    existing_container(host)
+    current = host.root / "current"
+    text = current.read_text(encoding="utf-8").replace(
+        "mqtt.password=old-secret\n",
+        "mqtt.password_file=/etc/meshcore-home-gateway/mqtt-password\n",
+    )
+    current.write_text(text, encoding="utf-8")
+    answers = answers_file(host, "mqtt.host=new.example.org\n")
+    result = run_installer(host, "--reconfigure", "105", "--answers", str(answers))
+    assert result.returncode == 0, result.stderr
+    pushed = host.pushed("meshcore-home-gateway-answers")
+    assert "mqtt.password_file=/etc/meshcore-home-gateway/mqtt-password\n" in pushed
+    assert "mqtt.password=" not in pushed
+    dialog = ["default", "old.example.org", "no", "bridge", "new-secret", "1", ALICE, ALICE,
+              "status"]  # fmt: skip
+    result = run_installer(host, "--reconfigure", "105", dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    pushed = host.pushed("meshcore-home-gateway-answers")
+    assert "mqtt.password=new-secret\n" in pushed
+    assert "mqtt.password_file" not in pushed
+
+
 def test_reconfigure_keeps_an_anonymous_broker_and_the_default_port(host: Host) -> None:
     """Settings missing from the file stay at the program's defaults, not the installer's."""
     existing_container(host)
@@ -1417,13 +1450,14 @@ def test_the_answers_are_private_and_removed_after_rendering(
     answers = host.pushed("meshcore-home-gateway-answers")
     run = container.run(f"umask 077\n{script}", stdin=answers)  # pct exec keeps the host's
     assert run.returncode == status
-    (render,) = container.calls("meshcore-home-gateway")
-    assert render == (
+    # a program without --password-file (this stub's help names none) gets the password inline
+    render = (
         f"config render --answers {container.path(ANSWERS)} --output {container.path(CONFIG)} "
         "--group meshcore-home-gateway"
     )
+    assert container.calls("meshcore-home-gateway") == ["config render --help", render]
     assert container.calls("mode") == ["600"]  # the answers, while they exist
-    assert container.calls("umask") == ["0022"]  # not 077 for the configuration's directory
+    assert set(container.calls("umask")) == {"0022"}  # not 077 for the configuration's directory
     assert not container.path(ANSWERS).exists()
 
 
@@ -1435,8 +1469,8 @@ def test_the_service_user_can_reach_the_written_configuration(
     assert result.returncode == 0, result.stderr
     group = grp.getgrgid(os.getgid()).gr_name  # the container's service group stands in for it
     script = host.script(f"--output {CONFIG}")
-    assert script.endswith("--group meshcore-home-gateway")
-    script = script.removesuffix("meshcore-home-gateway") + group
+    assert script.count("--group meshcore-home-gateway ") == 1
+    script = script.replace("--group meshcore-home-gateway ", f"--group {group} ")
     program = f'PYTHONPATH="{ROOT / "src"}" exec "{sys.executable}" -m meshcore_home_gateway "$@"'
     container.stub("meshcore-home-gateway", program)
     container.path(CONFIG).parent.rmdir()  # the first installation creates it
@@ -1445,6 +1479,11 @@ def test_the_service_user_can_reach_the_written_configuration(
     assert stat.S_IMODE(container.path(CONFIG).parent.stat().st_mode) == 0o755
     config = container.path(CONFIG).stat()
     assert (stat.S_IMODE(config.st_mode), config.st_gid) == (0o640, os.getgid())
+    # the real program takes --password-file: the password is in its file, not the configuration
+    secret = container.path("/etc/meshcore-home-gateway/mqtt-password")
+    assert (stat.S_IMODE(secret.stat().st_mode), secret.stat().st_gid) == (0o640, os.getgid())
+    assert secret.read_text(encoding="utf-8") == "s3cret=x\n"
+    assert "s3cret" not in container.path(CONFIG).read_text(encoding="utf-8")
 
 
 def test_help_and_unknown_options(host: Host) -> None:

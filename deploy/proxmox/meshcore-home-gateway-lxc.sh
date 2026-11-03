@@ -30,6 +30,7 @@ DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the c
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
 LIB=/usr/local/lib/meshcore-home-gateway
 CONFIG=/etc/meshcore-home-gateway/config.toml
+PASSWORD_FILE=/etc/meshcore-home-gateway/mqtt-password  # the broker password (SEC-009)
 STATE_DIR=/var/lib/meshcore-home-gateway   # the service's state (StateDirectory=)
 STAGE=/root/meshcore-home-gateway-src      # the program before its installation, in the container
 ANSWERS_FILE=/root/meshcore-home-gateway-answers
@@ -588,7 +589,7 @@ login_text() {  # the broker login, for the confirmation; never the password
   local user=${OUT[mqtt.username]-}
   if [[ -z $user ]]; then
     t 'none (no user name)'
-  elif [[ -n ${OUT[mqtt.password]-} ]]; then
+  elif [[ -n ${OUT[mqtt.password]-} || -n ${OUT[mqtt.password_file]-} ]]; then
     t "user '{user}' with a password" user "$user"
   else
     t "user '{user}' without a password" user "$user"
@@ -889,18 +890,29 @@ ask_broker() {  # address and login
     # a password needs a user name: no dialog, and the current one goes (the settings check
     # refuses one given in the answers file)
     [[ -v "ANSWERS[mqtt.password]" ]] || unset 'OUT[mqtt.password]'
-  elif [[ -v "CURRENT[mqtt.password]" && $user == "${CURRENT[mqtt.username]-}" ]]; then
+    [[ -v "ANSWERS[mqtt.password_file]" ]] || unset 'OUT[mqtt.password_file]'
+  elif has_password && [[ $user == "${CURRENT[mqtt.username]-}" ]]; then
     password=$(ask mqtt.password password \
       "$(t "Password of MQTT user '{user}' (empty: keep the current one)" user "$user")" "")
-    if [[ -n $password ]]; then OUT[mqtt.password]=$password; fi
+    if [[ -n $password ]]; then new_password "$password"; fi
   else  # a new user name: a current password belongs to the old one
     password=""
     if (( INTERACTIVE )) || [[ -v "ANSWERS[mqtt.password]" ]]; then
       password=$(ask mqtt.password password \
         "$(t "Password of MQTT user '{user}' (empty: none)" user "$user")" "")
     fi
-    if [[ -n $password ]]; then OUT[mqtt.password]=$password; else unset 'OUT[mqtt.password]'; fi
+    unset 'OUT[mqtt.password]' 'OUT[mqtt.password_file]'
+    if [[ -n $password ]]; then new_password "$password"; fi
   fi
+}
+
+has_password() {  # the installation has a broker password, in the configuration or a file
+  [[ -v "CURRENT[mqtt.password]" || -v "CURRENT[mqtt.password_file]" ]]
+}
+
+new_password() {  # new_password PASSWORD: it replaces the one installed, also its file
+  OUT[mqtt.password]=$1
+  unset 'OUT[mqtt.password_file]'
 }
 
 ask_broker_again() {  # after a refused login, with dialogs: every broker setting
@@ -930,15 +942,23 @@ ask_broker_again() {  # after a refused login, with dialogs: every broker settin
   done
   OUT[mqtt.username]=$user
   if [[ -z $user ]]; then
-    unset 'OUT[mqtt.password]'
-  elif [[ -v "CURRENT[mqtt.password]" && $user == "${CURRENT[mqtt.username]-}" ]]; then
+    unset 'OUT[mqtt.password]' 'OUT[mqtt.password_file]'
+  elif has_password && [[ $user == "${CURRENT[mqtt.username]-}" ]]; then
     password=$(show_dialog password \
       "$(t "Password of MQTT user '{user}' (empty: keep the installed one)" user "$user")" "")
-    OUT[mqtt.password]=${password:-${CURRENT[mqtt.password]}}
+    unset 'OUT[mqtt.password]' 'OUT[mqtt.password_file]'
+    if [[ -n $password ]]; then
+      new_password "$password"
+    elif [[ -v "CURRENT[mqtt.password_file]" ]]; then
+      OUT[mqtt.password_file]=${CURRENT[mqtt.password_file]}
+    else
+      OUT[mqtt.password]=${CURRENT[mqtt.password]}
+    fi
   else
     password=$(show_dialog password \
       "$(t "Password of MQTT user '{user}' (empty: none)" user "$user")" "")
-    if [[ -n $password ]]; then OUT[mqtt.password]=$password; else unset 'OUT[mqtt.password]'; fi
+    unset 'OUT[mqtt.password]' 'OUT[mqtt.password_file]'
+    if [[ -n $password ]]; then new_password "$password"; fi
   fi
 }
 
@@ -1259,13 +1279,18 @@ language_dropped() {  # the installer's own homeassistant.language, which the ve
 
 configure() {  # write the configuration into the container
   local ctid=$1
-  # through a pipe and a private file in the container: the answers hold the broker password
+  # through a pipe and a private file in the container: the answers hold the broker password,
+  # which a program that can puts into a file of its own (SEC-009)
   write_answers | in_ct_input "$ctid" bash -c "set -e
     umask 022   # not the host's: the service user must reach the configuration
     trap 'rm -f $ANSWERS_FILE' EXIT
     (umask 077 && cat >$ANSWERS_FILE)
+    secret=()
+    if meshcore-home-gateway config render --help | grep -q -e --password-file; then
+      secret=(--password-file $PASSWORD_FILE)
+    fi
     meshcore-home-gateway config render --answers $ANSWERS_FILE \
-      --output $CONFIG --group meshcore-home-gateway" >&2 \
+      --output $CONFIG --group meshcore-home-gateway \"\${secret[@]}\"" >&2 \
     || die 'the configuration was not accepted (see above)'
 }
 

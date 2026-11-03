@@ -24,7 +24,7 @@ from meshcore_home_gateway import __version__
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import cli as cli_module
 from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
-from meshcore_home_gateway.config import MqttConfig, load_config, parse_config
+from meshcore_home_gateway.config import MqttConfig, config_answers, load_config, parse_config
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.mqtt import client as client_module
@@ -119,6 +119,33 @@ def test_config_render_writes_a_private_valid_file(tmp_path: Path) -> None:
     assert (
         main(["config", "render", "--answers", str(answers), "--output", str(output)]) == EX_CONFIG
     )
+
+
+def test_config_render_puts_the_password_into_a_file_of_its_own(tmp_path: Path) -> None:
+    """SEC-009: with --password-file the password goes into that file (0640), the configuration
+    names it, `config answers` prints its path and never the password; answers without a
+    password remove a file left from before; answers that keep the file keep it."""
+    answers, output = tmp_path / "answers", tmp_path / "etc" / "config.toml"
+    secret = tmp_path / "etc" / "mqtt-password"
+    group = grp.getgrgid(os.getgid()).gr_name
+    login = "mqtt.username=bridge\nmqtt.password=s3cret=x\n"
+    answers.write_text(RENDER_ANSWERS + login, encoding="utf-8")
+    render = ["config", "render", "--answers", str(answers), "--output", str(output),
+              "--group", group, "--password-file", str(secret)]  # fmt: skip
+    assert main(render) == EX_OK
+    assert secret.read_text(encoding="utf-8") == "s3cret=x\n"
+    assert stat.S_IMODE(secret.stat().st_mode) == 0o640
+    assert "s3cret" not in output.read_text(encoding="utf-8")
+    assert load_config(output).mqtt.password == "s3cret=x"
+    kept = config_answers(output.read_text(encoding="utf-8"))
+    assert f"mqtt.password_file={secret}\n" in kept
+    assert "s3cret" not in kept
+    answers.write_text(kept, encoding="utf-8")  # --reconfigure with the password kept
+    assert main(render) == EX_OK
+    assert secret.read_text(encoding="utf-8") == "s3cret=x\n"
+    answers.write_text(RENDER_ANSWERS + "mqtt.username=bridge\n", encoding="utf-8")
+    assert main(render) == EX_OK  # no password any more
+    assert not secret.exists()
 
 
 RENDER_ANSWERS = (

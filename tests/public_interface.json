@@ -44,6 +44,7 @@
     "mqtt.key_file",
     "mqtt.node_id",
     "mqtt.password",
+    "mqtt.password_file",
     "mqtt.port",
     "mqtt.tls",
     "mqtt.username",
@@ -142,6 +143,13 @@
        "--output"
       ],
       "required": true,
+      "takes_value": true,
+      "type": "path"
+     },
+     "--password-file": {
+      "names": [
+       "--password-file"
+      ],
       "takes_value": true,
       "type": "path"
      }
@@ -865,6 +873,10 @@
    "type": "string"
   },
   "mqtt.password": {
+   "answer": "str",
+   "type": "string"
+  },
+  "mqtt.password_file": {
    "answer": "str",
    "type": "string"
   },

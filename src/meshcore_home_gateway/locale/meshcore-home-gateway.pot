@@ -795,6 +795,11 @@ msgid "write a validated configuration from key=value answers"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli.py
+#, python-format
+msgid "write the broker password into this file (mode 0640) instead of the configuration"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli.py
 #, python-brace-format
 msgid "wrote {path}"
 msgstr ""
@@ -897,6 +902,16 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: an item contains a comma, which the answers cannot express"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: cannot read {path}: not valid UTF-8 (byte {byte})"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: cannot read {path}: {detail}"
 msgstr ""
 
 #. kind is a Python type: str, int, float, bool or list.
@@ -1033,6 +1048,11 @@ msgstr ""
 msgid "{key}: set exactly one of 'channel' or 'contact'"
 msgstr ""
 
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: set password or password_file, not both"
+msgstr ""
+
 #. tcp_unauthenticated = true is a setting; keep it as it is.
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
@@ -1064,6 +1084,11 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: {path} holds no password"
 msgstr ""
 
 #: src/meshcore_home_gateway/core/commands.py

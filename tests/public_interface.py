@@ -170,6 +170,17 @@ device = "/dev/ttyACM0"
 host = "broker.example.org"
 node_id = "{NODE}"
 """
+# the settings ANSWERED cannot hold beside its own: the password in a file (SEC-009)
+ALTERNATIVES = f"""
+[radio]
+transport = "serial"
+device = "/dev/ttyACM0"
+[mqtt]
+host = "broker.example.org"
+node_id = "{NODE}"
+username = "gateway"
+password_file = "/etc/meshcore-home-gateway/mqtt-password"
+"""
 # everything that adds to the interface: tcp, discovery with contact devices, a target of each
 # kind, a command word, the packet log, telemetry; and the settings read only when present
 MAXIMAL_TEXT = f"""
@@ -1361,7 +1372,7 @@ def _answers(tmp: Path) -> dict[str, list[str]]:
     which must be those of every setting with an answer type, and the forms of a target's
     value."""
     keys, targets = [], []
-    for name, text in (("answered", ANSWERED), ("minimal", MINIMAL)):
+    for name, text in (("answered", ANSWERED), ("minimal", MINIMAL), ("other", ALTERNATIVES)):
         config = _written(tmp / f"{name}.toml", text)
         for line in _printed(["config", "answers", "--config", str(config)]).splitlines():
             key, _, value = placeholders(line).partition("=")
