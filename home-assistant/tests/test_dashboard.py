@@ -589,7 +589,7 @@ async def test_cards_show_only_while_their_state_says_so(
         c["entity"]: c for c in walk(loaded)
         if c["type"] == "tile" and c["entity"].startswith("binary_sensor.") and "visibility" in c
     }  # fmt: skip
-    assert len(problem) == 3
+    assert len(problem) == 4  # look-alikes, a remote CLI, a position in adverts, degraded
     assert not visible(hass, version)  # no gateway
     assert (visible(hass, tile), visible(hass, hint)) == (False, True)
     topics = await gateway(hass, config)
@@ -607,6 +607,8 @@ async def test_cards_show_only_while_their_state_says_so(
     contacts = {"total": 1, "max": 350, "remote_cli": [BOB], "remote_cli_total": 1,
                 "advert_carries_position": [BOB], "advert_carries_position_total": 1}  # fmt: skip
     await fire(hass, topics.contacts, contacts, retain=True)
+    degraded = state_document(known=True) | {"health": {"degraded": True}}
+    await fire(hass, topics.state, degraded)
     assert all(visible(hass, c) for c in problem.values())
     await guide_script(hass)
     assert (visible(hass, tile), visible(hass, hint)) == (True, False)

@@ -3,11 +3,15 @@ each node was last heard, and the readings of the contacts' telemetry answers.
 
 One file in the state directory, written only by the service. A history that cannot be opened or
 written is logged and switched off for the rest of the run: it never stops messaging. A file that
-is not a database is moved aside and a new one started.
+is not a database is moved aside and a new one started. The hourly purge runs in a thread on a
+connection of its own, so the event loop goes on meanwhile (CODE-002); the writes that come in
+the meantime wait in memory and follow it.
 """
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import contextlib
 import json
 import logging
@@ -20,15 +24,19 @@ from typing import Any
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import Fix, Heard, Readings, Signal
 from meshcore_home_gateway.core.model import Position
+from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.views import HistoryEntry
 
 log = logging.getLogger(__name__)
+log.addFilter(FAILURES)  # a bug in the purge's thread is counted like the others
 
 SCHEMA_VERSION = 2  # 2: node.last_advert
 DAY_S = 86_400.0
 MAX_MESSAGES = 10_000
 MAX_POSITIONS = 100_000  # beyond it the oldest go, except each contact's newest
 MAX_READINGS = 200_000  # beyond it the oldest go, never a contact's newest answer
+MAX_HELD = 10_000  # writes held while a purge runs; beyond them, rows are lost (logged once)
+PURGE_BUSY_S = 10.0  # the purge's connection waits this long for the lock (sqlite3 timeout)
 _SCHEMA = """
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,
@@ -121,18 +129,29 @@ class NewerSchemaError(Exception):
     """The file was written by a newer version of the program."""
 
 
+Steps = list[tuple[str, list[tuple[Any, ...]]]]  # statements, each with its rows of arguments
+
+
 class History:
-    def __init__(self, connection: sqlite3.Connection, retention: Retention) -> None:
+    def __init__(
+        self, connection: sqlite3.Connection, retention: Retention, path: Path | None = None
+    ) -> None:
+        """`path`: the file, for the purge's own connection; None: the purge runs inline."""
         self._db = connection
         self._retention = retention
+        self._path = path
         self.broken = False
+        self._purging: concurrent.futures.Future[None] | None = None  # in its thread
+        self._held: list[Steps] = []  # the writes that came while it ran, in their order
+        self._dropped = 0  # writes beyond MAX_HELD
+        self._worker: concurrent.futures.ThreadPoolExecutor | None = None
 
     @classmethod
     def open(cls, path: Path, retention: Retention | None = None) -> History | None:
         """The history at `path`, created if missing; None if it cannot be used."""
         retention = retention or Retention()
         try:
-            return cls(_connect(path), retention)
+            return cls(_connect(path), retention, path)
         except NewerSchemaError as exc:
             log.warning("history %s: %s; running without it (a downgrade?)", path, exc)
         except sqlite3.DatabaseError as exc:
@@ -142,13 +161,17 @@ class History:
                     path.replace(aside)  # SQLite has removed its log files on closing it
                     log.warning("history %s unreadable (%s), moved to %s", path, exc, aside)
                     with contextlib.suppress(sqlite3.Error, OSError):
-                        return cls(_connect(path), retention)
+                        return cls(_connect(path), retention, path)
             log.warning("history %s cannot be used (%s): running without", path, exc)
         except OSError as exc:
             log.warning("history %s cannot be used (%s): running without", path, exc)
         return None
 
     def close(self) -> None:
+        """Waits for a purge that runs and writes what it held."""
+        self._finish_purge()
+        if self._worker is not None:
+            self._worker.shutdown()
         with contextlib.suppress(sqlite3.Error):
             self._db.close()
 
@@ -180,7 +203,9 @@ class History:
 
     def forget_telemetry(self, key: str) -> int | None:
         """Delete the contact's readings and its positions from telemetry, all or none; its
-        positions from adverts stay. The rows deleted, or None without a working history."""
+        positions from adverts stay. The rows deleted, or None without a working history. A
+        purge that runs is waited for (rare: the household excludes a contact and forgets)."""
+        self._finish_purge()
         return self._write_all([
             ("DELETE FROM reading WHERE contact_key = ?", [(key,)]),
             ("DELETE FROM position WHERE contact_key = ? AND source = 'telemetry'", [(key,)]),
@@ -209,8 +234,38 @@ class History:
         nodes; the rows of all others go, so that a flood of adverts with invented keys leaves
         no more rows than the gateway keeps in memory (SEC-010). None before the first table
         read of a run, while the rows are the heard nodes still to restore: only their age."""
+        self._finish_purge()
+        self._write_all(self._purge_steps(now, nodes))
+
+    def purge_in_thread(self, now: float, nodes: Iterable[str] | None = None) -> None:
+        """purge() in a thread on a connection of its own while the event loop goes on
+        (CODE-002): its cost grows with the tables and the disk. The writes that come meanwhile
+        are held in memory and follow it, in their order, in one transaction. Inline without a
+        running loop (the command line, tests) or without the file's path; nothing while the
+        last one still runs."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is None or self._path is None or self.broken:
+            self.purge(now, nodes)
+            return
+        if self._purging is not None:
+            return
+        if self._worker is None:
+            self._worker = concurrent.futures.ThreadPoolExecutor(1, "history-purge")
+        future = self._worker.submit(_purge_apart, self._path, self._purge_steps(now, nodes))
+        self._purging = future
+
+        def done(_: concurrent.futures.Future[None]) -> None:  # in the purge's thread
+            with contextlib.suppress(RuntimeError):  # the loop has closed: close() finished it
+                loop.call_soon_threadsafe(self._purged, future)
+
+        future.add_done_callback(done)
+
+    def _purge_steps(self, now: float, nodes: Iterable[str] | None) -> Steps:
         r = self._retention
-        steps: list[tuple[str, list[tuple[Any, ...]]]] = [
+        steps: Steps = [
             ("DELETE FROM message WHERE at < ?", [(now - r.messages_days * DAY_S,)]),
             (_MESSAGES_BEYOND_CAP, [(MAX_MESSAGES,)]),
             ("DELETE FROM position WHERE at < ?", [(now - r.positions_days * DAY_S,)]),
@@ -221,10 +276,45 @@ class History:
         ]  # fmt: skip
         if nodes is not None:
             steps.append((_NODES_FORGOTTEN, [(json.dumps(sorted(set(nodes))),)]))
-        self._write_all(steps)
+        return steps
+
+    def _purged(self, future: concurrent.futures.Future[None]) -> None:
+        """The purge's thread has finished: its error breaks the history as one of a write
+        does; the writes it held follow."""
+        if future is not self._purging:
+            return  # finished by close() or forget_telemetry()
+        self._purging = None
+        error = future.exception()
+        if isinstance(error, sqlite3.Error):
+            self._broke(error)
+        elif error is not None:
+            log.error("history: the purge failed", exc_info=error)
+        held, self._held = self._held, []
+        if held:
+            self._write_all([step for steps in held for step in steps])
+
+    def _finish_purge(self) -> None:
+        """Wait for a purge that runs in its thread, and write what it held."""
+        future = self._purging
+        if future is not None:
+            concurrent.futures.wait([future])
+            self._purged(future)
+
+    def _hold(self, steps: Steps) -> None:
+        """A write for after the purge that runs."""
+        if len(self._held) < MAX_HELD:
+            self._held.append(steps)
+            return
+        if not self._dropped:
+            log.warning("history: more than %d writes while the purge ran; later ones lost",
+                        MAX_HELD)  # fmt: skip
+        self._dropped += 1
 
     def _write(self, sql: str, args: tuple[Any, ...]) -> None:
         if self.broken:
+            return
+        if self._purging is not None:
+            self._hold([(sql, [args])])
             return
         try:
             self._db.execute(sql, args)
@@ -233,8 +323,12 @@ class History:
 
     def _write_all(self, steps: Iterable[tuple[str, Iterable[tuple[Any, ...]]]]) -> int | None:
         """Statements with their rows of arguments in one transaction; the rows they changed,
-        or None when the history is broken (a failure breaks it, as in _write)."""
+        or None when the history is broken (a failure breaks it, as in _write) or a purge
+        runs (they follow it)."""
         if self.broken:
+            return None
+        if self._purging is not None:
+            self._hold([(sql, list(rows)) for sql, rows in steps])
             return None
         changed = 0
         try:
@@ -321,6 +415,17 @@ def _named(values: Mapping[str, float]) -> lpp.Named:
     """An answer's values as the documents name them, from its rows."""
     readings = {q: value for q, value in values.items() if lpp.component_of(q) is not None}
     return lpp.Named(values.get(lpp.BATTERY_V), values.get(lpp.MCU_TEMPERATURE_C), readings)
+
+
+def _purge_apart(path: Path, steps: Steps) -> None:
+    """The purge on a connection of its own, in one transaction (the purge's thread)."""
+    db = sqlite3.connect(path, timeout=PURGE_BUSY_S, isolation_level=None)
+    try:
+        with _transaction(db):
+            for sql, rows in steps:
+                db.executemany(sql, rows)
+    finally:
+        db.close()
 
 
 def _connect(path: Path) -> sqlite3.Connection:

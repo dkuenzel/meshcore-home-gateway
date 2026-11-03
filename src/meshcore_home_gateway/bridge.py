@@ -23,10 +23,12 @@ import contextlib
 import logging
 import random
 import secrets
+import shutil
 import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, Protocol
 
 from meshcore_home_gateway import __version__
@@ -67,6 +69,13 @@ from meshcore_home_gateway.core.text import (
     clean_received,
     prepare_text,
     with_nonce,
+)
+from meshcore_home_gateway.health import (
+    DISK_LOW_MB,
+    FAILURES,
+    LAG_TICK_S,
+    LAG_WARN_S,
+    LoopLag,
 )
 from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
@@ -110,6 +119,7 @@ from meshcore_home_gateway.telemetry_poller import OutboxActivity, TelemetryPoll
 from meshcore_home_gateway.texts import Text
 
 log = logging.getLogger(__name__)
+log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
 
 MAX_REQUEST_BYTES = 1024
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1.0, 60.0
@@ -161,6 +171,7 @@ class Bus(Protocol):
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
     def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None: ...
+    def dropped_1h(self) -> int: ...
 
 
 SessionFactory = Callable[[Transport, "asyncio.Queue[RadioEvent]", bool], CompanionSession]
@@ -196,6 +207,14 @@ class _Expected:
 
     def suspect(self, round_trip_ms: int) -> bool:
         return self.shortest_ms is not None and round_trip_ms < self.shortest_ms
+
+
+@dataclass
+class _Health:
+    """What the health section reads that no other part keeps (ARC-012)."""
+
+    state_dir: Path | None  # its free space; None: not measured (tests)
+    lag: LoopLag = field(default_factory=LoopLag)  # how late the event loop ran (CODE-001)
 
 
 @dataclass
@@ -307,8 +326,10 @@ class Bridge:
         manage_components: AnnouncedComponents | None = None,
         telemetry_records: TelemetryRecords | None = None,
         telemetry_lanes: LaneFactory | None = None,
+        state_dir: Path | None = None,
     ) -> None:
-        """`telemetry_lanes`: builds the telemetry lanes (tests)."""
+        """`telemetry_lanes`: builds the telemetry lanes (tests). `state_dir`: where the state
+        and the history are kept, for the free space in the health section."""
         self.config = config
         self._components = components
         self._bus = bus
@@ -361,8 +382,8 @@ class Bridge:
         )
         self._dedup = Deduplicator(config.messages.dedup_window_s)
         self._refusals = RateLimit(REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, now=monotonic())
-        self._unpublished = 0  # events of refused requests left out since the last report
-        self._next_report = monotonic()
+        # events of refused requests left out since the last report, and when the next is due
+        self._unpublished, self._next_report = 0, monotonic()
         self._received = ReceivedLimit(monotonic())
         # a copy passes the age check until 2 x max_age_s after the original (the sender's clock
         # may be max_age_s ahead): the duplicate memory must last as long (ADR 0009)
@@ -379,6 +400,7 @@ class Bridge:
         self._radio_ready = asyncio.Event()
         self._tasks: list[asyncio.Task[None]] = []
         self._telemetry_task: asyncio.Task[None] | None = None
+        self._health = _Health(state_dir)
 
     def _telemetry_poller(
         self, records: TelemetryRecords | None, lanes: LaneFactory | None
@@ -403,7 +425,7 @@ class Bridge:
     async def run(self, stop: asyncio.Event) -> None:
         if self._telemetry is not None:  # the states of the first documents come from it
             self._telemetry.restore()
-        for warning in protected_look_alikes(self.config) + broker_warnings(self.config):
+        for warning in start_warnings(self.config):
             log.warning("%s", warning)
         if self.config.contacts.manage and self.config.radio.transport == "tcp":
             log.warning("contact management over TCP: heard nodes are best effort, the radio "
@@ -431,6 +453,7 @@ class Bridge:
                     ("events", self._event_loop()),
                     ("messages", self._message_loop()),
                     ("status", self._status_loop()),
+                    ("lag", self._lag_loop()),
                 ):
                     self._tasks.append(group.create_task(coroutine, name=name))
                 if self._telemetry is not None:
@@ -1109,6 +1132,20 @@ class Bridge:
                 next_state = self._mono() + STATUS_INTERVAL_S
             await asyncio.sleep(tick)
 
+    async def _lag_loop(self) -> None:
+        """How late the event loop runs (CODE-001): a host that gives the gateway no CPU, or a
+        disk that holds it up, shows here before it shows as a radio that does not answer."""
+        loop = asyncio.get_running_loop()
+        while True:
+            due = loop.time() + LAG_TICK_S
+            await asyncio.sleep(LAG_TICK_S)
+            now = loop.time()
+            if self._health.lag.record(now - due, now):
+                log.warning(
+                    "the event loop was held up for %.1f s: the host gave the gateway no CPU, or "
+                    "its disk was slow (a backup, swapping)", now - due,
+                )  # fmt: skip
+
     def state_payload(self) -> dict[str, Any]:
         info = self._radio_info
         connected = self._radio_ready.is_set()
@@ -1139,6 +1176,34 @@ class Bridge:
             "contact_link": contact_link(info.name, info.public_key) if info else None,
             "version": __version__,
             **self._telemetry_state(),
+            "health": self._health_section(),
+        }
+
+    def _health_section(self) -> dict[str, Any]:
+        """How the gateway itself is doing (ARC-012): `degraded` while any part is not as it
+        should be, which the log tells in detail (docs/mqtt-api.md, State)."""
+        history = self.observer.history
+        history_state = (
+            "off" if not self.config.history.enabled
+            else "broken" if history is None or history.broken else "ok"
+        )  # fmt: skip
+        state_file = "unwritable" if self._ledger.store.failed else "ok"
+        exclusions = self.observer.exclusions.health
+        errors, lag = FAILURES.last_hour(), self._health.lag.worst()
+        disk = _free_mb(self._health.state_dir)
+        degraded = (
+            history_state == "broken" or state_file != "ok" or exclusions != "ok" or errors > 0
+            or (lag is not None and lag >= LAG_WARN_S) or (disk is not None and disk < DISK_LOW_MB)
+        )  # fmt: skip
+        return {
+            "degraded": degraded,
+            "history": history_state,
+            "state_file": state_file,
+            "exclusions": exclusions,
+            "errors_1h": errors,
+            "loop_lag_max_s": None if lag is None else round(lag, 3),
+            "events_dropped_1h": self._bus.dropped_1h(),
+            "disk_free_mb": disk,
         }
 
     def _telemetry_state(self) -> dict[str, Any]:
@@ -1164,7 +1229,8 @@ class Bridge:
     def _publish_state(self) -> None:
         state = self.state_payload()
         self._bus.publish(self.topics.state, encode(state), retain=True)
-        self._notify(f"STATUS=radio {state['radio']}, queue {state['queue']}")
+        degraded = ", degraded" if state["health"]["degraded"] else ""
+        self._notify(f"STATUS=radio {state['radio']}, queue {state['queue']}{degraded}")
 
     def _connected(self) -> None:
         """The broker connected: Home Assistant may have restarted unseen meanwhile."""
@@ -1291,6 +1357,22 @@ def broker_warnings(config: Config) -> list[Text]:
     return warnings
 
 
+def log_level_warnings(config: Config) -> list[Text]:
+    """`debug` logs what the gateway sees: texts, positions, keys, every frame (OPS-017)."""
+    if config.diagnostics.log_level != "debug":
+        return []
+    return [Text(
+        "log level debug: the journal gets the texts of the messages, the positions, the keys "
+        "and every frame of the radio, which journald keeps for weeks; set it back to info "
+        "after the search (docs/configuration.md, diagnostics)"
+    )]  # fmt: skip
+
+
+def start_warnings(config: Config) -> list[Text]:
+    """What the service logs at its start and `check-config` shows."""
+    return protected_look_alikes(config) + broker_warnings(config) + log_level_warnings(config)
+
+
 def protected_look_alikes(config: Config) -> list[Text]:
     """Warnings about protected keys with one 6-byte prefix: the radio names a sender by its
     prefix only, so it can hold one of them (ADR 0009); the managed profile adds them in key
@@ -1371,6 +1453,16 @@ def _may_be_asked(advert: codec.Advert) -> bool:
     it is asked for telemetry while its advert is fresh."""
     record = advert.record
     return not advert.new or (record is not None and record.node_type == NodeType.CHAT)
+
+
+def _free_mb(directory: Path | None) -> int | None:
+    """Free space in MB where the state and the history are kept; None unknown."""
+    if directory is None:
+        return None
+    try:
+        return shutil.disk_usage(directory).free // 1_000_000
+    except OSError:
+        return None
 
 
 def _key(target: Target) -> str:

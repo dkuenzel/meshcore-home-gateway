@@ -49,6 +49,7 @@ from meshcore_home_gateway.core.model import (
 )
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.core.telemetry import Answer, TelemetryEvent, TelemetryState
+from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.history import History, NodeRow
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol import codec
@@ -89,6 +90,7 @@ from meshcore_home_gateway.views import (
 )
 
 log = logging.getLogger(__name__)
+log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
 
 RECENT_MESSAGES = 50  # kept in memory for the history document
 LOGGED_ADVERT_S = 10.0  # a logged advert is matched to the radio's push this long
@@ -430,10 +432,15 @@ class Observer:
             # it keeps none of them
             strangers = [] if self.heard_nodes == "off" else self.mesh.nodes
             kept = None if self._first_read else [*self.mesh.contacts, *strangers]
-            self._history.purge(now, nodes=kept)
+            self._history.purge_in_thread(now, nodes=kept)  # the loop goes on (CODE-002)
             self._next_purge = now + PURGE_INTERVAL_S
         self._restate_all()
         self.flush()
+
+    @property
+    def history(self) -> History | None:
+        """The history; None without one (switched off, or it could not be opened)."""
+        return self._history
 
     def flush(self) -> None:
         """Store the current documents (also at the stop): a change of their content waits for

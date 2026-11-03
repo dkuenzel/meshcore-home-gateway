@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from meshcore_home_gateway import i18n, telemetry_poller
+from meshcore_home_gateway import health, i18n, telemetry_poller
 from meshcore_home_gateway.catalog import read_po
 
 SKIP_BROKER = os.environ.get("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS") == "1"
@@ -46,6 +46,13 @@ def no_first_start_hold(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
     tests marked `first_start_hold` wait for it."""
     if request.node.get_closest_marker("first_start_hold") is None:
         monkeypatch.setattr(telemetry_poller, "FIRST_START_S", 0.0)
+
+
+@pytest.fixture(autouse=True)
+def fresh_failures() -> None:
+    """The count of caught bugs and the memory of their tracebacks are the process's: each test
+    starts without those of the tests before (health.FAILURES)."""
+    health.FAILURES.reset()
 
 
 @pytest.fixture(autouse=True)

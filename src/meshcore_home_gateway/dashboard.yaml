@@ -19,7 +19,7 @@ views:
               {%- set radio = 'binary_sensor.@gw@_radio' -%}
               {%- set link = states(radio) -%}
               {%- set queue = states('sensor.@gw@_queue') | int(0) -%}
-              {%- set problems = ['binary_sensor.@gw@_look_alike', 'binary_sensor.@gw@_remote_cli', 'binary_sensor.@gw@_advert_position'] | select('is_state', 'on') | list | count -%}
+              {%- set problems = ['binary_sensor.@gw@_look_alike', 'binary_sensor.@gw@_remote_cli', 'binary_sensor.@gw@_advert_position', 'binary_sensor.@gw@_degraded'] | select('is_state', 'on') | list | count -%}
               {%- if states[radio] is none -%}
               > [!NOTE]
               > **_("Gateway not found.")** _("Home Assistant has no entity of node {node}: check MQTT discovery, or generate the dashboard for the right node.")
@@ -79,6 +79,12 @@ views:
             visibility:
               - condition: state
                 entity: binary_sensor.@gw@_advert_position
+                state: "on"
+          - type: tile
+            entity: binary_sensor.@gw@_degraded
+            visibility:
+              - condition: state
+                entity: binary_sensor.@gw@_degraded
                 state: "on"
       - type: grid
         cards:

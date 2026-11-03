@@ -29,20 +29,23 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from meshcore_home_gateway.core.airtime import LoRaParams, meshcore_lora
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.model import InboundMessage
+from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import PUSH_MIN, AutoAdd, Push, Response, StatsType
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
 from meshcore_home_gateway.radio.transport import ClosedByRadioError, Transport
 
 log = logging.getLogger(__name__)
+log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
 
 APP_NAME = "meshcore-home-gateway"
 COMMAND_TIMEOUT_S = 5.0  # the firmware documentation recommends about 5 s per command
+STALL_TURNS = 3  # turns of the loop a timed-out wait gives an answer already read (CODE-001)
 FLUSH_BYTES = 256  # completes any partial frame in the serial parser (docs/protocol.md)
 FLUSH_SETTLE_S = 0.5
 CLOCK_SET_THRESHOLD_S = 2
@@ -835,6 +838,8 @@ class CompanionSession:
             done, _ = await asyncio.wait(
                 {closed, frame}, timeout=self._timeout, return_when=asyncio.FIRST_COMPLETED
             )
+            if not done:  # after a stall of the loop the answer may wait in the buffer (CODE-001)
+                done = await _after_a_stall(closed, frame)
         finally:
             closed.cancel()
             if not frame.done():  # also when the caller is cancelled: no task left behind
@@ -934,6 +939,18 @@ def _warn_about_contact_adding(
             "types off in the auto-add settings (ADR 0009)",
             ", ".join(type_names(types)),
         )
+
+
+async def _after_a_stall(*tasks: asyncio.Task[Any]) -> set[asyncio.Task[Any]]:
+    """The tasks done after a few turns of the loop. When the loop resumes after a stall longer
+    than the timeout, the timer and the radio's data are due together, and the waiter runs
+    before the reader has put the frame into the queue and the getter has taken it: without
+    these turns the session ended on an answer that had come (RES-009)."""
+    for _ in range(STALL_TURNS):
+        await asyncio.sleep(0)
+        if done := {task for task in tasks if task.done()}:
+            return done
+    return set()
 
 
 def _iso(timestamp: int) -> str:

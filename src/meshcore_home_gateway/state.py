@@ -39,6 +39,7 @@ class JsonStateFile:
         empty and stays where it is; saving is refused."""
         self.path = path
         self.read_only = read_only
+        self.failed = False  # the last write failed (the health section, ARC-012)
 
     def load(self) -> dict[str, Any]:
         try:
@@ -68,6 +69,7 @@ class JsonStateFile:
         if self.read_only:
             msg = f"{self.path} is opened read-only"
             raise PermissionError(msg)
+        self.failed = True  # until the write is through
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name, suffix=".tmp")
         try:
@@ -86,6 +88,7 @@ class JsonStateFile:
             os.fsync(directory)
         finally:
             os.close(directory)
+        self.failed = False
 
 
 class CommandLedger:
@@ -102,6 +105,11 @@ class CommandLedger:
 
     def last(self, sender_key: str) -> int | None:
         return self._last.get(sender_key)
+
+    @property
+    def store(self) -> JsonStateFile:
+        """The state file, which it shares with the other sections."""
+        return self._store
 
     @property
     def view(self) -> Mapping[str, int]:
@@ -413,6 +421,12 @@ class TelemetryExclusions:
     def pending(self) -> bool:
         """A change is not stored yet."""
         return (frozenset(self._keys), frozenset(self._included)) != self._stored
+
+    @property
+    def health(self) -> str:
+        """For the health section: `unreadable` (telemetry paused), `unsaved` (a change waits
+        to be stored) or `ok`."""
+        return "unreadable" if self.unreadable else "unsaved" if self.pending else "ok"
 
     def exclude(self, key: str) -> bool:
         """Excluded from now on, also if the file cannot be written. True when the sets are

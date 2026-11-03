@@ -54,6 +54,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_airtime` | duration (s), diagnostic | airtime of the last hour |
 | `sensor.meshcore_home_gateway_radio1_airtime_available` | duration (s), diagnostic | airtime that may be spent now; attribute `budget_s_per_hour` |
 | `sensor.meshcore_home_gateway_radio1_queue` | diagnostic | messages waiting for the radio |
+| `binary_sensor.meshcore_home_gateway_radio1_degraded` | problem, diagnostic | *Gateway degraded*: on while a part of the gateway is not as it should be (the history broken, the state file unwritable, an exclusion unsaved, a bug caught in the last hour, the host holding it up, the disk nearly full); the `health` section as attributes ([mqtt-api.md](mqtt-api.md#state-state), [what to do](deployment.md#5-troubleshooting)); unknown with a gateway of an earlier version |
 | `event.meshcore_home_gateway_radio1_message` | event: `contact`, `channel` | every received message |
 | `event.meshcore_home_gateway_radio1_delivery` | event: `queued` … `rejected` | delivery steps of outgoing messages |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
@@ -473,6 +474,7 @@ and shows a person instead of a tracker that is the person's current source.
 | `state`: `radio_name`, `public_key`, `model`, `firmware`, `frequency_mhz`, `bandwidth_khz`, `spreading_factor`, `coding_rate`, `tx_power_dbm`, `contact_link`, `version` | attributes of the radio link (`version` as `bridge_version`) |
 | `state`: `radio`; `contacts`: `manage`; `contacts/<key>`: `removable` | whether the controls that change the contacts are available |
 | `state`: `airtime_budget_s_per_hour` | attribute of *Airtime available* |
+| `state`: `health` | *Gateway degraded*, with the section's keys as attributes |
 | `received`, `delivery`, `command` | every key becomes an attribute of the event entity, also the nested `command` object |
 | `rx`: `rssi_dbm`, `snr_db` | the packet sensors; `raw`, `length` and `received_at` stay on MQTT |
 | `send/<alias>` | the notify entities of the targets |

@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import struct
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -14,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway import history as history_module
 from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.bridge import protected_keys
 from meshcore_home_gateway.core import lpp
@@ -392,6 +394,31 @@ def test_with_heard_nodes_off_nothing_of_a_stranger_is_published_or_kept(tmp_pat
     clock.now = NOW + 60
     observer.tick()  # the first purge
     assert history.nodes() == []
+    history.close()
+
+
+def test_the_hourly_purge_runs_in_its_thread_while_the_loop_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CODE-002: the tick hands the purge to the history's thread and returns; the loop goes
+    on until the purge is done."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    observer = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW)
+    release = threading.Event()
+    monkeypatch.setattr(history_module, "_purge_apart", lambda *_: release.wait(5))
+
+    async def main() -> None:
+        observer.tick()  # the first purge is due at once
+        future = history._purging
+        assert future is not None
+        await asyncio.sleep(0.05)
+        assert not future.done()  # it waits in its thread, the loop runs
+        release.set()
+        await asyncio.wait([asyncio.wrap_future(future)])
+
+    asyncio.run(main())
+    assert history._purging is None
     history.close()
 
 

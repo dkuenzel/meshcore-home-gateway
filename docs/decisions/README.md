@@ -23,7 +23,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0013](0013-signed-releases-with-github-artifact-attestations.md) | Signed releases with GitHub artifact attestations | accepted; amended by 0022 |
 | [0014](0014-the-gateway-as-the-households-mesh-observer.md) | The gateway as the household's mesh observer: positions, telemetry, contacts and dashboards | accepted |
 | [0015](0015-provider-neutral-documents-on-the-bus.md) | Provider-neutral documents on the bus; front ends are adapters | accepted; amended 2026-11-03 (the integrity model) |
-| [0016](0016-history-in-a-local-sqlite-database.md) | History in a local SQLite database | accepted |
+| [0016](0016-history-in-a-local-sqlite-database.md) | History in a local SQLite database | accepted; amended 2026-11-03 (the purge in a thread) |
 | [0017](0017-contacts-on-the-radio-each-with-its-own-device.md) | Contacts live on the radio; each contact is a recipient with its own device | accepted |
 | [0018](0018-telemetry-pulled-from-the-households-companions.md) | Telemetry and positions pulled from the household's companions, in budget lanes | accepted; amended by 0025 |
 | [0019](0019-internationalisation-with-gettext.md) | Internationalisation with gettext catalogs; English source, German, Dutch, Polish, French | accepted; amended by 0027 |

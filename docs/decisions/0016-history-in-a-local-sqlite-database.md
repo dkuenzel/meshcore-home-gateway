@@ -115,6 +115,10 @@ Tests cover schema creation and migration, retention by age and count, a corrupt
 
 ## More Information
 
+* Amended on 2026-11-03 (security and architecture review, CODE-002): the hourly purge, the one
+  write whose cost grows with the tables and the disk, runs in a thread on a connection of its
+  own, in one transaction; the writes that come meanwhile wait in memory and follow it. The other
+  writes stay short and in the loop, which the `health` section's `loop_lag_max_s` now measures.
 * File lists: <https://packages.debian.org/bookworm/amd64/libpython3.11-stdlib/filelist>,
   <https://packages.debian.org/trixie/amd64/libpython3.13-stdlib/filelist>; versions of
   `libsqlite3-0` on <https://packages.debian.org/bookworm/libsqlite3-0> and

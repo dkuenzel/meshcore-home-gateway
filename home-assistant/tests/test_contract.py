@@ -368,6 +368,32 @@ async def test_the_state_document_fills_sensors_and_attributes(
     assert problems(caplog) == []
 
 
+async def test_a_degraded_gateway_is_a_problem_with_its_health_as_attributes(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """ARC-012: the problem sensor follows `health.degraded`, its attributes are the section; a
+    state document of an earlier version, without one, leaves it unknown without a warning."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    await fire(hass, TOPICS.state, state_document(known=True), retain=True)
+    sensor = f"binary_sensor.{PREFIX}_degraded"
+    assert hass.states.get(sensor).state == "unknown"
+    health = {
+        "degraded": True, "history": "broken", "state_file": "ok", "exclusions": "ok",
+        "errors_1h": 2, "loop_lag_max_s": 0.012, "events_dropped_1h": 0, "disk_free_mb": 5120,
+    }  # fmt: skip
+    await fire(hass, TOPICS.state, state_document(known=True) | {"health": health})
+    degraded = hass.states.get(sensor)
+    assert degraded.state == "on"
+    assert {key: degraded.attributes[key] for key in health if key != "degraded"} == {
+        key: value for key, value in health.items() if key != "degraded"
+    }
+    well = health | {"degraded": False, "history": "ok", "errors_1h": 0}
+    await fire(hass, TOPICS.state, state_document(known=True) | {"health": well})
+    assert hass.states.get(sensor).state == "off"
+    assert problems(caplog) == []
+
+
 async def test_packet_sensors_show_the_last_packet_once_enabled(
     hass: HomeAssistant, mqtt: Any
 ) -> None:

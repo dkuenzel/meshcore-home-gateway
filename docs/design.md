@@ -195,7 +195,12 @@ Long-running tasks on the loop, supervised by a task group:
 * **status reporter**: publishes the state document on change and every 60 s, pings the systemd
   watchdog and writes an exclusion from telemetry that could not be stored yet (§6.11);
 * **telemetry poller** (only with `[telemetry] enabled`, the default): one request to a companion
-  at a time (§6.11). Its saved schedule is restored before any task starts.
+  at a time (§6.11). Its saved schedule is restored before any task starts;
+* **lag probe**: sleeps a second at a time and measures how late it wakes. A host that gives the
+  gateway no CPU, or a disk that holds it up, shows there (`health.loop_lag_max_s`, a warning from
+  1 s) before it shows as a radio that does not answer. A command whose timeout falls in such a
+  stall gets a few more turns of the loop for an answer that has come meanwhile, which the reader
+  has not handed on yet (CODE-001).
 
 On stop the telemetry poller is cancelled first, so no request goes out after it, and saves its
 schedule; an answer that arrives later is dropped. Then the radio supervisor ends and closes the
@@ -583,7 +588,14 @@ flowchart LR
   answers moves it at most once an hour, keeping the signal of its last advert or message (an
   answer reports none).
 * **Failures stay local**: an exception in the observer is logged and does not stop messages,
-  deliveries or commands; a history that cannot be written switches itself off for the run.
+  deliveries or commands; a history that cannot be written switches itself off for the run. Such
+  a bug is counted and its traceback logged at most once a minute per place, with how many came
+  since (`health.FAILURES`, a filter on the loggers of the parts); the `health` section of the
+  `state` document and the problem sensor *Gateway degraded* tell what is wrong (ARC-012).
+* **The purge** runs hourly in a thread on a connection of its own, in one transaction: its cost
+  grows with the tables and the disk, and the event loop serves the radio meanwhile. The writes
+  that come in the meantime wait in memory and follow it in their order
+  ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)).
 
 ### 6.7 Home Assistant
 
@@ -599,6 +611,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Airtime last hour | `sensor` (duration) | `state` → `airtime_1h_s` |
 | Airtime available | `sensor` (duration) | `state` → `airtime_available_s` |
 | Queue | `sensor` | `state` → `queue` |
+| Gateway degraded | `binary_sensor` (problem) | `state` → `health.degraded`; the health section as attributes |
 | Last packet RSSI, SNR | `sensor` (signal strength), disabled by default | `rx` (only with `publish_rx_log`) |
 | Message | `event` (`contact`, `channel`) | `received` |
 | Delivery | `event` (delivery states) | `delivery` |

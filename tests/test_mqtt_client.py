@@ -530,6 +530,7 @@ def test_events_are_bounded_while_the_broker_is_unreachable(
         bus.publish("meshcore/radio1/received", b"4")
         assert [p[1] for p in fake.published][-2:] == [b"{}", b"4"]
         assert "2 events were dropped" in caplog.text
+        assert bus.dropped_1h() == 2  # the health section tells them for an hour (ARC-012)
 
     asyncio.run(scenario())
 
