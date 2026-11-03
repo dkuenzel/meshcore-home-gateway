@@ -20,8 +20,9 @@ from paho.mqtt.reasoncodes import ReasonCode
 from meshcore_home_gateway.config import MqttConfig
 from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.mqtt import retained as retained_module
-from meshcore_home_gateway.mqtt.client import ContactRequest, MqttBus, SendRequest
+from meshcore_home_gateway.mqtt.client import MqttBus
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.ports import ContactRequest, SendRequest
 from tests.conftest import Broker
 
 TOPICS = Topics("meshcore", "radio1")

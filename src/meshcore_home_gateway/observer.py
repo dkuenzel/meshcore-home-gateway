@@ -52,10 +52,7 @@ from meshcore_home_gateway.core.telemetry import Answer, TelemetryEvent, Telemet
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.history import History, NodeRow
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import NodeType
-from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     AdvertHeard,
     ContactsRead,
     PacketLogged,
@@ -63,6 +60,9 @@ from meshcore_home_gateway.radio.session import (
     RadioEvent,
     StatsRead,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
 from meshcore_home_gateway.state import (
     AdvertChecks,
     CurrentDocuments,

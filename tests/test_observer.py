@@ -24,17 +24,17 @@ from meshcore_home_gateway.core.mesh import AdvertCheck, Fix, Heard, Signal
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.telemetry import Answer, TelemetryState
 from meshcore_home_gateway.history import History
-from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import Push
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     AdvertHeard,
+    ContactRequest,
     ContactsRead,
     PacketLogged,
     PathReset,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import Push
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
     AdvertChecks,

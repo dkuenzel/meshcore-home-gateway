@@ -23,14 +23,13 @@ from meshcore_home_gateway.core.mesh import Heard, Node
 from meshcore_home_gateway.core.telemetry import Answer
 from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import manage_entities
-from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.ports import ContactRequest, ContactsRead
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.radio import session as session_module
-from meshcore_home_gateway.radio.session import ContactsRead
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryExclusions
 from tests.radio_emulator import LPP_BME280, SELF_KEY, EmulatedContact, EmulatedRadio
 from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario

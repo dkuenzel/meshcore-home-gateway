@@ -11,17 +11,10 @@ from dataclasses import replace
 import pytest
 
 from meshcore_home_gateway.core.model import MessageKind, Position
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import Command, Push, Response
-from meshcore_home_gateway.protocol.framing import encode_frame
-from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
-from meshcore_home_gateway.radio import session as session_module
-from meshcore_home_gateway.radio.session import (
-    RELEASED_AFTER,
+from meshcore_home_gateway.ports import (
     AckReceived,
     AdvertHeard,
     CommandFailedError,
-    CompanionSession,
     ContactsRead,
     MessageReceived,
     NotSentError,
@@ -34,6 +27,12 @@ from meshcore_home_gateway.radio.session import (
     TelemetryReceived,
     TelemetrySent,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import Command, Push, Response
+from meshcore_home_gateway.protocol.framing import encode_frame
+from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
+from meshcore_home_gateway.radio import session as session_module
+from meshcore_home_gateway.radio.session import RELEASED_AFTER, CompanionSession
 from meshcore_home_gateway.radio.transport import TcpTransport
 from tests.radio_emulator import (
     LPP_FULL,

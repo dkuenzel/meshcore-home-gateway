@@ -23,7 +23,7 @@ from meshcore_home_gateway.core.model import DeliveryState
 from meshcore_home_gateway.mqtt.topics import Topics
 
 if TYPE_CHECKING:
-    from meshcore_home_gateway.radio.session import RadioInfo
+    from meshcore_home_gateway.ports import RadioInfo
 
 DOCUMENTATION_URL = (
     "https://github.com/dkuenzel/meshcore-home-gateway/blob/main/docs/home-assistant.md"

@@ -73,3 +73,11 @@ event loop with `call_soon_threadsafe`. Everything else runs on the event loop.
 * Alistair Cockburn, "Hexagonal architecture", <https://alistair.cockburn.us/hexagonal-architecture/>
 * Python `asyncio` event loop, `loop.call_soon_threadsafe`:
   <https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.call_soon_threadsafe>
+* Amended on 2026-11-03 (security and architecture review, ARC-003, CODE-010): the ports had
+  stayed a plan; the application imported the companion session and the MQTT client's request
+  types. They are now the module `meshcore_home_gateway.ports`: `RadioPort` with the radio's
+  events and errors, `Transport`, `SessionFactory`, `RadioProfileHook`, and `Bus` with its
+  `SendRequest` and `ContactRequest`; `MqttBus` declares `Bus`. The clocks are passed in as
+  functions, and the state file stays one concrete class, as no second store is planned. A test
+  (`tests/test_architecture.py`) checks that no application module imports an adapter; only the
+  adapters themselves and the command line that puts them together do.

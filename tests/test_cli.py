@@ -29,9 +29,9 @@ from meshcore_home_gateway.config import MqttConfig, config_answers, load_config
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.mqtt import client as client_module
+from meshcore_home_gateway.ports import ContactsRead
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command
-from meshcore_home_gateway.radio.session import ContactsRead
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, JsonStateFile
 from tests.conftest import Broker

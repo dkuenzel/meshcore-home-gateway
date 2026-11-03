@@ -48,7 +48,7 @@ from meshcore_home_gateway.protocol.codes import ContactFlag, TelemetryMode
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.core.profile import Plan
-    from meshcore_home_gateway.radio.transport import Transport
+    from meshcore_home_gateway.ports import Transport
     from meshcore_home_gateway.state import ProfileRecords
 
 EX_OK, EX_FAILURE, EX_USAGE, EX_CONFIG = 0, 1, 2, 78
@@ -394,6 +394,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
     from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
     from meshcore_home_gateway.observer import Observer  # noqa: PLC0415
     from meshcore_home_gateway.radio.profile import RadioProfile  # noqa: PLC0415
+    from meshcore_home_gateway.radio.session import default_session_factory  # noqa: PLC0415
     from meshcore_home_gateway.state import (  # noqa: PLC0415
         EXCLUSIONS_FILE,
         AdvertChecks,
@@ -453,6 +454,7 @@ async def _serve(config: Config, state_dir: Path) -> int:
         bus,
         lambda: transport_for(config),
         CommandLedger(store),
+        session_factory=default_session_factory,
         components=AnnouncedComponents(store),
         observer=observer,
         devices=devices,
@@ -802,13 +804,10 @@ async def _probe_radio(
     configured: bool,
 ) -> dict[str, Any]:
     from meshcore_home_gateway.core import profile as policy  # noqa: PLC0415
+    from meshcore_home_gateway.ports import RadioEvent  # noqa: PLC0415
+    from meshcore_home_gateway.protocol.codec import added_types, type_names  # noqa: PLC0415
     from meshcore_home_gateway.radio.profile import live_values  # noqa: PLC0415
-    from meshcore_home_gateway.radio.session import (  # noqa: PLC0415
-        CompanionSession,
-        RadioEvent,
-        added_types,
-        type_names,
-    )
+    from meshcore_home_gateway.radio.session import CompanionSession  # noqa: PLC0415
     from meshcore_home_gateway.views import SETTING_NAMES, setting_value  # noqa: PLC0415
 
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()

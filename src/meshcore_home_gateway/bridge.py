@@ -29,7 +29,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config
@@ -79,7 +79,6 @@ from meshcore_home_gateway.health import (
     LAG_WARN_S,
     LoopLag,
 )
-from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
     contact_discovery_subscription,
@@ -96,26 +95,29 @@ from meshcore_home_gateway.mqtt.payloads import (
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.outbox import Outbox, Outgoing
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES, radio_name
-from meshcore_home_gateway.protocol.codes import NodeType
-from meshcore_home_gateway.protocol.links import contact_link
-from meshcore_home_gateway.radio.profile import RadioProfile
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     AckReceived,
     AdvertHeard,
     Barrier,
+    Bus,
     CommandFailedError,
-    CompanionSession,
     MessageReceived,
     PacketLogged,
     PathChanged,
     RadioError,
     RadioEvent,
     RadioInfo,
+    RadioPort,
+    RadioProfileHook,
+    SendRequest,
+    SessionFactory,
     TelemetryReceived,
+    Transport,
 )
-from meshcore_home_gateway.radio.transport import Transport
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES, radio_name
+from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.state import (
     AirtimeLevel,
     AnnouncedComponents,
@@ -172,33 +174,6 @@ class _FinalError(Exception):
         super().__init__(reason)
         self.state = state
         self.reason = reason
-
-
-class Bus(Protocol):
-    """What the bridge needs from the message bus (implemented by mqtt.client.MqttBus)."""
-
-    requests: asyncio.Queue[SendRequest]
-    contact_requests: asyncio.Queue[ContactRequest]
-    connected: bool
-    on_connected: list[Callable[[], None]]
-    on_ha_online: list[Callable[[], None]]
-    on_ha_offline: list[Callable[[], None]]
-    on_ha_device: list[Callable[[str, bytes, bool], None]]
-    on_show_hidden: list[Callable[[], None]]
-
-    async def start(self) -> None: ...
-    async def stop(self) -> None: ...
-    def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None: ...
-    def dropped_1h(self) -> int: ...
-
-
-SessionFactory = Callable[[Transport, "asyncio.Queue[RadioEvent]", bool], CompanionSession]
-
-
-def default_session_factory(
-    transport: Transport, events: asyncio.Queue[RadioEvent], set_clock: bool
-) -> CompanionSession:
-    return CompanionSession(transport, events, set_clock=set_clock)
 
 
 @dataclass
@@ -324,14 +299,14 @@ class Bridge:
         transport_factory: Callable[[], Transport],
         ledger: CommandLedger,
         *,
-        session_factory: SessionFactory = default_session_factory,
+        session_factory: SessionFactory,
         wall_clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
         notifier: Callable[[str], bool] = notify,
         components: AnnouncedComponents | None = None,
         observer: Observer | None = None,
         devices: ContactDevices | None = None,
-        profile: RadioProfile | None = None,
+        profile: RadioProfileHook | None = None,
         manage_components: AnnouncedComponents | None = None,
         telemetry_records: TelemetryRecords | None = None,
         telemetry_lanes: LaneFactory | None = None,
@@ -410,7 +385,7 @@ class Bridge:
             max(INBOUND_DEDUP_S, 2 * config.commands.max_age_s + 60.0)
         )
         self._acks = AckWaiter(monotonic)
-        self._session: CompanionSession | None = None
+        self._session: RadioPort | None = None
         self._radio_info: RadioInfo | None = None
         self._link = LinkWatch()  # over TCP: whether another client took the link (SEC-003)
         self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
@@ -672,7 +647,7 @@ class Bridge:
             await asyncio.sleep(delay * random.uniform(1.0, 1.2))  # noqa: S311 - jitter only
             delay = min(delay * 2, RECONNECT_MAX_S)
 
-    def _link_started(self, session: CompanionSession) -> None:
+    def _link_started(self, session: RadioPort) -> None:
         """Over TCP: whether another client took the link before this one (core.link)."""
         uptime_s, read_at = _uptime(session)
         if self._link.started(uptime_s, read_at):
@@ -684,7 +659,7 @@ class Bridge:
                 uptime_s,
             )
 
-    def _check_radio(self, session: CompanionSession) -> None:
+    def _check_radio(self, session: RadioPort) -> None:
         """Warn about targets the radio does not know, a burst that is too small, and commands
         over TCP."""
         if self.config.radio.transport == "tcp" and self.config.commands.senders:
@@ -717,7 +692,7 @@ class Bridge:
                         "target %s: contact missing on the radio or prefix ambiguous", target.alias
                     )
 
-    async def _radio_until(self, deadline: float) -> CompanionSession | None:
+    async def _radio_until(self, deadline: float) -> RadioPort | None:
         """The connected session, waiting for it until the deadline; never a closed one."""
         while True:
             remaining = deadline - self._mono()
@@ -745,7 +720,7 @@ class Bridge:
         while True:
             self._contacts.accept(await self._bus.contact_requests.get())
 
-    def live_session(self) -> CompanionSession | None:
+    def live_session(self) -> RadioPort | None:
         """The session, while the radio is connected."""
         session = self._session
         if session is None or session.closed or not self._radio_ready.is_set():
@@ -948,7 +923,7 @@ class Bridge:
             reason = "queue_ttl" if self._radio_ready.is_set() else "no_radio"
         return self._event(item, DeliveryState.EXPIRED, reason=reason)
 
-    async def _read_changed_contacts(self, session: CompanionSession, target: Target) -> bool:
+    async def _read_changed_contacts(self, session: RadioPort, target: Target) -> bool:
         """For a contact target, read the table again if the radio reported a change: it
         encrypts for the first contact with the prefix, so the target must be resolved on a
         table that shows a look-alike added in an earlier slot. False for a channel target."""
@@ -959,7 +934,7 @@ class Bridge:
         return True
 
     async def _attempt(
-        self, session: CompanionSession, item: Outgoing, *, deadline: float
+        self, session: RadioPort, item: Outgoing, *, deadline: float
     ) -> DeliveryEvent | None:
         """One transmission, the attempt numbered `item.sent`. Returns the final event, or None
         when another attempt should follow."""
@@ -996,7 +971,7 @@ class Bridge:
         return await self._transmit(session, item, airtime, info)
 
     async def _transmit(
-        self, session: CompanionSession, item: Outgoing, airtime: float, info: RadioInfo
+        self, session: RadioPort, item: Outgoing, airtime: float, info: RadioInfo
     ) -> DeliveryEvent | None:
         """Hand the attempt to the radio; a direct message's waits for its acknowledgement."""
         target, text, timestamp = item.target, item.text, item.timestamp or int(self._wall())
@@ -1039,7 +1014,7 @@ class Bridge:
         )
 
     def _plan(
-        self, session: CompanionSession, item: Outgoing, attempt: int, info: RadioInfo
+        self, session: RadioPort, item: Outgoing, attempt: int, info: RadioInfo
     ) -> tuple[float, bytes | None]:
         """Check the target on the radio and estimate the airtime; also the key whose stored
         path must be reset before this attempt, so that it floods."""
@@ -1074,7 +1049,7 @@ class Bridge:
         path_bytes = 0 if flood else record.path_bytes or 0
         return direct_attempt_airtime_s(size, path_bytes, flood, info.lora), reset
 
-    def _resolve(self, session: CompanionSession, target: Target) -> Contact:
+    def _resolve(self, session: RadioPort, target: Target) -> Contact:
         key = _key(target)
         matches = session.contacts.resolve(key[:PREFIX_HEX_DIGITS])
         if len(matches) > 1:
@@ -1283,7 +1258,7 @@ class Bridge:
             return CommandDecision(word, rejection=Rejection.SENDER_UNVERIFIED)
         return self._decide(message, session)
 
-    def _decide(self, message: InboundMessage, session: CompanionSession) -> CommandDecision | None:
+    def _decide(self, message: InboundMessage, session: RadioPort) -> CommandDecision | None:
         now = self._mono()
         self._seen = {k: at for k, at in self._seen.items() if now - at < LOOK_ALIKE_MEMORY_S}
         return evaluate_command(
@@ -1668,7 +1643,7 @@ def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
     return (info.device.model, info.device.version, info.public_key) if info else None
 
 
-def _uptime(session: CompanionSession) -> tuple[int | None, float | None]:
+def _uptime(session: RadioPort) -> tuple[int | None, float | None]:
     """The radio's uptime in the session's last statistics, and when they were read."""
     stats = session.stats
     if stats is None or stats.core is None:
@@ -1705,7 +1680,7 @@ def _key(target: Target) -> str:
 
 
 def _shortest_ms(
-    session: CompanionSession,
+    session: RadioPort,
     record: codec.ContactRecord | None,
     sent: codec.Sent,
     text: str,

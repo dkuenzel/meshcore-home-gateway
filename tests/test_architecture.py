@@ -90,3 +90,29 @@ def test_only_the_modules_that_show_texts_choose_a_language() -> None:
         if any(name == I18N or name.startswith(I18N + ".") for name in imported_modules(path))
     }
     assert importing <= SPEAKING
+
+
+# ARC-003: the application asks the radio and the bus through the ports (ports.py); only the
+# adapters themselves, and the command line and the wiring that put them in, name an adapter.
+ADAPTERS = {
+    "meshcore_home_gateway.radio.session",
+    "meshcore_home_gateway.radio.transport",
+    "meshcore_home_gateway.mqtt.client",
+}
+PUTS_IN_ADAPTERS = ("cli.py", "cli/", "wiring.py", "radio/", "mqtt/client.py")
+APPLICATION = sorted(
+    path
+    for path in PACKAGE.rglob("*.py")
+    if not path.relative_to(PACKAGE).as_posix().startswith(PUTS_IN_ADAPTERS)
+)
+
+
+@pytest.mark.parametrize("path", APPLICATION, ids=lambda p: p.relative_to(PACKAGE).as_posix())
+def test_the_application_names_no_adapter(path: Path) -> None:
+    assert not imported_modules(path) & ADAPTERS
+
+
+def test_the_application_is_checked() -> None:
+    names = {path.relative_to(PACKAGE).as_posix() for path in APPLICATION}
+    assert {"bridge.py", "observer.py", "contact_manager.py", "telemetry_poller.py"} <= names
+    assert {"mqtt/discovery.py", "ports.py"} <= names

@@ -87,7 +87,6 @@ from meshcore_home_gateway.core.telemetry import (
     Answer,
 )
 from meshcore_home_gateway.mqtt import client as mqtt_client
-from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
     contact_device_id,
@@ -102,17 +101,18 @@ from meshcore_home_gateway.mqtt.discovery import (
 from meshcore_home_gateway.mqtt.manage_entities import manage_payload, manage_topic
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType, TelemetryMode
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     AdvertHeard,
     CommandFailedError,
-    CompanionSession,
+    ContactRequest,
     ContactsRead,
     MessageReceived,
     PacketLogged,
     StatsRead,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType, TelemetryMode
+from meshcore_home_gateway.radio.session import CompanionSession, default_session_factory
 from meshcore_home_gateway.state import (
     CommandLedger,
     ContactDeviceRecords,
@@ -129,7 +129,7 @@ from tests.radio_emulator import (
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.observer import Publisher
-    from meshcore_home_gateway.radio.transport import Transport
+    from meshcore_home_gateway.ports import Transport
     from public_interface import Finding  # tools/public_interface.py, loaded below by its path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -566,6 +566,7 @@ async def _published(tmp: Path) -> _Paho:
         bus,
         _no_radio,
         CommandLedger(store),
+        session_factory=default_session_factory,
         notifier=lambda _: True,
         wall_clock=lambda: T,
         devices=devices,

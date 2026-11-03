@@ -42,20 +42,20 @@ from meshcore_home_gateway.core.contacts import (
 from meshcore_home_gateway.core.mesh import Node
 from meshcore_home_gateway.core.text import contact_name
 from meshcore_home_gateway.health import FAILURES
-from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import NodeType
-from meshcore_home_gateway.protocol.links import LinkContact, LinkError, parse_contact_text
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     Barrier,
     CommandFailedError,
-    CompanionSession,
+    ContactRequest,
     NotSentError,
     RadioError,
     RadioEvent,
     RadioInfo,
+    RadioPort,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.protocol.links import LinkContact, LinkError, parse_contact_text
 from meshcore_home_gateway.views import contact_event
 
 log = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ class ContactManager:
         config: Config,
         observer: Observer,
         events: asyncio.Queue[RadioEvent],
-        session: Callable[[], CompanionSession | None],
+        session: Callable[[], RadioPort | None],
         *,
         protected: frozenset[str],
         monotonic: Callable[[], float] = time.monotonic,
@@ -366,7 +366,7 @@ class ContactManager:
         else:
             await self._remove(session, job)
 
-    async def _fresh_table(self, session: CompanionSession) -> None:
+    async def _fresh_table(self, session: RadioPort) -> None:
         """The rules apply to the table as the radio has it now: read again if it changed since
         the last read began (a read in progress that began later is waited for, not repeated)."""
         try:
@@ -376,7 +376,7 @@ class ContactManager:
         except RadioError:
             raise _RefusedError("no_radio") from None
 
-    async def _add(self, session: CompanionSession, own_key: str, limit: int, job: Job) -> None:
+    async def _add(self, session: RadioPort, own_key: str, limit: int, job: Job) -> None:
         heard = job.heard or _node(self._observer.mesh.nodes.get(job.key))
         if heard is not None:  # its own signed advert: name, type and time are the node's
             name, node_type, advert = heard.name, heard.node_type, heard.last_advert
@@ -399,7 +399,7 @@ class ContactManager:
         claimed = Job(job.kind, job.key, job.request_id, job.source, name, node_type, job.heard)
         await self._write(session, claimed, session.write_contact(request))
 
-    async def _remove(self, session: CompanionSession, job: Job) -> None:
+    async def _remove(self, session: RadioPort, job: Job) -> None:
         record = session.contact_records.get(job.key)
         reason = remove_refusal(job.key, table=session.contact_records)
         if reason is not None or record is None:
@@ -407,7 +407,7 @@ class ContactManager:
         named = Job(job.kind, job.key, job.request_id, job.source, record.name, record.node_type)
         await self._write(session, named, session.remove_contact(record.public_key))
 
-    async def _write(self, session: CompanionSession, job: Job, write: Awaitable[None]) -> None:
+    async def _write(self, session: RadioPort, job: Job, write: Awaitable[None]) -> None:
         """Write once, read the table back; the result after the events before it."""
         expected = _RESULT[job.kind]
         self._writing = True  # from here on, the result follows the events before it

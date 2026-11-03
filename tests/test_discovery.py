@@ -32,9 +32,9 @@ from meshcore_home_gateway.mqtt.discovery import (
 from meshcore_home_gateway.mqtt.manage_entities import manage_payload
 from meshcore_home_gateway.mqtt.payloads import rx_payload
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.codes import NodeType
-from meshcore_home_gateway.radio.session import RadioInfo
 from meshcore_home_gateway.views import (
     contacts_document,
     nodes_document,

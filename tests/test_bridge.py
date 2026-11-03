@@ -25,16 +25,16 @@ from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import manage_entities
-from meshcore_home_gateway.mqtt.client import ContactRequest, SendRequest
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.ports import ContactRequest, RadioEvent, SendRequest, Transport
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.profile import RadioProfile
-from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
-from meshcore_home_gateway.radio.transport import TcpTransport, Transport
+from meshcore_home_gateway.radio.session import CompanionSession, default_session_factory
+from meshcore_home_gateway.radio.transport import TcpTransport
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
     AnnouncedComponents,
@@ -1987,13 +1987,25 @@ def test_telemetry_is_on_by_default(tmp_path: Path) -> None:
     )
     assert plain.telemetry.enabled is True
     store = JsonStateFile(tmp_path / "state.json")
-    bridge = Bridge(plain, FakeBus(), EmulatedRadio, CommandLedger(store))
+    bridge = Bridge(
+        plain,
+        FakeBus(),
+        EmulatedRadio,
+        CommandLedger(store),
+        session_factory=default_session_factory,
+    )
     poller = bridge._telemetry
     assert poller is not None
     assert bridge.observer.telemetry_state == poller.state_of
     assert bridge.observer.on_telemetry_exclusion == [poller.exclusion_changed]
     assert bridge.observer.on_contact_added == [poller.contact_added]
-    off = Bridge(make_config(), FakeBus(), EmulatedRadio, CommandLedger(store))
+    off = Bridge(
+        make_config(),
+        FakeBus(),
+        EmulatedRadio,
+        CommandLedger(store),
+        session_factory=default_session_factory,
+    )
     assert off._telemetry is None
     assert (off.observer.telemetry_state, off.observer.on_telemetry_exclusion) == (None, [])
     assert off.observer.on_contact_added == []
@@ -2009,7 +2021,12 @@ def test_with_telemetry_off_an_exclusion_or_inclusion_forgets_the_saved_answers(
     key = "d4" * 32
     records.save(telemetry.Saved({key: telemetry.SavedContact(812.5, 0, 95.0)}), NOW)
     off = Bridge(
-        make_config(), FakeBus(), EmulatedRadio, CommandLedger(store), telemetry_records=records
+        make_config(),
+        FakeBus(),
+        EmulatedRadio,
+        CommandLedger(store),
+        session_factory=default_session_factory,
+        telemetry_records=records,
     )
     off.observer.telemetry_excluded(key, False)  # included again, as the contact manager does
     saved, _ = records.load(NOW)
@@ -2102,7 +2119,13 @@ def test_a_bug_in_the_telemetry_state_leaves_the_rest_of_the_state(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     store = JsonStateFile(tmp_path / "state.json")
-    bridge = Bridge(make_config(telemetry=True), FakeBus(), EmulatedRadio, CommandLedger(store))
+    bridge = Bridge(
+        make_config(telemetry=True),
+        FakeBus(),
+        EmulatedRadio,
+        CommandLedger(store),
+        session_factory=default_session_factory,
+    )
     poller = bridge._telemetry
     assert poller is not None
 
@@ -3041,7 +3064,14 @@ def idle_bridge(
         return True
 
     bridge = Bridge(
-        config, bus, EmulatedRadio, ledger, notifier=note, observer=observer, state_dir=tmp_path
+        config,
+        bus,
+        EmulatedRadio,
+        ledger,
+        session_factory=default_session_factory,
+        notifier=note,
+        observer=observer,
+        state_dir=tmp_path,
     )
     return bridge, bus, notes
 

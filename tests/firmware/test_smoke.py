@@ -15,7 +15,8 @@ from typing import Any, TypeVar
 import pytest
 
 from meshcore_home_gateway import cli
-from meshcore_home_gateway.radio.session import CompanionSession, RadioEvent
+from meshcore_home_gateway.ports import RadioEvent
+from meshcore_home_gateway.radio.session import CompanionSession
 from meshcore_home_gateway.radio.transport import SerialTransport
 from tests.firmware.air import AirThread, RadioSettings
 from tests.firmware.app import App

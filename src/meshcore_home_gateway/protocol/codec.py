@@ -778,3 +778,33 @@ _DECODERS: dict[int, Callable[[bytes], Decoded]] = {
     Push.LOG_RX_DATA: _rx_log,
     Push.TELEMETRY_RESPONSE: _telemetry_response,
 }
+
+
+AUTO_ADD_TYPES = {
+    AutoAdd.CHAT: "chat",
+    AutoAdd.REPEATER: "repeater",
+    AutoAdd.ROOM_SERVER: "room",
+    AutoAdd.SENSOR: "sensor",
+}
+_EVERY_TYPE = AutoAdd.CHAT | AutoAdd.REPEATER | AutoAdd.ROOM_SERVER | AutoAdd.SENSOR
+
+
+def added_types(self_info: SelfInfo, autoadd: AutoAddConfig | None) -> AutoAdd:
+    """Contact types the radio adds on its own (MyMesh.cpp:308-332).
+
+    Every type without manual adding; with it, the types enabled in the auto-add settings, none
+    on firmware without those settings. Bits of types this code does not know count as well.
+    """
+    if not self_info.manual_add_contacts:
+        return _EVERY_TYPE
+    if autoadd is None:
+        return AutoAdd(0)
+    # int arithmetic: inverting the flag itself would also clear the unknown bits
+    return AutoAdd(autoadd.flags & 0xFF & ~int(AutoAdd.OVERWRITE_OLDEST))
+
+
+def type_names(types: AutoAdd) -> list[str]:
+    """Names of the contact types; bits of types this code does not know as one hex value."""
+    names = [name for flag, name in AUTO_ADD_TYPES.items() if types & flag]
+    unknown = int(types) & ~int(_EVERY_TYPE)
+    return [*names, f"0x{unknown:02x}"] if unknown else names

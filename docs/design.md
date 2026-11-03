@@ -120,7 +120,11 @@ documents for Home Assistant and later front ends (§13).
 
 The core holds the rules and calculations and does no I/O. The application layer orchestrates. The
 adapters talk to the radio, the broker, the file system and systemd
-([ADR 0007](decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)).
+([ADR 0007](decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)). The application asks
+the radio and the bus through the ports (`ports`): the radio port with its events and errors, the
+transport, the bus and its requests. The adapters implement them, and
+`tests/test_architecture.py` checks that no application module names an adapter (ARC-003): a
+second radio adapter changes none of them.
 
 ```mermaid
 flowchart TB
@@ -137,9 +141,11 @@ flowchart TB
         TX[text] --- AT[airtime] --- BU[budget · dedup]
         CO[commands] --- CT[contacts] --- MO[model]
     end
+    PO[ports<br/>radio · bus]
     PR[protocol<br/>framing · codec] --> SES
-    SES <--> BR
-    MQ <--> BR
+    SES -. implements .-> PO
+    MQ -. implements .-> PO
+    BR --> PO
     ST --- BR
     SD --- BR
     BR --> core
@@ -161,6 +167,7 @@ flowchart TB
 | `protocol.codec` | Command encoders and response decoders. |
 | `protocol.packet` | On-air packets from the radio's packet log, and the adverts in them. |
 | `views` | Providers: the documents of the MQTT API, built from the core's state (pure). |
+| `ports` | What the application asks of the radio and the bus and what they give it: the radio port, its events and errors, the transport, the bus and its requests (ARC-003). |
 | `radio.transport` | Serial port (termios) and TCP byte streams. |
 | `radio.session` | Connection handshake, request/response, pushes, message sync, time sync. |
 | `bridge` | Outbound queue with delivery and retries, inbound handling, status reporting, supervision. |

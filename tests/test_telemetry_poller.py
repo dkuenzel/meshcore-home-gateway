@@ -28,19 +28,21 @@ from meshcore_home_gateway.core.budget import AirtimeBudget
 from meshcore_home_gateway.core.mesh import ANSWERED_SLACK_S, Heard, Signal
 from meshcore_home_gateway.core.telemetry import Candidate, Poll
 from meshcore_home_gateway.history import History
-from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import Command, Push
-from meshcore_home_gateway.radio import session as session_module
-from meshcore_home_gateway.radio.session import (
-    CompanionSession,
+from meshcore_home_gateway.ports import (
+    ContactRequest,
+    ContactsRead,
     NotSentError,
     RadioError,
+    RadioPort,
     TelemetryReceived,
     TelemetrySent,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import Command, Push
+from meshcore_home_gateway.radio import session as session_module
+from meshcore_home_gateway.radio.session import CompanionSession
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
     CurrentDocuments,
@@ -536,6 +538,7 @@ def test_a_message_queued_while_a_request_waits_for_the_radio_withdraws_it(
             session, poller = bridge.live_session(), bridge._telemetry
             assert session is not None
             assert poller is not None
+            assert isinstance(session, CompanionSession)
             async with session._lock:  # another command holds the radio
                 await until(lambda: poller._sending == KEY)
                 bus.send("alerts", "intruder")
@@ -1420,7 +1423,7 @@ def test_late_answers_are_ordered_by_frame_within_a_session_only() -> None:
         assert isinstance(record, codec.ContactRecord)
         session.contact_records = {KEY: record}
         poller, observer = stand_in_poller(session)
-        observer.radio_event(session_module.ContactsRead({KEY: record}, NOW))
+        observer.radio_event(ContactsRead({KEY: record}, NOW))
         now = time.monotonic()
         poller._scheduler.decide(EU, [Candidate(KEY, 0, 0, None)], now)
         prefix = DANA.public_key[:6]
@@ -1453,7 +1456,7 @@ def test_an_advert_from_before_the_restart_counts_from_when_it_was_heard() -> No
     session.contact_records = {KEY: chat_record(DANA)}
     poller, observer = stand_in_poller(session, monotonic=lambda: 5000.0)
     observer.mesh.restore(KEY, Heard(NOW - 600, "advert", Signal()), None)
-    observer.radio_event(session_module.ContactsRead(session.contact_records, NOW))
+    observer.radio_event(ContactsRead(session.contact_records, NOW))
     stand_in = cast(CompanionSession, session)
     assert [c.heard_at for c in poller._candidates(stand_in, 5000.0)] == [4400.0]
 
@@ -1563,7 +1566,7 @@ class Rig:
         """A table read: the observer gets the table the radio holds."""
         self.radio.contacts_read_at = self.radio.contacts_read_started_at = self.radio.seq
         records = dict(self.radio.contact_records)
-        self.observer.radio_event(session_module.ContactsRead(records, self.wall()))
+        self.observer.radio_event(ContactsRead(records, self.wall()))
 
     def exclude(self, key: str) -> None:
         """As the contact manager takes `off`."""
@@ -1732,7 +1735,7 @@ def test_an_answer_of_a_contact_excluded_during_the_table_wait_is_not_taken(
         r.radio.answers[KEY] = LPP_FULL
         fresh_table = r.poller._fresh_table
 
-        async def excluded_meanwhile() -> CompanionSession | None:
+        async def excluded_meanwhile() -> RadioPort | None:
             r.exclude(KEY)  # while the answer waits for a table that shows every change
             return await fresh_table()
 
@@ -2086,7 +2089,7 @@ def test_no_event_while_the_contact_reads_as_a_look_alike(monkeypatch: pytest.Mo
     async def main() -> None:
         r = rig(monkeypatch, DANA)
         twin = {**r.radio.contact_records, TWIN_KEY: chat_record(DANA_TWIN)}
-        r.observer.radio_event(session_module.ContactsRead(twin, NOW))
+        r.observer.radio_event(ContactsRead(twin, NOW))
         r.radio.answers[KEY] = LPP_FULL
         await r.until_asked(1)
         assert r.poller._scheduler.state(KEY, r.clock[0]) == "answering"

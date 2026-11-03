@@ -192,6 +192,10 @@ format, the command line and Home Assistant discovery are public interfaces
   stands after 5 minutes. The code names the records and design sections that hold its rules
   instead of the numbers of working documents that are not in the repository, and a test keeps
   each such reference resolving.
+- For developers: the application reaches the radio and the bus through one module of ports
+  (`meshcore_home_gateway.ports`), and a test keeps it from importing the companion session, the
+  transports or the MQTT client
+  ([ADR 0007](docs/decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)).
 
 ### Fixed
 

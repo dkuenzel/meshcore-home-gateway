@@ -28,14 +28,14 @@ from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt import contact_devices
 from meshcore_home_gateway.mqtt.contact_devices import contact_device_id
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.protocol.codec import AUTO_ADD_TYPES
 from meshcore_home_gateway.protocol.codes import NodeType, TelemetryMode
-from meshcore_home_gateway.radio.session import AUTO_ADD_TYPES
 from tests import public_interface as interface
 from tests.i18n_helpers import hostile, pseudo, speaking
 from tests.radio_emulator import LPP_ALL_READINGS
 
 if TYPE_CHECKING:
-    from meshcore_home_gateway.radio.transport import Transport
+    from meshcore_home_gateway.ports import Transport
 
 tool = interface.tool
 
