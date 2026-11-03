@@ -16,8 +16,11 @@
     "history.positions_days",
     "history.readings_days",
     "homeassistant.contact_devices",
+    "homeassistant.contact_entity_prefix",
+    "homeassistant.controls",
     "homeassistant.device_name",
     "homeassistant.discovery",
+    "homeassistant.hidden_targets",
     "homeassistant.language",
     "homeassistant.prefix",
     "homeassistant.status_topic",
@@ -704,6 +707,16 @@
    "min": 0,
    "type": "integer"
   },
+  "homeassistant.contact_entity_prefix": {
+   "answer": "str",
+   "default": "mesh",
+   "type": "string"
+  },
+  "homeassistant.controls": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
+  },
   "homeassistant.device_name": {
    "answer": "str",
    "default": "MeshCore radio",
@@ -713,6 +726,10 @@
    "answer": "bool",
    "default": true,
    "type": "boolean"
+  },
+  "homeassistant.hidden_targets": {
+   "answer": "list",
+   "type": "list[string]"
   },
   "homeassistant.language": {
    "answer": "str",

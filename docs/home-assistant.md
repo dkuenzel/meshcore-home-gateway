@@ -809,6 +809,27 @@ mode: queued
 Do not report a failed delivery over the mesh to the same target: when the radio cannot reach it,
 the report fails too and uses airtime.
 
+Get told when the gateway or its radio has been away for five minutes: the radio link turns off
+when the radio is unplugged or the link breaks, and every entity turns unavailable when the
+gateway stops or loses the broker (its last will):
+
+```yaml
+alias: Mesh gateway away
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.meshcore_home_gateway_radio1_radio
+    to: ["off", "unavailable"]
+    for: "00:05:00"
+actions:
+  - action: persistent_notification.create
+    data:
+      title: Mesh gateway away
+      message: >-
+        {{ 'The gateway is offline' if trigger.to_state.state == 'unavailable'
+           else 'The gateway has lost its radio' }}
+mode: single
+```
+
 Get told when a contact was not added or removed (a node already on the radio is left out), or
 an exclusion from telemetry was not stored (`not_saved`: it took effect, and the gateway tries
 again every minute) or its history not deleted (`not_forgotten`):
@@ -944,6 +965,46 @@ in a notification.
 Use `event.received`: a state trigger on an event entity misses its first event (the state changes
 from `unknown`), and a trigger on the attribute `event_type` misses the second of two equal events.
 The event's keys are in `trigger.to_state.attributes`, for example `args` of a command.
+
+## Shared households
+
+Home Assistant shows every entity to every user, and lets every user operate it; only
+administrators change the configuration. So every user sees every tracker on the map and in the
+history, can send to every target and contact, and can add and remove the radio's contacts and
+switch telemetry for a companion. Dashboards per user hide cards, not the entities behind them.
+
+* `[homeassistant] controls = false` keeps *Add heard node*, *Add contact (key or link)*, *Show
+  hidden contacts* and each contact's *Remove from radio* and *Telemetry* unavailable: nobody
+  operates them in Home Assistant, which leaves unavailable entities out of its actions too. An
+  administrator uses `meshcore-home-gateway contacts` in the container, or MQTT
+  ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)); the broker's
+  ACL decides which clients may write those topics.
+* `[homeassistant] hidden_targets` leaves out the notify entity of a target that only automations
+  should use, such as an alarm channel: they send with `mqtt.publish` to `send/<alias>`
+  ([configuration.md](configuration.md#homeassistant)).
+* The notify entities of the contacts send as the household's radio, for every user.
+* Home Assistant's permission policies can restrict a group of users to reading entities, or to
+  some of them; its interface does not offer them (developer documentation,
+  [Permissions](https://contributors.home-assistant.io/core/internals/permissions/)).
+
+## A second gateway
+
+A second gateway (another radio, another `node_id`) gets its own device and entities. Its
+contacts' entity IDs would begin like the first one's, and Home Assistant would number the
+second `_2`: give it another start, such as `[homeassistant] contact_entity_prefix = "mesh_2"`,
+before its first start ([configuration.md](configuration.md#homeassistant)). A companion that is a
+contact of both radios then has two trackers; one `person` follows the newer of them:
+
+```yaml
+person:
+  - name: Alice
+    id: alice
+    device_trackers:
+      - device_tracker.mesh_alice
+      - device_tracker.mesh_2_alice
+```
+
+The same in the interface: *Settings → People → Alice → Track device*, both trackers.
 
 ## Privacy
 

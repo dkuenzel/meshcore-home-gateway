@@ -51,6 +51,18 @@ format, the command line and Home Assistant discovery are public interfaces
   senders; a new contact is not asked until included, and the first start holds nothing. The
   inclusions are kept in `telemetry-excluded.json` beside the exclusions
   ([configuration.md](docs/configuration.md#telemetry)).
+- `[homeassistant] controls` (default `true`): with `false`, Home Assistant shows the controls
+  that change the radio or the telemetry unavailable (*Add heard node*, *Add contact*, *Show
+  hidden contacts*, each contact's *Remove from radio* and *Telemetry*), so no user of it can
+  operate them; MQTT and the command line keep working.
+- `[homeassistant] hidden_targets`: targets without a notify entity in Home Assistant, such as an
+  alarm channel only automations should use.
+- `[homeassistant] contact_entity_prefix` (default `mesh`): how the contacts' entity IDs begin,
+  for a second gateway.
+- The Home Assistant guide: *Shared households* (what every Home Assistant user sees and can do,
+  and the settings above), *A second gateway* (one `person` for two trackers), and an automation
+  that tells when the gateway or its radio has been away for five minutes
+  ([home-assistant.md](docs/home-assistant.md#shared-households)).
 
 ### Changed
 

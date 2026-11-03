@@ -639,6 +639,28 @@ def test_telemetry_asks_every_companion_unless_only_the_households() -> None:
         parse_config(MINIMAL + '\n[telemetry]\nask = "some"\n')
 
 
+def test_home_assistant_controls_hidden_targets_and_entity_prefix() -> None:
+    """SEC-008, ARC-015."""
+    ha = parse_config(MINIMAL).homeassistant
+    assert (ha.controls, ha.hidden_targets, ha.contact_entity_prefix) == (True, frozenset(), "mesh")
+    text = MINIMAL + "[targets.alarm]\nchannel = 2\n[homeassistant]\ncontrols = false\n"
+    config = parse_config(text + 'hidden_targets = ["alarm"]\ncontact_entity_prefix = "mesh_2"\n')
+    ha = config.homeassistant
+    assert (ha.controls, ha.hidden_targets, ha.contact_entity_prefix) == (
+        False, frozenset({"alarm"}), "mesh_2",
+    )  # fmt: skip
+    with pytest.raises(
+        ConfigError, match=r"homeassistant\.hidden_targets: 'siren' is not a target"
+    ):
+        parse_config(text + 'hidden_targets = ["siren"]\n')
+    for bad in ("Mesh", "mesh_", "_mesh", "mesh__2", "m" * 21, "mesh-2"):
+        with pytest.raises(ConfigError, match=r"homeassistant\.contact_entity_prefix: lower"):
+            parse_config(text + f'contact_entity_prefix = "{bad}"\n')
+    with pytest.raises(ConfigError, match=r"homeassistant\.contact_entity_prefix"):
+        parse_config(text + 'contact_entity_prefix = ""\n')
+    assert parse_config(text + f'contact_entity_prefix = "{"m" * 20}"\n')
+
+
 def test_contacts_are_managed_on_request_by_default() -> None:
     assert parse_config(MINIMAL).contacts.manage is True
     assert parse_config(MINIMAL).contacts.heard_nodes == "full"

@@ -32,7 +32,13 @@ from meshcore_home_gateway.core.budget import RateLimit
 from meshcore_home_gateway.core.contacts import LABEL_TYPES, HeardNodes, node_label
 from meshcore_home_gateway.core.mesh import Mesh
 from meshcore_home_gateway.mqtt.contact_devices import RADIO_CONNECTED
-from meshcore_home_gateway.mqtt.discovery import device_id, device_name, origin, with_removed
+from meshcore_home_gateway.mqtt.discovery import (
+    controls_off,
+    device_id,
+    device_name,
+    origin,
+    with_removed,
+)
 from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.views import look_alike_nodes
@@ -128,6 +134,7 @@ def manage_payload(
             {"topic": topics.availability},
             {"topic": topics.state, "value_template": RADIO_CONNECTED},
             {"topic": topics.contacts, "value_template": MANAGE_ON},
+            *controls_off(config, topics),
         ],
         "availability_mode": "all",
         "qos": 1,

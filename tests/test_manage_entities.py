@@ -142,6 +142,15 @@ def test_the_availability_reads_keys_with_guards() -> None:
     assert "is true" in availability[2]["value_template"]
 
 
+def test_with_controls_off_the_controls_are_unavailable() -> None:
+    """SEC-008: `[homeassistant] controls = false`: an availability that is always offline;
+    `add_contact` and `homeassistant/add_node` on MQTT still work."""
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    availability = manage_payload(off, TOPICS, [])["availability"]
+    assert availability[:3] == manage_payload(CONFIG, TOPICS, [])["availability"]
+    assert availability[3:] == [{"topic": TOPICS.availability, "value_template": "{{ 'offline' }}"}]
+
+
 @pytest.mark.parametrize(
     ("text", "taken"),
     [

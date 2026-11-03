@@ -234,6 +234,9 @@ device_name = "Gateway"
 status_topic = "{STATUS}"
 contact_devices = 10
 language = "en"
+controls = false
+hidden_targets = ["{CHANNEL_ALIAS}"]
+contact_entity_prefix = "mesh_2"
 [messages]
 ascii_only = true
 truncate = false

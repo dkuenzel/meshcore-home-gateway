@@ -46,7 +46,7 @@ from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import Mesh, Tracked, type_name
 from meshcore_home_gateway.core.telemetry import STATES
 from meshcore_home_gateway.i18n import N_ha
-from meshcore_home_gateway.mqtt.discovery import device_id, origin, placeholder
+from meshcore_home_gateway.mqtt.discovery import controls_off, device_id, origin, placeholder
 from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codes import ContactFlag, NodeType
@@ -212,11 +212,13 @@ def contact_payload(
     uid = contact_device_id(config, key)
     document = topics.contact(key)
     ha_name = i18n.translator(config.homeassistant.language).ha_name
+    entity = config.homeassistant.contact_entity_prefix  # a second gateway takes another
+    off = controls_off(config, topics)
 
     def component(key: str, platform: str, suffix: str, **options: Any) -> dict[str, Any]:
         return {
             "p": platform, "unique_id": f"{uid}_{key}",
-            "default_entity_id": f"{platform}.mesh_{slug}{suffix}", **options,
+            "default_entity_id": f"{platform}.{entity}_{slug}{suffix}", **options,
         }  # fmt: skip
 
     # every template asks whether the document is JSON: the empty message that clears it can
@@ -261,6 +263,7 @@ def contact_payload(
             {"topic": topics.availability},
             {"topic": topics.state, "value_template": RADIO_CONNECTED},
             {"topic": document, "value_template": REMOVABLE},
+            *off,
         ],
         availability_mode="all",
     )  # fmt: skip
@@ -272,6 +275,8 @@ def contact_payload(
             entity_category="config",
             command_topic=topics.contact_telemetry(key), payload_on="on", payload_off="off",
             value_template=TELEMETRY_SWITCH, **state,
+            **({"availability": [{"topic": topics.availability}, *off],
+                "availability_mode": "all"} if off else {}),
         )  # fmt: skip
     if companion or "telemetry_state" in kept:
         components["telemetry_state"] = component(
