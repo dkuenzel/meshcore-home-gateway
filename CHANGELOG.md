@@ -8,6 +8,22 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Security
+
+- A flood of adverts with invented keys, which any board in range can send (a key costs
+  microseconds), stays bounded
+  ([design §7.2](docs/design.md#72-threats-and-mitigations)). The heard nodes keep those heard
+  again (a newer advert, or a former contact) longest, so the flood no longer pushes out the
+  nodes the household knows from the `nodes` document and the *Add heard node* select. While only
+  heard nodes change, the `nodes` document goes out at most every 30 seconds instead of with
+  every advert (up to 15 KiB each); it still goes out at once when a contact joins or leaves the
+  table. On firmware 1.12 and newer a stranger's advert no longer makes the gateway read the
+  radio's whole contact table, which kept the radio busy listing it and, over TCP, made it drop
+  pushes. The history keeps when a node was last heard only for the contacts and the heard nodes
+  the gateway lists, and for 7 days instead of 30, as
+  [ADR 0016](docs/decisions/0016-history-in-a-local-sqlite-database.md) says, instead of a row
+  for every key ever heard ([configuration.md](docs/configuration.md#history)).
+
 ## [1.1.0a4] - 2026-10-31
 
 A pre-release of 1.1.0, with two slices: the texts of the command line, the Proxmox installer

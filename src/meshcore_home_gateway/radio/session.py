@@ -677,7 +677,11 @@ class CompanionSession:
             await self._events.put(PacketLogged(decoded, self._wall(), seq, self.serial))
         elif isinstance(decoded, codec.Advert):
             self._report_key(decoded.public_key, held=not decoded.new)  # before later frames
-            self._contacts_changed()
+            if not decoded.new or self.autoadd is None:
+                # a node the radio did not add changes nothing in the table, except on firmware
+                # 1.11 and older (no auto-add settings), which also announce a contact they have
+                # just added with NEW_ADVERT: a flood of strangers' adverts reads nothing
+                self._contacts_changed()
             await self._events.put(AdvertHeard(decoded, self._wall(), seq, self.serial))
         elif isinstance(decoded, codec.PathUpdated | codec.ContactDeleted):
             self._report_key(decoded.public_key)

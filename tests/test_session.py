@@ -472,6 +472,36 @@ def test_firmware_without_the_hop_limit_still_starts() -> None:
     run(radio, scenario)
 
 
+@pytest.mark.parametrize(
+    ("radio", "reads_the_table"),
+    [
+        (EmulatedRadio(contacts=[ALICE]), False),
+        (EmulatedRadio(contacts=[ALICE], unknown=UNKNOWN_AUTOADD), True),
+    ],
+    ids=["firmware-1.12-and-newer", "firmware-1.11-and-older"],
+)
+def test_a_strangers_advert_reads_the_table_only_on_firmware_that_also_announces_contacts_so(
+    monkeypatch: pytest.MonkeyPatch, radio: EmulatedRadio, reads_the_table: bool
+) -> None:
+    """NEW_ADVERT is a node the radio did not add; only firmware without the auto-add settings
+    (1.11 and older) also announces a contact it has just added that way (SEC-011): a flood of
+    invented keys must not keep the radio listing its table."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.0)
+    stranger = bytes.fromhex("d4" * 32)
+
+    async def scenario(session: CompanionSession, events: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        before = radio.commands().count(Command.GET_CONTACTS)
+        for _ in range(5):
+            radio.emit(bytes([Push.NEW_ADVERT]) + stranger + bytes(115))
+        radio.queue_direct_message(ALICE.public_key[:6], "after the adverts", START_TIME + 50)
+        while not isinstance(await next_event(events), MessageReceived):
+            pass
+        assert (radio.commands().count(Command.GET_CONTACTS) > before) is reads_the_table
+
+    run(radio, scenario)
+
+
 def test_every_key_the_radio_reports_is_passed_on() -> None:
     """Keys from table reads and from the pushes that carry one (advert, new advert, path,
     overwrite) reach the callback before any later frame, marked whether the radio holds or held

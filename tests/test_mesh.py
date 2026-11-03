@@ -172,6 +172,35 @@ def test_heard_nodes_are_bounded_and_keep_no_position() -> None:
     assert list(mesh.nodes) == [erin.public_key]
 
 
+def test_a_node_heard_again_outlasts_a_flood_of_nodes_heard_once() -> None:
+    """Invented keys cost an attacker nothing; a real node advertises again (SEC-011). A replay
+    of the same advert does not count as heard again."""
+    mesh = Mesh(max_nodes=3)
+    bob = Node("b2" * 32, "Bob's new handheld", 1, last_advert=int(T))
+    mesh.node_heard(bob, Heard(T, "advert"))
+    mesh.node_heard(bob, Heard(T + 1, "advert"))  # the same advert again
+    assert not mesh.nodes[bob.public_key].heard_again
+    mesh.node_heard(replace(bob, last_advert=int(T) + 600), Heard(T + 600, "advert"))
+    assert mesh.nodes[bob.public_key].heard_again
+    for i in range(20):  # each invented key heard once
+        mesh.node_heard(Node(f"{i:02x}" * 32, f"Spam{i}", 1), Heard(T + 700 + i, "advert"))
+    assert bob.public_key in mesh.nodes
+    assert len(mesh.nodes) == 3
+    assert list(mesh.nodes)[1:] == ["12" * 32, "13" * 32]  # the newest of those heard once
+    # only nodes heard again left: the least recently heard of them goes (a former contact
+    # counts as heard again)
+    everyone = Mesh(max_nodes=1)
+    carol = Node("c3" * 32, "Carol", 1, last_advert=1)
+    everyone.node_heard(carol, Heard(T, "advert"))
+    everyone.node_heard(replace(carol, last_advert=2), Heard(T + 1, "advert"))
+    dave = Node("d4" * 32, "Dave", 1)
+    everyone.contacts_read([dave], T + 2)
+    everyone.contact_heard(dave.public_key, Heard(T + 3, "message"))
+    everyone.contacts_read([], T + 4)  # Dave left the table
+    assert list(everyone.nodes) == [dave.public_key]
+    assert everyone.nodes[dave.public_key].heard_again
+
+
 def test_a_heard_node_that_is_added_keeps_its_sighting() -> None:
     mesh = Mesh()
     carol = Node("c3" * 32, "Carol", 1)

@@ -255,7 +255,7 @@ Codes 0x80 and above can arrive at any time, also between the frames of `GET_CON
 | 0x83 | `MSG_WAITING` | – | sync messages |
 | 0x88 | `LOG_RX_DATA` | SNR × 4 (int8), RSSI (int8 dBm), raw packet: every packet the radio receives, before it handles it (`MyMesh.cpp:291-302`, `src/Dispatcher.cpp:199`); see below | optional `rx` topic |
 | 0x8B | `TELEMETRY_RESPONSE` | reserved byte, the 6-byte key prefix of the contact whose key decrypted the answer, CayenneLPP data with its AES zero padding (`MyMesh.cpp:739-749`) | the answer to the gateway's telemetry request: taken only for the contact asked (section 5) |
-| 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added; 1.11 and older also send it for a contact they have just added (`BaseChatMesh.cpp:88-134` of `companion-v1.11.0`) | renew the key if it is already remembered; refresh contacts; report the advert with its record |
+| 0x8A | `NEW_ADVERT` | contact layout of a node that advertised but was not added; 1.11 and older also send it for a contact they have just added (`BaseChatMesh.cpp:88-134` of `companion-v1.11.0`) | renew the key if it is already remembered; refresh contacts only on firmware without the auto-add settings (1.11 and older); report the advert with its record |
 | 0x8F | `CONTACT_DELETED` | public key of a contact overwritten to make room (`MyMesh.cpp:342-349`) | remember the key, as above; refresh contacts |
 | 0x90 | `CONTACTS_FULL` | – | refresh contacts |
 

@@ -98,6 +98,23 @@ def test_retention_by_age_and_by_count(tmp_path: Path, monkeypatch: pytest.Monke
     assert history.nodes() == []
 
 
+def test_the_node_table_keeps_the_nodes_the_gateway_keeps(tmp_path: Path) -> None:
+    """A flood of adverts with invented keys writes a row per key; the purge leaves the rows of
+    the contacts and heard nodes the gateway keeps (SEC-010). Before the first table read of a
+    run the rows are the heard nodes still to restore: only their age counts."""
+    history = opened(tmp_path / "h.sqlite3")
+    assert Retention().nodes_days == 7  # as the heard nodes in memory (ADR 0016)
+    for i in range(200):
+        history.node_heard(f"{i:04x}" * 16, f"Spam{i}", 1, Heard(T + i, "advert"))
+    history.node_heard(KEY, "Alice", 1, Heard(T, "advert"))
+    history.purge(T + 600)  # not told which it keeps
+    assert len(history.nodes()) == 201
+    history.purge(T + 600, nodes=[KEY, "d4" * 32])  # a key without a row changes nothing
+    assert [row.key for row in history.nodes()] == [KEY]
+    history.purge(T + 600, nodes=[])
+    assert history.nodes() == []
+
+
 def test_the_position_cap_keeps_the_newest_position_of_every_contact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

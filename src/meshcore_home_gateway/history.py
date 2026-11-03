@@ -9,6 +9,7 @@ is not a database is moved aside and a new one started.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import sqlite3
 from collections.abc import Iterable, Iterator, Mapping
@@ -80,11 +81,29 @@ _ADDED = (
 )
 
 
+_MESSAGES_BEYOND_CAP = (
+    "DELETE FROM message WHERE id <= (SELECT id FROM message ORDER BY id DESC LIMIT 1 OFFSET ?)"
+)
+# never the newest of a contact: the row last_fixes() reads
+_POSITIONS_BEYOND_CAP = (
+    "DELETE FROM position WHERE id <= (SELECT id FROM position ORDER BY id DESC LIMIT 1 OFFSET ?) "
+    "AND id NOT IN (SELECT (SELECT id FROM position WHERE contact_key = p.contact_key "
+    "ORDER BY at DESC, id DESC LIMIT 1) FROM (SELECT DISTINCT contact_key FROM position) p)"
+)
+# the rows of the nodes the gateway forgot: all but those in a JSON list of keys
+_NODES_FORGOTTEN = "DELETE FROM node WHERE key NOT IN (SELECT value FROM json_each(?))"
+# never the rows of a contact's newest answer: those last_readings() reads
+_READINGS_BEYOND_CAP = (
+    "DELETE FROM reading WHERE id <= (SELECT id FROM reading ORDER BY id DESC LIMIT 1 OFFSET ?) "
+    "AND at < (SELECT MAX(at) FROM reading n WHERE n.contact_key = reading.contact_key)"
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Retention:
     messages_days: float = 30.0
     positions_days: float = 30.0
-    nodes_days: float = 30.0
+    nodes_days: float = 7.0  # as the heard nodes in memory (core.mesh.NODE_TTL_S, ADR 0016)
     readings_days: float = 30.0
 
 
@@ -183,33 +202,26 @@ class History:
              signal.rssi_dbm, last_advert),
         )  # fmt: skip
 
-    def purge(self, now: float) -> None:
-        """Drop what is older than the retention, and messages, positions and readings beyond
-        their caps (the oldest first; never a contact's newest position or answer, which only
-        its age removes)."""
+    def purge(self, now: float, nodes: Iterable[str] | None = None) -> None:
+        """Drop what is older than the retention, and rows beyond the caps (the oldest first;
+        never a contact's newest position or answer, which only its age removes), in one
+        transaction. `nodes`: the keys of the nodes the gateway keeps, its contacts and heard
+        nodes; the rows of all others go, so that a flood of adverts with invented keys leaves
+        no more rows than the gateway keeps in memory (SEC-010). None before the first table
+        read of a run, while the rows are the heard nodes still to restore: only their age."""
         r = self._retention
-        self._write("DELETE FROM message WHERE at < ?", (now - r.messages_days * DAY_S,))
-        self._write(
-            "DELETE FROM message WHERE id <= "
-            "(SELECT id FROM message ORDER BY id DESC LIMIT 1 OFFSET ?)",
-            (MAX_MESSAGES,),
-        )
-        self._write("DELETE FROM position WHERE at < ?", (now - r.positions_days * DAY_S,))
-        self._write(  # never the newest of a contact: the row last_fixes() reads
-            "DELETE FROM position WHERE id <= (SELECT id FROM position ORDER BY id DESC LIMIT 1 "
-            "OFFSET ?) AND id NOT IN (SELECT (SELECT id FROM position WHERE contact_key = "
-            "p.contact_key ORDER BY at DESC, id DESC LIMIT 1) FROM (SELECT DISTINCT contact_key "
-            "FROM position) p)",
-            (MAX_POSITIONS,),
-        )
-        self._write("DELETE FROM node WHERE heard_at < ?", (now - r.nodes_days * DAY_S,))
-        self._write("DELETE FROM reading WHERE at < ?", (now - r.readings_days * DAY_S,))
-        self._write(  # never the rows of a contact's newest answer: those last_readings() reads
-            "DELETE FROM reading WHERE id <= (SELECT id FROM reading ORDER BY id DESC LIMIT 1 "
-            "OFFSET ?) AND at < (SELECT MAX(at) FROM reading n WHERE n.contact_key = "
-            "reading.contact_key)",
-            (MAX_READINGS,),
-        )
+        steps: list[tuple[str, list[tuple[Any, ...]]]] = [
+            ("DELETE FROM message WHERE at < ?", [(now - r.messages_days * DAY_S,)]),
+            (_MESSAGES_BEYOND_CAP, [(MAX_MESSAGES,)]),
+            ("DELETE FROM position WHERE at < ?", [(now - r.positions_days * DAY_S,)]),
+            (_POSITIONS_BEYOND_CAP, [(MAX_POSITIONS,)]),
+            ("DELETE FROM node WHERE heard_at < ?", [(now - r.nodes_days * DAY_S,)]),
+            ("DELETE FROM reading WHERE at < ?", [(now - r.readings_days * DAY_S,)]),
+            (_READINGS_BEYOND_CAP, [(MAX_READINGS,)]),
+        ]  # fmt: skip
+        if nodes is not None:
+            steps.append((_NODES_FORGOTTEN, [(json.dumps(sorted(set(nodes))),)]))
+        self._write_all(steps)
 
     def _write(self, sql: str, args: tuple[Any, ...]) -> None:
         if self.broken:

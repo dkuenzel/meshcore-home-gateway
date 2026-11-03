@@ -376,7 +376,11 @@ GPS is the position, never a reading; other types are not published.
 Nodes the radio heard advertising but did not add (it adds contacts only on request), most
 recently heard first: the last 50 of the last 7 days, at most 15 KiB. A contact that leaves the
 table is listed again while it counts as heard (among the last 50, within 7 days), so it can be
-added back. **No positions**: the gateway does not keep where strangers are.
+added back. **No positions**: the gateway does not keep where strangers are. When 50 are listed,
+a node heard once makes room before one heard again (a newer advert, or a former contact), so a
+flood of adverts with invented keys does not push out the nodes the household knows. The
+document goes out at once when a contact joins or leaves the table; while only heard nodes
+change, at most every 30 seconds (up to a minute later than the advert).
 
 ```json
 {"total": 1, "truncated": false, "look_alike": [], "look_alike_total": 0,

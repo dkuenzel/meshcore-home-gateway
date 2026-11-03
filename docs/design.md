@@ -272,11 +272,14 @@ sequenceDiagram
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
 * **Contacts and channels** are read at connect time; contacts are re-read after advert, path and
-  contact-table pushes, so key resolution (§7.3) sees new and changed contacts. Every key the
-  radio names goes to the bridge, with whether the radio holds or held that contact: from a push
-  before the next frame is handled, from a table read record by record before the read returns
-  (§7.3). Channel slots without a name are not configured and never used (the radio would send
-  with an all-zero key).
+  contact-table pushes, so key resolution (§7.3) sees new and changed contacts. A `NEW_ADVERT`
+  (a node the radio did not add) changes nothing in the table and reads it only on firmware 1.11
+  and older, which announce a contact they have just added that way too (the radio without
+  auto-add settings): a flood of strangers' adverts does not keep the radio listing its table.
+  Every key the radio names goes to the bridge, with whether the radio holds or held that
+  contact: from a push before the next frame is handled, from a table read record by record
+  before the read returns (§7.3). Channel slots without a name are not configured and never used
+  (the radio would send with an all-zero key).
 * **Managed profile** ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)).
   After the auto-add and tuning settings are read and before the contact table is read, the
   session hands itself to the profile (`radio/profile.py`): a three-way reconcile of desired
@@ -546,6 +549,14 @@ flowchart LR
   history stay until their age removes them and are not restored while it is excluded. `forget`
   deletes its readings and positions from telemetry in one transaction; its advert positions and
   when it was last heard stay.
+* **Heard nodes**: the 50 most recently heard of the last 7 days. When 50 are kept, a node
+  heard once makes room first; one heard again (a newer advert than its first, or a former
+  contact) only when no other is left, so adverts with invented keys, which cost nothing, do not
+  push out the nodes the household knows. The `nodes` document goes out at once when a contact
+  joins or leaves the table; while only heard nodes change, at most every 30 seconds (with the
+  minute tick after that), so a flood of adverts does not republish it (up to 15 KiB) per advert.
+  The history keeps the rows of the contacts and of the heard nodes the gateway keeps: the hourly
+  purge removes the others, and every row after 7 days.
 * **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
   answers moves it at most once an hour, keeping the signal of its last advert or message (an
   answer reports none).
@@ -1012,6 +1023,7 @@ gateways share a name.
 | Presence decided on a position nobody confirmed | A position from telemetry and the readings expire when the companion stops answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the state says why; `paused` with `no_radio` while the radio is away, and no events then. |
 | A household companion shares its position in adverts, which everyone in range can read | The gateway checks each companion's newest advert ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)): *Position in adverts* on its device, the gateway's *Companion position in adverts* and the event `position_in_advert` warn the household. Until the newest advert is checked, the radio's record decides, erring to warn. The gateway reads only what the radio logged and accepted; it sends no command for it and never writes a companion. |
 | A forged advert in the packet log (the radio logs every packet before it checks the signature) | A log counts only for an advert the radio pushed and whose timestamp the next table read shows as `last_advert`. While the receive delay is 0, the log that is the frame directly before the push decides, and a forged copy is never there; otherwise all logs of the key with that time must agree, and differing copies decide nothing. A flagged log must hold the position the record took. A forged position is never shown: positions come from the record. |
+| A flood of adverts with invented keys (a new key costs microseconds; any board in range) | Memory, documents and history stay bounded: 50 heard nodes, of which those heard again stay longest; the `nodes` document at most every 30 seconds while only heard nodes change; `node` events at most one every 5 seconds on average; the history keeps only the nodes the gateway keeps. A stranger's advert reads no contact table (firmware 1.12 and newer). The airtime the flood takes is the mesh's problem, not the gateway's (§8). |
 
 ### 7.3 Command authorisation in detail
 
@@ -1132,6 +1144,7 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
 | Airtime budget exhausted | token bucket | messages wait, then expire | `delivery: expired`; airtime entity |
 | Recipient out of range | no acknowledgement | retries, flood, then give up | `delivery: failed` |
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects; the events of refused requests are limited to 20 per second (bursts of 100), so they cannot push other events out of a subscriber's queue on the broker | `delivery: duplicate` / `rejected`; a log warning counts the events left out |
+| A flood of adverts from strangers (invented keys, or a busy mesh) | none: each advert is valid | bounded (§7.2): heard nodes heard once make room first; the `nodes` document at most every 30 s; `node` events rate-limited; no table read per advert on firmware 1.12 and newer; the history keeps only the nodes the gateway keeps | *Nodes heard* at 50 with unknown names; the *Add heard node* select offers them |
 | State file corrupt | JSON error at start | moved aside, start empty | log warning |
 | State file not writable | error on save | the command is rejected, the service carries on | `received`: `state_unwritable`; log error |
 | Command sent while the bridge was not connected or was connecting | fetched at connect | rejected; the sender sends it again | `received`: `sender_unverified`; log warning |

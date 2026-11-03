@@ -18,6 +18,7 @@ from typing import Any, cast
 import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
+from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway import telemetry_poller as poller_module
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core import lpp, telemetry
@@ -92,6 +93,7 @@ def fast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
     monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
+    monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)
     monkeypatch.setattr(poller_module, "QUIET_S", 0.05)
     monkeypatch.setattr(poller_module, "HOLD_MAX_S", 1.0)
     monkeypatch.setattr(poller_module, "BUSY_PAUSE_S", 0.3)

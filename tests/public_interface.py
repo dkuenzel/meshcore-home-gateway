@@ -49,6 +49,7 @@ import paho.mqtt.client as paho
 
 from meshcore_home_gateway import __version__, cli, i18n, views
 from meshcore_home_gateway import config as configuration
+from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.contact_manager import Job
@@ -429,7 +430,10 @@ class _Topic:
 
 
 def mqtt(tmp: Path) -> dict[str, Any]:
-    client = asyncio.run(_published(tmp))
+    # the scenario's clock stands still: the `nodes` document goes out with every change, not
+    # at most every NODES_DOCUMENT_INTERVAL_S as in a run (SEC-011)
+    with mock.patch.object(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0):
+        client = asyncio.run(_published(tmp))
     seen: dict[str, _Topic] = {}
     for topic, payload, retained, qos in client.published:
         entry = seen.setdefault(placeholders(topic), _Topic())
@@ -1464,7 +1468,7 @@ def _tracked(node_type: int) -> Tracked:
     tracked = Tracked(
         node, T - 60, heard, fix, position_received_at=T, restored_heard=heard,
         readings=Readings(T, Named(4.12, 23.4, LPP_ALL_READINGS)),
-        advert=AdvertCheck(int(T) - 60, True),
+        advert=AdvertCheck(int(T) - 60, True), heard_again=True,
     )  # fmt: skip
     _filled(tracked)
     return tracked
