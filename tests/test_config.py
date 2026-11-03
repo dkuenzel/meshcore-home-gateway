@@ -15,6 +15,7 @@ from meshcore_home_gateway.config import (
     load_config,
     parse_config,
     render_config,
+    with_password_file,
 )
 from meshcore_home_gateway.core.model import MessageKind
 
@@ -522,6 +523,71 @@ def test_answers_refuse_list_items_with_commas() -> None:
     """The answers separate list items by commas; a command word may contain one."""
     with pytest.raises(ConfigError, match=r"commands\.words: an item contains a comma"):
         config_answers(MINIMAL + '\n[commands]\nwords = ["a,b"]\n')
+
+
+def test_the_password_can_be_in_a_file_of_its_own(tmp_path: Path) -> None:
+    """SEC-009: `password_file` instead of `password`, an absolute path that load_config reads
+    (one line break at the end dropped); parse_config does not, so `config answers` prints the
+    path and never the password."""
+    secret = tmp_path / "mqtt-password"
+    secret.write_text("s3cret \n", encoding="utf-8")
+    login = f'username = "bridge"\npassword_file = "{secret}"\n'
+    path = tmp_path / "config.toml"
+    path.write_text(MINIMAL + login, encoding="utf-8")
+    assert parse_config(path.read_text(encoding="utf-8")).mqtt.password is None
+    mqtt = load_config(path).mqtt
+    assert (mqtt.password, mqtt.password_file) == ("s3cret ", str(secret))
+    assert f"mqtt.password_file={secret}" in config_answers(path.read_text(encoding="utf-8"))
+    for content, message in ((b"", "holds no password"), (b"\xff", "not valid UTF-8")):
+        secret.write_bytes(content)
+        with pytest.raises(ConfigError, match=message):
+            load_config(path)
+    secret.unlink()
+    with pytest.raises(ConfigError, match=r"mqtt\.password_file: cannot read"):
+        load_config(path)
+
+
+def test_a_systemd_credential_of_the_password_file_s_name_is_read_instead(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LoadCredential= hands the service a copy; the file itself may be root's alone."""
+    secret = tmp_path / "etc" / "mqtt-password"
+    secret.parent.mkdir()
+    secret.write_text("from the file\n", encoding="utf-8")
+    path = tmp_path / "config.toml"
+    path.write_text(MINIMAL + f'username = "u"\npassword_file = "{secret}"\n', encoding="utf-8")
+    credentials = tmp_path / "credentials"
+    credentials.mkdir()
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+    assert load_config(path).mqtt.password == "from the file"  # no credential of that name
+    (credentials / "mqtt-password").write_text("from systemd", encoding="utf-8")
+    assert load_config(path).mqtt.password == "from systemd"
+
+
+@pytest.mark.parametrize(
+    ("login", "message"),
+    [
+        ('username = "u"\npassword = "p"\npassword_file = "/etc/p"', "not both"),
+        ('password_file = "/etc/p"', r"mqtt\.password_file: needs username"),
+        ('username = "u"\npassword_file = "p"', r"mqtt\.password_file"),
+    ],
+    ids=["both", "no-user", "relative"],
+)
+def test_a_password_file_needs_a_user_an_absolute_path_and_no_password(
+    login: str, message: str
+) -> None:
+    with pytest.raises(ConfigError, match=message):
+        parse_config(MINIMAL + login + "\n")
+
+
+def test_answers_put_the_password_into_a_file() -> None:
+    """What `config render --password-file` renders (SEC-009)."""
+    answers = "mqtt.host=b\nmqtt.password=a=b\nmqtt.password_file=/old\nmqtt.port=1\n"
+    moved, password = with_password_file(answers, Path("/etc/pw"))
+    assert password == "a=b"
+    assert moved == "mqtt.host=b\nmqtt.port=1\n\nmqtt.password_file=/etc/pw\n"
+    assert with_password_file("mqtt.host=b\n", Path("/etc/pw")) == ("mqtt.host=b\n", None)
+    assert with_password_file("mqtt.password=\n", Path("/etc/pw"))[1] is None  # none
 
 
 def test_answers_refuse_invalid_files() -> None:

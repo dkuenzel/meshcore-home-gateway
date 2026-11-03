@@ -1,8 +1,8 @@
 # Configuration
 
 One TOML file, by default `/etc/meshcore-home-gateway/config.toml`, owner `root`, group
-`meshcore-home-gateway`, mode 0640 (it contains the broker password). Unknown keys are errors, so a
-typo never falls back to a default silently. Check a file with `meshcore-home-gateway check-config
+`meshcore-home-gateway`, mode 0640 (it contains the broker password, unless `password_file` names
+a file of its own). Unknown keys are errors, so a typo never falls back to a default silently. Check a file with `meshcore-home-gateway check-config
 --config <file>`; the service exits with code 78 on configuration errors and systemd does not
 restart it then.
 
@@ -84,6 +84,7 @@ connect.
 | `host` | required | broker address: a host name or IP address, without `mqtt://` and port |
 | `port` | `1883` | broker port (8883 is usual with TLS) |
 | `username`, `password` | – | broker credentials; `password` needs `username` |
+| `password_file` | – | instead of `password`: the absolute path of a file that holds it (one line break at its end is not part of it), so that the configuration, `config answers`, a backup or a screenshot of it carry no secret. The service and the command line read it at start (mode 0640 `root:meshcore-home-gateway`, as the configuration); one that cannot be read, or is empty, is a configuration error. The installer writes `/etc/meshcore-home-gateway/mqtt-password` ([deployment.md](deployment.md#4-operations)) |
 | `tls` | `false` | TLS with certificate and host name verification |
 | `ca_file` | system store | CA certificate file for TLS, an absolute path; only with `tls = true` |
 | `cert_file`, `key_file` | – | client certificate and key for TLS authentication, absolute paths; only with `tls = true`. `key_file` needs `cert_file` and can be left out when the certificate file holds the key |
@@ -321,7 +322,9 @@ a position from telemetry from the history.
 
 `meshcore-home-gateway config render --answers <file> --output <config> --group
 meshcore-home-gateway` builds a configuration from `key=value` lines and validates it like
-`check-config` does, TLS files included. Keys are the dotted settings above (`mqtt.host=…`),
+`check-config` does, TLS files included. With `--password-file <path>` the answer
+`mqtt.password` goes into that file (mode 0640, the same group) and the configuration names it as
+`password_file`; answers without a password remove a file the configuration no longer names. Keys are the dotted settings above (`mqtt.host=…`),
 `target.<alias>=channel:<index>` or `target.<alias>=contact:<public key>`; lists are
 comma-separated; empty values are skipped. The Proxmox installer uses it so that no shell code
 writes TOML.
@@ -329,7 +332,7 @@ writes TOML.
 `meshcore-home-gateway config answers --config <config>` does the reverse: it prints the settings
 present in a configuration file as answers, with public keys normalised. The installer's
 `--reconfigure` uses them as defaults and passes on the settings it does not ask for. The output
-includes the broker password.
+includes the broker password when the file holds it, and only the path with `password_file`.
 
 ## Language of the command line
 

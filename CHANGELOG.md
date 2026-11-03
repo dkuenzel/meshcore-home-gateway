@@ -67,6 +67,11 @@ format, the command line and Home Assistant discovery are public interfaces
   event: the node's name, as a person reads it (NFKC, case folded, Cyrillic and Greek letters that
   look Latin as those), is a contact's, the gateway's or another heard node's
   ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)).
+- `[mqtt] password_file`: the broker password in a file of its own instead of `password`, so the
+  configuration, `config answers`, backups and screenshots of it carry only its path; a systemd
+  credential named like the file (`LoadCredential=`) is read instead, so the file may be root's
+  alone. `config render --password-file <path>` writes the answer `mqtt.password` there
+  ([configuration.md](docs/configuration.md#mqtt), [deployment.md](docs/deployment.md#4-operations)).
 
 ### Changed
 
@@ -102,6 +107,10 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Security
 
+- The installer keeps the broker password in `/etc/meshcore-home-gateway/mqtt-password` (0640
+  `root:meshcore-home-gateway`) instead of the configuration, and `--reconfigure` moves a
+  password that is still in the configuration there: `config answers`, which the
+  reconfiguration reads through `pct exec`, then prints only the path.
 - The documentation says what the TCP interface exposes, as verified in the firmware: the
   release build exports and imports the radio's private key to and from any client, MeshCore's
   direct messages have no forward secrecy, and a client can send any packet or move the radio

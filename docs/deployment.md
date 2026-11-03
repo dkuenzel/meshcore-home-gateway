@@ -356,14 +356,16 @@ English. The service's log is always English.
 * **Service:** `Type=notify` with a 60 s watchdog; restart after 5 s on failure, not on
   configuration errors (exit code 78). `systemd-analyze security meshcore-home-gateway` rates the
   unit's exposure at 1.6 (lower is better).
-* **State and backup:** back up `/etc/meshcore-home-gateway/config.toml` and the three files of
+* **State and backup:** back up `/etc/meshcore-home-gateway/` (`config.toml`, and
+  `mqtt-password` where the installer wrote it) and the three files of
   `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop
   meshcore-home-gateway`), or use a Proxmox backup of the whole container (`vzdump`): a backup of
   the running container holds the files as a power cut would leave them, which both survive
   (`state.json` is replaced atomically, the history uses SQLite's write-ahead log). Keep backups
-  private and encrypted: the configuration holds the broker password, `state.json` and
-  `history.sqlite3` hold positions of the household's companions and message texts, and the
-  history also other people's names, keys and channel texts
+  private and encrypted: `mqtt-password` (or, on an installation from before 2.0, the
+  configuration) holds the broker password, `state.json` and `history.sqlite3` hold positions of
+  the household's companions and message texts, and the history also other people's names, keys
+  and channel texts
   ([what the gateway keeps](privacy.md)). Restore the three state files together and with the
   service stopped: the service rewrites `state.json` while it runs, an older `state.json` beside
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
@@ -388,6 +390,14 @@ English. The service's log is always English.
   * `history.sqlite3` holds the history: messages, positions, the companions' readings and the
     nodes heard ([configuration](configuration.md#history)); copy it only with the service
     stopped, or with `sqlite3 history.sqlite3 ".backup copy.sqlite3"`.
+* **Broker password:** the installer keeps it in `/etc/meshcore-home-gateway/mqtt-password` (0640
+  `root:meshcore-home-gateway`), which `[mqtt] password_file` names; `--reconfigure` moves a
+  password that is still in the configuration there. To keep it from the service user too, hand it
+  to the service as a systemd credential: a drop-in (`systemctl edit meshcore-home-gateway`) with
+  `[Service]` and `LoadCredential=mqtt-password:/etc/meshcore-home-gateway/mqtt-password`, then
+  `chmod 0600` the file. The service reads systemd's copy of a credential named like the file,
+  the command line (as root) the file itself. `--reconfigure` writes the file with mode 0640
+  again; set 0600 after it.
 * **Times:** the gateway's documents and events give times in UTC; the journal shows the
   container's local time, which the installer takes from the host (`--timezone host`).
 * **Retained documents** stay on the broker after the gateway is removed. Clear them with, for
