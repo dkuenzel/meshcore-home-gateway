@@ -49,6 +49,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | --- | --- | --- |
 | `binary_sensor.meshcore_home_gateway_radio1_radio` | connectivity, diagnostic | radio link up; attributes below |
 | `sensor.meshcore_home_gateway_radio1_battery` | voltage (V), diagnostic | radio battery |
+| `sensor.meshcore_home_gateway_radio1_radio_clock_offset` | duration (s), diagnostic | how far the radio's clock is ahead of the gateway's (negative: behind); it cannot be set back ([deployment.md](deployment.md#5-troubleshooting)) |
 | `sensor.meshcore_home_gateway_radio1_airtime` | duration (s), diagnostic | airtime of the last hour |
 | `sensor.meshcore_home_gateway_radio1_airtime_available` | duration (s), diagnostic | airtime that may be spent now; attribute `budget_s_per_hour` |
 | `sensor.meshcore_home_gateway_radio1_queue` | diagnostic | messages waiting for the radio |

@@ -65,6 +65,7 @@ class RadioConfig:
     host: str | None = None
     port: int = 5000
     set_clock: bool = True
+    set_clock_max_days: int = 30  # 0: no limit
     profile: ProfileConfig = field(default_factory=ProfileConfig)
 
 
@@ -350,6 +351,7 @@ def _radio(s: _Section) -> RadioConfig:
         host=host,
         port=s.integer("port", 5000, 1, 65535),
         set_clock=s.boolean("set_clock", True),
+        set_clock_max_days=s.integer("set_clock_max_days", 30, 0, 3650),
         profile=_checked(s.section("profile"), _profile),
     )
 
@@ -600,7 +602,8 @@ def _diagnostics(s: _Section) -> DiagnosticsConfig:
 
 _ANSWER_TYPES: dict[str, type] = {
     "radio.transport": str, "radio.device": str, "radio.host": str, "radio.port": int,
-    "radio.set_clock": bool, "radio.profile.manage": str, "radio.profile.name": str,
+    "radio.set_clock": bool, "radio.set_clock_max_days": int, "radio.profile.manage": str,
+    "radio.profile.name": str,
     "radio.profile.duty_cycle_percent": float, "radio.profile.protect_contacts": bool,
     "mqtt.host": str, "mqtt.port": int, "mqtt.username": str, "mqtt.password": str,
     "mqtt.tls": bool, "mqtt.ca_file": str, "mqtt.cert_file": str, "mqtt.key_file": str,

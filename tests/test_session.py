@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
@@ -16,6 +17,7 @@ from meshcore_home_gateway.protocol.framing import encode_frame
 from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import (
+    RELEASED_AFTER,
     AckReceived,
     AdvertHeard,
     CommandFailedError,
@@ -149,8 +151,10 @@ def test_clock_is_moved_forward_only() -> None:
     assert Command.SET_DEVICE_TIME not in ahead.commands()
 
 
-def test_clock_is_not_read_without_set_clock() -> None:
+def test_clock_is_read_but_not_written_without_set_clock() -> None:
+    """The offset is shown also when the gateway may not set the clock (SEC-002)."""
     radio = EmulatedRadio(clock=START_TIME)
+    offsets: list[int | None] = []
 
     async def main() -> None:
         events: asyncio.Queue[RadioEvent] = asyncio.Queue()
@@ -160,12 +164,106 @@ def test_clock_is_not_read_without_set_clock() -> None:
         )  # fmt: skip
         try:
             await session.start()
+            offsets.append(session.clock_offset_s)
         finally:
             await session.close()
 
     asyncio.run(main())
-    assert Command.GET_DEVICE_TIME not in radio.commands()
+    assert Command.GET_DEVICE_TIME in radio.commands()
+    assert Command.SET_DEVICE_TIME not in radio.commands()
     assert radio.clock == START_TIME
+    assert offsets == [-100]
+
+
+UNSET = 1_715_770_351  # where a radio without a clock chip and contacts starts (ArduinoHelpers.h)
+
+
+@pytest.mark.parametrize(
+    ("radio_time", "host_time", "max_days", "warning"),
+    [
+        (UNSET, START_TIME, 30, None),  # never set: any step
+        (START_TIME, START_TIME + 29 * 86_400, 30, None),  # off for a while
+        (START_TIME, START_TIME + 31 * 86_400, 30, "more than set_clock_max_days = 30"),
+        (START_TIME, START_TIME + 31 * 86_400, 0, None),
+        (START_TIME, START_TIME + 31 * 86_400, 60, None),
+        # a typo: 2062 instead of 2026
+        (UNSET, RELEASED_AFTER + 36 * 365 * 86_400, 30, "more than ten years after"),
+        (UNSET, RELEASED_AFTER + 36 * 365 * 86_400, 0, None),
+        (UNSET, RELEASED_AFTER - 86_400, 0, "before this release"),  # a host never set
+    ],
+    ids=[
+        "unset-radio", "29-days", "31-days", "31-days-no-limit", "31-days-60-allowed",
+        "host-in-2062", "host-in-2062-no-limit", "host-before-the-release",
+    ],
+)  # fmt: skip
+def test_the_radio_clock_is_written_only_from_a_plausible_host_clock(
+    caplog: pytest.LogCaptureFixture, radio_time: int, host_time: int, max_days: int,
+    warning: str | None,
+) -> None:  # fmt: skip
+    """The radio cannot be set back: a wrong host clock written to it stays (SEC-002). Without
+    a warning the host's time is written."""
+    caplog.set_level(logging.INFO)
+    radio = EmulatedRadio(clock=radio_time)
+    written = warning is None
+
+    async def main() -> None:
+        events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        session = CompanionSession(
+            radio, events, wall_clock=lambda: host_time, command_timeout_s=0.3,
+            flush_settle_s=0.01, set_clock_max_days=max_days,
+        )  # fmt: skip
+        try:
+            await session.start()
+            assert session.clock_offset_s == (0 if written else radio_time - host_time)
+        finally:
+            await session.close()
+
+    asyncio.run(main())
+    assert (Command.SET_DEVICE_TIME in radio.commands()) is written
+    assert radio.clock == (host_time if written else radio_time)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    clock_warnings = [w for w in warnings if w.startswith("radio clock")]
+    if warning is None:
+        assert clock_warnings == []
+    else:
+        assert len(clock_warnings) == 1
+        assert warning in clock_warnings[0]
+
+
+def test_a_radio_clock_ahead_is_warned_about_with_what_it_does(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """DOC-002: the radio's own clock matters for its adverts, not for the age of commands
+    (the sender's and the host's clocks decide that)."""
+    caplog.set_level(logging.WARNING)
+    run(EmulatedRadio(clock=START_TIME + 1000), start_only, now=START_TIME)
+    messages = [r.getMessage() for r in caplog.records]
+    (warning,) = [m for m in messages if m.startswith("radio clock")]
+    assert "1000 s ahead of the host's and cannot be set back: its adverts and" in warning
+    assert "age" not in warning
+
+
+def test_the_release_date_floor_is_a_past_date() -> None:
+    """A floor after today would refuse every host clock (docs/development.md, Release)."""
+    assert time.time() >= RELEASED_AFTER
+    assert RELEASED_AFTER % 86_400 == 0  # midnight UTC of a release's date
+
+
+def test_the_clock_offset_follows_the_heartbeat() -> None:
+    """Read at every heartbeat; a change within the reading's resolution is not one."""
+    radio = EmulatedRadio(clock=START_TIME + 100)
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        assert session.clock_offset_s == 0  # written at connect
+        radio.clock += 2
+        await session.read_status()
+        assert session.clock_offset_s == 0
+        radio.clock += 40  # drifted, or another client wrote it
+        await session.read_status()
+        assert session.clock_offset_s == 42
+
+    run(radio, scenario, now=START_TIME + 200)
 
 
 def test_queued_messages_are_drained_at_start_in_both_layouts() -> None:

@@ -377,6 +377,7 @@ class Bridge:
             )
             session.on_contact_key = self._contact_key
             session.profile = self._profile
+            session.set_clock_max_days = self.config.radio.set_clock_max_days
             try:
                 self._radio_info = await session.start()
             except (RadioError, OSError) as exc:
@@ -967,10 +968,13 @@ class Bridge:
         info = self._radio_info
         connected = self._radio_ready.is_set()
         battery = self._session.battery if (self._session and connected) else None
+        offset = self._session.clock_offset_s if (self._session and connected) else None
         now = self._mono()
         return {
             "radio": "connected" if connected else "disconnected",
             "battery_v": round(battery.millivolts / 1000, 3) if battery else None,
+            # the radio's clock minus the host's: it cannot be set back (SEC-002)
+            "radio_clock_offset_s": offset,
             "airtime_1h_s": round(self._budget.used_s(now), 3),
             "airtime_available_s": round(self._budget.available_s(now), 3),
             "airtime_budget_s_per_hour": self._budget.per_hour_s,

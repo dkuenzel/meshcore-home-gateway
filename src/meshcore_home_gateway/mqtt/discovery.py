@@ -110,6 +110,14 @@ def discovery_payload(
             state_class="measurement", suggested_display_precision=2,
             value_template="{{ value_json.battery_v }}", **diagnostic,
         ),
+        "radio_clock_offset": component(
+            # Translators: sensor (duration) of the gateway: how far its own radio's clock is
+            # ahead of the gateway's clock (negative: behind)
+            "radio_clock_offset", "sensor", ha_name("Radio clock offset"),
+            device_class="duration", unit_of_measurement="s", state_class="measurement",
+            icon="mdi:clock-alert-outline",
+            value_template="{{ value_json.get('radio_clock_offset_s') }}", **diagnostic,
+        ),
         "airtime": component(
             # Translators: sensor (duration) of the gateway: how long it transmitted in the
             # last hour (airtime: the time on air, as in Home Assistant's own words)

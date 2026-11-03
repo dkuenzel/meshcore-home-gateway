@@ -204,6 +204,7 @@ transport = "tcp"
 host = "192.0.2.10"
 port = 5000
 set_clock = false
+set_clock_max_days = 7
 [radio.profile]
 manage = "observe"
 name = "Gateway"

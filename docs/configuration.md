@@ -18,7 +18,8 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | `device` | – | serial device, an absolute path; use the stable `/dev/serial/by-id/...` path. Required for `serial`, an error with `tcp` |
 | `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial`. The TCP interface has no authentication |
 | `port` | `5000` | TCP port; only with `tcp` |
-| `set_clock` | `true` | move the radio clock forward to the gateway clock at connect (it cannot be moved back) |
+| `set_clock` | `true` | move the radio clock forward to the host's clock at connect, when the host's clock is plausible (`set_clock_max_days`); it cannot be moved back |
+| `set_clock_max_days` | `30` | the largest step, in days, by which `set_clock` moves a radio clock that was set, 0–3650; a host clock further ahead, before the gateway's release or more than ten years after it is not written (a warning says why). A radio without a clock chip restarts at the newest time it wrote to a contact, so a radio that lay unused needs a larger step once. `0`: no limit (the behaviour of earlier versions) |
 
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it
 would put nRF52 radios into their bootloader.

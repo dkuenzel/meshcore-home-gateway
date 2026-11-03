@@ -48,6 +48,7 @@
     "radio.profile.name",
     "radio.profile.protect_contacts",
     "radio.set_clock",
+    "radio.set_clock_max_days",
     "radio.transport",
     "target.<alias>",
     "telemetry.enabled"
@@ -892,6 +893,13 @@
    "default": true,
    "type": "boolean"
   },
+  "radio.set_clock_max_days": {
+   "answer": "int",
+   "default": 30,
+   "max": 3650,
+   "min": 0,
+   "type": "integer"
+  },
   "radio.transport": {
    "answer": "str",
    "choices": [
@@ -1400,6 +1408,13 @@
      "state_class": "measurement",
      "unit": "s"
     },
+    "radio_clock_offset": {
+     "device_class": "duration",
+     "entity_id": "sensor.<device>_radio_clock_offset",
+     "platform": "sensor",
+     "state_class": "measurement",
+     "unit": "s"
+    },
     "receive_errors": {
      "entity_id": "sensor.<device>_receive_errors",
      "platform": "sensor",
@@ -1794,6 +1809,7 @@
     "public_key",
     "queue",
     "radio",
+    "radio_clock_offset_s",
     "radio_name",
     "spreading_factor",
     "telemetry",

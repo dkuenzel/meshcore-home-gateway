@@ -1733,11 +1733,26 @@ def test_radio_clock_is_set_only_when_configured(tmp_path: Path, set_clock: bool
     section = f'transport = "tcp"\nhost = "192.0.2.10"\nset_clock = {str(set_clock).lower()}'
 
     async def main() -> None:
-        async with running(make_config(radio=section), radio, tmp_path):
-            pass
+        async with running(make_config(radio=section), radio, tmp_path) as (_, bus, _n):
+            # the state shows how far the radio's clock is off (SEC-002)
+            state = await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+            assert state["radio_clock_offset_s"] == (0 if set_clock else -100)
 
     scenario(main)
     assert (Command.SET_DEVICE_TIME in radio.commands()) is set_clock
+
+
+def test_the_step_limit_of_the_radio_clock_comes_from_the_configuration(tmp_path: Path) -> None:
+    radio = EmulatedRadio(clock=int(NOW) - 2 * 86_400)  # two days behind: off for a while
+    section = 'transport = "tcp"\nhost = "192.0.2.10"\nset_clock_max_days = 1'
+
+    async def main() -> None:
+        async with running(make_config(radio=section), radio, tmp_path) as (_, bus, _n):
+            state = await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+            assert state["radio_clock_offset_s"] == -2 * 86_400
+
+    scenario(main)
+    assert Command.SET_DEVICE_TIME not in radio.commands()
 
 
 def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:

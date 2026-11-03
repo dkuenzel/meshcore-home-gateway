@@ -76,6 +76,7 @@ STATE_KEYS = {
     "queue", "radio_name", "public_key", "model", "firmware", "frequency_mhz", "bandwidth_khz",
     "spreading_factor", "coding_rate", "tx_power_dbm", "contact_link", "version", "telemetry",
     "telemetry_reason", "telemetry_airtime_1h_s", "telemetry_mesh_airtime_1h_s",
+    "radio_clock_offset_s",
 }  # fmt: skip
 
 
@@ -141,11 +142,16 @@ def test_entities_and_their_sources() -> None:
         "packets_received", "packets_sent", "receive_errors", "contacts", "nodes", "remote_cli",
         "advert_position", "look_alike", "contact", "node", "show_hidden", "profile", "setting",
         "telemetry_status", "telemetry_airtime", "telemetry_mesh_airtime", "telemetry",
+        "radio_clock_offset",
     }  # fmt: skip
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
     assert cmps["battery"]["unit_of_measurement"] == "V"  # "v" would be rejected
     assert cmps["battery"]["entity_category"] == "diagnostic"
+    clock = cmps["radio_clock_offset"]  # SEC-002: the radio's clock cannot be set back
+    assert (clock["entity_category"], clock["unit_of_measurement"]) == ("diagnostic", "s")
+    # newer than the state documents of earlier versions: read without a warning there
+    assert clock["value_template"] == "{{ value_json.get('radio_clock_offset_s') }}"
     assert cmps["message"]["event_types"] == ["contact", "channel"]
     assert "queued" in cmps["delivery"]["event_types"]
     assert cmps["command"]["event_types"] == ["arm", "status"]
