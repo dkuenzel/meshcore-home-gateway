@@ -69,7 +69,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ARC-009 | fix | Wiring in one module, `bridge.py` split into outbox, inbox and announcer | pending: structure |
 | ARC-010 | fix | The firmware behaviours the advert check relies on, each with its line, in `docs/protocol.md` §4, as a checklist for a firmware update; the firmware tests stay the guard. A push carrying the advert's flags is for the maintainer to request upstream | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-011 | accept | The machinery stays; the roadmap names the first language as its proof and a review of the installer's packs after it. The parser risk is covered by SUP-006 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| ARC-012 | fix | A `health` section in `state` and a *Gateway degraded* problem sensor; observer errors counted and their log rate-limited | pending: robustness |
+| ARC-012 | fix | A `health` section in `state` and a *Gateway degraded* problem sensor; observer errors counted and their log rate-limited | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | ARC-013 | fix | The outgoing queue is kept across restarts and drained on stop within a longer stop timeout (ADR 0029 supersedes the non-goal) | pending: outbox |
 | ARC-014 | fix | `[mqtt] protocol = "5"` as an option: message expiry, correlation data and user properties; 3.1.1 stays the default | pending: mqtt5 |
 | ARC-015 | fix | `[homeassistant] contact_entity_prefix` for a second gateway; the guide shows one `person` for two trackers | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
@@ -80,19 +80,19 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| CODE-001 | fix | `_next` lets the reader and the getter run once after a timeout before it gives up; the loop's lateness is measured and published | pending: robustness |
-| CODE-002 | fix | The hourly purge runs in a thread on a connection of its own, in one transaction; the state store (ARC-004) bounds the writes of `state.json`; the loop lag (CODE-001) shows whether more is needed | pending: robustness, state-store |
+| CODE-001 | fix | `_next` lets the reader and the getter run once after a timeout before it gives up; the loop's lateness is measured and published | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
+| CODE-002 | fix | The hourly purge runs in a thread on a connection of its own, in one transaction; the state store (ARC-004) bounds the writes of `state.json`; the loop lag (CODE-001) shows whether more is needed | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: state-store |
 | CODE-003 | fix | `slugs` pruned to the contacts the gateway still knows plus the most recently seen, `radio_profile` to the current radio and the two before | pending: state-store |
 | CODE-004 | fix | By the single store: a section never re-reads the file | pending: state-store |
 | CODE-005 | fix | `cli.py` becomes a package of command modules, `bridge.py` is split (ARC-009); state and sequence diagrams for the telemetry subsystem | pending: structure, threat-model |
 | CODE-006 | fix | Every reference to the sprint's "design 6c" decisions replaced by the section or record that holds the rule; a test that design references in the code resolve | pending: code-quality |
 | CODE-007 | fix | The `# fmt: skip` markers removed in one mechanical commit; the formatter's output is the style | pending: code-quality |
-| CODE-008 | fix | Through ARC-012 (counters, rate-limited logs) | pending: robustness |
-| CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38), pending: code-quality, robustness |
+| CODE-008 | fix | Through ARC-012 (counters, rate-limited logs) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
+| CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38), [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: code-quality |
 | CODE-010 | fix | The `Bus` protocol moves to the ports module and `MqttBus` declares it | pending: structure |
 | CODE-011 | fix | The cost noted in `refresh_channels`' docstring | pending: code-quality |
 | CODE-012 | fix | A comment naming the radio's table as the bound | pending: code-quality |
-| CODE-013 | fix | The purge in one transaction, as it is since [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38); now also in a thread of its own (CODE-002) | pending: robustness |
+| CODE-013 | fix | The purge in one transaction, as it is since [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38); now also in a thread of its own (CODE-002) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | CODE-014 | fix | A test that `nan` and `inf` are refused with a readable message | pending: code-quality |
 | CODE-015 | fix | `_toml_string` escapes line and paragraph separators and other invisible format characters | pending: code-quality |
 | CODE-016 | accept | The lazy imports keep `--version` and the light commands fast; documented where they are | – |
@@ -149,15 +149,15 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | OPS-006 | fix | Through ARC-013 | pending: outbox |
 | OPS-007 | fix | A troubleshooting row, a warning at every connect on untested firmware, `manage_reason` in the `contacts` index, a turnaround target for new firmware (EXT-020) | pending: ops |
 | OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: cli-ops |
-| OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | pending: ops, robustness |
+| OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: ops |
 | OPS-010 | fix | Message boxes before a TCP radio and before a broker without credentials or TLS; the summary names the posture | pending: ops |
-| OPS-011 | fix | The health section (ARC-012) and a `status` command (IMP-016) | pending: robustness, cli-ops |
+| OPS-011 | fix | The health section (ARC-012) and a `status` command (IMP-016) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: cli-ops |
 | OPS-012 | accept | An installation needs Debian's mirror; an offline installation is a feature nobody asked for | – |
 | OPS-013 | fix | `apt-get clean` after the installation | pending: ops |
 | OPS-014 | fix | A sentence on time zones in the operations section | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | OPS-015 | accept | Nothing to fix; the reconfigure section notes the radio's queue | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | OPS-016 | fix | The released unit names its version in a comment | pending: ops |
-| OPS-017 | fix | A warning at start when the log level is `debug` | pending: robustness |
+| OPS-017 | fix | A warning at start when the log level is `debug` | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | OPS-018 | accept | Documented in the unit; only the passed-through device exists in the container | – |
 | OPS-019 | accept | Documented with the full path | – |
 | OPS-020 | accept | Nothing to change | – |
@@ -192,14 +192,14 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-010 | fix | Through SEC-007 | [#47](https://github.com/dkuenzel/meshcore-home-gateway/pull/47) |
 | IMP-011 | fix | Through SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-012 | fix | Through SEC-009 | [#46](https://github.com/dkuenzel/meshcore-home-gateway/pull/46) |
-| IMP-013 | fix | Through ARC-012 | pending: robustness |
+| IMP-013 | fix | Through ARC-012 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-014 | fix | Through ARC-013 | pending: outbox |
 | IMP-015 | fix | Through ARC-014 | pending: mqtt5 |
 | IMP-016 | fix | `status`, `backup` and `retire` commands | pending: cli-ops |
 | IMP-017 | fix | Through CODE-009 | pending: code-quality |
 | IMP-018 | fix | Through SEC-012 and SEC-013 | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
 | IMP-019 | fix | Through SEC-010 and SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
-| IMP-020 | fix | Through CODE-001 and CODE-002 | pending: robustness |
+| IMP-020 | fix | Through CODE-001 and CODE-002 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-021 | fix | Through ARC-004 | pending: state-store |
 | IMP-022 | fix | Through ARC-003, ARC-009 and CODE-005 | pending: structure |
 | IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | pending: ops, installer-integrity |
@@ -215,7 +215,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-033 | fix | Through OPS-007 | pending: ops |
 | IMP-034 | fix | Through OPS-007 | pending: ops |
 | IMP-035 | reject | Superseded by IMP-014: an update keeps the queue, waiting for it to empty is no longer needed | – |
-| IMP-036 | fix | Through OPS-017 | pending: robustness |
+| IMP-036 | fix | Through OPS-017 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-037 | fix | Through SEC-010 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | IMP-038 | fix | Through SEC-017 (opt-in, default off: texts stay data) | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
 | IMP-039 | fix | Through SEC-017 | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
@@ -268,7 +268,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | pending: threat-model |
 | RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
-| RES-009 | accept | Acknowledged; turned into a test (CODE-001) | pending: robustness |
+| RES-009 | accept | Acknowledged; turned into a test (CODE-001) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
 | RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | pending: installer-integrity |
