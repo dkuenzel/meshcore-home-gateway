@@ -35,7 +35,23 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 
 ### Install
 
-On the Proxmox VE host, as root:
+On the Proxmox VE host, as root. Download the installer, check that the release workflow built it
+from the release's tag (on any machine with the GitHub CLI `gh`, logged in; the release attests
+each of its files; `X.Y.Z` is the version on the releases page), then run it:
+
+```sh
+wget https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh
+gh attestation verify meshcore-home-gateway-lxc.sh --repo dkuenzel/meshcore-home-gateway \
+  --signer-workflow dkuenzel/meshcore-home-gateway/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
+bash meshcore-home-gateway-lxc.sh && rm meshcore-home-gateway-lxc.sh
+```
+
+The installer of a release carries the SHA-256 of that release's zipapp and unit and installs
+only those files: the check of the installer covers the program it installs. Whoever could
+replace a file of the release could replace its `SHA256SUMS` too, but not the installer's
+attestation; the repository's releases are also immutable once published. If you trust GitHub's
+TLS and the release's files as served, run the installer straight from its address instead:
 
 ```sh
 bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
@@ -51,24 +67,18 @@ lands in the template storage as for any container. It downloads the program ins
 container:
 
 * run from a release's address: that release's zipapp and unit, checked against the release's
-  `SHA256SUMS` before they are installed (`--release X.Y.Z` picks another release);
+  `SHA256SUMS` and the digests the installer carries before they are installed (`--release
+  X.Y.Z` picks another release, checked against its `SHA256SUMS` alone);
 * run from `main`'s address: the source archive of `main` (or of the branch, tag or commit that
-  `--ref` names), built inside the container; HTTPS is the only check;
+  `--ref` names), built inside the container; HTTPS is the only check. A branch moves; to install
+  exactly what you read, name a commit: `bash -c "$(wget -qO- URL)" -- --ref <commit>` (its full
+  hash from the commit's page);
 * run from a clone of this repository: that clone, packed and sent into the container (for
   development); with `--release` or `--ref`, a download as above.
 
 Options follow a `--`, for example `bash -c "$(wget -qO- URL)" -- --answers FILE`; `--help` lists
 them. If the command does nothing at all, the address could not be downloaded (`bash -c` gets an
-empty script): `wget -O- URL` shows why. To check the installer before running it, download it, verify it on a machine with the
-GitHub CLI `gh` (the release attests it like its other files), then run it:
-
-```sh
-wget https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh
-gh attestation verify meshcore-home-gateway-lxc.sh --repo dkuenzel/meshcore-home-gateway \
-  --signer-workflow dkuenzel/meshcore-home-gateway/.github/workflows/release.yml \
-  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
-bash meshcore-home-gateway-lxc.sh && rm meshcore-home-gateway-lxc.sh
-```
+empty script): `wget -O- URL` shows why.
 
 Once the gateway offers a language besides English (1.1.0a4 offers English only), the first
 dialog chooses the installer's language, preselected from your session (`LANGUAGE`, `LC_ALL`,

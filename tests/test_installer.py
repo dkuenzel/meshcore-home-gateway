@@ -1679,13 +1679,17 @@ STAGE = "/root/meshcore-home-gateway-src"
 
 
 def run_from_url(
-    host: Host, *args: str, release: str = "", env: dict[str, str] | None = None
-) -> subprocess.CompletedProcess[str]:
+    host: Host, *args: str, release: str = "", env: dict[str, str] | None = None,
+    pins: tuple[str, str] = ("", ""),
+) -> subprocess.CompletedProcess[str]:  # fmt: skip
     """Like `bash -c "$(wget -qO- URL)" -- ARGS`: the script is no file, so there is no checkout.
-    `release` is the version that `make release` writes into the published copy."""
+    `release` is the version that `make release` writes into the published copy, `pins` the
+    digests of its zipapp and unit."""
     text = host.installer.read_text(encoding="utf-8")
     if release:
         text = text.replace('\nRELEASE=""', f'\nRELEASE="{release}"', 1)
+    for name, pin in zip(("PYZ", "UNIT"), pins, strict=True):
+        text = text.replace(f'\nRELEASE_{name}_SHA256=""', f'\nRELEASE_{name}_SHA256="{pin}"', 1)
     temporary = host.root / "tmp"
     temporary.mkdir(exist_ok=True)
     return subprocess.run(  # noqa: S603 - our script with fixed arguments
@@ -1725,7 +1729,7 @@ def test_from_a_release_its_checked_files_are_downloaded_in_the_container(host: 
     result = run_from_url(host, "--answers", str(answers_file(host)), release="1.2.3",
                           env={"STUB_VERSION": "1.2.3"})  # fmt: skip
     assert result.returncode == 0, result.stderr
-    assert fetches(host) == [["release", f"{RELEASES}v1.2.3/", "1.2.3", STAGE]]
+    assert fetches(host) == [["release", f"{RELEASES}v1.2.3/", "1.2.3", "-", "-", STAGE]]
     assert "meshcore-home-gateway 1.2.3 in container 105" in result.stderr  # known in advance
     assert 'releases/latest/download/meshcore-home-gateway-lxc.sh)" -- --update 105' in (
         result.stderr
@@ -1828,10 +1832,33 @@ def test_update_from_a_url_downloads_into_the_container(host: Host) -> None:
     assert host.inside()[-1] == "systemctl restart meshcore-home-gateway"
 
 
+PYZ_PIN, UNIT_PIN = "a1" * 32, "b2" * 32
+
+
+@pytest.mark.parametrize(
+    ("args", "pins"),
+    [
+        ((), [PYZ_PIN, UNIT_PIN]),  # its own release: the files it was published with
+        (("--release", "1.2.3"), [PYZ_PIN, UNIT_PIN]),
+        (("--release", "1.2.2"), ["-", "-"]),  # another release: its SHA256SUMS alone
+    ],
+)
+def test_the_published_copy_installs_the_files_it_pins(
+    host: Host, args: tuple[str, ...], pins: list[str]
+) -> None:
+    """OPS-002: whoever can replace the zipapp of a release can replace its SHA256SUMS too; the
+    installer's attestation covers the digests it carries."""
+    existing_container(host)
+    result = run_from_url(host, *args, "--update", "105", release="1.2.3", pins=(PYZ_PIN, UNIT_PIN))
+    assert result.returncode == 0, result.stderr
+    (fetched,) = fetches(host)
+    assert fetched[3:5] == pins
+
+
 @pytest.mark.parametrize(
     ("args", "expected"),
     [
-        (["--release", "2.0.0"], ["release", f"{RELEASES}v2.0.0/", "2.0.0", STAGE]),
+        (["--release", "2.0.0"], ["release", f"{RELEASES}v2.0.0/", "2.0.0", "-", "-", STAGE]),
         (["--ref", "v0.1.0"], ["source", ARCHIVE.replace("main", "v0.1.0"), STAGE]),
     ],
 )  # fmt: skip
@@ -1875,13 +1902,15 @@ def test_bad_release_and_ref_options_are_refused(host: Host, args: list[str]) ->
 
 
 def test_the_published_copy_names_its_release() -> None:
-    """`make release` writes the version into the one line it replaces."""
+    """`make release` writes the version and the digests into the lines it replaces."""
     lines = SCRIPT.read_text(encoding="utf-8").splitlines()
     assert lines.count('RELEASE=""     # the copy published with a release names its version here '
                        "(make release)") == 1  # fmt: skip
+    assert lines.count('RELEASE_PYZ_SHA256=""') == lines.count('RELEASE_UNIT_SHA256=""') == 1
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert "meshcore-home-gateway-lxc.sh" in makefile
     assert 's/^RELEASE=\\"\\"/RELEASE=\\"$$version\\"/' in makefile
+    assert 's/^RELEASE_PYZ_SHA256=\\"\\"$$/RELEASE_PYZ_SHA256=\\"$$pyz_sha256\\"/' in makefile
 
 
 def test_help_needs_no_script_file(host: Host) -> None:
@@ -1922,11 +1951,14 @@ def fetch(*args: str) -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
-def publish_release(files: Path, version: str, pyz: bytes = b"PK zipapp") -> None:
+def publish_release(
+    files: Path, version: str, pyz: bytes = b"PK zipapp", unit: bytes | None = None
+) -> None:
     release = files / f"v{version}"
     release.mkdir()
     (release / f"meshcore-home-gateway-{version}.pyz").write_bytes(pyz)
-    (release / "meshcore-home-gateway.service").write_bytes((ROOT / UNIT).read_bytes())
+    unit_bytes = (ROOT / UNIT).read_bytes() if unit is None else unit
+    (release / "meshcore-home-gateway.service").write_bytes(unit_bytes)
     sums = "".join(
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
         for path in sorted(release.iterdir())
@@ -1940,10 +1972,45 @@ def test_the_files_of_a_release_are_downloaded_and_checked(
     base, files = server
     publish_release(files, "1.2.3")
     target = tmp_path / "stage"
-    result = fetch("release", f"{base}v1.2.3/", "1.2.3", str(target))
+    result = fetch("release", f"{base}v1.2.3/", "1.2.3", "-", "-", str(target))
     assert result.returncode == 0, result.stderr
     assert (target / "meshcore-home-gateway.pyz").read_bytes() == b"PK zipapp"
     assert (target / UNIT).read_bytes() == (ROOT / UNIT).read_bytes()
+
+
+def test_the_files_a_published_installer_pins_are_installed(
+    server: tuple[str, Path], tmp_path: Path
+) -> None:
+    base, files = server
+    publish_release(files, "1.2.3")
+    pins = [hashlib.sha256(b"PK zipapp").hexdigest(),
+            hashlib.sha256((ROOT / UNIT).read_bytes()).hexdigest()]  # fmt: skip
+    target = tmp_path / "stage"
+    result = fetch("release", f"{base}v1.2.3/", "1.2.3", *pins, str(target))
+    assert result.returncode == 0, result.stderr
+    assert (target / "meshcore-home-gateway.pyz").read_bytes() == b"PK zipapp"
+
+
+@pytest.mark.parametrize("replaced", ["pyz", "unit"])
+def test_a_release_file_replaced_with_its_checksum_is_not_installed(
+    server: tuple[str, Path], tmp_path: Path, replaced: str
+) -> None:
+    """OPS-002: a zipapp (or unit) replaced in the release together with its SHA256SUMS line is
+    not the file the installer was published with; nothing is written."""
+    base, files = server
+    publish_release(files, "1.2.3")
+    pins = [hashlib.sha256(b"PK zipapp").hexdigest(),
+            hashlib.sha256((ROOT / UNIT).read_bytes()).hexdigest()]  # fmt: skip
+    shutil.rmtree(files / "v1.2.3")
+    if replaced == "pyz":
+        publish_release(files, "1.2.3", pyz=b"PK replaced")
+    else:
+        publish_release(files, "1.2.3", unit=b"[Service]\nExecStart=/bin/sh\n")
+    target = tmp_path / "stage"
+    result = fetch("release", f"{base}v1.2.3/", "1.2.3", *pins, str(target))
+    assert result.returncode == 1
+    assert "is not the file this installer was published with: not installed" in result.stderr
+    assert not target.exists()  # every file is checked before one is written
 
 
 def test_a_release_file_that_does_not_match_its_checksum_is_not_installed(
@@ -1953,7 +2020,7 @@ def test_a_release_file_that_does_not_match_its_checksum_is_not_installed(
     publish_release(files, "1.2.3")
     (files / "v1.2.3" / "meshcore-home-gateway-1.2.3.pyz").write_bytes(b"PK tampered")
     target = tmp_path / "stage"
-    result = fetch("release", f"{base}v1.2.3/", "1.2.3", str(target))
+    result = fetch("release", f"{base}v1.2.3/", "1.2.3", "-", "-", str(target))
     assert result.returncode == 1
     assert "does not match the SHA256SUMS" in result.stderr
     assert not (target / "meshcore-home-gateway.pyz").exists()
@@ -1961,7 +2028,7 @@ def test_a_release_file_that_does_not_match_its_checksum_is_not_installed(
 
 def test_a_missing_release_is_reported(server: tuple[str, Path], tmp_path: Path) -> None:
     base, _ = server
-    result = fetch("release", f"{base}v9.9.9/", "9.9.9", str(tmp_path / "stage"))
+    result = fetch("release", f"{base}v9.9.9/", "9.9.9", "-", "-", str(tmp_path / "stage"))
     assert result.returncode == 1
     assert "cannot download" in result.stderr
     assert "404" in result.stderr

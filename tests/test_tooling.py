@@ -403,7 +403,8 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     pack = "# meshcore-home-gateway installer messages, xx\nmsg\tYes\t‹Yes›\n"
     (locale / "xx.messages").write_text(pack, encoding="utf-8")
     block = tool.pin_block({"en": "English", "xx": "Pseudo"}, {"xx": pack})
-    script = f'#!/usr/bin/env bash\nRELEASE=""     # make release\n{block}'
+    pins = 'RELEASE_PYZ_SHA256=""\nRELEASE_UNIT_SHA256=""\n'
+    script = f'#!/usr/bin/env bash\nRELEASE=""     # make release\n{pins}{block}'
     (locale.parent / "meshcore-home-gateway-lxc.sh").write_text(script, encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
 
@@ -429,6 +430,13 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     source = (ROOT / unit).read_text(encoding="utf-8").split("\n")
     assert released.split("\n") == [source[0], "# Version: 9.9.9", *source[2:]]
     assert "  meshcore-home-gateway.service\n" in sums
+    # OPS-002: the installer pins what it installs, so its attestation covers the program
+    pinning = (dist / "release" / "meshcore-home-gateway-lxc.sh").read_text(encoding="utf-8")
+    for name, file in (("PYZ", "meshcore-home-gateway-9.9.9.pyz"),
+                       ("UNIT", "meshcore-home-gateway.service")):  # fmt: skip
+        digest = hashlib.sha256((dist / "release" / file).read_bytes()).hexdigest()
+        assert f'\nRELEASE_{name}_SHA256="{digest}"\n' in pinning
+        assert f"{digest}  {file}\n" in sums
 
     (locale / "xx.messages").write_text(pack + "msg\tNo\t‹No›\n", encoding="utf-8")
     refused = release()
@@ -442,4 +450,12 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     unnamed = release()
     assert unnamed.returncode != 0
     assert "release: the unit names no version" in unnamed.stderr
+    assert not (dist / "release" / "SHA256SUMS").exists()
+
+    (tmp_path / unit).write_text(text, encoding="utf-8")
+    installer = locale.parent / "meshcore-home-gateway-lxc.sh"
+    installer.write_text(script.replace(pins, 'RELEASE_PYZ_SHA256=""\n'), encoding="utf-8")
+    unpinned = release()
+    assert unpinned.returncode != 0
+    assert "release: the installer pins no digests" in unpinned.stderr
     assert not (dist / "release" / "SHA256SUMS").exists()

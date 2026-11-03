@@ -75,7 +75,21 @@ release after the [hardware checklist](docs/testing.md#hardware-checklist).
 
 ### Proxmox VE
 
-On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root:
+On the Proxmox host (Proxmox VE 9, or 8 with current updates), as root. Download the installer,
+check that the release workflow built it (with the GitHub CLI `gh`, on any machine; `X.Y.Z` is the
+version on the releases page), then run it:
+
+```sh
+wget https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh
+gh attestation verify meshcore-home-gateway-lxc.sh --repo dkuenzel/meshcore-home-gateway \
+  --signer-workflow dkuenzel/meshcore-home-gateway/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
+bash meshcore-home-gateway-lxc.sh && rm meshcore-home-gateway-lxc.sh
+```
+
+The installer carries the SHA-256 of its release's program and unit and installs nothing else, so
+the check covers them too. If you trust GitHub's TLS and the release's files as served, run it
+straight from its address instead:
 
 ```sh
 bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/latest/download/meshcore-home-gateway-lxc.sh)"
@@ -83,7 +97,7 @@ bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/
 
 A pre-release has an installer of its own (its address is on the releases page). Nothing is
 stored on the host: the program is downloaded inside the new container and checked against the
-release's `SHA256SUMS`.
+release's `SHA256SUMS` and the digests the installer carries.
 
 In the default setup the script asks only for the radio (USB serial device or TCP address) and the
 broker; the advanced setup also asks for the container and topic settings. After a confirmation it

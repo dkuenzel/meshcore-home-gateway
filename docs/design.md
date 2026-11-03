@@ -1295,12 +1295,13 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   the broker and the targets, an advanced one for everything. After a confirmation it creates an
   unprivileged Debian 13 container with nesting, passes the USB serial device through (`dev0`,
   group `dialout` as seen in the container; refused when another container of the host already
-  passes it through), installs `python3` and `python3-paho-mqtt` from
-  Debian and the program inside the container (a release's zipapp checked against its
-  `SHA256SUMS`, or the source of `main` built there), validates the answers with it, probes the
-  radio to offer its channels and contacts as targets, writes the configuration and starts the
-  service. Commands in the container run with a clean environment. The container gets Debian's
-  updates from `unattended-upgrades`, and its journal is limited to 100 MB. Once the gateway offers a
+  passes it through), installs `python3` and `python3-paho-mqtt` from Debian and the program
+  inside the container (a release's zipapp checked against its `SHA256SUMS` and the digest the
+  published installer carries, or the source of `main` built there), validates the answers with
+  it, probes the radio to offer its channels and contacts as targets, writes the configuration
+  and starts the service. Commands in the container run with a clean environment. The container
+  gets Debian's updates from `unattended-upgrades`, and its journal is limited to 100 MB. Once
+  the gateway offers a
   language besides English, the first dialog chooses the installer's language and the default of
   `[homeassistant] language`; the language's pack is read into memory and checked against a
   digest the script carries ([§6.12](#612-translations)).
