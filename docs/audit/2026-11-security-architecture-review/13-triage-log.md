@@ -64,16 +64,16 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ARC-004 | fix | One state store for `state.json`, loaded once, every section in memory, written once per change set and at once for the ledger | pending: state-store |
 | ARC-005 | fix | The message budget's level is kept across restarts, never below what one long message needs, so the first alert after a restart still goes out at once; ADR 0008 names the radio's own limiter as the regulatory backstop | pending: outbox |
 | ARC-006 | fix | Through SEC-005; the integrity model in ADR 0015 (dated note) and the threat model | pending: documents |
-| ARC-007 | fix | Dated notes with today's sizes in ADR 0002 and ADR 0004; a module size that asks for a split in `CONTRIBUTING.md` | pending: docs-accuracy |
-| ARC-008 | fix | The amendment practice stated in ADR 0001 and `CONTRIBUTING.md`: dated amendments may narrow or correct a record, a reversal needs a new one | pending: docs-accuracy |
+| ARC-007 | fix | Dated notes with today's sizes in ADR 0002 and ADR 0004; a module size that asks for a split in `CONTRIBUTING.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| ARC-008 | fix | The amendment practice stated in ADR 0001 and `CONTRIBUTING.md`: dated amendments may narrow or correct a record, a reversal needs a new one | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-009 | fix | Wiring in one module, `bridge.py` split into outbox, inbox and announcer | pending: structure |
-| ARC-010 | fix | The firmware behaviours the advert check relies on, each with its line, in `docs/protocol.md` §4, as a checklist for a firmware update; the firmware tests stay the guard. A push carrying the advert's flags is for the maintainer to request upstream | pending: docs-accuracy |
-| ARC-011 | accept | The machinery stays; the roadmap names the first language as its proof and a review of the installer's packs after it. The parser risk is covered by SUP-006 | pending: docs-accuracy |
+| ARC-010 | fix | The firmware behaviours the advert check relies on, each with its line, in `docs/protocol.md` §4, as a checklist for a firmware update; the firmware tests stay the guard. A push carrying the advert's flags is for the maintainer to request upstream | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| ARC-011 | accept | The machinery stays; the roadmap names the first language as its proof and a review of the installer's packs after it. The parser risk is covered by SUP-006 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-012 | fix | A `health` section in `state` and a *Gateway degraded* problem sensor; observer errors counted and their log rate-limited | pending: robustness |
 | ARC-013 | fix | The outgoing queue is kept across restarts and drained on stop within a longer stop timeout (ADR 0029 supersedes the non-goal) | pending: outbox |
 | ARC-014 | fix | `[mqtt] protocol = "5"` as an option: message expiry, correlation data and user properties; 3.1.1 stays the default | pending: mqtt5 |
 | ARC-015 | fix | `[homeassistant] contact_entity_prefix` for a second gateway; the guide shows one `person` for two trackers | pending: ha-exposure |
-| ARC-016 | fix | A "tested with" table in `docs/home-assistant.md`, kept per release, and a checklist step against the newest Home Assistant. A CI job against an unpinned Home Assistant is rejected: it would install releases inside the cooldown the dependency policy keeps out | pending: docs-accuracy |
+| ARC-016 | fix | A "tested with" table in `docs/home-assistant.md`, kept per release, and a checklist step against the newest Home Assistant. A CI job against an unpinned Home Assistant is rejected: it would install releases inside the cooldown the dependency policy keeps out | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-017 | fix | The eight choices recorded as paragraphs of design §11 | pending: threat-model |
 
 ## Code quality
@@ -101,8 +101,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-019 | accept | The adapter's own bound is the documented design | – |
 | CODE-020 | accept | Deciding the language before parsing is required for English service logs; Ctrl-C as exit 1 is the documented failure | – |
 | CODE-021 | fix | A comment in the installer that only constants and validated values may be interpolated into `bash -c` | pending: ops |
-| CODE-022 | fix | `docs/development.md` names the release-critical tools and that they are reviewed as such | pending: docs-accuracy |
-| CODE-023 | fix | `tests/firmware/README.md` names each stand-in and why it exists | pending: docs-accuracy |
+| CODE-022 | fix | `docs/development.md` names the release-critical tools and that they are reviewed as such | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| CODE-023 | fix | `tests/firmware/README.md` names each stand-in and why it exists | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | CODE-024 | accept | The reasoning in comments stays; new code refers to the design where the paragraph exists | – |
 | CODE-025 | fix | Through ARC-013: the stop timeout's room is used for the drain | pending: outbox |
 
@@ -110,32 +110,32 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| DOC-001 | fix | The direction of the gateway's own discovery topic is "both" | pending: docs-accuracy |
-| DOC-002 | fix | Design §6.1, §8 and the troubleshooting row name the sender's and the host's clocks; the warning text names the adverts | pending: docs-accuracy, clock |
-| DOC-003 | fix | The "before the first release" paragraphs and the 0.1.0 example go; the repository description follows the README | pending: docs-accuracy, github |
+| DOC-001 | fix | The direction of the gateway's own discovery topic is "both" | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-002 | fix | Design §6.1, §8 and the troubleshooting row name the sender's and the host's clocks; the warning text names the adverts | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: clock |
+| DOC-003 | fix | The "before the first release" paragraphs and the 0.1.0 example go; the repository description follows the README | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37); the description: repository settings, 2026-11-02 |
 | DOC-004 | fix | Heard nodes are kept 7 days in the history too, as ADR 0016 says (SEC-010) | pending: floods |
 | DOC-005 | fix | Through ARC-001 | pending: threat-model |
-| DOC-006 | fix | `SECURITY.md` says which versions get fixes, how soon a report is acknowledged and that advisories are published | pending: docs-accuracy |
-| DOC-007 | fix | The README says whom the gateway asks, and that a companion answers only if allowed | pending: docs-accuracy |
+| DOC-006 | fix | `SECURITY.md` says which versions get fixes, how soon a report is acknowledged and that advisories are published | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-007 | fix | The README says whom the gateway asks, and that a companion answers only if allowed | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-008 | fix | Through SEC-001: one sentence wherever `confirmed` is explained | pending: acks |
 | DOC-009 | fix | Through SEC-003 | pending: tcp |
 | DOC-010 | fix | A "What the gateway keeps" section (household and bystanders, where, how long, how to switch it off) | pending: threat-model |
 | DOC-011 | fix | The design document split into a core and one document per subsystem, with state and sequence diagrams and a table of where each section moved | pending: threat-model |
-| DOC-012 | fix | "Gateway" in prose, "bridge" for the module, a one-line glossary | pending: docs-accuracy |
+| DOC-012 | fix | "Gateway" in prose, "bridge" for the module, a one-line glossary | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-013 | fix | `docs/architecture.md`: the short way in | pending: threat-model |
-| DOC-014 | fix | Design §6.5's table says that it is a subset and points to `docs/mqtt-api.md` | pending: docs-accuracy |
+| DOC-014 | fix | Design §6.5's table says that it is a subset and points to `docs/mqtt-api.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-015 | fix | `nodes_days` documented as a setting (SEC-010) | pending: floods |
-| DOC-016 | fix | The backup section says what each file holds, that the password is in the configuration, that the state files belong together and to stop the service first | pending: docs-accuracy |
-| DOC-017 | fix | "Securing the broker" says what happens without an ACL and that the gateway cannot tell | pending: docs-accuracy |
-| DOC-018 | fix | Through ARC-016 | pending: docs-accuracy |
-| DOC-019 | fix | Through ARC-008 | pending: docs-accuracy |
-| DOC-020 | fix | The checklist says that pre-releases are not checked on hardware | pending: docs-accuracy |
-| DOC-021 | fix | `[contacts]` in the example configuration | pending: docs-accuracy |
-| DOC-022 | fix | Verified in the firmware: the tag is the radio's clock, made unique; stated in `docs/protocol.md` (RES-016) | pending: docs-accuracy |
+| DOC-016 | fix | The backup section says what each file holds, that the password is in the configuration, that the state files belong together and to stop the service first | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-017 | fix | "Securing the broker" says what happens without an ACL and that the gateway cannot tell | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-018 | fix | Through ARC-016 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-019 | fix | Through ARC-008 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-020 | fix | The checklist says that pre-releases are not checked on hardware | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-021 | fix | `[contacts]` in the example configuration | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-022 | fix | Verified in the firmware: the tag is the radio's clock, made unique; stated in `docs/protocol.md` (RES-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-023 | fix | Through SEC-003 | pending: tcp |
-| DOC-024 | fix | A status column with "amended by" in the record index | pending: docs-accuracy |
-| DOC-025 | fix | The bug form asks for the transport and whether the broker has an ACL | pending: docs-accuracy |
-| DOC-026 | fix | A table of contents of the facts at the top of `docs/platform-notes.md` | pending: docs-accuracy |
+| DOC-024 | fix | A status column with "amended by" in the record index | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-025 | fix | The bug form asks for the transport and whether the broker has an ACL | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| DOC-026 | fix | A table of contents of the facts at the top of `docs/platform-notes.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 
 ## Operations and deployment
 
@@ -148,14 +148,14 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | OPS-005 | fix | `After=time-sync.target`, `MemoryMax=`, `@obsolete` in the system call filter; `IPAddressAllow=` documented as an option | pending: ops |
 | OPS-006 | fix | Through ARC-013 | pending: outbox |
 | OPS-007 | fix | A troubleshooting row, a warning at every connect on untested firmware, `manage_reason` in the `contacts` index, a turnaround target for new firmware (EXT-020) | pending: ops |
-| OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | pending: docs-accuracy, cli-ops |
+| OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: cli-ops |
 | OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | pending: ops, robustness |
 | OPS-010 | fix | Message boxes before a TCP radio and before a broker without credentials or TLS; the summary names the posture | pending: ops |
 | OPS-011 | fix | The health section (ARC-012) and a `status` command (IMP-016) | pending: robustness, cli-ops |
 | OPS-012 | accept | An installation needs Debian's mirror; an offline installation is a feature nobody asked for | – |
 | OPS-013 | fix | `apt-get clean` after the installation | pending: ops |
-| OPS-014 | fix | A sentence on time zones in the operations section | pending: docs-accuracy |
-| OPS-015 | accept | Nothing to fix; the reconfigure section notes the radio's queue | pending: docs-accuracy |
+| OPS-014 | fix | A sentence on time zones in the operations section | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| OPS-015 | accept | Nothing to fix; the reconfigure section notes the radio's queue | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | OPS-016 | fix | The released unit names its version in a comment | pending: ops |
 | OPS-017 | fix | A warning at start when the log level is `debug` | pending: robustness |
 | OPS-018 | accept | Documented in the unit; only the passed-through device exists in the container | – |
@@ -223,9 +223,9 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-041 | fix | Through SEC-003 | pending: tcp |
 | IMP-042 | fix | Through SEC-003 | pending: tcp |
 | IMP-043 | fix | Through SUP-007 | pending: supply-chain |
-| IMP-044 | fix | Through CODE-023 | pending: docs-accuracy |
+| IMP-044 | fix | Through CODE-023 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-045 | fix | Through CODE-007 | pending: code-quality |
-| IMP-046 | fix | Through DOC-026 | pending: docs-accuracy |
+| IMP-046 | fix | Through DOC-026 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-047 | fix | `history export` as JSON lines or CSV | pending: cli-ops |
 | IMP-048 | fix | Through OPS-013 | pending: ops |
 | IMP-049 | fix | Reason codes as texts and the remove and telemetry controls on the dashboard. Heard repeaters on the map are rejected: the gateway keeps no stranger's position (ADR 0016) | pending: extensions |
@@ -263,7 +263,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-001 | accept | Acknowledged; the consequence moves to `docs/protocol.md` §5 with SEC-001 | pending: acks |
 | RES-002 | accept | Acknowledged; already in `docs/protocol.md` §5, the clock consequence added with SEC-002 | pending: clock |
 | RES-003 | accept | Acknowledged; the scale of the cost goes to design §7.4 | pending: threat-model |
-| RES-004 | accept | Acknowledged; the table goes to `docs/protocol.md` §7 | pending: docs-accuracy |
+| RES-004 | accept | Acknowledged; the table goes to `docs/protocol.md` §7 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-005 | accept | Acknowledged; turned into flood tests (SEC-010, SEC-011) | pending: floods |
 | RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | pending: threat-model |
 | RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | pending: clock |
@@ -274,8 +274,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | pending: installer-integrity |
 | RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | pending: ops |
 | RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | pending: mqtt5 |
-| RES-015 | accept | Acknowledged; moves to `docs/protocol.md` §2 (IMP-003 deferred) | pending: docs-accuracy |
-| RES-016 | accept | Acknowledged; verified, moves to `docs/protocol.md` (DOC-022) | pending: docs-accuracy |
+| RES-015 | accept | Acknowledged; moves to `docs/protocol.md` §2 (IMP-003 deferred) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| RES-016 | accept | Acknowledged; verified, moves to `docs/protocol.md` (DOC-022) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-017 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | pending: tcp |
 | RES-018 | accept | Acknowledged; moves to `docs/protocol.md` §3 with IMP-041 | pending: tcp |
 | RES-019 | accept | Acknowledged; resolved by SUP-004 | pending: supply-chain |
