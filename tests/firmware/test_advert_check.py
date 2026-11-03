@@ -270,9 +270,8 @@ def test_a_companion_heard_before_the_household_adds_it_starts_checked(scene: Sc
             async with running(scene.configuration(household.alice, SETTINGS), scene.state_dir):
                 index = await scene.watcher.wait("contacts")  # read after the profile's writes
                 pressed = await button(scene, household)
-                await scene.watcher.wait(
-                    "nodes", lambda d: any(n["key"] == key for n in d["nodes"])
-                )
+                # the event comes at once; the `nodes` document within a minute (SEC-011)
+                await scene.watcher.wait("node", lambda e: e["key"] == key)
                 request = json.dumps({"contact": key, "id": "add-bob"})
                 scene.watcher.publish("add_contact", request)
                 added = (await checked(scene, key, pressed)).json()
