@@ -6,6 +6,7 @@ import asyncio
 import dataclasses
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -345,6 +346,128 @@ def test_acknowledgement_arriving_before_a_retry_ends_the_delivery(tmp_path: Pat
             assert (done["attempt"], done["rtt_ms"]) == (1, 700)
             assert len(radio.texts) == 1
             assert not radio.path_resets
+
+    scenario(main)
+
+
+def test_confirm_nonce_makes_a_direct_text_unguessable(tmp_path: Path) -> None:
+    """SEC-001: with `confirm_nonce` a direct text leaves with 8 random hex digits, the same on
+    every attempt; every event carries the text as sent, duplicates are judged without them, and
+    a channel text gets none (it is not acknowledged)."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        config = make_config(messages="confirm_nonce = true")
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            bus.send("bob", "Smoke in the kitchen")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "failed")
+            (sent,) = {t.text for t in radio.texts}
+            assert re.fullmatch(r"Smoke in the kitchen #[0-9a-f]{8}", sent)
+            assert [t.attempt for t in radio.texts] == [0, 1, 2]
+            assert {e["text"] for e in bus.payloads("/delivery")} == {sent}
+            bus.send("bob", "Smoke in the kitchen")
+            duplicate = await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
+            assert duplicate["text"] == "Smoke in the kitchen"
+            bus.send("alerts", "Smoke in the kitchen")
+            await bus.wait_for(
+                "/delivery", lambda d: d["target"] == "alerts" and d["event_type"] == "sent"
+            )
+            assert radio.channel_texts == [(0, "Smoke in the kitchen", NOW)]
+
+    scenario(main)
+
+
+def test_confirm_nonce_leaves_room_for_its_digits(tmp_path: Path) -> None:
+    """The 160 bytes of a direct text hold the suffix: a text is limited to 150 bytes first."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        config = make_config(messages="confirm_nonce = true")
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            bus.send("alice", "y" * 150)
+            bus.send("alice", "x" * 200)  # one at a time: the second is confirmed last
+            await bus.wait_for(
+                "/delivery", lambda d: d["event_type"] == "confirmed" and d["text"][0] == "x"
+            )
+            whole, cut = (t.text for t in radio.texts)
+            assert re.fullmatch(r"y{150} #[0-9a-f]{8}", whole)
+            assert re.fullmatch(r"x{147}\.\.\. #[0-9a-f]{8}", cut)
+            assert len(whole.encode()) == len(cut.encode()) == 160
+
+    scenario(main)
+
+
+NEIGHBOUR = EmulatedContact(bytes.fromhex("c3" * 32), "Carol", out_path_len=0x00)
+
+
+@pytest.mark.parametrize(
+    ("contact", "round_trip_ms", "suspect"),
+    [(BOB, 400, True), (BOB, 1500, False), (ALICE, 1, False), (NEIGHBOUR, 1, False)],
+)
+def test_an_acknowledgement_sooner_than_the_path_allows_is_suspect(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, contact: EmulatedContact,
+    round_trip_ms: int, suspect: bool,
+) -> None:  # fmt: skip
+    """SEC-001: Bob is two repeaters away, so a genuine acknowledgement of a 9-byte text takes
+    922 ms at least at the emulated radio's settings; one in 400 ms is `suspect` and logged. To
+    Alice, without a path, the radio floods, and Carol is a neighbour: a forger in range answers
+    them as soon as they can, so nothing is told."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB, NEIGHBOUR], ack_round_trip_ms=round_trip_ms)
+    caplog.set_level(logging.WARNING)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for("radio1/contacts", lambda d: d["total"] == 3)
+            bus.send(contact.public_key.hex(), "Hello you", contact=True)
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert (done["rtt_ms"], done["suspect"]) == (round_trip_ms, suspect)
+            queued = bus.payloads("/delivery")[0]
+            assert (queued["event_type"], queued["suspect"]) == ("queued", None)
+
+    scenario(main)
+    warnings = [r.getMessage() for r in caplog.records if "may be forged" in r.getMessage()]
+    assert len(warnings) == int(suspect)
+    if suspect:
+        assert re.fullmatch(
+            r"delivery [0-9a-f]{8}: acknowledged after 400 ms, sooner than the 922 ms a genuine "
+            r"acknowledgement takes over the path at least: it may be forged \(SEC-001\)",
+            warnings[0],
+        )
+
+
+def test_a_table_changed_while_sending_is_never_suspect(tmp_path: Path) -> None:
+    """The radio reports a contact change while it takes the message: the path it used may not
+    be the one the gateway read, so the round trip says nothing (SEC-001)."""
+
+    class PathChanges(EmulatedRadio):
+        def _send_text(self, p: bytes) -> None:
+            self.emit(bytes([Push.PATH_UPDATED]) + BOB.public_key)
+            super()._send_text(p)
+
+    radio = PathChanges(contacts=[ALICE, BOB], ack_round_trip_ms=400)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("bob", "Hello you")
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert (done["rtt_ms"], done["suspect"]) == (400, False)
+
+    scenario(main)
+
+
+def test_a_repeated_attempt_is_never_suspect(tmp_path: Path) -> None:
+    """An attempt interrupted by the radio is repeated with the same code: an acknowledgement may
+    answer either copy, so its round trip says nothing (SEC-001)."""
+    radio = EmulatedRadio(
+        contacts=[ALICE, BOB], ack_round_trip_ms=400, drop_on={Command.SEND_TXT_MSG}
+    )
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("bob", "Hello you")
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert (done["attempt"], done["suspect"]) == (1, False)
+            assert radio.commands().count(Command.APP_START) == 2
 
     scenario(main)
 

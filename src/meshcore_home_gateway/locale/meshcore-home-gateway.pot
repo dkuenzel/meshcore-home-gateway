@@ -301,6 +301,12 @@ msgstr ""
 msgid "configuration {path}: valid"
 msgstr ""
 
+#. the recipient's acknowledgement came sooner than the message's way
+#. through the mesh allows
+#: src/meshcore_home_gateway/cli.py
+msgid "confirmed sooner than the path allows: the acknowledgement may be forged"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli.py
 #, python-format
 msgid "connect to a radio directly and list what it knows"
@@ -757,7 +763,7 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli.py
 #, python-format
-msgid "wait for the delivery result; exit 1 unless sent or confirmed"
+msgid "wait for the delivery result; exit 1 unless sent or confirmed, also when confirmed sooner than the path allows"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli.py
@@ -1104,6 +1110,12 @@ msgstr ""
 #: src/meshcore_home_gateway/core/contacts.py
 #, python-brace-format
 msgid "public key must be {digits} hex digits, got {key!r}"
+msgstr ""
+
+#. after "confirmed": the acknowledgement came sooner than the message's way through the mesh allows
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "(sooner than the path allows: maybe forged)"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

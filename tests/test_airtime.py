@@ -29,6 +29,7 @@ from meshcore_home_gateway.core.airtime import (
     meshcore_preamble,
     path_return_bytes,
     return_path_retry_bytes,
+    shortest_acknowledgement_s,
     telemetry_reply_bytes,
     telemetry_request_bytes,
     time_on_air_s,
@@ -183,3 +184,44 @@ def test_flood_repeaters_are_read_when_called(monkeypatch: pytest.MonkeyPatch) -
 def test_a_flooded_reply_costs_its_flood_and_the_path_sent_back() -> None:
     costs = flooded_reply_costs(19, 0, 0, EU_NARROW)
     assert (round(costs.own_s, 3), round(costs.mesh_s, 2)) == (0.378, 11.75)
+
+
+# --- acknowledgements (SEC-001) -----------------------------------------------------------------
+
+
+def test_a_genuine_acknowledgement_takes_every_hop_of_the_message_and_one_of_its_own() -> None:
+    """Transmission k of the message carries hops - k hashes, then the shortest acknowledgement
+    (header, path length, 4-byte code) once; all without preamble."""
+    bare = LoRaParams(62_500.0, 8, 8, 0)
+    hops = [time_on_air_s(direct_message_bytes(20, hashes, False), bare) for hashes in (2, 1, 0)]
+    expected = sum(hops) + time_on_air_s(6, bare)
+    assert shortest_acknowledgement_s(20, 2, 2, EU_NARROW) == pytest.approx(expected)
+    shortest = [round(shortest_acknowledgement_s(20, h, h, EU_NARROW), 3) for h in range(3)]
+    assert shortest == [0.494, 0.904, 1.315]
+    two_byte_hashes = [time_on_air_s(direct_message_bytes(20, n, False), bare) for n in (4, 2, 0)]
+    assert shortest_acknowledgement_s(20, 2, 4, EU_NARROW) == pytest.approx(
+        sum(two_byte_hashes) + time_on_air_s(6, bare)
+    )
+
+
+def test_the_shortest_acknowledgement_holds_whatever_preamble_the_nodes_use() -> None:
+    """A lower bound: below what a node of any firmware spends, the radio's own preamble
+    included (8 symbols before firmware 1.16, 32 since)."""
+    for preamble in (0, 8, 32):
+        radio = LoRaParams(62_500.0, 8, 8, preamble)
+        assert shortest_acknowledgement_s(60, 3, 3, radio) == pytest.approx(
+            shortest_acknowledgement_s(60, 3, 3, EU_NARROW)
+        )
+        spent = sum(time_on_air_s(direct_message_bytes(60, n, False), radio) for n in range(4))
+        spent += time_on_air_s(6, radio)
+        assert shortest_acknowledgement_s(60, 3, 3, radio) <= spent + 1e-9
+
+
+def test_a_forger_beside_the_radio_answers_sooner_only_over_a_repeater() -> None:
+    """A forger hears the message and answers at once: the radio's transmission and an
+    acknowledgement of 8 bytes. Over a repeater that is sooner than a genuine one can be;
+    beside the recipient it is not, so a neighbour gives no bound (the bridge's `_shortest_ms`)."""
+    for hops in (0, 1, 2):
+        forged = time_on_air_s(direct_message_bytes(20, hops, False), EU_NARROW)
+        forged += time_on_air_s(8, EU_NARROW)
+        assert (forged < shortest_acknowledgement_s(20, hops, hops, EU_NARROW)) is (hops > 0)

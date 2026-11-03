@@ -8,7 +8,7 @@ the MeshCore packet format (docs/protocol.md, "On-air sizes").
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 LDRO_SYMBOL_TIME_S = 0.016  # low data rate optimisation from 16 ms symbol time (datasheet)
 
@@ -114,6 +114,26 @@ def direct_attempt_airtime_s(text_bytes: int, path_bytes: int, flood: bool, p: L
     if flood:
         airtime += time_on_air_s(RECIPROCAL_PATH_BYTES, p)
     return airtime
+
+
+# the shortest acknowledgement: its 4-byte code without a path (Mesh.cpp:560-571); since 1.18 an
+# attempt and a random byte follow (BaseChatMesh.cpp:247-248)
+ACKNOWLEDGEMENT_MIN_BYTES = HEADER_BYTES + PATH_LEN_BYTES + 4
+
+
+def shortest_acknowledgement_s(text_bytes: int, hops: int, path_bytes: int, p: LoRaParams) -> float:
+    """The shortest round trip of a genuine acknowledgement of a direct message sent over a path
+    of `hops` repeaters (SEC-001): the message on every hop, each repeater removing its hash
+    before it forwards (Mesh.cpp:102-107), and the acknowledgement on one hop at least. Without
+    preamble, as the other nodes' firmware may use a shorter one than this radio's: a lower bound
+    whatever they run."""
+    bare = replace(p, preamble_symbols=0)
+    per_hop = path_bytes // hops if hops else 0
+    message = sum(
+        time_on_air_s(direct_message_bytes(text_bytes, (hops - k) * per_hop, False), bare)
+        for k in range(hops + 1)
+    )
+    return message + time_on_air_s(ACKNOWLEDGEMENT_MIN_BYTES, bare)
 
 
 # --- telemetry requests (ADR 0018) --------------------------------------------------------------

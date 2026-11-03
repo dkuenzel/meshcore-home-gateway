@@ -8,11 +8,16 @@ ASCII and enforces the byte limit by truncation or rejection.
 from __future__ import annotations
 
 import re
+import secrets
 import unicodedata
 from dataclasses import dataclass
 
 ELLIPSIS = "..."
 CONTACT_NAME_BYTES = 31  # a name in the radio's contact table, without its NUL
+# hex digits of the random suffix of a direct message: 32 bits, as many as the code (SEC-001)
+CONFIRM_NONCE_DIGITS = 8
+CONFIRM_NONCE_BYTES = len(" #") + CONFIRM_NONCE_DIGITS
+_NONCE = re.compile(rf" #[0-9a-f]{{{CONFIRM_NONCE_DIGITS}}}\Z")
 
 # Characters with a conventional ASCII spelling. Everything else goes through Unicode
 # decomposition (é -> e); what is still not ASCII becomes "?".
@@ -72,6 +77,18 @@ def prepare_text(text: str, policy: TextPolicy) -> str:
             "too_long", f"text too long: {len(encoded)} bytes, limit {policy.max_bytes}"
         )
     return cut_utf8(cleaned, policy.max_bytes - len(ELLIPSIS)).rstrip() + ELLIPSIS
+
+
+def with_nonce(text: str) -> str:
+    """The text with a random suffix, " #" and 8 hex digits. The acknowledgement of a direct
+    message is a hash of its text that anyone who knows the text can compute: one who cannot
+    guess the suffix cannot forge it (SEC-001). Its policy leaves CONFIRM_NONCE_BYTES free."""
+    return f"{text} #{secrets.token_hex(CONFIRM_NONCE_DIGITS // 2)}"
+
+
+def without_nonce(text: str) -> str:
+    """The text without the suffix of `with_nonce`, if it ends in one."""
+    return _NONCE.sub("", text, count=1)
 
 
 def contact_name(text: str) -> str:

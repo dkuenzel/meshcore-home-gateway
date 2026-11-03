@@ -139,6 +139,7 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
 | `publish_channels` | `all` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's. The installer writes `targets` on a new installation |
 | `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones; off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
+| `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes; the events and the history carry it as sent, duplicates are judged without the suffix |
 
 ## `[airtime]`
 

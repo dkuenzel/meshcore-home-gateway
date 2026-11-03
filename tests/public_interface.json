@@ -26,6 +26,7 @@
     "homeassistant.status_topic",
     "messages.ascii_only",
     "messages.clean_received",
+    "messages.confirm_nonce",
     "messages.dedup_window_s",
     "messages.flood_after",
     "messages.ignore_channels",
@@ -768,6 +769,11 @@
    "type": "boolean"
   },
   "messages.clean_received": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
+  },
+  "messages.confirm_nonce": {
    "answer": "bool",
    "default": false,
    "type": "boolean"
@@ -1733,6 +1739,7 @@
     "id",
     "reason",
     "rtt_ms",
+    "suspect",
     "target",
     "text"
    ],

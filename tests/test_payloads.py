@@ -139,11 +139,14 @@ def test_delivery_payload() -> None:
         attempt=2,
         rtt_ms=2300,
         airtime_ms=640,
+        suspect=False,
     )
     assert delivery_payload(event) == {
         "event_type": "confirmed", "id": "7f3a", "target": "alice", "text": "hi",
-        "attempt": 2, "reason": None, "rtt_ms": 2300, "airtime_ms": 640,
+        "attempt": 2, "reason": None, "rtt_ms": 2300, "airtime_ms": 640, "suspect": False,
     }  # fmt: skip
+    queued = DeliveryEvent(id="7f3a", target="alice", state=DeliveryState.QUEUED, text="hi")
+    assert delivery_payload(queued)["suspect"] is None  # only a confirmation is judged
 
 
 def test_rx_payload() -> None:

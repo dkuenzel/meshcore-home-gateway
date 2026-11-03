@@ -137,6 +137,7 @@ class MessagesConfig:
     # "targets": only the channels of `[targets.*]` entries are published and kept (SEC-012)
     publish_channels: Literal["all", "targets"] = "all"
     clean_received: bool = False  # control and direction characters out of received texts
+    confirm_nonce: bool = False  # a random suffix on direct messages: unforgeable acks (SEC-001)
 
 
 @dataclass(frozen=True, slots=True)
@@ -684,6 +685,7 @@ def _messages(s: _Section) -> MessagesConfig:
         ignore_channels=frozenset(s.integers("ignore_channels", 0, CHANNEL_INDEX_MAX)),
         publish_channels=cast(Literal["all", "targets"], publish_channels),
         clean_received=s.boolean("clean_received", False),
+        confirm_nonce=s.boolean("confirm_nonce", False),
     )
 
 
@@ -779,6 +781,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "messages.queue_size": int, "messages.queue_ttl_s": float, "messages.max_attempts": int,
     "messages.flood_after": int, "messages.ignore_channels": list,
     "messages.publish_channels": str, "messages.clean_received": bool,
+    "messages.confirm_nonce": bool,
     "airtime.budget_s_per_hour": float, "airtime.burst_s": float,
     "commands.senders": list, "commands.words": list, "commands.max_age_s": float,
     "history.enabled": bool, "history.messages_days": float, "history.positions_days": float,

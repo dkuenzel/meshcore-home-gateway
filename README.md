@@ -22,7 +22,9 @@ flowchart LR
 
 - **Send** to configured channels and contacts: `mosquitto_pub -t meshcore/radio1/send/alerts -m "Gate open"`.
 - **Delivery state** for every message: queued, sent, confirmed (with round-trip time), failed,
-  expired, duplicate, rejected — with the reason.
+  expired, duplicate, rejected — with the reason. MeshCore's acknowledgements can be forged by
+  anyone who guesses the text; [what `confirmed` proves](docs/mqtt-api.md#what-confirmed-proves)
+  and how a random suffix makes it hard.
 - **Reliable direct messages:** acknowledgement tracking, retries with the radio's attempt counter,
   path reset to flood after unanswered attempts, as the official clients do.
 - **Respectful of the shared channel:** an airtime budget computed from the radio's own modulation

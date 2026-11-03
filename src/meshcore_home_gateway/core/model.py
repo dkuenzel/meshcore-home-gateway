@@ -101,6 +101,8 @@ class DeliveryEvent:
     reason: str | None = None
     rtt_ms: int | None = None
     airtime_ms: int | None = None
+    # confirmed: the acknowledgement came sooner than the message's path allows (SEC-001)
+    suspect: bool | None = None
 
 
 _NAME_PREFIX_MAX = 32
