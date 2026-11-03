@@ -113,10 +113,8 @@ def test_service_end_to_end(
             controls = "homeassistant/device/meshcore_home_gateway_radio1/manage_contacts/config"
             assert "add_node" in json.loads(watcher.wait(controls))["cmps"]
             server.call(lambda: radio.advertise(DAVE))
-            watcher.wait(
-                "meshcore/radio1/nodes",
-                lambda p: any(n["key"] == "d4" * 32 for n in json.loads(p)["nodes"]),
-            )
+            # the event comes at once; the `nodes` document within a minute (SEC-011)
+            watcher.wait("meshcore/radio1/node", lambda p: json.loads(p)["key"] == "d4" * 32)
             label = f"{'d4' * 6}…{'d4' * 4} Dave"
             watcher.client.publish("meshcore/radio1/homeassistant/add_node", label, qos=1)
             added = json.loads(watcher.wait(

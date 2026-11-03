@@ -15,6 +15,7 @@ import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import contact_manager as manager_module
+from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core import lpp
@@ -50,6 +51,7 @@ def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
     monkeypatch.setattr(manage_entities, "OPTIONS_INTERVAL_S", 0.05)
+    monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)
 
 
 def request(
@@ -610,7 +612,7 @@ def test_a_change_during_the_read_a_request_waited_for_is_read_too(tmp_path: Pat
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
             reads = radio.commands().count(Command.GET_CONTACTS)
-            radio.advertise(ROOM)  # the maintenance task reads the table after its delay
+            radio.advertise(ALICE)  # the maintenance task reads the table after its delay
             for _ in range(300):  # until that read has begun
                 if radio.commands().count(Command.GET_CONTACTS) > reads:
                     break

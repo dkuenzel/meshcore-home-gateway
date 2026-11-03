@@ -23,7 +23,7 @@ from meshcore_home_gateway.core.model import Position, distance_m
 
 NODE_TYPES = {1: "chat", 2: "repeater", 3: "room", 4: "sensor"}  # advert types
 COMPANION = 1  # the advert type of a chat contact (NODE_TYPES): the only one checked
-MAX_NODES = 50  # heard nodes kept; the least recently heard goes first
+MAX_NODES = 50  # heard nodes kept; when full, the least recently heard of those heard once goes
 NODE_TTL_S = 7 * 86_400.0  # a heard node is forgotten this long after it was last heard
 FIX_MOVED_M = 20.0  # a telemetry position replaces the fix from this distance on
 HEARD_REFRESH_S = 3600.0  # telemetry answers alone move "last heard" at most this often
@@ -108,6 +108,9 @@ class Tracked:
     readings: Readings | None = None  # of the newest telemetry answer
     # the last check of its adverts; on a heard node only its time and flag, never a position
     advert: AdvertCheck | None = None
+    # a heard node heard again (a newer advert) or that was a contact: invented keys, each heard
+    # once, cannot push it out of the heard nodes (SEC-011)
+    heard_again: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,7 +222,7 @@ class Mesh:
             return
         node = replace(tracked.node, flags=0, path_hops=None, position=None)
         self.nodes[node.public_key] = Tracked(
-            node, tracked.first_heard, tracked.heard, advert=tracked.advert
+            node, tracked.first_heard, tracked.heard, advert=tracked.advert, heard_again=True
         )
         ordered = sorted(self.nodes.items(), key=lambda item: _heard_at(item[1]))  # stable
         self.nodes = dict(ordered)
@@ -365,6 +368,8 @@ class Mesh:
         new = tracked is None
         if tracked is None:
             tracked = Tracked(replace(node, position=None), first_heard=heard.at)
+        elif node.last_advert > tracked.node.last_advert:  # a newer advert, not a replay
+            tracked.heard_again = True
         if new or node.last_advert >= tracked.node.last_advert:  # a replayed older advert: kept
             tracked.node = replace(node, position=None)
         tracked.heard = heard
@@ -381,12 +386,17 @@ class Mesh:
             tracked.advert = newer_check(tracked.advert, check)
 
     def forget_nodes(self, now: float) -> list[str]:
-        """Drop heard nodes beyond the limits; returns their keys."""
-        dropped = []
-        for key, tracked in list(self.nodes.items()):
-            if now - _heard_at(tracked) > self._node_ttl_s or len(self.nodes) > self._max_nodes:
-                del self.nodes[key]
-                dropped.append(key)
+        """Drop heard nodes beyond the limits; returns their keys. Beyond the count, the least
+        recently heard of the nodes heard once goes first; nodes heard again only when no other
+        is left."""
+        dropped = [k for k, t in self.nodes.items() if now - _heard_at(t) > self._node_ttl_s]
+        for key in dropped:
+            del self.nodes[key]
+        while len(self.nodes) > self._max_nodes:
+            once = (k for k, t in self.nodes.items() if not t.heard_again)
+            key = next(once, None) or next(iter(self.nodes))  # least recently heard first
+            del self.nodes[key]
+            dropped.append(key)
         return dropped
 
 

@@ -175,7 +175,11 @@ when each node was last heard
 document after a restart and gives each companion its newest readings back. Home Assistant draws
 traces from its own recorder ([home-assistant.md](home-assistant.md#traces-on-the-map)); the
 history keeps positions for later front ends. Positions and readings are kept only for contacts,
-never for nodes the gateway merely heard.
+never for nodes the gateway merely heard. When each node was last heard is kept for the contacts
+and for the heard nodes the gateway lists (the last 50 of the last 7 days,
+[mqtt-api.md](mqtt-api.md#nodes-heard-nodes)), so they come back after a restart; the hourly
+purge removes the rows of all other nodes, and every row after 7 days. This is not a setting: the
+rows serve only the restart.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

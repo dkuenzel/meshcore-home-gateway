@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
+from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.bridge import Bridge, ha_device_topics
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
 from meshcore_home_gateway.core import telemetry
@@ -165,6 +166,8 @@ def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
     monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
+    # the nodes document follows every change: the tests check its content, not its rate
+    monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)
 
 
 @asynccontextmanager
@@ -1006,14 +1009,23 @@ def test_only_possible_commands_read_the_contacts_again(tmp_path: Path) -> None:
     scenario(main)
 
 
-def test_new_contacts_are_read_before_their_messages(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("unknown", "push"),
+    [(set(), Push.ADVERT), ({Command.GET_AUTOADD_CONFIG}, Push.NEW_ADVERT)],
+    ids=["firmware-1.12-and-newer", "firmware-1.11-and-older"],
+)
+def test_new_contacts_are_read_before_their_messages(
+    tmp_path: Path, unknown: set[int], push: int
+) -> None:
+    """A contact the radio added on its own is announced with ADVERT; firmware 1.11 and older,
+    without the auto-add settings, announce it with NEW_ADVERT (docs/protocol.md section 4)."""
     carol = EmulatedContact(bytes.fromhex("c3" * 32), "Carol")
-    radio = EmulatedRadio(contacts=[ALICE], manual_add=False)
+    radio = EmulatedRadio(contacts=[ALICE], manual_add=False, unknown=unknown)
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
             radio.contacts.append(carol)
-            radio.emit(bytes([Push.NEW_ADVERT]) + carol.public_key)
+            radio.emit(bytes([push]) + carol.public_key)
             radio.queue_direct_message(carol.public_key[:6], "hello", NOW - 5)
             received = await bus.wait_for("/received", lambda r: True)
             assert received["sender_name"] == "Carol"
@@ -2070,11 +2082,11 @@ def test_contacts_get_their_devices_in_home_assistant(
             assert gateway["show_hidden"]["command_topic"].endswith("/homeassistant/show_hidden")
 
             radio.contacts.append(carol)  # added
-            radio.emit(bytes([Push.NEW_ADVERT]) + carol.public_key)
+            radio.emit(bytes([Push.ADVERT]) + carol.public_key)
             await until(lambda: bool(sent(carol.public_key.hex())))
 
             radio.contacts.remove(BOB)  # removed: placeholders, then the empty document
-            radio.emit(bytes([Push.NEW_ADVERT]) + ALICE.public_key)
+            radio.emit(bytes([Push.ADVERT]) + ALICE.public_key)
             await until(lambda: sent(bob)[-1:] == [b""])
             assert json.loads(sent(bob)[-2])["cmps"]["send"]["name"] == "Removed"
 

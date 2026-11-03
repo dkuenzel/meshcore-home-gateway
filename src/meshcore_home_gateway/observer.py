@@ -92,6 +92,9 @@ RECENT_MESSAGES = 50  # kept in memory for the history document
 LOGGED_ADVERT_S = 10.0  # a logged advert is matched to the radio's push this long
 PURGE_INTERVAL_S = 3600.0
 NODE_EVENTS_PER_S, NODE_EVENTS_BURST = 0.2, 10.0  # spoofed keys must not flood the bus
+# while only heard nodes change, the `nodes` document goes out at most this often: an advert
+# flood would otherwise republish it (up to 15 KiB) for every advert (SEC-011)
+NODES_DOCUMENT_INTERVAL_S = 30.0
 _KEPT = frozenset({DeliveryState.CONFIRMED, DeliveryState.FAILED, DeliveryState.EXPIRED})
 
 
@@ -148,6 +151,8 @@ class Observer:
         self._published: dict[str, bytes] = {}  # topic -> payload last published
         self._first_read = True
         self._node_events = RateLimit(NODE_EVENTS_PER_S, NODE_EVENTS_BURST, now=wall_clock())
+        self._nodes_sent_at: float | None = None  # when the `nodes` document last went out
+        self._nodes_waiting = False  # a change of only heard nodes waits for the interval
         self._next_purge = 0.0
         self._heard_rows: list[NodeRow] = []  # from the history, until the first table read
         self._stored_fixes: dict[str, Fix] = {}  # the newest position in the history per contact
@@ -410,8 +415,13 @@ class Observer:
         self._prune_adverts(now)  # also on a quiet mesh
         if self.mesh.forget_nodes(now):
             self._publish_nodes()
+        elif self._nodes_waiting and self._nodes_due(now):
+            self._send_nodes(now)
         if self._history is not None and now >= self._next_purge:
-            self._history.purge(now)
+            # the history keeps the nodes the gateway keeps; before the first table read of the
+            # run its heard nodes are not taken from the history yet
+            kept = None if self._first_read else [*self.mesh.contacts, *self.mesh.nodes]
+            self._history.purge(now, nodes=kept)
             self._next_purge = now + PURGE_INTERVAL_S
         self._restate_all()
         self.flush()
@@ -493,6 +503,8 @@ class Observer:
                     self._store_heard(row.key, node, tracked.heard)
             if tracked is not None:
                 tracked.first_heard = row.first_heard
+                # heard at two times: more than once (not one of a flood of invented keys)
+                tracked.heard_again |= row.heard.at > row.first_heard
         self._heard_rows = []
         self.mesh.forget_nodes(self._wall())
         self._publish_nodes(read=True)
@@ -767,12 +779,28 @@ class Observer:
         self._publish(self._topics.contacts, index)
 
     def _publish_nodes(self, *, read: bool = False) -> None:
-        self._publish(self._topics.nodes, nodes_document(self.mesh, protected=self._protected))
+        """The heard nodes may have changed: the listeners hear of it at once; the document goes
+        out at once when a contact joined or left the table (`read`) or the interval since the
+        last one is over, else with the tick after it (SEC-011)."""
+        now = self._wall()
+        if read or self._nodes_due(now):
+            self._send_nodes(now)
+        else:
+            self._nodes_waiting = True
         for listener in self.on_nodes:
             try:
                 listener(read)
             except Exception:  # a front end's bug must not stop the documents
                 log.exception("node listener failed")
+
+    def _nodes_due(self, now: float) -> bool:
+        sent = self._nodes_sent_at
+        return sent is None or not 0 <= now - sent < NODES_DOCUMENT_INTERVAL_S
+
+    def _send_nodes(self, now: float) -> None:
+        self._nodes_waiting = False
+        self._nodes_sent_at = now
+        self._publish(self._topics.nodes, nodes_document(self.mesh, protected=self._protected))
 
     # --- radio ----------------------------------------------------------------------------------
 

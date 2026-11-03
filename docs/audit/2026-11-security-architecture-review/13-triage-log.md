@@ -45,8 +45,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SEC-007 | fix | `name_taken` in the `nodes` document and the `node` event, a mark in the select's labels, contact devices of the same name disambiguated by their key digits; names compared after NFKC and case folding | pending: names |
 | SEC-008 | fix | `[homeassistant] controls` separates Home Assistant's controls from the function (MQTT and the command line keep working); `[targets.<alias>] expose = false` hides a target's notify entity; the guide explains Home Assistant's user model | pending: ha-exposure |
 | SEC-009 | fix | `[mqtt] password_file` keeps the secret out of `config.toml` and out of `config answers`; the installer writes it; a systemd credential is documented | pending: password |
-| SEC-010 | fix | A row cap for the history's `node` table; heard nodes kept 7 days as ADR 0016 says, as the setting `[history] nodes_days` | pending: floods |
-| SEC-011 | fix | The `nodes` document coalesced (at most every 30 s while only heard nodes change); no table read after a `NEW_ADVERT` on firmware that never uses it for a contact; once-heard nodes evicted before nodes heard again | pending: floods |
+| SEC-010 | fix | The history keeps node rows only for the contacts and the heard nodes the gateway keeps (the finding's option 3, tighter than a row cap), for 7 days as ADR 0016 says. No `[history] nodes_days` setting, as first planned: beyond the 7 days of the memory it would change nothing | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
+| SEC-011 | fix | The `nodes` document coalesced (at most every 30 s while only heard nodes change); no table read after a `NEW_ADVERT` on firmware that never uses it for a contact; once-heard nodes evicted before nodes heard again | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | SEC-012 | fix | `[messages] publish_channels = "targets"` publishes only the channels the household configured (new installations get it; the default stays `all` until the 2.0.0 decision); a rate limit per channel; documented | pending: privacy, limits |
 | SEC-013 | fix | A rate limit per sender on what a message produces (events, history), commands still judged; the residual risk (the radio acknowledges before the gateway sees anything) in the threat model. Extending the acknowledgement wait by the radio's queue is not done: its statistics are read once a minute | pending: limits, threat-model |
 | SEC-014 | fix | Malformed pushes logged at most once a minute with a count; a run of them ends the session, which the reconnect resynchronises | pending: limits |
@@ -88,7 +88,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-006 | fix | Every reference to the sprint's "design 6c" decisions replaced by the section or record that holds the rule; a test that design references in the code resolve | pending: code-quality |
 | CODE-007 | fix | The `# fmt: skip` markers removed in one mechanical commit; the formatter's output is the style | pending: code-quality |
 | CODE-008 | fix | Through ARC-012 (counters, rate-limited logs) | pending: robustness |
-| CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | pending: code-quality, floods, robustness |
+| CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38), pending: code-quality, robustness |
 | CODE-010 | fix | The `Bus` protocol moves to the ports module and `MqttBus` declares it | pending: structure |
 | CODE-011 | fix | The cost noted in `refresh_channels`' docstring | pending: code-quality |
 | CODE-012 | fix | A comment naming the radio's table as the bound | pending: code-quality |
@@ -97,7 +97,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-015 | fix | `_toml_string` escapes line and paragraph separators and other invisible format characters | pending: code-quality |
 | CODE-016 | accept | The lazy imports keep `--version` and the light commands fast; documented where they are | – |
 | CODE-017 | fix | A comment naming the bound of the retry loop | pending: code-quality |
-| CODE-018 | fix | Through SEC-011 | pending: floods |
+| CODE-018 | fix | Through SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | CODE-019 | accept | The adapter's own bound is the documented design | – |
 | CODE-020 | accept | Deciding the language before parsing is required for English service logs; Ctrl-C as exit 1 is the documented failure | – |
 | CODE-021 | fix | A comment in the installer that only constants and validated values may be interpolated into `bash -c` | pending: ops |
@@ -113,7 +113,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | DOC-001 | fix | The direction of the gateway's own discovery topic is "both" | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-002 | fix | Design §6.1, §8 and the troubleshooting row name the sender's and the host's clocks; the warning text names the adverts | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: clock |
 | DOC-003 | fix | The "before the first release" paragraphs and the 0.1.0 example go; the repository description follows the README | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37); the description: repository settings, 2026-11-02 |
-| DOC-004 | fix | Heard nodes are kept 7 days in the history too, as ADR 0016 says (SEC-010) | pending: floods |
+| DOC-004 | fix | Heard nodes are kept 7 days in the history too, as ADR 0016 says (SEC-010) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | DOC-005 | fix | Through ARC-001 | pending: threat-model |
 | DOC-006 | fix | `SECURITY.md` says which versions get fixes, how soon a report is acknowledged and that advisories are published | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-007 | fix | The README says whom the gateway asks, and that a companion answers only if allowed | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -124,7 +124,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | DOC-012 | fix | "Gateway" in prose, "bridge" for the module, a one-line glossary | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-013 | fix | `docs/architecture.md`: the short way in | pending: threat-model |
 | DOC-014 | fix | Design §6.5's table says that it is a subset and points to `docs/mqtt-api.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| DOC-015 | fix | `nodes_days` documented as a setting (SEC-010) | pending: floods |
+| DOC-015 | fix | Documented, not exposed: `[history]` in `configuration.md` says which node rows are kept and for how long, and why it is no setting (SEC-010) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | DOC-016 | fix | The backup section says what each file holds, that the password is in the configuration, that the state files belong together and to stop the service first | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-017 | fix | "Securing the broker" says what happens without an ACL and that the gateway cannot tell | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-018 | fix | Through ARC-016 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -198,7 +198,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-016 | fix | `status`, `backup` and `retire` commands | pending: cli-ops |
 | IMP-017 | fix | Through CODE-009 | pending: code-quality |
 | IMP-018 | fix | Through SEC-012 and SEC-013 | pending: limits |
-| IMP-019 | fix | Through SEC-010 and SEC-011 | pending: floods |
+| IMP-019 | fix | Through SEC-010 and SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | IMP-020 | fix | Through CODE-001 and CODE-002 | pending: robustness |
 | IMP-021 | fix | Through ARC-004 | pending: state-store |
 | IMP-022 | fix | Through ARC-003, ARC-009 and CODE-005 | pending: structure |
@@ -216,7 +216,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-034 | fix | Through OPS-007 | pending: ops |
 | IMP-035 | reject | Superseded by IMP-014: an update keeps the queue, waiting for it to empty is no longer needed | – |
 | IMP-036 | fix | Through OPS-017 | pending: robustness |
-| IMP-037 | fix | Through SEC-010 | pending: floods |
+| IMP-037 | fix | Through SEC-010 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | IMP-038 | fix | Through SEC-017 (opt-in, default off: texts stay data) | pending: limits |
 | IMP-039 | fix | Through SEC-017 | pending: limits |
 | IMP-040 | fix | Through SEC-014 | pending: limits |
@@ -264,7 +264,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-002 | accept | Acknowledged; already in `docs/protocol.md` §5, the clock consequence added with SEC-002 | pending: clock |
 | RES-003 | accept | Acknowledged; the scale of the cost goes to design §7.4 | pending: threat-model |
 | RES-004 | accept | Acknowledged; the table goes to `docs/protocol.md` §7 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| RES-005 | accept | Acknowledged; turned into flood tests (SEC-010, SEC-011) | pending: floods |
+| RES-005 | accept | Acknowledged; turned into flood tests (SEC-010, SEC-011) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | pending: threat-model |
 | RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | pending: clock |
 | RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | pending: tcp |

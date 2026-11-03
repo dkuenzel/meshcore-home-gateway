@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.bridge import protected_keys
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.adverts import MAX_LOGGED
@@ -299,10 +300,46 @@ def test_heard_nodes_come_back_after_a_restart_and_expire(tmp_path: Path) -> Non
     clock.now = NOW + 8 * 86_400  # beyond the memory of heard nodes, and a purge is due
     observer.tick()
     assert last(bus, f"{ROOT}/nodes")["total"] == 0
-    assert [row.name for row in history.nodes()] == ["Carol"]  # the history keeps 30 days
-    clock.now = NOW + 31 * 86_400
-    observer.tick()  # the next purge is due an hour after the first
-    assert history.nodes() == []
+    assert history.nodes() == []  # the history keeps them as long as the memory (ADR 0016)
+    history.close()
+
+
+def test_an_advert_flood_is_bounded_on_the_bus_and_in_the_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """200 adverts with invented keys within a second (SEC-010, SEC-011): the `nodes` document
+    goes out again only with the tick after its interval, at once when a contact joins the
+    table; the purge leaves the history the rows of the nodes the gateway keeps."""
+    monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 30.0)  # fast timers: 0
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    clock, bus = Clock(NOW), FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=clock)
+    observer.radio_event(ContactsRead({}, NOW))
+    sent = len(retained(bus, f"{ROOT}/nodes"))
+    records = [
+        contact_record(EmulatedContact(bytes.fromhex(f"{i:04x}" * 16), f"Spam{i}",
+                                       last_advert=int(NOW) + i))
+        for i in range(200)
+    ]  # fmt: skip
+    for i, record in enumerate(records):
+        advert = codec.Advert(record.public_key, True, record)
+        observer.radio_event(AdvertHeard(advert, NOW + i / 200))
+    assert len(retained(bus, f"{ROOT}/nodes")) == sent
+    clock.now = NOW + 29
+    observer.tick()  # also the first purge
+    assert len(retained(bus, f"{ROOT}/nodes")) == sent
+    assert len(history.nodes()) == 50  # the heard nodes the gateway keeps
+    clock.now = NOW + 31
+    observer.tick()
+    assert len(retained(bus, f"{ROOT}/nodes")) == sent + 1
+    assert last(bus, f"{ROOT}/nodes")["total"] == 50
+    observer.tick()  # nothing waits
+    assert len(retained(bus, f"{ROOT}/nodes")) == sent + 1
+    joined = records[-1]
+    observer.radio_event(ContactsRead({joined.public_key.hex(): joined}, NOW + 32))
+    assert len(retained(bus, f"{ROOT}/nodes")) == sent + 2
+    assert last(bus, f"{ROOT}/nodes")["total"] == 49
     history.close()
 
 
