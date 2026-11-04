@@ -1,6 +1,6 @@
 """`backup FILE`: the configuration and the state in one archive (IMP-016, OPS-008), while the
 service runs: the state file is replaced atomically, the history is copied with SQLite's online
-backup. The configuration goes without the broker password unless `--with-password`; the archive
+backup. The configuration goes without the broker password unless `--with-secrets`; the archive
 holds the household's positions and messages either way, so it is written for its owner only."""
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ class _RefusedError(Exception):
 def _backup(args: argparse.Namespace) -> int:
     state_dir = args.state_dir or Path(os.environ.get("STATE_DIRECTORY", DEFAULT_STATE_DIR))
     try:
-        members = contents(args.config, state_dir, with_password=args.with_password)
+        members = contents(args.config, state_dir, with_secrets=args.with_secrets)
         _write(args.file, members)
     except _RefusedError as exc:
         print(PREFIX + str(exc), file=sys.stderr)
@@ -50,7 +50,7 @@ def _backup(args: argparse.Namespace) -> int:
     return EX_OK
 
 
-def contents(config_path: Path, state_dir: Path, *, with_password: bool) -> dict[str, bytes]:
+def contents(config_path: Path, state_dir: Path, *, with_secrets: bool) -> dict[str, bytes]:
     """The archive's files by name, MANIFEST.json included."""
     try:
         config_text = _read(config_path).decode("utf-8")
@@ -60,8 +60,8 @@ def contents(config_path: Path, state_dir: Path, *, with_password: bool) -> dict
             tr("cannot read {path}: {detail}", path=config_path, detail=exc)
         ) from None
     secret = mqtt.get("password_file")
-    members = {"config.toml": _configuration(config_text, mqtt, with_password=with_password)}
-    if with_password and isinstance(secret, str):
+    members = {"config.toml": _configuration(config_text, mqtt, with_secrets=with_secrets)}
+    if with_secrets and isinstance(secret, str):
         members["password"] = _read(Path(secret))
     for name in STATE_FILES:
         if (state_dir / name).exists():
@@ -80,7 +80,7 @@ def contents(config_path: Path, state_dir: Path, *, with_password: bool) -> dict
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "config": str(config_path),
         "state_dir": str(state_dir),
-        "password": ("kept" if with_password else "left_out") if has_password else "none",
+        "password": ("kept" if with_secrets else "left_out") if has_password else "none",
         "password_file": secret if isinstance(secret, str) else None,
         "files": sorted(members),
     }
@@ -88,8 +88,8 @@ def contents(config_path: Path, state_dir: Path, *, with_password: bool) -> dict
     return members
 
 
-def _configuration(text: str, mqtt: dict[str, object], *, with_password: bool) -> bytes:
-    if with_password or "password" not in mqtt:
+def _configuration(text: str, mqtt: dict[str, object], *, with_secrets: bool) -> bytes:
+    if with_secrets or "password" not in mqtt:
         return text.encode("utf-8")
     kept = without_password(text)
     if kept is None:
@@ -98,7 +98,7 @@ def _configuration(text: str, mqtt: dict[str, object], *, with_password: bool) -
             # keep the password unasked
             tr(
                 'the broker password is not on a line of its own (password = "…" in [mqtt]): '
-                "the backup cannot leave it out; add --with-password to keep it"
+                "the backup cannot leave it out; add --with-secrets to keep it"
             )
         )
     return kept.encode("utf-8")

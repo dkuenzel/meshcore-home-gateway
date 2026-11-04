@@ -432,7 +432,7 @@ updates wait for.
   (tar.gz, mode 0600) while the service runs: the configuration, the three files of
   `/var/lib/meshcore-home-gateway/` (the history copied with SQLite's online backup) and
   `MANIFEST.json`, which names the version and where each file came from. The configuration goes
-  without the broker password unless `--with-password` (which also takes the file
+  without the broker password unless `--with-secrets` (which also takes the file
   `password_file` names); without it, set the password again after a restore. To restore: stop
   the service, unpack the archive, copy `config.toml` to `/etc/meshcore-home-gateway/` and the
   files under `state/` to `/var/lib/meshcore-home-gateway/` (owned by `meshcore-home-gateway`),

@@ -253,10 +253,10 @@ def _operations_parser(
     )
     backup.add_argument("file", type=Path, help=tr_help("the archive; it must not exist yet"))
     backup.add_argument(
-        "--with-password",
+        "--with-secrets",
         action="store_true",
-        # Translators: security text (docs/translations.md): the archive keeps the password
-        help=tr_help("keep the broker password, also the file password_file names"),
+        # Translators: security text (docs/translations.md): the archive keeps the secrets
+        help=tr_help("keep the secrets: the broker password, also the file password_file names"),
     )
     backup.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
 

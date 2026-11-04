@@ -336,7 +336,7 @@ def test_backup_keeps_the_password_only_when_asked(tmp_path: Path) -> None:
     )
     archive = tmp_path / "b.tgz"
     argv = ["backup", str(archive), "--config", str(config), "--state-dir", str(tmp_path / "none")]
-    assert main([*argv, "--with-password"]) == EX_OK
+    assert main([*argv, "--with-secrets"]) == EX_OK
     members = _members(archive)
     assert members["password"] == b"s3cret\n"
     assert json.loads(members["MANIFEST.json"])["password"] == "kept"
@@ -359,7 +359,7 @@ def test_backup_refuses_a_password_it_cannot_leave_out(
         str(tmp_path),
     ]
     assert main(argv) == EX_FAILURE
-    assert "add --with-password" in capsys.readouterr().err
+    assert "add --with-secrets" in capsys.readouterr().err
     assert not (tmp_path / "b.tgz").exists()
 
 

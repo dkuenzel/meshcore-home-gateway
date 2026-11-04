@@ -130,10 +130,10 @@ msgstr ""
 msgid "its public key, or KEY12…KEY8 (a name may follow)"
 msgstr ""
 
-#. security text (docs/translations.md): the archive keeps the password
+#. security text (docs/translations.md): the archive keeps the secrets
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
-msgid "keep the broker password, also the file password_file names"
+msgid "keep the secrets: the broker password, also the file password_file names"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
@@ -311,7 +311,7 @@ msgstr ""
 #. security text (docs/translations.md): the backup refuses rather than
 #. keep the password unasked
 #: src/meshcore_home_gateway/cli/backup.py
-msgid "the broker password is not on a line of its own (password = \"…\" in [mqtt]): the backup cannot leave it out; add --with-password to keep it"
+msgid "the broker password is not on a line of its own (password = \"…\" in [mqtt]): the backup cannot leave it out; add --with-secrets to keep it"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/backup.py

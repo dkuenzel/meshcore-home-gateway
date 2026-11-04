@@ -99,9 +99,9 @@
       "takes_value": true,
       "type": "path"
      },
-     "--with-password": {
+     "--with-secrets": {
       "names": [
-       "--with-password"
+       "--with-secrets"
       ],
       "takes_value": false
      }
