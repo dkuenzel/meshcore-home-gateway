@@ -36,3 +36,4 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0026](0026-gateway-tested-against-the-real-firmware-built-natively.md) | The gateway is tested against the real firmware, built natively | accepted |
 | [0027](0027-message-catalogs-compiled-when-loaded.md) | Message catalogs compiled when they are loaded | accepted |
 | [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted; amended 2026-11-03 (where its tests are) |
+| [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted |

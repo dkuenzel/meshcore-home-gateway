@@ -1091,10 +1091,17 @@ gateways share a name.
 
 ### 7.1 Assets and trust boundaries
 
-* **Assets:** the right to transmit on a shared channel (airtime, reputation of the node); the
-  command path into the automation system; message confidentiality; broker credentials.
-* **Boundaries:** radio channel (untrusted) → radio (trusted firmware, holds the keys) → USB or TCP
-  link → bridge → broker (authenticated clients) → automation system.
+The [threat model](threat-model.md) is the full account: twelve assets, twelve actors, seven
+boundaries and what stands in the way of each; this section is its summary.
+
+* **Assets:** the command path into the home; the alert path out of it; the household's positions
+  and messages; the radio's key, contact table and settings; airtime; the broker and the gateway's
+  login; the container and the host; what users install; the gateway being there; trust in the
+  documents.
+* **Boundaries:** the air (B1: untrusted, the firmware checks signatures and decrypts) → the radio
+  (trusted firmware, holds the keys) → its USB or TCP link (B2) → the gateway → the broker (B3:
+  its ACL decides who writes) → Home Assistant (B4) → its users (B5); the gateway's container (B6);
+  the project's releases (B7).
 
 ### 7.2 Threats and mitigations
 
@@ -1194,7 +1201,9 @@ stops the service rather than let commands pass without codes.
   small and make automations confirm critical actions; a code secret (§7.3) adds the phone
   with the authenticator app as a second factor.
 * A look-alike needs a 48-bit prefix collision with an allowlisted key, which takes considerable
-  but feasible computing effort (about 2^48 key generations). If the radio adds it, the real
+  but feasible computing effort: about 2^48 ≈ 2.8 × 10^14 key generations, some 180 years of one
+  CPU core, months of one GPU, days for a hundred GPUs (a few thousand to a few tens of thousands
+  of euros at 2026 cloud prices; RES-003). If the radio adds it, the real
   sender's commands are rejected (`sender_ambiguous`) for 24 hours after the bridge last saw it.
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2). Without its code secret a look-alike that got past those checks
@@ -1441,6 +1450,51 @@ version, like the CI matrix, and fails if one is missing.
 | Managed radio profile for the observer | [0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | Generated dashboards for desktop and mobile | [0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) |
 | The gateway tested against the real firmware, built natively | [0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md) |
+| Releases tagged by CI on `main` | [0022](decisions/0022-releases-tagged-by-ci-on-main.md) |
+| Public interfaces kept by a policy and a snapshot | [0023](decisions/0023-public-interfaces-kept-by-a-snapshot.md) |
+| The outgoing queue kept across restarts, alerts first | [0028](decisions/0028-outgoing-queue-kept-across-restarts.md) |
+| What a contact of the radio is trusted with | [0029](decisions/0029-what-a-contact-is-trusted-with.md) |
+
+
+### 11.1 Choices without a record of their own
+
+Decided in the design and the code; each paragraph says why, so that a change starts from the
+reasons (security review 2026-11, ARC-017).
+
+* **Telemetry is on by default, with a first-start hour.** It reversed ADR 0018's "off by default
+  for now" in 1.1.0a2: telemetry is the reason most households run the gateway. An update to it
+  has no moment of opt-in, so the first start asks nobody for an hour and says whom it will ask
+  (§6.11). Who is asked is the household's choice since `[telemetry] ask = "household"`, which new
+  installations get ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)).
+* **The contact table is read again after adverts, paths and table changes.** A full read is the
+  only list of the table the protocol offers, and the look-alike memory of §7.3 relies on it; a
+  read costs about 150 bytes per contact (4.6 s for 350 over USB). Adverts of nodes the radio did
+  not add read nothing (§6.1), so strangers cannot keep the radio listing; incremental reads wait
+  until reads show up as a load (IMP-003).
+* **One JSON state file for every section.** The sections are small, belong together for a backup
+  and a restore, and change at different paces: one store holds them in memory, writes the file
+  whole and atomically once per change set, and at once what a crash must not lose (the command
+  ledger, the kept documents, the schedule after a flood).
+* **Command events go out with QoS 0.** An event delivered after a broker outage would trigger an
+  automation at an arbitrary later time; a lost one costs the sender a repetition, which it sees
+  as no answer (§6.5). MQTT 5's expiry does not change it: it counts from the broker, not from
+  the gateway.
+* **Clean sessions; requests are not persisted.** A request published while the gateway is away
+  is lost rather than sent late: an alert that arrives an hour later misleads (§6.5). The
+  gateway's own queue keeps what it accepted ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)).
+* **Fixed bounds shape what the gateway keeps.** 50 contact devices by default (Home Assistant
+  slows with thousands of entities), 50 heard nodes (strangers cost memory and documents, SEC-010),
+  1024 keys in each set of telemetry marks, documents below the ceilings of
+  [ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md). Each bound has its reason
+  beside its constant; raising one is a decision.
+* **The gateway writes the radio's clock.** A radio without a clock starts at the newest time its
+  contacts gave it, and its messages carry that time; the host's clock is the better source, so
+  `[radio] set_clock` writes it at connect, within plausible bounds (SEC-002, §6.1).
+* **Text from the mesh is published as it came.** Texts and names are data for automations and
+  people, never commands or markup; cleaning them on the way in would change what was received
+  and hide what an attacker sent. Consumers escape them where they display them
+  ([development.md](development.md#text-from-the-mesh-and-the-bus)); `[messages] clean_received`
+  is the opt-in for consumers that cannot (SEC-017).
 
 ## 12 Open questions and future work
 

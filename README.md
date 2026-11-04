@@ -159,6 +159,7 @@ the bus.
 | Document | Content |
 | --- | --- |
 | [`docs/design.md`](docs/design.md) | Design: goals, architecture, interfaces, security, failure modes, testing |
+| [`docs/threat-model.md`](docs/threat-model.md) | Assets, actors, trust boundaries and what stands in the way |
 | [`docs/decisions/`](docs/decisions/README.md) | Architecture decision records |
 | [`docs/mqtt-api.md`](docs/mqtt-api.md) | Topics and payloads |
 | [`docs/home-assistant.md`](docs/home-assistant.md) | Entities, discovery, example automations |
@@ -178,7 +179,8 @@ only configured targets, an airtime budget, commands only from allowlisted full 
 replay protection, retained send requests rejected on replay, nothing executed by the gateway
 itself. Secure the broker (authentication, topic ACLs). Prefer USB over the unauthenticated TCP
 companion interface, which hands the radio's private key to any client that reaches it. Details:
-[`docs/design.md#7-security`](docs/design.md#7-security) and [`SECURITY.md`](SECURITY.md).
+[`docs/threat-model.md`](docs/threat-model.md), [`docs/design.md#7-security`](docs/design.md#7-security)
+and [`SECURITY.md`](SECURITY.md).
 
 Radio regulation is your responsibility. In the EU band 869.40–869.65 MHz a device may transmit
 at most 10 % of the time; the gateway's default budget uses 1 %, but the radio's own limit is a
