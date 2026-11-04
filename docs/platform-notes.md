@@ -192,6 +192,7 @@ One line per fact, by section.
 * `SYNC_NEXT_MESSAGE` takes the message out of the radio's queue when it answers.
 * Radios on ESP32 boards with an auto-reset circuit reset when RTS alone is asserted.
 * The WiFi interface source moved at `companion-v1.18.0`.
+* A USB build answers over USB only when it was built with `ENABLE_USB_INTERFACE`.
 * A factory reset gives the radio a new identity.
 * `ADD_UPDATE_CONTACT` overwrites every field of an existing key, and only contacts get the advert replay check.
 * The radio's record keeps the position of a contact's last advert that carried one.
