@@ -181,6 +181,10 @@ format, the command line and Home Assistant discovery are public interfaces
   *Telemetry* and button *Remove from radio*, for household users who open no device page; the
   last delivery step and the last contact event show their reason as a text, a reason without
   one as its code ([home-assistant.md](docs/home-assistant.md#dashboard)).
+- Documentation: the four USB release builds of MeshCore 1.18.0 that have no USB interface, among
+  them the T-Echo Lite's with display, and what the gateway reports for them; the T-Echo Lite's
+  `non_shell` USB build, which works but never draws on the e-paper (platform notes,
+  troubleshooting).
 
 ### Changed
 
