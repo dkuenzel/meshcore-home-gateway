@@ -506,9 +506,15 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     (tmp_path / "tools").mkdir()
     shutil.copy(ROOT / "tools" / "i18n.py", tmp_path / "tools" / "i18n.py")
     # EXT-004: the AsyncAPI document, from the snapshot, for the version the release builds
-    shutil.copy(ROOT / "tools" / "asyncapi.py", tmp_path / "tools" / "asyncapi.py")
+    asyncapi = ROOT / "tools" / "asyncapi.py"
+    shutil.copy(asyncapi, tmp_path / "tools" / "asyncapi.py")
+    spec = importlib.util.spec_from_file_location("asyncapi_tool", asyncapi)
+    assert spec is not None
+    assert spec.loader is not None
+    snapshot = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(snapshot)
     (tmp_path / "tests").mkdir()
-    shutil.copy(ROOT / "tests" / "public_interface.json", tmp_path / "tests")
+    shutil.copy(snapshot.SNAPSHOT, tmp_path / snapshot.SNAPSHOT.relative_to(ROOT))
     (tmp_path / "docs").mkdir()
 
     def interface(version: str) -> None:

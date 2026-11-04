@@ -28,8 +28,10 @@ GIT = shutil.which("git") or "/usr/bin/git"
 LANGUAGE, NAME = "xy", "Pseudo"  # not xx, which the tests offer themselves (tests/i18n_helpers.py)
 GERMANIC = "nplurals=2; plural=(n != 1);"  # tools/i18n.py PLURAL_FORMS has none for xy
 SUITES = [
+    "tests/test_asyncapi.py",
     "tests/test_build_pyz.py",
     "tests/test_cli_language.py",
+    "tests/test_contrib.py",
     "tests/test_dashboard.py",
     "tests/test_discovery.py",
     "tests/test_i18n.py",
@@ -142,7 +144,8 @@ def test_a_language_needs_its_catalogs_its_line_and_what_the_tools_write(tmp_pat
     text = text.replace('{"en": "English"', f'{{"en": "English", "{LANGUAGE}": "{NAME}"', 1)
     languages.write_text(text, encoding="utf-8")
 
-    for step in (["tools/i18n.py", "update"], ["-m", "tests.public_interface", "--write"]):
+    make_interface = (["-m", "tests.public_interface", "--write"], ["tools/asyncapi.py", "--write"])
+    for step in (["tools/i18n.py", "update"], *make_interface):
         done = run(copy, *step)  # steps 4 and 5: make translations, make interface
         assert done.returncode == 0, done.stdout + done.stderr
     after = {
