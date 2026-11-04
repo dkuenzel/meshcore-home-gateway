@@ -5,17 +5,21 @@ The decision the project team took on every item of the review, while working th
 so that no item is dropped silently. The review documents (`00-…` to `12-…`) stay as they were
 written; this log is the only file of the folder that changes as the work goes on.
 
+**State on 2026-11-04: complete.** All 208 items have a decision and none is pending: 162 fixed by
+pull requests merged on `main` (#37 to #64), 34 accepted, 10 deferred with the condition that
+brings each back, 2 rejected.
+
 | Decision | Meaning |
 | --- | --- |
 | fix | Resolved by a change merged on `main`; *Reference* names the pull request |
 | accept | The state is accepted as it is, with the reasoning; for a research note: acknowledged, and where its fact has lasting value, the document it moved to |
 | reject | The suggested change is not taken, with the reasoning |
 | defer | Not now; the reasoning names the condition or the milestone that brings it back |
-| split | The item continues as its own issue |
+| split | The item continues as its own issue; once the issue is resolved, the row becomes *fix* and names the issue beside the pull request (EXT-004) |
 
-*Reference* names the pull request that resolved the item once it is merged. While the work is
-in progress it names the work package that will (`pending: <package>`); the packages are listed at
-the end.
+*Reference* names the pull request that resolved the item, merged on `main`; a dash means that
+nothing had to change. While the work was in progress it named the work package that would
+(`pending: <package>`); the packages and their pull requests are listed at the end.
 
 Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
@@ -89,7 +93,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-007 | fix | The `# fmt: skip` markers removed in one mechanical commit; the formatter's output is the style | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-008 | fix | Through ARC-012 (counters, rate-limited logs) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38), [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
-| CODE-010 | fix | The `Bus` protocol moves to the ports module and `MqttBus` declares it | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
+| CODE-010 | fix | The `Bus` protocol moved to the ports module and `MqttBus` declares it | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
 | CODE-011 | fix | The cost noted in `refresh_channels`' docstring | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-012 | fix | A comment naming the radio's table as the bound | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-013 | fix | The purge in one transaction, as it is since [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38); now also in a thread of its own (CODE-002) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
@@ -238,48 +242,48 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | EXT-001 | defer | An add-on is a second deployment path without the systemd sandbox; it cannot be tested here without Home Assistant OS, and it revisits ADR 0002 and ADR 0006. Back with a test host and a record | – |
 | EXT-002 | defer | PyPI needs an account and a trusted publisher, a Debian package and an image each a channel to support; the maintainer decides which to open | – |
 | EXT-003 | defer | BLE needs a new runtime dependency (a record under ADR 0005), BlueZ in the container and hardware to test | – |
-| EXT-004 | split | Issue #23; implemented there from the interface snapshot | [#23](https://github.com/dkuenzel/meshcore-home-gateway/issues/23), [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
-| EXT-005 | fix | Sensor nodes of the household as telemetry candidates (`[telemetry] ask_types`), under the household mark | [#63](https://github.com/dkuenzel/meshcore-home-gateway/pull/63) |
+| EXT-004 | fix | Split into issue #23 and resolved there: `docs/mqtt-api.asyncapi.yaml`, an AsyncAPI 3.1 document that `tools/asyncapi.py` generates from the interface snapshot (`make interface`), tested against the snapshot and published with each release | [#23](https://github.com/dkuenzel/meshcore-home-gateway/issues/23), [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
+| EXT-005 | fix | Sensor nodes (MeshCore's sensor firmware) as telemetry candidates: with `"sensor"` in `[telemetry] ask_types` (companions only by default) they are asked as companions are, exclusions, inclusions, `ask`, switch and state alike; `docs/companions.md` (Sensors) says that a sensor answers only a radio in its access list | [#63](https://github.com/dkuenzel/meshcore-home-gateway/pull/63) |
 | EXT-006 | defer | Logging in to repeaters makes the gateway hold another node's administration password; ADR 0014 keeps administration out of scope. Back with a record and a threat model for it | – |
 | EXT-007 | defer | Traces cost airtime and the map of repeaters needs strangers' positions, which the gateway does not keep; each needs a design of its own | – |
 | EXT-008 | reject | ADR 0017 keeps channels configuration-only because a channel's secret reaches everyone who holds it; passing secrets over MQTT would undo that | – |
 | EXT-009 | fix | `[commands] reply`: a short direct answer to accepted commands, optionally to safe rejections, through the outbox and the budget | [#62](https://github.com/dkuenzel/meshcore-home-gateway/pull/62) |
 | EXT-010 | defer | Command 39 works in every tested firmware; command 50 is taken up when a firmware release deprecates 39 (the firmware tests of each new release show it) | – |
-| EXT-011 | fix | A Homie 4 adapter, opt-in, fed by the same documents | [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
+| EXT-011 | fix | A Homie 4 adapter, opt-in (`[homie] enabled`), fed by the same documents: one device whose nodes are the contacts (at most `[homie] contacts`), on a connection of its own whose last will marks the device `lost` (ADR 0015 amended) | [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
 | EXT-012 | defer | A web front end with vendored libraries is a project of its own (ADR 0021 "later") | – |
-| EXT-013 | fix | A configuration for `mqtt2prometheus` in `contrib/` | [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
+| EXT-013 | fix | Two configurations for `mqtt2prometheus` in `contrib/`: the gateway's `state` and `stats`, and each contact's document; `tests/test_contrib.py` checks every field they read against the gateway's documents | [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
 | EXT-014 | defer | Coordinating two gateways is distributed-systems work for a concrete household; the cheap part (an entity prefix, one `person` for two trackers) is done with ARC-015 | – |
 | EXT-015 | defer | Translated guides follow the first translated catalogs (ADR 0019) and need a speaker's review | – |
 | EXT-016 | fix | A `doctor` command that runs the checks of the review's operational findings | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | EXT-017 | fix | `[targets.<alias>] prefix` and `suffix` | [#62](https://github.com/dkuenzel/meshcore-home-gateway/pull/62) |
 | EXT-018 | fix | A script in the guide that sends and waits for `confirmed` | [#62](https://github.com/dkuenzel/meshcore-home-gateway/pull/62) |
-| EXT-019 | fix | `make firmware-play` | [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
+| EXT-019 | fix | `make firmware-play`: the household of the hardware checklist on the simulated air, with a broker and the gateway, kept running to explore with an MQTT client | [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
 | EXT-020 | fix | A documented turnaround for a new firmware release | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 
 ## Research notes
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| RES-001 | accept | Acknowledged; the consequence moves to `docs/protocol.md` §5 with SEC-001 | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
+| RES-001 | accept | Acknowledged; the consequence moved to `docs/protocol.md` §5 with SEC-001 | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
 | RES-002 | accept | Acknowledged; already in `docs/protocol.md` §5, the clock consequence added with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
-| RES-003 | accept | Acknowledged; the scale of the cost goes to design §7.4 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
-| RES-004 | accept | Acknowledged; the table goes to `docs/protocol.md` §7 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| RES-003 | accept | Acknowledged; the scale of the cost went to design §7.4 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
+| RES-004 | accept | Acknowledged; the table went to `docs/protocol.md` §7 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-005 | accept | Acknowledged; turned into flood tests (SEC-010, SEC-011) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
-| RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
-| RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
+| RES-007 | accept | Acknowledged; moved to `docs/protocol.md` with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
+| RES-008 | accept | Acknowledged; moved to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-009 | accept | Acknowledged; turned into a test (CODE-001) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
-| RES-010 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
-| RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
-| RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
-| RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
-| RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | [#60](https://github.com/dkuenzel/meshcore-home-gateway/pull/60) |
-| RES-015 | accept | Acknowledged; moves to `docs/protocol.md` §2 (IMP-003 deferred) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| RES-016 | accept | Acknowledged; verified, moves to `docs/protocol.md` (DOC-022) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| RES-017 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
-| RES-018 | accept | Acknowledged; moves to `docs/protocol.md` §3 with IMP-041 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
+| RES-010 | accept | Acknowledged; moved to `docs/platform-notes.md` with SEC-006 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
+| RES-011 | accept | Acknowledged; moved to `docs/platform-notes.md` with SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
+| RES-012 | accept | Acknowledged; moved to `docs/platform-notes.md` with SUP-003 | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
+| RES-013 | accept | Acknowledged; moved to `docs/platform-notes.md` with OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
+| RES-014 | accept | Acknowledged; moved to `docs/platform-notes.md` with ARC-014 | [#60](https://github.com/dkuenzel/meshcore-home-gateway/pull/60) |
+| RES-015 | accept | Acknowledged; moved to `docs/protocol.md` §2 (IMP-003 deferred) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| RES-016 | accept | Acknowledged; verified, moved to `docs/protocol.md` (DOC-022) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| RES-017 | accept | Acknowledged; moved to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
+| RES-018 | accept | Acknowledged; moved to `docs/protocol.md` §3 with IMP-041 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-019 | accept | Acknowledged; resolved by SUP-004 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
-| RES-020 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-009 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
+| RES-020 | accept | Acknowledged; moved to `docs/platform-notes.md` with OPS-009 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | RES-021 | accept | Acknowledged; `docs/platform-notes.md` covers these | – |
 | RES-022 | accept | Acknowledged; nothing to change | – |
 | RES-023 | accept | Acknowledged; the firmware tests show at each firmware update whether the upstream documentation changed | – |
@@ -287,34 +291,36 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 ## Work packages
 
-Each package is one pull request (or a few, where one would be too large to review), titled with
-the item IDs and referencing issue #34.
+Each package was one pull request (or a few, where one would have been too large to review),
+titled with the item IDs and referencing issue #34, and all of them are merged. *Items* is the
+plan; where a row names a further pull request (a research fact that went into the same change,
+an item that a later change touched again), the row is the record.
 
-| Package | Items |
-| --- | --- |
-| docs-accuracy | Documentation that the code already supports, the records' notes, the research facts that move into the guides |
-| floods | SEC-010, SEC-011, CODE-018, DOC-004, DOC-015, IMP-019, IMP-037 |
-| clock | SEC-002, IMP-006, DOC-002 |
-| broker | SEC-004, SEC-006, IMP-007, IMP-009 |
-| documents | SEC-005, ARC-006, IMP-008 |
-| tcp | SEC-003, DOC-009, DOC-023, IMP-041, IMP-042 |
-| limits | SEC-012 (rate), SEC-013, SEC-014, SEC-017, IMP-018, IMP-038, IMP-039, IMP-040 |
-| privacy | SEC-012, SEC-015, SEC-016, IMP-004, IMP-005, DOC-010 |
-| ha-exposure | SEC-008, ARC-015, OPS-003, IMP-011, IMP-025 |
-| names | SEC-007, IMP-010 |
-| password | SEC-009, IMP-012 |
-| acks | SEC-001, DOC-008, IMP-001 |
-| robustness | CODE-001, CODE-002, CODE-008, CODE-013, ARC-012, OPS-011, OPS-017, IMP-013, IMP-020, IMP-036 |
-| state-store | ARC-004, CODE-003, CODE-004, IMP-021 |
-| outbox | ARC-005, ARC-013, CODE-025, OPS-006, IMP-014, IMP-031, IMP-032 |
-| ops | The unit and the installer: OPS-001, -004, -005, -007, -009, -010, -013, -016, -021, CODE-021, IMP-023, -024, -033, -034, -048, -050, EXT-020 |
-| installer-integrity | OPS-002, SUP-003, IMP-023 |
-| supply-chain | SUP-001, -002, -004, -005, -006, -007, IMP-027, -028, -029, -043 |
-| code-quality | CODE-006, -007, -009, -011, -012, -014, -015, -017, IMP-017, IMP-045 |
-| structure | ARC-003, ARC-009, CODE-005, CODE-010, IMP-022 |
-| cli-ops | IMP-016, IMP-047, OPS-008, OPS-011, OPS-022, EXT-016 |
-| totp | IMP-002 |
-| mqtt5 | ARC-014, IMP-015 |
-| threat-model | ARC-001, ARC-002, ARC-017, DOC-005, DOC-011, DOC-013, IMP-026, IMP-030 |
-| extensions | EXT-004, -005, -009, -011, -013, -017, -018, -019, IMP-049 |
-| github | Repository settings: the description, immutable releases, code scanning, the label `audit-2026-11` |
+| Package | Items | Pull requests |
+| --- | --- | --- |
+| docs-accuracy | Documentation that the code already supports, the records' notes, the research facts that moved into the guides | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
+| floods | SEC-010, SEC-011, CODE-018, DOC-004, DOC-015, IMP-019, IMP-037 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
+| clock | SEC-002, IMP-006, DOC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
+| broker | SEC-004, SEC-006, IMP-007, IMP-009 | [#40](https://github.com/dkuenzel/meshcore-home-gateway/pull/40) |
+| documents | SEC-005, ARC-006, IMP-008 | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
+| tcp | SEC-003, DOC-009, DOC-023, IMP-041, IMP-042 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
+| limits | SEC-012 (rate), SEC-013, SEC-014, SEC-017, IMP-018, IMP-038, IMP-039, IMP-040 | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
+| privacy | SEC-012, SEC-015, SEC-016, IMP-004, IMP-005, DOC-010 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
+| ha-exposure | SEC-008, ARC-015, OPS-003, IMP-011, IMP-025 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
+| names | SEC-007, IMP-010 | [#47](https://github.com/dkuenzel/meshcore-home-gateway/pull/47) |
+| password | SEC-009, IMP-012 | [#46](https://github.com/dkuenzel/meshcore-home-gateway/pull/46) |
+| acks | SEC-001, DOC-008, IMP-001 | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
+| robustness | CODE-001, CODE-002, CODE-008, CODE-013, ARC-012, OPS-011, OPS-017, IMP-013, IMP-020, IMP-036 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
+| state-store | ARC-004, CODE-003, CODE-004, IMP-021 | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
+| outbox | ARC-005, ARC-013, CODE-025, OPS-006, IMP-014, IMP-031, IMP-032 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
+| ops | The unit and the installer: OPS-001, -004, -005, -007, -009, -010, -013, -016, -021, CODE-021, IMP-023, -024, -033, -034, -048, -050, EXT-020 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
+| installer-integrity | OPS-002, SUP-003, IMP-023 | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
+| supply-chain | SUP-001, -002, -004, -005, -006, -007, IMP-027, -028, -029, -043 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| code-quality | CODE-006, -007, -009, -011, -012, -014, -015, -017, IMP-017, IMP-045 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
+| structure | ARC-003, ARC-009, CODE-005, CODE-010, IMP-022 | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
+| cli-ops | IMP-016, IMP-047, OPS-008, OPS-011, OPS-022, EXT-016 | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
+| totp | IMP-002 | [#59](https://github.com/dkuenzel/meshcore-home-gateway/pull/59) |
+| mqtt5 | ARC-014, IMP-015 | [#60](https://github.com/dkuenzel/meshcore-home-gateway/pull/60) |
+| threat-model | ARC-001, ARC-002, ARC-017, DOC-005, DOC-011, DOC-013, IMP-026, IMP-030 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
+| extensions | EXT-004, -005, -009, -011, -013, -017, -018, -019, IMP-049 | [#62](https://github.com/dkuenzel/meshcore-home-gateway/pull/62), [#63](https://github.com/dkuenzel/meshcore-home-gateway/pull/63), [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
+| github | Repository settings: the description, immutable releases, code scanning, the label `audit-2026-11` | none: changed in the repository's settings, reported in [issue #34](https://github.com/dkuenzel/meshcore-home-gateway/issues/34#issuecomment-6580694408) |

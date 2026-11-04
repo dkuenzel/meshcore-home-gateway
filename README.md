@@ -53,6 +53,10 @@ flowchart LR
 - **openHAB and other Homie controllers:** with `[homie] enabled = true` the contacts are a Homie
   device that they discover on their own, with battery, position, last heard and a field to send
   ([`docs/mqtt-api.md`](docs/mqtt-api.md#homie-homiehomie_device)).
+- **Prometheus, and the API for machines:** configurations for the exporter mqtt2prometheus
+  ([`contrib/mqtt2prometheus`](contrib/mqtt2prometheus/README.md)); the MQTT API as an AsyncAPI
+  document generated from the code and attached to each release
+  ([`docs/mqtt-api.asyncapi.yaml`](docs/mqtt-api.asyncapi.yaml)).
 - **Translatable:** the command line, the installer, the names in Home Assistant and the
   dashboard come from gettext catalogs; English for now, more languages by contribution
   ([`docs/translations.md`](docs/translations.md)). Machine output never changes with the
