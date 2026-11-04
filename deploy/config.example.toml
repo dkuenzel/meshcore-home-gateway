@@ -22,6 +22,7 @@ tls = false                                            # true: verify the broker
 # ca_file = "/etc/ssl/certs/example-ca.pem"
 base_topic = "meshcore"
 node_id = "radio1"                                     # topics: meshcore/radio1/...
+# protocol = "5"                                       # MQTT 5: expiry, correlation data
 
 [homeassistant]
 discovery = true

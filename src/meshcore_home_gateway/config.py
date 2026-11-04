@@ -94,6 +94,7 @@ class MqttConfig:
     keepalive_s: int = 60
     base_topic: str = "meshcore"
     insecure: bool = False  # accepts a broker connection without credentials or TLS (SEC-004)
+    protocol: str = "3.1.1"  # or "5": message expiry, correlation data, user properties
 
     @property
     def topic_root(self) -> str:
@@ -701,7 +702,18 @@ def _mqtt(s: _Section) -> MqttConfig:
         keepalive_s=s.integer("keepalive_s", 60, 10, 3600),
         base_topic=base,
         insecure=s.boolean("insecure", False),
+        protocol=_protocol(s),
     )
+
+
+MQTT_PROTOCOLS = ("3.1.1", "5")
+
+
+def _protocol(s: _Section) -> str:
+    protocol = cast(str, s.string("protocol", "3.1.1"))
+    if protocol not in MQTT_PROTOCOLS:
+        raise _one_of(s.key("protocol"), MQTT_PROTOCOLS, protocol)
+    return protocol
 
 
 def _homeassistant(s: _Section) -> HomeAssistantConfig:
@@ -867,6 +879,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "mqtt.base_topic": str,
     "mqtt.node_id": str,
     "mqtt.insecure": bool,
+    "mqtt.protocol": str,
     "homeassistant.discovery": bool,
     "homeassistant.prefix": str,
     "homeassistant.device_name": str,

@@ -505,7 +505,9 @@ there).
 | `contacts/<key>/telemetry` | in | must not be | `on`, `off` or JSON: include a companion in telemetry, or exclude it (§6.11) |
 | `telemetry` | out | no | JSON: a companion answers again, or stopped answering (§6.11) |
 
-* QoS 1 throughout, except command events. MQTT 3.1.1 with a clean session: requests published
+* QoS 1 throughout, except command events. MQTT 3.1.1 with a clean session (or, with
+  `[mqtt] protocol = "5"`, MQTT 5 without a session expiry interval, which ends the session with
+  the connection; ARC-014): requests published
   while the bridge is
   offline are lost, which is the safer choice for alerts that would otherwise arrive late. Events
   the bridge publishes while the broker is down are queued in memory (up to 1000, more are
@@ -516,6 +518,12 @@ there).
   loss, network) is noticed only after one to two `keepalive_s`; command events go out with QoS 0,
   so one sent in that time is lost instead of being resent after the reconnect. The sender then
   gets no answer and can send the command again.
+* With MQTT 5 the adapter adds what the protocol carries and the core never sees
+  ([mqtt-api.md](mqtt-api.md#mqtt-5)): user properties with the gateway, its version and the
+  time on every message, an expiry on the events (`queue_ttl_s`, for `command` `max_age_s`),
+  and the correlation data of a send request on its delivery events, which the outbox keeps by
+  the request's `id` until the final one. It follows no response topic: the gateway writes
+  only its own topics.
 * On reconnect the bridge republishes availability, discovery and state; when Home Assistant
   announces itself on `homeassistant.status_topic` (default `homeassistant/status`), discovery and
   state (availability is retained, so Home Assistant receives it with its subscription).

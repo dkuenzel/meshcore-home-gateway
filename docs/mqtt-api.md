@@ -784,6 +784,32 @@ decides whether the packet is for it — useful to compare antennas or locations
  "received_at": "2026-10-18T09:00:00+00:00"}
 ```
 
+## MQTT 5
+
+With `[mqtt] protocol = "5"` ([configuration.md](configuration.md#mqtt)) the gateway connects
+with MQTT 5. Topics, payloads, retained flags and QoS stay as above, and clients of MQTT 3.1.1
+share the broker with it: they get the same messages, without the properties below. Home
+Assistant's MQTT integration connects with MQTT 5 by default
+([platform notes](platform-notes.md#home-assistant-mqtt)).
+
+* **User properties** on every message the gateway publishes: `gateway` (its `node_id`),
+  `version` (the gateway's version) and `published_at` (ISO 8601 in UTC). They tell who
+  published a message and when; they prove nothing, since a client that may write the topic can
+  copy them ([securing the broker](#securing-the-broker)).
+* **Message expiry** on events: `delivery`, `received` and `contacts/<key>/received` expire after
+  `queue_ttl_s`, `command` after `max_age_s` (with `max_age_s = 0`, after `queue_ttl_s`): a
+  broker keeps them no longer for a subscriber whose session waits for it. The `command` event
+  stays QoS 0: an expiry counts from when the broker receives a message, so a command that
+  waited in the gateway during a broker outage would still arrive late.
+* **Correlation data**: the correlation data of a request on `send/<alias>` or
+  `contacts/<key>/send` comes back with each `delivery` event of that request, up to its final
+  one; a message kept across a restart is reported without it. A contact request names itself
+  with the `id` of its JSON form, which its `contact` event carries.
+* **Response topics are ignored.** The gateway publishes on its own topics only; a request's
+  response topic would let anyone who may send requests have the gateway write wherever its own
+  permissions reach. A request's message expiry is the broker's: it drops a request that expired
+  before the gateway was there to take it.
+
 ## Securing the broker
 
 Give the gateway its own user. With Mosquitto, an ACL along these lines keeps clients apart:

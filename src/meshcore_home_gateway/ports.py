@@ -249,6 +249,7 @@ class SendRequest:
     payload: bytes
     retained: bool
     contact: bool = False
+    correlation: bytes | None = None  # MQTT 5 correlation data, echoed on its delivery events
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,5 +280,13 @@ class Bus(Protocol):
 
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
-    def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None: ...
+    def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        retain: bool = False,
+        qos: int = 1,
+        *,
+        correlation: bytes | None = None,
+    ) -> None: ...
     def dropped_1h(self) -> int: ...

@@ -98,6 +98,7 @@ One line per fact, by section.
 * Under MQTT 3.1.1, a retained PUBLISH reaches clients that are already subscribed with the retain flag cleared; only the stored copy, sent on every new subscription, has it set.
 * A password file written by `mosquitto_passwd` 2.1 loses users on a 2.0 broker.
 * Mosquitto accepts passwords with unusual characters.
+* Mosquitto passes MQTT 5 properties between MQTT 5 clients and lowers a message's expiry by the time it kept the message.
 
 **[Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on)**
 
@@ -118,6 +119,7 @@ One line per fact, by section.
 * `max_queued_messages_set()` counts the unacknowledged backlog, and at a reconnect `on_connect` runs before the backlog is sent again.
 * paho notices a broker that stops answering only through keepalive, after up to two keepalive intervals; then it sends unacknowledged QoS 1 messages again with the DUP flag, also with a clean session.
 * paho reads a whole packet into memory before any callback sees it
+* An MQTT 5 client takes no `clean_session`, and a received message's `properties` has only the properties its publisher set.
 
 **[Home Assistant MQTT](#home-assistant-mqtt)**
 
@@ -170,6 +172,7 @@ One line per fact, by section.
 * `recorder.purge_entities` removes an entity's states and events, not its long-term statistics; those go only with `recorder/clear_statistics` (*Developer tools → Statistics*).
 * The device classes and units of the reading sensors are accepted: voltage V, current A, power W, temperature °C, humidity %, atmospheric pressure hPa, distance m, frequency Hz.
 * A discovery update that keeps an entity's `state_topic`, QoS and encoding keeps its subscription, so the broker does not send the retained message again: the entity keeps its state, read with the old template, until the next message on the topic.
+* Home Assistant's MQTT integration speaks MQTT 3.1, 3.1.1 and 5, and connects with 5 unless its broker options say otherwise.
 
 **[Home Assistant dashboards](#home-assistant-dashboards)**
 
@@ -892,6 +895,15 @@ mosquitto -c m.conf & broker=$!
   the characters that went missing were lost in the dialogs ([deployment.md](deployment.md#install),
   the `C.UTF-8` locale). *Check:* `mosquitto_passwd -b pw mhg '  pä:ss#$ '`, `kill -HUP $broker`,
   then `mosquitto_sub -p 18830 -u mhg -P '  pä:ss#$ ' -t x -E` exits with 0.
+* **Mosquitto passes MQTT 5 properties between MQTT 5 clients and lowers a message's
+  expiry by the time it kept the message.** *Verified:* with Mosquitto 2.0 (the CI's Ubuntu
+  package), `test_with_broker_mqtt_5_carries_expiry_correlation_and_user_properties` in
+  [`tests/test_mqtt_client.py`](../tests/test_mqtt_client.py): the correlation data of a
+  request reaches the gateway, and its event reaches a subscriber with the correlation data,
+  the user properties and an expiry no longer than the gateway set. A 3.1.1 subscriber gets
+  the message without them: 3.1.1 has no properties. *Here:* `[mqtt] protocol = "5"`
+  ([mqtt-api.md](mqtt-api.md#mqtt-5)); clients of both versions share the broker. *Check:*
+  `mosquitto_sub -V mqttv5 -F '%t %P' -t 'meshcore/#'` prints the user properties.
 
 ## Home Assistant Mosquitto add-on
 
@@ -1045,6 +1057,18 @@ and of the pin in [`requirements/dev.in`](../requirements/dev.in), with Python 3
 * **paho reads a whole packet into memory before any callback sees it**, so one large PUBLISH
   costs its full size in memory; the advice is in [mqtt-api.md](mqtt-api.md#securing-the-broker)
   (`max_packet_size`). *Verified:* `_packet_read()`, lines 3120-3134.
+* **An MQTT 5 client takes no `clean_session`, and a received message's `properties` has
+  only the properties its publisher set.** `Client(protocol=MQTTv5, clean_session=True)`
+  raises `ValueError` ("Clean session is not used for MQTT 5.0"). A session without a
+  session expiry interval ends when the connection does (MQTT 5.0, section 3.1.2.11.2), so
+  the gateway's MQTT 5 connection is as clean as its 3.1.1 one. A missing property is a
+  missing attribute: `getattr(message.properties, "CorrelationData", None)`. *Verified:*
+  paho 2.1.0 in the interpreter, and [`tests/test_mqtt_client.py`](../tests/test_mqtt_client.py).
+  *Here:* `make_paho_client()` and `_paho_message()` in
+  [`mqtt/client.py`](../src/meshcore_home_gateway/mqtt/client.py). *Check:* `python3 -c
+  'import paho.mqtt.client as p; from paho.mqtt.enums import *;
+  p.Client(CallbackAPIVersion.VERSION2, protocol=MQTTProtocolVersion.MQTTv5,
+  clean_session=True)'` raises the `ValueError`.
 
 ## Home Assistant MQTT
 
@@ -1498,6 +1522,14 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   gateway sensor keeps its 1.1.0a2 state until the gateway publishes the `contacts` index again
   (when the radio connects, and at each table read). *Check:* `src 2026.10.0
   components/mqtt/subscription.py | sed -n 66,81p`.
+* **Home Assistant's MQTT integration speaks MQTT 3.1, 3.1.1 and 5, and connects with 5
+  unless its broker options say otherwise.** `DEFAULT_PROTOCOL = PROTOCOL_5` in
+  `components/mqtt/const.py` of 2026.10.0, the release the contract tests pin; the review of
+  2026-11 (RES-014) assumed 3.1.1. *Here:* a broker that serves Home Assistant with its
+  defaults already speaks MQTT 5, so `[mqtt] protocol = "5"` needs nothing more there; the
+  gateway keeps 3.1.1 as its default for the brokers that do not
+  ([configuration.md](configuration.md#mqtt)). *Check:* `src 2026.10.0
+  components/mqtt/const.py | grep -n DEFAULT_PROTOCOL`.
 
 ## Home Assistant dashboards
 

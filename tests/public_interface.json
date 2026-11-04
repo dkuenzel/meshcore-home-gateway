@@ -49,6 +49,7 @@
     "mqtt.password",
     "mqtt.password_file",
     "mqtt.port",
+    "mqtt.protocol",
     "mqtt.tls",
     "mqtt.username",
     "radio.device",
@@ -1140,6 +1141,11 @@
    "max": 65535,
    "min": 1,
    "type": "integer"
+  },
+  "mqtt.protocol": {
+   "answer": "str",
+   "default": "3.1.1",
+   "type": "string"
   },
   "mqtt.tls": {
    "answer": "bool",

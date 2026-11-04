@@ -124,11 +124,19 @@ def test_command_time_is_stored_before_the_command_is_published(tmp_path: Path) 
     stored_at_publish: list[Any] = []
 
     class WatchingBus(FakeBus):
-        def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
+        def publish(
+            self,
+            topic: str,
+            payload: bytes,
+            retain: bool = False,
+            qos: int = 1,
+            *,
+            correlation: bytes | None = None,
+        ) -> None:
             if topic.endswith("/command"):
                 stored = json.loads(state.read_text(encoding="utf-8"))
                 stored_at_publish.append(stored["command_timestamps"])
-            super().publish(topic, payload, retain, qos)
+            super().publish(topic, payload, retain, qos, correlation=correlation)
 
     radio = EmulatedRadio(contacts=[ALICE])
 

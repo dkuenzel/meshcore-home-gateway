@@ -246,6 +246,7 @@ keepalive_s = 30
 base_topic = "{BASE}"
 node_id = "{NODE}"
 insecure = true
+protocol = "5"
 [homeassistant]
 discovery = true
 prefix = "{PREFIX}"
@@ -438,7 +439,14 @@ class _Paho:
     def subscribe(self, topic: list[tuple[str, int]]) -> None:
         self.subscribed += topic
 
-    def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any:
+    def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        qos: int = 0,
+        retain: bool = False,
+        properties: Any = None,
+    ) -> Any:
         self.published.append((topic, payload, retain, qos))
         return SimpleNamespace(rc=paho.MQTT_ERR_SUCCESS)
 

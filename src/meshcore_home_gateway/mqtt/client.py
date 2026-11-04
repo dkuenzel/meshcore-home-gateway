@@ -6,7 +6,9 @@ event loop because paho guards its outgoing queue with a lock. While the broker 
 events stay queued in paho and go out after the reconnect, at most MAX_QUEUED_EVENTS of them;
 retained documents are skipped then, because the reconnect publishes them again. The adapter
 subscribes to the gateway's retained topics too, and undoes what other clients write there
-(`mqtt.retained`).
+(`mqtt.retained`). With `[mqtt] protocol = "5"` every message carries the gateway's name, its
+version and the time as user properties, events an expiry, and the delivery events of a send
+request its correlation data (ARC-014).
 """
 
 from __future__ import annotations
@@ -18,11 +20,15 @@ import ssl
 import sys
 import time
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import paho.mqtt.client as paho
 from paho.mqtt.enums import CallbackAPIVersion, MQTTProtocolVersion
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
+from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import ConfigError, MqttConfig
 from meshcore_home_gateway.health import MinuteCounts
 from meshcore_home_gateway.mqtt.retained import RetainedTopics
@@ -56,14 +62,30 @@ class PahoLike(Protocol):
     def loop_start(self) -> Any: ...
     def loop_stop(self) -> Any: ...
     def subscribe(self, topic: list[tuple[str, int]]) -> Any: ...
-    def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any: ...
+    def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        qos: int = 0,
+        retain: bool = False,
+        properties: Properties | None = None,
+    ) -> Any: ...
     def disconnect(self) -> Any: ...
 
 
 def make_paho_client(config: MqttConfig) -> PahoLike:
+    client_id = config.client_id or default_client_id(config.node_id)
+    if config.protocol == "5":
+        # no session expiry interval: the broker ends the session at the disconnect, as a clean
+        # session of 3.1.1 does
+        return paho.Client(
+            callback_api_version=CallbackAPIVersion.VERSION2,
+            client_id=client_id,
+            protocol=MQTTProtocolVersion.MQTTv5,
+        )
     return paho.Client(
         callback_api_version=CallbackAPIVersion.VERSION2,
-        client_id=config.client_id or default_client_id(config.node_id),
+        client_id=client_id,
         protocol=MQTTProtocolVersion.MQTTv311,
         clean_session=True,
     )
@@ -127,13 +149,19 @@ class MqttBus(Bus):
         client_factory: Callable[[MqttConfig], PahoLike] = make_paho_client,
         *,
         ha_devices: Sequence[str] = (),
+        event_expiry_s: int | None = None,
+        command_expiry_s: int | None = None,
     ) -> None:
         """`ha_devices`: subscriptions to the gateway's discovery topics, to notice what Home
-        Assistant clears there (with the request to show deleted contact devices again)."""
+        Assistant clears there (with the request to show deleted contact devices again).
+        `event_expiry_s`, `command_expiry_s`: with MQTT 5, how long the broker keeps a `delivery`
+        or `received` event, and a `command` event, for a subscriber that is away."""
         self._config = config
         self._topics = topics
         self._ha_status = ha_status_topic
         self._ha_devices = tuple(ha_devices)
+        self._expiry = {topics.delivery: event_expiry_s, topics.received: event_expiry_s}
+        self._expiry[topics.command] = command_expiry_s
         self._client = client_factory(config)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._retained = RetainedTopics(
@@ -183,7 +211,15 @@ class MqttBus(Bus):
         MAX_QUEUED_EVENTS waited): the health section tells them once the broker is back."""
         return self._drops.total(time.monotonic())
 
-    def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
+    def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        retain: bool = False,
+        qos: int = 1,
+        *,
+        correlation: bytes | None = None,
+    ) -> None:
         """QoS 1 events are queued while the broker is unreachable; QoS 0 events (commands) are
         not, so they can never arrive late."""
         if retain and self._retained.covers(topic):
@@ -202,16 +238,44 @@ class MqttBus(Bus):
                 self._drops.add(time.monotonic())
                 return
             self._queued += 1
-        info = self._client.publish(topic, payload, qos=qos, retain=retain)
+        properties = self._properties(topic, correlation)
+        info = self._client.publish(topic, payload, qos=qos, retain=retain, properties=properties)
         # NO_CONN: paho noticed the loss first and keeps a QoS 1 message for the reconnect
         if getattr(info, "rc", 0) not in (paho.MQTT_ERR_SUCCESS, paho.MQTT_ERR_NO_CONN):
             log.warning("MQTT: publish to %s refused (paho error %s)", topic, info.rc)
+
+    def _properties(self, topic: str, correlation: bytes | None = None) -> Properties | None:
+        """MQTT 5: who published it, and when; how long an event may wait for a subscriber that
+        is away; the correlation data of the request it answers. None for MQTT 3.1.1."""
+        if self._config.protocol != "5":
+            return None
+        properties = Properties(PacketTypes.PUBLISH)  # type: ignore[no-untyped-call]
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        properties.UserProperty = [
+            ("gateway", self._config.node_id),
+            ("version", __version__),
+            ("published_at", now),
+        ]
+        expiry = self._expiry.get(topic)
+        if expiry is None and self._topics.key_from_contact_topic(topic, "received") is not None:
+            expiry = self._expiry[self._topics.received]
+        if expiry:
+            properties.MessageExpiryInterval = expiry
+        if correlation is not None:
+            properties.CorrelationData = correlation
+        return properties
 
     async def stop(self, timeout_s: float = 2.0) -> None:
         self._stopping = True
         self._retained.close()
         self._cancel_echo_check()
-        info = self._client.publish(self._topics.availability, OFFLINE, qos=1, retain=True)
+        info = self._client.publish(
+            self._topics.availability,
+            OFFLINE,
+            qos=1,
+            retain=True,
+            properties=self._properties(self._topics.availability),
+        )
         wait = getattr(info, "wait_for_publish", None)
         if self.connected and callable(wait):
             try:
@@ -257,7 +321,8 @@ class MqttBus(Bus):
         info = client.subscribe(subscriptions)
         mid = info[1] if isinstance(info, tuple) else None  # its answer comes after this returns
         self._subscribing = (mid, [topic for topic, _ in subscriptions])
-        client.publish(self._topics.availability, ONLINE, qos=1, retain=True)
+        online = self._properties(self._topics.availability)
+        client.publish(self._topics.availability, ONLINE, qos=1, retain=True, properties=online)
         self._call(self._handle_connected)
 
     def _paho_subscribed(self, _c: Any, _u: Any, mid: int, reasons: Any, _p: Any) -> None:
@@ -288,8 +353,14 @@ class MqttBus(Bus):
         self._call(self._handle_disconnected, str(reason), answered)
 
     def _paho_message(self, _c: Any, _u: Any, message: Any) -> None:
+        properties = getattr(message, "properties", None)  # MQTT 5 only
+        correlation = getattr(properties, "CorrelationData", None)
         self._call(
-            self._handle_message, message.topic, bytes(message.payload), bool(message.retain)
+            self._handle_message,
+            message.topic,
+            bytes(message.payload),
+            bool(message.retain),
+            bytes(correlation) if isinstance(correlation, bytes | bytearray) else None,
         )
 
     def _call(self, callback: Callable[..., None], *args: Any) -> None:
@@ -305,7 +376,8 @@ class MqttBus(Bus):
     def _publish_retained(self, topic: str, payload: bytes) -> None:
         """A restore of a retained topic (`mqtt.retained`); the next connect publishes all."""
         if self.connected:
-            self._client.publish(topic, payload, qos=1, retain=True)
+            properties = self._properties(topic)
+            self._client.publish(topic, payload, qos=1, retain=True, properties=properties)
 
     def _handle_connected(self) -> None:
         self.connected = True
@@ -355,7 +427,9 @@ class MqttBus(Bus):
             self._echo_check.cancel()
             self._echo_check = None
 
-    def _handle_message(self, topic: str, payload: bytes, retained: bool) -> None:
+    def _handle_message(
+        self, topic: str, payload: bytes, retained: bool, correlation: bytes | None = None
+    ) -> None:
         if self._retained.covers(topic):
             self._heard_back = True
             if not self._stopping:
@@ -366,17 +440,21 @@ class MqttBus(Bus):
             ):
                 callback()
         elif not (self._ha_devices and self._ha_message(topic, payload, retained)):
-            self._request(topic, payload, retained)
+            self._request(topic, payload, retained, correlation)
 
-    def _request(self, topic: str, payload: bytes, retained: bool) -> None:
-        """A request on one of the gateway's request topics; any other topic is ignored."""
+    def _request(
+        self, topic: str, payload: bytes, retained: bool, correlation: bytes | None = None
+    ) -> None:
+        """A request on one of the gateway's request topics; any other topic is ignored. A send
+        request keeps its correlation data for its delivery events; a contact request names
+        itself by the `id` of its JSON form, which its events carry."""
         alias = self._topics.alias_from_send_topic(topic)
         if alias is not None:
-            self.requests.put_nowait(SendRequest(alias, payload, retained))
+            self.requests.put_nowait(SendRequest(alias, payload, retained, False, correlation))
             return
         key = self._topics.key_from_contact_topic(topic, "send")
         if key is not None:
-            self.requests.put_nowait(SendRequest(key, payload, retained, contact=True))
+            self.requests.put_nowait(SendRequest(key, payload, retained, True, correlation))
             return
         if topic == self._topics.add_contact:
             self.contact_requests.put_nowait(ContactRequest("add", payload, retained))

@@ -132,6 +132,12 @@ format, the command line and Home Assistant discovery are public interfaces
   line for the app. New rejection reasons `code_missing`, `code_invalid` and `code_reused`
   ([mqtt-api.md](docs/mqtt-api.md#commands-command)); senders without a secret keep the rules.
 
+- `[mqtt] protocol = "5"` (default `"3.1.1"`): the gateway connects with MQTT 5. Its messages
+  carry the user properties `gateway`, `version` and `published_at`, its `delivery`, `received`
+  and `command` events an expiry (`queue_ttl_s`, for commands `max_age_s`), and the delivery
+  events of a send request that request's correlation data; response topics are ignored
+  ([mqtt-api.md](docs/mqtt-api.md#mqtt-5)). Home Assistant connects with MQTT 5 by default.
+
 ### Changed
 
 - **Breaking:** a radio over TCP is a configuration error until `[radio] tcp_unauthenticated =
