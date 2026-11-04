@@ -159,6 +159,9 @@ format, the command line and Home Assistant discovery are public interfaces
   asked, with the same switch, state, exclusions and inclusions. A sensor answers only a radio
   in its access list: `setperm <the gateway radio's key> 1` on the sensor
   ([companions.md](docs/companions.md#sensors)).
+- `contrib/mqtt2prometheus`: configurations for the exporter mqtt2prometheus, which serves the
+  gateway's `state` and `stats` and the contacts' documents to Prometheus without a listener in
+  the gateway ([README](contrib/mqtt2prometheus/README.md)).
 - `make firmware-play` for contributors: the hardware checklist's household on the firmware's
   simulated air, a local broker and the gateway, for exploring by hand until Ctrl-C
   ([testing.md](docs/testing.md#tests-against-the-real-firmware)).

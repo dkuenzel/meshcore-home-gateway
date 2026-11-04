@@ -1,0 +1,88 @@
+# mqtt2prometheus for the contacts' documents (EXT-013): a second instance beside gateway.yaml,
+# since one instance reads one topic path. Each `contacts/<key>` document becomes metrics with
+# the contact's full key as the label `sensor`. Replace `radio1` with your `[mqtt] node_id`
+# and `meshcore` with `base_topic`. Positions are left out on purpose (README.md, Privacy).
+mqtt:
+  server: tcp://127.0.0.1:1883
+  # user and password: MQTT2PROM_MQTT_USER and MQTT2PROM_MQTT_PASSWORD, a user that may only read
+  client_id: mqtt2prometheus-meshcore-contacts
+  topic_path: meshcore/radio1/contacts/+
+  device_id_regex: "meshcore/radio1/contacts/(?P<deviceid>[0-9a-f]{64})"
+  qos: 1
+cache:
+  # a contact that leaves the radio gets an empty document, which ends its metrics after this
+  timeout: 2h
+json_parsing:
+  separator: .
+# a contact's document comes on changes, not periodically: its samples take the scrape's time
+# (omit_timestamp), and a value holds until the next document or the cache timeout
+metrics:
+  - prom_name: meshcore_contact_answering
+    mqtt_name: telemetry_state
+    help: 1 while the contact's telemetry answers are current (answering, no_position)
+    type: gauge
+    omit_timestamp: true
+    string_value_mapping:
+      map:
+        answering: 1
+        no_position: 1
+        waiting: 0
+        away: 0
+        no_answer: 0
+        no_path: 0
+        look_alike: 0
+        excluded: 0
+        "off": 0
+  - prom_name: meshcore_contact_battery_volts
+    mqtt_name: battery_v
+    help: battery voltage from the contact's newest telemetry answer
+    type: gauge
+    omit_timestamp: true
+  - prom_name: meshcore_contact_mcu_temperature_celsius
+    mqtt_name: mcu_temperature_c
+    help: MCU temperature from the contact's newest telemetry answer
+    type: gauge
+    omit_timestamp: true
+  - prom_name: meshcore_contact_snr_db
+    mqtt_name: snr_db
+    help: signal-to-noise ratio of the last packet heard from the contact
+    type: gauge
+    omit_timestamp: true
+  - prom_name: meshcore_contact_rssi_dbm
+    mqtt_name: rssi_dbm
+    help: signal strength of the last packet heard from the contact
+    type: gauge
+    omit_timestamp: true
+  - prom_name: meshcore_contact_hops
+    mqtt_name: hops
+    help: repeaters the contact's last flooded packet passed
+    type: gauge
+    omit_timestamp: true
+  - prom_name: meshcore_contact_path_hops
+    mqtt_name: path_hops
+    help: repeaters on the path the radio stored for the contact
+    type: gauge
+    omit_timestamp: true
+  # readings: `readings.<channel>_<type>_<unit>` as the contact's document names them; add the
+  # ones your companions and sensors send (docs/mqtt-api.md#contacts-contacts-and-contactskey)
+  - prom_name: meshcore_contact_temperature_celsius
+    mqtt_name: readings.ch2_temperature_c
+    help: temperature on channel 2 of the contact's newest telemetry answer
+    type: gauge
+    omit_timestamp: true
+    const_labels:
+      channel: "2"
+  - prom_name: meshcore_contact_humidity_percent
+    mqtt_name: readings.ch2_humidity_percent
+    help: relative humidity on channel 2 of the contact's newest telemetry answer
+    type: gauge
+    omit_timestamp: true
+    const_labels:
+      channel: "2"
+  - prom_name: meshcore_contact_barometric_pressure_hpa
+    mqtt_name: readings.ch2_barometric_pressure_hpa
+    help: barometric pressure on channel 2 of the contact's newest telemetry answer
+    type: gauge
+    omit_timestamp: true
+    const_labels:
+      channel: "2"

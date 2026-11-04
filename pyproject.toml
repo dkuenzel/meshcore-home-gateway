@@ -48,7 +48,7 @@ include = [
   "docs/", "deploy/", "tests/", "tools/", "requirements/", "Makefile", "CHANGELOG.md",
   "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
   ".github/", ".githooks/",  # the tests check links into them, `make check` runs their checks
-  "home-assistant/",
+  "home-assistant/", "contrib/",  # tests/test_contrib.py reads the exporter configurations
 ]
 
 [tool.ruff]
