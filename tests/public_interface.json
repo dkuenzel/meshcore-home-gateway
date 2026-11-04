@@ -82,6 +82,39 @@
    "probe --list profile: writes": 2
   },
   "commands": {
+   "backup": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--with-secrets": {
+      "names": [
+       "--with-secrets"
+      ],
+      "takes_value": false
+     }
+    },
+    "positionals": {
+     "1": {
+      "name": "file",
+      "required": true,
+      "takes_value": true,
+      "type": "path"
+     }
+    }
+   },
    "check-config": {
     "options": {
      "--broker": {
@@ -322,6 +355,78 @@
     },
     "positionals": {}
    },
+   "doctor": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {}
+   },
+   "history": {
+    "options": {},
+    "positionals": {
+     "1": {
+      "name": "action",
+      "required": true,
+      "takes_value": true
+     }
+    }
+   },
+   "history export": {
+    "options": {
+     "--format": {
+      "choices": [
+       "csv",
+       "jsonl"
+      ],
+      "default": "jsonl",
+      "names": [
+       "--format"
+      ],
+      "takes_value": true
+     },
+     "--since": {
+      "names": [
+       "--since"
+      ],
+      "takes_value": true,
+      "type": "date"
+     },
+     "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--table": {
+      "choices": [
+       "messages",
+       "positions",
+       "readings"
+      ],
+      "default": "messages",
+      "names": [
+       "--table"
+      ],
+      "takes_value": true
+     }
+    },
+    "positionals": {}
+   },
    "listen": {
     "options": {
      "--config": {
@@ -442,6 +547,32 @@
     },
     "positionals": {}
    },
+   "retire": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--state-dir": {
+      "names": [
+       "--state-dir"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--yes": {
+      "names": [
+       "--yes"
+      ],
+      "takes_value": false
+     }
+    },
+    "positionals": {}
+   },
    "run": {
     "options": {
      "--config": {
@@ -495,7 +626,54 @@
       "takes_value": true
      }
     }
+   },
+   "status": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--json": {
+      "names": [
+       "--json"
+      ],
+      "takes_value": false
+     }
+    },
+    "positionals": {}
    }
+  },
+  "csv": {
+   "history export --format csv --table messages": [
+    "at",
+    "channel_index",
+    "contact_key",
+    "direction",
+    "hops",
+    "kind",
+    "name",
+    "snr_db",
+    "state",
+    "text"
+   ],
+   "history export --format csv --table positions": [
+    "altitude_m",
+    "at",
+    "contact_key",
+    "latitude",
+    "longitude",
+    "source"
+   ],
+   "history export --format csv --table readings": [
+    "at",
+    "contact_key",
+    "quantity",
+    "value"
+   ]
   },
   "exit_codes": {
    "config_error": 78,
@@ -509,6 +687,32 @@
     "contacts.<document contacts>",
     "nodes",
     "nodes.<document nodes>"
+   ],
+   "history export --table messages": [
+    "at",
+    "channel_index",
+    "contact_key",
+    "direction",
+    "hops",
+    "kind",
+    "name",
+    "snr_db",
+    "state",
+    "text"
+   ],
+   "history export --table positions": [
+    "altitude_m",
+    "at",
+    "contact_key",
+    "latitude",
+    "longitude",
+    "source"
+   ],
+   "history export --table readings": [
+    "at",
+    "contact_key",
+    "quantity",
+    "value"
    ],
    "listen": [
     "payload",
@@ -566,6 +770,11 @@
     "telemetry.environment",
     "telemetry.location",
     "tx_power_dbm"
+   ],
+   "status --json": [
+    "availability",
+    "contacts",
+    "state"
    ]
   },
   "paths": {

@@ -20,11 +20,12 @@ import argparse
 import math
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from meshcore_home_gateway import __version__, i18n
+from meshcore_home_gateway.cli.backup import _backup
 from meshcore_home_gateway.cli.common import (
     DEFAULT_CONFIG,
     EX_CONFIG,
@@ -45,9 +46,13 @@ from meshcore_home_gateway.cli.contacts import (
     _contacts_telemetry,
 )
 from meshcore_home_gateway.cli.dashboard import _dashboard
+from meshcore_home_gateway.cli.doctor import _doctor
+from meshcore_home_gateway.cli.history import _history_export, since_time
 from meshcore_home_gateway.cli.messages import _listen, _send
 from meshcore_home_gateway.cli.probe import _probe
+from meshcore_home_gateway.cli.retire import _retire
 from meshcore_home_gateway.cli.run import _run
+from meshcore_home_gateway.cli.status import _status
 from meshcore_home_gateway.config import ConfigError
 
 __all__ = ["EX_CONFIG", "EX_FAILURE", "EX_OK", "EX_USAGE", "main"]
@@ -92,13 +97,9 @@ def _parser() -> argparse.ArgumentParser:
             )
         return sub
 
+    state_dir_help = tr_help("default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway")
     run = command("run", tr_help("run the bridge (the systemd service does this)"), _run)
-    run.add_argument(
-        "--state-dir",
-        type=Path,
-        default=None,
-        help=tr_help("default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway"),
-    )
+    run.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
 
     check = command(
         "check-config", tr_help("validate the configuration and print a summary"), _check_config
@@ -176,6 +177,8 @@ def _parser() -> argparse.ArgumentParser:
 
     _contacts_parser(commands)
 
+    _operations_parser(commands, command, state_dir_help)
+
     dashboard = command(
         "dashboard",
         tr_help("write a Home Assistant dashboard for this gateway (YAML, to standard output)"),
@@ -222,6 +225,80 @@ def _parser() -> argparse.ArgumentParser:
     answers.set_defaults(handler=_answers)
     answers.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     return parser
+
+
+def _operations_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+    command: Callable[..., argparse.ArgumentParser],
+    state_dir_help: str,
+) -> None:
+    """The commands of an installation's life: status, doctor, backup, retire, history
+    (IMP-016, IMP-047, EXT-016)."""
+    status = command("status", tr_help("show what the running gateway reports of itself"), _status)
+    status.add_argument(
+        "--json", action="store_true", help=tr_help("the gateway's documents as JSON")
+    )
+
+    doctor = command(
+        "doctor",
+        tr_help("check the configuration, the broker, the running gateway and this host"),
+        _doctor,
+    )
+    doctor.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
+
+    backup = command(
+        "backup",
+        tr_help("write the configuration and the state into an archive (tar.gz, mode 0600)"),
+        _backup,
+    )
+    backup.add_argument("file", type=Path, help=tr_help("the archive; it must not exist yet"))
+    backup.add_argument(
+        "--with-secrets",
+        action="store_true",
+        # Translators: security text (docs/translations.md): the archive keeps the secrets
+        help=tr_help("keep the secrets: the broker password, also the file password_file names"),
+    )
+    backup.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
+
+    retire = command(
+        "retire",
+        tr_help(
+            "before the container goes: remove the gateway from Home Assistant and clear its "
+            "retained documents (the service stopped)"
+        ),
+        _retire,
+    )
+    retire.add_argument(
+        "--yes", action="store_true", help=tr_help("do it; without, only say what it would do")
+    )
+    retire.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
+
+    history = commands.add_parser("history", help=tr_help("the local history"))
+    history_commands = history.add_subparsers(required=True, metavar="action")
+    export = history_commands.add_parser(
+        "export", help=tr_help("print the history as JSON lines or CSV, read only")
+    )
+    export.set_defaults(handler=_history_export)
+    export.add_argument(
+        "--table",
+        choices=["messages", "positions", "readings"],
+        default="messages",
+        help=tr_help("the table (default: messages)"),
+    )
+    export.add_argument(
+        "--format",
+        choices=["jsonl", "csv"],
+        default="jsonl",
+        help=tr_help("JSON lines or CSV (default: jsonl)"),
+    )
+    export.add_argument(
+        "--since",
+        type=since_time,
+        default=None,
+        metavar="DATE",
+        help=tr_help("from this date or time on (ISO 8601; without a zone, UTC)"),
+    )
+    export.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
 
 
 def _contacts_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

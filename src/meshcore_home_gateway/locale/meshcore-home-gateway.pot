@@ -12,6 +12,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "JSON lines or CSV (default: jsonl)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "WiFi companion, port 5000 by default; IPv6 as [ADDRESS]:PORT"
 msgstr ""
 
@@ -37,7 +42,17 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "before the container goes: remove the gateway from Home Assistant and clear its retained documents (the service stopped)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "both documents as JSON"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "check the configuration, the broker, the running gateway and this host"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
@@ -67,6 +82,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "do it; without, only say what it would do"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "everything as JSON"
 msgstr ""
 
@@ -92,6 +112,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "from this date or time on (ISO 8601; without a zone, UTC)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "group that may read the file (mode 0640)"
 msgstr ""
 
@@ -103,6 +128,12 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "its public key, or KEY12…KEY8 (a name may follow)"
+msgstr ""
+
+#. security text (docs/translations.md): the archive keeps the secrets
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "keep the secrets: the broker password, also the file password_file names"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
@@ -147,6 +178,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "print the history as JSON lines or CSV, read only"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "remove a contact from the radio"
 msgstr ""
 
@@ -172,6 +208,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "show what the running gateway reports of itself"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "stop after this many events (0: never)"
 msgstr ""
 
@@ -182,12 +223,32 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "the archive; it must not exist yet"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "the gateway's documents as JSON"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "the local history"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "the service's state, read only, for its exact plan (default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway)"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "the service's state, read only, for the contacts on the map (default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "the table (default: messages)"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
@@ -229,6 +290,38 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "write the broker password into this file (mode 0640) instead of the configuration"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "write the configuration and the state into an archive (tar.gz, mode 0600)"
+msgstr ""
+
+#. detail is the system's reason, such as "No such file or directory".
+#: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/history.py src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "cannot read {path}: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/config_cmd.py
+#, python-brace-format
+msgid "cannot write {path}: {detail}"
+msgstr ""
+
+#. security text (docs/translations.md): the backup refuses rather than
+#. keep the password unasked
+#: src/meshcore_home_gateway/cli/backup.py
+msgid "the broker password is not on a line of its own (password = \"…\" in [mqtt]): the backup cannot leave it out; add --with-secrets to keep it"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/backup.py
+#, python-brace-format
+msgid "wrote {path}: {files}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/backup.py
+#, python-brace-format
+msgid "{path} exists: choose another name"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/broker.py
@@ -381,12 +474,7 @@ msgstr ""
 msgid "brokers such as Mosquitto refuse a wrong password, an unknown user and missing credentials alike; a standalone Mosquitto knows a user added with mosquitto_passwd only after '{command}' ({guide})"
 msgstr ""
 
-#: src/meshcore_home_gateway/cli/config_cmd.py
-#, python-brace-format
-msgid "cannot write {path}: {detail}"
-msgstr ""
-
-#: src/meshcore_home_gateway/cli/config_cmd.py
+#: src/meshcore_home_gateway/cli/config_cmd.py src/meshcore_home_gateway/cli/doctor.py
 #, python-brace-format
 msgid "configuration {path}: valid"
 msgstr ""
@@ -402,7 +490,7 @@ msgid "no user name"
 msgstr ""
 
 #. security text (docs/translations.md): translate all of it, add nothing
-#: src/meshcore_home_gateway/cli/config_cmd.py
+#: src/meshcore_home_gateway/cli/config_cmd.py src/meshcore_home_gateway/cli/doctor.py
 msgid "the broker accepts clients without a user name: unless its ACL keeps them off the gateway's topics, any client that reaches it can read messages and positions and publish command events (docs/mqtt-api.md, Securing the broker)"
 msgstr ""
 
@@ -589,6 +677,108 @@ msgid "The map lists {count} contact with a position."
 msgid_plural "The map lists {count} contacts with a position."
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "TLS: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "an update waits for a restart of the container"
+msgstr ""
+
+#. security text (docs/translations.md): another client took the radio's
+#. TCP link (SEC-003)
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "another client took the radio's TCP link in the last hour"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "broker {host}:{port}: logged in"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "firmware {firmware} is not one the gateway is tested with: it takes no contact requests (docs/companions.md)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "no state directory at {path}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "ok"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "problem"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "security updates are installed automatically"
+msgstr ""
+
+#. security text (docs/translations.md): the good answer to the check above
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "the broker refuses clients without a user name"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "the gateway has published no state document"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "the gateway is not online (is its service running?)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "the gateway is online"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "the radio is not connected"
+msgstr ""
+
+#. security text (docs/translations.md): the radio's TCP interface has no
+#. authentication (SEC-003)
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "the radio over TCP: anyone who reaches its port controls the radio and can read its private key; prefer USB (docs/deployment.md)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "the radio's clock is {seconds} s off the host's: messages and commands carry the wrong time ([radio] set_clock, docs/configuration.md)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "unattended-upgrades is not installed: security updates wait for someone to install them (docs/deployment.md)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+msgid "warning"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "{free} MB free for {path}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/history.py
+#, python-brace-format
+msgid "no history at {path}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/history.py
+#, python-brace-format
+msgid "not a date such as 2026-11-01 or 2026-11-01T08:00:00+01:00: {value}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/history.py
+#, python-brace-format
+msgid "the history is of a newer version of the program ({version}): update it"
+msgstr ""
 
 #. security text (docs/translations.md): the recipient's
 #. acknowledgement came sooner than the message's way through the mesh allows
@@ -827,6 +1017,117 @@ msgstr ""
 msgid "the firmware does not support it"
 msgstr ""
 
+#: src/meshcore_home_gateway/cli/retire.py
+#, python-brace-format
+msgid "Home Assistant: {count} device to remove"
+msgid_plural "Home Assistant: {count} devices to remove"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/meshcore_home_gateway/cli/retire.py
+#, python-brace-format
+msgid "broker: {count} retained document to clear under {root}/"
+msgid_plural "broker: {count} retained documents to clear under {root}/"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/meshcore_home_gateway/cli/retire.py
+msgid "nothing done: add --yes to retire the gateway"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/retire.py
+msgid "retired: the container can go now"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/retire.py
+msgid "the gateway is online: stop its service first (systemctl stop meshcore-home-gateway), then retire it"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  airtime    {used} s used in the last hour, {available} s available, {budget} s per hour"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  battery    {volts} V"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  clock      the radio's is {seconds} s off the host's"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  contacts   {total} of {max}, {excluded} excluded from telemetry"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+msgid "  health     degraded (the journal says why)"
+msgstr ""
+
+#. the problems are names and values of the state document, in English
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  health     degraded ({problems})"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+msgid "  health     not reported"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+msgid "  health     ok"
+msgstr ""
+
+#. security text (docs/translations.md): another client took the radio's
+#. TCP link (SEC-003)
+#: src/meshcore_home_gateway/cli/status.py
+msgid "  link       another client took the TCP link in the last hour"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  queue      {count}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  radio      connected: {name}, {model}, firmware {firmware}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+msgid "  radio      not connected"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  telemetry  {status}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "  telemetry  {status} ({reason})"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+#, python-brace-format
+msgid "gateway {node}: {availability}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+msgid "never seen on this broker"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+msgid "offline"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/status.py
+msgid "online"
+msgstr ""
+
 #. the rule of node IDs and target aliases, after "use" or "alias must be".
 #: src/meshcore_home_gateway/config.py
 msgid "1-32 of a-z, 0-9, '-', '_', starting with a letter or digit, not ending with '-' or '_', and no two of them in a row"
@@ -870,12 +1171,6 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "cannot read {path}: not valid UTF-8 (byte {byte})"
-msgstr ""
-
-#. detail is the system's reason, such as "No such file or directory".
-#: src/meshcore_home_gateway/config.py
-#, python-brace-format
-msgid "cannot read {path}: {detail}"
 msgstr ""
 
 #. security text (docs/translations.md): the broker connection has no user

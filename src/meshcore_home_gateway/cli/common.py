@@ -75,6 +75,11 @@ def trn(singular: str, plural: str, n: int, /, **values: object) -> str:
     return _LANGUAGE.translator.plural(singular, plural, n, **values)
 
 
+def tr_text(text: object, /) -> str:
+    """A Text that code outside the command line made (a warning) in the command line's language."""
+    return _LANGUAGE.translator.render(text)
+
+
 def _safe_text(text: str) -> str:
     """For tab-separated lists and dialogs: control characters (tabs, line breaks, terminal
     escapes), format characters (direction overrides) and Unicode line separators become

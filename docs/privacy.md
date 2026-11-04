@@ -9,13 +9,15 @@ This page lists what is kept, where, for how long, and how to switch each part o
 Data protection law usually exempts what a household keeps for itself (in the EU, Art. 2(2)(c)
 GDPR); the exemption does not cover what leaves the household. Do not post dashboards,
 screenshots or copies of the history that show other people's names, keys or messages, and keep
-backups private and encrypted ([state and backup](deployment.md#4-operations)).
+backups private and encrypted ([state and backup](deployment.md#4-operations)). The archive of
+`meshcore-home-gateway backup` holds all of the state, and what `history export` prints holds what
+the history holds: treat both as the history itself.
 
 ## Where
 
 | Place | Who can read it | How long |
 | --- | --- | --- |
-| Retained topics on the broker (`meshcore/<node_id>/…`) | every client the broker lets read them ([securing the broker](mqtt-api.md#securing-the-broker)) | until the gateway replaces or clears them; after the gateway is removed, until you clear them ([operations](deployment.md#4-operations)) |
+| Retained topics on the broker (`meshcore/<node_id>/…`) | every client the broker lets read them ([securing the broker](mqtt-api.md#securing-the-broker)) | until the gateway replaces or clears them; after the gateway is removed, until you clear them (`meshcore-home-gateway retire`, [operations](deployment.md#4-operations)) |
 | Events on the broker (`message`, `node`, `contact`, `rx`, …) | the clients subscribed at the time | not kept by the broker |
 | `history.sqlite3` in `/var/lib/meshcore-home-gateway/` | the service, and whoever has the container or a backup | per kind, below ([`[history]`](configuration.md#history)) |
 | `state.json` and `telemetry-excluded.json` beside it | as the history | while the gateway needs them ([what each holds](deployment.md#4-operations)) |

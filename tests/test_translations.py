@@ -108,6 +108,7 @@ NOT_SECURITY_TEXTS = frozenset(
         "{key}: only used with tls = true",
         "{key}: set password or password_file, not both",
         "{key}: {path} holds no password",
+        "TLS: {detail}",
         "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container",
         # the installer's question for the user name, which is no secret
         "MQTT user name as set up on the broker (it was '{was}'); empty: none",

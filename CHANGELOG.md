@@ -113,6 +113,15 @@ format, the command line and Home Assistant discovery are public interfaces
   ([deployment.md](docs/deployment.md#what-the-script-does)).
 - A release's unit names its version in its second line, which tells after a rollback which
   version it came with.
+- Commands for an installation's life ([design.md](docs/design.md#69-command-line),
+  [deployment.md](docs/deployment.md#4-operations)): `status` shows what the running gateway
+  reports (its radio, clock, airtime, queue, telemetry, health and contacts; `--json` for scripts)
+  and exits with 1 while it is offline or degraded; `doctor` checks the configuration, the broker
+  (login, TLS, clients without a user name), the running gateway and the host (free space,
+  automatic updates); `backup FILE` writes the configuration and the state into an archive while
+  the service runs, without the broker password unless `--with-secrets`; `retire --yes` removes
+  the gateway from Home Assistant and clears its retained documents before its container goes;
+  `history export` prints the history's messages, positions or readings as JSON lines or CSV.
 
 ### Changed
 
