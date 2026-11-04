@@ -44,6 +44,13 @@ format, the command line and Home Assistant discovery are public interfaces
   added, other people's radios, only their keys and types, no names, times or signal, also in the
   history and in the select *Add heard node*; `off` nothing but the keys of look-alikes
   ([configuration.md](docs/configuration.md#contacts)).
+- [`docs/threat-model.md`](docs/threat-model.md): the assets, the actors, seven trust boundaries
+  and what stands in the way at each; design §7 is now its summary, and every decision record
+  names the boundaries it touches. [ADR 0029](docs/decisions/0029-what-a-contact-is-trusted-with.md)
+  states what a contact of the radio is trusted with, design §11.1 the choices that had no record.
+- [`docs/architecture.md`](docs/architecture.md), the short way in; the observer, Home Assistant
+  and telemetry have design documents of their own, telemetry with state and sequence diagrams
+  ([design §6](docs/design.md#6-detailed-design) lists where each section went).
 - [`docs/privacy.md`](docs/privacy.md): what the gateway keeps of the household and of other
   people, where, for how long and how to switch it off; a *Privacy* section in the README.
 - `[telemetry] ask` (default `all`): `household` asks only the companions the household included

@@ -158,7 +158,8 @@ the bus.
 
 | Document | Content |
 | --- | --- |
-| [`docs/design.md`](docs/design.md) | Design: goals, architecture, interfaces, security, failure modes, testing |
+| [`docs/architecture.md`](docs/architecture.md) | The short way in: the parts, how a message travels, what is kept, where to look |
+| [`docs/design.md`](docs/design.md) | Design: goals, architecture, interfaces, security, failure modes, testing; with [the observer](docs/design-observer.md), [Home Assistant](docs/design-home-assistant.md) and [telemetry](docs/design-telemetry.md) in documents of their own |
 | [`docs/threat-model.md`](docs/threat-model.md) | Assets, actors, trust boundaries and what stands in the way |
 | [`docs/decisions/`](docs/decisions/README.md) | Architecture decision records |
 | [`docs/mqtt-api.md`](docs/mqtt-api.md) | Topics and payloads |
