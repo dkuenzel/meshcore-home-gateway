@@ -1677,7 +1677,7 @@ def test_interactive_reconfigure_offers_the_current_settings(host: Host) -> None
     result = run_installer(host, "--reconfigure", "105", dialog=dialog)
     assert result.returncode == 0, result.stderr
     dialogs = host.dialogs()
-    assert "old.example.org" in dialogs[1]  # the current value is the default
+    assert dialogs[1][-1] == "old.example.org"  # the current value is the default
     assert "--defaultno" in dialogs[2]  # TLS as it is: off
     channels = next(c for c in dialogs if "Channels to send to" in c)
     assert channels[-9:] == ["0", "Public", "off", "1", "Alerts", "on", "2", "public", "off"]
