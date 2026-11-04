@@ -1127,7 +1127,15 @@ reasons (security review 2026-11, ARC-017).
 ## 12 Open questions and future work
 
 * BLE transport as a further adapter, for radios without USB data or WiFi.
-* MQTT 5 features: message expiry for send requests, response topics for correlation.
+* The defaults that touch privacy (published public channels, heard nodes, telemetry of every
+  contact): the settings exist and the installer gives a new installation the privacy-friendly
+  values; whether 2.0.0 changes them for existing configurations is for the maintainer to decide.
+* An acknowledgement proves knowledge of the text, not receipt
+  ([protocol.md](protocol.md#5-semantics)); proving receipt needs a change of the firmware
+  (SEC-001).
+* What the security and architecture review of 2026-11 deferred, each with the condition that
+  brings it back, is in its
+  [triage log](audit/2026-11-security-architecture-review/13-triage-log.md).
 
 ## 13 Roadmap: the mesh observer
 
