@@ -48,7 +48,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | SEC-010 | fix | The history keeps node rows only for the contacts and the heard nodes the gateway keeps (the finding's option 3, tighter than a row cap), for 7 days as ADR 0016 says. No `[history] nodes_days` setting, as first planned: beyond the 7 days of the memory it would change nothing | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | SEC-011 | fix | The `nodes` document coalesced (at most every 30 s while only heard nodes change); no table read after a `NEW_ADVERT` on firmware that never uses it for a contact; once-heard nodes evicted before nodes heard again | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | SEC-012 | fix | `[messages] publish_channels = "targets"` publishes only the channels the household configured (new installations get it; the default stays `all` until the 2.0.0 decision); a rate limit per channel; documented | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43), [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
-| SEC-013 | fix | A rate limit per sender on what a message produces (events, history), commands still judged; the residual risk (the radio acknowledges before the gateway sees anything) in the threat model. Extending the acknowledgement wait by the radio's queue is not done: its statistics are read once a minute | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43), pending: threat-model |
+| SEC-013 | fix | A rate limit per sender on what a message produces (events, history), commands still judged; the residual risk (the radio acknowledges before the gateway sees anything) in the threat model. Extending the acknowledgement wait by the radio's queue is not done: its statistics are read once a minute | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43), [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | SEC-014 | fix | Malformed pushes logged at most once a minute with a count; a run of them ends the session, which the reconnect resynchronises | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
 | SEC-015 | fix | A privacy section on what is kept about bystanders and for how long; heard nodes 7 days; `[contacts] heard_nodes` minimises or switches off what is kept of strangers. Redacting positions from the opt-in `rx` diagnostics is rejected: it would make the diagnostics wrong; documented instead | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
 | SEC-016 | fix | `[telemetry] ask = "household"` asks only contacts the household included (protected contacts are); new installations get it from the installer; README states the gateway's side | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
@@ -58,8 +58,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| ARC-001 | fix | `docs/threat-model.md` with the seven boundaries and the actors, design §7 as its summary, a boundary paragraph required in the record template | pending: threat-model |
-| ARC-002 | fix | ADR 0029 states what a contact is trusted with; the household mark (SEC-016) and the exposure setting (SEC-008) are its mechanisms | pending: threat-model |
+| ARC-001 | fix | `docs/threat-model.md` with the seven boundaries and the actors, design §7 as its summary, a boundary paragraph required in the record template | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
+| ARC-002 | fix | ADR 0029 states what a contact is trusted with; the household mark (SEC-016) and the exposure setting (SEC-008) are its mechanisms | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | ARC-003 | fix | A `ports` module with the radio events and the radio port the application uses; the architecture test forbids the application modules to import the adapters | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
 | ARC-004 | fix | One state store for `state.json`, loaded once, every section in memory, written once per change set at the status tick and at once for what a crash must not lose (the ledger, the kept documents and advert checks, the schedule after a flood, the profile's attempts) | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | ARC-005 | fix | The message budget's level is kept across restarts, never below what one long message needs, so the first alert after a restart still goes out at once; ADR 0008 names the radio's own limiter as the regulatory backstop | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
@@ -74,7 +74,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ARC-014 | fix | `[mqtt] protocol = "5"` as an option: message expiry, correlation data and user properties; 3.1.1 stays the default | [#60](https://github.com/dkuenzel/meshcore-home-gateway/pull/60) |
 | ARC-015 | fix | `[homeassistant] contact_entity_prefix` for a second gateway; the guide shows one `person` for two trackers | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | ARC-016 | fix | A "tested with" table in `docs/home-assistant.md`, kept per release, and a checklist step against the newest Home Assistant. A CI job against an unpinned Home Assistant is rejected: it would install releases inside the cooldown the dependency policy keeps out | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| ARC-017 | fix | The eight choices recorded as paragraphs of design §11 | pending: threat-model |
+| ARC-017 | fix | The eight choices recorded as paragraphs of design §11 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 
 ## Code quality
 
@@ -84,7 +84,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-002 | fix | The hourly purge runs in a thread on a connection of its own, in one transaction; the state store (ARC-004) bounds the writes of `state.json`; the loop lag (CODE-001) shows whether more is needed | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | CODE-003 | fix | `slugs` of contacts that left the table kept for 90 days and at most 1 000 (the newest), `radio_profile` for the current radio and the two saved before it | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | CODE-004 | fix | By the single store: a section never re-reads the file | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
-| CODE-005 | fix | `cli.py` becomes a package of command modules, `bridge.py` is split (ARC-009) and its tests follow its parts; the tests of the observer and of the telemetry poller stay one file each, as each specifies one module; state and sequence diagrams for the telemetry subsystem | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57), pending: threat-model |
+| CODE-005 | fix | `cli.py` becomes a package of command modules, `bridge.py` is split (ARC-009) and its tests follow its parts; the tests of the observer and of the telemetry poller stay one file each, as each specifies one module; state and sequence diagrams for the telemetry subsystem | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57), [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | CODE-006 | fix | Every reference to the sprint's "design 6c" decisions replaced by the section or record that holds the rule; a test that design references in the code resolve | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-007 | fix | The `# fmt: skip` markers removed in one mechanical commit; the formatter's output is the style | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-008 | fix | Through ARC-012 (counters, rate-limited logs) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
@@ -114,15 +114,15 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | DOC-002 | fix | Design §6.1, §8 and the troubleshooting row name the sender's and the host's clocks; the warning text names the adverts | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | DOC-003 | fix | The "before the first release" paragraphs and the 0.1.0 example go; the repository description follows the README | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37); the description: repository settings, 2026-11-02 |
 | DOC-004 | fix | Heard nodes are kept 7 days in the history too, as ADR 0016 says (SEC-010) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
-| DOC-005 | fix | Through ARC-001 | pending: threat-model |
+| DOC-005 | fix | Through ARC-001 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | DOC-006 | fix | `SECURITY.md` says which versions get fixes, how soon a report is acknowledged and that advisories are published | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-007 | fix | The README says whom the gateway asks, and that a companion answers only if allowed | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-008 | fix | Through SEC-001: one sentence wherever `confirmed` is explained | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
 | DOC-009 | fix | Through SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | DOC-010 | fix | A "What the gateway keeps" section (household and bystanders, where, how long, how to switch it off): `docs/privacy.md`, with SEC-015 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
-| DOC-011 | fix | The design document split into a core and one document per subsystem, with state and sequence diagrams and a table of where each section moved | pending: threat-model |
+| DOC-011 | fix | The design document split into a core and one document per subsystem, with state and sequence diagrams and a table of where each section moved | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | DOC-012 | fix | "Gateway" in prose, "bridge" for the module, a one-line glossary | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| DOC-013 | fix | `docs/architecture.md`: the short way in | pending: threat-model |
+| DOC-013 | fix | `docs/architecture.md`: the short way in | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | DOC-014 | fix | Design §6.5's table says that it is a subset and points to `docs/mqtt-api.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | DOC-015 | fix | Documented, not exposed: `[history]` in `configuration.md` says which node rows are kept and for how long, and why it is no setting (SEC-010) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | DOC-016 | fix | The backup section says what each file holds, that the password is in the configuration, that the state files belong together and to stop the service first | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -205,11 +205,11 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52), [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
 | IMP-024 | fix | Through OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
-| IMP-026 | fix | Through ARC-001 | pending: threat-model |
+| IMP-026 | fix | Through ARC-001 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | IMP-027 | fix | Through SUP-001 (code owners, checklist); identity and cooldown deferred to the maintainer | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-028 | fix | Through SUP-002 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-029 | fix | Through SUP-005 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
-| IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55), pending: threat-model |
+| IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55), [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | IMP-031 | fix | Through ARC-005 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-032 | fix | `[messages] alert_targets`: alerts overtake the queue and go between two attempts of a message in flight. Per target, not per request: a JSON envelope would change what a text that looks like JSON means, and the installer's answers carry no per-target setting (as for `hidden_targets`, SEC-008); a second target for the same recipient gives a request the choice | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-033 | fix | Through OPS-007 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
@@ -262,10 +262,10 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | --- | --- | --- | --- |
 | RES-001 | accept | Acknowledged; the consequence moves to `docs/protocol.md` §5 with SEC-001 | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
 | RES-002 | accept | Acknowledged; already in `docs/protocol.md` §5, the clock consequence added with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
-| RES-003 | accept | Acknowledged; the scale of the cost goes to design §7.4 | pending: threat-model |
+| RES-003 | accept | Acknowledged; the scale of the cost goes to design §7.4 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | RES-004 | accept | Acknowledged; the table goes to `docs/protocol.md` §7 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-005 | accept | Acknowledged; turned into flood tests (SEC-010, SEC-011) | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
-| RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | pending: threat-model |
+| RES-006 | accept | Acknowledged; the privacy section refers to it (not legal advice) | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
 | RES-007 | accept | Acknowledged; moves to `docs/protocol.md` with SEC-002 | [#39](https://github.com/dkuenzel/meshcore-home-gateway/pull/39) |
 | RES-008 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
 | RES-009 | accept | Acknowledged; turned into a test (CODE-001) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
