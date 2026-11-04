@@ -148,10 +148,10 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | OPS-005 | fix | `After=time-sync.target`, `MemoryMax=`, `@obsolete` in the system call filter; `IPAddressAllow=` documented as an option | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-006 | fix | Through ARC-013 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | OPS-007 | fix | A troubleshooting row, a warning at every connect on untested firmware, `manage_reason` in the `contacts` index, a turnaround target for new firmware (EXT-020) | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
-| OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), pending: cli-ops |
+| OPS-008 | fix | The backup section (DOC-016) and a `backup` command (IMP-016) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37), [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | OPS-009 | fix | A journald limit from the installer, free disk space in the health section, the `node` cap (SEC-010) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-010 | fix | A radio over TCP and a broker without a user name need a confirmation, and the TLS question says what crosses the network in the clear (SEC-003, SEC-004); the final message names the posture: TLS or not, the user name or none, a TCP radio without authentication | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
-| OPS-011 | fix | The health section (ARC-012) and a `status` command (IMP-016) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), pending: cli-ops |
+| OPS-011 | fix | The health section (ARC-012) and a `status` command (IMP-016) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | OPS-012 | accept | An installation needs Debian's mirror; an offline installation is a feature nobody asked for | – |
 | OPS-013 | fix | `apt-get clean` after the installation | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | OPS-014 | fix | A sentence on time zones in the operations section | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
@@ -162,7 +162,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | OPS-019 | accept | Documented with the full path | – |
 | OPS-020 | accept | Nothing to change | – |
 | OPS-021 | fix | The installer refuses a device another container already passes through | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
-| OPS-022 | fix | A `retire` command (IMP-016) | pending: cli-ops |
+| OPS-022 | fix | A `retire` command (IMP-016) | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 
 ## Supply chain and release
 
@@ -195,7 +195,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-013 | fix | Through ARC-012 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-014 | fix | Through ARC-013 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | IMP-015 | fix | Through ARC-014 | pending: mqtt5 |
-| IMP-016 | fix | `status`, `backup` and `retire` commands | pending: cli-ops |
+| IMP-016 | fix | `status`, `backup` and `retire` commands | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | IMP-017 | fix | Through CODE-009 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | IMP-018 | fix | Through SEC-012 and SEC-013 | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
 | IMP-019 | fix | Through SEC-010 and SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
@@ -226,7 +226,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-044 | fix | Through CODE-023 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-045 | fix | Through CODE-007 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | IMP-046 | fix | Through DOC-026 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| IMP-047 | fix | `history export` as JSON lines or CSV | pending: cli-ops |
+| IMP-047 | fix | `history export` as JSON lines or CSV | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | IMP-048 | fix | Through OPS-013 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-049 | fix | Reason codes as texts and the remove and telemetry controls on the dashboard. Heard repeaters on the map are rejected: the gateway keeps no stranger's position (ADR 0016) | pending: extensions |
 | IMP-050 | fix | A setting compiled out of the firmware is reported as `disabled`, apart from `unsupported` | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
@@ -250,7 +250,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | EXT-013 | fix | A configuration for `mqtt2prometheus` in `contrib/` | pending: extensions |
 | EXT-014 | defer | Coordinating two gateways is distributed-systems work for a concrete household; the cheap part (an entity prefix, one `person` for two trackers) is done with ARC-015 | – |
 | EXT-015 | defer | Translated guides follow the first translated catalogs (ADR 0019) and need a speaker's review | – |
-| EXT-016 | fix | A `doctor` command that runs the checks of the review's operational findings | pending: cli-ops |
+| EXT-016 | fix | A `doctor` command that runs the checks of the review's operational findings | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | EXT-017 | fix | `[targets.<alias>] prefix` and `suffix` | pending: extensions |
 | EXT-018 | fix | A script in the guide that sends and waits for `confirmed` | pending: extensions |
 | EXT-019 | fix | `make firmware-play` | pending: extensions |
