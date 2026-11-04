@@ -71,7 +71,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ARC-011 | accept | The machinery stays; the roadmap names the first language as its proof and a review of the installer's packs after it. The parser risk is covered by SUP-006 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-012 | fix | A `health` section in `state` and a *Gateway degraded* problem sensor; observer errors counted and their log rate-limited | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | ARC-013 | fix | The outgoing queue is kept across restarts (written at the stop, queued again at the start with each message's `id`, attempts and timestamp) and the acknowledgement in flight is awaited for up to 60 s within a stop timeout of 90 s; ADR 0028 supersedes the non-goal (the next free number: the threat model's record became 0029) | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
-| ARC-014 | fix | `[mqtt] protocol = "5"` as an option: message expiry, correlation data and user properties; 3.1.1 stays the default | pending: mqtt5 |
+| ARC-014 | fix | `[mqtt] protocol = "5"` as an option: message expiry, correlation data and user properties; 3.1.1 stays the default | [#60](https://github.com/dkuenzel/meshcore-home-gateway/pull/60) |
 | ARC-015 | fix | `[homeassistant] contact_entity_prefix` for a second gateway; the guide shows one `person` for two trackers | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | ARC-016 | fix | A "tested with" table in `docs/home-assistant.md`, kept per release, and a checklist step against the newest Home Assistant. A CI job against an unpinned Home Assistant is rejected: it would install releases inside the cooldown the dependency policy keeps out | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-017 | fix | The eight choices recorded as paragraphs of design §11 | pending: threat-model |
@@ -194,7 +194,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-012 | fix | Through SEC-009 | [#46](https://github.com/dkuenzel/meshcore-home-gateway/pull/46) |
 | IMP-013 | fix | Through ARC-012 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-014 | fix | Through ARC-013 | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
-| IMP-015 | fix | Through ARC-014 | pending: mqtt5 |
+| IMP-015 | fix | Through ARC-014 | [#60](https://github.com/dkuenzel/meshcore-home-gateway/pull/60) |
 | IMP-016 | fix | `status`, `backup` and `retire` commands | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | IMP-017 | fix | Through CODE-009 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | IMP-018 | fix | Through SEC-012 and SEC-013 | [#43](https://github.com/dkuenzel/meshcore-home-gateway/pull/43) |
@@ -273,7 +273,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | RES-011 | accept | Acknowledged; moves to `docs/platform-notes.md` with SEC-008 | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | RES-012 | accept | Acknowledged; moves to `docs/platform-notes.md` with SUP-003 | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
 | RES-013 | accept | Acknowledged; moves to `docs/platform-notes.md` with OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
-| RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | pending: mqtt5 |
+| RES-014 | accept | Acknowledged; moves to `docs/platform-notes.md` with ARC-014 | [#60](https://github.com/dkuenzel/meshcore-home-gateway/pull/60) |
 | RES-015 | accept | Acknowledged; moves to `docs/protocol.md` §2 (IMP-003 deferred) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-016 | accept | Acknowledged; verified, moves to `docs/protocol.md` (DOC-022) | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | RES-017 | accept | Acknowledged; moves to `docs/protocol.md` §1 with SEC-003 | [#42](https://github.com/dkuenzel/meshcore-home-gateway/pull/42) |
