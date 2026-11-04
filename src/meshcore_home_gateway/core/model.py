@@ -81,6 +81,8 @@ class Target:
     kind: MessageKind
     public_key: str | None = None  # contact targets: full key, 64 hex digits
     channel_index: int | None = None  # channel targets
+    prefix: str = ""  # put before and after every text sent to it, as written (EXT-017)
+    suffix: str = ""
 
     def __post_init__(self) -> None:
         if self.kind is MessageKind.CONTACT and self.public_key is None:

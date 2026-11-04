@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import re
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
+from homeassistant.util import slugify
 from pytest_homeassistant_custom_component.common import async_fire_mqtt_message
 
 from meshcore_home_gateway import __version__
@@ -501,7 +503,9 @@ async def test_the_documented_automations_work(
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     await fire(hass, TOPICS.availability, "online", retain=True)
     automations = guide_automations()
-    assert len(automations) == 9  # the contacts' one: tests/test_manage_contacts.py
+    # the contacts' one: tests/test_manage_contacts.py; the one calling the guide's script to
+    # send and wait, here only set up: test_the_guides_script_waits_for_its_own_final_event
+    assert len(automations) == 10
     telemetry = {"Handheld battery low", "Mesh handheld not answering", "Alice left home"}
     assert telemetry <= {a["alias"] for a in automations}  # tests/test_telemetry.py, with Alice
     assert await async_setup_component(hass, "persistent_notification", {})
@@ -607,6 +611,65 @@ def guide_block(start: str) -> dict[str, Any]:
     (block,) = [b for b in blocks if b.startswith(start)]
     loaded: dict[str, Any] = yaml.safe_load(block)
     return loaded
+
+
+async def test_the_guides_script_waits_for_its_own_final_event(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """EXT-018: the script sends through the target's notify entity, takes the `id` of the first
+    delivery event for that target and returns its request's final event: the events of other
+    requests do not end it, and a suspect acknowledgement is no confirmation."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    script = guide_block("alias: Send over the mesh and wait")
+    name = slugify(script["alias"])
+    assert await async_setup_component(hass, "script", {"script": {name: script}})
+    await hass.async_block_till_done()
+
+    async def until(check: Callable[[], bool]) -> None:
+        for _ in range(500):  # the script waits in a task of its own: no async_block_till_done
+            if check():
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError("timed out")
+
+    async def send(*events: DeliveryEvent) -> Any:
+        mqtt.async_publish.reset_mock()
+        call = asyncio.ensure_future(
+            hass.services.async_call(
+                "script",
+                name,
+                {"recipient": "operator", "message": "1.10"},  # a text, not a number
+                blocking=True,
+                return_response=True,
+            )
+        )
+        await until(lambda: bool(mqtt.async_publish.call_args_list))
+        (sent,) = [c.args[:3] for c in mqtt.async_publish.call_args_list]
+        assert sent == (TOPICS.send("operator"), "1.10", 1)
+        for event in events:
+            async_fire_mqtt_message(hass, TOPICS.delivery, json.dumps(delivery_payload(event)))
+            await asyncio.sleep(0.05)
+        return await asyncio.wait_for(call, 5)
+
+    def event(ident: str, state: DeliveryState, target: str = "operator", **more: Any) -> Any:
+        return DeliveryEvent(id=ident, target=target, state=state, text="1.10", **more)
+
+    confirmed = await send(
+        event("a", DeliveryState.QUEUED),
+        event("b", DeliveryState.CONFIRMED, target="alerts", suspect=False),  # another request
+        event("a", DeliveryState.SENT, attempt=1),
+        event("a", DeliveryState.CONFIRMED, attempt=1, rtt_ms=2300, suspect=False),
+    )
+    assert confirmed == {"confirmed": True, "event_type": "confirmed", "reason": None}
+    suspect = await send(
+        event("c", DeliveryState.QUEUED),
+        event("c", DeliveryState.CONFIRMED, attempt=1, rtt_ms=10, suspect=True),
+    )
+    assert suspect == {"confirmed": False, "event_type": "confirmed", "reason": None}
+    duplicate = await send(event("d", DeliveryState.DUPLICATE))
+    assert duplicate == {"confirmed": False, "event_type": "duplicate", "reason": None}
+    assert problems(caplog) == []
 
 
 async def test_the_markdown_card_of_the_first_steps_shows_the_last_message(

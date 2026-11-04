@@ -806,6 +806,17 @@ radio, the link nor the mesh carries. The secret is 160 random bits from
 `meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
 stops the service rather than let commands pass without codes.
 
+**Answers** (EXT-009). With `[commands] reply`, the bridge answers the sender of a published
+command (`ok: <word>`) and, with `all`, of a command it refused after the sender checks passed
+(`rejected: <reason>`: replay, age, code, state file, broker). Before them nothing is answered:
+an answer to `sender_unknown`, `sender_ambiguous`, `sender_not_allowed` or `sender_unverified`
+would tell whoever sent the frame the command words and the state of its key. The answer goes to
+the full key the checks resolved, encrypted to that contact, through the outbox like any message
+(queue, airtime budget, events), without the duplicate check: the inbox judged each command once,
+and the same command sent again deserves its answer again. The checks drop an identical copy of a
+command's packet first, so a replay costs at most one answer per rate-limit token of that sender
+(§6.4).
+
 ### 7.4 Residual risks
 
 * A contact can keep the radio busy with direct messages: the firmware acknowledges each before

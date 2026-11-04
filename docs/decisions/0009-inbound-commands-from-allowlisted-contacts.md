@@ -149,4 +149,10 @@ command. The hardware checklist repeats the restart case.
   gateway clock or the one before or after, each step once), which authenticates the text
   whatever reached the gateway: a host posing as a radio over TCP or an added look-alike cannot
   command without the secret. The prefix checks stay; senders without a secret keep them alone.
+* Amended on 2026-11-05 after the security review of 2026-11 (EXT-009): `[commands] reply`
+  answers the sender by direct message, `ok: <word>` when the command was published and, with
+  `all`, `rejected: <reason>` when the checks identified the sender but refused the command
+  (replay, age, code, state file, broker). A sender the checks did not identify gets no answer,
+  which would tell a stranger the words and that its key is not allowed. The answer goes through
+  the queue and the airtime budget like any message; it is off by default.
 * Revisit if MeshCore adds signed commands or a challenge–response mechanism for companion clients.

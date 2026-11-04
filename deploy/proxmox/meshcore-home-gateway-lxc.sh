@@ -1159,7 +1159,7 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
     || die "cannot read the radio's contacts"
 
   for key in "${!OUT[@]}"; do  # current targets keep their aliases when selected again
-    [[ $key == target.* ]] || continue
+    [[ $key == target.* && $key != target.*.* ]] || continue  # not a prefix or suffix
     alias_of[${OUT[$key]}]+="${alias_of[${OUT[$key]}]:+ }${key#target.}"
     case ${OUT[$key]} in
       channel:*) current_channels+=",${OUT[$key]#channel:}" ;;
@@ -1226,6 +1226,9 @@ choose_targets() {  # read channels and contacts from the radio and ask which to
       unset 'OUT[commands.senders]' 'OUT[commands.words]'
     fi
   fi
+  for key in "${!OUT[@]}"; do  # the prefix and suffix of a target go with it
+    if [[ $key == target.*.* && ! -v "OUT[${key%.*}]" ]]; then unset "OUT[$key]"; fi
+  done
 }
 
 choose_profile() {  # the radio's name, and what the managed profile changes (ADR 0020)
@@ -1340,7 +1343,7 @@ drop_offered() {  # drop_offered KIND OFFERED: forget the targets the dialog ask
   local kind=$1 key ref
   local -n offered=$2
   for key in "${!OUT[@]}"; do
-    [[ $key == target.* && ${OUT[$key]} == "$kind":* ]] || continue
+    [[ $key == target.* && $key != target.*.* && ${OUT[$key]} == "$kind":* ]] || continue
     ref=${OUT[$key]#"$kind":}
     if [[ -v "offered[$ref]" ]]; then
       unset "OUT[$key]"

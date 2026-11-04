@@ -53,6 +53,7 @@ from meshcore_home_gateway.ports import (
     RadioEvent,
     RadioPort,
     RadioProfileHook,
+    SendRequest,
     SessionFactory,
     Transport,
 )
@@ -244,6 +245,11 @@ def gateway(
         ledger=ledger,
         activity=outbox.activity,
         telemetry=poller,
+        # the answer to a command goes as any message (queue, airtime budget, events), but it
+        # is no duplicate: the inbox judged each command once
+        reply=lambda key, text: outbox.accept(
+            SendRequest(key, text.encode(), False, contact=True), deduplicate=False
+        ),
         monotonic=monotonic,
         wall_clock=wall_clock,
     )

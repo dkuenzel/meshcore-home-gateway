@@ -758,8 +758,8 @@ as the entities do. The file holds the names of the contacts on the map: do not 
 
 ## Examples
 
-Each example is one automation. Paste it in the automation editor (*Edit in YAML*), or add it
-under the `automation:` key of an existing configuration.
+Each example is one automation, unless it says it is a script. Paste it in the automation editor
+(*Edit in YAML*), or add it under the `automation:` key of an existing configuration.
 
 Send an alert to a channel when the smoke detector fires:
 
@@ -821,6 +821,94 @@ mode: queued
 
 Do not report a failed delivery over the mesh to the same target: when the radio cannot reach it,
 the report fails too and uses airtime.
+
+Send a message to a contact target and wait until it is confirmed, as a script (paste it in the
+script editor, *Edit in YAML*). It sends through the target's notify entity, takes the `id` of
+the first delivery event for that target, and returns when the request's final event comes:
+
+```yaml
+alias: Send over the mesh and wait
+mode: queued
+fields:
+  recipient:
+    name: Target
+    description: the alias of a contact target, as in send/<alias>
+    required: true
+    selector:
+      text:
+  message:
+    name: Message
+    required: true
+    selector:
+      text:
+sequence:
+  - variables:
+      delivery: event.meshcore_home_gateway_radio1_delivery
+      before: "{{ states(delivery) }}"
+  - action: notify.send_message
+    target:
+      entity_id: "notify.meshcore_home_gateway_radio1_send_{{ recipient | slugify }}"
+    data: "{{ {'message': message} }}"
+  - wait_template: >-
+      {{ states(delivery) != before and state_attr(delivery, 'target') == recipient }}
+    timeout: "00:00:30"
+  - if:
+      - "{{ not wait.completed }}"
+    then:
+      - variables:
+          result: {confirmed: false, event_type: null, reason: no_answer}
+      - stop: The gateway did not answer
+        response_variable: result
+  - variables:
+      id: "{{ state_attr(delivery, 'id') }}"
+  - wait_template: >-
+      {{ state_attr(delivery, 'id') == id and state_attr(delivery, 'event_type')
+         in ['confirmed', 'failed', 'expired', 'rejected', 'duplicate'] }}
+    timeout: "00:15:00"
+  - variables:
+      result:
+        confirmed: >-
+          {{ wait.completed and state_attr(delivery, 'event_type') == 'confirmed'
+             and not state_attr(delivery, 'suspect') }}
+        event_type: "{{ state_attr(delivery, 'event_type') if wait.completed else none }}"
+        reason: "{{ state_attr(delivery, 'reason') if wait.completed else 'timeout' }}"
+  - stop: Final event received
+    response_variable: result
+```
+
+An automation calls it as `script.send_over_the_mesh_and_wait` (not with `script.turn_on`,
+which does not wait) and escalates when the message was not confirmed:
+
+```yaml
+alias: Smoke alert that must arrive
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.kitchen_smoke
+    to: "on"
+actions:
+  - action: script.send_over_the_mesh_and_wait
+    data:
+      recipient: operator
+      message: "Smoke in the kitchen"
+    response_variable: sent
+  - if:
+      - "{{ not sent.confirmed }}"
+    then:
+      - action: persistent_notification.create
+        data:
+          title: Smoke alert not confirmed over the mesh
+          message: "{{ sent.event_type }} ({{ sent.reason }})"
+mode: queued
+```
+
+`confirmed` is false also for a `suspect` acknowledgement
+([mqtt-api.md](mqtt-api.md#what-confirmed-proves)); `reason` is `no_answer` when no delivery event
+came, for example for a target hidden from Home Assistant, which has no notify entity. The script
+is for contact targets: a channel message ends with `sent`, never `confirmed`. It tells its own
+request from another by the target alone until it has the `id`: while it runs, let nothing else
+send to the same target (`mode: queued` keeps its own runs apart). The 15 minutes cover the
+default `queue_ttl_s` of 10 minutes and the wait for the last acknowledgement. The whole `data` is
+one template for the reason given at the [form](#dashboard): the text stays a text.
 
 Get told when the gateway or its radio has been away for five minutes: the radio link turns off
 when the radio is unplugged or the link breaks, and every entity turns unavailable when the

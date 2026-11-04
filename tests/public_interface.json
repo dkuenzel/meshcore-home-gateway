@@ -6,6 +6,7 @@
     "airtime.burst_s",
     "commands.codes_file",
     "commands.max_age_s",
+    "commands.reply",
     "commands.senders",
     "commands.words",
     "contacts.heard_nodes",
@@ -64,6 +65,8 @@
     "radio.tcp_unauthenticated",
     "radio.transport",
     "target.<alias>",
+    "target.<alias>.prefix",
+    "target.<alias>.suffix",
     "telemetry.ask",
     "telemetry.enabled"
    ],
@@ -881,6 +884,11 @@
    "max": 86400.0,
    "min": 0.0,
    "type": "number"
+  },
+  "commands.reply": {
+   "answer": "str",
+   "default": "none",
+   "type": "string"
   },
   "commands.senders": {
    "answer": "list",

@@ -13,6 +13,7 @@ from dataclasses import replace
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import Deduplicator, KeyedRateLimit
 from meshcore_home_gateway.core.commands import (
+    Command,
     CommandDecision,
     Rejection,
     command_word,
@@ -108,14 +109,17 @@ class Inbox:
         ledger: CommandLedger,
         activity: OutboxActivity,
         telemetry: TelemetryPoller | None = None,
+        reply: Callable[[str, str], None] | None = None,
         monotonic: Callable[[], float],
         wall_clock: Callable[[], float],
     ) -> None:
         """`activity`: a message that may get an answer keeps the telemetry poller waiting;
-        `telemetry`: it hears of every companion that sent a message."""
+        `telemetry`: it hears of every companion that sent a message; `reply` sends a text to a
+        contact's key (`[commands] reply`, EXT-009)."""
         self.config = config
         self._bus, self._topics, self._observer = bus, topics, observer
         self._ledger, self._activity, self._telemetry = ledger, activity, telemetry
+        self._reply = reply
         self._mono, self._wall = monotonic, wall_clock
         self._targets = {t.alias: t for t in config.targets}
         self._messages: asyncio.Queue[MessageReceived] = asyncio.Queue()
@@ -189,13 +193,19 @@ class Inbox:
                 self._ledger.record(command.sender_key, command.sender_timestamp, command.code_step)
             except OSError:
                 log.exception("command not published: the state file cannot be written")
+                decision = CommandDecision(
+                    decision.word,
+                    rejection=Rejection.STATE_UNWRITABLE,
+                    sender_key=command.sender_key,
+                )
                 command = None
-                decision = CommandDecision(decision.word, rejection=Rejection.STATE_UNWRITABLE)
         if decision is not None and command is not None and not self._bus.connected:
             # queued until the reconnect, it would trigger automations at any later time
             log.warning("command %s refused: the broker is unreachable", decision.word)
+            decision = CommandDecision(
+                decision.word, rejection=Rejection.BROKER_UNAVAILABLE, sender_key=command.sender_key
+            )
             command = None
-            decision = CommandDecision(decision.word, rejection=Rejection.BROKER_UNAVAILABLE)
         if command is None and not self._received.allow(message.kind, origin, self._mono()):
             return  # judged, but neither published nor recorded: one sender or channel floods
         if self.config.messages.clean_received:  # judged as it came, published cleaned
@@ -239,6 +249,15 @@ class Inbox:
                 encode(command_payload(command, name, message.received_at)),
                 qos=0,
             )
+        if decision is not None:
+            self._answer(decision, command)
+
+    def _answer(self, decision: CommandDecision, command: Command | None) -> None:
+        """`[commands] reply`: the sender learns whether its command was published."""
+        text = self.config.commands.reply_text(decision)
+        reply_to = command.sender_key if command is not None else decision.sender_key
+        if self._reply is not None and text is not None and reply_to is not None:
+            self._reply(reply_to, text)
 
     async def _judge(self, event: MessageReceived) -> CommandDecision | None:
         """The command verdict; None if the message is no command at all (ADR 0009).

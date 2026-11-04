@@ -127,6 +127,18 @@ companions in the radio's contact table also through `contacts/<key>/send`
 | `channel` | channel index on the radio (0–255). The channel must be configured on the radio; `meshcore-home-gateway probe` lists them |
 | `contact` | the contact's full public key, 64 hex digits. The radio addresses contacts by the first 6 bytes; the gateway refuses to send if those match another contact too |
 
+Optionally also:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `prefix` | none | text put in front of every message to this target, spaces included, such as `"Shed: "`: printable characters, at most 32 bytes |
+| `suffix` | none | text put after every message to this target, such as `" #home"`; the same rules |
+
+The prefix and suffix count toward the radio's limit and stay whole when a text is cut
+(`truncate`); `ascii_only` transliterates them with the text. A request whose text is empty stays
+rejected (`empty`). The delivery events and the history carry the text as sent, and duplicates
+are judged on it. A message to `contacts/<key>/send` gets neither: that recipient is no target.
+
 ## `[messages]`
 
 | Key | Default | Meaning |
@@ -171,9 +183,21 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
 | `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error |
+| `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
+
+**Answers.** With `reply`, the sender learns on its phone whether the command reached the
+automations, without an automation of its own. The answer goes to the sender's full key as any
+message does: through the queue and the airtime budget, with `delivery` events (the `target` is
+the key) and a history entry; the same command sent again later is answered again. An answer
+says only that the command was published, not what the automation did; an automation that has
+more to say sends it to `contacts/<key>/send`. A sender that the checks did not identify
+(`sender_unknown`, `sender_ambiguous`, `sender_not_allowed`, `sender_unverified`) gets no answer:
+it would tell a stranger which words exist and that its key is not allowed. Each answer costs
+airtime; a replayed copy of an old command is answered with `rejected: replay` at most as often
+as the rate limit of received messages lets it through ([mqtt-api.md](mqtt-api.md#received-messages-received)).
 
 **Codes.** A sender with a code secret ends each command with the 6-digit code of an
 authenticator app (TOTP, RFC 6238: SHA-1, 30 s), as in `arm now 492039`; the code is not part of

@@ -275,7 +275,9 @@ class Delivery:
         while True:
             self.accept(await self._bus.requests.get())
 
-    def accept(self, request: SendRequest) -> None:
+    def accept(self, request: SendRequest, *, deduplicate: bool = True) -> None:
+        """`deduplicate=False`: the answer to a command, which the inbox judged once; the same
+        command sent again later deserves its answer again (EXT-009)."""
         event_id = secrets.token_hex(4)
         if request.correlation is not None:
             self._correlations[event_id] = request.correlation
@@ -289,7 +291,7 @@ class Delivery:
             return
         state, reason = DeliveryState.QUEUED, None
         key = (target.alias, text)
-        if self._dedup.is_duplicate(key, self._mono()):
+        if deduplicate and self._dedup.is_duplicate(key, self._mono()):
             state = DeliveryState.DUPLICATE
         else:
             nonce = target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
@@ -300,7 +302,8 @@ class Delivery:
                 self.activity.touch()
                 text = sent
             except asyncio.QueueFull:
-                self._dedup.forget(key)  # not taken, so a retry must not count as duplicate
+                if deduplicate:  # not taken, so a retry must not count as duplicate
+                    self._dedup.forget(key)
                 state, reason = DeliveryState.REJECTED, "queue_full"
         event = DeliveryEvent(event_id, target.alias, state, text=text, reason=reason)
         if state is DeliveryState.QUEUED:
@@ -350,7 +353,12 @@ class Delivery:
         else:
             raise _FinalError(DeliveryState.REJECTED, "unknown_target")
         try:
-            text = prepare_text(raw, self._text_policy(target, self._radio.info))
+            text = prepare_text(
+                raw,
+                self._text_policy(target, self._radio.info),
+                prefix=target.prefix,
+                suffix=target.suffix,
+            )
         except TextRejectedError as exc:
             raise _FinalError(DeliveryState.REJECTED, exc.reason) from None
         name_unknown = target.kind is MessageKind.CHANNEL and self._radio.info is None
@@ -573,7 +581,12 @@ class Delivery:
                 raise _FinalError(DeliveryState.FAILED, "channel_not_configured")
             if item.raw is not None:  # accepted before the radio's name was known: limit it now
                 try:
-                    final = prepare_text(item.raw, self._text_policy(target, info))
+                    final = prepare_text(
+                        item.raw,
+                        self._text_policy(target, info),
+                        prefix=target.prefix,
+                        suffix=target.suffix,
+                    )
                 except TextRejectedError as exc:
                     raise _FinalError(DeliveryState.FAILED, exc.reason) from None
                 if final != item.text:  # deduplicate on the text that is sent

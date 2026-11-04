@@ -81,21 +81,27 @@ class TextPolicy:
             raise ValueError(f"max_bytes must exceed {len(ELLIPSIS)}, got {self.max_bytes}")
 
 
-def prepare_text(text: str, policy: TextPolicy) -> str:
-    """Return the text as it will be sent, or raise TextRejectedError."""
+def prepare_text(text: str, policy: TextPolicy, *, prefix: str = "", suffix: str = "") -> str:
+    """Return the text as it will be sent, or raise TextRejectedError. A target's `prefix` and
+    `suffix` (EXT-017) go around a text that is not empty, count toward the limit and stay whole
+    when the text is cut."""
     cleaned = _clean(unicodedata.normalize("NFC", text))
     if policy.ascii_only:
         cleaned = _clean(_to_ascii(cleaned))  # transliteration turns wide spaces into " "
+        prefix, suffix = _to_ascii(prefix), _to_ascii(suffix)
     if not any(unicodedata.category(ch) != "Cf" and not ch.isspace() for ch in cleaned):
         raise TextRejectedError("empty", "text is empty after cleaning")
+    room = policy.max_bytes - len(prefix.encode("utf-8")) - len(suffix.encode("utf-8"))
     encoded = cleaned.encode("utf-8")
-    if len(encoded) <= policy.max_bytes:
-        return cleaned
+    if len(encoded) <= room:
+        return f"{prefix}{cleaned}{suffix}"
     if not policy.truncate:
         raise TextRejectedError(
-            "too_long", f"text too long: {len(encoded)} bytes, limit {policy.max_bytes}"
+            "too_long",
+            f"text too long: {len(encoded) + policy.max_bytes - room} bytes, "
+            f"limit {policy.max_bytes}",
         )
-    return cut_utf8(cleaned, policy.max_bytes - len(ELLIPSIS)).rstrip() + ELLIPSIS
+    return f"{prefix}{cut_utf8(cleaned, room - len(ELLIPSIS)).rstrip()}{ELLIPSIS}{suffix}"
 
 
 def with_nonce(text: str) -> str:
