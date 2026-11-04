@@ -119,9 +119,18 @@ format, the command line and Home Assistant discovery are public interfaces
   and exits with 1 while it is offline or degraded; `doctor` checks the configuration, the broker
   (login, TLS, clients without a user name), the running gateway and the host (free space,
   automatic updates); `backup FILE` writes the configuration and the state into an archive while
-  the service runs, without the broker password unless `--with-secrets`; `retire --yes` removes
-  the gateway from Home Assistant and clears its retained documents before its container goes;
+  the service runs, without the broker password and the code secrets unless `--with-secrets`;
+  `retire --yes` removes the gateway from Home Assistant and clears its retained documents before
+  its container goes;
   `history export` prints the history's messages, positions or readings as JSON lines or CSV.
+- Codes for commands ([configuration.md](docs/configuration.md#commands)): a sender with a code
+  secret in `[commands] codes_file` ends each command with the 6-digit code of an authenticator
+  app (TOTP, RFC 6238), which the gateway accepts once, for its clock's 30 seconds and those before
+  and after. The code authenticates the text, so neither a host posing as a radio over TCP nor a
+  node sharing the sender's key prefix can command without the secret.
+  `meshcore-home-gateway commands enrol KEY` writes a new secret and prints it as an `otpauth://`
+  line for the app. New rejection reasons `code_missing`, `code_invalid` and `code_reused`
+  ([mqtt-api.md](docs/mqtt-api.md#commands-command)); senders without a secret keep the rules.
 
 ### Changed
 

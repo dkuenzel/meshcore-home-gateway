@@ -338,6 +338,12 @@ GPS, a contact of A); for steps 51 and 52 C, another companion with GPS that A i
 | 53 | Update the gateway, or start a test installation with another version, without making the dashboard again | the amber version card with both versions; gone once the dashboard is made again |
 | 54 | A household user who is no administrator, on the phone; then open `/config/devices` as that user; then press `e`, search *Remove from radio* and open a contact's button (do not press it) | sees every view, sends with the form, cannot edit the dashboard; the device page is refused; the entity search opens the button with *Press*, as the guide says (anyone can remove a contact that way) |
 
+Step 55 needs an authenticator app (any TOTP app) on B's owner's phone.
+
+| # | Step | Expected |
+| --- | --- | --- |
+| 55 | Set `[commands] codes_file`, run `meshcore-home-gateway commands enrol <B's key>`, scan `qrencode -t ansiutf8 '<line>'` with the app, restart the service. B sends `status <code>`, the same text anew within 30 s, then `status` | a `command` event `status` with empty `args`; then `received` shows `code_reused`, then `code_missing` |
+
 ### Steps 29–45 on the simulated air
 
 The [firmware tests](#scenarios-of-the-hardware-checklist) play parts of steps 29–43 against the

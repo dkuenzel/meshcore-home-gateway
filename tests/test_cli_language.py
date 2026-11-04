@@ -14,6 +14,7 @@ import inspect
 import io
 import json
 import re
+import secrets
 import sqlite3
 import sys
 import tomllib
@@ -581,6 +582,9 @@ VALUES = (
     "meshcore-home-gateway listen --topic contact",
     "meshcore-home-gateway",
     "command",
+    "commands",
+    "enrol",
+    "A" * 32,  # the secret of 20 zero bytes, as `commands enrol` shows it
     "bogus",
     "maybe",
     "run",
@@ -1098,6 +1102,26 @@ def _operations(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return printed
 
 
+def _enrolled(tmp: Path, monkeypatch: pytest.MonkeyPatch, *more: str, key: str = KEY) -> Ran:
+    """`commands enrol` with a secret of zero bytes, and these settings."""
+    monkeypatch.setattr(secrets, "token_bytes", bytes)
+    settings = f'[commands]\nsenders = ["{KEY}"]\nwords = ["open"]\n' + "".join(more)
+    base = SUMMARIES["tcp"].split("[commands]")[0]
+    config = _written(tmp, "codes.toml", base + settings)
+    return _main(["commands", "enrol", key, "--config", config])
+
+
+def _codes(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """`commands enrol`: what it says on standard error; the otpauth:// line is for apps."""
+    codes_file = f'codes_file = "{tmp / "command-codes"}"\n'
+    return [
+        _enrolled(tmp, monkeypatch).err,
+        _enrolled(tmp, monkeypatch, codes_file).err,
+        _enrolled(tmp, monkeypatch, codes_file, key=OTHER).err,
+        _enrolled(tmp, monkeypatch, codes_file, key="hello").err,
+    ]
+
+
 SCENARIOS = {
     "check-config": _check_config,
     "probe": _probe,
@@ -1107,6 +1131,7 @@ SCENARIOS = {
     "usage": _usage,
     "dashboard": _dashboard,
     "operations": _operations,
+    "codes": _codes,
 }
 
 
@@ -1243,7 +1268,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
     with cli_common._speaking(translator):
         parser = cli._parser()
         helps = [command.format_help() for command in _parsers(parser)]
-    assert len(helps) == 22  # the program, its commands and theirs
+    assert len(helps) == 24  # the program, its commands and theirs
     if language == "xx":
         assert all(text.startswith("‹usage: ›") for text in helps)
     if language in {"hostile", "percents"}:  # argparse formats them: English
@@ -1305,6 +1330,8 @@ def _machine_outputs(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[R
         kept.close()
     for form in ("jsonl", "csv"):
         ran.append(_main(["history", "export", "--format", form, "--state-dir", str(tmp)]))
+    codes_file = f'codes_file = "{tmp / "command-codes"}"\n'
+    ran.append(_enrolled(tmp, monkeypatch, codes_file))
     ran.append(_main(["--version"]))
     by_id = re.compile(r"cli-[0-9a-f]{8}")  # a new request id each time
     machine = [Ran(r.status, by_id.sub("cli-<id>", r.out), "") for r in ran]

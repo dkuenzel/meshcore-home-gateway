@@ -1,10 +1,15 @@
 """Command policy: allowlisted contacts, command words, replay and age checks (ADR 0009)."""
 
+import dataclasses
+
 import pytest
 
 from meshcore_home_gateway.core.commands import (
+    CODE_STEP_S,
+    CommandDecision,
     CommandRules,
     Rejection,
+    code_at,
     command_word,
     evaluate_command,
 )
@@ -193,3 +198,117 @@ def test_far_future_timestamps_are_refused_even_without_the_age_check() -> None:
     edge = evaluate_command(dm("arm", ts=NOW + 86_400), rules, BOOK, {}, NOW)  # exactly a day
     assert edge is not None
     assert edge.command is not None
+
+
+# --- codes (IMP-002) ---------------------------------------------------------------------------
+
+SECRET = b"12345678901234567890"  # RFC 6238's test secret
+CAROL = "c3" * 32
+CODED = dataclasses.replace(RULES, senders=frozenset({ALICE, CAROL}), secrets=((ALICE, SECRET),))
+CODED_BOOK = ContactBook([Contact(ALICE, "Alice"), Contact(BOB, "Bob"), Contact(CAROL, "Carol")])
+STEP = int(NOW // CODE_STEP_S)
+
+
+def code(at: float = NOW, secret: bytes = SECRET) -> str:
+    return code_at(secret, int(at // CODE_STEP_S))
+
+
+def coded(
+    text: str, *, now: float = NOW, last: dict[str, int] | None = None, key: str = ALICE
+) -> CommandDecision | None:
+    return evaluate_command(dm(text, key=key), CODED, CODED_BOOK, {}, now, last_codes=last)
+
+
+@pytest.mark.parametrize(
+    ("unix_time", "expected"),
+    [
+        (59, "287082"),
+        (1_111_111_109, "081804"),
+        (1_111_111_111, "050471"),
+        (1_234_567_890, "005924"),
+        (2_000_000_000, "279037"),
+        (20_000_000_000, "353130"),
+    ],
+)
+def test_codes_are_rfc_6238s(unix_time: int, expected: str) -> None:
+    """RFC 6238's test values for SHA-1, in the 6 digits authenticator apps show."""
+    assert code_at(SECRET, unix_time // CODE_STEP_S) == expected
+
+
+def test_a_sender_with_a_secret_ends_its_commands_with_the_code() -> None:
+    decision = coded(f"ARM now please {code()}")
+    assert decision is not None
+    assert decision.command is not None
+    assert (decision.command.args, decision.command.code_step) == ("now please", STEP)
+    alone = coded(f"arm\n{code()}")
+    assert alone is not None
+    assert alone.command is not None
+    assert alone.command.args == ""
+
+
+@pytest.mark.parametrize(("steps", "accepted"), [(-1, True), (1, True), (-2, False), (2, False)])
+def test_a_code_may_be_a_time_step_off_and_no_more(steps: int, accepted: bool) -> None:
+    """The sender's phone and the host need not agree to the second (RFC 6238, section 5.2)."""
+    decision = coded(f"arm {code(NOW + steps * CODE_STEP_S)}")
+    assert decision is not None
+    assert decision.rejection is (None if accepted else Rejection.CODE_INVALID)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "arm now",
+        "arm",
+        "arm now 12345",
+        "arm now 1234567",
+        "arm now \u0661\u0662\u0663\u0664\u0665\u0666",
+    ],
+)
+def test_a_command_without_a_code_is_refused(text: str) -> None:
+    decision = coded(text)
+    assert decision is not None
+    assert decision.rejection is Rejection.CODE_MISSING
+
+
+def test_a_wrong_code_is_refused() -> None:
+    right = code()
+    wrong = f"{(int(right[0]) + 1) % 10}{right[1:]}"
+    for text in (f"arm {wrong}", f"arm {code(secret=b'another secret of 20b')}"):
+        decision = coded(text)
+        assert decision is not None
+        assert decision.rejection is Rejection.CODE_INVALID
+
+
+def test_a_code_serves_once() -> None:
+    """Whoever saw a code (a host that took the radio's TCP link) cannot use it again."""
+    for last, rejection in ((STEP, Rejection.CODE_REUSED), (STEP + 1, Rejection.CODE_REUSED)):
+        decision = coded(f"arm {code()}", last={ALICE: last})
+        assert decision is not None
+        assert decision.rejection is rejection
+    later = coded(f"arm {code()}", last={ALICE: STEP - 1, CAROL: STEP})
+    assert later is not None
+    assert later.command is not None
+
+
+def test_senders_without_a_secret_keep_the_rules() -> None:
+    decision = coded(f"arm now {code()}", key=CAROL)
+    assert decision is not None
+    assert decision.command is not None
+    assert (decision.command.args, decision.command.code_step) == (f"now {code()}", None)
+
+
+def test_the_other_checks_come_before_the_code() -> None:
+    replayed = evaluate_command(
+        dm(f"arm {code()}"), CODED, CODED_BOOK, {ALICE: int(NOW)}, NOW, last_codes={}
+    )
+    assert replayed is not None
+    assert replayed.rejection is Rejection.REPLAY
+    stranger = coded(f"arm {code()}", key=BOB)
+    assert stranger is not None
+    assert stranger.rejection is Rejection.SENDER_NOT_ALLOWED
+
+
+def test_the_rules_never_show_a_secret() -> None:
+    assert "1234567890" not in repr(CODED)
+    assert CODED.secret(ALICE) == SECRET
+    assert CODED.secret(CAROL) is None

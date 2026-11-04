@@ -169,9 +169,34 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
+| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
+
+**Codes.** A sender with a code secret ends each command with the 6-digit code of an
+authenticator app (TOTP, RFC 6238: SHA-1, 30 s), as in `arm now 492039`; the code is not part of
+`args`. The gateway accepts the code of the current 30 seconds of its clock and of those before
+and after, each code once (`code_missing`, `code_invalid`, `code_reused` otherwise,
+[mqtt-api.md](mqtt-api.md#commands-command)). A code authenticates the text whatever reached the
+gateway: a host that poses as a radio over TCP, or a node that shares an allowed sender's key
+prefix, cannot command without the secret. Senders without a secret keep the rules above. To
+give one a secret (or a new one, which ends the old):
+
+```sh
+# once: codes_file = "/etc/meshcore-home-gateway/command-codes" under [commands]
+meshcore-home-gateway commands enrol <full key>   # prints an otpauth:// line
+systemctl restart meshcore-home-gateway
+```
+
+The sender adds the line to an authenticator app: as text, as a QR code
+(`qrencode -t ansiutf8 '<line>'` shows one in the terminal), or by typing in the secret that
+`enrol` also prints. The file holds `<key> = "<base32 secret>"` lines; `enrol` writes it with
+mode 0640 and the configuration's group, and keeps the mode and group of a file that exists. A
+systemd credential of its name is read instead, as for the broker password
+([deployment.md](deployment.md#4-operations)). The phone's clock and the host's must agree within
+30 seconds; phones set theirs from the network. The code travels in the message's text: the
+`received` event and the history show it, which is harmless once the code is used.
 
 Commands that the gateway fetches while it connects are rejected: those that waited in the radio
 while the gateway was not running (restart, update, unplugged radio), and those that arrive during

@@ -181,7 +181,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
 | IMP-001 | fix | Through SEC-001 | [#48](https://github.com/dkuenzel/meshcore-home-gateway/pull/48) |
-| IMP-002 | fix | Optional per-sender TOTP codes for commands, with an enrolment command | pending: totp |
+| IMP-002 | fix | Optional per-sender TOTP codes for commands, with an enrolment command | [#59](https://github.com/dkuenzel/meshcore-home-gateway/pull/59) |
 | IMP-003 | defer | Incremental table reads would touch the full reads ADR 0009's look-alike memory relies on; after SEC-011 strangers' adverts no longer cause reads, so the gain is small. Back when contact re-reads show up as a load | – |
 | IMP-004 | fix | Through SEC-012 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |
 | IMP-005 | fix | Through SEC-016 | [#45](https://github.com/dkuenzel/meshcore-home-gateway/pull/45) |

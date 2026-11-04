@@ -164,6 +164,18 @@ def _summary(config: Config, login: str) -> list[str]:
             if words
             else []
         ),
+        *(
+            [
+                # Translators: security text (docs/translations.md): their commands need a code
+                trn(
+                    "  codes      {count} sender ends commands with a code",
+                    "  codes      {count} senders end commands with a code",
+                    len(config.commands.secrets),
+                )
+            ]
+            if config.commands.secrets
+            else []
+        ),
         tr(
             "  airtime    {budget:g} s per hour, burst {burst:g} s",
             budget=airtime.budget_s_per_hour,
