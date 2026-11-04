@@ -159,6 +159,9 @@ format, the command line and Home Assistant discovery are public interfaces
   asked, with the same switch, state, exclusions and inclusions. A sensor answers only a radio
   in its access list: `setperm <the gateway radio's key> 1` on the sensor
   ([companions.md](docs/companions.md#sensors)).
+- `make firmware-play` for contributors: the hardware checklist's household on the firmware's
+  simulated air, a local broker and the gateway, for exploring by hand until Ctrl-C
+  ([testing.md](docs/testing.md#tests-against-the-real-firmware)).
 - The dashboard's *Contacts* view has a card *Telemetry and removal* with each contact's switch
   *Telemetry* and button *Remove from radio*, for household users who open no device page; the
   last delivery step and the last contact event show their reason as a text, a reason without

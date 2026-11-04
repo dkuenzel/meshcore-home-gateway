@@ -31,7 +31,8 @@ FIRMWARE_BUILD ?= build/firmware
 FIRMWARE_TESTS ?= tests/firmware
 
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
-  translations firmware-fetch firmware firmware-test dist pyz release release-plan check hooks \
+  translations firmware-fetch firmware firmware-test firmware-play dist pyz release release-plan \
+  check hooks \
   clean audit
 
 help: ## List the targets
@@ -129,6 +130,12 @@ firmware: firmware-fetch ## Build MeshCore's companion and repeater natively (ne
 firmware-test: venv firmware ## The gateway against the real firmware on a simulated air
 	MESHCORE_HOME_GATEWAY_FIRMWARE=$(abspath $(FIRMWARE_BUILD)) $(BIN)/python -m pytest \
 	  $(FIRMWARE_TESTS)
+
+# EXT-019: radio A, a repeater and Bob's companion on the simulated air, a broker on 127.0.0.1 and
+# the gateway on A, until Ctrl-C (PLAY: its options, such as PLAY="--port 0 --hops 2").
+firmware-play: venv firmware ## A playground: the firmware's household, a broker and the gateway
+	MESHCORE_HOME_GATEWAY_FIRMWARE=$(abspath $(FIRMWARE_BUILD)) $(BIN)/python -m tests.firmware.play \
+	  $(PLAY)
 
 # The snapshot test fails until this runs (docs/development.md#compatibility). Review the
 # snapshot's diff like code: a removal or narrowing of what the last release had needs a

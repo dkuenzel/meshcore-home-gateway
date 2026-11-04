@@ -143,6 +143,15 @@ those need neither a compiler nor network; CI runs them in a job of their own.
   built, `.venv/bin/python -m pytest tests/firmware/test_paths.py` works too.
   `tests/firmware/air.py` is the air, in the test's process; `tests/firmware/node.py` starts a
   node; the fixtures in `tests/firmware/conftest.py` give a test the air and its nodes.
+- `make firmware-play` (EXT-019) keeps the hardware checklist's household running for a look by
+  hand: radio A on the gateway, a repeater and Bob's companion B with a GPS, set up as
+  [companions.md](companions.md) says, a Mosquitto broker on 127.0.0.1:1883 and the gateway's
+  service on A, with B as a target and a command sender. It prints the `mosquitto_sub` and
+  `mosquitto_pub` lines to watch and to send; a line typed is a direct message from B to the
+  gateway; Ctrl-C stops everything. `PLAY` passes options, such as `PLAY="--port 0 --hops 2"`;
+  the files (logs, the service's state) stay in a new temporary directory, or in `--directory`.
+  `tests/firmware/play.py` is built from the tests' parts; `test_playground.py` starts and
+  stops it once.
 
 Every node runs the EU/UK Narrow preset with CR 4/8 (869.618 MHz, 62.5 kHz, SF 8), the settings
 the hardware checklist assumes. Each node writes its packet log, debug output and, on the

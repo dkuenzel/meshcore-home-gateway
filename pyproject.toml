@@ -79,6 +79,7 @@ extend-function-names = ["tr", "tr_help", "trn", "N_", "ha_name", "N_ha"]
 "home-assistant/tests/**" = ["S101"]
 "tools/**" = ["T20"]
 "tests/manual/**" = ["T20"]  # a script that reports by printing
+"tests/firmware/play.py" = ["T20"]  # the playground reports by printing (EXT-019)
 "src/meshcore_home_gateway/cli/*.py" = ["T20"]  # the command line prints by design
 
 [tool.mypy]

@@ -43,6 +43,7 @@ the stand-in grows ([testing.md](../../docs/testing.md#testing-another-firmware-
 `gateway.py` runs the gateway's service on a node's serial port and the test's broker,
 `household.py` sets up the hardware checklist's households (the gateway's radio, a companion and
 repeaters), `app.py` plays a companion's phone app on the gateway's own codec, and `conftest.py`
-has the fixtures (the firmware `make firmware` built, the air and its nodes). The tests are the
+has the fixtures (the firmware `make firmware` built, the air and its nodes). `play.py` keeps a
+household, a broker and the gateway running for exploration (`make firmware-play`). The tests are the
 `test_*.py` files; [testing.md](../../docs/testing.md#scenarios-of-the-hardware-checklist) lists
 which step of the hardware checklist each one covers.
