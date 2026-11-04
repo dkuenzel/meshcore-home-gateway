@@ -16,12 +16,11 @@ from meshcore_home_gateway.config import ProfileConfig
 from meshcore_home_gateway.core import profile as policy
 from meshcore_home_gateway.core.contacts import look_alike
 from meshcore_home_gateway.core.profile import Applied, Mode, ProfileReport, Value
+from meshcore_home_gateway.ports import CommandFailedError, RadioPort
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import ContactFlag, ErrorCode
-from meshcore_home_gateway.radio.session import CommandFailedError
 
 if TYPE_CHECKING:
-    from meshcore_home_gateway.radio.session import CompanionSession
     from meshcore_home_gateway.state import ProfileRecords
 
 log = logging.getLogger(__name__)
@@ -40,7 +39,7 @@ _WHY = {
 }
 
 
-def live_values(session: CompanionSession) -> dict[str, Value | None]:
+def live_values(session: RadioPort) -> dict[str, Value | None]:
     """The managed settings as the radio reports them; None for what this firmware lacks."""
     info = session.info
     assert info is not None  # noqa: S101 - read at the start of the session
@@ -78,7 +77,7 @@ class RadioProfile:
         reports, self._reports = self._reports, []
         return reports
 
-    async def before_contacts(self, session: CompanionSession) -> None:
+    async def before_contacts(self, session: RadioPort) -> None:
         self.report = None  # until this connect has one: after_contacts needs its own
         info = session.info
         assert info is not None  # noqa: S101
@@ -175,7 +174,7 @@ class RadioProfile:
         )
         self._keep(report)
 
-    async def after_contacts(self, session: CompanionSession) -> bool:
+    async def after_contacts(self, session: RadioPort) -> bool:
         """Protected contacts on the radio, as favourites; True when the table changed."""
         report = self.report
         if not self._config.protect_contacts or not self._protected or report is None:
@@ -270,9 +269,7 @@ class RadioProfile:
 _OTHER = (policy.MANUAL_ADD, policy.TELEMETRY, policy.ADVERT_LOCATION)  # one command sets them
 
 
-def _frames(
-    session: CompanionSession, writes: Mapping[str, Value]
-) -> list[tuple[list[str], bytes]]:
+def _frames(session: RadioPort, writes: Mapping[str, Value]) -> list[tuple[list[str], bytes]]:
     """The setter frames for the planned writes: one per command, so the radio rewrites its
     preferences file once per command."""
     info = session.info

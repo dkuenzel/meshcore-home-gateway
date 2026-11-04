@@ -25,15 +25,20 @@ from meshcore_home_gateway import __version__
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import cli as cli_module
 from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
+from meshcore_home_gateway.cli import broker as cli_broker
+from meshcore_home_gateway.cli import config_cmd as cli_config
+from meshcore_home_gateway.cli import messages as cli_messages
+from meshcore_home_gateway.cli import run as cli_run
 from meshcore_home_gateway.config import MqttConfig, config_answers, load_config, parse_config
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.mqtt import client as client_module
+from meshcore_home_gateway.ports import ContactsRead
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command
-from meshcore_home_gateway.radio.session import ContactsRead
 from meshcore_home_gateway.radio.transport import SerialTransport, TcpTransport
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, JsonStateFile
+from meshcore_home_gateway.wiring import transport_for
 from tests.conftest import Broker
 from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio, TcpRadioServer
 from tests.test_mqtt_client import FakePaho
@@ -198,7 +203,7 @@ def test_config_render_syncs_the_file_and_its_directory(
         real_fsync(fd)
 
     monkeypatch.setattr(os, "fsync", fsync)
-    cli_module.write_private(output, "x = 1\n", None)
+    cli_config.write_private(output, "x = 1\n", None)
     assert synced == [("file", False), ("directory", True)]  # before and after the rename
     assert output.read_text(encoding="utf-8") == "x = 1\n"
 
@@ -209,8 +214,8 @@ def test_config_render_makes_its_directory_reachable_whatever_the_umask(tmp_path
     existing.mkdir(mode=0o700)
     previous = os.umask(0o077)
     try:
-        cli_module.write_private(tmp_path / "etc" / "gw" / "config.toml", "x = 1\n", None)
-        cli_module.write_private(existing / "config.toml", "x = 1\n", None)
+        cli_config.write_private(tmp_path / "etc" / "gw" / "config.toml", "x = 1\n", None)
+        cli_config.write_private(existing / "config.toml", "x = 1\n", None)
     finally:
         os.umask(previous)
     for directory in (tmp_path / "etc", tmp_path / "etc" / "gw"):
@@ -510,10 +515,10 @@ def test_probe_tcp_addresses(text: str, address: tuple[str, int]) -> None:
 
 
 def test_the_service_opens_the_configured_radio() -> None:
-    serial = cli_module.transport_for(load_config(EXAMPLE))
+    serial = transport_for(load_config(EXAMPLE))
     assert isinstance(serial, SerialTransport)
     assert serial.device == "/dev/serial/by-id/usb-Example_Radio_0001-if00"
-    tcp = cli_module.transport_for(
+    tcp = transport_for(
         parse_config(
             '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
             'host = "192.0.2.10"\nport = 5001\n'
@@ -530,10 +535,10 @@ def test_send_and_listen_log_in_with_the_configured_credentials(
     fake = FakePaho()
     monkeypatch.setattr(client_module, "make_paho_client", lambda _config: fake)
     with_login = MqttConfig(host="h", node_id="n", username="u", password="p")
-    assert cli_module._mqtt_client(with_login, "send") is fake
+    assert cli_broker.mqtt_client(with_login, "send") is fake
     assert ("username_pw_set", ("u", "p")) in fake.calls
     fake.calls.clear()
-    cli_module._mqtt_client(MqttConfig(host="h", node_id="n"), "listen")
+    cli_broker.mqtt_client(MqttConfig(host="h", node_id="n"), "listen")
     assert "username_pw_set" not in [name for name, _ in fake.calls]
 
 
@@ -595,7 +600,7 @@ def test_unreadable_tls_files_are_configuration_errors(
     command: list[str],
 ) -> None:
     """Exit code 78, so systemd does not restart the service in a loop over a missing file."""
-    monkeypatch.setattr(cli_module, "setup_logging", lambda _level: None)
+    monkeypatch.setattr(cli_run, "setup_logging", lambda _level: None)
     not_a_certificate = tmp_path / "ca.pem"
     not_a_certificate.write_text("not a certificate\n", encoding="utf-8")
     for files, key in [
@@ -689,7 +694,7 @@ def test_the_service_keeps_exclusions_in_their_file_and_readings_their_days(
         'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "[history]\nmessages_days = 7\npositions_days = 9\nreadings_days = 3.5\n"
     )
-    assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
+    assert asyncio.run(cli_run._serve(config, tmp_path)) == EX_OK
     assert retentions == [Retention(7.0, 9.0, readings_days=3.5)]
     (bridge,) = bridges
     assert bridge.observer.exclusions.exclude("a1" * 32)
@@ -715,7 +720,7 @@ def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file
         'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "[history]\nenabled = false\n[telemetry]\nenabled = false\n"
     )
-    assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
+    assert asyncio.run(cli_run._serve(config, tmp_path)) == EX_OK
     (bridge,) = bridges
     bridge.observer.publish_all()  # the broker connected: telemetry is off now
     stored = JsonStateFile(tmp_path / "state.json").load()  # written at once
@@ -740,7 +745,7 @@ def test_the_service_keeps_the_advert_checks_in_its_state_file(
         'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
         "[history]\nenabled = false\n[telemetry]\nenabled = false\n"
     )
-    assert asyncio.run(cli_module._serve(config, tmp_path)) == EX_OK
+    assert asyncio.run(cli_run._serve(config, tmp_path)) == EX_OK
     (bridge,) = bridges
     record = codec.decode(EmulatedContact(bytes.fromhex(key), "Alice", last_advert=at).record())
     assert isinstance(record, codec.ContactRecord)
@@ -991,7 +996,7 @@ def test_check_config_tries_the_broker_without_credentials(
         logins.append(mqtt.username)
         return _Answering(refused=mqtt.username is None and not anonymous)
 
-    monkeypatch.setattr(cli_module, "_mqtt_client", client)
+    monkeypatch.setattr(cli_broker, "mqtt_client", client)
     path = tmp_path / "config.toml"
     path.write_text(
         '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
@@ -1151,7 +1156,7 @@ def test_send_wait_knows_its_text_by_the_random_suffix() -> None:
     """`confirm_nonce` (SEC-001): the bridge names a direct request with the text as sent, the
     suffix included; a text that only begins like it is another request."""
     for nonce in (True, False):
-        watch = cli_module._DeliveryWatch("alice", "Smoke", {"confirmed"}, nonce=nonce)
+        watch = cli_messages._DeliveryWatch("alice", "Smoke", {"confirmed"}, nonce=nonce)
         for kind, event_id, text in (
             ("queued", "other", "Smoke alarm #0a1b2c3d"),
             ("queued", "mine", "Smoke #0a1b2c3d"),
@@ -1257,7 +1262,7 @@ def _read_packet(connection: socket.socket) -> tuple[int, bytes] | None:
 def test_send_fails_when_the_broker_does_not_confirm_the_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli_module, "PUBLISH_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(cli_broker, "PUBLISH_TIMEOUT_S", 0.5)
     broker = ScriptedBroker(ack_publish=False)
     try:
         assert main(["send", "--config", broker.config(tmp_path), "alerts", "x"]) == EX_FAILURE

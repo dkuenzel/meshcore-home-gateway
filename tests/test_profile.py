@@ -16,10 +16,11 @@ import pytest
 from meshcore_home_gateway.config import ProfileConfig
 from meshcore_home_gateway.core import profile as policy
 from meshcore_home_gateway.core.profile import Applied, Desired, Mode
+from meshcore_home_gateway.ports import RadioError, RadioEvent, RadioPort
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, ContactFlag
 from meshcore_home_gateway.radio.profile import RadioProfile
-from meshcore_home_gateway.radio.session import CompanionSession, RadioError, RadioEvent
+from meshcore_home_gateway.radio.session import CompanionSession
 from meshcore_home_gateway.state import JsonStateFile, ProfileRecords
 from meshcore_home_gateway.views import settings_document
 from tests.radio_emulator import SELF_KEY, START_TIME, EmulatedContact, EmulatedRadio
@@ -575,7 +576,7 @@ def test_a_bug_in_the_profile_does_not_keep_the_radio_away(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     class Broken(RadioProfile):
-        async def before_contacts(self, session: CompanionSession) -> None:
+        async def before_contacts(self, session: RadioPort) -> None:
             raise KeyError("bug")
 
     session = asyncio.run(connect(EmulatedRadio(), Broken(ProfileConfig())))

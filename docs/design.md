@@ -120,7 +120,11 @@ documents for Home Assistant and later front ends (§13).
 
 The core holds the rules and calculations and does no I/O. The application layer orchestrates. The
 adapters talk to the radio, the broker, the file system and systemd
-([ADR 0007](decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)).
+([ADR 0007](decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)). The application asks
+the radio and the bus through the ports (`ports`): the radio port with its events and errors, the
+transport, the bus and its requests. The adapters implement them, and
+`tests/test_architecture.py` checks that no application module names an adapter (ARC-003): a
+second radio adapter changes none of them.
 
 ```mermaid
 flowchart TB
@@ -131,15 +135,17 @@ flowchart TB
         SD[systemd<br/>sd_notify]
     end
     subgraph app [Application]
-        BR[bridge<br/>outbox · inbox · status]
+        BR[bridge<br/>outbox · inbox · announcer · status]
     end
     subgraph core [Core: pure]
         TX[text] --- AT[airtime] --- BU[budget · dedup]
         CO[commands] --- CT[contacts] --- MO[model]
     end
+    PO[ports<br/>radio · bus]
     PR[protocol<br/>framing · codec] --> SES
-    SES <--> BR
-    MQ <--> BR
+    SES -. implements .-> PO
+    MQ -. implements .-> PO
+    BR --> PO
     ST --- BR
     SD --- BR
     BR --> core
@@ -161,9 +167,17 @@ flowchart TB
 | `protocol.codec` | Command encoders and response decoders. |
 | `protocol.packet` | On-air packets from the radio's packet log, and the adverts in them. |
 | `views` | Providers: the documents of the MQTT API, built from the core's state (pure). |
+| `ports` | What the application asks of the radio and the bus and what they give it: the radio port, its events and errors, the transport, the bus and its requests (ARC-003). |
 | `radio.transport` | Serial port (termios) and TCP byte streams. |
 | `radio.session` | Connection handshake, request/response, pushes, message sync, time sync. |
-| `bridge` | Outbound queue with delivery and retries, inbound handling, status reporting, supervision. |
+| `bridge` | Supervises the radio, hands out its events and runs the tasks of all parts on one event loop (§5.2). |
+| `outbox` | The outgoing queue (alerts first, kept across a stop) and its delivery: validation, deduplication, attempts, acknowledgements, retries, a delivery event for each step (§6.2). |
+| `inbox` | Received messages: in order, without copies, commands judged (§6.4, §7.3), each published and handed on; a bounded rate per sender and per channel. |
+| `announcer` | Announcements to Home Assistant: the discovery document, the controls that add contacts, the contacts' devices; again after a birth message or a cleared device (§6.7). |
+| `status` | The state document with its health section, and systemd's status line. |
+| `radio_link` | The radio as the parts see it: the session while connected, what the radio said it is, whether another client took the TCP link. |
+| `config_checks` | What a configuration implies: the contacts it protects, the warnings that the start logs and `check-config` shows. |
+| `wiring` | Puts the service together: the adapters, the parts, and who hears of what (the list in its docstring; ARC-009). |
 | `observer` | Feeds the mesh view and the history from the radio's reports, messages, telemetry answers and deliveries; publishes the documents. |
 | `telemetry_poller` | Asks the companions for telemetry, one at a time, after the messages; takes an answer only for the contact asked (§6.11). |
 | `history` | The local history in SQLite. |
@@ -173,7 +187,7 @@ flowchart TB
 | `config` | TOML loading with strict validation; rendering from installer answers. |
 | `state` | The state file, read once and held in memory, its sections written together and atomically (§5.2); ledger of accepted command timestamps. |
 | `systemd` | Readiness, watchdog and status notifications. |
-| `cli` | Command-line entry points. |
+| `cli` | Command line: the parser and `main` (`cli/__init__.py`), a module per group of commands (`run`, `config_cmd`, `probe`, `messages`, `contacts`, `dashboard`) and what they share (`common`: exit codes, language; `broker`: the commands' MQTT client). |
 
 ### 5.2 Concurrency
 

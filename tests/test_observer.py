@@ -17,24 +17,24 @@ import pytest
 
 from meshcore_home_gateway import history as history_module
 from meshcore_home_gateway import observer as observer_module
-from meshcore_home_gateway.bridge import protected_keys
+from meshcore_home_gateway.config_checks import protected_keys
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.adverts import MAX_LOGGED
 from meshcore_home_gateway.core.mesh import AdvertCheck, Fix, Heard, Signal
 from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.telemetry import Answer, TelemetryState
 from meshcore_home_gateway.history import History
-from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import Push
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     AdvertHeard,
+    ContactRequest,
     ContactsRead,
     PacketLogged,
     PathReset,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import Push
 from meshcore_home_gateway.state import (
     EXCLUSIONS_FILE,
     AdvertChecks,
@@ -44,16 +44,7 @@ from meshcore_home_gateway.state import (
     TelemetryExclusions,
 )
 from meshcore_home_gateway.views import iso
-from tests.radio_emulator import (
-    LPP_BME280,
-    LPP_FULL,
-    LPP_T1000E,
-    SELF_KEY,
-    EmulatedContact,
-    EmulatedRadio,
-    advert_packet,
-)
-from tests.test_bridge import (
+from tests.bridge_harness import (
     ALICE,
     BOB,
     NOW,
@@ -64,6 +55,15 @@ from tests.test_bridge import (
     run_state,
     running,
     scenario,
+)
+from tests.radio_emulator import (
+    LPP_BME280,
+    LPP_FULL,
+    LPP_T1000E,
+    SELF_KEY,
+    EmulatedContact,
+    EmulatedRadio,
+    advert_packet,
 )
 
 ROOT = "meshcore/radio1"

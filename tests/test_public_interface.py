@@ -20,22 +20,23 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
-from meshcore_home_gateway import bridge, cli, i18n, views
+from meshcore_home_gateway import bridge, cli, i18n, status, views
 from meshcore_home_gateway import config as configuration
+from meshcore_home_gateway.cli import probe as cli_probe
 from meshcore_home_gateway.core import adverts, lpp, telemetry
 from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt import contact_devices
 from meshcore_home_gateway.mqtt.contact_devices import contact_device_id
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.protocol.codec import AUTO_ADD_TYPES
 from meshcore_home_gateway.protocol.codes import NodeType, TelemetryMode
-from meshcore_home_gateway.radio.session import AUTO_ADD_TYPES
 from tests import public_interface as interface
 from tests.i18n_helpers import hostile, pseudo, speaking
 from tests.radio_emulator import LPP_ALL_READINGS
 
 if TYPE_CHECKING:
-    from meshcore_home_gateway.radio.transport import Transport
+    from meshcore_home_gateway.ports import Transport
 
 tool = interface.tool
 
@@ -288,14 +289,14 @@ def test_contact_slugs_are_recorded_as_the_code_gives_them(current: dict[str, An
 def test_probe_prints_every_value_of_its_lists(current: dict[str, Any]) -> None:
     """The radios of the scenario cover each list of values that `probe` prints."""
     values = current["cli"]["values"]
-    modes = [cli._mode_name(mode) for mode in TelemetryMode]
+    modes = [cli_probe._mode_name(mode) for mode in TelemetryMode]
     assert {name: set(found) for name, found in values.items()} == {
-        "probe --json:advert_location": set(cli.ADVERT_LOCATION.values()),
+        "probe --json:advert_location": set(cli_probe.ADVERT_LOCATION.values()),
         "probe --json:auto_add.types": set(AUTO_ADD_TYPES.values()),
-        "probe --json:contacts[].flags": set(cli._FLAG_NAMES.values()),
-        "probe --json:contacts[].type": set(cli.NODE_TYPES.values()),
+        "probe --json:contacts[].flags": set(cli_probe._FLAG_NAMES.values()),
+        "probe --json:contacts[].type": set(cli_probe.NODE_TYPES.values()),
         "probe --json:telemetry.*": set(modes),
-        "probe --list contacts:3": set(cli.NODE_TYPES.values()),
+        "probe --list contacts:3": set(cli_probe.NODE_TYPES.values()),
     }
 
 
@@ -400,7 +401,7 @@ def test_a_value_outside_its_list_is_refused() -> None:
     interface._within("x", {"a", None}, ("a", "b"))  # null: none
 
 
-def _telemetry_state(_: bridge.Bridge) -> dict[str, Any]:
+def _telemetry_state(_: status.Status) -> dict[str, Any]:
     return {"telemetry": "stopped", "telemetry_reason": None}
 
 
@@ -418,7 +419,7 @@ LIST_GUARDS: dict[str, tuple[Callable[[pytest.MonkeyPatch], None], str]] = {
         "state:telemetry: Home Assistant's options",
     ),
     "a status outside the statuses": (
-        lambda m: m.setattr(bridge.Bridge, "_telemetry_state", _telemetry_state),
+        lambda m: m.setattr(status.Status, "_telemetry_state", _telemetry_state),
         "state:telemetry: values outside the list",
     ),
     "a reason outside the reasons": (

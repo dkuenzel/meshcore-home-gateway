@@ -27,18 +27,35 @@ import datetime
 import itertools
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field, replace
-from typing import Any, Protocol, TypeVar
+from typing import Any, TypeVar
 
-from meshcore_home_gateway.core.airtime import LoRaParams, meshcore_lora
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
-from meshcore_home_gateway.core.model import InboundMessage
 from meshcore_home_gateway.health import FAILURES
+from meshcore_home_gateway.ports import (
+    AckReceived,
+    AdvertHeard,
+    CommandFailedError,
+    ContactsRead,
+    MessageReceived,
+    NotSentError,
+    PacketLogged,
+    PathChanged,
+    PathReset,
+    RadioError,
+    RadioEvent,
+    RadioInfo,
+    RadioProfileHook,
+    StatsRead,
+    TelemetryReceived,
+    TelemetrySent,
+    Transport,
+)
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import PUSH_MIN, AutoAdd, Push, Response, StatsType
+from meshcore_home_gateway.protocol.codes import PUSH_MIN, Push, Response, StatsType
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
-from meshcore_home_gateway.radio.transport import ClosedByRadioError, Transport
+from meshcore_home_gateway.radio.transport import ClosedByRadioError
 
 log = logging.getLogger(__name__)
 log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
@@ -70,155 +87,6 @@ ResponseCodes = frozenset[int]
 _SIMPLE = frozenset({Response.OK, Response.ERR, Response.DISABLED})
 T = TypeVar("T")
 S = TypeVar("S", codec.CoreStats, codec.RadioStats, codec.PacketStats)
-
-
-class ProfileHook(Protocol):
-    """The managed radio profile (radio/profile.py): before and after the first table read."""
-
-    async def before_contacts(self, session: CompanionSession) -> None: ...
-    async def after_contacts(self, session: CompanionSession) -> bool: ...
-
-
-class RadioError(Exception):
-    """The radio cannot be used right now (disconnected, timed out, protocol violation)."""
-
-
-class NotSentError(RadioError):
-    """The session ended before the command was sent: the radio never got it."""
-
-
-class CommandFailedError(RadioError):
-    """The radio refused a command: ERR with an error name, or `disabled`."""
-
-    def __init__(self, command: str, reason: str) -> None:
-        super().__init__(f"{command}: {reason}")
-        self.reason = reason
-
-
-@dataclass(frozen=True, slots=True)
-class RadioInfo:
-    self_info: codec.SelfInfo
-    device: codec.DeviceInfo
-
-    @property
-    def public_key(self) -> str:
-        return self.self_info.public_key.hex()
-
-    @property
-    def name(self) -> str:
-        return self.self_info.name
-
-    @property
-    def lora(self) -> LoRaParams:
-        s = self.self_info
-        return meshcore_lora(float(s.bandwidth_hz), s.spreading_factor, s.coding_rate)
-
-
-@dataclass(frozen=True, slots=True)
-class MessageReceived:
-    message: InboundMessage
-    session: CompanionSession  # judge the sender on this session's contact table
-    fetched_at: int  # the session's command count when the message was fetched
-    at_connect: bool  # fetched at connect: it may have arrived while no session listened
-
-
-@dataclass(frozen=True, slots=True)
-class AckReceived:
-    ack: bytes
-    round_trip_ms: int
-
-
-@dataclass(frozen=True, slots=True)
-class TelemetryReceived:
-    """Push 0x8B: the answer to the pending telemetry request, named by the 6-byte prefix of
-    the contact whose key decrypted it."""
-
-    prefix: bytes
-    data: bytes
-    received_at: float
-    seq: int  # the frame's number in its session
-    session_serial: int  # numbers are compared only within one session
-
-
-@dataclass(frozen=True, slots=True)
-class TelemetrySent:
-    """The radio's answer to a telemetry request: it sent it."""
-
-    flood: bool  # the route it took
-    timeout_ms: int  # the radio's estimate of the round trip
-    seq: int  # the number of the SENT frame
-
-
-@dataclass(frozen=True, slots=True)
-class PathChanged:
-    """Push 0x81: the radio stored a path the contact sent (also the same one again)."""
-
-    public_key: bytes
-
-
-@dataclass(frozen=True, slots=True)
-class PathReset:
-    """RESET_PATH was answered: the radio floods to the contact until it learns a path."""
-
-    public_key: bytes
-
-
-@dataclass(frozen=True, slots=True)
-class PacketLogged:
-    rx: codec.RxLog
-    received_at: float
-    seq: int = 0  # the frame's number in its session; 0: not from a session (tests)
-    session_serial: int = 0  # numbers are compared only within one session
-
-
-@dataclass(frozen=True, slots=True)
-class AdvertHeard:
-    """The radio checked an advert's signature and reports it: a contact (key only) or a node it
-    did not add (its full record)."""
-
-    advert: codec.Advert
-    received_at: float
-    seq: int = 0  # the frame's number: with no receive delay, the log just before is its own
-    session_serial: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class ContactsRead:
-    records: Mapping[str, codec.ContactRecord]  # full key, hex -> record; not changed later
-    read_at: float
-
-
-@dataclass(frozen=True, slots=True)
-class StatsRead:
-    """The heartbeat's readings; a part is None if the firmware does not have it."""
-
-    battery: codec.Battery
-    core: codec.CoreStats | None
-    radio: codec.RadioStats | None
-    packets: codec.PacketStats | None
-    read_at: float
-
-
-@dataclass(frozen=True, slots=True)
-class Barrier:
-    """Not from the radio: put on the event queue by a caller that waits until the events before
-    it are handled (`done` is then set)."""
-
-    done: asyncio.Event = field(default_factory=asyncio.Event)
-
-
-RadioEvent = (
-    MessageReceived
-    | AckReceived
-    | PacketLogged
-    | AdvertHeard
-    | ContactsRead
-    | StatsRead
-    | TelemetryReceived
-    | PathChanged
-    | PathReset
-    | Barrier
-)
 
 
 @dataclass
@@ -264,7 +132,7 @@ class CompanionSession:
         self.info: RadioInfo | None = None
         self.autoadd: codec.AutoAddConfig | None = None
         self.on_contact_key: Callable[[str, bool], None] | None = None  # key, held as contact
-        self.profile: ProfileHook | None = None  # the managed radio profile (ADR 0020)
+        self.profile: RadioProfileHook | None = None  # the managed radio profile (ADR 0020)
         self.contacts_read_at = -1  # command count of the read behind contact_records
         self.contacts_read_started_at = -1  # command count of the newest read, also one running
         self._contacts_changed_at = -1  # command count at the last contact push
@@ -915,34 +783,11 @@ _CONTACT_CODES = frozenset({Response.CONTACTS_START, Response.CONTACT, Response.
 _SYNC_CODES = codec.MESSAGE_CODES | {Response.NO_MORE_MESSAGES}
 
 
-AUTO_ADD_TYPES = {
-    AutoAdd.CHAT: "chat",
-    AutoAdd.REPEATER: "repeater",
-    AutoAdd.ROOM_SERVER: "room",
-    AutoAdd.SENSOR: "sensor",
-}
-_EVERY_TYPE = AutoAdd.CHAT | AutoAdd.REPEATER | AutoAdd.ROOM_SERVER | AutoAdd.SENSOR
-
-
-def added_types(self_info: codec.SelfInfo, autoadd: codec.AutoAddConfig | None) -> AutoAdd:
-    """Contact types the radio adds on its own (MyMesh.cpp:308-332).
-
-    Every type without manual adding; with it, the types enabled in the auto-add settings, none
-    on firmware without those settings. Bits of types this code does not know count as well.
-    """
-    if not self_info.manual_add_contacts:
-        return _EVERY_TYPE
-    if autoadd is None:
-        return AutoAdd(0)
-    # int arithmetic: inverting the flag itself would also clear the unknown bits
-    return AutoAdd(autoadd.flags & 0xFF & ~int(AutoAdd.OVERWRITE_OLDEST))
-
-
-def type_names(types: AutoAdd) -> list[str]:
-    """Names of the contact types; bits of types this code does not know as one hex value."""
-    names = [name for flag, name in AUTO_ADD_TYPES.items() if types & flag]
-    unknown = int(types) & ~int(_EVERY_TYPE)
-    return [*names, f"0x{unknown:02x}"] if unknown else names
+def default_session_factory(
+    transport: Transport, events: asyncio.Queue[RadioEvent], set_clock: bool
+) -> CompanionSession:
+    """The service's sessions (ports.SessionFactory)."""
+    return CompanionSession(transport, events, set_clock=set_clock)
 
 
 def _warn_about_contact_adding(
@@ -957,12 +802,12 @@ def _warn_about_contact_adding(
             "sender would block that sender's commands: switch on manual adding and switch off "
             "every type in the auto-add settings (ADR 0009)"
         )
-    elif types := added_types(self_info, autoadd):
+    elif types := codec.added_types(self_info, autoadd):
         log.warning(
             "radio adds new contacts of type %s automatically despite manual adding; a node with "
             "the key prefix of a command sender would block that sender's commands: switch these "
             "types off in the auto-add settings (ADR 0009)",
-            ", ".join(type_names(types)),
+            ", ".join(codec.type_names(types)),
         )
 
 

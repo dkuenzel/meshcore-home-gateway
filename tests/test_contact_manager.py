@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway import announcer as announcer_module
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import contact_manager as manager_module
 from meshcore_home_gateway import observer as observer_module
@@ -23,17 +24,16 @@ from meshcore_home_gateway.core.mesh import Heard, Node
 from meshcore_home_gateway.core.telemetry import Answer
 from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import manage_entities
-from meshcore_home_gateway.mqtt.client import ContactRequest
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
+from meshcore_home_gateway.ports import ContactRequest, ContactsRead
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.radio import session as session_module
-from meshcore_home_gateway.radio.session import ContactsRead
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryExclusions
+from tests.bridge_harness import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
 from tests.radio_emulator import LPP_BME280, SELF_KEY, EmulatedContact, EmulatedRadio
-from tests.test_bridge import ALICE, BOB, NOW, FakeBus, make_config, running, scenario
 from tests.test_session import SlowTable
 from tests.test_state import failing_rename
 
@@ -48,7 +48,7 @@ ALICE_TWIN = bytes.fromhex("a1" * 6 + "ee" * 26)
 @pytest.fixture(autouse=True)
 def fast_timers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bridge_module, "RECONNECT_MIN_S", 0.02)
-    monkeypatch.setattr(bridge_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
+    monkeypatch.setattr(announcer_module, "DISCOVERY_DELAY_S", (0.0, 0.0))
     monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 0.05)
     monkeypatch.setattr(manage_entities, "OPTIONS_INTERVAL_S", 0.05)
     monkeypatch.setattr(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0)

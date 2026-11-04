@@ -60,13 +60,13 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | --- | --- | --- | --- |
 | ARC-001 | fix | `docs/threat-model.md` with the seven boundaries and the actors, design §7 as its summary, a boundary paragraph required in the record template | pending: threat-model |
 | ARC-002 | fix | ADR 0029 states what a contact is trusted with; the household mark (SEC-016) and the exposure setting (SEC-008) are its mechanisms | pending: threat-model |
-| ARC-003 | fix | A `ports` module with the radio events and the radio port the application uses; the architecture test forbids the application modules to import the adapters | pending: structure |
+| ARC-003 | fix | A `ports` module with the radio events and the radio port the application uses; the architecture test forbids the application modules to import the adapters | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
 | ARC-004 | fix | One state store for `state.json`, loaded once, every section in memory, written once per change set at the status tick and at once for what a crash must not lose (the ledger, the kept documents and advert checks, the schedule after a flood, the profile's attempts) | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | ARC-005 | fix | The message budget's level is kept across restarts, never below what one long message needs, so the first alert after a restart still goes out at once; ADR 0008 names the radio's own limiter as the regulatory backstop | [#51](https://github.com/dkuenzel/meshcore-home-gateway/pull/51) |
 | ARC-006 | fix | Through SEC-005; the integrity model in ADR 0015 (dated note) and the threat model | [#41](https://github.com/dkuenzel/meshcore-home-gateway/pull/41) |
 | ARC-007 | fix | Dated notes with today's sizes in ADR 0002 and ADR 0004; a module size that asks for a split in `CONTRIBUTING.md` | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-008 | fix | The amendment practice stated in ADR 0001 and `CONTRIBUTING.md`: dated amendments may narrow or correct a record, a reversal needs a new one | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
-| ARC-009 | fix | Wiring in one module, `bridge.py` split into outbox, inbox and announcer | pending: structure |
+| ARC-009 | fix | Wiring in one module, `bridge.py` split into outbox, inbox and announcer | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
 | ARC-010 | fix | The firmware behaviours the advert check relies on, each with its line, in `docs/protocol.md` §4, as a checklist for a firmware update; the firmware tests stay the guard. A push carrying the advert's flags is for the maintainer to request upstream | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-011 | accept | The machinery stays; the roadmap names the first language as its proof and a review of the installer's packs after it. The parser risk is covered by SUP-006 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | ARC-012 | fix | A `health` section in `state` and a *Gateway degraded* problem sensor; observer errors counted and their log rate-limited | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
@@ -84,12 +84,12 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | CODE-002 | fix | The hourly purge runs in a thread on a connection of its own, in one transaction; the state store (ARC-004) bounds the writes of `state.json`; the loop lag (CODE-001) shows whether more is needed | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | CODE-003 | fix | `slugs` of contacts that left the table kept for 90 days and at most 1 000 (the newest), `radio_profile` for the current radio and the two saved before it | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
 | CODE-004 | fix | By the single store: a section never re-reads the file | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
-| CODE-005 | fix | `cli.py` becomes a package of command modules, `bridge.py` is split (ARC-009); state and sequence diagrams for the telemetry subsystem | pending: structure, threat-model |
+| CODE-005 | fix | `cli.py` becomes a package of command modules, `bridge.py` is split (ARC-009) and its tests follow its parts; the tests of the observer and of the telemetry poller stay one file each, as each specifies one module; state and sequence diagrams for the telemetry subsystem | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57), pending: threat-model |
 | CODE-006 | fix | Every reference to the sprint's "design 6c" decisions replaced by the section or record that holds the rule; a test that design references in the code resolve | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-007 | fix | The `# fmt: skip` markers removed in one mechanical commit; the formatter's output is the style | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-008 | fix | Through ARC-012 (counters, rate-limited logs) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | CODE-009 | fix | Property-based tests of the parsers (Hypothesis), a stall test (CODE-001), flood tests (SEC-010, SEC-011). A mutation run is deferred: a one-off calibration, not a gate | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38), [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49), [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
-| CODE-010 | fix | The `Bus` protocol moves to the ports module and `MqttBus` declares it | pending: structure |
+| CODE-010 | fix | The `Bus` protocol moves to the ports module and `MqttBus` declares it | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
 | CODE-011 | fix | The cost noted in `refresh_channels`' docstring | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-012 | fix | A comment naming the radio's table as the bound | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55) |
 | CODE-013 | fix | The purge in one transaction, as it is since [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38); now also in a thread of its own (CODE-002) | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
@@ -201,7 +201,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-019 | fix | Through SEC-010 and SEC-011 | [#38](https://github.com/dkuenzel/meshcore-home-gateway/pull/38) |
 | IMP-020 | fix | Through CODE-001 and CODE-002 | [#49](https://github.com/dkuenzel/meshcore-home-gateway/pull/49) |
 | IMP-021 | fix | Through ARC-004 | [#50](https://github.com/dkuenzel/meshcore-home-gateway/pull/50) |
-| IMP-022 | fix | Through ARC-003, ARC-009 and CODE-005 | pending: structure |
+| IMP-022 | fix | Through ARC-003, ARC-009 and CODE-005 | [#57](https://github.com/dkuenzel/meshcore-home-gateway/pull/57) |
 | IMP-023 | fix | Digests, updates, journald limit, warnings (OPS-001, -002, -009, -010); the udev rule deferred (OPS-003) | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52), [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53) |
 | IMP-024 | fix | Through OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |

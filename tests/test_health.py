@@ -79,6 +79,10 @@ def test_the_service_loggers_report_to_the_one_count() -> None:
     """The parts that catch their own bugs; a count of their own: count()."""
     for name in (
         "bridge",
+        "outbox",
+        "inbox",
+        "announcer",
+        "status",
         "observer",
         "telemetry_poller",
         "contact_manager",

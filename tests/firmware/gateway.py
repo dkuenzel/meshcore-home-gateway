@@ -24,8 +24,8 @@ import paho.mqtt.client as paho
 import pytest
 from paho.mqtt.enums import CallbackAPIVersion
 
-from meshcore_home_gateway import cli
 from meshcore_home_gateway.bridge import Bridge
+from meshcore_home_gateway.cli import run as cli_run
 from meshcore_home_gateway.config import parse_config
 from tests.conftest import Broker
 
@@ -147,7 +147,7 @@ async def running(text: str, state_dir: Path) -> AsyncIterator[Service]:
         await run(bridge, stop)
 
     with mock.patch.object(Bridge, "run", keep):
-        task = asyncio.create_task(cli._serve(config, state_dir), name="gateway")
+        task = asyncio.create_task(cli_run._serve(config, state_dir), name="gateway")
         deadline = time.monotonic() + START_S
         while not started:
             if task.done() or time.monotonic() > deadline:

@@ -25,9 +25,12 @@ import pytest
 
 from meshcore_home_gateway import cli, i18n
 from meshcore_home_gateway import config as configuration
-from meshcore_home_gateway.bridge import protected_look_alikes
 from meshcore_home_gateway.catalog import read_po
 from meshcore_home_gateway.cli import EX_CONFIG, EX_OK, EX_USAGE, main
+from meshcore_home_gateway.cli import broker as cli_broker
+from meshcore_home_gateway.cli import common as cli_common
+from meshcore_home_gateway.cli import contacts as cli_contacts
+from meshcore_home_gateway.cli import probe as cli_probe
 from meshcore_home_gateway.config import (
     ConfigError,
     HomeAssistantConfig,
@@ -37,6 +40,7 @@ from meshcore_home_gateway.config import (
     parse_config,
     render_config,
 )
+from meshcore_home_gateway.config_checks import protected_look_alikes
 from meshcore_home_gateway.core.commands import CommandRules
 from meshcore_home_gateway.core.contacts import normalise_key
 from meshcore_home_gateway.mqtt.client import tls_context
@@ -721,9 +725,13 @@ class _Client:
 def _broker(monkeypatch: pytest.MonkeyPatch, **behaviour: Any) -> None:
     """The commands' broker connections behave as told, without waiting long for an answer."""
     client = _Client(**behaviour)
-    monkeypatch.setattr(cli, "_mqtt_client", lambda _mqtt, _suffix: client)
-    for name in ("CONNECT_TIMEOUT_S", "SUBSCRIBE_TIMEOUT_S", "RETAINED_WAIT_S"):
-        monkeypatch.setattr(cli, name, 0.01)
+    monkeypatch.setattr(cli_broker, "mqtt_client", lambda _mqtt, _suffix: client)
+    for module, name in (
+        (cli_broker, "CONNECT_TIMEOUT_S"),
+        (cli_broker, "SUBSCRIBE_TIMEOUT_S"),
+        (cli_contacts, "RETAINED_WAIT_S"),
+    ):
+        monkeypatch.setattr(module, name, 0.01)
 
 
 def _listed(kind: str, *keys: str, truncated: bool = False, **extra: Any) -> dict[str, Any]:
@@ -849,7 +857,7 @@ def _probed(monkeypatch: pytest.MonkeyPatch, report: dict[str, Any] | None) -> N
             raise OSError("the radio went away")
         return report
 
-    monkeypatch.setattr(cli, "_probe_radio", probed)
+    monkeypatch.setattr(cli_probe, "_probe_radio", probed)
 
 
 # Each scenario runs commands in the language of the environment and returns what they printed
@@ -1132,7 +1140,7 @@ def test_argparse_stays_english_without_its_module_attributes(
     """A Python whose argparse lacks `_` or `ngettext`: its words stay English, ours not
     (design §6.12)."""
     monkeypatch.delattr(argparse, "ngettext")
-    with cli._speaking(pseudo()):
+    with cli_common._speaking(pseudo()):
         text = cli._parser().format_help()
     assert text.startswith("usage: meshcore-home-gateway")
     assert "‹Gateway between home automation (MQTT) and a MeshCore companion radio.›" in text
@@ -1156,7 +1164,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
     with a % its English text lacks must not break a command (design §6.12)."""
     catalog = TEST_CATALOGS.get(language)
     translator = i18n.translator(language) if catalog is None else catalog()
-    with cli._speaking(translator):
+    with cli_common._speaking(translator):
         parser = cli._parser()
         helps = [command.format_help() for command in _parsers(parser)]
     assert len(helps) == 16  # the program, its commands and theirs

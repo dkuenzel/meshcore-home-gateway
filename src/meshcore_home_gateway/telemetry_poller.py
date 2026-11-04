@@ -46,18 +46,17 @@ from meshcore_home_gateway.core.telemetry import (
 )
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import NodeType
-from meshcore_home_gateway.protocol.packet import flooded_response_hashes
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     CommandFailedError,
-    CompanionSession,
     RadioError,
+    RadioPort,
     TelemetryReceived,
     TelemetrySent,
-    added_types,
-    type_names,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codec import added_types, type_names
+from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.protocol.packet import flooded_response_hashes
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryRecords
 
 log = logging.getLogger(__name__)
@@ -234,7 +233,7 @@ class TelemetryPoller:
     def __init__(
         self,
         observer: Observer,
-        session: Callable[[], CompanionSession | None],
+        session: Callable[[], RadioPort | None],
         outbox: OutboxActivity,
         *,
         records: TelemetryRecords | None,
@@ -272,9 +271,9 @@ class TelemetryPoller:
         self._states: dict[str, str] = {}
         self._reported: dict[str, TelemetryState] = {}  # key -> the state the observer was told
         self._own_key: str | None = None  # the radio's, from the last session with its info
-        self._session_seen: CompanionSession | None = None
-        self._unsupported: CompanionSession | None = None
-        self._warned: tuple[CompanionSession, str] | None = None  # the pause last warned of
+        self._session_seen: RadioPort | None = None
+        self._unsupported: RadioPort | None = None
+        self._warned: tuple[RadioPort, str] | None = None  # the pause last warned of
         self._status: TelemetryStatus = "paused"
         self._reason: PauseReason | None = "no_radio"
         self.on_status: Callable[[], None] | None = None  # what the status reads changed
@@ -435,7 +434,7 @@ class TelemetryPoller:
         if key is not None and self._early_path:
             self.heard(key)
 
-    def _hold(self, session: CompanionSession) -> float | None:
+    def _hold(self, session: RadioPort) -> float | None:
         """How long to wait before deciding while telemetry is off for this session, paused,
         or the radio was busy; None: go on. The first reason that holds counts: the firmware
         lacks the command, the exclusions cannot be read, the first-start hold, the radio adds
@@ -475,7 +474,7 @@ class TelemetryPoller:
 
     def _pause(
         self,
-        session: CompanionSession,
+        session: RadioPort,
         reason: PauseReason,
         why: str,
         level: int = logging.WARNING,
@@ -485,7 +484,7 @@ class TelemetryPoller:
             self._warned = (session, reason)
             log.log(level, "telemetry paused: %s", why)
 
-    def _first_start(self, session: CompanionSession) -> float | None:
+    def _first_start(self, session: RadioPort) -> float | None:
         """How long the first-start hold still holds the requests; None: none, or it is over.
         It starts at the first step with a read table: one warning names how many companions
         it will ask, and the schedule is saved at once, so a restart holds only the rest."""
@@ -511,7 +510,7 @@ class TelemetryPoller:
         self._warned = (session, "first_start")  # "resumed" once it is over
         return min(left, core.STEP_S)
 
-    def _askable(self, session: CompanionSession) -> int:
+    def _askable(self, session: RadioPort) -> int:
         """The companions of the table as read that would be asked: unique, not excluded."""
         prefixes = _prefixes(session)
         return sum(
@@ -521,7 +520,7 @@ class TelemetryPoller:
             for key, record in session.contact_records.items()
         )
 
-    async def _poll(self, session: CompanionSession, poll: Poll) -> None:
+    async def _poll(self, session: RadioPort, poll: Poll) -> None:
         sent = await self._send(session, poll)
         if sent is None:
             return
@@ -560,7 +559,7 @@ class TelemetryPoller:
         else:
             self._silence(session, poll.key, commands)
 
-    async def _send(self, session: CompanionSession, poll: Poll) -> TelemetrySent | None:
+    async def _send(self, session: RadioPort, poll: Poll) -> TelemetrySent | None:
         """The request; None when the radio did not report it sent (all handled here)."""
         self._waiter.arm(poll.key)
         # pushes read before this task sees SENT: the route is known only then
@@ -603,7 +602,7 @@ class TelemetryPoller:
         self._sending = None
         return sent
 
-    def _silence(self, session: CompanionSession, key: str, commands: int) -> None:
+    def _silence(self, session: RadioPort, key: str, commands: int) -> None:
         """No answer within the wait. Over TCP a table read during it (also one still running)
         may have filled the radio's push queue: counted only the second time in a row. The
         second request in a row left unanswered by a companion that answered within the day is
@@ -680,7 +679,7 @@ class TelemetryPoller:
         if back:  # its first answer, or the first after two unanswered requests in a row
             self._event("answered", key)
 
-    async def _fresh_table(self) -> CompanionSession | None:
+    async def _fresh_table(self) -> RadioPort | None:
         """The session once its table shows every change the radio reported; None after
         HOLD_MAX_S without one."""
         deadline = self._mono() + HOLD_MAX_S
@@ -692,13 +691,13 @@ class TelemetryPoller:
                 return None
             await asyncio.sleep(0.25)
 
-    def _unique(self, session: CompanionSession, key: str) -> bool:
+    def _unique(self, session: RadioPort, key: str) -> bool:
         prefix = key[:PREFIX_HEX_DIGITS]
         same = sum(k[:PREFIX_HEX_DIGITS] == prefix for k in session.contact_records)
         info = session.info
         return same == 1 and info is not None and info.public_key[:PREFIX_HEX_DIGITS] != prefix
 
-    def _candidates(self, session: CompanionSession, now: float) -> list[Candidate]:
+    def _candidates(self, session: RadioPort, now: float) -> list[Candidate]:
         """Every companion of the radio's table whose prefix is its own (ADR 0018), unless it
         was excluded. The prefixes count every contact: an excluded one still blocks its twin."""
         records, prefixes = session.contact_records, _prefixes(session)
@@ -735,7 +734,7 @@ class TelemetryPoller:
     def _prune_heard(self, now: float) -> None:
         self._heard = {k: t for k, t in self._heard.items() if now - t <= 2 * core.HEARD_RECENTLY_S}
 
-    def _refused(self, session: CompanionSession, poll: Poll, reason: str) -> None:
+    def _refused(self, session: RadioPort, poll: Poll, reason: str) -> None:
         now = self._mono()
         if reason == "unsupported_cmd":  # firmware without the command
             self._unsupported = session
@@ -753,7 +752,7 @@ class TelemetryPoller:
             log.info("telemetry %s: refused (%s)", poll.key[:12], reason)
             self._scheduler.retry(poll.key, now, REFUSED_RETRY_S)
 
-    def _paused(self, session: CompanionSession) -> tuple[PauseReason, str] | None:
+    def _paused(self, session: RadioPort) -> tuple[PauseReason, str] | None:
         """Why the radio lets telemetry wait, as a reason and a text; None: it does not."""
         info = session.info
         if info is not None and (types := added_types(info.self_info, session.autoadd)):
@@ -922,7 +921,7 @@ class TelemetryPoller:
         return self._scheduler.used_s(self._mono())
 
 
-def _prefixes(session: CompanionSession) -> Counter[str]:
+def _prefixes(session: RadioPort) -> Counter[str]:
     """How many contacts of the session's table, and the radio itself, have each key prefix."""
     prefixes = Counter(key[:PREFIX_HEX_DIGITS] for key in session.contact_records)
     if session.info is not None:

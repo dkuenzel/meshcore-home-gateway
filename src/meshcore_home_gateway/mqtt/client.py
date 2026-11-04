@@ -18,7 +18,6 @@ import ssl
 import sys
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 import paho.mqtt.client as paho
@@ -28,6 +27,7 @@ from meshcore_home_gateway.config import ConfigError, MqttConfig
 from meshcore_home_gateway.health import MinuteCounts
 from meshcore_home_gateway.mqtt.retained import RetainedTopics
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.ports import Bus, ContactRequest, SendRequest
 
 log = logging.getLogger(__name__)
 
@@ -36,28 +36,6 @@ OFFLINE = b"offline"
 MAX_QUEUED_EVENTS = 1000  # events kept for the broker while it is unreachable
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1, 60
 ECHO_WAIT_S = 10  # the gateway's `online` comes back within this, or it cannot read its topics
-
-
-@dataclass(frozen=True, slots=True)
-class SendRequest:
-    alias: str  # a configured target, or the full key of a contact (`contact` is then true)
-    payload: bytes
-    retained: bool
-    contact: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class ContactRequest:
-    """A request to change the radio's contact table (ADR 0017), or whether a companion is asked
-    for its telemetry (ADR 0018)."""
-
-    # "add" (add_contact, homeassistant/add_node), "remove" (contacts/<key>/remove) or
-    # "telemetry" (contacts/<key>/telemetry)
-    kind: str
-    payload: bytes
-    retained: bool
-    key: str | None = None  # remove, telemetry: the topic's <key> level, as it came
-    node_label: bool = False  # add: the text is the label of a heard node (add_node)
 
 
 class PahoLike(Protocol):
@@ -138,7 +116,9 @@ def _reason(exc: OSError) -> str:
     return exc.strerror or str(exc)
 
 
-class MqttBus:
+class MqttBus(Bus):
+    """The bus port (ports.py) over paho-mqtt (CODE-010)."""
+
     def __init__(
         self,
         config: MqttConfig,

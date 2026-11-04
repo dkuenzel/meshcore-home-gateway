@@ -48,9 +48,9 @@ from meshcore_home_gateway.mqtt.payloads import (
     rx_payload,
 )
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.links import contact_link
-from meshcore_home_gateway.radio.session import RadioInfo
 from meshcore_home_gateway.views import settings_document
 
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "home-assistant.md"

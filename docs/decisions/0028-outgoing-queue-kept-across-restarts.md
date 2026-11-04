@@ -110,3 +110,6 @@ level), `tests/test_outbox.py` (the order), `tests/test_state.py` (the records).
   the delivery events in [mqtt-api.md](../mqtt-api.md#delivery-delivery).
 * Revisit when crashes become a concern for the queue: the queue would then be written with the
   state file's tick, at the cost of a write per tick while messages wait.
+* Amended on 2026-11-03 (security and architecture review, CODE-005): the tests that the
+  confirmation names in `tests/test_bridge.py` are in `tests/test_outbox.py`, after the
+  queue's own, since the bridge's tests follow its parts.

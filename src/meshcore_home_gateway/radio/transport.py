@@ -12,7 +12,6 @@ import fcntl
 import os
 import struct
 import termios
-from typing import Protocol
 
 BAUDRATE = 115200  # MeshCore companion firmware, USB serial
 FORBIDDEN_BAUDRATE = 1200  # "1200 baud touch": nRF52 boards reboot into the bootloader
@@ -22,16 +21,6 @@ CONNECT_TIMEOUT_S = 10.0
 class ClosedByRadioError(ConnectionError):
     """The radio ended the TCP connection: it serves one client and replaces the connection when
     another one connects (SEC-003), or it restarted."""
-
-
-class Transport(Protocol):
-    description: str
-    needs_flush: bool  # the radio's parser may hold a partial frame from an earlier client
-
-    async def open(self) -> None: ...
-    async def read(self) -> bytes: ...
-    async def write(self, data: bytes) -> None: ...
-    async def close(self) -> None: ...
 
 
 class SerialTransport:

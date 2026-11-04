@@ -52,10 +52,7 @@ from meshcore_home_gateway.core.telemetry import Answer, TelemetryEvent, Telemet
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.history import History, NodeRow
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import NodeType
-from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
-from meshcore_home_gateway.radio.session import (
+from meshcore_home_gateway.ports import (
     AdvertHeard,
     ContactsRead,
     PacketLogged,
@@ -63,6 +60,9 @@ from meshcore_home_gateway.radio.session import (
     RadioEvent,
     StatsRead,
 )
+from meshcore_home_gateway.protocol import codec
+from meshcore_home_gateway.protocol.codes import NodeType
+from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
 from meshcore_home_gateway.state import (
     AdvertChecks,
     CurrentDocuments,
@@ -100,6 +100,15 @@ NODE_EVENTS_PER_S, NODE_EVENTS_BURST = 0.2, 10.0  # spoofed keys must not flood 
 # flood would otherwise republish it (up to 15 KiB) for every advert (SEC-011)
 NODES_DOCUMENT_INTERVAL_S = 30.0
 _KEPT = frozenset({DeliveryState.CONFIRMED, DeliveryState.FAILED, DeliveryState.EXPIRED})
+
+
+def observe(call: Callable[..., None], *args: Any) -> None:
+    """Hand something to the observer or another listener of the service's parts: a bug in the
+    views must not stop messages. It is logged and counted (health.FAILURES)."""
+    try:
+        call(*args)
+    except Exception:
+        log.exception("observer failed")
 
 
 class Publisher(Protocol):
