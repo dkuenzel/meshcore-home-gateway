@@ -129,7 +129,7 @@ items for routes, permissions, GPS states and padding.
 * Amended on 2026-10-31 by [ADR 0025](0025-positions-in-adverts-checked-from-the-packet-log.md):
   until the gateway has checked a companion's newest advert, the radio's record decides, erring to
   warn; the check reads the packet log, not the stored copy.
-* Amended on 2026-11-05 after the security review of 2026-11 (EXT-005): `[telemetry] ask_types`
+* Amended on 2026-11-04 after the security review of 2026-11 (EXT-005): `[telemetry] ask_types`
   can name sensors besides companions. A sensor (MeshCore's sensor firmware) answers the same
   request, but only to a radio in its access list, which its owner adds with `setperm`
   ([companions.md](../companions.md#sensors)); the gateway asks it like a companion, under the
