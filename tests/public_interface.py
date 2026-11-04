@@ -54,6 +54,7 @@ from meshcore_home_gateway.announcer import ha_device_topics
 from meshcore_home_gateway.cli import broker as cli_broker
 from meshcore_home_gateway.cli import common as cli_common
 from meshcore_home_gateway.cli import contacts as cli_contacts
+from meshcore_home_gateway.cli import history as cli_history
 from meshcore_home_gateway.cli import probe as cli_probe
 from meshcore_home_gateway.cli import run as cli_run
 from meshcore_home_gateway.config import Config, ProfileConfig, parse_config
@@ -91,6 +92,7 @@ from meshcore_home_gateway.core.telemetry import (
     STATUSES,
     Answer,
 )
+from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import client as mqtt_client
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
@@ -1063,6 +1065,7 @@ def _types() -> dict[Any, _Type]:
         cli.tcp_address: _Type("host[:port]", 1, 65535, lambda port: f"192.0.2.10:{port:g}"),
         cli._wait_seconds: _Type("seconds", 0.0, cli.MAX_WAIT_S),
         cli._count: _Type("count", 0),
+        cli_history.since_time: _Type("date"),
     }
 
 
@@ -1100,15 +1103,19 @@ def _command_line(tmp: Path, commands: dict[str, Any]) -> dict[str, Any]:
         "config_error": cli.EX_CONFIG,
     }
     contacts = json.loads(_contacts_list(tmp, "--json", session=_Marked))
+    exported, csv_headers = _history_exported(tmp)
     return {
         "commands": commands,
         "exit_codes": exit_codes,
         "paths": paths,
         "columns": _columns(listings | {"contacts list": _contacts_list(tmp)}),
+        "csv": csv_headers,
         "json": {
             "probe --json": list(_key_paths(printed, maps=keyed_by_data)),
             "contacts list --json": list(_key_paths(contacts)),
             "listen": list(_key_paths(_listened(tmp))),
+            "status --json": _status_keys(tmp),
+            **exported,
         },
         "values": _probe_values(tmp, probe),
         "answers": _answers(tmp),
@@ -1434,6 +1441,54 @@ def _listened(tmp: Path) -> Any:
     config = _written(tmp / "listen.toml", MINIMAL)
     with mock.patch.object(cli_broker, "mqtt_client", return_value=_Broker()):
         return json.loads(_printed(["listen", "--config", str(config), "--count", "1"]))
+
+
+class _Gateway:
+    """The broker connection of `status`: an online gateway whose documents name themselves."""
+
+    online = True
+
+    def __init__(self, *_: Any) -> None:
+        pass
+
+    def open(self) -> str | None:
+        return None
+
+    def document(self, name: str) -> Any:
+        if name == "availability":
+            return "online"
+        return {f"<document {name}>": True, "health": {"degraded": False}}
+
+    def close(self) -> None:
+        pass
+
+
+def _status_keys(tmp: Path) -> list[str]:
+    """The keys of `status --json`; the documents in it are those of `mqtt > documents`."""
+    config = _written(tmp / "status.toml", MINIMAL)
+    with mock.patch.object(cli_broker, "GatewaySession", _Gateway):
+        return sorted(json.loads(_printed(["status", "--json", "--config", str(config)])))
+
+
+def _history_exported(tmp: Path) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """What `history export` prints per table: the keys of a JSON line, the header of the CSV."""
+    directory = tmp / "exported"
+    directory.mkdir(exist_ok=True)
+    history = History.open(directory / "history.sqlite3")
+    if history is None:
+        raise AssertionError("the history did not open")
+    history.add_message(views.HistoryEntry(T, "in", "contact", "hi", KEY, name="Alice"))
+    history.add_position(KEY, Fix(Position(1.0, 2.0), T, "telemetry", 3.0))
+    history.add_readings(KEY, T, {"battery_v": 4.1})
+    history.close()
+    keys, headers = {}, {}
+    for table in cli_history.TABLES:
+        argv = ["history", "export", "--table", table, "--state-dir", str(directory)]
+        line = _printed(argv).splitlines()[0]
+        keys[f"history export --table {table}"] = sorted(_key_paths(json.loads(line)))
+        header = _printed([*argv, "--format", "csv"]).splitlines()[0]
+        headers[f"history export --format csv --table {table}"] = header.split(",")
+    return keys, headers
 
 
 def _answers(tmp: Path) -> dict[str, list[str]]:

@@ -14,6 +14,7 @@ import inspect
 import io
 import json
 import re
+import sqlite3
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Sequence
@@ -29,7 +30,6 @@ from meshcore_home_gateway.catalog import read_po
 from meshcore_home_gateway.cli import EX_CONFIG, EX_OK, EX_USAGE, main
 from meshcore_home_gateway.cli import broker as cli_broker
 from meshcore_home_gateway.cli import common as cli_common
-from meshcore_home_gateway.cli import contacts as cli_contacts
 from meshcore_home_gateway.cli import probe as cli_probe
 from meshcore_home_gateway.config import (
     ConfigError,
@@ -43,10 +43,12 @@ from meshcore_home_gateway.config import (
 from meshcore_home_gateway.config_checks import protected_look_alikes
 from meshcore_home_gateway.core.commands import CommandRules
 from meshcore_home_gateway.core.contacts import normalise_key
+from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt.client import tls_context
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.links import LinkError, contact_link, parse_contact_text
 from meshcore_home_gateway.texts import Text, TextError
+from meshcore_home_gateway.views import HistoryEntry
 from tests.i18n_helpers import hostile, percents, pseudo, speaking, wide, widened
 from tests.test_links import card
 
@@ -587,14 +589,24 @@ VALUES = (
     "send",
     "listen",
     "contacts",
+    "doctor",
+    "backup",
+    "retire",
+    "history",
+    "export",
     "dashboard",
     "config",
     "state",
     "on",
+    "radio1",
+    "config.toml",
+    "MANIFEST.json",
+    "yesterday",
     "--serial",
     "--tcp",
     "--wait",
     "--count",
+    "--since",
     "--bogus",
     KEY,
     TWIN,
@@ -697,7 +709,7 @@ class _Client:
             if name in self.documents:
                 self._deliver(name, self.documents[name], retain=True)
 
-    def publish(self, topic: str, payload: bytes, qos: int = 0) -> Any:
+    def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any:
         for name, body in self.answer(topic, payload) if self.answer else []:
             self._deliver(name, body)
 
@@ -729,7 +741,7 @@ def _broker(monkeypatch: pytest.MonkeyPatch, **behaviour: Any) -> None:
     for module, name in (
         (cli_broker, "CONNECT_TIMEOUT_S"),
         (cli_broker, "SUBSCRIBE_TIMEOUT_S"),
-        (cli_contacts, "RETAINED_WAIT_S"),
+        (cli_broker, "RETAINED_WAIT_S"),
     ):
         monkeypatch.setattr(module, name, 0.01)
 
@@ -1007,6 +1019,7 @@ def _usage(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
         ["listen", "--count", "-1"],
         ["contacts", "telemetry", KEY, "maybe"],
         ["check-config", "--bogus"],
+        ["history", "export", "--since", "yesterday"],
     ):
         lines = _main(argv).err.splitlines()
         assert re.match("‹[^‹›]+›meshcore-home-gateway", lines[0])  # usage: the names
@@ -1023,6 +1036,68 @@ def _dashboard(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return [_main([*dashboard, "--config", path]).err for path in (on, off)]
 
 
+REPORTED = {  # a state document whose every line `status` and `doctor` print
+    "radio": "connected",
+    "radio_name": "Radio",
+    "model": "X1",
+    "firmware": "v1.18.0",
+    "battery_v": 4.1,
+    "radio_clock_offset_s": 120,
+    "radio_link_contested": True,
+    "airtime_1h_s": 1.5,
+    "airtime_available_s": 30,
+    "airtime_budget_s_per_hour": 36,
+    "queue": 2,
+    "telemetry": "on",
+    "telemetry_reason": None,
+    "health": {"degraded": False},
+}
+
+
+def _operations(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """status, doctor, backup, retire and history export: all they print is for people."""
+    config = _written(tmp, "config.toml", SUMMARIES["tcp"])
+    state_dir = str(tmp)
+    contacts = {"total": 1, "max": 100, "manage_reason": "untested_firmware"}
+    away = {"radio": "disconnected", "telemetry": "off", "health": {"degraded": True}}
+    runs: list[tuple[dict[str, Any], list[str]]] = [
+        ({"unreachable": True}, ["status"]),
+        ({"documents": _online(state=REPORTED, contacts=contacts)}, ["status"]),
+        ({"documents": _online(state=away)}, ["status"]),
+        ({"documents": {TOPICS.availability: "offline"}}, ["status"]),
+        ({}, ["status"]),
+        ({"unreachable": True}, ["doctor", "--state-dir", state_dir]),
+        ({"documents": _online(state=REPORTED, contacts=contacts)}, ["doctor"]),
+        ({"documents": _online(state=away)}, ["doctor", "--state-dir", state_dir]),
+        ({"documents": _online()}, ["doctor", "--state-dir", str(tmp / "none")]),
+        ({}, ["doctor", "--state-dir", state_dir]),
+        ({"documents": _online()}, ["retire", "--state-dir", state_dir]),
+        ({}, ["retire", "--state-dir", state_dir]),
+        ({}, ["retire", "--yes", "--state-dir", state_dir]),
+        ({"sending": "the client is not connected"}, ["retire", "--yes", "--state-dir", state_dir]),
+        ({"unreachable": True}, ["retire"]),
+    ]
+    printed = []
+    for behaviour, command in runs:
+        _broker(monkeypatch, **behaviour)
+        ran = _main([command[0], "--config", config, *command[1:]])
+        printed += [ran.out, ran.err]
+    archive = str(tmp / "backup.tgz")
+    for _ in range(2):  # the second finds the archive of the first
+        ran = _main(["backup", archive, "--config", config, "--state-dir", state_dir])
+        printed += [ran.out, ran.err]
+    inline = _written(tmp, "inline.toml", 'mqtt = { host = "h", password = "secret" }\n')
+    printed.append(_main(["backup", str(tmp / "inline.tgz"), "--config", inline]).err)
+    printed.append(_main(["backup", str(tmp / "none" / "b.tgz"), "--config", config]).err)
+    printed.append(_main(["history", "export", "--state-dir", str(tmp / "none")]).err)
+    newer = tmp / "newer"
+    newer.mkdir(exist_ok=True)
+    with contextlib.closing(sqlite3.connect(newer / "history.sqlite3")) as db:
+        db.execute("PRAGMA user_version = 999")
+    printed.append(_main(["history", "export", "--state-dir", str(newer)]).err)
+    return printed
+
+
 SCENARIOS = {
     "check-config": _check_config,
     "probe": _probe,
@@ -1031,6 +1106,7 @@ SCENARIOS = {
     "render": _render,
     "usage": _usage,
     "dashboard": _dashboard,
+    "operations": _operations,
 }
 
 
@@ -1167,7 +1243,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
     with cli_common._speaking(translator):
         parser = cli._parser()
         helps = [command.format_help() for command in _parsers(parser)]
-    assert len(helps) == 16  # the program, its commands and theirs
+    assert len(helps) == 22  # the program, its commands and theirs
     if language == "xx":
         assert all(text.startswith("‹usage: ›") for text in helps)
     if language in {"hostile", "percents"}:  # argparse formats them: English
@@ -1219,6 +1295,16 @@ def _machine_outputs(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[R
     ]
     ran.append(_main(["config", "answers", "--config", config]))
     ran.append(_main(["dashboard", "--config", config, "--state-dir", str(tmp)]))
+    _broker(monkeypatch, documents=_online(state=REPORTED, contacts=contacts))
+    ran.append(_main(["status", "--json", "--config", config]))
+    history = tmp / "history.sqlite3"
+    if not history.exists():
+        kept = History.open(history)
+        assert kept is not None
+        kept.add_message(HistoryEntry(1_700_000_000.0, "in", "contact", "hello", KEY))
+        kept.close()
+    for form in ("jsonl", "csv"):
+        ran.append(_main(["history", "export", "--format", form, "--state-dir", str(tmp)]))
     ran.append(_main(["--version"]))
     by_id = re.compile(r"cli-[0-9a-f]{8}")  # a new request id each time
     machine = [Ran(r.status, by_id.sub("cli-<id>", r.out), "") for r in ran]

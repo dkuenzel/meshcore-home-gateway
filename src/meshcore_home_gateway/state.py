@@ -230,6 +230,18 @@ class AnnouncedComponents:
             self._store.put(self._removed, removed)
         return {key: entry["p"] for key, entry in removed.items()}
 
+    def announced(self) -> dict[str, str]:
+        """Every component Home Assistant may still have (key -> platform): those of the last
+        document and the pending removals; for `retire`, which removes them all."""
+        data = self._store.load()
+        raw = data.get(self._removed)
+        pending = {
+            key: entry["p"]
+            for key, entry in (raw.items() if isinstance(raw, dict) else ())
+            if isinstance(entry, dict) and isinstance(entry.get("p"), str)
+        }
+        return pending | _string_map(data.get(self._key))
+
 
 REMOVAL_KEEP_S = 30 * 86_400.0
 

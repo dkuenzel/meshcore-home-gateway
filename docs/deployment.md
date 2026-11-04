@@ -261,7 +261,9 @@ pct exec 105 -- ls /usr/local/lib/meshcore-home-gateway/
 pct exec 105 -- ln -sfn meshcore-home-gateway-<old version>.pyz \
   /usr/local/lib/meshcore-home-gateway/current.pyz
 pct exec 105 -- systemctl restart meshcore-home-gateway
-# remove
+# remove: first out of Home Assistant and off the broker, then the container
+pct exec 105 -- systemctl stop meshcore-home-gateway
+pct exec 105 -- meshcore-home-gateway retire --yes
 pct stop 105 && pct destroy 105
 ```
 
@@ -373,11 +375,23 @@ English. The service's log is always English.
 | --- | --- |
 | Logs | `journalctl -u meshcore-home-gateway -f` |
 | Status | `systemctl status meshcore-home-gateway` (shows radio state and queue) |
+| What the gateway reports | `meshcore-home-gateway status` (its retained documents; `--json`) |
+| Check everything | `meshcore-home-gateway doctor` (configuration, broker, gateway, this host) |
 | Check the configuration | `meshcore-home-gateway check-config` |
 | Check the broker login | `meshcore-home-gateway check-config --broker` |
 | Watch the bus | `meshcore-home-gateway listen` |
 | Send a test message | `meshcore-home-gateway send --wait 60 <alias> "test"` |
 | Inspect the radio | `systemctl stop meshcore-home-gateway && meshcore-home-gateway probe --serial <device>` |
+| Back up | `meshcore-home-gateway backup /root/gateway-$(date +%F).tar.gz` (below) |
+| Export the history | `meshcore-home-gateway history export --format csv > messages.csv` |
+| Before the container goes | `systemctl stop meshcore-home-gateway && meshcore-home-gateway retire --yes` |
+
+`status` exits with 1 while the gateway is offline or its health section degraded, `doctor` when
+a check finds a problem; both suit a monitoring script. `doctor` checks what is easily missed:
+the broker login and whether the broker takes clients without one,
+TLS, a radio over TCP, the radio's clock, a contested TCP link, firmware the gateway is not
+tested with, the health section, the free space, automatic security updates and a restart that
+updates wait for.
 
 * **Service:** `Type=notify` with a 60 s watchdog; restart after 5 s on failure, not on
   configuration errors (exit code 78). Each further automatic restart waits longer, up to 5
@@ -414,7 +428,15 @@ English. The service's log is always English.
   `systemd-run --wait -p IPAddressDeny=any python3 -c "import socket;
   socket.create_connection(('deb.debian.org', 80), 5)"` must fail. It suits a virtual machine
   or a host of its own better than the container.
-* **State and backup:** back up `/etc/meshcore-home-gateway/` (`config.toml`, and
+* **State and backup:** `meshcore-home-gateway backup FILE` writes all of it into one archive
+  (tar.gz, mode 0600) while the service runs: the configuration, the three files of
+  `/var/lib/meshcore-home-gateway/` (the history copied with SQLite's online backup) and
+  `MANIFEST.json`, which names the version and where each file came from. The configuration goes
+  without the broker password unless `--with-password` (which also takes the file
+  `password_file` names); without it, set the password again after a restore. To restore: stop
+  the service, unpack the archive, copy `config.toml` to `/etc/meshcore-home-gateway/` and the
+  files under `state/` to `/var/lib/meshcore-home-gateway/` (owned by `meshcore-home-gateway`),
+  then start it. By hand: back up `/etc/meshcore-home-gateway/` (`config.toml`, and
   `mqtt-password` where the installer wrote it) and the three files of
   `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop
   meshcore-home-gateway`), or use a Proxmox backup of the whole container (`vzdump`): a backup of
@@ -460,8 +482,12 @@ English. The service's log is always English.
   again; set 0600 after it.
 * **Times:** the gateway's documents and events give times in UTC; the journal shows the
   container's local time, which the installer takes from the host (`--timezone host`).
-* **Retained documents** stay on the broker after the gateway is removed. Clear them with, for
-  example, `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
+* **Retained documents** stay on the broker after the gateway is removed, and its devices in Home
+  Assistant. `meshcore-home-gateway retire --yes`, with the service stopped and Home Assistant
+  running, removes the devices (each bound first, so that Home Assistant also drops what earlier
+  versions announced), clears every retained document under the gateway's topics and leaves its
+  availability `offline`; without `--yes` it counts what it would do. By hand: for example,
+  `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
   2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
 * **Logs contain no message texts** at the default level; set `log_level = "debug"` temporarily to
   see them.

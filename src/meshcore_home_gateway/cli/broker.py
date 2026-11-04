@@ -4,21 +4,19 @@ module (`broker.mqtt_client`), so that a test replaces it in one place."""
 
 from __future__ import annotations
 
+import json
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from meshcore_home_gateway.cli.common import tr
-from meshcore_home_gateway.config import MqttConfig
+from meshcore_home_gateway.config import Config, MqttConfig
 
 CONNECT_TIMEOUT_S = 10.0
-
-
 PUBLISH_TIMEOUT_S = 10.0
-
-
 SUBSCRIBE_TIMEOUT_S = 5.0
+RETAINED_WAIT_S = 2.0  # for the gateway's retained documents; brokers send them on SUBACK
 
 
 def mqtt_client(mqtt: MqttConfig, suffix: str) -> Any:
@@ -94,11 +92,72 @@ def subscribe(client: Any, topic: str) -> str | None:
     return None
 
 
-def publish(client: Any, topic: str, payload: bytes) -> str | None:
-    """Publish with QoS 1 and wait for the broker's acknowledgement; returns an error text."""
-    info = client.publish(topic, payload, qos=1)
+def publish(client: Any, topic: str, payload: bytes, *, retain: bool = False) -> str | None:
+    """Publish with QoS 1 and wait for the broker's acknowledgement; returns an error text.
+    `retain` with an empty payload clears the topic's retained message."""
+    info = client.publish(topic, payload, qos=1, retain=retain)
     try:
         info.wait_for_publish(PUBLISH_TIMEOUT_S)
     except (RuntimeError, ValueError) as exc:
         return tr("request not sent: {detail}", detail=exc)
     return None if info.is_published() else tr("broker did not confirm the request")
+
+
+class Retained:
+    """The retained messages of some topics (paho thread); JSON where they are JSON."""
+
+    def __init__(self, topics: Sequence[str]) -> None:
+        self.topics = tuple(topics)
+        self.messages: dict[str, Any] = {}
+        self.complete = threading.Event()
+
+    def on_message(self, message: Any) -> None:
+        if message.topic not in self.topics or not message.retain or not message.payload:
+            return
+        try:
+            self.messages[message.topic] = json.loads(message.payload)
+        except (ValueError, RecursionError):
+            self.messages[message.topic] = message.payload.decode("utf-8", errors="replace")
+        if set(self.messages) == set(self.topics):
+            self.complete.set()
+
+
+class GatewaySession:
+    """A broker connection to the gateway's topics: its availability and some of its retained
+    documents (`documents`: the names of `Topics` attributes, such as "contacts", "nodes",
+    "state"), with a client id of the command's own (`suffix`)."""
+
+    def __init__(
+        self, config: Config, documents: Sequence[str] = (), suffix: str = "status"
+    ) -> None:
+        from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
+
+        self.config = config
+        self.topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
+        names = [self.topics.availability, *(getattr(self.topics, d) for d in documents)]
+        self.retained = Retained(names)
+        self.client = mqtt_client(config.mqtt, suffix)
+        self.client.on_message = self._on_message
+
+    def _on_message(self, _client: Any, _userdata: Any, message: Any) -> None:
+        self.retained.on_message(message)
+
+    def open(self) -> str | None:
+        """Connect and read the retained documents; an error text, or None."""
+        error = Connection().open(self.client, self.config.mqtt)
+        for topic in () if error else self.retained.topics:
+            error = error or subscribe(self.client, topic)
+        if error is None:
+            self.retained.complete.wait(RETAINED_WAIT_S)
+        return error
+
+    def document(self, name: str) -> Any:
+        return self.retained.messages.get(getattr(self.topics, name))
+
+    @property
+    def online(self) -> bool:
+        return bool(self.document("availability") == "online")
+
+    def close(self) -> None:
+        self.client.disconnect()  # first: loop_stop() alone may wait 120 s for unacknowledged
+        self.client.loop_stop()

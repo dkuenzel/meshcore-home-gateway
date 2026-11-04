@@ -26,33 +26,11 @@ from meshcore_home_gateway.cli.common import (
 from meshcore_home_gateway.config import Config, load_config
 from meshcore_home_gateway.i18n import N_
 
-RETAINED_WAIT_S = 2.0  # for the gateway's retained documents; brokers send them on SUBACK
-
-
 _FULL_KEY = re.compile(r"[0-9a-fA-F]{64}")
 
 
 # a heard node as Home Assistant's select lists it, the name after the digits optional
 _LABEL = re.compile(r"([0-9a-fA-F]{12})(?:…|\.\.\.)([0-9a-fA-F]{8})(?: .*)?")
-
-
-class _Retained:
-    """The retained messages of some topics (paho thread); JSON where they are JSON."""
-
-    def __init__(self, topics: Sequence[str]) -> None:
-        self.topics = tuple(topics)
-        self.messages: dict[str, Any] = {}
-        self.complete = threading.Event()
-
-    def on_message(self, message: Any) -> None:
-        if message.topic not in self.topics or not message.retain or not message.payload:
-            return
-        try:
-            self.messages[message.topic] = json.loads(message.payload)
-        except (ValueError, RecursionError):
-            self.messages[message.topic] = message.payload.decode("utf-8", errors="replace")
-        if set(self.messages) == set(self.topics):
-            self.complete.set()
 
 
 class _ContactWatch:
@@ -75,42 +53,19 @@ class _ContactWatch:
             self.done.set()
 
 
-class _ContactSession:
+class _ContactSession(broker.GatewaySession):
     """A broker connection for the `contacts` commands: the gateway's availability and some of
     its retained documents (`documents`: "contacts", "nodes", "state"), then perhaps a request."""
 
     def __init__(self, config: Config, documents: Sequence[str] = ()) -> None:
-        from meshcore_home_gateway.mqtt.topics import Topics  # noqa: PLC0415
-
-        self.config = config
-        self.topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
-        names = [self.topics.availability, *(getattr(self.topics, d) for d in documents)]
-        self.retained = _Retained(names)
         self.watch: _ContactWatch | None = None
-        self.client = broker.mqtt_client(config.mqtt, "contacts")
-        self.client.on_message = self._on_message
+        super().__init__(config, documents, "contacts")
 
-    def _on_message(self, _c: Any, _u: Any, message: Any) -> None:
+    def _on_message(self, client: Any, userdata: Any, message: Any) -> None:
         if message.topic == self.topics.contact_event and self.watch is not None:
             self.watch.on_message(message)
         else:
-            self.retained.on_message(message)
-
-    def open(self) -> str | None:
-        """Connect and read the retained documents; an error text, or None."""
-        error = broker.Connection().open(self.client, self.config.mqtt)
-        for topic in () if error else self.retained.topics:
-            error = error or broker.subscribe(self.client, topic)
-        if error is None:
-            self.retained.complete.wait(RETAINED_WAIT_S)
-        return error
-
-    def document(self, name: str) -> Any:
-        return self.retained.messages.get(getattr(self.topics, name))
-
-    @property
-    def online(self) -> bool:
-        return bool(self.document("availability") == "online")
+            super()._on_message(client, userdata, message)
 
     def request(
         self,
@@ -143,10 +98,6 @@ class _ContactSession:
         result = self.watch.result
         print(_json_text(result))
         return EX_OK if result["event_type"] in ok and result.get("reason") is None else EX_FAILURE
-
-    def close(self) -> None:
-        self.client.disconnect()  # first: loop_stop() alone may wait 120 s for unacknowledged
-        self.client.loop_stop()
 
 
 def _opened(session: _ContactSession) -> int | None:
