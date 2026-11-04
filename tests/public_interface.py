@@ -94,6 +94,7 @@ from meshcore_home_gateway.core.telemetry import (
 )
 from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import client as mqtt_client
+from meshcore_home_gateway.mqtt import homie, homie_client
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
     contact_device_id,
@@ -218,6 +219,8 @@ publish_rx_log = true
 [telemetry]
 enabled = true
 ask_types = ["chat", "sensor"]
+[homie]
+enabled = true
 """
 # every setting with an answer type, for `config answers` (MINIMAL adds radio.device)
 ANSWERED = f"""
@@ -301,6 +304,9 @@ log_level = "debug"
 enabled = true
 ask = "household"
 ask_types = ["chat", "sensor"]
+[homie]
+enabled = true
+contacts = 10
 """
 
 
@@ -325,6 +331,7 @@ def placeholders(text: str) -> str:
     """`text` with each fixture value replaced by its placeholder."""
     for value, placeholder in (
         (gateway_device(), "<device>"),  # first: it holds the node ID
+        (homie.device_id(NODE), "<homie_device>"),  # the node ID, `_` as `-`
         (BASE, "<base_topic>"),
         (NODE, "<node_id>"),
         (PREFIX, "<prefix>"),
@@ -468,8 +475,9 @@ class _Topic:
     cleared: bool = False  # an empty message: a retained topic cleared, a discovery removed
 
     def record(self, topic: str) -> dict[str, Any]:
+        payloads = self.payloads or {"text"}  # only ever empty: an empty text (`$extensions`)
         try:
-            [retained], [qos], [payload] = self.retained, self.qos, self.payloads
+            [retained], [qos], [payload] = self.retained, self.qos, payloads
         except ValueError:
             raise AssertionError(f"{topic}: published in more than one way: {self}") from None
         entry: dict[str, Any] = {"retained": retained, "qos": qos, "payload": payload}
@@ -480,9 +488,9 @@ def mqtt(tmp: Path) -> dict[str, Any]:
     # the scenario's clock stands still: the `nodes` document goes out with every change, not
     # at most every NODES_DOCUMENT_INTERVAL_S as in a run (SEC-011)
     with mock.patch.object(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0):
-        client = asyncio.run(_published(tmp))
+        client, homie_paho = asyncio.run(_published(tmp))
     seen: dict[str, _Topic] = {}
-    for topic, payload, retained, qos in client.published:
+    for topic, payload, retained, qos in client.published + homie_paho.published:
         entry = seen.setdefault(placeholders(topic), _Topic())
         entry.retained.add(retained)
         entry.qos.add(qos)
@@ -495,17 +503,20 @@ def mqtt(tmp: Path) -> dict[str, Any]:
             entry.payloads.add("text")
             entry.texts.add(payload.decode())
     refuse_leftovers(sorted(seen))  # a topic built otherwise: before the documents go missing
-    if client.will is None:
-        raise AssertionError("MqttBus set no last will")
-    topic, payload, retained, qos = client.will
-    seen[placeholders(topic)].texts.add(payload.decode())
-    will = {"payload": payload.decode(), "retained": retained, "qos": qos}
+    wills = {}
+    for name, paho_client in (("MqttBus", client), ("the Homie connection", homie_paho)):
+        if paho_client.will is None:
+            raise AssertionError(f"{name} set no last will")
+        topic, payload, retained, qos = paho_client.will
+        seen[placeholders(topic)].texts.add(payload.decode())
+        wills[placeholders(topic)] = {"payload": payload.decode(), "retained": retained, "qos": qos}
     ours = {t.removeprefix(_DOCUMENTS): e for t, e in seen.items() if t.startswith(_DOCUMENTS)}
     texts = {name: list(e.texts) for name, e in ours.items() if "text" in e.payloads}
+    subscribed = client.subscribed + homie_paho.subscribed
     return {
         "publish": {topic: entry.record(topic) for topic, entry in seen.items()},
-        "subscribe": {placeholders(topic): {"qos": qos} for topic, qos in client.subscribed},
-        "last_will": {placeholders(topic): will},
+        "subscribe": {placeholders(topic): {"qos": qos} for topic, qos in subscribed},
+        "last_will": wills,
         "documents": {name: list(e.keys) for name, e in ours.items() if "json" in e.payloads},
         "values": texts | _vocabularies(client.published),
     }
@@ -562,11 +573,12 @@ async def _until(events: asyncio.Task[None], step: Awaitable[None]) -> None:
     raise AssertionError(f"the bridge's event loop did not get there in {EVENTS_S} s")
 
 
-async def _published(tmp: Path) -> _Paho:
+async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     """Every publish path of the gateway once, through the MQTT adapter, and every value of the
     lists that the producers build where they publish them: the bridge never runs, its observer
     and a few of its steps are called directly. Its poller never runs either: the observer gets
-    an answer and the events as the poller hands them over."""
+    an answer and the events as the poller hands them over. The Homie device's connection is the
+    second client."""
     client = _Paho()
     topics = Topics(BASE, NODE)
     config = maximal()
@@ -580,6 +592,18 @@ async def _published(tmp: Path) -> _Paho:
     await bus.start()
     client.on_connect(client, None, None, SimpleNamespace(is_failure=False), None)  # as paho
     await asyncio.sleep(0)  # the connection reaches the event loop
+    homie_paho = _Paho()
+    connection = homie_client.homie_adapter(
+        config.mqtt,
+        config.homie.contacts,
+        "Gateway",
+        topics,
+        send=bus.requests.put_nowait,
+        client_factory=lambda _: homie_paho,
+    )
+    await connection.start()
+    homie_paho.on_connect(homie_paho, None, None, SimpleNamespace(is_failure=False), None)
+    await asyncio.sleep(0)
     store = JsonStateFile(tmp / "state.json")
     records = ContactDeviceRecords(store)
     devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: T)
@@ -592,6 +616,7 @@ async def _published(tmp: Path) -> _Paho:
         notifier=lambda _: True,
         wall_clock=lambda: T,
         devices=devices,
+        homie=connection.device,
     )
     observer = bridge.observer
     alice, bob = _record(KEY, "Alice", NodeType.CHAT), _record(KEY_B, "Bob", NodeType.CHAT)
@@ -664,8 +689,18 @@ async def _published(tmp: Path) -> _Paho:
     bridge._events.put_nowait(PacketLogged(codec.RxLog(1.0, -90, b"\x00"), T))
     await _until(events, bridge._events.join())
     events.cancel()
+    # a text for a companion's node, and its echo
+    homie_paho.on_message(
+        homie_paho, None, SimpleNamespace(topic=_homie_send(KEY), payload=b"Hi", retain=False)
+    )
+    await asyncio.sleep(0)
+    await connection.stop()
     await bus.stop()
-    return client
+    return client, homie_paho
+
+
+def _homie_send(key: str) -> str:
+    return f"{homie.ROOT}/{homie.device_id(NODE)}/{key}/send/set"
 
 
 def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str, list[str]]:

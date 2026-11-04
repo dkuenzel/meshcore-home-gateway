@@ -505,6 +505,32 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     executable(stubs / "python", STUB_PYTHON.format(python=sys.executable))
     (tmp_path / "tools").mkdir()
     shutil.copy(ROOT / "tools" / "i18n.py", tmp_path / "tools" / "i18n.py")
+    # EXT-004: the AsyncAPI document, from the snapshot, for the version the release builds
+    asyncapi = ROOT / "tools" / "asyncapi.py"
+    shutil.copy(asyncapi, tmp_path / "tools" / "asyncapi.py")
+    spec = importlib.util.spec_from_file_location("asyncapi_tool", asyncapi)
+    assert spec is not None
+    assert spec.loader is not None
+    snapshot = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(snapshot)
+    (tmp_path / "tests").mkdir()
+    shutil.copy(snapshot.SNAPSHOT, tmp_path / snapshot.SNAPSHOT.relative_to(ROOT))
+    (tmp_path / "docs").mkdir()
+
+    def interface(version: str) -> None:
+        subprocess.run(  # noqa: S603 - our tool with fixed arguments
+            [
+                sys.executable,
+                str(tmp_path / "tools" / "asyncapi.py"),
+                "--write",
+                "--release",
+                version,
+            ],
+            capture_output=True,
+            check=True,
+        )
+
+    interface("9.9.9")
     dist = tmp_path / "dist"
     dist.mkdir()
     for name in (
@@ -569,6 +595,11 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
         digest = hashlib.sha256((dist / "release" / file).read_bytes()).hexdigest()
         assert f'\nRELEASE_{name}_SHA256="{digest}"\n' in pinning
         assert f"{digest}  {file}\n" in sums
+    # EXT-004: the MQTT API for machines, as of this release
+    api = (dist / "release" / "meshcore-home-gateway-9.9.9.asyncapi.yaml").read_bytes()
+    assert api == (tmp_path / "docs" / "mqtt-api.asyncapi.yaml").read_bytes()
+    assert b'\n    "version": "9.9.9",\n' in api
+    assert f"{hashlib.sha256(api).hexdigest()}  meshcore-home-gateway-9.9.9.asyncapi.yaml\n" in sums
 
     (locale / "xx.messages").write_text(pack + "msg\tNo\t‹No›\n", encoding="utf-8")
     refused = release()
@@ -590,4 +621,11 @@ def test_a_release_publishes_the_pack_of_each_language_its_installer_offers(
     unpinned = release()
     assert unpinned.returncode != 0
     assert "release: the installer pins no digests" in unpinned.stderr
+    assert not (dist / "release" / "SHA256SUMS").exists()
+
+    installer.write_text(script, encoding="utf-8")
+    interface("9.9.8")
+    stale = release()  # a version written without `make interface`
+    assert stale.returncode != 0
+    assert "docs/mqtt-api.asyncapi.yaml is not the snapshot's: make interface" in stale.stderr
     assert not (dist / "release" / "SHA256SUMS").exists()

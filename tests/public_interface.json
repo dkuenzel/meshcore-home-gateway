@@ -26,6 +26,8 @@
     "homeassistant.language",
     "homeassistant.prefix",
     "homeassistant.status_topic",
+    "homie.contacts",
+    "homie.enabled",
     "messages.alert_targets",
     "messages.ascii_only",
     "messages.clean_received",
@@ -1013,6 +1015,21 @@
    "default": "homeassistant/status",
    "identity": true,
    "type": "string"
+  },
+  "homie": {
+   "type": "table"
+  },
+  "homie.contacts": {
+   "answer": "int",
+   "default": 50,
+   "max": 1000,
+   "min": 0,
+   "type": "integer"
+  },
+  "homie.enabled": {
+   "answer": "bool",
+   "default": false,
+   "type": "boolean"
   },
   "messages": {
    "type": "table"
@@ -2250,6 +2267,11 @@
     "payload": "offline",
     "qos": 1,
     "retained": true
+   },
+   "homie/<homie_device>/$state": {
+    "payload": "lost",
+    "qos": 1,
+    "retained": true
    }
   },
   "publish": {
@@ -2354,6 +2376,169 @@
     "payload": "json",
     "qos": 1,
     "retained": false
+   },
+   "homie/<homie_device>/$extensions": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/$homie": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/$implementation": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/$name": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/$nodes": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/$state": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/$name": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/$properties": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/$type": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/battery": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/battery/$datatype": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/battery/$name": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/battery/$unit": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/last-heard": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/last-heard/$datatype": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/last-heard/$name": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/position": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/position/$datatype": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/position/$name": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/send": {
+    "payload": "text",
+    "qos": 1,
+    "retained": false
+   },
+   "homie/<homie_device>/<key>/send/$datatype": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/send/$name": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/send/$retained": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/send/$settable": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/telemetry-state": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/telemetry-state/$datatype": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/telemetry-state/$format": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/<key>/telemetry-state/$name": {
+    "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
    }
   },
   "subscribe": {
@@ -2409,6 +2594,9 @@
     "qos": 1
    },
    "<status_topic>": {
+    "qos": 1
+   },
+   "homie/<homie_device>/+/send/set": {
     "qos": 1
    }
   },

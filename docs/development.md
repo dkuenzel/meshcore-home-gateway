@@ -318,6 +318,9 @@ and the dashboard's template.
   against the committed snapshot: breaking, changed (a default, a wider range) or added, one
   finding per fact (each value removed from a list is one). Review its diff like code. A merge
   conflict in `tests/public_interface.json` is resolved by `make interface`, not by hand.
+- `make interface` also writes `docs/mqtt-api.asyncapi.yaml` from the snapshot and
+  `__version__` (`tools/asyncapi.py`), the MQTT API for machines; `tests/test_asyncapi.py` fails
+  when it is stale, and checks its channels and keys against the snapshot by rules of its own.
 - The CI job *release plan* (`make release-plan`) compares the snapshot with the one of the last
   release on every pull request and push, and its log shows the result. A finding that removes or
   narrows needs a `**Breaking:**` entry (or a `### Removed` section) since that release, which
@@ -371,8 +374,9 @@ Releases are built, signed and published by the workflow `.github/workflows/rele
 ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)); nobody builds
 release files by hand. The tools that decide what a release is and contains,
 `tools/release_plan.py`, `tools/public_interface.py`, `tools/release_notes.py`,
-`tools/build_pyz.py` and the `release` target of the `Makefile`, are reviewed like the
-security-relevant parts of the program: a change to them changes what every installation gets.
+`tools/build_pyz.py`, `tools/asyncapi.py` and the `release` target of the `Makefile`, are
+reviewed like the security-relevant parts of the program: a change to them changes what every
+installation gets.
 
 Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0 on, for
 the four public interfaces of [Compatibility](#compatibility): an incompatible change raises the
@@ -396,9 +400,10 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    after it, as wrong and does not write it to the radio (design §6.1). One left behind only
    weakens that check; one in the future would refuse every host clock, which a test catches.
 2. The pull request that finishes the increment sets `__version__` in
-   `src/meshcore_home_gateway/__init__.py`, adds its row to the table of Home Assistant releases
-   tested with ([home-assistant.md](home-assistant.md#requirements)) and moves the *Unreleased*
-   entries of `CHANGELOG.md`
+   `src/meshcore_home_gateway/__init__.py`, runs `make interface` (the AsyncAPI document names the
+   version), adds its row to the table of Home Assistant releases tested with
+   ([home-assistant.md](home-assistant.md#requirements)) and moves the *Unreleased* entries of
+   `CHANGELOG.md`
    under `## [X.Y.Z] - YYYY-MM-DD` (a pre-release's section says that the hardware checklist was
    not run for it). The version must be the next one, which `make release-plan` and the CI job
    *release plan* check: the kind of change comes from the changelog entries since the last
@@ -430,10 +435,11 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    (`RELEASE="X.Y.Z"`, `RELEASE_PYZ_SHA256`, `RELEASE_UNIT_SHA256`: run from the release's
    address, it installs this release) and, beside it, the language pack of each language it
    offers (`meshcore-home-gateway-lxc.<language>.messages`, refused unless it is the pack the
-   installer pins), and writes `SHA256SUMS`. A third job builds the files again on an arm64
-   runner and compares `SHA256SUMS`. After all three, the last job attests every file
-   (Sigstore-signed build provenance) and publishes the GitHub release with the changelog section
-   as notes (its relative links point at the files of the tag).
+   installer pins) and the AsyncAPI document (`meshcore-home-gateway-X.Y.Z.asyncapi.yaml`,
+   refused unless it is the snapshot's for that version), and writes `SHA256SUMS`. A third job
+   builds the files again on an arm64 runner and compares `SHA256SUMS`. After all three, the last
+   job attests every file (Sigstore-signed build provenance) and publishes the GitHub release
+   with the changelog section as notes (its relative links point at the files of the tag).
 5. Check the result like a user: download a file and run
 
    ```sh

@@ -50,6 +50,9 @@ flowchart LR
   gateway: its status and the radio's health, the last message and a form to write one, the
   contacts and the nodes heard, and a map with the contacts' traces
   ([`docs/home-assistant.md`](docs/home-assistant.md#dashboard)).
+- **openHAB and other Homie controllers:** with `[homie] enabled = true` the contacts are a Homie
+  device that they discover on their own, with battery, position, last heard and a field to send
+  ([`docs/mqtt-api.md`](docs/mqtt-api.md#homie-homiehomie_device)).
 - **Translatable:** the command line, the installer, the names in Home Assistant and the
   dashboard come from gettext catalogs; English for now, more languages by contribution
   ([`docs/translations.md`](docs/translations.md)). Machine output never changes with the

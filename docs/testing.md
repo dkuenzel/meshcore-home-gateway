@@ -143,6 +143,15 @@ those need neither a compiler nor network; CI runs them in a job of their own.
   built, `.venv/bin/python -m pytest tests/firmware/test_paths.py` works too.
   `tests/firmware/air.py` is the air, in the test's process; `tests/firmware/node.py` starts a
   node; the fixtures in `tests/firmware/conftest.py` give a test the air and its nodes.
+- `make firmware-play` (EXT-019) keeps the hardware checklist's household running for a look by
+  hand: radio A on the gateway, a repeater and Bob's companion B with a GPS, set up as
+  [companions.md](companions.md) says, a Mosquitto broker on 127.0.0.1:1883 and the gateway's
+  service on A, with B as a target and a command sender. It prints the `mosquitto_sub` and
+  `mosquitto_pub` lines to watch and to send; a line typed is a direct message from B to the
+  gateway; Ctrl-C stops everything. `PLAY` passes options, such as `PLAY="--port 0 --hops 2"`;
+  the files (logs, the service's state) stay in a new temporary directory, or in `--directory`.
+  `tests/firmware/play.py` is built from the tests' parts; `test_playground.py` starts and
+  stops it once.
 
 Every node runs the EU/UK Narrow preset with CR 4/8 (869.618 MHz, 62.5 kHz, SF 8), the settings
 the hardware checklist assumes. Each node writes its packet log, debug output and, on the
@@ -338,13 +347,14 @@ GPS, a contact of A); for steps 51 and 52 C, another companion with GPS that A i
 | 53 | Update the gateway, or start a test installation with another version, without making the dashboard again | the amber version card with both versions; gone once the dashboard is made again |
 | 54 | A household user who is no administrator, on the phone; then open `/config/devices` as that user; then press `e`, search *Remove from radio* and open a contact's button (do not press it) | sees every view, sends with the form, switches a contact's *Telemetry* in *Telemetry and removal*, cannot edit the dashboard; the device page is refused; the entity search opens the button with *Press*, as the guide says (anyone can remove a contact that way) |
 
-Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, step 57 a node with MeshCore's sensor firmware.
+Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, step 57 a node with MeshCore's sensor firmware, step 58 openHAB with its MQTT binding on the same broker.
 
 | # | Step | Expected |
 | --- | --- | --- |
 | 55 | Set `[commands] codes_file`, run `meshcore-home-gateway commands enrol <B's key>`, scan `qrencode -t ansiutf8 '<line>'` with the app, restart the service. B sends `status <code>`, the same text anew within 30 s, then `status` | a `command` event `status` with empty `args`; then `received` shows `code_reused`, then `code_missing` |
 | 56 | Set `[commands] reply = "all"` and `prefix = "Home: "` on a channel target; restart. B sends `status <code>`, then `status`; publish `Gate open` to the channel target | B's app shows `ok: status`, then `rejected: code_missing`, each confirmed in `delivery` with B's key as `target`; the channel shows `Home: Gate open` |
 | 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
+| 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
 
 ### Steps 29–45 on the simulated air
 

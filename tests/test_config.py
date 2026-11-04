@@ -12,6 +12,7 @@ from meshcore_home_gateway import config as config_module
 from meshcore_home_gateway.config import (
     Config,
     ConfigError,
+    HomieConfig,
     config_answers,
     load_config,
     parse_config,
@@ -294,6 +295,22 @@ def test_the_history_is_on_by_default_and_bounded() -> None:
     for invalid in ("0", "3651", '"30"'):
         with pytest.raises(ConfigError, match=r"history\.readings_days"):
             parse_config(MINIMAL + f"\n[history]\nreadings_days = {invalid}\n")
+
+
+def test_the_homie_device_is_off_unless_enabled_and_its_nodes_bounded() -> None:
+    """EXT-011: opt-in; at most as many nodes as Home Assistant could have contact devices."""
+    homie = parse_config(MINIMAL).homie
+    assert (homie.enabled, homie.contacts) == (False, 50)
+    homie = parse_config(MINIMAL + "\n[homie]\nenabled = true\ncontacts = 0\n").homie
+    assert (homie.enabled, homie.contacts) == (True, 0)
+    assert parse_config(MINIMAL + "\n[homie]\ncontacts = 1000\n").homie.contacts == 1000
+    for invalid in ("-1", "1001", "true", '"10"'):
+        with pytest.raises(ConfigError, match=r"homie\.contacts"):
+            parse_config(MINIMAL + f"\n[homie]\ncontacts = {invalid}\n")
+    with pytest.raises(ConfigError, match=r"homie\.root: unknown setting"):
+        parse_config(MINIMAL + '\n[homie]\nroot = "devices"\n')
+    rendered = render_config(ANSWERS + "homie.enabled=true\nhomie.contacts=8\n")
+    assert parse_config(rendered).homie == HomieConfig(enabled=True, contacts=8)
 
 
 @pytest.mark.parametrize(

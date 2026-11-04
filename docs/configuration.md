@@ -373,6 +373,17 @@ a position from telemetry from the history.
 | `publish_rx_log` | `false` | publish SNR, RSSI and raw bytes of every received packet on `rx` |
 | `log_level` | `info` | `debug`, `info`, `warning`, `error`; message texts are logged only at `debug`, with positions, keys and every frame of the radio, which journald keeps for weeks: the service and `check-config` warn about it; set it back after the search |
 
+## `[homie]`
+
+The radio's contacts as a device of the Homie convention, for openHAB and the other Homie
+controllers ([mqtt-api.md](mqtt-api.md#homie-homiehomie_device)). Off unless enabled; its
+connection to the broker is a second one, with the settings of `[mqtt]`.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | publish the device `homie/meshcore-<node_id>` (`_` as `-`); the broker's ACL needs `homie/meshcore-<node_id>/#` for the gateway's user |
+| `contacts` | `50` | contacts with a node, 0 to 1000, chosen as for their devices in Home Assistant (`homeassistant.contact_devices`) |
+
 ## Installer answers
 
 `meshcore-home-gateway config render --answers <file> --output <config> --group

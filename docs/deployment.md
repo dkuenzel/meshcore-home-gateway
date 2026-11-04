@@ -496,6 +496,9 @@ updates wait for.
   2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
 * **Logs contain no message texts** at the default level; set `log_level = "debug"` temporarily to
   see them.
+* **Metrics for Prometheus** come from an exporter beside the gateway, which has no listener of
+  its own: [`contrib/mqtt2prometheus`](../contrib/mqtt2prometheus/README.md) has configurations
+  for mqtt2prometheus that read `state`, `stats` and the contacts' documents.
 
 ## 5 Troubleshooting
 

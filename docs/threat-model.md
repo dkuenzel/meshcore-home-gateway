@@ -104,7 +104,11 @@ configured targets and known contacts receive; rate limits, a bounded queue, the
 MQTT 5's user properties name the publisher but prove nothing ([mqtt-api](mqtt-api.md#mqtt-5)).
 
 **Remains:** a client the ACL allows to write `command` triggers automations; a forged document
-shows until it is restored, and while the gateway is offline as long as the forger likes.
+shows until it is restored, and while the gateway is offline as long as the forger likes. With
+`[homie] enabled`, a second connection publishes the Homie device and takes texts on
+`homie/<device>/<key>/send/set` as on `contacts/<key>/send` ([mqtt-api](mqtt-api.md#homie-homiehomie_device));
+what another client writes on the device's topics is not restored, so only the ACL keeps its
+values true.
 
 ### B4: the broker and Home Assistant
 

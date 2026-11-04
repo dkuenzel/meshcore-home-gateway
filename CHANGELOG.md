@@ -159,6 +159,24 @@ format, the command line and Home Assistant discovery are public interfaces
   asked, with the same switch, state, exclusions and inclusions. A sensor answers only a radio
   in its access list: `setperm <the gateway radio's key> 1` on the sensor
   ([companions.md](docs/companions.md#sensors)).
+- `contrib/mqtt2prometheus`: configurations for the exporter mqtt2prometheus, which serves the
+  gateway's `state` and `stats` and the contacts' documents to Prometheus without a listener in
+  the gateway ([README](contrib/mqtt2prometheus/README.md)).
+- `make firmware-play` for contributors: the hardware checklist's household on the firmware's
+  simulated air, a local broker and the gateway, for exploring by hand until Ctrl-C
+  ([testing.md](docs/testing.md#tests-against-the-real-firmware)).
+- The MQTT API for machines: `docs/mqtt-api.asyncapi.yaml`, an AsyncAPI 3.1 document of every
+  topic the gateway publishes and reads, with QoS, retain flag and parameters, and the keys and
+  values of each document, generated from the interface snapshot so that it follows the code.
+  Each release attaches the document of its version, `meshcore-home-gateway-X.Y.Z.asyncapi.yaml`,
+  listed in `SHA256SUMS` ([mqtt-api.md](docs/mqtt-api.md)).
+- `[homie] enabled`: the radio's contacts as a device of the Homie convention 4.0.0, which openHAB
+  and the other Homie controllers discover without configuration: a node per contact (at most
+  `[homie] contacts`, 50) with battery, position, last heard and telemetry state, and for
+  companions a field to send a text, fed by the same documents as Home Assistant. Off by default;
+  the device has a connection of its own, with `$state` as its last will, and the broker's ACL
+  needs `homie/meshcore-<node_id>/#` for the gateway's user
+  ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
 - The dashboard's *Contacts* view has a card *Telemetry and removal* with each contact's switch
   *Telemetry* and button *Remove from radio*, for household users who open no device page; the
   last delivery step and the last contact event show their reason as a text, a reason without

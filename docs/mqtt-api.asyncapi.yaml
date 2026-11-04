@@ -1,0 +1,3175 @@
+{
+  "asyncapi": "3.1.0",
+  "id": "urn:meshcore-home-gateway:mqtt-api",
+  "info": {
+    "title": "meshcore-home-gateway MQTT API",
+    "version": "1.1.0a4",
+    "description": "The topics the gateway publishes and reads, generated from its interface snapshot by tools/asyncapi.py. docs/mqtt-api.md is normative: it gives what each key means and its type. Every value may be null. `x-values` lists the values the gateway uses at this release, in a key or in the items of a list; within a major version keys and values are only added: ignore a key you do not know, and treat a value you do not know as other.",
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/main/LICENSE"
+    },
+    "externalDocs": {
+      "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/v1.1.0a4/docs/mqtt-api.md"
+    }
+  },
+  "servers": {
+    "broker": {
+      "host": "{host}",
+      "protocol": "mqtt",
+      "protocolVersion": "3.1.1",
+      "description": "The broker of `[mqtt]`; with `protocol = \"5\"` it speaks MQTT 5.",
+      "variables": {
+        "host": {
+          "description": "`[mqtt] host` and `port`",
+          "examples": [
+            "broker.example.org:8883"
+          ]
+        }
+      }
+    }
+  },
+  "channels": {
+    "add_contact": {
+      "address": "{base_topic}/{node_id}/add_contact",
+      "messages": {
+        "add_contact": {
+          "name": "add_contact",
+          "summary": "a public key, contact link or contact card, or JSON {\"contact\": \"...\", \"id\": \"...\"}: add a contact to the radio; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "availability": {
+      "address": "{base_topic}/{node_id}/availability",
+      "messages": {
+        "availability": {
+          "name": "availability",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string",
+            "x-values": [
+              "offline",
+              "online"
+            ]
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      },
+      "description": "The last will of a connection: `offline`, retained, QoS 1."
+    },
+    "command": {
+      "address": "{base_topic}/{node_id}/command",
+      "messages": {
+        "command": {
+          "name": "command",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "args": {},
+              "event_type": {},
+              "received_at": {},
+              "sender_key": {},
+              "sender_name": {},
+              "sent_at": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "contact": {
+      "address": "{base_topic}/{node_id}/contact",
+      "messages": {
+        "contact": {
+          "name": "contact",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "x-values": [
+                  "added",
+                  "excluded",
+                  "failed",
+                  "hidden",
+                  "included",
+                  "position_in_advert",
+                  "refused",
+                  "removed",
+                  "shown"
+                ]
+              },
+              "id": {},
+              "key": {},
+              "name": {},
+              "prefix": {},
+              "reason": {},
+              "request": {
+                "x-values": [
+                  "add",
+                  "remove",
+                  "telemetry"
+                ]
+              },
+              "type": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "contacts": {
+      "address": "{base_topic}/{node_id}/contacts",
+      "messages": {
+        "contacts": {
+          "name": "contacts",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "advert_carries_position": {},
+              "advert_carries_position_total": {},
+              "advert_position": {},
+              "advert_position_total": {},
+              "contacts": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "heard_at": {},
+                    "key": {},
+                    "name": {},
+                    "protected": {},
+                    "type": {}
+                  }
+                }
+              },
+              "manage": {},
+              "manage_reason": {},
+              "max": {},
+              "remote_cli": {},
+              "remote_cli_total": {},
+              "telemetry_excluded": {},
+              "telemetry_excluded_total": {},
+              "total": {},
+              "truncated": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "contacts_key": {
+      "address": "{base_topic}/{node_id}/contacts/{key}",
+      "messages": {
+        "contacts_key": {
+          "name": "contacts_key",
+          "contentType": "application/json",
+          "summary": "a document; an empty retained message clears it when the contact leaves the table",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "advert_carries_position": {},
+              "advert_checked_at": {},
+              "advert_position": {},
+              "altitude_m": {},
+              "battery_v": {},
+              "favourite": {},
+              "first_heard_at": {},
+              "flags": {
+                "x-values": [
+                  "favourite",
+                  "remote_cli",
+                  "telemetry_base",
+                  "telemetry_environment",
+                  "telemetry_location"
+                ]
+              },
+              "heard_at": {},
+              "heard_via": {},
+              "hops": {},
+              "key": {},
+              "last_advert_at": {},
+              "latitude": {},
+              "longitude": {},
+              "mcu_temperature_c": {},
+              "name": {},
+              "path_hops": {},
+              "path_known": {},
+              "position_accuracy_m": {},
+              "position_at": {},
+              "position_current": {},
+              "position_received_at": {},
+              "position_source": {},
+              "prefix": {},
+              "protected": {},
+              "readings": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "ch1_luminosity": {},
+                  "ch1_temperature_c": {},
+                  "ch2_altitude_m": {},
+                  "ch2_analog_input": {},
+                  "ch2_barometric_pressure_hpa": {},
+                  "ch2_current_a": {},
+                  "ch2_distance_m": {},
+                  "ch2_frequency_hz": {},
+                  "ch2_generic": {},
+                  "ch2_humidity_percent": {},
+                  "ch2_luminosity": {},
+                  "ch2_percentage_percent": {},
+                  "ch2_power_w": {},
+                  "ch2_temperature_2_c": {},
+                  "ch2_temperature_c": {},
+                  "ch2_voltage_v": {}
+                }
+              },
+              "readings_at": {},
+              "remote_cli": {},
+              "removable": {},
+              "rssi_dbm": {},
+              "snr_db": {},
+              "telemetry_current": {},
+              "telemetry_excluded": {},
+              "telemetry_state": {
+                "x-values": [
+                  "answering",
+                  "away",
+                  "excluded",
+                  "look_alike",
+                  "no_answer",
+                  "no_path",
+                  "no_position",
+                  "off",
+                  "waiting"
+                ]
+              },
+              "type": {
+                "x-values": [
+                  "chat",
+                  "repeater",
+                  "room",
+                  "sensor"
+                ]
+              },
+              "verified": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "contacts_key_received": {
+      "address": "{base_topic}/{node_id}/contacts/{key}/received",
+      "messages": {
+        "contacts_key_received": {
+          "name": "contacts_key_received",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "channel_index": {},
+              "command": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "accepted": {},
+                  "reason": {},
+                  "word": {}
+                }
+              },
+              "event_type": {},
+              "hops": {},
+              "received_at": {},
+              "sender_key": {},
+              "sender_name": {},
+              "sender_prefix": {},
+              "sent_at": {},
+              "snr_db": {},
+              "target": {},
+              "text": {},
+              "text_type": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "contacts_key_remove": {
+      "address": "{base_topic}/{node_id}/contacts/{key}/remove",
+      "messages": {
+        "contacts_key_remove": {
+          "name": "contacts_key_remove",
+          "summary": "any payload, or JSON {\"id\": \"...\"}: remove that contact from the radio; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "contacts_key_send": {
+      "address": "{base_topic}/{node_id}/contacts/{key}/send",
+      "messages": {
+        "contacts_key_send": {
+          "name": "contacts_key_send",
+          "contentType": "text/plain",
+          "summary": "UTF-8 text for a companion in the contact table; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "contacts_key_telemetry": {
+      "address": "{base_topic}/{node_id}/contacts/{key}/telemetry",
+      "messages": {
+        "contacts_key_telemetry": {
+          "name": "contacts_key_telemetry",
+          "summary": "`on` or `off`, or JSON {\"telemetry\": \"off\", \"id\": \"...\", \"forget\": true}: ask a companion for its telemetry, or exclude it; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "delivery": {
+      "address": "{base_topic}/{node_id}/delivery",
+      "messages": {
+        "delivery": {
+          "name": "delivery",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "airtime_ms": {},
+              "attempt": {},
+              "event_type": {
+                "x-values": [
+                  "confirmed",
+                  "duplicate",
+                  "expired",
+                  "failed",
+                  "queued",
+                  "rejected",
+                  "sent"
+                ]
+              },
+              "id": {},
+              "reason": {},
+              "rtt_ms": {},
+              "suspect": {},
+              "target": {},
+              "text": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "discovery": {
+      "address": "{prefix}/device/{device}/config",
+      "messages": {
+        "discovery": {
+          "name": "discovery",
+          "contentType": "application/json",
+          "summary": "Home Assistant's device discovery (docs/home-assistant.md)",
+          "payload": {
+            "type": "object"
+          }
+        }
+      },
+      "parameters": {
+        "prefix": {
+          "description": "`[homeassistant] prefix`",
+          "default": "homeassistant"
+        },
+        "device": {
+          "description": "the gateway's device in Home Assistant, `meshcore_home_gateway_<node_id>`",
+          "examples": [
+            "meshcore_home_gateway_radio1"
+          ]
+        }
+      }
+    },
+    "discovery_component": {
+      "address": "{prefix}/device/{device}/{component}/config",
+      "messages": {
+        "discovery_component": {
+          "name": "discovery_component",
+          "contentType": "application/json",
+          "summary": "Home Assistant's device discovery (docs/home-assistant.md); an empty message removes the device",
+          "payload": {
+            "type": "object"
+          }
+        }
+      },
+      "parameters": {
+        "prefix": {
+          "description": "`[homeassistant] prefix`",
+          "default": "homeassistant"
+        },
+        "device": {
+          "description": "the gateway's device in Home Assistant, `meshcore_home_gateway_<node_id>`",
+          "examples": [
+            "meshcore_home_gateway_radio1"
+          ]
+        },
+        "component": {
+          "description": "a device on the gateway's: `contact_<key>` or `manage_contacts`",
+          "examples": [
+            "manage_contacts"
+          ]
+        }
+      }
+    },
+    "history": {
+      "address": "{base_topic}/{node_id}/history",
+      "messages": {
+        "history": {
+          "name": "history",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "messages": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "at": {},
+                    "channel_index": {},
+                    "contact_key": {},
+                    "direction": {},
+                    "hops": {},
+                    "kind": {},
+                    "name": {},
+                    "snr_db": {},
+                    "state": {},
+                    "text": {}
+                  }
+                }
+              },
+              "total": {},
+              "truncated": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "homeassistant_add_node": {
+      "address": "{base_topic}/{node_id}/homeassistant/add_node",
+      "messages": {
+        "homeassistant_add_node": {
+          "name": "homeassistant_add_node",
+          "contentType": "text/plain",
+          "summary": "the label of a heard node, as Home Assistant's select offers it: add it to the radio; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "homeassistant_show_hidden": {
+      "address": "{base_topic}/{node_id}/homeassistant/show_hidden",
+      "messages": {
+        "homeassistant_show_hidden": {
+          "name": "homeassistant_show_hidden",
+          "summary": "any payload: show the contacts deleted in Home Assistant again; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "homie_extensions": {
+      "address": "homie/{homie_device}/$extensions",
+      "messages": {
+        "homie_extensions": {
+          "name": "homie_extensions",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_homie": {
+      "address": "homie/{homie_device}/$homie",
+      "messages": {
+        "homie_homie": {
+          "name": "homie_homie",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_implementation": {
+      "address": "homie/{homie_device}/$implementation",
+      "messages": {
+        "homie_implementation": {
+          "name": "homie_implementation",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_key_battery": {
+      "address": "homie/{homie_device}/{key}/battery",
+      "messages": {
+        "homie_key_battery": {
+          "name": "homie_key_battery",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_battery_datatype": {
+      "address": "homie/{homie_device}/{key}/battery/$datatype",
+      "messages": {
+        "homie_key_battery_datatype": {
+          "name": "homie_key_battery_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_battery_name": {
+      "address": "homie/{homie_device}/{key}/battery/$name",
+      "messages": {
+        "homie_key_battery_name": {
+          "name": "homie_key_battery_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_battery_unit": {
+      "address": "homie/{homie_device}/{key}/battery/$unit",
+      "messages": {
+        "homie_key_battery_unit": {
+          "name": "homie_key_battery_unit",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_last_heard": {
+      "address": "homie/{homie_device}/{key}/last-heard",
+      "messages": {
+        "homie_key_last_heard": {
+          "name": "homie_key_last_heard",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_last_heard_datatype": {
+      "address": "homie/{homie_device}/{key}/last-heard/$datatype",
+      "messages": {
+        "homie_key_last_heard_datatype": {
+          "name": "homie_key_last_heard_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_last_heard_name": {
+      "address": "homie/{homie_device}/{key}/last-heard/$name",
+      "messages": {
+        "homie_key_last_heard_name": {
+          "name": "homie_key_last_heard_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_name": {
+      "address": "homie/{homie_device}/{key}/$name",
+      "messages": {
+        "homie_key_name": {
+          "name": "homie_key_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_position": {
+      "address": "homie/{homie_device}/{key}/position",
+      "messages": {
+        "homie_key_position": {
+          "name": "homie_key_position",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_position_datatype": {
+      "address": "homie/{homie_device}/{key}/position/$datatype",
+      "messages": {
+        "homie_key_position_datatype": {
+          "name": "homie_key_position_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_position_name": {
+      "address": "homie/{homie_device}/{key}/position/$name",
+      "messages": {
+        "homie_key_position_name": {
+          "name": "homie_key_position_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_properties": {
+      "address": "homie/{homie_device}/{key}/$properties",
+      "messages": {
+        "homie_key_properties": {
+          "name": "homie_key_properties",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send": {
+      "address": "homie/{homie_device}/{key}/send",
+      "messages": {
+        "homie_key_send": {
+          "name": "homie_key_send",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_datatype": {
+      "address": "homie/{homie_device}/{key}/send/$datatype",
+      "messages": {
+        "homie_key_send_datatype": {
+          "name": "homie_key_send_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_name": {
+      "address": "homie/{homie_device}/{key}/send/$name",
+      "messages": {
+        "homie_key_send_name": {
+          "name": "homie_key_send_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_retained": {
+      "address": "homie/{homie_device}/{key}/send/$retained",
+      "messages": {
+        "homie_key_send_retained": {
+          "name": "homie_key_send_retained",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_set": {
+      "address": "homie/{homie_device}/{key}/send/set",
+      "messages": {
+        "homie_key_send_set": {
+          "name": "homie_key_send_set",
+          "contentType": "text/plain",
+          "summary": "UTF-8 text for that companion, as on `contacts/<key>/send`; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_settable": {
+      "address": "homie/{homie_device}/{key}/send/$settable",
+      "messages": {
+        "homie_key_send_settable": {
+          "name": "homie_key_send_settable",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state": {
+      "address": "homie/{homie_device}/{key}/telemetry-state",
+      "messages": {
+        "homie_key_telemetry_state": {
+          "name": "homie_key_telemetry_state",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state_datatype": {
+      "address": "homie/{homie_device}/{key}/telemetry-state/$datatype",
+      "messages": {
+        "homie_key_telemetry_state_datatype": {
+          "name": "homie_key_telemetry_state_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state_format": {
+      "address": "homie/{homie_device}/{key}/telemetry-state/$format",
+      "messages": {
+        "homie_key_telemetry_state_format": {
+          "name": "homie_key_telemetry_state_format",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state_name": {
+      "address": "homie/{homie_device}/{key}/telemetry-state/$name",
+      "messages": {
+        "homie_key_telemetry_state_name": {
+          "name": "homie_key_telemetry_state_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_type": {
+      "address": "homie/{homie_device}/{key}/$type",
+      "messages": {
+        "homie_key_type": {
+          "name": "homie_key_type",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_name": {
+      "address": "homie/{homie_device}/$name",
+      "messages": {
+        "homie_name": {
+          "name": "homie_name",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_nodes": {
+      "address": "homie/{homie_device}/$nodes",
+      "messages": {
+        "homie_nodes": {
+          "name": "homie_nodes",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_state": {
+      "address": "homie/{homie_device}/$state",
+      "messages": {
+        "homie_state": {
+          "name": "homie_state",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      },
+      "description": "The last will of a connection: `lost`, retained, QoS 1."
+    },
+    "node": {
+      "address": "{base_topic}/{node_id}/node",
+      "messages": {
+        "node": {
+          "name": "node",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "x-values": [
+                  "new"
+                ]
+              },
+              "heard_at": {},
+              "hops": {},
+              "key": {},
+              "look_alike": {},
+              "name": {},
+              "name_taken": {},
+              "prefix": {},
+              "rssi_dbm": {},
+              "snr_db": {},
+              "type": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "nodes": {
+      "address": "{base_topic}/{node_id}/nodes",
+      "messages": {
+        "nodes": {
+          "name": "nodes",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "look_alike": {},
+              "look_alike_total": {},
+              "name_taken": {},
+              "name_taken_total": {},
+              "nodes": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "first_heard_at": {},
+                    "heard_at": {},
+                    "heard_via": {},
+                    "hops": {},
+                    "key": {},
+                    "look_alike": {},
+                    "name": {},
+                    "name_taken": {},
+                    "prefix": {},
+                    "rssi_dbm": {},
+                    "snr_db": {},
+                    "type": {}
+                  }
+                }
+              },
+              "total": {},
+              "truncated": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "received": {
+      "address": "{base_topic}/{node_id}/received",
+      "messages": {
+        "received": {
+          "name": "received",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "channel_index": {},
+              "command": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "accepted": {},
+                  "reason": {
+                    "x-values": [
+                      "broker_unavailable",
+                      "code_invalid",
+                      "code_missing",
+                      "code_reused",
+                      "from_the_future",
+                      "replay",
+                      "sender_ambiguous",
+                      "sender_not_allowed",
+                      "sender_unknown",
+                      "sender_unverified",
+                      "state_unwritable",
+                      "too_old"
+                    ]
+                  },
+                  "word": {}
+                }
+              },
+              "event_type": {
+                "x-values": [
+                  "channel",
+                  "contact"
+                ]
+              },
+              "hops": {},
+              "received_at": {},
+              "sender_key": {},
+              "sender_name": {},
+              "sender_prefix": {},
+              "sent_at": {},
+              "snr_db": {},
+              "target": {},
+              "text": {},
+              "text_type": {
+                "x-values": [
+                  "cli_command",
+                  "cli_data",
+                  "plain",
+                  "signed_plain"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "rx": {
+      "address": "{base_topic}/{node_id}/rx",
+      "messages": {
+        "rx": {
+          "name": "rx",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "length": {},
+              "raw": {},
+              "received_at": {},
+              "rssi_dbm": {},
+              "snr_db": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "send_alias": {
+      "address": "{base_topic}/{node_id}/send/{alias}",
+      "messages": {
+        "send_alias": {
+          "name": "send_alias",
+          "contentType": "text/plain",
+          "summary": "UTF-8 text: a message to the target; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "alias": {
+          "description": "the alias of a target, `[targets.<alias>]`"
+        }
+      }
+    },
+    "setting": {
+      "address": "{base_topic}/{node_id}/setting",
+      "messages": {
+        "setting": {
+          "name": "setting",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "desired": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "base": {},
+                  "environment": {},
+                  "location": {}
+                }
+              },
+              "event_type": {
+                "x-values": [
+                  "drift",
+                  "failed",
+                  "not_converging",
+                  "not_taken",
+                  "written"
+                ]
+              },
+              "live": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "base": {},
+                  "environment": {},
+                  "location": {}
+                }
+              },
+              "reason": {},
+              "setting": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "settings": {
+      "address": "{base_topic}/{node_id}/settings",
+      "messages": {
+        "settings": {
+          "name": "settings",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "checked_at": {},
+              "firmware_code": {},
+              "firmware_tested": {},
+              "mode": {
+                "x-values": [
+                  "always",
+                  "auto",
+                  "observe"
+                ]
+              },
+              "observing": {},
+              "own_position": {},
+              "protected_contacts": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "added": {},
+                  "failed": {},
+                  "favoured": {},
+                  "missing": {},
+                  "not_favourite": {}
+                }
+              },
+              "settings": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "advert_location": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "desired": {},
+                      "live": {
+                        "x-values": [
+                          "none",
+                          "share"
+                        ]
+                      },
+                      "state": {}
+                    }
+                  },
+                  "autoadd": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "desired": {},
+                      "live": {
+                        "x-values": [
+                          "chat",
+                          "overwrite_oldest",
+                          "repeater",
+                          "room",
+                          "sensor"
+                        ]
+                      },
+                      "state": {}
+                    }
+                  },
+                  "duty_cycle_percent": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "desired": {},
+                      "live": {},
+                      "state": {}
+                    }
+                  },
+                  "manual_add": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "desired": {},
+                      "live": {},
+                      "state": {}
+                    }
+                  },
+                  "name": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "desired": {},
+                      "live": {},
+                      "state": {}
+                    }
+                  },
+                  "telemetry": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "desired": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "base": {},
+                          "environment": {},
+                          "location": {}
+                        }
+                      },
+                      "live": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "base": {
+                            "x-values": [
+                              "all",
+                              "contacts",
+                              "deny",
+                              "unknown"
+                            ]
+                          },
+                          "environment": {
+                            "x-values": [
+                              "all",
+                              "contacts",
+                              "deny",
+                              "unknown"
+                            ]
+                          },
+                          "location": {
+                            "x-values": [
+                              "all",
+                              "contacts",
+                              "deny",
+                              "unknown"
+                            ]
+                          }
+                        }
+                      },
+                      "state": {}
+                    }
+                  }
+                }
+              },
+              "status": {
+                "x-values": [
+                  "differs",
+                  "drift",
+                  "ok",
+                  "problem",
+                  "written"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "state": {
+      "address": "{base_topic}/{node_id}/state",
+      "messages": {
+        "state": {
+          "name": "state",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "airtime_1h_s": {},
+              "airtime_available_s": {},
+              "airtime_budget_s_per_hour": {},
+              "bandwidth_khz": {},
+              "battery_v": {},
+              "coding_rate": {},
+              "contact_link": {},
+              "firmware": {},
+              "frequency_mhz": {},
+              "health": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "degraded": {},
+                  "disk_free_mb": {},
+                  "errors_1h": {},
+                  "events_dropped_1h": {},
+                  "exclusions": {},
+                  "history": {},
+                  "loop_lag_max_s": {},
+                  "state_file": {}
+                }
+              },
+              "model": {},
+              "public_key": {},
+              "queue": {},
+              "radio": {
+                "x-values": [
+                  "connected",
+                  "disconnected"
+                ]
+              },
+              "radio_clock_offset_s": {},
+              "radio_link_contested": {},
+              "radio_name": {},
+              "spreading_factor": {},
+              "telemetry": {
+                "x-values": [
+                  "off",
+                  "on",
+                  "paused",
+                  "unsupported"
+                ]
+              },
+              "telemetry_airtime_1h_s": {},
+              "telemetry_mesh_airtime_1h_s": {},
+              "telemetry_reason": {
+                "x-values": [
+                  "auto_add",
+                  "exclusions_unreadable",
+                  "first_start",
+                  "no_radio",
+                  "radio_airtime"
+                ]
+              },
+              "tx_power_dbm": {},
+              "version": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "stats": {
+      "address": "{base_topic}/{node_id}/stats",
+      "messages": {
+        "stats": {
+          "name": "stats",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "airtime_factor": {},
+              "duty_cycle_percent": {},
+              "errors": {
+                "x-values": [
+                  "cad_timeout",
+                  "queue_full",
+                  "start_rx_timeout"
+                ]
+              },
+              "last_rssi_dbm": {},
+              "last_snr_db": {},
+              "noise_floor_dbm": {},
+              "packets_received": {},
+              "packets_received_direct": {},
+              "packets_received_flood": {},
+              "packets_sent": {},
+              "packets_sent_direct": {},
+              "packets_sent_flood": {},
+              "queue_length": {},
+              "read_at": {},
+              "receive_errors": {},
+              "rx_airtime_s": {},
+              "storage_total_kb": {},
+              "storage_used_kb": {},
+              "tx_airtime_1h_s": {},
+              "tx_airtime_s": {},
+              "tx_airtime_window_s": {},
+              "uptime_s": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "status_topic": {
+      "address": "{status_topic}",
+      "messages": {
+        "status_topic": {
+          "name": "status_topic",
+          "contentType": "text/plain",
+          "summary": "Home Assistant's birth message: after `online` the gateway announces its devices again",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "status_topic": {
+          "description": "`[homeassistant] status_topic`: Home Assistant's birth message",
+          "default": "homeassistant/status"
+        }
+      }
+    },
+    "telemetry": {
+      "address": "{base_topic}/{node_id}/telemetry",
+      "messages": {
+        "telemetry": {
+          "name": "telemetry",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "x-values": [
+                  "answered",
+                  "unanswered"
+                ]
+              },
+              "key": {},
+              "name": {},
+              "prefix": {},
+              "state": {
+                "x-values": [
+                  "answering",
+                  "away",
+                  "no_position"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    }
+  },
+  "operations": {
+    "receive_add_contact": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/add_contact"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/add_contact/messages/add_contact"
+        }
+      ]
+    },
+    "receive_availability": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/availability"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/availability/messages/availability"
+        }
+      ]
+    },
+    "receive_contacts": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/contacts"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts/messages/contacts"
+        }
+      ]
+    },
+    "receive_contacts_key": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/contacts_key"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts_key/messages/contacts_key"
+        }
+      ]
+    },
+    "receive_contacts_key_remove": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/contacts_key_remove"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts_key_remove/messages/contacts_key_remove"
+        }
+      ]
+    },
+    "receive_contacts_key_send": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/contacts_key_send"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts_key_send/messages/contacts_key_send"
+        }
+      ]
+    },
+    "receive_contacts_key_telemetry": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/contacts_key_telemetry"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts_key_telemetry/messages/contacts_key_telemetry"
+        }
+      ]
+    },
+    "receive_discovery": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/discovery"
+      },
+      "summary": "the gateway reads it, to notice when Home Assistant clears it",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/discovery/messages/discovery"
+        }
+      ]
+    },
+    "receive_discovery_component": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/discovery_component"
+      },
+      "summary": "the gateway reads it, to notice when Home Assistant clears it",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/discovery_component/messages/discovery_component"
+        }
+      ]
+    },
+    "receive_history": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/history"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/history/messages/history"
+        }
+      ]
+    },
+    "receive_homeassistant_add_node": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/homeassistant_add_node"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homeassistant_add_node/messages/homeassistant_add_node"
+        }
+      ]
+    },
+    "receive_homeassistant_show_hidden": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/homeassistant_show_hidden"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homeassistant_show_hidden/messages/homeassistant_show_hidden"
+        }
+      ]
+    },
+    "receive_homie_key_send_set": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_set"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_set/messages/homie_key_send_set"
+        }
+      ]
+    },
+    "receive_nodes": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/nodes"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/nodes/messages/nodes"
+        }
+      ]
+    },
+    "receive_send_alias": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/send_alias"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/send_alias/messages/send_alias"
+        }
+      ]
+    },
+    "receive_settings": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/settings"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/settings/messages/settings"
+        }
+      ]
+    },
+    "receive_state": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/state"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/state/messages/state"
+        }
+      ]
+    },
+    "receive_stats": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/stats"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/stats/messages/stats"
+        }
+      ]
+    },
+    "receive_status_topic": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/status_topic"
+      },
+      "summary": "Home Assistant comes online",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/status_topic/messages/status_topic"
+        }
+      ]
+    },
+    "send_availability": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/availability"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/availability/messages/availability"
+        }
+      ]
+    },
+    "send_command": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/command"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 0,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/command/messages/command"
+        }
+      ]
+    },
+    "send_contact": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/contact"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contact/messages/contact"
+        }
+      ]
+    },
+    "send_contacts": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/contacts"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts/messages/contacts"
+        }
+      ]
+    },
+    "send_contacts_key": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/contacts_key"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts_key/messages/contacts_key"
+        }
+      ]
+    },
+    "send_contacts_key_received": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/contacts_key_received"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/contacts_key_received/messages/contacts_key_received"
+        }
+      ]
+    },
+    "send_delivery": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/delivery"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/delivery/messages/delivery"
+        }
+      ]
+    },
+    "send_discovery": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/discovery"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/discovery/messages/discovery"
+        }
+      ]
+    },
+    "send_discovery_component": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/discovery_component"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/discovery_component/messages/discovery_component"
+        }
+      ]
+    },
+    "send_history": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/history"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/history/messages/history"
+        }
+      ]
+    },
+    "send_homie_extensions": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_extensions"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_extensions/messages/homie_extensions"
+        }
+      ]
+    },
+    "send_homie_homie": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_homie"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_homie/messages/homie_homie"
+        }
+      ]
+    },
+    "send_homie_implementation": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_implementation"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_implementation/messages/homie_implementation"
+        }
+      ]
+    },
+    "send_homie_key_battery": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery/messages/homie_key_battery"
+        }
+      ]
+    },
+    "send_homie_key_battery_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery_datatype/messages/homie_key_battery_datatype"
+        }
+      ]
+    },
+    "send_homie_key_battery_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery_name/messages/homie_key_battery_name"
+        }
+      ]
+    },
+    "send_homie_key_battery_unit": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery_unit"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery_unit/messages/homie_key_battery_unit"
+        }
+      ]
+    },
+    "send_homie_key_last_heard": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_last_heard"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_last_heard/messages/homie_key_last_heard"
+        }
+      ]
+    },
+    "send_homie_key_last_heard_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_last_heard_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_last_heard_datatype/messages/homie_key_last_heard_datatype"
+        }
+      ]
+    },
+    "send_homie_key_last_heard_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_last_heard_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_last_heard_name/messages/homie_key_last_heard_name"
+        }
+      ]
+    },
+    "send_homie_key_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_name/messages/homie_key_name"
+        }
+      ]
+    },
+    "send_homie_key_position": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_position"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_position/messages/homie_key_position"
+        }
+      ]
+    },
+    "send_homie_key_position_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_position_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_position_datatype/messages/homie_key_position_datatype"
+        }
+      ]
+    },
+    "send_homie_key_position_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_position_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_position_name/messages/homie_key_position_name"
+        }
+      ]
+    },
+    "send_homie_key_properties": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_properties"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_properties/messages/homie_key_properties"
+        }
+      ]
+    },
+    "send_homie_key_send": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send/messages/homie_key_send"
+        }
+      ]
+    },
+    "send_homie_key_send_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_datatype/messages/homie_key_send_datatype"
+        }
+      ]
+    },
+    "send_homie_key_send_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_name/messages/homie_key_send_name"
+        }
+      ]
+    },
+    "send_homie_key_send_retained": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_retained"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_retained/messages/homie_key_send_retained"
+        }
+      ]
+    },
+    "send_homie_key_send_settable": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_settable"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_settable/messages/homie_key_send_settable"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state/messages/homie_key_telemetry_state"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state_datatype/messages/homie_key_telemetry_state_datatype"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state_format": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state_format"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state_format/messages/homie_key_telemetry_state_format"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state_name/messages/homie_key_telemetry_state_name"
+        }
+      ]
+    },
+    "send_homie_key_type": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_type"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_type/messages/homie_key_type"
+        }
+      ]
+    },
+    "send_homie_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_name/messages/homie_name"
+        }
+      ]
+    },
+    "send_homie_nodes": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_nodes"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_nodes/messages/homie_nodes"
+        }
+      ]
+    },
+    "send_homie_state": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_state"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_state/messages/homie_state"
+        }
+      ]
+    },
+    "send_node": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/node"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/node/messages/node"
+        }
+      ]
+    },
+    "send_nodes": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/nodes"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/nodes/messages/nodes"
+        }
+      ]
+    },
+    "send_received": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/received"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/received/messages/received"
+        }
+      ]
+    },
+    "send_rx": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/rx"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/rx/messages/rx"
+        }
+      ]
+    },
+    "send_setting": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/setting"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/setting/messages/setting"
+        }
+      ]
+    },
+    "send_settings": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/settings"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/settings/messages/settings"
+        }
+      ]
+    },
+    "send_state": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/state"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/state/messages/state"
+        }
+      ]
+    },
+    "send_stats": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/stats"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/stats/messages/stats"
+        }
+      ]
+    },
+    "send_telemetry": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/telemetry"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/telemetry/messages/telemetry"
+        }
+      ]
+    }
+  }
+}

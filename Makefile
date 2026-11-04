@@ -31,7 +31,8 @@ FIRMWARE_BUILD ?= build/firmware
 FIRMWARE_TESTS ?= tests/firmware
 
 .PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
-  translations firmware-fetch firmware firmware-test dist pyz release release-plan check hooks \
+  translations firmware-fetch firmware firmware-test firmware-play dist pyz release release-plan \
+  check hooks \
   clean audit
 
 help: ## List the targets
@@ -130,11 +131,18 @@ firmware-test: venv firmware ## The gateway against the real firmware on a simul
 	MESHCORE_HOME_GATEWAY_FIRMWARE=$(abspath $(FIRMWARE_BUILD)) $(BIN)/python -m pytest \
 	  $(FIRMWARE_TESTS)
 
+# EXT-019: radio A, a repeater and Bob's companion on the simulated air, a broker on 127.0.0.1 and
+# the gateway on A, until Ctrl-C (PLAY: its options, such as PLAY="--port 0 --hops 2").
+firmware-play: venv firmware ## A playground: the firmware's household, a broker and the gateway
+	MESHCORE_HOME_GATEWAY_FIRMWARE=$(abspath $(FIRMWARE_BUILD)) $(BIN)/python -m tests.firmware.play \
+	  $(PLAY)
+
 # The snapshot test fails until this runs (docs/development.md#compatibility). Review the
 # snapshot's diff like code: a removal or narrowing of what the last release had needs a
 # **Breaking:** entry in CHANGELOG.md, an addition or change an Added or Changed entry.
-interface: venv ## Write tests/public_interface.json from the code, after a deliberate interface change
+interface: venv ## Write tests/public_interface.json from the code and docs/mqtt-api.asyncapi.yaml from it, after a deliberate interface change
 	$(BIN)/python -m tests.public_interface --write
+	$(BIN)/python tools/asyncapi.py --write
 
 # The translation tests fail until this runs (tools/i18n.py): it writes the templates from the
 # marked texts, argparse's own words (adding this Python's) and the installer's texts, merges the
@@ -173,7 +181,7 @@ pyz: venv ## Reproducible zipapp dist/meshcore-home-gateway.pyz, smoke-tested
 # (each checked against its pin).
 # The unit names the release's version in its comment line: after a rollback, which keeps the
 # newer unit, `head -2` of the installed unit says which version it came with.
-release: venv ## Release files in dist/release: zipapp, unit, installer and its language packs, wheel, sdist, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
+release: venv ## Release files in dist/release: zipapp, unit, installer and its language packs, wheel, sdist, AsyncAPI document, SHA256SUMS (RELEASE_TAG=vX.Y.Z checks it)
 	version=$$($(BIN)/python -c 'import meshcore_home_gateway; print(meshcore_home_gateway.__version__)'); \
 	  if [ -n "$(RELEASE_TAG)" ] && [ "$(RELEASE_TAG)" != "v$$version" ]; then \
 	    echo "release: tag $(RELEASE_TAG) does not match version $$version" >&2; exit 1; fi; \
@@ -202,6 +210,9 @@ release: venv ## Release files in dist/release: zipapp, unit, installer and its 
 	    || { echo "release: the installer pins no digests" >&2; exit 1; }; \
 	  chmod 0755 dist/release/meshcore-home-gateway-lxc.sh; \
 	  $(BIN)/python tools/i18n.py release-packs dist/release >/dev/null; \
+	  $(BIN)/python tools/asyncapi.py --release "$$version" || exit 1; \
+	  cp docs/mqtt-api.asyncapi.yaml "dist/release/meshcore-home-gateway-$$version.asyncapi.yaml"; \
+	  chmod 0644 "dist/release/meshcore-home-gateway-$$version.asyncapi.yaml"; \
 	  if ! $(BIN)/python tools/release_notes.py "$$version" >dist/release-notes.md; then \
 	    if [ -n "$(RELEASE_TAG)" ]; then exit 1; fi; \
 	    echo "release: dry run; with RELEASE_TAG=v$$version this stops here (see above)" >&2; fi; \

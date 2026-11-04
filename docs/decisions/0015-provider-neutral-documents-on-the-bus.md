@@ -143,3 +143,10 @@ providers pure.
   the gateway is offline. A stamp of the publication time was left out: it would change every
   document at every publish, and a forger copies it. A signature over the document waits until a
   consumer can check one; Home Assistant's templates cannot.
+* Amended on 2026-11-04 after the security review of 2026-11 (EXT-011): the Homie convention is
+  added as a further adapter fed by the same documents, as the option above foresaw, and off by
+  default (`[homie] enabled`). It pays what the option named, bounded: one device whose nodes
+  are at most `[homie] contacts` contacts (50), about 25 retained topics each, values of a node
+  not updated together; and a second connection to the broker, because Homie wants the device's
+  `$state` as the last will and a connection has one. The documents stay what every other front
+  end reads.

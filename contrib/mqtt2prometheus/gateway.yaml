@@ -1,0 +1,140 @@
+# mqtt2prometheus for the gateway's state and the radio's statistics (EXT-013): one instance
+# of https://github.com/hikhvar/mqtt2prometheus reads `state` and `stats` and serves them as
+# Prometheus metrics; contacts.yaml is a second instance for the contacts' documents. The
+# gateway itself has no listener (ADR 0015). Replace `radio1` with your `[mqtt] node_id` and
+# `meshcore` with `base_topic`, in topic_path and device_id_regex. See README.md.
+mqtt:
+  server: tcp://127.0.0.1:1883
+  # user and password: MQTT2PROM_MQTT_USER and MQTT2PROM_MQTT_PASSWORD, a user that may only read
+  client_id: mqtt2prometheus-meshcore-gateway
+  topic_path: meshcore/radio1/+
+  # the document's name (state, stats) becomes the label `sensor`; the filters below pick them
+  device_id_regex: "meshcore/radio1/(?P<deviceid>.*)"
+  qos: 1
+cache:
+  # a document that stops coming (the gateway is stopped) drops out after this
+  timeout: 5m
+json_parsing:
+  separator: .
+metrics:
+  # --- state (docs/mqtt-api.md#state-state), retained, every 60 s
+  - prom_name: meshcore_radio_connected
+    mqtt_name: radio
+    sensor_name_filter: "^state$"
+    help: 1 while the gateway's radio is connected
+    type: gauge
+    string_value_mapping:
+      map:
+        connected: 1
+        disconnected: 0
+  - prom_name: meshcore_radio_battery_volts
+    mqtt_name: battery_v
+    sensor_name_filter: "^state$"
+    help: battery voltage the radio reports
+    type: gauge
+  - prom_name: meshcore_airtime_last_hour_seconds
+    mqtt_name: airtime_1h_s
+    sensor_name_filter: "^state$"
+    help: airtime of the gateway's messages in the last hour
+    type: gauge
+  - prom_name: meshcore_airtime_available_seconds
+    mqtt_name: airtime_available_s
+    sensor_name_filter: "^state$"
+    help: airtime the message budget has left now
+    type: gauge
+  - prom_name: meshcore_queue_messages
+    mqtt_name: queue
+    sensor_name_filter: "^state$"
+    help: messages waiting in the gateway's queue
+    type: gauge
+  - prom_name: meshcore_telemetry_airtime_last_hour_seconds
+    mqtt_name: telemetry_airtime_1h_s
+    sensor_name_filter: "^state$"
+    help: the gateway's own transmit time for telemetry in the last hour
+    type: gauge
+  - prom_name: meshcore_telemetry_mesh_airtime_last_hour_seconds
+    mqtt_name: telemetry_mesh_airtime_1h_s
+    sensor_name_filter: "^state$"
+    help: estimated airtime in the mesh that the telemetry requests caused in the last hour
+    type: gauge
+  - prom_name: meshcore_radio_clock_offset_seconds
+    mqtt_name: radio_clock_offset_s
+    sensor_name_filter: "^state$"
+    help: how far the radio's clock is ahead of the host's
+    type: gauge
+  - prom_name: meshcore_radio_link_contested
+    mqtt_name: radio_link_contested
+    sensor_name_filter: "^state$"
+    help: 1 for an hour after another client took the radio's TCP link
+    type: gauge
+  - prom_name: meshcore_health_degraded
+    mqtt_name: health.degraded
+    sensor_name_filter: "^state$"
+    help: 1 while a part of the gateway is not as it should be (docs/mqtt-api.md, health)
+    type: gauge
+  - prom_name: meshcore_health_errors_last_hour
+    mqtt_name: health.errors_1h
+    sensor_name_filter: "^state$"
+    help: bugs that a part of the gateway caught and logged in the last hour
+    type: gauge
+  - prom_name: meshcore_health_events_dropped_last_hour
+    mqtt_name: health.events_dropped_1h
+    sensor_name_filter: "^state$"
+    help: events dropped in the last hour while the broker was unreachable
+    type: gauge
+  - prom_name: meshcore_health_loop_lag_max_seconds
+    mqtt_name: health.loop_lag_max_s
+    sensor_name_filter: "^state$"
+    help: the longest the gateway's event loop was held up in the last hour
+    type: gauge
+  - prom_name: meshcore_health_disk_free_megabytes
+    mqtt_name: health.disk_free_mb
+    sensor_name_filter: "^state$"
+    help: free space where the gateway keeps its state
+    type: gauge
+  # --- stats (docs/mqtt-api.md#radio-statistics-stats), retained, read every 60 s
+  - prom_name: meshcore_radio_noise_floor_dbm
+    mqtt_name: noise_floor_dbm
+    sensor_name_filter: "^stats$"
+    help: the radio's noise floor
+    type: gauge
+  - prom_name: meshcore_radio_last_rssi_dbm
+    mqtt_name: last_rssi_dbm
+    sensor_name_filter: "^stats$"
+    help: signal strength of the last packet the radio received
+    type: gauge
+  - prom_name: meshcore_radio_last_snr_db
+    mqtt_name: last_snr_db
+    sensor_name_filter: "^stats$"
+    help: signal-to-noise ratio of the last packet the radio received
+    type: gauge
+  - prom_name: meshcore_radio_tx_airtime_last_hour_seconds
+    mqtt_name: tx_airtime_1h_s
+    sensor_name_filter: "^stats$"
+    help: the radio's time on air in the last hour, everything it sent: its real duty cycle
+    type: gauge
+  - prom_name: meshcore_radio_uptime_seconds
+    mqtt_name: uptime_s
+    sensor_name_filter: "^stats$"
+    help: time since the radio booted
+    type: gauge
+  - prom_name: meshcore_radio_queue_length
+    mqtt_name: queue_length
+    sensor_name_filter: "^stats$"
+    help: packets waiting in the radio's send queue
+    type: gauge
+  - prom_name: meshcore_radio_packets_received
+    mqtt_name: packets_received
+    sensor_name_filter: "^stats$"
+    help: packets the radio received since it booted
+    type: counter
+  - prom_name: meshcore_radio_packets_sent
+    mqtt_name: packets_sent
+    sensor_name_filter: "^stats$"
+    help: packets the radio sent since it booted
+    type: counter
+  - prom_name: meshcore_radio_receive_errors
+    mqtt_name: receive_errors
+    sensor_name_filter: "^stats$"
+    help: packets the radio received with errors since it booted (firmware 1.18 on)
+    type: counter
