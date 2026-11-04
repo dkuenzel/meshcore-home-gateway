@@ -178,6 +178,7 @@ Deny alerts or presence (A2, A3, A11)
 ├─ jam (T1) ........................................... none
 ├─ flood adverts or messages (T1, T3) ................. bounds per node, sender and channel
 ├─ keep the radio busy with direct messages (T3) ...... remove the contact; see below
+├─ spend airtime on answers to replays (T1) ........... reply off by default; repeat memory; rate limits; budget
 ├─ take the client id, clear documents (T6) ........... random id; the ACL; restored documents
 └─ push the radio's clock ahead (T12) ................. clock bounds; the offset in `state`
 ```

@@ -138,6 +138,34 @@ def test_exact_limit_is_not_truncated() -> None:
     assert prepare_text("0123456789", TextPolicy(max_bytes=10)) == "0123456789"
 
 
+def test_a_target_s_prefix_and_suffix_go_around_the_text_within_the_limit() -> None:
+    """EXT-017: they count toward the limit and stay whole when the text is cut."""
+    policy = TextPolicy(max_bytes=20)
+    assert (
+        prepare_text(" Gate  open ", policy, prefix="Shed: ", suffix=" #h") == "Shed: Gate open #h"
+    )
+    assert (
+        prepare_text("0123456789", TextPolicy(15), prefix="P: ", suffix=" S") == "P: 0123456789 S"
+    )
+    cut = prepare_text("0123456789ABCDEF", policy, prefix="P: ", suffix=" S")
+    assert cut == "P: 0123456789AB... S"
+    with pytest.raises(TextRejectedError, match="text too long: 21 bytes, limit 20"):
+        prepare_text("0123456789ABCDEF", TextPolicy(20, truncate=False), prefix="P: ", suffix=" S")
+
+
+def test_an_empty_text_stays_empty_with_a_prefix() -> None:
+    """The prefix alone is no message: the request is rejected as without one."""
+    with pytest.raises(TextRejectedError) as raised:
+        prepare_text(" \x00\u200b ", UTF8, prefix="Shed: ", suffix=" #h")
+    assert raised.value.reason == "empty"
+
+
+def test_a_prefix_and_suffix_are_transliterated_with_the_text() -> None:
+    assert prepare_text("T\u00fcr offen", ASCII, prefix="K\u00fcche: ", suffix=" \u00b0") == (
+        "Kueche: Tuer offen deg"
+    )
+
+
 def test_policy_rejects_limits_too_small_for_the_ellipsis() -> None:
     with pytest.raises(ValueError, match="max_bytes"):
         TextPolicy(max_bytes=3)

@@ -1707,6 +1707,32 @@ def test_interactive_reconfigure_keeps_targets_the_radio_does_not_offer(host: Ho
     assert "kept" in result.stderr
 
 
+@pytest.mark.parametrize("channels", ["0", "1"])
+def test_reconfigure_keeps_a_target_s_prefix_with_the_target(host: Host, channels: str) -> None:
+    """EXT-017: `target.<alias>.prefix` is no target of its own, even with a value that reads
+    like one; it stays with a target chosen again, spaces included, and goes with one no longer
+    chosen."""
+    existing_container(host)
+    current = host.root / "current"
+    current.write_text(
+        current.read_text(encoding="utf-8")
+        + "target.my-alerts.prefix=channel:0\ntarget.alice.suffix= (gw)\n",
+        encoding="utf-8",
+    )
+    dialog = ["default", "old.example.org", "no", "bridge", "", channels, ALICE, ALICE, "status"]
+    result = run_installer(host, "--reconfigure", "105", dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    targets = {t.alias: (t.channel_index, t.prefix, t.suffix) for t in host.config().targets}
+    assert targets["alice"] == (None, "", " (gw)")
+    if channels == "1":
+        assert targets["my-alerts"] == (1, "channel:0", "")
+    else:  # channel 1 is offered and was not chosen again; channel 0 is a new target
+        assert "my-alerts" not in targets
+        assert "my-alerts" not in host.pushed("meshcore-home-gateway-answers")
+        assert (0, "", "") in targets.values()
+    assert ".prefix" not in result.stderr
+
+
 def test_unattended_reconfigure_lists_a_kept_sender_once(host: Host) -> None:
     existing_container(host)
     current = host.root / "current"

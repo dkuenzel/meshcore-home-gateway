@@ -243,7 +243,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | EXT-006 | defer | Logging in to repeaters makes the gateway hold another node's administration password; ADR 0014 keeps administration out of scope. Back with a record and a threat model for it | – |
 | EXT-007 | defer | Traces cost airtime and the map of repeaters needs strangers' positions, which the gateway does not keep; each needs a design of its own | – |
 | EXT-008 | reject | ADR 0017 keeps channels configuration-only because a channel's secret reaches everyone who holds it; passing secrets over MQTT would undo that | – |
-| EXT-009 | fix | `[commands] reply`: a short direct answer to accepted commands, optionally to safe rejections, through the outbox and the budget | pending: extensions |
+| EXT-009 | fix | `[commands] reply`: a short direct answer to accepted commands, optionally to safe rejections, through the outbox and the budget | [#62](https://github.com/dkuenzel/meshcore-home-gateway/pull/62) |
 | EXT-010 | defer | Command 39 works in every tested firmware; command 50 is taken up when a firmware release deprecates 39 (the firmware tests of each new release show it) | – |
 | EXT-011 | fix | A Homie 4 adapter, opt-in, fed by the same documents | pending: extensions |
 | EXT-012 | defer | A web front end with vendored libraries is a project of its own (ADR 0021 "later") | – |
@@ -251,8 +251,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | EXT-014 | defer | Coordinating two gateways is distributed-systems work for a concrete household; the cheap part (an entity prefix, one `person` for two trackers) is done with ARC-015 | – |
 | EXT-015 | defer | Translated guides follow the first translated catalogs (ADR 0019) and need a speaker's review | – |
 | EXT-016 | fix | A `doctor` command that runs the checks of the review's operational findings | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
-| EXT-017 | fix | `[targets.<alias>] prefix` and `suffix` | pending: extensions |
-| EXT-018 | fix | A script in the guide that sends and waits for `confirmed` | pending: extensions |
+| EXT-017 | fix | `[targets.<alias>] prefix` and `suffix` | [#62](https://github.com/dkuenzel/meshcore-home-gateway/pull/62) |
+| EXT-018 | fix | A script in the guide that sends and waits for `confirmed` | [#62](https://github.com/dkuenzel/meshcore-home-gateway/pull/62) |
 | EXT-019 | fix | `make firmware-play` | pending: extensions |
 | EXT-020 | fix | A documented turnaround for a new firmware release | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 

@@ -278,10 +278,13 @@ senders = ["{KEY}"]
 words = ["{WORD}"]
 max_age_s = 300
 codes_file = "/etc/meshcore-home-gateway/command-codes"
+reply = "all"
 [targets.{ALIAS}]
 contact = "{KEY}"
+suffix = " (gateway)"
 [targets.{CHANNEL_ALIAS}]
 channel = 1
+prefix = "Gateway: "
 [history]
 enabled = false
 messages_days = 7
@@ -1512,7 +1515,8 @@ def _answers(tmp: Path) -> dict[str, list[str]]:
             keys.append(key)
             if key == "target.<alias>":
                 targets.append(re.sub(r"\d+", "<index>", value))
-    expected = {*configuration._ANSWER_TYPES, "target.<alias>"}
+    affixes = {f"target.<alias>.{name}" for name in configuration.TARGET_AFFIXES}
+    expected = {*configuration._ANSWER_TYPES, "target.<alias>", *affixes}
     if missing := sorted(expected - set(keys)):
         raise AssertionError(
             f"config answers prints no line for {missing}: set each in ANSWERED in"

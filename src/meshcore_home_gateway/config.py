@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from meshcore_home_gateway import i18n
-from meshcore_home_gateway.core.commands import MIN_SECRET_BYTES, CommandRules
+from meshcore_home_gateway.core.commands import MIN_SECRET_BYTES, REPLIES, CommandRules
 from meshcore_home_gateway.core.contacts import HEARD_NODES, HeardNodes, normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
 from meshcore_home_gateway.texts import Text, TextError
@@ -789,9 +789,12 @@ def _commands(s: _Section) -> CommandRules:
     senders, words = s.strings("senders"), s.strings("words")
     max_age = s.number("max_age_s", 900.0, 0.0, 86_400.0)
     codes_file = _absolute_path(s, "codes_file")
+    reply = cast(str, s.string("reply", "none"))
+    if reply not in REPLIES:
+        raise _one_of(s.key("reply"), REPLIES, reply)
     try:
         return CommandRules.create(
-            senders=senders, words=words, max_age_s=max_age, codes_file=codes_file
+            senders=senders, words=words, max_age_s=max_age, codes_file=codes_file, reply=reply
         )
     except TextError as exc:
         name = "senders" if "public key" in str(exc) else "words"
@@ -810,15 +813,38 @@ def _targets(s: _Section) -> tuple[Target, ...]:
             )
         if t.has("channel"):
             index = t.integer("channel", 0, 0, CHANNEL_INDEX_MAX)
-            targets.append(Target(alias, MessageKind.CHANNEL, channel_index=index))
+            target = Target(alias, MessageKind.CHANNEL, channel_index=index)
         else:
             try:
                 key = normalise_key(cast(str, t.string("contact", required=True)))
             except TextError as exc:
                 raise ConfigError("{key}: {detail}", key=t.key("contact"), detail=exc.text) from exc
-            targets.append(Target(alias, MessageKind.CONTACT, public_key=key))
+            target = Target(alias, MessageKind.CONTACT, public_key=key)
+        targets.append(replace(target, prefix=_affix(t, "prefix"), suffix=_affix(t, "suffix")))
         t.check_unknown()
     return tuple(targets)
+
+
+MAX_AFFIX_BYTES = 32  # both, even transliterated, leave most of a channel text's room to the text
+TARGET_AFFIXES = ("prefix", "suffix")
+
+
+def _affix(s: _Section, name: str) -> str:
+    """A target's prefix or suffix: printable text, as written, spaces included."""
+    value = s.raw(name)
+    if value is None:
+        return ""
+    if not isinstance(value, str) or not value or not value.isprintable():
+        raise ConfigError("{key}: expected printable text", key=s.key(name))
+    value = unicodedata.normalize("NFC", value)  # as the text it goes around
+    if len(value.encode("utf-8")) > MAX_AFFIX_BYTES:
+        raise ConfigError(
+            "{key}: at most {limit} bytes, got {size}",
+            key=s.key(name),
+            limit=MAX_AFFIX_BYTES,
+            size=len(value.encode("utf-8")),
+        )
+    return value
 
 
 def _history(s: _Section) -> HistoryConfig:
@@ -907,6 +933,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "commands.words": list,
     "commands.max_age_s": float,
     "commands.codes_file": str,
+    "commands.reply": str,
     "history.enabled": bool,
     "history.messages_days": float,
     "history.positions_days": float,
@@ -944,6 +971,12 @@ def render_config(answers: str) -> str:
         if value == "":
             continue
         table, _, name = key.rpartition(".")
+        if table.startswith("target.") and name in TARGET_AFFIXES:
+            alias = table.removeprefix("target.")
+            if not _is_id(alias):
+                raise ConfigError("{key}: alias must be {rule}", key=key, rule=ID_RULE)
+            tables.setdefault(f"targets.{alias}", {})[name] = value
+            continue
         if table == "target":
             if not _is_id(name):  # before it becomes a TOML table header
                 raise ConfigError("{key}: alias must be {rule}", key=key, rule=ID_RULE)
@@ -973,6 +1006,7 @@ def config_answers(text: str) -> str:
                 kind = "channel" if "channel" in value else "contact"
                 ref = value[kind] if kind == "channel" else normalise_key(value[kind])
                 lines.append(f"target.{name}={kind}:{ref}")
+                lines += [f"target.{name}.{a}={value[a]}" for a in TARGET_AFFIXES if a in value]
             elif (table, name) == ("commands", "senders"):
                 lines.append(f"commands.senders={','.join(normalise_key(k) for k in value)}")
             elif isinstance(value, dict):  # a sub-table, such as [radio.profile]

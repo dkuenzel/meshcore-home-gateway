@@ -508,6 +508,50 @@ def test_a_sender_with_a_code_secret_commands_only_with_a_fresh_code(tmp_path: P
     assert stored["command_code_steps"] == {sender: int(NOW // CODE_STEP_S)}
 
 
+def test_commands_are_answered_when_asked(tmp_path: Path) -> None:
+    """EXT-009: with `reply = "all"` the sender learns that its command was published, or why
+    not, through the queue as any message; also when the same command comes again. A sender the
+    checks did not identify learns nothing."""
+    config = make_config()
+    config = dataclasses.replace(config, commands=dataclasses.replace(config.commands, reply="all"))
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    alice = ALICE.public_key[:6]
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(alice, "arm now", NOW - 30)
+            radio.queue_direct_message(alice, "arm", NOW - 40)  # older: a replay
+            radio.queue_direct_message(BOB.public_key[:6], "arm", NOW - 5)  # not allowed
+            radio.queue_direct_message(alice, "arm now", NOW - 20)  # the same command again
+
+            def answered(_: dict[str, Any]) -> bool:
+                events = bus.payloads("/delivery")
+                return [d["event_type"] for d in events].count("confirmed") == 3
+
+            await bus.wait_for("/delivery", answered, within_s=10)
+            assert [t.text for t in radio.texts] == ["ok: arm", "rejected: replay", "ok: arm"]
+            assert {t.prefix for t in radio.texts} == {alice}
+            assert {d["target"] for d in bus.payloads("/delivery")} == {ALICE.public_key.hex()}
+            assert len(bus.payloads("/command")) == 2
+
+    scenario(main)
+
+
+def test_commands_are_not_answered_by_default(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 10)
+            radio.queue_direct_message(ALICE.public_key[:6], "arm", NOW - 20)  # a replay
+            await bus.wait_for("/received", lambda r: r["command"]["reason"] == "replay")
+            await asyncio.sleep(0.5)
+            assert not radio.texts
+            assert not bus.payloads("/delivery")
+
+    scenario(main)
+
+
 def test_names_come_from_the_table_just_read(tmp_path: Path) -> None:
     radio = EmulatedRadio(contacts=[ALICE])
 

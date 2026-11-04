@@ -49,6 +49,58 @@ def test_allowlisted_sender_with_known_word_is_accepted() -> None:
     assert decision.command.sender_key == ALICE
 
 
+@pytest.mark.parametrize(
+    ("reply", "answers"),
+    [
+        ("none", [None, None, None, None]),
+        ("accepted", ["ok: arm", None, None, None]),
+        ("all", ["ok: arm", "rejected: replay", None, None]),
+    ],
+)
+def test_a_command_is_answered_only_as_far_as_asked(reply: str, answers: list[str | None]) -> None:
+    """EXT-009: "all" also answers the rejection of a sender the checks identified, never that of
+    one they did not (not allowed, ambiguous): it would tell a stranger which words exist."""
+    rules = dataclasses.replace(RULES, reply=reply)
+    look_alike = ContactBook([*BOOK.resolve(ALICE[:12]), Contact(MALLORY_SAME_PREFIX, "M")])
+    decisions = [
+        evaluate_command(dm("arm now"), rules, BOOK, {}, NOW),
+        evaluate_command(dm("arm"), rules, BOOK, {ALICE: int(NOW)}, NOW),
+        evaluate_command(dm("arm", key=BOB), rules, BOOK, {}, NOW),
+        evaluate_command(dm("arm"), rules, look_alike, {}, NOW),
+    ]
+    assert [d.rejection if d else "no command" for d in decisions] == [
+        None,
+        Rejection.REPLAY,
+        Rejection.SENDER_NOT_ALLOWED,
+        Rejection.SENDER_AMBIGUOUS,
+    ]
+    assert [rules.reply_text(d) for d in decisions if d] == answers
+    assert [d.sender_key for d in decisions if d] == [None, ALICE, None, None]
+
+
+@pytest.mark.parametrize("rejection", list(Rejection))
+def test_only_the_rejections_of_an_identified_sender_are_answered(rejection: Rejection) -> None:
+    """The list is closed: a rejection added later is not answered until it is judged safe."""
+    rules = dataclasses.replace(RULES, reply="all")
+    text = rules.reply_text(CommandDecision("arm", rejection=rejection, sender_key=ALICE))
+    safe = {
+        "replay",
+        "too_old",
+        "from_the_future",
+        "code_missing",
+        "code_invalid",
+        "code_reused",
+        "state_unwritable",
+        "broker_unavailable",
+    }
+    assert text == (f"rejected: {rejection}" if rejection in safe else None)
+
+
+def test_rules_take_only_the_known_ways_to_answer() -> None:
+    assert CommandRules.create([ALICE], ["arm"], 60.0).reply == "none"
+    assert CommandRules.create([ALICE], ["arm"], 60.0, reply="all").reply == "all"
+
+
 def test_any_whitespace_ends_the_command_word() -> None:
     """A phone may put a line break or a tab after the word; it is still the first word."""
     for text in ("arm\nnow please", "arm\tnow please", "arm\u00a0 now please  "):

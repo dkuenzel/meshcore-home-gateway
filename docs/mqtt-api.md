@@ -63,7 +63,9 @@ transliterates it to ASCII, and truncates or rejects texts above the radio's lim
 direct message (150 with `[messages] confirm_nonce`, whose suffix takes the rest), `160 − (radio
 name length + 2)` for a channel message. Before the radio has
 connected once, its name is unknown: a channel text is then accepted up to 158 bytes and limited
-when it is sent (truncated, or `failed` with `too_long`).
+when it is sent (truncated, or `failed` with `too_long`). A target's `prefix` and `suffix`
+([configuration.md](configuration.md#targetsalias)) go around the text and count toward the
+limit; the events carry the text with them.
 
 ```sh
 mosquitto_pub -h broker.example.org -u client -P secret -q 1 \
@@ -241,6 +243,12 @@ After `sender_unverified` (the sender was not verified) and `state_unwritable` i
 that arrives after a restart of the gateway is judged afresh and accepted if it is still within
 `max_age_s`, and with `max_age_s = 0` also one after the hour
 ([design §7.4](design.md#74-residual-risks)).
+
+With `[commands] reply` the gateway answers the sender: `ok: <word>` after publishing the
+command, and with `all` also `rejected: <reason>` for the reasons from `state_unwritable` on in
+the table above, never for those of a sender it did not identify
+([configuration.md](configuration.md#commands)). An answer is a message to the sender's key: it
+has `delivery` events with the key as `target`, as one to `contacts/<key>/send`.
 
 ## State: `state`
 

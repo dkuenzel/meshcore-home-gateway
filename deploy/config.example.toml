@@ -35,6 +35,7 @@ status_topic = "homeassistant/status"   # birth message topic, as in Home Assist
 # Only configured targets can be sent to: publish text to meshcore/radio1/send/<alias>.
 [targets.alerts]
 channel = 1                                            # channel index on the radio
+# prefix = "Home: "                                    # put before every message; also suffix
 
 [targets.operator]
 contact = "0000000000000000000000000000000000000000000000000000000000000000"  # full public key
@@ -62,6 +63,7 @@ senders = []                                           # full public keys
 words = []                                             # e.g. ["status", "arm", "disarm"]
 max_age_s = 900                                        # 0 disables the clock check
 # codes_file = "/etc/meshcore-home-gateway/command-codes"  # codes from an app: commands enrol
+# reply = "accepted"                                   # answer "ok: <word>"; "all": refusals too
 
 # Contacts: Home Assistant's controls, the MQTT requests and the command line add contacts to the
 # radio and remove them. Every user of Home Assistant can use the controls

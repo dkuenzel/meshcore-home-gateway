@@ -85,12 +85,15 @@ burst_s = 12
 senders = ["{KEY.upper()}"]
 words = ["Status", "arm"]
 max_age_s = 300
+reply = "all"
 
 [targets.alerts]
 channel = 1
+prefix = "Haus: "
 
 [targets.alice]
 contact = "{KEY}"
+suffix = " (gw)"
 
 [history]
 enabled = false
@@ -142,9 +145,11 @@ def test_full_configuration_is_read_completely() -> None:
     assert config.messages.alert_targets == frozenset({"alerts"})
     assert config.commands.senders == frozenset({KEY})
     assert config.commands.words == frozenset({"status", "arm"})
+    assert config.commands.reply == "all"
     alerts, alice = sorted(config.targets, key=lambda t: t.alias)
     assert (alerts.alias, alerts.kind, alerts.channel_index) == ("alerts", MessageKind.CHANNEL, 1)
     assert (alice.kind, alice.public_key) == (MessageKind.CONTACT, KEY)
+    assert (alerts.prefix, alerts.suffix, alice.prefix, alice.suffix) == ("Haus: ", "", "", " (gw)")
     assert config.diagnostics.log_level == "debug"
     assert (config.history.enabled, config.history.messages_days) == (False, 7.0)
     assert (config.history.positions_days, config.history.readings_days) == (90.0, 14.5)
@@ -165,6 +170,58 @@ def test_the_radio_clock_steps_at_most_30_days_by_default() -> None:
 
 
 COMMANDS = f'[commands]\nsenders = ["{KEY}"]\nwords = ["status"]\n'
+
+
+def test_commands_are_answered_only_when_asked() -> None:
+    """EXT-009: no answer by default, as before; only the three known ways."""
+    assert parse_config(MINIMAL).commands.reply == "none"
+    text = _broker("broker.example.org", USER, tls=True) + COMMANDS
+    assert parse_config(text + 'reply = "accepted"\n').commands.reply == "accepted"
+    for invalid in ('"yes"', "true", '"All"'):
+        with pytest.raises(ConfigError, match=r"commands\.reply"):
+            parse_config(text + f"reply = {invalid}\n")
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        ('""', "expected printable text"),
+        ("1", "expected printable text"),
+        ('"a\\tb"', "expected printable text"),
+        ('"a\\nb"', "expected printable text"),
+        ('"\\u202e"', "expected printable text"),
+        (f'"{"ü" * 17}"', "at most 32 bytes, got 34"),
+    ],
+)
+def test_a_target_s_prefix_and_suffix_are_short_printable_text(value: str, error: str) -> None:
+    """EXT-017: they go into every message to the target; no control or direction characters,
+    and room for the text stays."""
+    for affix in ("prefix", "suffix"):
+        with pytest.raises(ConfigError, match=rf"targets\.alerts\.{affix}: {error}"):
+            parse_config(MINIMAL + f"[targets.alerts]\nchannel = 1\n{affix} = {value}\n")
+    text = (
+        MINIMAL
+        + '[targets.alerts]\nchannel = 1\nprefix = "\u00fc  "\nsuffix = "'
+        + "x" * 32
+        + '"\n'
+    )
+    (alerts,) = parse_config(text).targets
+    assert (alerts.prefix, alerts.suffix) == ("\u00fc  ", "x" * 32)  # spaces as written
+    decomposed = MINIMAL + '[targets.alerts]\nchannel = 1\nprefix = "u\u0308"\n'
+    assert parse_config(decomposed).targets[0].prefix == "\u00fc"  # NFC, as the text
+
+
+def test_a_target_s_prefix_and_suffix_survive_the_answers_with_their_spaces() -> None:
+    """The installer's reconfigure writes them back as they were; one of a target that is gone
+    is refused (the installer drops them with their target)."""
+    answers = config_answers(FULL)
+    assert "target.alerts.prefix=Haus: \n" in answers
+    assert "target.alice.suffix= (gw)\n" in answers
+    assert parse_config(render_config(answers)) == parse_config(FULL)
+    with pytest.raises(ConfigError, match=r"targets\.gone"):
+        render_config(config_answers(MINIMAL) + "target.gone.prefix=x\n")
+    with pytest.raises(ConfigError, match=r"target\.Bad\.prefix: alias must be"):
+        render_config(config_answers(MINIMAL) + "target.Bad.prefix=x\n")
 
 
 def _broker(host: str, login: str = "", tls: bool = False) -> str:

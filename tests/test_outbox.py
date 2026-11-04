@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import re
 import time
@@ -111,6 +112,41 @@ def test_channel_message_is_queued_and_sent(tmp_path: Path) -> None:
             assert radio.channel_texts == [(0, "Gate open", NOW)]
             states = [d["event_type"] for d in bus.payloads("/delivery")]
             assert states == ["queued", "sent"]
+
+    scenario(main)
+
+
+def test_a_target_s_prefix_and_suffix_go_into_each_of_its_messages(tmp_path: Path) -> None:
+    """EXT-017: the delivery events show the text as sent; a contact addressed by its key is no
+    configured target and gets the text alone."""
+    config = make_config()
+    affixes = {"alerts": ("Shed: ", ""), "alice": ("", " (gw)")}
+    config = dataclasses.replace(
+        config,
+        targets=tuple(
+            dataclasses.replace(t, prefix=affixes[t.alias][0], suffix=affixes[t.alias][1])
+            if t.alias in affixes
+            else t
+            for t in config.targets
+        ),
+    )
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    key = ALICE.public_key.hex()
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            bus.send("alerts", "Gate open")
+            queued = await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+            assert queued["text"] == "Shed: Gate open"
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            assert radio.channel_texts == [(0, "Shed: Gate open", NOW)]
+            bus.send("alice", "Hello")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            bus.send(key, "Hello", contact=True)
+            await bus.wait_for(
+                "/delivery", lambda d: d["event_type"] == "confirmed" and d["target"] == key
+            )
+            assert [t.text for t in radio.texts] == ["Hello (gw)", "Hello"]
 
     scenario(main)
 
@@ -694,6 +730,38 @@ def test_channel_text_accepted_before_the_radio_is_known_is_limited_when_sent(
             else:
                 assert (final["event_type"], final["text"]) == ("sent", sent)
             assert [t for _, t, _ in radio.channel_texts] == ([] if sent is None else [sent])
+
+    scenario(main)
+
+
+def test_a_channel_text_limited_when_it_is_sent_keeps_its_prefix_and_suffix(
+    tmp_path: Path,
+) -> None:
+    """EXT-017: accepted before the radio's name was known, the text is cut for this radio
+    ("Bridge": 152 bytes) between the target's prefix and suffix."""
+    radio = EmulatedRadio()
+    plugged: list[bool] = []
+    config = make_config()
+    config = dataclasses.replace(
+        config,
+        targets=tuple(
+            dataclasses.replace(t, prefix="Shed: ", suffix=" #h") if t.alias == "alerts" else t
+            for t in config.targets
+        ),
+    )
+
+    def transport() -> Transport:
+        return radio if plugged else Unreachable()
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path, transport=transport) as (_, bus, _notes):
+            bus.send("alerts", "x" * 200)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+            plugged.append(True)  # the radio connects
+            sent = await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent", 5)
+            expected = "Shed: " + "x" * 140 + "... #h"
+            assert (sent["text"], len(expected.encode())) == (expected, 152)
+            assert [t for _, t, _ in radio.channel_texts] == [expected]
 
     scenario(main)
 

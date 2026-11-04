@@ -50,6 +50,20 @@ CODE_DIGITS = 6
 CODE_STEP_S = 30  # RFC 6238's time step, as authenticator apps use it
 CODE_SKEW_STEPS = 1  # the sender's clock may be a step off the bridge's, either way
 MIN_SECRET_BYTES = 16  # RFC 4226: a secret has at least 128 bits
+REPLIES = ("none", "accepted", "all")  # `[commands] reply` (EXT-009)
+# rejections of a sender the checks identified: telling it the reason reveals nothing new
+REPLIED_REJECTIONS = frozenset(
+    {
+        Rejection.REPLAY,
+        Rejection.TOO_OLD,
+        Rejection.FROM_THE_FUTURE,
+        Rejection.CODE_MISSING,
+        Rejection.CODE_INVALID,
+        Rejection.CODE_REUSED,
+        Rejection.STATE_UNWRITABLE,
+        Rejection.BROKER_UNAVAILABLE,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +73,7 @@ class CommandRules:
     max_age_s: float = 900.0  # 0 disables the age check
     codes_file: str | None = None  # the senders' code secrets, which load_config reads
     secrets: tuple[tuple[str, bytes], ...] = field(default=(), repr=False)  # key, secret
+    reply: str = "none"  # REPLIES: answer accepted commands, and also safe rejections
 
     @classmethod
     def create(
@@ -67,6 +82,7 @@ class CommandRules:
         words: Iterable[str],
         max_age_s: float,
         codes_file: str | None = None,
+        reply: str = "none",
     ) -> CommandRules:
         normalised_words = set()
         for word in words:
@@ -81,7 +97,17 @@ class CommandRules:
             frozenset(normalised_words),
             max_age_s,
             codes_file,
+            reply=reply,
         )
+
+    def reply_text(self, decision: CommandDecision) -> str | None:
+        """The answer to a sender the checks identified: `ok: <word>`, `rejected: <reason>`
+        (machine words, in English as the events), or None when none is due."""
+        if decision.command is not None and self.reply != "none":
+            return f"ok: {decision.word}"
+        if self.reply == "all" and decision.rejection in REPLIED_REJECTIONS:
+            return f"rejected: {decision.rejection}"
+        return None
 
     def secret(self, sender: str) -> bytes | None:
         """The sender's code secret; None for a sender without one."""
@@ -102,6 +128,7 @@ class CommandDecision:
     word: str
     command: Command | None = None
     rejection: Rejection | None = None
+    sender_key: str | None = None  # of a rejection after the sender checks passed
 
 
 def command_word(message: InboundMessage, rules: CommandRules) -> str | None:
@@ -144,7 +171,7 @@ def evaluate_command(
         last_step = (last_codes or {}).get(sender)
         args, step, rejection = _check_code(args, secret, last_step, now)
     if sender is None or rejection is not None:
-        return CommandDecision(word, rejection=rejection)
+        return CommandDecision(word, rejection=rejection, sender_key=sender)
     command = Command(word, args, sender, message.sender_timestamp, step)
     return CommandDecision(word, command=command)
 

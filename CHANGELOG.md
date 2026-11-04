@@ -144,6 +144,16 @@ format, the command line and Home Assistant discovery are public interfaces
   and `command` events an expiry (`queue_ttl_s`, for commands `max_age_s`), and the delivery
   events of a send request that request's correlation data; response topics are ignored
   ([mqtt-api.md](docs/mqtt-api.md#mqtt-5)). Home Assistant connects with MQTT 5 by default.
+- `prefix` and `suffix` of a target ([configuration.md](docs/configuration.md#targetsalias)):
+  text put before and after every message to it, such as `"Shed: "`; they count toward the
+  radio's limit and stay whole when a text is cut. The installer keeps them on `--reconfigure`.
+- `[commands] reply` (default `"none"`): `"accepted"` answers the sender of a published command
+  by direct message with `ok: <word>`, `"all"` also a command refused after the sender checks
+  with `rejected: <reason>`; a sender the checks did not identify gets no answer
+  ([configuration.md](docs/configuration.md#commands)).
+- A Home Assistant script that sends a message to a contact target and waits for its final
+  delivery event, and an automation that escalates when it was not confirmed
+  ([home-assistant.md](docs/home-assistant.md#examples)).
 
 ### Changed
 

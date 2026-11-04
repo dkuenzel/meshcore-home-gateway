@@ -1246,6 +1246,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
+msgid "{key}: at most {limit} bytes, got {size}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
 msgid "{key}: cannot read {path}: not valid UTF-8 (byte {byte})"
 msgstr ""
 
@@ -1306,6 +1311,11 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: expected channel:<index> or contact:<public key>, got {value!r}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: expected printable text"
 msgstr ""
 
 #: src/meshcore_home_gateway/config.py
