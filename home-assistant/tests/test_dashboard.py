@@ -171,13 +171,15 @@ SECTIONS = frozenset({"grid"})
 # the Markdown cards, by a part of their content or visibility
 STATUS, VERSION, WRITE = "set problems", "bridge_version", "script.mesh_message"
 MESSAGE, SENT, TABLE = "_message'", "_delivery'", "_last_heard"
-EVENT, HEARD, QR, HINT = "_contact'", "_add_node'", "contact_link", "set listed"
+# the contact event's entity; a reason code such as 'unknown_contact' ends the same way
+EVENT = re.compile(r"event\.meshcore_home_gateway_\w+_contact'")
+HEARD, QR, HINT = "_add_node'", "contact_link", "set listed"
 # the line a value from Home Assistant stands on: one whole HTML element
 ELEMENT = re.compile(r"<div>.*</div>|<table>.*</table>|<ha-qr-code .*></ha-qr-code>")
 NONE = "\u2013"  # what a card shows for no value: an en dash
 MARKDOWN = "MESHCORE_HOME_GATEWAY_MARKDOWN_DIR"
 ENTITY_ID = re.compile(
-    r"\b(?:binary_sensor|sensor|event|notify|select|text|button|script|device_tracker)"
+    r"\b(?:binary_sensor|sensor|event|notify|select|text|button|switch|script|device_tracker)"
     r"\.[a-z0-9_]+\b"
 )
 
@@ -307,9 +309,13 @@ def markdown(loaded: dict[str, Any]) -> list[dict[str, Any]]:
     return [card for card in walk(loaded) if card["type"] == "markdown"]
 
 
-def card(loaded: dict[str, Any], needle: str) -> dict[str, Any]:
+def card(loaded: dict[str, Any], needle: str | re.Pattern[str]) -> dict[str, Any]:
     """The one Markdown card whose content or visibility holds `needle`."""
-    (found,) = [c for c in markdown(loaded) if needle in json.dumps(c)]
+
+    def holds(text: str) -> bool:
+        return bool(needle.search(text)) if isinstance(needle, re.Pattern) else needle in text
+
+    (found,) = [c for c in markdown(loaded) if holds(json.dumps(c))]
     return found
 
 
@@ -455,7 +461,7 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
             for c in walk(v["sections"])
             if c["type"] == "heading" or "title" in c or "name" in c
         ]
-        assert len(titles) == 16
+        assert len(titles) == 17  # with *Telemetry and removal*: Alice has a device
         for title in titles:
             if language == "xx":
                 assert title.startswith("‹xx: ")
