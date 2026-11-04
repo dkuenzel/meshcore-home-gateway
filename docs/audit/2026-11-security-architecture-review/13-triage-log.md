@@ -228,7 +228,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-046 | fix | Through DOC-026 | [#37](https://github.com/dkuenzel/meshcore-home-gateway/pull/37) |
 | IMP-047 | fix | `history export` as JSON lines or CSV | [#58](https://github.com/dkuenzel/meshcore-home-gateway/pull/58) |
 | IMP-048 | fix | Through OPS-013 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
-| IMP-049 | fix | Reason codes as texts and the remove and telemetry controls on the dashboard. Heard repeaters on the map are rejected: the gateway keeps no stranger's position (ADR 0016) | pending: extensions |
+| IMP-049 | fix | Reason codes as texts and the remove and telemetry controls on the dashboard. Heard repeaters on the map are rejected: the gateway keeps no stranger's position (ADR 0016) | [#63](https://github.com/dkuenzel/meshcore-home-gateway/pull/63) |
 | IMP-050 | fix | A setting compiled out of the firmware is reported as `disabled`, apart from `unsupported` | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 
 ## Extension opportunities
@@ -239,7 +239,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | EXT-002 | defer | PyPI needs an account and a trusted publisher, a Debian package and an image each a channel to support; the maintainer decides which to open | – |
 | EXT-003 | defer | BLE needs a new runtime dependency (a record under ADR 0005), BlueZ in the container and hardware to test | – |
 | EXT-004 | split | Issue #23; implemented there from the interface snapshot | [#23](https://github.com/dkuenzel/meshcore-home-gateway/issues/23), pending: extensions |
-| EXT-005 | fix | Sensor nodes of the household as telemetry candidates (`[telemetry] ask_types`), under the household mark | pending: extensions |
+| EXT-005 | fix | Sensor nodes of the household as telemetry candidates (`[telemetry] ask_types`), under the household mark | [#63](https://github.com/dkuenzel/meshcore-home-gateway/pull/63) |
 | EXT-006 | defer | Logging in to repeaters makes the gateway hold another node's administration password; ADR 0014 keeps administration out of scope. Back with a record and a threat model for it | – |
 | EXT-007 | defer | Traces cost airtime and the map of repeaters needs strangers' positions, which the gateway does not keep; each needs a design of its own | – |
 | EXT-008 | reject | ADR 0017 keeps channels configuration-only because a channel's secret reaches everyone who holds it; passing secrets over MQTT would undo that | – |
