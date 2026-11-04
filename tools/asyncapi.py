@@ -57,6 +57,10 @@ PARAMETERS: dict[str, dict[str, Any]] = {
         "description": "`[homeassistant] status_topic`: Home Assistant's birth message",
         "default": "homeassistant/status",
     },
+    "homie_device": {
+        "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+        "examples": ["meshcore-radio1"],
+    },
 }
 # what the requests carry, as the topic table of docs/mqtt-api.md gives it: (content, summary);
 # none of them may be retained
@@ -89,6 +93,10 @@ REQUESTS: dict[str, tuple[str | None, str]] = {
         None,
         "any payload: show the contacts deleted in Home Assistant again",
     ),
+    "homie/{homie_device}/{key}/send/set": (
+        TEXT,
+        "UTF-8 text for that companion, as on `contacts/<key>/send`",
+    ),
 }
 BIRTH = "Home Assistant's birth message: after `online` the gateway announces its devices again"
 READ_BACK = "the gateway reads its own topic, to undo what another client writes there"
@@ -98,6 +106,8 @@ CLEARED = {
     "contacts/{key}": "an empty retained message clears it when the contact leaves the table",
     "{prefix}/device/{device}/{component}/config": "an empty message removes the device",
 }
+HOMIE = "homie/{homie_device}/"  # the topics of the Homie device (docs/mqtt-api.md, Homie)
+HOMIE_CLEARED = "an empty retained message: none, an unknown value, or a node that is gone"
 
 
 def version() -> str:
@@ -120,7 +130,9 @@ def address(topic: str) -> str:
     out = []
     for index, part in enumerate(parts):
         before = parts[index - 1] if index else ""
-        if part == "+":
+        if part == "+" and parts[0] == "homie":  # a node of the Homie device: a contact's key
+            out.append("{key}")
+        elif part == "+":
             out.append({"contacts": "{key}", "send": "{alias}"}.get(before, "{component}"))
         elif before == "<device>" and part != "config":
             out.append("{component}")
@@ -131,10 +143,12 @@ def address(topic: str) -> str:
 
 def channel_id(path: str) -> str:
     """`{base_topic}/{node_id}/contacts/{key}/received` is `contacts_key_received`; the
-    discovery topics are `discovery` and `discovery_component`."""
+    discovery topics are `discovery` and `discovery_component`, the Homie device's `homie_...`."""
     if path.startswith("{prefix}/device/{device}/"):
         path = "discovery/" + path.removeprefix("{prefix}/device/{device}/")
         path = path.removesuffix("/config")
+    elif path.startswith(HOMIE):
+        path = "homie/" + path.removeprefix(HOMIE)
     return "_".join(re.findall(r"[a-z0-9]+", path.removeprefix(OURS)))
 
 
@@ -174,10 +188,31 @@ def _resolve(root: dict[str, Any], path: str) -> list[dict[str, Any]]:
     return nodes
 
 
-def document(snapshot: dict[str, Any], release: str) -> dict[str, Any]:
-    mqtt = snapshot["mqtt"]
+def _published(
+    topic: str, entry: dict[str, Any], mqtt: dict[str, Any], short: str
+) -> tuple[dict[str, Any], str]:
+    """The payload of a topic the gateway publishes, and a summary of what it is."""
     documents: dict[str, list[str]] = mqtt["documents"]
     values: dict[str, list[str]] = mqtt["values"]
+    known = topic.removeprefix("<base_topic>/<node_id>/")  # as the snapshot names it
+    if known in documents:
+        prefix = f"{known}:"
+        listed = {k.removeprefix(prefix): v for k, v in values.items() if k.startswith(prefix)}
+        payload = schema(documents[known], listed, known)
+        summary = "a document" if entry["retained"] else "an event"
+    elif entry["payload"] == "json":
+        payload, summary = {"type": "object"}, DISCOVERY
+    else:
+        listed_text = {"x-values": sorted(values[known])} if known in values else {}
+        payload, summary = {"type": "string"} | listed_text, "text"
+    why = CLEARED.get(short) or (HOMIE_CLEARED if short.startswith(HOMIE) else "")
+    if entry.get("cleared") and why:
+        summary += f"; {why}"
+    return payload, summary
+
+
+def document(snapshot: dict[str, Any], release: str) -> dict[str, Any]:
+    mqtt = snapshot["mqtt"]
     channels: dict[str, dict[str, Any]] = {}
     operations: dict[str, dict[str, Any]] = {}
 
@@ -198,21 +233,7 @@ def document(snapshot: dict[str, Any], release: str) -> dict[str, Any]:
 
     for topic, entry in sorted(mqtt["publish"].items()):
         name, found, short = channel(topic)
-        known = topic.removeprefix("<base_topic>/<node_id>/")  # as the snapshot names it
-        if known in documents:
-            prefix = f"{known}:"
-            listed = {k.removeprefix(prefix): v for k, v in values.items() if k.startswith(prefix)}
-            payload = schema(documents[known], listed, known)
-            summary = "a document" if entry["retained"] else "an event"
-        elif entry["payload"] == "json":
-            payload, summary = {"type": "object"}, DISCOVERY
-        else:
-            payload = {"type": "string"} | (
-                {"x-values": sorted(values[known])} if known in values else {}
-            )
-            summary = "text"
-        if short in CLEARED and entry.get("cleared"):
-            summary += f"; {CLEARED[short]}"
+        payload, summary = _published(topic, entry, mqtt, short)
         if not found["messages"]:  # the first of the topics a channel stands for
             content = TEXT if entry["payload"] == "text" else JSON
             message(found, name, content, summary=summary, payload=payload)
@@ -246,10 +267,11 @@ def document(snapshot: dict[str, Any], release: str) -> dict[str, Any]:
             "summary": summary,
             "bindings": {"mqtt": {"qos": entry["qos"], "bindingVersion": MQTT_BINDING}},
         }
-    ((will_topic, will),) = mqtt["last_will"].items()
-    channels[channel_id(address(will_topic))]["description"] = (
-        f"The gateway's last will: `{will['payload']}`, retained, QoS {will['qos']}."
-    )
+    for will_topic, will in mqtt["last_will"].items():  # the gateway's, the Homie device's
+        channels[channel_id(address(will_topic))]["description"] = (
+            f"The last will of a connection: `{will['payload']}`, "
+            f"{'retained' if will['retained'] else 'not retained'}, QoS {will['qos']}."
+        )
     for each in operations.values():  # each operation carries its channel's messages
         name = each["channel"]["$ref"].removeprefix("#/channels/")
         each["messages"] = [

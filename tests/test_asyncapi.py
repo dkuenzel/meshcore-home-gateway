@@ -112,10 +112,13 @@ def test_every_topic_of_the_code_has_its_operation(direction: str, action: str) 
     assert used == set(operations)
 
 
-def test_the_last_will_is_described_on_its_channel() -> None:
-    [(topic, will)] = SNAPSHOT["mqtt"]["last_will"].items()
-    [channel] = [c for c in DATA["channels"].values() if _matches(c["address"], topic)]
-    assert f"`{will['payload']}`, retained, QoS {will['qos']}" in channel["description"]
+def test_each_last_will_is_described_on_its_channel() -> None:
+    """The gateway's (`availability`) and the Homie device's (`$state`)."""
+    wills = SNAPSHOT["mqtt"]["last_will"].items()
+    assert len(wills) == 2
+    for topic, will in wills:
+        [channel] = [c for c in DATA["channels"].values() if _matches(c["address"], topic)]
+        assert f"`{will['payload']}`, retained, QoS {will['qos']}" in channel["description"]
 
 
 def test_a_topic_the_gateway_clears_says_so() -> None:

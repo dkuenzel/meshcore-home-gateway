@@ -76,7 +76,7 @@
           "default": "radio1"
         }
       },
-      "description": "The gateway's last will: `offline`, retained, QoS 1."
+      "description": "The last will of a connection: `offline`, retained, QoS 1."
     },
     "command": {
       "address": "{base_topic}/{node_id}/command",
@@ -638,6 +638,683 @@
           "default": "radio1"
         }
       }
+    },
+    "homie_extensions": {
+      "address": "homie/{homie_device}/$extensions",
+      "messages": {
+        "homie_extensions": {
+          "name": "homie_extensions",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_homie": {
+      "address": "homie/{homie_device}/$homie",
+      "messages": {
+        "homie_homie": {
+          "name": "homie_homie",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_implementation": {
+      "address": "homie/{homie_device}/$implementation",
+      "messages": {
+        "homie_implementation": {
+          "name": "homie_implementation",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_key_battery": {
+      "address": "homie/{homie_device}/{key}/battery",
+      "messages": {
+        "homie_key_battery": {
+          "name": "homie_key_battery",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_battery_datatype": {
+      "address": "homie/{homie_device}/{key}/battery/$datatype",
+      "messages": {
+        "homie_key_battery_datatype": {
+          "name": "homie_key_battery_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_battery_name": {
+      "address": "homie/{homie_device}/{key}/battery/$name",
+      "messages": {
+        "homie_key_battery_name": {
+          "name": "homie_key_battery_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_battery_unit": {
+      "address": "homie/{homie_device}/{key}/battery/$unit",
+      "messages": {
+        "homie_key_battery_unit": {
+          "name": "homie_key_battery_unit",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_last_heard": {
+      "address": "homie/{homie_device}/{key}/last-heard",
+      "messages": {
+        "homie_key_last_heard": {
+          "name": "homie_key_last_heard",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_last_heard_datatype": {
+      "address": "homie/{homie_device}/{key}/last-heard/$datatype",
+      "messages": {
+        "homie_key_last_heard_datatype": {
+          "name": "homie_key_last_heard_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_last_heard_name": {
+      "address": "homie/{homie_device}/{key}/last-heard/$name",
+      "messages": {
+        "homie_key_last_heard_name": {
+          "name": "homie_key_last_heard_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_name": {
+      "address": "homie/{homie_device}/{key}/$name",
+      "messages": {
+        "homie_key_name": {
+          "name": "homie_key_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_position": {
+      "address": "homie/{homie_device}/{key}/position",
+      "messages": {
+        "homie_key_position": {
+          "name": "homie_key_position",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_position_datatype": {
+      "address": "homie/{homie_device}/{key}/position/$datatype",
+      "messages": {
+        "homie_key_position_datatype": {
+          "name": "homie_key_position_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_position_name": {
+      "address": "homie/{homie_device}/{key}/position/$name",
+      "messages": {
+        "homie_key_position_name": {
+          "name": "homie_key_position_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_properties": {
+      "address": "homie/{homie_device}/{key}/$properties",
+      "messages": {
+        "homie_key_properties": {
+          "name": "homie_key_properties",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send": {
+      "address": "homie/{homie_device}/{key}/send",
+      "messages": {
+        "homie_key_send": {
+          "name": "homie_key_send",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_datatype": {
+      "address": "homie/{homie_device}/{key}/send/$datatype",
+      "messages": {
+        "homie_key_send_datatype": {
+          "name": "homie_key_send_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_name": {
+      "address": "homie/{homie_device}/{key}/send/$name",
+      "messages": {
+        "homie_key_send_name": {
+          "name": "homie_key_send_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_retained": {
+      "address": "homie/{homie_device}/{key}/send/$retained",
+      "messages": {
+        "homie_key_send_retained": {
+          "name": "homie_key_send_retained",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_set": {
+      "address": "homie/{homie_device}/{key}/send/set",
+      "messages": {
+        "homie_key_send_set": {
+          "name": "homie_key_send_set",
+          "contentType": "text/plain",
+          "summary": "UTF-8 text for that companion, as on `contacts/<key>/send`; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_send_settable": {
+      "address": "homie/{homie_device}/{key}/send/$settable",
+      "messages": {
+        "homie_key_send_settable": {
+          "name": "homie_key_send_settable",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state": {
+      "address": "homie/{homie_device}/{key}/telemetry-state",
+      "messages": {
+        "homie_key_telemetry_state": {
+          "name": "homie_key_telemetry_state",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state_datatype": {
+      "address": "homie/{homie_device}/{key}/telemetry-state/$datatype",
+      "messages": {
+        "homie_key_telemetry_state_datatype": {
+          "name": "homie_key_telemetry_state_datatype",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state_format": {
+      "address": "homie/{homie_device}/{key}/telemetry-state/$format",
+      "messages": {
+        "homie_key_telemetry_state_format": {
+          "name": "homie_key_telemetry_state_format",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_telemetry_state_name": {
+      "address": "homie/{homie_device}/{key}/telemetry-state/$name",
+      "messages": {
+        "homie_key_telemetry_state_name": {
+          "name": "homie_key_telemetry_state_name",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_key_type": {
+      "address": "homie/{homie_device}/{key}/$type",
+      "messages": {
+        "homie_key_type": {
+          "name": "homie_key_type",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        },
+        "key": {
+          "description": "a contact's full public key: 64 hex digits in lower case"
+        }
+      }
+    },
+    "homie_name": {
+      "address": "homie/{homie_device}/$name",
+      "messages": {
+        "homie_name": {
+          "name": "homie_name",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_nodes": {
+      "address": "homie/{homie_device}/$nodes",
+      "messages": {
+        "homie_nodes": {
+          "name": "homie_nodes",
+          "contentType": "text/plain",
+          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_state": {
+      "address": "homie/{homie_device}/$state",
+      "messages": {
+        "homie_state": {
+          "name": "homie_state",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      },
+      "description": "The last will of a connection: `lost`, retained, QoS 1."
     },
     "node": {
       "address": "{base_topic}/{node_id}/node",
@@ -1522,6 +2199,24 @@
         }
       ]
     },
+    "receive_homie_key_send_set": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_set"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_set/messages/homie_key_send_set"
+        }
+      ]
+    },
     "receive_nodes": {
       "action": "receive",
       "channel": {
@@ -1807,6 +2502,510 @@
       "messages": [
         {
           "$ref": "#/channels/history/messages/history"
+        }
+      ]
+    },
+    "send_homie_extensions": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_extensions"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_extensions/messages/homie_extensions"
+        }
+      ]
+    },
+    "send_homie_homie": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_homie"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_homie/messages/homie_homie"
+        }
+      ]
+    },
+    "send_homie_implementation": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_implementation"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_implementation/messages/homie_implementation"
+        }
+      ]
+    },
+    "send_homie_key_battery": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery/messages/homie_key_battery"
+        }
+      ]
+    },
+    "send_homie_key_battery_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery_datatype/messages/homie_key_battery_datatype"
+        }
+      ]
+    },
+    "send_homie_key_battery_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery_name/messages/homie_key_battery_name"
+        }
+      ]
+    },
+    "send_homie_key_battery_unit": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_battery_unit"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_battery_unit/messages/homie_key_battery_unit"
+        }
+      ]
+    },
+    "send_homie_key_last_heard": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_last_heard"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_last_heard/messages/homie_key_last_heard"
+        }
+      ]
+    },
+    "send_homie_key_last_heard_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_last_heard_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_last_heard_datatype/messages/homie_key_last_heard_datatype"
+        }
+      ]
+    },
+    "send_homie_key_last_heard_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_last_heard_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_last_heard_name/messages/homie_key_last_heard_name"
+        }
+      ]
+    },
+    "send_homie_key_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_name/messages/homie_key_name"
+        }
+      ]
+    },
+    "send_homie_key_position": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_position"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_position/messages/homie_key_position"
+        }
+      ]
+    },
+    "send_homie_key_position_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_position_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_position_datatype/messages/homie_key_position_datatype"
+        }
+      ]
+    },
+    "send_homie_key_position_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_position_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_position_name/messages/homie_key_position_name"
+        }
+      ]
+    },
+    "send_homie_key_properties": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_properties"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_properties/messages/homie_key_properties"
+        }
+      ]
+    },
+    "send_homie_key_send": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send/messages/homie_key_send"
+        }
+      ]
+    },
+    "send_homie_key_send_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_datatype/messages/homie_key_send_datatype"
+        }
+      ]
+    },
+    "send_homie_key_send_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_name/messages/homie_key_send_name"
+        }
+      ]
+    },
+    "send_homie_key_send_retained": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_retained"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_retained/messages/homie_key_send_retained"
+        }
+      ]
+    },
+    "send_homie_key_send_settable": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_send_settable"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_send_settable/messages/homie_key_send_settable"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state/messages/homie_key_telemetry_state"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state_datatype/messages/homie_key_telemetry_state_datatype"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state_format": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state_format"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state_format/messages/homie_key_telemetry_state_format"
+        }
+      ]
+    },
+    "send_homie_key_telemetry_state_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_telemetry_state_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_telemetry_state_name/messages/homie_key_telemetry_state_name"
+        }
+      ]
+    },
+    "send_homie_key_type": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_key_type"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_key_type/messages/homie_key_type"
+        }
+      ]
+    },
+    "send_homie_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_name/messages/homie_name"
+        }
+      ]
+    },
+    "send_homie_nodes": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_nodes"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_nodes/messages/homie_nodes"
+        }
+      ]
+    },
+    "send_homie_state": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_state"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_state/messages/homie_state"
         }
       ]
     },

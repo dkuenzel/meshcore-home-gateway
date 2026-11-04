@@ -201,6 +201,14 @@ class DiagnosticsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class HomieConfig:
+    """The contacts as a Homie device, for openHAB and the other Homie controllers (EXT-011)."""
+
+    enabled: bool = False
+    contacts: int = 50  # contacts with a node, chosen as for their devices in Home Assistant
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     radio: RadioConfig
     mqtt: MqttConfig
@@ -213,6 +221,7 @@ class Config:
     contacts: ContactsConfig = field(default_factory=ContactsConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
+    homie: HomieConfig = field(default_factory=HomieConfig)
 
 
 def load_config(path: Path) -> Config:
@@ -480,6 +489,7 @@ def _build(root: _Section) -> Config:
         contacts=_checked(root.section("contacts"), _contacts),
         telemetry=_checked(root.section("telemetry"), _telemetry),
         diagnostics=_checked(root.section("diagnostics"), _diagnostics),
+        homie=_checked(root.section("homie"), _homie),
     )
     root.check_unknown()
     _check_commands_broker(config)
@@ -895,6 +905,13 @@ def _diagnostics(s: _Section) -> DiagnosticsConfig:
     return DiagnosticsConfig(publish_rx_log=s.boolean("publish_rx_log", False), log_level=level)
 
 
+def _homie(s: _Section) -> HomieConfig:
+    return HomieConfig(
+        enabled=s.boolean("enabled", False),
+        contacts=s.integer("contacts", 50, 0, MAX_CONTACT_DEVICES),
+    )
+
+
 # --- rendering from installer answers -------------------------------------------------------
 
 _ANSWER_TYPES: dict[str, type] = {
@@ -963,6 +980,8 @@ _ANSWER_TYPES: dict[str, type] = {
     "telemetry.ask_types": list,
     "diagnostics.publish_rx_log": bool,
     "diagnostics.log_level": str,
+    "homie.enabled": bool,
+    "homie.contacts": int,
 }
 
 HEADER = """\

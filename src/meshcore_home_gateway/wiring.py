@@ -19,6 +19,8 @@ are connected here (`gateway`). Who tells, when, and the listeners in the order 
   `announcer.device_message`;
 * `bus.on_ha_offline`, Home Assistant went offline: `devices.ha_offline`;
 * `bus.on_show_hidden`, a request to show the hidden contacts' devices: `devices.show_hidden`;
+* `observer.on_document` and `status.on_document`, a document was published (or cleared):
+  `homie.document`, with `[homie] enabled`;
 * a radio session's `on_contact_key`, the radio named a key: `inbox.contact_key`;
 * a radio session's `profile`, the connect reads the radio's settings: the radio profile
   (ADR 0020).
@@ -43,7 +45,9 @@ from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.inbox import Inbox
 from meshcore_home_gateway.mqtt.client import MqttBus
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
-from meshcore_home_gateway.mqtt.discovery import gateway_names
+from meshcore_home_gateway.mqtt.discovery import gateway_device_name, gateway_names
+from meshcore_home_gateway.mqtt.homie import HomieDevice
+from meshcore_home_gateway.mqtt.homie_client import homie_adapter
 from meshcore_home_gateway.mqtt.manage_entities import OBJECT_ID, ManageEntities
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer, observe
@@ -134,6 +138,15 @@ async def serve(config: Config, state_dir: Path, stop: asyncio.Event) -> None:
     if ha.discovery:  # also with no devices allowed: those of an earlier run are removed
         records = ContactDeviceRecords(store)
         devices = ContactDevices(config, topics, bus, records, protected=protected)
+    homie = None
+    if config.homie.enabled:  # its device has the name of the gateway's in Home Assistant
+        homie = homie_adapter(
+            config.mqtt,
+            config.homie.contacts,
+            gateway_device_name(config),
+            topics,
+            send=bus.requests.put_nowait,
+        )
     bridge = gateway(
         config,
         bus,
@@ -147,10 +160,15 @@ async def serve(config: Config, state_dir: Path, stop: asyncio.Event) -> None:
         manage_components=AnnouncedComponents(store, OBJECT_ID),
         telemetry_records=TelemetryRecords(store),
         state_dir=state_dir,
+        homie=homie.device if homie is not None else None,
     )
     try:
+        if homie is not None:
+            await homie.start()
         await bridge.run(stop)
     finally:
+        if homie is not None:
+            await homie.stop()
         if history is not None:
             history.close()
 
@@ -182,12 +200,14 @@ def gateway(
     telemetry_records: TelemetryRecords | None = None,
     telemetry_lanes: LaneFactory | None = None,
     state_dir: Path | None = None,
+    homie: HomieDevice | None = None,
 ) -> Bridge:
     """The bridge with its parts, each connected to what it hears of (the table above).
     `components`, `manage_components`: what earlier runs announced to Home Assistant;
     `devices`: the contacts' devices in Home Assistant; `profile`: the managed radio profile
     (ADR 0020); `telemetry_lanes`: builds the telemetry lanes (tests); `state_dir`: where the
-    state and the history are kept, for the free space in the health section."""
+    state and the history are kept, for the free space in the health section; `homie`: the
+    contacts as a Homie device (EXT-011)."""
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
     protected = protected_keys(config)
     if observer is None:
@@ -303,6 +323,9 @@ def gateway(
     if (shown := devices) is not None:
         bus.on_ha_offline.append(lambda: observe(shown.ha_offline))
         bus.on_show_hidden.append(lambda: observe(shown.show_hidden))
+    if homie is not None:
+        observer.on_document.append(homie.document)
+        status.on_document.append(homie.document)
 
     def session(
         transport: Transport, radio_events: asyncio.Queue[RadioEvent], set_clock: bool

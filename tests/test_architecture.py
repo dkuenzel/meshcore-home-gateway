@@ -98,12 +98,14 @@ def test_only_the_modules_that_show_texts_choose_a_language() -> None:
 
 # ARC-003: the application asks the radio and the bus through the ports (ports.py); only the
 # adapters themselves, and the command line and the wiring that put them in, name an adapter.
+# The Homie device's connection is one (EXT-011): the device itself publishes through it.
 ADAPTERS = {
     "meshcore_home_gateway.radio.session",
     "meshcore_home_gateway.radio.transport",
     "meshcore_home_gateway.mqtt.client",
+    "meshcore_home_gateway.mqtt.homie_client",
 }
-PUTS_IN_ADAPTERS = ("cli/", "wiring.py", "radio/", "mqtt/client.py")
+PUTS_IN_ADAPTERS = ("cli/", "wiring.py", "radio/", "mqtt/client.py", "mqtt/homie_client.py")
 APPLICATION = sorted(
     path
     for path in PACKAGE.rglob("*.py")

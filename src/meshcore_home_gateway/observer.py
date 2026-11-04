@@ -183,6 +183,9 @@ class Observer:
         self.on_contacts: list[Callable[[Mesh], None]] = []
         # called whenever the heard nodes may have changed; True: a contact joined or left
         self.on_nodes: list[Callable[[bool], None]] = []
+        # called with each document published as it changed, and None for one cleared: the
+        # adapters of other front ends, fed by the same documents (the Homie adapter)
+        self.on_document: list[Callable[[str, dict[str, Any] | None], None]] = []
         self._profiles: dict[str, ProfileReport] = {}  # radio key -> the profile's last report
         # contact requests whose write went out: (event type, key) -> (request, id); the table
         # read that shows the change reports it as the request's result
@@ -949,10 +952,14 @@ class Observer:
             return
         self._published[topic] = payload
         self._bus.publish(topic, payload, retain=True)
+        for listener in self.on_document:
+            listener(topic, document)
 
     def _clear(self, topic: str) -> None:
         self._published[topic] = b""  # an empty retained message clears the topic (again)
         self._bus.publish(topic, b"", retain=True)
+        for listener in self.on_document:
+            listener(topic, None)
 
     def _event(self, topic: str, payload: dict[str, Any]) -> None:
         self._bus.publish(topic, encode(payload))

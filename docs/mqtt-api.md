@@ -800,6 +800,69 @@ decides whether the packet is for it — useful to compare antennas or locations
  "received_at": "2026-10-18T09:00:00+00:00"}
 ```
 
+## Homie: `homie/<homie_device>`
+
+With `[homie] enabled = true` ([configuration.md](configuration.md#homie)) the gateway also
+publishes the radio's contacts as one device of the [Homie convention 4.0.0](https://homieiot.github.io/specification/spec-core-v4_0_0/),
+which openHAB and the other Homie controllers discover without configuration. It is fed by the
+documents above (`state` and `contacts/<key>`): it shows nothing they do not. `<homie_device>` is
+`meshcore-<node_id>` with `_` as `-` (`meshcore-radio1`): Homie's IDs are lower-case letters,
+digits and `-`.
+
+Homie wants the device's `$state` as the last will of its connection, and a connection has one
+last will, which the gateway's carries for `availability`. So the device has a connection of its
+own, with the broker settings of `[mqtt]` and the client ID with `-homie` added. Every message is
+retained with QoS 1, the echo of `send` aside.
+
+| Topic below `homie/<homie_device>` | Direction | Retained | Payload |
+| --- | --- | --- | --- |
+| `$homie`, `$name`, `$extensions`, `$implementation`, `$nodes` | gateway → | yes | `4.0.0`; the name of the gateway's device in Home Assistant; empty; `meshcore-home-gateway`; the nodes' IDs, separated by `,` |
+| `$state` | gateway → | yes | `init` while the device is announced, `ready`, `alert` while the radio is not connected, `disconnected` after a clean stop, `lost` as the last will |
+| `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document), its properties |
+| `<key>/<property>`, `<key>/<property>/$<attribute>` | gateway → | yes | the property's value (below) and its Homie attributes |
+| `<key>/send` | gateway → | no | the echo of a text taken on `send/set` |
+
+| Topic | Direction | Retained | Payload |
+| --- | --- | --- | --- |
+| `homie/<homie_device>/<key>/send/set` | → gateway | must not be | UTF-8 text for that companion, as on `contacts/<key>/send` |
+
+A node is a contact, its ID the contact's full key. The nodes are the contacts that come first as
+for their devices in Home Assistant (protected contacts, favourites, companions, then the most
+recently heard), at most `[homie] contacts`; a contact keeps its node while it stays in the
+table. A change of the nodes goes out between `$state` `init` and `ready`, so that a controller
+reads the device again, and the topics of a node that is gone are cleared. Those of a node whose
+contact left while the gateway was stopped stay on the broker, no longer listed in `$nodes`.
+
+| Property | Datatype | From the document | Notes |
+| --- | --- | --- | --- |
+| `battery` | `float`, unit `V` | `battery_v` | |
+| `position` | `string` | `latitude`, `longitude` | `<latitude>,<longitude>` in degrees, openHAB's location format |
+| `last-heard` | `string` | `heard_at` | ISO 8601 in UTC |
+| `telemetry-state` | `enum` | `telemetry_state` | its values ([telemetry states](#telemetry-states)) as `$format` |
+| `send` | `string`, settable, not retained | | companions only (type `chat`) |
+
+A value that is unknown (`null` in the document) is cleared: an empty retained message removes it
+from the broker. A text on `<key>/send/set` takes the way of one on `contacts/<key>/send`, with
+its limits and its `delivery` events; the gateway echoes it on `<key>/send` as Homie asks, which
+tells only that it was taken. A retained one is refused as there.
+
+The Homie topics are part of the public interface, as the topics above. A broker that serves
+them needs these lines for the gateway's user in addition to those of
+[securing the broker](#securing-the-broker), and the controller's user may read the device and
+send to companions:
+
+```text
+user meshcore-home-gateway
+topic readwrite homie/meshcore-radio1/#
+
+user openhab
+topic read homie/#
+topic write homie/meshcore-radio1/+/send/set
+```
+
+Only the gateway may write the device's other topics. It does not undo what another client
+writes there, as it does for its documents: a controller that trusts the values needs the ACL.
+
 ## MQTT 5
 
 With `[mqtt] protocol = "5"` ([configuration.md](configuration.md#mqtt)) the gateway connects

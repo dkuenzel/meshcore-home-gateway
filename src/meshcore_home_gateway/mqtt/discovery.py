@@ -397,9 +397,14 @@ def device_name(config: Config, ha_name: Callable[..., str]) -> str:
 def gateway_names(config: Config) -> frozenset[str]:
     """The names the gateway goes by: its device in Home Assistant, and its radio's name when
     the profile sets it. A node or contact of such a name could pass for the gateway (SEC-007)."""
-    ha_name = i18n.translator(config.homeassistant.language).ha_name
-    names = {device_name(config, ha_name), config.radio.profile.name}
+    names = {gateway_device_name(config), config.radio.profile.name}
     return frozenset(n for n in names if n)
+
+
+def gateway_device_name(config: Config) -> str:
+    """The name of the gateway's device in Home Assistant, in the language of its names; the
+    Homie device has it too."""
+    return device_name(config, i18n.translator(config.homeassistant.language).ha_name)
 
 
 def with_removed(

@@ -89,3 +89,8 @@ max_age_s = 900                                        # 0 disables the clock ch
 [diagnostics]
 publish_rx_log = false                                 # SNR/RSSI of every received packet
 log_level = "info"
+
+# The contacts as a Homie device for openHAB and other Homie controllers (docs/mqtt-api.md).
+# [homie]
+# enabled = false                                      # the default; true publishes it
+# contacts = 50                                        # the default

@@ -56,6 +56,8 @@ class Status:
         self._notify, self._mono, self._wall = notifier, monotonic, wall_clock
         self._state_dir = state_dir
         self.lag = LoopLag()  # how late the event loop ran (CODE-001)
+        # called with the state document each time it is published: the Homie adapter
+        self.on_document: list[Callable[[str, dict[str, Any] | None], None]] = []
 
     def payload(self) -> dict[str, Any]:
         info, session = self._radio.info, self._radio.session
@@ -149,6 +151,8 @@ class Status:
     def publish(self) -> None:
         state = self.payload()
         self._bus.publish(self._topics.state, encode(state), retain=True)
+        for listener in self.on_document:
+            listener(self._topics.state, state)
         degraded = ", degraded" if state["health"]["degraded"] else ""
         self._notify(f"STATUS=radio {state['radio']}, queue {state['queue']}{degraded}")
 

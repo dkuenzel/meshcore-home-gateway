@@ -170,6 +170,13 @@ format, the command line and Home Assistant discovery are public interfaces
   values of each document, generated from the interface snapshot so that it follows the code.
   Each release attaches the document of its version, `meshcore-home-gateway-X.Y.Z.asyncapi.yaml`,
   listed in `SHA256SUMS` ([mqtt-api.md](docs/mqtt-api.md)).
+- `[homie] enabled`: the radio's contacts as a device of the Homie convention 4.0.0, which openHAB
+  and the other Homie controllers discover without configuration: a node per contact (at most
+  `[homie] contacts`, 50) with battery, position, last heard and telemetry state, and for
+  companions a field to send a text, fed by the same documents as Home Assistant. Off by default;
+  the device has a connection of its own, with `$state` as its last will, and the broker's ACL
+  needs `homie/meshcore-<node_id>/#` for the gateway's user
+  ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
 - The dashboard's *Contacts* view has a card *Telemetry and removal* with each contact's switch
   *Telemetry* and button *Remove from radio*, for household users who open no device page; the
   last delivery step and the last contact event show their reason as a text, a reason without
