@@ -165,6 +165,11 @@ format, the command line and Home Assistant discovery are public interfaces
 - `make firmware-play` for contributors: the hardware checklist's household on the firmware's
   simulated air, a local broker and the gateway, for exploring by hand until Ctrl-C
   ([testing.md](docs/testing.md#tests-against-the-real-firmware)).
+- The MQTT API for machines: `docs/mqtt-api.asyncapi.yaml`, an AsyncAPI 3.1 document of every
+  topic the gateway publishes and reads, with QoS, retain flag and parameters, and the keys and
+  values of each document, generated from the interface snapshot so that it follows the code.
+  Each release attaches the document of its version, `meshcore-home-gateway-X.Y.Z.asyncapi.yaml`,
+  listed in `SHA256SUMS` ([mqtt-api.md](docs/mqtt-api.md)).
 - The dashboard's *Contacts* view has a card *Telemetry and removal* with each contact's switch
   *Telemetry* and button *Remove from radio*, for household users who open no device page; the
   last delivery step and the last contact event show their reason as a text, a reason without

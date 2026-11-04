@@ -5,6 +5,13 @@ is `meshcore/radio1`. Everything uses QoS 1, except the `command` events (QoS 0,
 API is a public interface under semantic versioning
 ([compatibility](development.md#compatibility)).
 
+For machines, [mqtt-api.asyncapi.yaml](mqtt-api.asyncapi.yaml) is the API as an AsyncAPI 3.1
+document: every topic the gateway publishes and reads, with QoS, retain flag and parameters, and
+the keys of each document with the values the gateway uses (`x-values`). It is generated from
+the interface snapshot, so it follows the code; each release attaches the document of its
+version, `meshcore-home-gateway-X.Y.Z.asyncapi.yaml`, listed in `SHA256SUMS`. It gives no types
+and no closed lists of values: this page stays normative.
+
 | Topic | Direction | Retained | Payload |
 | --- | --- | --- | --- |
 | `availability` | gateway → | yes | `online` / `offline`; last will `offline` |
