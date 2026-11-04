@@ -54,7 +54,6 @@ from meshcore_home_gateway.ports import (
     RadioPort,
 )
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.protocol.links import LinkContact, LinkError, parse_contact_text
 from meshcore_home_gateway.views import contact_event
 
@@ -293,8 +292,8 @@ class ContactManager:
         tracked = self._observer.mesh.contacts.get(key) if key is not None else None
         if key is None or (tracked is None and not excluding and key not in excluded):
             raise _RefusedError("unknown_contact")
-        if tracked is not None and tracked.node.node_type != NodeType.CHAT:
-            raise _RefusedError("not_a_companion")  # only companions are asked
+        if tracked is not None and tracked.node.node_type not in self._observer.telemetry_types:
+            raise _RefusedError("not_a_companion")  # only companions are asked, or sensors too
         kept = excluded if excluding else exclusions.included if exclusions.household else None
         if kept is not None and key not in kept and len(kept) >= exclusions.LIMIT:
             raise _RefusedError("too_many")

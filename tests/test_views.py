@@ -470,8 +470,17 @@ def test_a_document_restated_as_excluded_forgets_what_an_exclusion_forgets(adver
     assert restated(excluded, "waiting") == included  # what it forgot stays forgotten
 
 
-def test_only_a_companion_is_excluded() -> None:
-    assert contact_document(Tracked(Node(KEY, "Alice", 1)), excluded=True)["telemetry_excluded"]
+def test_only_a_contact_that_is_asked_is_excluded() -> None:
+    """A contact of a type that is asked has a telemetry state (companions, with `ask_types`
+    also sensors, EXT-005); one that is never asked has none and is not excluded."""
+    alice = contact_document(
+        Tracked(Node(KEY, "Alice", 1)), telemetry_state="excluded", excluded=True
+    )
+    assert alice["telemetry_excluded"] is True
+    sensor = contact_document(
+        Tracked(Node(KEY, "Shed", 4)), telemetry_state="excluded", excluded=True
+    )
+    assert sensor["telemetry_excluded"] is True
     repeater = contact_document(Tracked(Node(KEY, "Hill", 2)), excluded=True)
     assert repeater["telemetry_excluded"] is False
 

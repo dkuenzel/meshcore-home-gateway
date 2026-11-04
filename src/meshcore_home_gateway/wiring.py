@@ -197,6 +197,7 @@ def gateway(
         "no_radio" if config.contacts.manage else "management_off",  # until the radio connects
         config.contacts.heard_nodes,
     )
+    observer.telemetry_types = config.telemetry.node_types
     radio = RadioLink(monotonic)
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()
     outbox = Delivery(

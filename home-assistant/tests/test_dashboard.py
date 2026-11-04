@@ -479,8 +479,9 @@ async def test_the_dashboard_names_only_entities_that_exist(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """The gateway's entities, its controls, the trackers and the guide's script; the same in
-    English and in xx, with the household discovered in `language`."""
+    """The gateway's entities, its controls, the trackers, the contacts' switches and buttons
+    and the guide's script; the same in English and in xx, with the household discovered in
+    `language`."""
     offer("xx", monkeypatch, XX)
     config = in_language(make_config(), language)
     broker, mesh = Broker(), household(ALICE_NODE, HILL_NODE)
@@ -496,6 +497,13 @@ async def test_the_dashboard_names_only_entities_that_exist(
     names = referenced(loaded["mesh-en"])
     assert names == referenced(loaded["mesh-xx"])
     assert {"device_tracker.mesh_alice", "device_tracker.mesh_hilltop", WRITE} <= names
+    controls = {
+        "switch.mesh_alice_telemetry",
+        "button.mesh_alice_remove",
+        "button.mesh_hilltop_remove",
+    }
+    assert controls <= names  # IMP-049: the household's controls; a repeater is never asked
+    assert "switch.mesh_hilltop_telemetry" not in names
     assert len(names) > 20
     assert names <= {e.entity_id for e in er.async_get(hass).entities.values()}
     assert problems(caplog) == []
@@ -959,8 +967,9 @@ async def test_steps_states_and_contact_events_show_as_texts(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A delivery step, a telemetry state and a contact event as the dashboard's text, a reason
-    as its code: the codes are an open list (docs/mqtt-api.md)."""
+    """A delivery step, a telemetry state, a contact event and a reason as the dashboard's
+    text; a reason added later, or one of the radio's refusals, as its code: the codes are an
+    open list (docs/mqtt-api.md)."""
     assert set(STEPS) == {s.value for s in DeliveryState}
     assert set(STATES) == set(telemetry.STATES)
     config = make_config()
@@ -985,7 +994,7 @@ async def test_steps_states_and_contact_events_show_as_texts(
             reason="look_alike",
         ),
     )
-    refused = "<div><b>Bob</b> request refused <code>look_alike</code> "
+    refused = "<div><b>Bob</b> request refused (another contact has the same key prefix) "
     assert render(hass, event).startswith(refused)
     await fire(hass, topics.contact_event, contact_event("added", ALICE, ALICE_NODE))
     added = r"<div><b>Alice</b> added to the radio \d+ min ago</div>"
@@ -995,8 +1004,12 @@ async def test_steps_states_and_contact_events_show_as_texts(
         reason = "no_acknowledgement" if step == "failed" else None
         delivered = DeliveryEvent("m1", "alerts", DeliveryState(step), "Gate open", 1, reason)
         await fire(hass, topics.delivery, delivery_payload(delivered))
-        code = " <code>no_acknowledgement</code>" if reason else ""
-        assert render(hass, sent) == f"<div><b>alerts</b> {text}{code}<br>Gate open</div>", step
+        why = " (no acknowledgement)" if reason else ""
+        assert render(hass, sent) == f"<div><b>alerts</b> {text}{why}<br>Gate open</div>", step
+    refusal = DeliveryEvent("m3", "alerts", DeliveryState.FAILED, "Gate open", 1, "error_7")
+    await fire(hass, topics.delivery, delivery_payload(refusal))
+    code = "failed (<code>error_7</code>)"  # the radio's refusal: an open list
+    assert render(hass, sent) == f"<div><b>alerts</b> {code}<br>Gate open</div>"
     forged = DeliveryEvent(
         "m2", "alerts", DeliveryState.CONFIRMED, "Gate open", 1, rtt_ms=400, suspect=True
     )

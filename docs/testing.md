@@ -336,14 +336,15 @@ GPS, a contact of A); for steps 51 and 52 C, another companion with GPS that A i
 | 51 | C advertises; *Add heard node* for C; then *Add contact (key or link)* with a wrong key; rename B to `<i>x</i>[y](https://e.x)` in the app and advertise | C in *Nodes heard*, then in the contacts table within a minute, *Last contact event* "added to the radio"; for the wrong key "request refused" with its reason code; B's new name literal in the table (a name with a line break cannot be typed in the app; the contract tests cover it) |
 | 52 | Map: B walks 200 m away and back; C with GPS on; then make the dashboard again and paste it | B's trace; the hint names C until the new dashboard lists it |
 | 53 | Update the gateway, or start a test installation with another version, without making the dashboard again | the amber version card with both versions; gone once the dashboard is made again |
-| 54 | A household user who is no administrator, on the phone; then open `/config/devices` as that user; then press `e`, search *Remove from radio* and open a contact's button (do not press it) | sees every view, sends with the form, cannot edit the dashboard; the device page is refused; the entity search opens the button with *Press*, as the guide says (anyone can remove a contact that way) |
+| 54 | A household user who is no administrator, on the phone; then open `/config/devices` as that user; then press `e`, search *Remove from radio* and open a contact's button (do not press it) | sees every view, sends with the form, switches a contact's *Telemetry* in *Telemetry and removal*, cannot edit the dashboard; the device page is refused; the entity search opens the button with *Press*, as the guide says (anyone can remove a contact that way) |
 
-Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone.
+Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, step 57 a node with MeshCore's sensor firmware.
 
 | # | Step | Expected |
 | --- | --- | --- |
 | 55 | Set `[commands] codes_file`, run `meshcore-home-gateway commands enrol <B's key>`, scan `qrencode -t ansiutf8 '<line>'` with the app, restart the service. B sends `status <code>`, the same text anew within 30 s, then `status` | a `command` event `status` with empty `args`; then `received` shows `code_reused`, then `code_missing` |
 | 56 | Set `[commands] reply = "all"` and `prefix = "Home: "` on a channel target; restart. B sends `status <code>`, then `status`; publish `Gate open` to the channel target | B's app shows `ok: status`, then `rejected: code_missing`, each confirmed in `delivery` with B's key as `target`; the channel shows `Home: Gate open` |
+| 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
 
 ### Steps 29–45 on the simulated air
 

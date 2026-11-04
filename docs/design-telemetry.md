@@ -30,7 +30,8 @@ sequenceDiagram
     P->>P: unique prefix on a current table: taken
 ```
 
-* **Who.** Every chat contact of the radio's table that the household did not exclude and whose
+* **Who.** Every chat contact of the radio's table (with `[telemetry] ask_types`, also every
+  sensor, EXT-005; the observer holds the types) that the household did not exclude and whose
   first 6 key bytes no other contact and not the radio's own key share: the 0x8B names the
   answering contact by those bytes only (an excluded look-alike still blocks its twin). Nothing is
   asked while the radio adds contacts of any type on its own (a look-alike could enter the table

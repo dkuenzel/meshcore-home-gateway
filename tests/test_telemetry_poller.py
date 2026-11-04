@@ -42,7 +42,7 @@ from meshcore_home_gateway.ports import (
     TelemetrySent,
 )
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import Command, Push
+from meshcore_home_gateway.protocol.codes import Command, NodeType, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.session import CompanionSession
 from meshcore_home_gateway.state import (
@@ -1329,6 +1329,21 @@ def test_only_companions_count_among_the_nodes_heard(tmp_path: Path) -> None:
     scenario(main)
 
 
+def test_the_configured_types_reach_the_observer_and_the_documents(tmp_path: Path) -> None:
+    """EXT-005, wired: `ask_types` reaches the observer, which the poller, the contact manager
+    and the documents read; a sensor then has a telemetry state."""
+    radio = EmulatedRadio(contacts=[DANA, SHED])
+    sensors = make_config(extra='[telemetry]\nask_types = ["chat", "sensor"]\n', telemetry=None)
+
+    async def main() -> None:
+        async with running(sensors, radio, tmp_path, telemetry_lanes=wide) as (bridge, bus, _):
+            assert bridge.observer.telemetry_types == frozenset({NodeType.CHAT, NodeType.SENSOR})
+            document = await bus.wait_for(f"/contacts/{SHED_KEY}", lambda d: True)
+            assert document["telemetry_state"] == "waiting"
+
+    scenario(main)
+
+
 # --- the poller's parts with a stand-in session -----------------------------------------------
 
 TOPICS = Topics("meshcore", "radio1")
@@ -1493,6 +1508,8 @@ GINA = EmulatedContact(bytes.fromhex("9a" * 32), "Gina", out_path_len=0x00)
 GINA_KEY = GINA.public_key.hex()
 GINA_TWIN = EmulatedContact(GINA.public_key[:6] + bytes(26), "Trent", out_path_len=0x00)
 HILL = EmulatedContact(bytes.fromhex("c7" * 32), "Hill", node_type=2)  # a repeater
+SHED = EmulatedContact(bytes.fromhex("5e" * 32), "Shed", node_type=4, out_path_len=0x00)  # a sensor
+SHED_KEY = SHED.public_key.hex()
 MIRROR = EmulatedContact(SELF_KEY[:6] + bytes(26), "Mirror", out_path_len=0x00)  # the radio's
 TWIN_KEY = DANA_TWIN.public_key.hex()
 START = 10_000.0  # the stand-in clock when a test starts
@@ -1704,6 +1721,33 @@ def test_an_excluded_contact_is_never_asked_but_still_blocks_its_twin(
             "excluded",
         )
         assert HILL.public_key.hex() not in r.poller._reported  # a repeater has no state
+
+    asyncio.run(main())
+
+
+@pytest.mark.parametrize("sensors", [False, True], ids=["companions", "sensors too"])
+def test_a_sensor_is_asked_only_when_sensors_are(
+    monkeypatch: pytest.MonkeyPatch, sensors: bool
+) -> None:
+    """EXT-005: with `ask_types` naming sensors, the household's sensor is a candidate with a
+    state of its own and is asked like a companion; a repeater never is."""
+
+    async def main() -> None:
+        r = rig(monkeypatch, DANA, SHED, HILL, read=False)
+        if sensors:
+            r.observer.telemetry_types = frozenset({NodeType.CHAT, NodeType.SENSOR})
+        r.read()
+        session = cast(CompanionSession, r.radio)
+        candidates = r.poller._candidates(session, r.clock[0])
+        assert [c.key for c in candidates] == ([KEY, SHED_KEY] if sensors else [KEY])
+        assert r.poller._askable(session) == (2 if sensors else 1)  # the first-start warning
+        r.radio.answers.update({KEY: LPP_FULL, SHED_KEY: LPP_FULL})
+        await r.until_asked(2 if sensors else 1)
+        await r.steps(5)
+        assert {key for key, _ in r.radio.asked} == ({KEY, SHED_KEY} if sensors else {KEY})
+        assert r.state(SHED_KEY) == ("answering" if sensors else None)
+        assert (SHED_KEY in r.poller._reported) == sensors  # its state changes are told
+        assert HILL.public_key.hex() not in r.poller._reported
 
     asyncio.run(main())
 
@@ -2467,7 +2511,7 @@ def test_the_first_start_holds_the_requests_for_an_hour_after_the_table_is_read(
         warned = [m.getMessage() for m in caplog.records if HOLD_WARNING in m.getMessage()]
         assert warned == [
             (
-                "telemetry paused: the first requests go out in 60 minutes, to 2 companions of "
+                "telemetry paused: the first requests go out in 60 minutes, to 2 contacts of "
                 "the radio; exclude every one that is not the household's (the Telemetry switch "
                 "on its device, or meshcore-home-gateway contacts telemetry KEY off)"
             )

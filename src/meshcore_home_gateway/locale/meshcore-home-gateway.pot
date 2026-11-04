@@ -1345,6 +1345,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
+msgid "{key}: name at least one type; to ask none, set enabled = false"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
 msgid "{key}: needs cert_file"
 msgstr ""
 
@@ -1699,6 +1704,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Telemetry and removal"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The gateway has not reported its radio since Home Assistant started."
 msgstr ""
 
@@ -1756,7 +1766,32 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "a link of another kind"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "a target or command sender"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "added to the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "airtime used up"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "already a contact"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "another contact has the same key prefix"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1771,7 +1806,27 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "cannot be stored"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "channel not set up on the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "confirmed"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "contact management is off"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "contact table full"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1782,6 +1837,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "device deleted in Home Assistant"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "empty text"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1806,7 +1866,32 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "firmware not tested"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "in effect, history not deleted"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "in effect, not stored yet"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "included in telemetry"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "internal error: see the log"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "invalid request"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1816,7 +1901,32 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "needs more airtime than one burst"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "never asked for telemetry"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no acknowledgement"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "no answer"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no heard node or contact of that name"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no key, link or contact card"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1831,12 +1941,47 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "no radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no such target"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "not a companion"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "not a contact on the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "not sent again: a duplicate"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "off"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "outcome unknown: the next table read tells"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "published with the retain flag"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "queue full"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1861,7 +2006,17 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "request not UTF-8"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "request refused"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "request too large"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1872,6 +2027,51 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "shares its position in adverts"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "text not UTF-8"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "text too long"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the gateway's own key"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the radio's table does not show it"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "too many keys stored"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "too many requests"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "too many requests waiting"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "unsupported node type"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "waited too long"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

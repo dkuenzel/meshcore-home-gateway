@@ -154,6 +154,15 @@ format, the command line and Home Assistant discovery are public interfaces
 - A Home Assistant script that sends a message to a contact target and waits for its final
   delivery event, and an automation that escalates when it was not confirmed
   ([home-assistant.md](docs/home-assistant.md#examples)).
+- `[telemetry] ask_types` (default `["chat"]`): `["chat", "sensor"]` also asks the household's
+  sensors (MeshCore's sensor firmware) for battery, readings and position, as companions are
+  asked, with the same switch, state, exclusions and inclusions. A sensor answers only a radio
+  in its access list: `setperm <the gateway radio's key> 1` on the sensor
+  ([companions.md](docs/companions.md#sensors)).
+- The dashboard's *Contacts* view has a card *Telemetry and removal* with each contact's switch
+  *Telemetry* and button *Remove from radio*, for household users who open no device page; the
+  last delivery step and the last contact event show their reason as a text, a reason without
+  one as its code ([home-assistant.md](docs/home-assistant.md#dashboard)).
 
 ### Changed
 

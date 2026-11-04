@@ -6,10 +6,10 @@ out: no YAML parser at run time (ADR 0005).
 The template is YAML as it stands, both branches of its conditional included:
 
 * `@gw@` (the gateway's part of its entity IDs), `@contact@` (how its contacts' entity IDs
-  begin), `@node@`, `@version@` and `["@trackers@"]` (the map's trackers, a JSON list) are
-  filled in.
+  begin), `@node@`, `@version@`, `["@trackers@"]` (the map's trackers, a JSON list) and
+  `["@controls@"]` (the contacts' telemetry switches and remove buttons) are filled in.
 * The lines between `# @if trackers` and `# @else` stay while the map lists a tracker, those
-  between `# @else` and `# @end` while it lists none.
+  between `# @else` and `# @end` while it lists none; `# @if controls` likewise.
 * `_("…")`, a JSON string inside, marks a text (msgctxt "dashboard"; tools/i18n.py extracts it).
   As a whole YAML value it becomes a quoted scalar and has no field; inside a card's content
   (a literal block) it becomes the text, {node} and {version} filled in, and any other field the
@@ -84,6 +84,21 @@ def trackers(records: ContactDeviceRecords, prefix: str = "mesh") -> list[str]:
     )
 
 
+def controls(records: ContactDeviceRecords, prefix: str = "mesh") -> list[str]:
+    """The switch *Telemetry* and the button *Remove from radio* of each contact announced with
+    them, by contact (IMP-049): on the dashboard a household user, who opens no device page, has
+    them as every user has them through the entity search."""
+    found = []
+    for record in sorted(records.announced.values(), key=lambda r: r.slug):
+        if not _SLUG.fullmatch(record.slug):
+            continue
+        if record.components.get("telemetry") == "switch":
+            found.append(f"switch.{prefix}_{record.slug}_telemetry")
+        if record.components.get("remove") == "button":
+            found.append(f"button.{prefix}_{record.slug}_remove")
+    return found
+
+
 def render(
     template: str,
     *,
@@ -92,13 +107,16 @@ def render(
     trackers: Sequence[str],
     text: Callable[[str, Mapping[str, str]], str],
     contact_prefix: str = "mesh",
+    controls: Sequence[str] = (),
 ) -> str:
     """The template filled in; `text(msgid, values)` gives a text in the dashboard's language,
-    filled with the values; `contact_prefix` begins the contacts' entity IDs."""
-    lines = _kept(template.split("\n"), {"trackers": bool(trackers)})
+    filled with the values; `contact_prefix` begins the contacts' entity IDs; `controls`: the
+    contacts' switches and buttons, in order."""
+    lines = _kept(template.split("\n"), {"trackers": bool(trackers), "controls": bool(controls)})
     filled = (
         "\n".join(lines)
         .replace('["@trackers@"]', json.dumps(sorted(trackers)))
+        .replace('["@controls@"]', json.dumps(list(controls)))
         .replace("@gw@", "meshcore_home_gateway_" + node_id.replace("-", "_"))
         .replace("@node@", node_id)
         .replace("@version@", version)
@@ -139,6 +157,7 @@ def dashboard(config: Config, state_dir: Path) -> tuple[str, int]:
         trackers=listed,
         text=text,
         contact_prefix=prefix,
+        controls=controls(records, prefix),
     )
     return yaml, len(listed)
 
