@@ -78,13 +78,29 @@ from meshcore_home_gateway.systemd import notify
 from meshcore_home_gateway.telemetry_poller import TelemetryPoller
 
 
+def event_expiries(config: Config) -> tuple[int, int]:
+    """With MQTT 5, how long the broker keeps a `delivery` or `received` event, and a `command`
+    event, for a subscriber that is away: a command older than `max_age_s` would be refused now,
+    so its event must not come later either."""
+    ttl = round(config.messages.queue_ttl_s)
+    return ttl, round(config.commands.max_age_s) or ttl
+
+
 async def serve(config: Config, state_dir: Path, stop: asyncio.Event) -> None:
     """The service until `stop` is set: the adapters (the MQTT client, the radio's transport, the
     state file and the history in `state_dir`) and the bridge with its parts."""
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
     ha = config.homeassistant
     ha_status = ha.status_topic if ha.discovery else None
-    bus = MqttBus(config.mqtt, topics, ha_status, ha_devices=ha_device_topics(config))
+    events, commands = event_expiries(config)
+    bus = MqttBus(
+        config.mqtt,
+        topics,
+        ha_status,
+        ha_devices=ha_device_topics(config),
+        event_expiry_s=events,
+        command_expiry_s=commands,
+    )
     store = JsonStateFile(state_dir / "state.json")
     history = None
     if config.history.enabled:

@@ -633,6 +633,15 @@ def test_a_password_file_needs_a_user_an_absolute_path_and_no_password(
         parse_config(MINIMAL + login + "\n")
 
 
+def test_the_mqtt_protocol_is_3_1_1_unless_5_is_set() -> None:
+    """ARC-014: MQTT 5 is an option; a broker that does not speak it refuses the connection."""
+    assert parse_config(MINIMAL).mqtt.protocol == "3.1.1"
+    assert parse_config(MINIMAL + 'protocol = "5"\n').mqtt.protocol == "5"
+    for value in ('"4"', "5"):
+        with pytest.raises(ConfigError, match=r"mqtt\.protocol"):
+            parse_config(MINIMAL + f"protocol = {value}\n")
+
+
 CODE_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"  # 160 bits
 
 

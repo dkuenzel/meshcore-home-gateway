@@ -8,21 +8,25 @@ import socket
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
 import paho.mqtt.client as paho
 import pytest
-from paho.mqtt.enums import CallbackAPIVersion
+from paho.mqtt.enums import CallbackAPIVersion, MQTTProtocolVersion
 from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCode
 
-from meshcore_home_gateway.config import MqttConfig
+from meshcore_home_gateway import __version__
+from meshcore_home_gateway.config import MqttConfig, parse_config
 from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.mqtt import retained as retained_module
-from meshcore_home_gateway.mqtt.client import MqttBus
+from meshcore_home_gateway.mqtt.client import MqttBus, make_paho_client
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.ports import ContactRequest, SendRequest
+from meshcore_home_gateway.wiring import event_expiries
 from tests.conftest import Broker
 
 TOPICS = Topics("meshcore", "radio1")
@@ -32,6 +36,7 @@ class FakePaho:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
         self.published: list[tuple[str, bytes, int, bool]] = []
+        self.properties: list[Properties | None] = []  # of each publish, as published
         self.on_connect: Any = None
         self.on_disconnect: Any = None
         self.on_message: Any = None
@@ -42,8 +47,16 @@ class FakePaho:
 
         return record
 
-    def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any:
+    def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        qos: int = 0,
+        retain: bool = False,
+        properties: Properties | None = None,
+    ) -> Any:
         self.published.append((topic, payload, qos, retain))
+        self.properties.append(properties)
         return SimpleNamespace()
 
 
@@ -275,6 +288,111 @@ def test_send_requests_and_home_assistant_birth_reach_the_loop() -> None:
         await asyncio.sleep(0.05)
         assert bus.requests.empty()
         assert births == [1]
+
+    asyncio.run(scenario())
+
+
+def test_mqtt_5_is_a_setting_and_3_1_1_the_default() -> None:
+    """ARC-014: a session that ends at the disconnect either way (clean session, or no session
+    expiry interval)."""
+    old = make_paho_client(MqttConfig(host="h", node_id="radio1"))
+    new = make_paho_client(MqttConfig(host="h", node_id="radio1", protocol="5"))
+    assert isinstance(old, paho.Client)
+    assert isinstance(new, paho.Client)
+    assert (old.protocol, old._clean_session) == (MQTTProtocolVersion.MQTTv311, True)
+    assert new.protocol == MQTTProtocolVersion.MQTTv5
+
+
+def _properties(properties: Properties | None) -> dict[str, Any]:
+    assert properties is not None
+    names = ("MessageExpiryInterval", "CorrelationData", "UserProperty")
+    return {name: getattr(properties, name) for name in names if hasattr(properties, name)}
+
+
+def test_with_mqtt_5_messages_say_who_published_them_and_events_expire() -> None:
+    async def scenario() -> None:
+        config = MqttConfig(host="h", node_id="radio1", protocol="5")
+        fake = FakePaho()
+        bus = MqttBus(
+            config,
+            TOPICS,
+            None,
+            client_factory=lambda _: fake,
+            event_expiry_s=600,
+            command_expiry_s=900,
+        )
+        await bus.start()
+        fake.on_connect(fake, None, None, ReasonCode(PacketTypes.CONNACK, "Success"), None)
+        await asyncio.sleep(0)
+        key = "a1" * 32
+        bus.publish(TOPICS.delivery, b"{}", correlation=b"\x00request-1")
+        bus.publish(TOPICS.received, b"{}")
+        bus.publish(TOPICS.contact_received(key), b"{}")
+        bus.publish(TOPICS.command, b"{}", qos=0)
+        bus.publish(TOPICS.state, b"{}", retain=True)
+        sent = {
+            topic: _properties(p)
+            for (topic, *_), p in zip(fake.published, fake.properties, strict=True)
+        }
+        users = sent[TOPICS.state]["UserProperty"]
+        assert [name for name, _ in users] == ["gateway", "version", "published_at"]
+        assert users[:2] == [("gateway", "radio1"), ("version", __version__)]
+        assert datetime.fromisoformat(users[2][1]).tzinfo is not None
+        expiries = {topic: p.get("MessageExpiryInterval") for topic, p in sent.items()}
+        assert expiries == {
+            TOPICS.availability: None,
+            TOPICS.delivery: 600,
+            TOPICS.received: 600,
+            TOPICS.contact_received(key): 600,
+            TOPICS.command: 900,
+            TOPICS.state: None,
+        }
+        assert sent[TOPICS.delivery]["CorrelationData"] == b"\x00request-1"
+        assert "CorrelationData" not in sent[TOPICS.received]
+
+    asyncio.run(scenario())
+
+
+def test_events_expire_after_the_queue_time_and_commands_after_their_age() -> None:
+    radio = '[radio]\ntransport = "serial"\ndevice = "/dev/ttyACM0"\n'
+    mqtt = '[mqtt]\nhost = "h"\nnode_id = "radio1"\n'
+    timed = parse_config(radio + mqtt + "[messages]\nqueue_ttl_s = 120\n")
+    assert event_expiries(timed) == (120, 900)
+    ageless = parse_config(radio + mqtt + "[commands]\nmax_age_s = 0\n")
+    assert event_expiries(ageless) == (600, 600)
+
+
+def test_with_mqtt_3_1_1_messages_carry_no_properties() -> None:
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        fake.on_connect(fake, None, None, ReasonCode(PacketTypes.CONNACK, "Success"), None)
+        await asyncio.sleep(0)
+        bus.publish(TOPICS.delivery, b"{}", correlation=b"ignored")
+        assert fake.properties == [None, None]
+
+    asyncio.run(scenario())
+
+
+def test_the_correlation_data_of_a_send_request_reaches_the_loop() -> None:
+    async def scenario() -> None:
+        bus, fake = make_bus(MqttConfig(host="h", node_id="radio1", protocol="5"))
+        await bus.start()
+        properties = Properties(PacketTypes.PUBLISH)  # type: ignore[no-untyped-call]
+        properties.CorrelationData = b"r-7"
+        key = "a1" * 32
+        for topic in ("meshcore/radio1/send/alerts", f"meshcore/radio1/contacts/{key}/send"):
+            message = SimpleNamespace(
+                topic=topic, payload=b"Gate open", retain=False, properties=properties
+            )
+            await asyncio.to_thread(fake.on_message, fake, None, message)
+        plain = SimpleNamespace(topic="meshcore/radio1/send/alerts", payload=b"x", retain=False)
+        await asyncio.to_thread(fake.on_message, fake, None, plain)  # MQTT 3.1.1: no properties
+        assert [await asyncio.wait_for(bus.requests.get(), 1) for _ in range(3)] == [
+            SendRequest("alerts", b"Gate open", False, False, b"r-7"),
+            SendRequest(key, b"Gate open", False, True, b"r-7"),
+            SendRequest("alerts", b"x", False),
+        ]
 
     asyncio.run(scenario())
 
@@ -649,6 +767,58 @@ def test_with_broker_availability_requests_and_last_will(broker: Broker) -> None
             observer.close()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.broker
+def test_with_broker_mqtt_5_carries_expiry_correlation_and_user_properties(
+    broker: Broker,
+) -> None:
+    """ARC-014 against Mosquitto: a request's correlation data reaches the gateway, and its
+    event carries it back, with the expiry and the gateway's name."""
+    received: list[Any] = []
+    arrived, subscribed = threading.Event(), threading.Event()
+    observer = paho.Client(
+        callback_api_version=CallbackAPIVersion.VERSION2, protocol=MQTTProtocolVersion.MQTTv5
+    )
+
+    def on_message(_c: Any, _u: Any, message: Any) -> None:
+        received.append(message)
+        arrived.set()
+
+    observer.on_message = on_message
+    observer.on_subscribe = lambda *_: subscribed.set()
+
+    async def scenario() -> None:
+        config = MqttConfig(host=broker.host, port=broker.port, node_id="radio1", protocol="5")
+        bus = MqttBus(config, TOPICS, None, event_expiry_s=600)
+        connected = asyncio.Event()
+        bus.on_connected.append(connected.set)
+        await bus.start()
+        try:
+            await asyncio.wait_for(connected.wait(), 5)
+            properties = Properties(PacketTypes.PUBLISH)  # type: ignore[no-untyped-call]
+            properties.CorrelationData = b"r-1"
+            observer.publish(TOPICS.send("alerts"), b"Hello", qos=1, properties=properties)
+            request = await asyncio.wait_for(bus.requests.get(), 5)
+            assert request == SendRequest("alerts", b"Hello", False, False, b"r-1")
+            bus.publish(TOPICS.delivery, b"{}", correlation=request.correlation)
+            assert await asyncio.to_thread(arrived.wait, 5)
+        finally:
+            await bus.stop()
+
+    observer.connect(broker.host, broker.port)
+    observer.subscribe(TOPICS.delivery, qos=1)
+    observer.loop_start()
+    try:
+        assert subscribed.wait(5)
+        asyncio.run(scenario())
+        echoed = received[0].properties
+        assert echoed.CorrelationData == b"r-1"
+        assert 0 < echoed.MessageExpiryInterval <= 600
+        assert ("gateway", "radio1") in echoed.UserProperty
+    finally:
+        observer.loop_stop()
+        observer.disconnect()
 
 
 @pytest.mark.broker

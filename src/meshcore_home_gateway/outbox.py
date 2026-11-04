@@ -246,6 +246,8 @@ class Delivery:
         self._unpublished, self._next_report = 0, monotonic()
         self.acks = AckWaiter(monotonic)
         self._flight = _Flight()
+        # MQTT 5: the correlation data of a request, by its id, until its final event (ARC-014)
+        self._correlations: dict[str, bytes] = {}
 
     def queued(self) -> int:
         return self._queue.qsize()
@@ -275,6 +277,8 @@ class Delivery:
 
     def accept(self, request: SendRequest) -> None:
         event_id = secrets.token_hex(4)
+        if request.correlation is not None:
+            self._correlations[event_id] = request.correlation
         try:
             target, text, raw = self._validate(request)
         except _FinalError as exc:
@@ -311,6 +315,7 @@ class Delivery:
         if self._refusals.allow(self._mono()):
             self._deliver_event(event)
             return
+        self._correlations.pop(event.id, None)
         self._unpublished += 1
         self.report_unpublished()
 
@@ -634,8 +639,25 @@ class Delivery:
             event.state.value,
             f" ({event.reason})" if event.reason else "",
         )
-        self._bus.publish(self._topics.delivery, encode(delivery_payload(event)))
+        self._bus.publish(
+            self._topics.delivery,
+            encode(delivery_payload(event)),
+            correlation=self._correlation(event),
+        )
         observe(self._observer.delivery, event, self.target_of(event.target))
+
+    def _correlation(self, event: DeliveryEvent) -> bytes | None:
+        """The correlation data of the event's request; forgotten with its final event. A message
+        kept across a restart has none: the data was the requester's, not the gateway's."""
+        if event.id not in self._correlations:
+            return None
+        target = self.target_of(event.target)
+        final = event.state not in (DeliveryState.QUEUED, DeliveryState.SENT) or (
+            event.state is DeliveryState.SENT
+            and target is not None
+            and target.kind is MessageKind.CHANNEL
+        )
+        return self._correlations.pop(event.id) if final else self._correlations[event.id]
 
     async def finish(self, loop: asyncio.Task[None]) -> None:
         """No attempt starts any more; one that waits for its acknowledgement gets it, for at

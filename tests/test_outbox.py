@@ -18,7 +18,7 @@ from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.core.model import MessageKind, Target
 from meshcore_home_gateway.mqtt.payloads import received_payload
 from meshcore_home_gateway.outbox import Delivery, Outbox, Outgoing
-from meshcore_home_gateway.ports import Transport
+from meshcore_home_gateway.ports import SendRequest, Transport
 from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.state import JsonStateFile
@@ -124,6 +124,38 @@ def test_direct_message_is_confirmed(tmp_path: Path) -> None:
             done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
             assert (done["attempt"], done["rtt_ms"]) == (1, 2300)
             assert [t.text for t in radio.texts] == ["Hello Alice"]
+
+    scenario(main)
+
+
+def test_a_request_s_correlation_data_comes_back_with_each_of_its_events(tmp_path: Path) -> None:
+    """ARC-014: the MQTT 5 correlation data the adapter took from a request, until its final
+    event, also for one refused at once; a request without it gets none."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], ack_round_trip_ms=2300)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _notes):
+            for alias, text, correlation in (
+                ("alice", b"Hello Alice", b"direct"),
+                ("alerts", b"Gate open", b"channel"),
+                ("nowhere", b"Lost", b"refused"),
+            ):
+                bus.requests.put_nowait(SendRequest(alias, text, False, False, correlation))
+            bus.send("alerts", "uncorrelated")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            await bus.wait_for(
+                "/delivery", lambda d: (d["text"], d["event_type"]) == ("uncorrelated", "sent")
+            )
+            echoed: dict[bytes, list[str]] = {}
+            for topic, event, correlation in bus.correlations:
+                assert topic.endswith("/delivery")
+                echoed.setdefault(correlation, []).append(event["event_type"])
+            assert echoed == {
+                b"direct": ["queued", "sent", "confirmed"],
+                b"channel": ["queued", "sent"],
+                b"refused": ["rejected"],
+            }
+            assert bridge.outbox._correlations == {}  # forgotten with the final events
 
     scenario(main)
 
@@ -688,9 +720,9 @@ def test_events_of_a_flood_of_refused_requests_are_limited(
     caplog.set_level(logging.WARNING)
 
     async def main() -> None:
-        async with running(make_config(), EmulatedRadio(), tmp_path) as (_, bus, _notes):
-            for _request in range(5000):
-                bus.send("nobody", "x")
+        async with running(make_config(), EmulatedRadio(), tmp_path) as (bridge, bus, _notes):
+            for number in range(5000):  # with MQTT 5 correlation data, which must not pile up
+                bus.requests.put_nowait(SendRequest("nobody", b"x", False, False, b"%d" % number))
             bus.send("alerts", "valid")
             await bus.wait_for(
                 "/delivery", lambda d: (d["text"], d["event_type"]) == ("valid", "sent")
@@ -702,6 +734,8 @@ def test_events_of_a_flood_of_refused_requests_are_limited(
             assert len(reports) == 2  # at once, then the rest of the flood
             counted = sum(int(report.rsplit(" ", 1)[1]) for report in reports)
             assert counted + len(refused) == 5000
+            assert len(bus.correlations) == len(refused)
+            assert bridge.outbox._correlations == {}
 
     scenario(main)
 

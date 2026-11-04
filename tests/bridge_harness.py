@@ -104,6 +104,7 @@ class FakeBus:
         self.on_show_hidden: list[Callable[[], None]] = []
         self.published: list[tuple[str, bytes, bool]] = []
         self.qos: dict[str, set[int]] = {}
+        self.correlations: list[tuple[str, Any, bytes]] = []  # MQTT 5 (ARC-014)
         self.stopped = False
         self.connected = True
         self.dropped = 0  # events of the last hour the broker did not take
@@ -118,9 +119,19 @@ class FakeBus:
     def dropped_1h(self) -> int:
         return self.dropped
 
-    def publish(self, topic: str, payload: bytes, retain: bool = False, qos: int = 1) -> None:
+    def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        retain: bool = False,
+        qos: int = 1,
+        *,
+        correlation: bytes | None = None,
+    ) -> None:
         self.published.append((topic, payload, retain))
         self.qos.setdefault(topic, set()).add(qos)
+        if correlation is not None:
+            self.correlations.append((topic, json.loads(payload), correlation))
 
     def send(
         self, alias: str, text: str | bytes, retained: bool = False, *, contact: bool = False
