@@ -1,7 +1,8 @@
 # Development
 
 How to work on meshcore-home-gateway. The rules (design first, test first, evidence for protocol
-facts) are in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+facts) are in [`CONTRIBUTING.md`](../CONTRIBUTING.md); [architecture.md](architecture.md) is the short
+way into the code.
 
 ## Set up
 

@@ -187,7 +187,7 @@ flowchart TB
 | `config` | TOML loading with strict validation; rendering from installer answers. |
 | `state` | The state file, read once and held in memory, its sections written together and atomically (§5.2); ledger of accepted command timestamps. |
 | `systemd` | Readiness, watchdog and status notifications. |
-| `cli` | Command line: the parser and `main` (`cli/__init__.py`), a module per group of commands (`run`, `config_cmd`, `probe`, `messages`, `contacts`, `dashboard`) and what they share (`common`: exit codes, language; `broker`: the commands' MQTT client). |
+| `cli` | Command line: the parser and `main` (`cli/__init__.py`), a module per group of commands (`run`, `config_cmd`, `probe`, `messages`, `contacts`, `codes`, `dashboard`, `status`, `doctor`, `backup`, `retire`, `history`) and what they share (`common`: exit codes, language; `broker`: the commands' MQTT client). |
 
 ### 5.2 Concurrency
 
@@ -249,6 +249,16 @@ can lose a cancellation that arrives just as the awaited event completes, and th
 never finishes on shutdown (found by the test matrix).
 
 ## 6 Detailed design
+
+Three subsystems have documents of their own; their sections keep their numbers and a summary
+here, so references to them hold:
+
+| Section | Document |
+| --- | --- |
+| 6.6 Observer: documents and history | [design-observer.md](design-observer.md) |
+| 6.7 Home Assistant | [design-home-assistant.md](design-home-assistant.md) |
+| 6.11 Telemetry | [design-telemetry.md](design-telemetry.md) |
+| 6.13 Dashboard (MVP) | [design-home-assistant.md](design-home-assistant.md#613-dashboard-mvp) |
 
 ### 6.1 Radio session
 
@@ -545,106 +555,7 @@ documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)):
 `contacts` and `contacts/<key>`, `nodes`, `history`, and the events `contact`, `node` and
 `telemetry`.
 
-```mermaid
-flowchart LR
-    S[radio.session] -- "contact tables, adverts,<br/>statistics, packet log" --> BR[bridge]
-    BR -- "the same, messages,<br/>deliveries" --> OB[observer]
-    OB <--> M[core.mesh]
-    OB <--> H[(history<br/>SQLite)]
-    OB -- state --> V[views]
-    V -- documents --> OB
-    OB -- "retained documents,<br/>events" --> MQ[MQTT]
-```
-
-* **Only changes are published**: the observer remembers the last payload per topic; after a
-  reconnect to the broker it publishes them all again. The topic of a contact that left the table
-  is cleared with an empty retained message; the keys of published contacts are kept in the state
-  file, so contacts removed while the gateway was stopped are cleared at its first table read.
-* **Signals of adverts**: the radio logs every packet before it handles it, and pushes `ADVERT` or
-  `NEW_ADVERT` only for adverts whose signature it accepted. The observer takes hops, SNR and RSSI
-  from the push's own log. While the radio's receive delay is 0 (its default, read at connect),
-  that is the logged advert of the same key that is the frame directly before the push, for a
-  `NEW_ADVERT` only with its record's time, for an `ADVERT` only when it is newer than the record
-  the observer holds (the radio pushes a contact's advert only when it is newer than its record).
-  Any other log is another packet (a late copy of an older advert, or a forged one), so a push
-  without its own log gets no signal, as an advert that was not logged. With a receive delay
-  above 0, or one not known, a logged advert of the key within 10 s before the push gives them.
-  The logged content itself is never trusted on its own (protocol.md, section 4).
-* **Positions** come from contact records (the radio keeps the position of a contact's newest
-  advert that carried one, also after the contact stopped sharing it) and from the contacts' own
-  telemetry (§6.11). A position from adverts exists only while the record holds one and the
-  contact's last checked advert, if any, carried one (next item); a record without a position
-  drops an advert position of any contact, and a telemetry position is never touched. A telemetry
-  position replaces the fix when it moved 20 m or more, or when the fix came from an advert; its
-  time is when it changed, so a companion at rest writes nothing per answer, neither in the
-  history nor in Home Assistant's recorder. It carries an accuracy of 15 m (the cell of 0.0001°
-  the encoder truncates to, and the receiver's own error). A changed advert position replaces a
-  telemetry fix, also at the check that shows a companion shares it again; an unchanged one does
-  not. A position from telemetry expires (§6.11):
-  `position_current` says whether it is current, and the document keeps it. Nodes that are not
-  contacts keep none.
-* **Positions in adverts** ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md),
-  `core/adverts.py`): the observer keeps each logged advert (at most 64, at most 40 s) and, at a
-  contact's `ADVERT`, its pending advert with the key's logs. The next table read whose record
-  shows the logged timestamp as `last_advert` decides: while the receive delay is 0, the log that
-  is the frame directly before the push; otherwise every log of the key with that timestamp must
-  agree. A flagged log must hold the record's position; a new position in the record since the
-  read before, with a newer `last_advert`, is evidence on its own. The radio pushes a contact's
-  advert only when it is newer than its record, so a read whose record is older than the push's
-  own log, or no newer than at the read before, was sent before the radio took it: it waits for
-  the next read (at most 30 s), also while a log of the record's time is in the window. A read
-  with no log of the record's time waits too while a newer log of the key is in the window. A
-  heard companion's `NEW_ADVERT` carries the record made from that advert alone and is checked at
-  once; its heard node keeps only the time and flag, and the table read that adds it takes them.
-  When nothing is learned the last check stays and one debug line says "not checked". While a
-  companion's newest advert is not checked, `advert_carries_position` is the last check's flag, or
-  `true` when the record holds a position: it errs to warn. The index lists the companions not
-  excluded from telemetry whose value is `true`; the event `position_in_advert` comes when such a
-  companion's check turns to carrying, at an add with a check that carries, and at an inclusion
-  while it carries. The last check of each companion is kept in the state file (`advert_checks`,
-  no position); a logged position is held at most about three minutes (its log up to 40 s before
-  the push, which is held up to 70 s, until the next minute tick) and never stored or published.
-* **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
-  `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
-  history's table `reading`, one row per value, in one transaction. The table was added to the
-  history's version 2 with `CREATE … IF NOT EXISTS` instead of a version 3: an older gateway opens
-  a file of a newer version without any history, and it ignores an added table, so a downgrade
-  keeps its messages and positions. Readings are kept for `readings_days`; beyond 200 000 rows the
-  oldest go, but never the rows of a contact's newest answer, which is restored at start, unless
-  telemetry is on and its saved schedule knows a later answer the history missed (it was off or
-  broken, or an older version ran): old values must not read as current. After the clock went
-  back while the gateway was stopped the schedule cannot tell (every answer counts as more than a
-  day old), and the history's newest comes back, not as current. A contact's document and the
-  history show the same answer.
-* **Exclusion** (§6.11): an excluded companion's readings, its time of the newest position and a
-  position from telemetry are forgotten, and the position its record carries takes the place, as
-  at a first table read, while its last checked advert, if any, carried one; its rows in the
-  history stay until their age removes them and are not restored while it is excluded. `forget`
-  deletes its readings and positions from telemetry in one transaction; its advert positions and
-  when it was last heard stay.
-* **Heard nodes**: the 50 most recently heard of the last 7 days. When 50 are kept, a node
-  heard once makes room first; one heard again (a newer advert than its first, or a former
-  contact) only when no other is left, so adverts with invented keys, which cost nothing, do not
-  push out the nodes the household knows. The `nodes` document goes out at once when a contact
-  joins or leaves the table; while only heard nodes change, at most every 30 seconds (with the
-  minute tick after that), so a flood of adverts does not republish it (up to 15 KiB) per advert.
-  The history keeps the rows of the contacts and of the heard nodes the gateway keeps: the hourly
-  purge removes the others, and every row after 7 days. Heard nodes are other people's radios:
-  `[contacts] heard_nodes = "keys"` publishes and stores their keys and types only, `"off"`
-  nothing; the memory still holds them, for the look-alike check, whose keys stay published
-  ([privacy.md](privacy.md)).
-* **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
-  answers moves it at most once an hour, keeping the signal of its last advert or message (an
-  answer reports none).
-* **Failures stay local**: an exception in the observer is logged and does not stop messages,
-  deliveries or commands; a history that cannot be written switches itself off for the run. Such
-  a bug is counted and its traceback logged at most once a minute per place, with how many came
-  since (`health.FAILURES`, a filter on the loggers of the parts); the `health` section of the
-  `state` document and the problem sensor *Gateway degraded* tell what is wrong (ARC-012).
-* **The purge** runs hourly in a thread on a connection of its own, in one transaction: its cost
-  grows with the tables and the disk, and the event loop serves the radio meanwhile. The writes
-  that come in the meantime wait in memory and follow it in their order
-  ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)).
+The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 
 ### 6.7 Home Assistant
 
@@ -653,85 +564,7 @@ The bridge publishes one device-based discovery document for itself
 contact ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)); entities
 and example automations are in [`home-assistant.md`](home-assistant.md).
 
-| Entity | Platform | Source |
-| --- | --- | --- |
-| Radio link | `binary_sensor` (connectivity) | `state` → `radio`; the radio's static facts as attributes |
-| Battery | `sensor` (voltage) | `state` → `battery_v` |
-| Airtime last hour | `sensor` (duration) | `state` → `airtime_1h_s` |
-| Airtime available | `sensor` (duration) | `state` → `airtime_available_s` |
-| Queue | `sensor` | `state` → `queue` |
-| Gateway degraded | `binary_sensor` (problem) | `state` → `health.degraded`; the health section as attributes |
-| Last packet RSSI, SNR | `sensor` (signal strength), disabled by default | `rx` (only with `publish_rx_log`) |
-| Message | `event` (`contact`, `channel`) | `received` |
-| Delivery | `event` (delivery states) | `delivery` |
-| Command | `event` (configured words) | `command` |
-| Send to *alias* | `notify`, one per target | `send/<alias>` |
-| Contacts, Nodes heard | `sensor` | `contacts` → `total`, `nodes` → `total` |
-| Contact, New node | `event` | `contact`, `node` |
-| Noise floor, Radio transmit time last hour, uptime and packet counters | `sensor`, diagnostic; the counters disabled by default | `stats` |
-| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` → `remote_cli_total`, `advert_carries_position_total` |
-| Look-alike node heard | `binary_sensor` (problem) | `nodes` → `look_alike_total` |
-| Show hidden contacts | `button` | → `homeassistant/show_hidden` |
-| Add heard node | `select`, its own document | the heard nodes' labels → `homeassistant/add_node` |
-| Add contact (key or link) | `text`, its own document | → `add_contact` |
-| Remove from radio | `button` on each contact's device | → `contacts/<key>/remove` |
-| Telemetry status | `sensor` (enum), diagnostic, attribute `reason` | `state` → `telemetry`, `telemetry_reason` |
-| Telemetry airtime last hour, Telemetry mesh airtime last hour | `sensor` (duration), diagnostic, disabled by default | `state` → `telemetry_airtime_1h_s`, `telemetry_mesh_airtime_1h_s` |
-| Telemetry | `event` (`answered`, `unanswered`) | `telemetry` |
-| Telemetry | `switch`, configuration, on each companion's device | `contacts/<key>` → `telemetry_excluded`; → `contacts/<key>/telemetry` |
-| Telemetry state | `sensor` (enum) on each companion's device | `contacts/<key>` → `telemetry_state` |
-| Position in adverts | `binary_sensor` (problem) on each companion's device | `contacts/<key>` → `advert_carries_position` |
-| Battery, MCU temperature, a sensor per reading | `sensor` (their class and unit, state class `measurement`) on a companion's device, with its first answer that carries them | `contacts/<key>` → `battery_v`, `mcu_temperature_c`, `readings`; available while `telemetry_current` |
-
-All entities share the availability topic, so they become unavailable when the bridge is offline.
-The document names the radio's model, firmware and key once the radio is known and is sent again
-when they change; unknown fields are left out, because Home Assistant rejects a document with a
-null device field. Components of an earlier run that the configuration no longer has are
-removed: Home Assistant removes a component only when it is sent as `{"p": <platform>}` and only if
-it has discovered it since its own start, so each announcement first sends a placeholder under the
-old unique_id (it binds a leftover entity, or creates one for a moment), then the removal. The
-state file keeps these removals pending for 30 days, because the gateway cannot tell when Home
-Assistant has received them. The placeholders are enabled: when Home Assistant removes a disabled
-entity, it clears the whole device's discovery topic itself. The gateway subscribes to that topic
-and announces again when Home Assistant clears it.
-
-Each contact's device (`mqtt/contact_devices.py`) sits on its own topic one level below the
-gateway's device ID and follows the radio's table: it is announced after a table read, updated
-when its document changes, and removed with placeholders first and then an empty document, once
-more after Home Assistant's next birth message if it may not have been running. Its components
-exist only with data (sending for companions, messages for companions and room servers, the
-tracker once a position is known, the telemetry switch and state and *Position in adverts* for
-companions, battery, MCU temperature and up to 16 readings with an answer that carries them) and
-are never removed one by one; only the tracker has coordinates. The tracker of a position from
-telemetry and the telemetry sensors are available only while the answers are current
-([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the device and state
-classes are interface and recorded in the snapshot. Entity IDs use a slug of the contact's name kept from its first appearance, also when
-it comes back within 90 days of leaving the table (at most 1 000 slugs of contacts that left are
-kept, the newest; CODE-003). The gateway subscribes to these topics: an empty document it did not send is the user
-deleting the device in Home Assistant, and the contact stays hidden there until it leaves the table
-or is shown again. At most `homeassistant.contact_devices` contacts get a device; one keeps its
-device while it stays in the table, and free places go to protected contacts, favourites,
-companions and the most recently heard, in that order.
-
-The controls that add contacts (`mqtt/manage_entities.py`) have a discovery document of their own,
-`…/manage_contacts/config`, whose components join the gateway's device: the select's options exist
-only in discovery and follow the heard nodes, sent at most every 30 seconds but at once when a
-contact joined or left the table, and at most 10 changes at once, then one a minute, also with
-announcements and from a fresh start, which begins with 2 (Home Assistant warns from the 101st
-change of an entity's capabilities within an hour, counts across the gateway's restarts, and writes
-its entity registry for each); the main document with its placeholders is not sent again for them.
-A label puts 12 and 8 key digits before the name, so no name can push the digits aside; the gateway
-resolves a label against the heard nodes and the contacts as they are when the request arrives. The
-text's pattern takes keys and contact links only: the field ends at 255 characters, and a contact
-card cut there would still parse, with a cut name. The select, the text and each contact's remove
-button are available while the gateway is online, the radio connected and management on (on
-firmware the gateway is tested with, as the worker requires), the button also only for a contact
-that is not protected; templates read keys that older documents lack with `is defined`, `is true`
-or `.get()`, so retained documents of an earlier version read as unavailable without a warning.
-Option changes wait while the broker is away: the reconnect announces the current ones, or, with no
-change left in the budget, those sent before, and the current ones within a minute. Components of
-the controls' document that a later version drops are removed like those of the main document; the
-state file keeps them apart.
+The detail is in [design-home-assistant.md](design-home-assistant.md#67-home-assistant).
 
 ### 6.8 Configuration
 
@@ -800,170 +633,7 @@ includes those that are (SEC-016): then a contact is asked only once included, o
 target or command sender, and the first start holds nothing. Values expire when a companion stops
 answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
 
-```mermaid
-sequenceDiagram
-    participant P as poller
-    participant S as session
-    participant R as radio
-    participant C as companion
-    P->>P: outbox quiet 10 s, schedule says who and how
-    P->>S: request_telemetry (unless the outbox is busy)
-    S->>R: SEND_TELEMETRY_REQ (key)
-    R-->>S: SENT (route, estimated timeout)
-    R->>C: request (direct on the stored path)
-    C->>R: answer (CayenneLPP)
-    R-->>S: TELEMETRY_RESPONSE (6-byte prefix, data)
-    S-->>P: event, matched by prefix and frame order
-    P->>P: unique prefix on a current table: taken
-```
-
-* **Who.** Every chat contact of the radio's table that the household did not exclude and whose
-  first 6 key bytes no other contact and not the radio's own key share: the 0x8B names the
-  answering contact by those bytes only (an excluded look-alike still blocks its twin). Nothing is
-  asked while the radio adds contacts of any type on its own (a look-alike could enter the table
-  and answer in its place); the managed profile switches that off.
-* **Exclusion.** `contacts/<key>/telemetry` (`off`, `on`), the switch *Telemetry* and `contacts
-  telemetry` reach the contact manager, which takes the request at once, without the radio, its
-  worker or `[contacts] manage`, and without an await, so storage, documents and event cannot
-  interleave with the poller. `off` is taken for any well-formed key, also one not on the radio
-  yet: exclusion only narrows what the gateway does. The keys (at most 1024) are kept in
-  `telemetry-excluded.json` in the state directory, written atomically and only when the set
-  changed; `off` takes effect also when the file cannot be written (`not_saved`, written again at
-  every status tick), `on` only once stored. A file that cannot be parsed is left as it is and
-  pauses telemetry (`exclusions_unreadable`) until it is fixed or deleted and the service
-  restarted: the gateway asks nobody rather than everybody. An exclusion withdraws a request that
-  waits for the radio's lock, drops an answer that arrives anyway (checked after the table wait,
-  and by the observer), counts a silence as nothing learned, and forgets the contact's answers in
-  the schedule; when it was asked and flooded stays, so the flood limits hold. An inclusion makes
-  it `waiting` and due at once. One owner holds the set: the observer; the contact manager and the
-  poller read it.
-* **The first-start hour.** When telemetry starts on a state directory whose state file has no
-  telemetry record (it never ran there), the poller sends nothing for an hour from its first step
-  with a read table: `paused` with `first_start`, one warning with the number of companions it
-  will ask. What is left of the hour is saved with the schedule, so a restart neither skips nor
-  extends it (an unknown elapsed time keeps all of it). An update to a default-on version has no
-  moment of opt-in; the hour gives the household one.
-* **One at a time.** The firmware keeps one pending request; the poller is its only user (the
-  gateway sends no other remote request). It waits `max(5 s, 1.25 × est_timeout)` from `SENT`. An
-  answer is taken for the contact asked, or as the late answer of the last request until the next
-  one, at most 60 s after its wait; an answer read before a request's `SENT` belongs to the one
-  before (frame numbers). It is taken only on a table that shows every change the radio reported
-  (held up to 15 s for the re-read), with the prefix still unique; a late answer older than one
-  taken is dropped (frame numbers within a session, not the wall clock, which may be set back).
-  The binary answer 0x8C carries no sender and is never read.
-* **Messages first.** No request while the outbox has a message, is delivering one (which includes
-  waiting for its acknowledgement), or had one or received one in the last 10 s (not a message of a
-  channel the configuration ignores, which nothing answers); a message queued while a request waits
-  for the radio withdraws it unwritten. A message queued after the request went out is sent at once;
-  it may share the channel with the request's answer for about a second (direct), or with a flood
-  for up to its timeout.
-* **Routes.** Direct only: a contact with a stored path is asked on it. One without a path is asked
-  by flood only when it was heard by other means within 30 minutes when the flood is planned (an
-  advert, also one from before it was added or, as the history keeps it, from before a restart; a
-  message as it arrived; a path it sent; never its own telemetry answers, never a message fetched at
-  connect, never the path of the gateway's own flood, never an advert of a repeater, room or sensor
-  the radio did not add). Heard after its last request (sent or tried), it is due at once, and its
-  flood is planned also while the hourly limit holds. A flood once planned stays planned while it
-  waits for the lanes, a retry or the hourly limit, however the contact is heard meanwhile, as long
-  as the gateway keeps deciding (plans are dropped after 5 minutes without a decision, the radio
-  away) and the contact stays a candidate without a path and its own gap stays over (one that leaves
-  loses its plan, and so does one whose gap grows to a day when its last answer turns a day old; a
-  restart drops every plan). At most 4 floods an hour for the gateway and one per contact per 30
-  minutes, the gap doubling with each flood until a direct answer (up to a day); a contact that has
-  not answered within a day gets one flood a day. A flooded request teaches both sides a path, so
-  the next requests go direct. **The gateway never resets or writes a path for telemetry:** a stored
-  path that no longer works stays until the companion sends a path or a message's flood fallback
-  resets it (§6.2); a contact whose path was reset is then asked again only once it is heard. A
-  companion away when an alert to it fell back to a flood is therefore found again when it
-  advertises or sends a message, not by itself. A request written whose `SENT` never came (the link
-  broke, or the gateway stopped) counts as sent as planned, so a reconnect or a restart does not
-  repeat a flood, and its answer is still taken as late for two minutes. A request refused or
-  withdrawn counts as tried: a sign of life from before it does not bring it forward again.
-* **Lanes.** Two token buckets, separate from the message budget: 18 s an hour of the gateway's own
-  transmit time and 90 s an hour of estimated airtime in the mesh (every hop of request and answer;
-  a flood as repeated by 20 repeaters, an assumption). Both start empty at every start (a restart
-  adds no burst; a debt is saved and carried over, less what the stop paid back) and when the
-  radio's settings change (the debt carried over again), and hold the costliest planned request, a
-  flood (0.821 s and 20.4 s at EU/UK Narrow). A request is charged in full when the radio reports
-  it sent, answered or not; a flood the radio sent for a request planned direct, and a flooded
-  answer the packet log shows, are charged as what they were, as a debt the refill pays back first.
-  A direct request costing more than a lane holds is not sent (at EU/UK Narrow more than 18 hops
-  for a 19-byte answer with one-byte path hashes; fewer with longer hashes or answers).
-  A due flood waits at most 10 minutes behind direct requests, then goes first. Over any interval
-  *T* telemetry's own transmit time is at most `0.821 + 18 × T / 3600` s plus one charge beyond the
-  level, and its estimated mesh airtime `20.4 + 90 × T / 3600` s plus one; the radio's measured
-  transmit time is a backstop for its own share only (polls pause from 180 s in an hour), nothing
-  measures the others'.
-* **Intervals** from a share of channel time per companion, request to request: 1 % while it moves,
-  0.1 % at rest, at least 90 s and 15 minutes (a neighbour at EU/UK Narrow: 90 s and 15 min; over
-  two repeaters 4.7 and 47 min); once an hour without a position in its answers. Moving means 50 m
-  or more from the last fix; two answers under 50 m mean resting again (at rest the reference
-  stays, so slow drift adds up and jitter never counts). A new contact counts as resting.
-* **Back-off.** An unanswered request is retried after 30 s once (a contact that answered within a
-  day, asked directly), then asked at its interval doubling with every failure: at least every
-  `max(30 min, its interval)` while it answered within the day, so it is found again that long
-  after it comes back without sending anything (30 min for a neighbour at rest, an hour without a
-  position); up to 6 h after a day without an answer and for one that never answered. Hearing it by
-  other means ends the back-off: the next request follows its interval after the last one, never
-  sooner (a contact without a path: at once, see Routes). Over TCP a timeout during a table
-  listing, one that ran or was still running in the wait (when the radio's push queue drops
-  frames), counts only the second time in a row.
-* **Refusals.** `ERR 1` switches telemetry off until the radio reconnects (firmware without the
-  command, or a later one that dropped it); `ERR 2` skips the contact until the next table read;
-  `ERR 3` (no free packet buffer) pauses requests for 60 s. A disconnect during the wait counts
-  nothing.
-* **Readings** ([mqtt-api.md](mqtt-api.md#reading-keys)). The 13 single-value CayenneLPP types
-  that 1.18 companions send are published under `ch<channel>_<type>[_<n>][_<unit>]`, `<type>` the
-  library's name, `<n>` from 2 for a further reading of one channel and type; GPS is the position,
-  other types are decoded and not published. `battery_v` is the answer's first entry if it is the
-  channel 1 voltage, `mcu_temperature_c` its last if it is a channel 1 temperature and nothing after
-  it was left undecoded (the firmware's order); both leave `readings`. Luminosity has no unit: the
-  T1000-E, its only 1.18 sender, sends 0–100 % in it, other boards lux. Values are the integers sent
-  divided, never rounded again.
-* **Positions** go to the contact's document and its tracker (§6.6).
-* **States and expiry.** The scheduler computes each companion's state from its schedule:
-  `answering` or `no_position` while its answers are current (at most one request in a row
-  unanswered, the last answer at most `max(1 h, 3 × its interval)` old; located while the newest
-  answer, or one within the last hour, carried a position), else `away` within a day of an answer,
-  `no_path` for a candidate without a path that was not heard within 30 minutes and has no flood
-  planned, `no_answer` after a failure, `waiting` otherwise; the poller adds `excluded` and
-  `look_alike` (from the table as last read and the radio's own key, in every step, also while
-  paused), the observer `off`. The documents pull the state from the poller; the poller
-  re-evaluates every chat contact at every step and the asked one after each outcome, and
-  republishes a contact whose state changed. The tracker of a telemetry position and the telemetry
-  sensors in Home Assistant follow `position_current` and `telemetry_current`
-  ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
-* **Events** on `telemetry`, only for requests that were sent: `unanswered` when a companion that
-  answered within the day leaves its second request in a row unanswered (once per absence: the
-  count resets only with an answer), `answered` for an answer after two or more failures in a row,
-  or the first since the contact was added or included again. An expiry by the time bound alone
-  (paused, the radio away, no path, the gateway stopped) raises none.
-* **Status.** `state.telemetry` is `on`, `off`, `unsupported` or `paused`; while paused
-  `state.telemetry_reason` says why: `first_start`, `no_radio` (no radio session),
-  `exclusions_unreadable`, `auto_add` or `radio_airtime`.
-* **Persistence.** The schedule (per contact the due time, failures, the times of its last answer,
-  request and flood, how long its answers count and when one last carried a position, whether it
-  was last moving, the size of its answers, since when it left the candidates; the gateway's
-  floods of the last hour, the lanes' debt and what is left of the first-start hour) is kept under
-  `telemetry` in the state file, relative to the time it was saved (a contact of the last run
-  keeps its schedule until a table read lacks it, however long the radio was away),
-  without positions. It is saved every 5 minutes after a change, at once after a flood (before its
-  wait, so a crash cannot repeat it) and at the stop. A contact that left the candidates keeps its
-  schedule for a day; one the radio's table adds again forgets its answers, as at an inclusion.
-  When the clock went back while the gateway was stopped, the time stopped is unknown: it counts
-  as nothing, except that every last answer counts as more than a day old
-  (fewer requests until the next answer, never more) and no located time is kept. Restored before
-  any task runs, the schedule gives each contact its state back at once, and the observer the time
-  of its newest answer with a position, so a restart flips no state and raises no event. The
-  observer keeps the last document of each companion whose answers are current in the state file
-  too (at once when one turns current or no longer, or loses a position from adverts, so that a
-  crash brings back none a check dropped; else with its minute tick and at the stop).
-  Before the first table read it has no contacts. It keeps these documents in their latest state,
-  also once they expired, stores each change at once, and publishes them again when their state
-  changes, and each again at every connect of the broker (it may have missed one: a run that
-  stopped before it was back). So after a restart without the radio they still expire at their
-  bound, also when a run stopped before the broker connected. The first table read replaces
-  them. The exclusions are kept in their own file (above).
+The detail is in [design-telemetry.md](design-telemetry.md#611-telemetry).
 
 ### 6.12 Translations
 
@@ -1032,69 +702,23 @@ beside ([home-assistant.md](home-assistant.md#dashboard)). This is the first par
 [ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md), which stays the
 target: no new entity, topic or setting, only the entities and the cards Home Assistant has.
 
-* **Four sections views:** *Overview* (a status line, a card while the gateway runs another
-  version than the dashboard was made for, the radio's link, airtime, queue, battery and health,
-  each problem sensor while it is on), *Messages* (the form, the last message, the last delivery
-  step), *Contacts* (the contacts on the radio, the add controls, the last contact event, the
-  nodes heard, the QR code) and *Map* (the contacts' trackers with 24 hours of traces). Sections
-  reflow on a phone, so there is one variant; visibility conditions only on states.
-* **The form** is the guide's script *Mesh message* (`script.mesh_message`): its more-info dialog
-  asks for a notify entity of MQTT and a text and calls `notify.send_message`. A hint replaces the
-  tile while the script is missing.
-* **What changes while the dashboard stays** comes from Markdown templates over the device
-  registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
-  the heard nodes, the last contact event. What a card needs as fixed IDs is written when the
-  dashboard is made: the gateway's entity IDs from `mqtt.node_id`, and the map's trackers from
-  the state file (`ha_contact_devices`, the announced contacts with a position, read only). A
-  hint names a tracker of this gateway whose contact's key no listed tracker has.
-* **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
-  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
-  `["@trackers@"]`, one conditional in comment lines, and texts marked `_("…")` with
-  `msgctxt "dashboard"`. A marked whole YAML value becomes a quoted scalar; a marked text inside a
-  card's content becomes the text, `{node}` and `{version}` filled in, any other field the Jinja
-  variable of that name. The same inputs give the same bytes.
-* **Translations of its texts** are used only when they hold no Jinja, HTML, Markdown link or
-  address (`{{`, `{%`, `{#`, `<`, `>`, `@`, `](`, `://`, `www.`, `_("`), no control, format, line
-  or paragraph separator character, and only the fields of the English text; else the English
-  text. The catalog check applies the same rule (`dashboard.FORBIDDEN`, `dashboard.UNSAFE`).
-* **Values from the mesh are text.** Every value a card reads from a state, an attribute or the
-  registry (message texts, names, labels, versions, the contact link) goes through the card's
-  macro `m`, which turns line breaks into spaces and escapes, onto a line that is one `<div>`,
-  `<table>` or `<ha-qr-code>` element: a CommonMark HTML block, which a blank line would end. The
-  alerts carry only our texts and integers. Machine values of a closed list (delivery steps,
-  telemetry states, contact events) are mapped to texts, with the value itself, through `m`, for
-  one added later; reason codes stay codes, in `<code>`.
-* **Interface:** the command is the only growth (`cli > commands > dashboard`); the dashboard's
-  content is not an interface, the entity IDs it names are.
-
-Where the MVP departs from ADR 0021:
-
-1. The template lives in the package, not in `home-assistant/dashboard/`: a file outside it
-   reaches neither the zipapp nor the wheel.
-2. The map shows the contacts' trackers only, no heard repeater without a contact: the gateway
-   keeps no stranger's position ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Showing them
-   needs a gateway change.
-3. Relative times ("5 min ago") and counts are formatted in the templates: a Markdown card cannot
-   hand a value to the frontend's formatter. The tiles still format their own values; the
-   dashboard shows no clock time, so no time zone is involved.
-4. The version card says that the versions differ, not which is newer.
-
-Deferred: release files per node and language, `--language` and `--output`, a second variant,
-more languages, a message history, the gateway's own compose entities, remove and telemetry
-controls per contact on the dashboard (today on the device page, which only administrators open,
-and through the entity search or the actions, which every user of Home Assistant can use),
-settings and help views, heard repeaters on the map, reason codes as texts, a colour
-legend, a list of the gateways on the broker, and the right tracker IDs when the contacts of two
-gateways share a name.
+The detail is in [design-home-assistant.md](design-home-assistant.md#613-dashboard-mvp).
 
 ## 7 Security
 
 ### 7.1 Assets and trust boundaries
 
-* **Assets:** the right to transmit on a shared channel (airtime, reputation of the node); the
-  command path into the automation system; message confidentiality; broker credentials.
-* **Boundaries:** radio channel (untrusted) → radio (trusted firmware, holds the keys) → USB or TCP
-  link → bridge → broker (authenticated clients) → automation system.
+The [threat model](threat-model.md) is the full account: twelve assets, twelve actors, seven
+boundaries and what stands in the way of each; this section is its summary.
+
+* **Assets:** the command path into the home; the alert path out of it; the household's positions
+  and messages; the radio's key, contact table and settings; airtime; the broker and the gateway's
+  login; the container and the host; what users install; the gateway being there; trust in the
+  documents.
+* **Boundaries:** the air (B1: untrusted, the firmware checks signatures and decrypts) → the radio
+  (trusted firmware, holds the keys) → its USB or TCP link (B2) → the gateway → the broker (B3:
+  its ACL decides who writes) → Home Assistant (B4) → its users (B5); the gateway's container (B6);
+  the project's releases (B7).
 
 ### 7.2 Threats and mitigations
 
@@ -1194,7 +818,9 @@ stops the service rather than let commands pass without codes.
   small and make automations confirm critical actions; a code secret (§7.3) adds the phone
   with the authenticator app as a second factor.
 * A look-alike needs a 48-bit prefix collision with an allowlisted key, which takes considerable
-  but feasible computing effort (about 2^48 key generations). If the radio adds it, the real
+  but feasible computing effort: about 2^48 ≈ 2.8 × 10^14 key generations, some 180 years of one
+  CPU core, months of one GPU, days for a hundred GPUs (a few thousand to a few tens of thousands
+  of euros at 2026 cloud prices; RES-003). If the radio adds it, the real
   sender's commands are rejected (`sender_ambiguous`) for 24 hours after the bridge last saw it.
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2). Without its code secret a look-alike that got past those checks
@@ -1441,6 +1067,51 @@ version, like the CI matrix, and fails if one is missing.
 | Managed radio profile for the observer | [0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | Generated dashboards for desktop and mobile | [0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) |
 | The gateway tested against the real firmware, built natively | [0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md) |
+| Releases tagged by CI on `main` | [0022](decisions/0022-releases-tagged-by-ci-on-main.md) |
+| Public interfaces kept by a policy and a snapshot | [0023](decisions/0023-public-interfaces-kept-by-a-snapshot.md) |
+| The outgoing queue kept across restarts, alerts first | [0028](decisions/0028-outgoing-queue-kept-across-restarts.md) |
+| What a contact of the radio is trusted with | [0029](decisions/0029-what-a-contact-is-trusted-with.md) |
+
+
+### 11.1 Choices without a record of their own
+
+Decided in the design and the code; each paragraph says why, so that a change starts from the
+reasons (security review 2026-11, ARC-017).
+
+* **Telemetry is on by default, with a first-start hour.** It reversed ADR 0018's "off by default
+  for now" in 1.1.0a2: telemetry is the reason most households run the gateway. An update to it
+  has no moment of opt-in, so the first start asks nobody for an hour and says whom it will ask
+  (§6.11). Who is asked is the household's choice since `[telemetry] ask = "household"`, which new
+  installations get ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)).
+* **The contact table is read again after adverts, paths and table changes.** A full read is the
+  only list of the table the protocol offers, and the look-alike memory of §7.3 relies on it; a
+  read costs about 150 bytes per contact (4.6 s for 350 over USB). Adverts of nodes the radio did
+  not add read nothing (§6.1), so strangers cannot keep the radio listing; incremental reads wait
+  until reads show up as a load (IMP-003).
+* **One JSON state file for every section.** The sections are small, belong together for a backup
+  and a restore, and change at different paces: one store holds them in memory, writes the file
+  whole and atomically once per change set, and at once what a crash must not lose (the command
+  ledger, the kept documents, the schedule after a flood).
+* **Command events go out with QoS 0.** An event delivered after a broker outage would trigger an
+  automation at an arbitrary later time; a lost one costs the sender a repetition, which it sees
+  as no answer (§6.5). MQTT 5's expiry does not change it: it counts from the broker, not from
+  the gateway.
+* **Clean sessions; requests are not persisted.** A request published while the gateway is away
+  is lost rather than sent late: an alert that arrives an hour later misleads (§6.5). The
+  gateway's own queue keeps what it accepted ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)).
+* **Fixed bounds shape what the gateway keeps.** 50 contact devices by default (Home Assistant
+  slows with thousands of entities), 50 heard nodes (strangers cost memory and documents, SEC-010),
+  1024 keys in each set of telemetry marks, documents below the ceilings of
+  [ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md). Each bound has its reason
+  beside its constant; raising one is a decision.
+* **The gateway writes the radio's clock.** A radio without a clock starts at the newest time its
+  contacts gave it, and its messages carry that time; the host's clock is the better source, so
+  `[radio] set_clock` writes it at connect, within plausible bounds (SEC-002, §6.1).
+* **Text from the mesh is published as it came.** Texts and names are data for automations and
+  people, never commands or markup; cleaning them on the way in would change what was received
+  and hide what an attacker sent. Consumers escape them where they display them
+  ([development.md](development.md#text-from-the-mesh-and-the-bus)); `[messages] clean_received`
+  is the opt-in for consumers that cannot (SEC-017).
 
 ## 12 Open questions and future work
 

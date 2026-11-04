@@ -7,7 +7,10 @@ channel the radio has the key of, such as the *Public* channel, whose key is in 
 This page lists what is kept, where, for how long, and how to switch each part off.
 
 Data protection law usually exempts what a household keeps for itself (in the EU, Art. 2(2)(c)
-GDPR); the exemption does not cover what leaves the household. Do not post dashboards,
+GDPR); the exemption does not cover what leaves the household, and the Court of Justice held that
+a home camera filming public space falls outside it (Ryneš, C-212/13): recording every radio that
+passes the house is closer to that than to a phone's contacts, which is why `[contacts]
+heard_nodes` can keep less of strangers. This is not legal advice. Do not post dashboards,
 screenshots or copies of the history that show other people's names, keys or messages, and keep
 backups private and encrypted ([state and backup](deployment.md#4-operations)). The archive of
 `meshcore-home-gateway backup` holds all of the state, and what `history export` prints holds what

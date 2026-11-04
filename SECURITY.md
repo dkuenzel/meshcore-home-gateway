@@ -23,7 +23,8 @@ reproduce.
 ## Scope and threat model
 
 The gateway sits between an untrusted radio channel, a local MQTT broker and a home automation
-system. The threat model, the trust boundaries and the mitigations are described in
+system. The threat model, with its assets, actors and trust boundaries, is
+[`docs/threat-model.md`](docs/threat-model.md); the mitigations and the residual risks are in
 [`docs/design.md`](docs/design.md#7-security). In short:
 
 - Commands from the radio are accepted only as direct messages from allowlisted contacts, never
