@@ -103,6 +103,7 @@ readings_days = 14.5
 
 [telemetry]
 enabled = true
+ask_types = ["chat", "sensor"]
 
 [diagnostics]
 publish_rx_log = true
@@ -170,6 +171,23 @@ def test_the_radio_clock_steps_at_most_30_days_by_default() -> None:
 
 
 COMMANDS = f'[commands]\nsenders = ["{KEY}"]\nwords = ["status"]\n'
+
+
+def test_telemetry_asks_companions_and_on_request_sensors() -> None:
+    """EXT-005: companions by default, as before; sensors only when named; no other type, and
+    an empty list is refused (`enabled = false` says that)."""
+    assert parse_config(MINIMAL).telemetry.ask_types == frozenset({"chat"})
+    assert config_module.TelemetryConfig().node_types == frozenset({1})  # Config() as well
+    assert parse_config(MINIMAL).telemetry.node_types == frozenset({1})
+    assert parse_config(FULL).telemetry.node_types == frozenset({1, 4})
+    for invalid, error in (
+        ('["repeater"]', "one of chat, sensor, got 'repeater'"),
+        ('["room"]', "one of chat, sensor"),
+        ("[]", "name at least one type"),
+        ('"sensor"', ""),
+    ):
+        with pytest.raises(ConfigError, match=rf"telemetry\.ask_types: .*{error}"):
+            parse_config(MINIMAL + f"[telemetry]\nask_types = {invalid}\n")
 
 
 def test_commands_are_answered_only_when_asked() -> None:

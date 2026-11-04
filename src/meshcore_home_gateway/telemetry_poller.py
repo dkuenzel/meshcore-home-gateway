@@ -55,7 +55,6 @@ from meshcore_home_gateway.ports import (
 )
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codec import added_types, type_names
-from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.protocol.packet import flooded_response_hashes
 from meshcore_home_gateway.state import EXCLUSIONS_FILE, TelemetryRecords
 
@@ -496,7 +495,7 @@ class TelemetryPoller:
                 return OUTDATED_WAIT_S
             self._hold_until = now + self._hold_left
             log.warning(
-                "telemetry paused: the first requests go out in %d minutes, to %d companions of "
+                "telemetry paused: the first requests go out in %d minutes, to %d contacts of "
                 "the radio; exclude every one that is not the household's (the Telemetry switch "
                 "on its device, or meshcore-home-gateway contacts telemetry KEY off)",
                 math.ceil(self._hold_left / 60),
@@ -511,10 +510,11 @@ class TelemetryPoller:
         return min(left, core.STEP_S)
 
     def _askable(self, session: RadioPort) -> int:
-        """The companions of the table as read that would be asked: unique, not excluded."""
-        prefixes = _prefixes(session)
+        """The contacts of the table as read that would be asked: of a type asked (companions,
+        also sensors with `ask_types`), unique, not excluded."""
+        prefixes, types = _prefixes(session), self._observer.telemetry_types
         return sum(
-            record.node_type == NodeType.CHAT
+            record.node_type in types
             and prefixes[key[:PREFIX_HEX_DIGITS]] == 1
             and key not in self._exclusions
             for key, record in session.contact_records.items()
@@ -705,10 +705,10 @@ class TelemetryPoller:
         for kept in (self._newest, self._routes, self._states):  # contacts that left
             for key in [k for k in kept if k not in records]:
                 del kept[key]
-        chosen = []
+        chosen, types = [], self._observer.telemetry_types
         for key, record in records.items():
-            if record.node_type != NodeType.CHAT or prefixes[key[:PREFIX_HEX_DIGITS]] > 1:
-                continue  # companions only, never a look-alike
+            if record.node_type not in types or prefixes[key[:PREFIX_HEX_DIGITS]] > 1:
+                continue  # companions (and sensors when asked) only, never a look-alike
             if key in self._exclusions:
                 continue
             if self._absent.get(key) == session.contacts_read_at:
@@ -793,7 +793,7 @@ class TelemetryPoller:
         prefixes, now = self._mesh_prefixes(), self._mono()
         for key in contacts if keys is None else keys:
             tracked = contacts.get(key)
-            if tracked is None or tracked.node.node_type != NodeType.CHAT:
+            if tracked is None or tracked.node.node_type not in self._observer.telemetry_types:
                 continue
             state = self._state(key, prefixes, now) or "waiting"
             before = self._reported.get(key)

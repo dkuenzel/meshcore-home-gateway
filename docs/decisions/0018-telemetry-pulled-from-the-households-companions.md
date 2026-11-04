@@ -129,6 +129,13 @@ items for routes, permissions, GPS states and padding.
 * Amended on 2026-10-31 by [ADR 0025](0025-positions-in-adverts-checked-from-the-packet-log.md):
   until the gateway has checked a companion's newest advert, the radio's record decides, erring to
   warn; the check reads the packet log, not the stored copy.
+* Amended on 2026-11-04 after the security review of 2026-11 (EXT-005): `[telemetry] ask_types`
+  can name sensors besides companions. A sensor (MeshCore's sensor firmware) answers the same
+  request, but only to a radio in its access list, which its owner adds with `setperm`
+  ([companions.md](../companions.md#sensors)); the gateway asks it like a companion, under the
+  same exclusions, inclusions and lanes. Repeaters and room servers stay out of scope: what the
+  household wants of them (status, uptime, their own counters) needs a login, which is
+  administration (ADR 0014; deferred as EXT-006 of the review).
 * Frames, routes, permissions, payload and airtime with firmware citations: research for the
   design sprint (2026-10-23), summarised in [protocol.md](../protocol.md) with the implementation.
 * Revisit when MeshCore offers pushed or subscribed telemetry, when command 39 is deprecated, or

@@ -149,7 +149,7 @@ def contact_document(
         "advert_carries_position": advert_carries_position(tracked),
         "advert_checked_at": iso(check.at) if check and check.at else None,
         "telemetry_state": telemetry_state,
-        "telemetry_excluded": excluded and node.node_type == NodeType.CHAT,
+        "telemetry_excluded": excluded and telemetry_state is not None,  # a type that is asked
         "telemetry_current": telemetry_current,
         "position_current": position_current,
         "readings_at": iso(readings.at) if readings else None,  # the gateway's time of the answer

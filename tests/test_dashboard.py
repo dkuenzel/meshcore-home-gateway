@@ -283,6 +283,57 @@ def test_the_trackers_are_sorted_and_only_valid_entity_ids(tmp_path: Path) -> No
     assert dashboard.trackers(records, "mesh_2")[0] == "device_tracker.mesh_2_alice"
 
 
+def test_the_controls_card_lists_each_contacts_switch_and_button(tmp_path: Path) -> None:
+    """IMP-049: by contact, the switch Telemetry and the button Remove from radio it was
+    announced with; a slug the gateway never gives is left out, and without any the card is
+    not written."""
+
+    def record(slug: str, **components: str) -> dict[str, object]:
+        return {"slug": slug, "cmps": components}
+
+    announced = {
+        "k1": record("zed", remove="button"),  # a repeater: never asked
+        "k2": record("alice", telemetry="switch", remove="button", last_heard="sensor"),
+        "k3": record('x"]\n- y', telemetry="switch", remove="button"),
+        "k4": record("bob", telemetry="sensor"),  # never a switch of that key
+    }
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"ha_contact_devices": {"announced": announced}}), encoding="utf-8")
+    records = ContactDeviceRecords(JsonStateFile(state, read_only=True))
+    expected = ["switch.mesh_alice_telemetry", "button.mesh_alice_remove", "button.mesh_zed_remove"]
+    assert dashboard.controls(records) == expected
+    assert dashboard.controls(records, "mesh_2")[0] == "switch.mesh_2_alice_telemetry"
+    text, _ = dashboard.dashboard(config(), tmp_path)
+    assert f"entities: {json.dumps(expected)}" in text
+    assert "Telemetry and removal" in text
+    state.write_text(json.dumps({"ha_contact_devices": {"announced": {}}}), encoding="utf-8")
+    assert "Telemetry and removal" not in dashboard.dashboard(config(), tmp_path)[0]
+
+
+def test_reason_codes_read_as_texts_and_an_unknown_one_stays_a_code() -> None:
+    """IMP-049: each reason the API documents for a delivery and for a contact request has a
+    text; one added later, and the radio's own refusals, stay codes, through m()."""
+    template = shipped()
+    delivery, contact = (template.split("macro why(v)")[i].split("endmacro")[0] for i in (1, 2))
+    documented = {
+        delivery: """no_acknowledgement unknown_contact unknown_target ambiguous_target
+            not_a_companion channel_not_configured too_long too_large invalid_utf8 empty
+            retained queue_full queue_ttl no_radio airtime_budget exceeds_airtime_burst
+            internal_error""",
+        contact: """invalid_request invalid_link unsupported_link unsupported_type unknown_node
+            unknown_contact management_off own_key protected busy no_radio untested_firmware
+            rate_limited already_contact look_alike table_full not_confirmed outcome_unknown
+            not_a_companion too_many not_saved not_forgotten state_unwritable too_large
+            invalid_utf8 retained internal_error""",
+    }
+    for macro, codes in documented.items():
+        for code in codes.split():
+            assert f"v == '{code}'" in macro, code
+    for macro in (delivery, contact):
+        assert "{%- else -%}<code>{{ m(v) }}</code>" in macro
+    assert "<code>{{ m(reason) }}</code>" not in template
+
+
 def test_the_contacts_card_finds_the_contacts_by_the_configured_prefix() -> None:
     """ARC-015: `[homeassistant] contact_entity_prefix` reaches the card's entity patterns."""
     template = (Path(dashboard.__file__).parent / dashboard.TEMPLATE).read_text(encoding="utf-8")
@@ -387,7 +438,7 @@ _INTEGER = re.compile(
     r".*\|\s*(?:int|count)(?:\(\s*-?\d*\s*\))?|\[?\s*(\w+)\s*//\s*\d+(?:\s*,\s*\d+\s*\]\s*\|\s*max)?"
 )
 _YAML_11 = re.compile(r"(?i)y|n|yes|no|on|off|\d+(?:\.\d+)+\w*")
-_PLACEHOLDERS = {"@gw@", "@contact@", "@node@", "@version@", "@trackers@"}
+_PLACEHOLDERS = {"@gw@", "@contact@", "@node@", "@version@", "@trackers@", "@controls@"}
 _JINJA_NOTE = re.compile(r"\{#-?\s*Translators:.*-?#\}")
 _OPENS = {"<div>": "</div>", "<table>": "</table>", "<ha-qr-code": "</ha-qr-code>"}
 
@@ -452,8 +503,9 @@ def rule_findings(template: str) -> list[str]:  # noqa: PLR0912 - one rule after
             for placeholder in re.findall(r"@\w+@", line)
             if placeholder not in _PLACEHOLDERS
         ]
-        if "@trackers@" in line and '["@trackers@"]' not in line:
-            found.append(f"{number}: @trackers@ is a whole list")
+        for listed in ("@trackers@", "@controls@"):
+            if listed in line and f'["{listed}"]' not in line:
+                found.append(f"{number}: {listed} is a whole list")
         tags = [match.span() for match in _TAG.finditer(line)]
         for marker in markers:
             if any(start <= marker.start() < end for start, end in tags):

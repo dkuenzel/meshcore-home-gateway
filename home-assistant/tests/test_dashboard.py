@@ -171,13 +171,15 @@ SECTIONS = frozenset({"grid"})
 # the Markdown cards, by a part of their content or visibility
 STATUS, VERSION, WRITE = "set problems", "bridge_version", "script.mesh_message"
 MESSAGE, SENT, TABLE = "_message'", "_delivery'", "_last_heard"
-EVENT, HEARD, QR, HINT = "_contact'", "_add_node'", "contact_link", "set listed"
+# the contact event's entity; a reason code such as 'unknown_contact' ends the same way
+EVENT = re.compile(r"event\.meshcore_home_gateway_\w+_contact'")
+HEARD, QR, HINT = "_add_node'", "contact_link", "set listed"
 # the line a value from Home Assistant stands on: one whole HTML element
 ELEMENT = re.compile(r"<div>.*</div>|<table>.*</table>|<ha-qr-code .*></ha-qr-code>")
 NONE = "\u2013"  # what a card shows for no value: an en dash
 MARKDOWN = "MESHCORE_HOME_GATEWAY_MARKDOWN_DIR"
 ENTITY_ID = re.compile(
-    r"\b(?:binary_sensor|sensor|event|notify|select|text|button|script|device_tracker)"
+    r"\b(?:binary_sensor|sensor|event|notify|select|text|button|switch|script|device_tracker)"
     r"\.[a-z0-9_]+\b"
 )
 
@@ -307,9 +309,13 @@ def markdown(loaded: dict[str, Any]) -> list[dict[str, Any]]:
     return [card for card in walk(loaded) if card["type"] == "markdown"]
 
 
-def card(loaded: dict[str, Any], needle: str) -> dict[str, Any]:
+def card(loaded: dict[str, Any], needle: str | re.Pattern[str]) -> dict[str, Any]:
     """The one Markdown card whose content or visibility holds `needle`."""
-    (found,) = [c for c in markdown(loaded) if needle in json.dumps(c)]
+
+    def holds(text: str) -> bool:
+        return bool(needle.search(text)) if isinstance(needle, re.Pattern) else needle in text
+
+    (found,) = [c for c in markdown(loaded) if holds(json.dumps(c))]
     return found
 
 
@@ -455,7 +461,7 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
             for c in walk(v["sections"])
             if c["type"] == "heading" or "title" in c or "name" in c
         ]
-        assert len(titles) == 16
+        assert len(titles) == 17  # with *Telemetry and removal*: Alice has a device
         for title in titles:
             if language == "xx":
                 assert title.startswith("‹xx: ")
@@ -479,8 +485,9 @@ async def test_the_dashboard_names_only_entities_that_exist(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """The gateway's entities, its controls, the trackers and the guide's script; the same in
-    English and in xx, with the household discovered in `language`."""
+    """The gateway's entities, its controls, the trackers, the contacts' switches and buttons
+    and the guide's script; the same in English and in xx, with the household discovered in
+    `language`."""
     offer("xx", monkeypatch, XX)
     config = in_language(make_config(), language)
     broker, mesh = Broker(), household(ALICE_NODE, HILL_NODE)
@@ -496,6 +503,13 @@ async def test_the_dashboard_names_only_entities_that_exist(
     names = referenced(loaded["mesh-en"])
     assert names == referenced(loaded["mesh-xx"])
     assert {"device_tracker.mesh_alice", "device_tracker.mesh_hilltop", WRITE} <= names
+    controls = {
+        "switch.mesh_alice_telemetry",
+        "button.mesh_alice_remove",
+        "button.mesh_hilltop_remove",
+    }
+    assert controls <= names  # IMP-049: the household's controls; a repeater is never asked
+    assert "switch.mesh_hilltop_telemetry" not in names
     assert len(names) > 20
     assert names <= {e.entity_id for e in er.async_get(hass).entities.values()}
     assert problems(caplog) == []
@@ -959,8 +973,9 @@ async def test_steps_states_and_contact_events_show_as_texts(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A delivery step, a telemetry state and a contact event as the dashboard's text, a reason
-    as its code: the codes are an open list (docs/mqtt-api.md)."""
+    """A delivery step, a telemetry state, a contact event and a reason as the dashboard's
+    text; a reason added later, or one of the radio's refusals, as its code: the codes are an
+    open list (docs/mqtt-api.md)."""
     assert set(STEPS) == {s.value for s in DeliveryState}
     assert set(STATES) == set(telemetry.STATES)
     config = make_config()
@@ -985,7 +1000,7 @@ async def test_steps_states_and_contact_events_show_as_texts(
             reason="look_alike",
         ),
     )
-    refused = "<div><b>Bob</b> request refused <code>look_alike</code> "
+    refused = "<div><b>Bob</b> request refused (another contact has the same key prefix) "
     assert render(hass, event).startswith(refused)
     await fire(hass, topics.contact_event, contact_event("added", ALICE, ALICE_NODE))
     added = r"<div><b>Alice</b> added to the radio \d+ min ago</div>"
@@ -995,8 +1010,12 @@ async def test_steps_states_and_contact_events_show_as_texts(
         reason = "no_acknowledgement" if step == "failed" else None
         delivered = DeliveryEvent("m1", "alerts", DeliveryState(step), "Gate open", 1, reason)
         await fire(hass, topics.delivery, delivery_payload(delivered))
-        code = " <code>no_acknowledgement</code>" if reason else ""
-        assert render(hass, sent) == f"<div><b>alerts</b> {text}{code}<br>Gate open</div>", step
+        why = " (no acknowledgement)" if reason else ""
+        assert render(hass, sent) == f"<div><b>alerts</b> {text}{why}<br>Gate open</div>", step
+    refusal = DeliveryEvent("m3", "alerts", DeliveryState.FAILED, "Gate open", 1, "error_7")
+    await fire(hass, topics.delivery, delivery_payload(refusal))
+    code = "failed (<code>error_7</code>)"  # the radio's refusal: an open list
+    assert render(hass, sent) == f"<div><b>alerts</b> {code}<br>Gate open</div>"
     forged = DeliveryEvent(
         "m2", "alerts", DeliveryState.CONFIRMED, "Gate open", 1, rtt_ms=400, suspect=True
     )

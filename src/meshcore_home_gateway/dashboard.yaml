@@ -166,6 +166,28 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
+              {#- the reasons of mqtt-api.md, Delivery; one added later, and the radio's refusals, stay codes -#}
+              {%- macro why(v) -%}
+              {%- if v == 'no_acknowledgement' -%}_("no acknowledgement")
+              {%- elif v == 'unknown_contact' -%}_("not a contact on the radio")
+              {%- elif v == 'unknown_target' -%}_("no such target")
+              {%- elif v == 'ambiguous_target' -%}_("another contact has the same key prefix")
+              {%- elif v == 'not_a_companion' -%}_("not a companion")
+              {%- elif v == 'channel_not_configured' -%}_("channel not set up on the radio")
+              {%- elif v == 'too_long' -%}_("text too long")
+              {%- elif v == 'too_large' -%}_("request too large")
+              {%- elif v == 'invalid_utf8' -%}_("text not UTF-8")
+              {%- elif v == 'empty' -%}_("empty text")
+              {%- elif v == 'retained' -%}_("published with the retain flag")
+              {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'queue_ttl' -%}_("waited too long")
+              {%- elif v == 'no_radio' -%}_("no radio")
+              {%- elif v == 'airtime_budget' -%}_("airtime used up")
+              {%- elif v == 'exceeds_airtime_burst' -%}_("needs more airtime than one burst")
+              {%- elif v == 'internal_error' -%}_("internal error: see the log")
+              {%- else -%}<code>{{ m(v) }}</code>
+              {%- endif -%}
+              {%- endmacro -%}
               {%- set e = 'event.@gw@_delivery' -%}
               {%- set step = state_attr(e, 'event_type') -%}
               {%- if step is none -%}
@@ -173,7 +195,7 @@ views:
               {%- else -%}
               {%- set reason = state_attr(e, 'reason') -%}
               {#- Translators: security text (docs/translations.md): after "confirmed": the acknowledgement came sooner than the message's way through the mesh allows -#}
-              <div><b>{{ m(state_attr(e, 'target') or '?') }}</b> {{ said(step) }}{% if state_attr(e, 'suspect') %} _("(sooner than the path allows: maybe forged)"){% endif %}{% if reason %} <code>{{ m(reason) }}</code>{% endif %}<br>{{ m(state_attr(e, 'text')) }}</div>
+              <div><b>{{ m(state_attr(e, 'target') or '?') }}</b> {{ said(step) }}{% if state_attr(e, 'suspect') %} _("(sooner than the path allows: maybe forged)"){% endif %}{% if reason %} ({{ why(reason) }}){% endif %}<br>{{ m(state_attr(e, 'text')) }}</div>
               {%- endif %}
   - title: _("Contacts")
     path: contacts
@@ -227,6 +249,12 @@ views:
               {%- else -%}
               <table><tr><th>_("Name")</th><th>_("Type")</th><th>_("Heard")</th><th>_("Telemetry")</th></tr>{%- for r in ns.rows | sort(attribute=0, reverse=true) -%}<tr><td>{{ m(r[1]) }}</td><td>{{ m(r[2]) }}</td><td>{{ ago(r[0]) }}</td><td>{{ telemetry(r[3]) }}</td></tr>{%- endfor -%}</table>
               {%- endif %}
+# @if controls
+          - type: entities
+            title: _("Telemetry and removal")
+            state_color: true
+            entities: ["@controls@"]
+# @end
           - type: entities
             title: _("Add a contact")
             entities:
@@ -257,13 +285,45 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
+              {#- the reasons of mqtt-api.md, Managing contacts and Excluding; one added later, and the radio's refusals, stay codes -#}
+              {%- macro why(v) -%}
+              {%- if v == 'invalid_request' -%}_("invalid request")
+              {%- elif v == 'invalid_link' -%}_("no key, link or contact card")
+              {%- elif v == 'unsupported_link' -%}_("a link of another kind")
+              {%- elif v == 'unsupported_type' -%}_("unsupported node type")
+              {%- elif v == 'unknown_node' -%}_("no heard node or contact of that name")
+              {%- elif v == 'unknown_contact' -%}_("not a contact on the radio")
+              {%- elif v == 'management_off' -%}_("contact management is off")
+              {%- elif v == 'own_key' -%}_("the gateway's own key")
+              {%- elif v == 'protected' -%}_("a target or command sender")
+              {%- elif v == 'busy' -%}_("too many requests waiting")
+              {%- elif v == 'no_radio' -%}_("no radio")
+              {%- elif v == 'untested_firmware' -%}_("firmware not tested")
+              {%- elif v == 'rate_limited' -%}_("too many requests")
+              {%- elif v == 'already_contact' -%}_("already a contact")
+              {%- elif v == 'look_alike' -%}_("another contact has the same key prefix")
+              {%- elif v == 'table_full' -%}_("contact table full")
+              {%- elif v == 'not_confirmed' -%}_("the radio's table does not show it")
+              {%- elif v == 'outcome_unknown' -%}_("outcome unknown: the next table read tells")
+              {%- elif v == 'not_a_companion' -%}_("never asked for telemetry")
+              {%- elif v == 'too_many' -%}_("too many keys stored")
+              {%- elif v == 'not_saved' -%}_("in effect, not stored yet")
+              {%- elif v == 'not_forgotten' -%}_("in effect, history not deleted")
+              {%- elif v == 'state_unwritable' -%}_("cannot be stored")
+              {%- elif v == 'too_large' -%}_("request too large")
+              {%- elif v == 'invalid_utf8' -%}_("request not UTF-8")
+              {%- elif v == 'retained' -%}_("published with the retain flag")
+              {%- elif v == 'internal_error' -%}_("internal error: see the log")
+              {%- else -%}<code>{{ m(v) }}</code>
+              {%- endif -%}
+              {%- endmacro -%}
               {%- set e = 'event.@gw@_contact' -%}
               {%- set kind = state_attr(e, 'event_type') -%}
               {%- if kind is none -%}
               _("No contact event yet.")
               {%- else -%}
               {%- set reason = state_attr(e, 'reason') -%}
-              <div><b>{{ m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') }}</b> {{ what(kind) }}{% if reason %} <code>{{ m(reason) }}</code>{% endif %} {{ ago(states(e)) }}</div>
+              <div><b>{{ m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') }}</b> {{ what(kind) }}{% if reason %} ({{ why(reason) }}){% endif %} {{ ago(states(e)) }}</div>
               {%- endif %}
       - type: grid
         cards:

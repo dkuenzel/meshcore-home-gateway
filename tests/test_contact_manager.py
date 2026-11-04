@@ -1003,6 +1003,23 @@ def test_a_telemetry_request_is_refused_with_the_first_reason(  # noqa: PLR0917 
     assert len(observer.exclusions) == 0
 
 
+def test_a_sensor_can_be_excluded_once_sensors_are_asked() -> None:
+    """EXT-005: `not_a_companion` stands for a type that is not asked; with sensors asked, a
+    sensor's switch works as a companion's, and a repeater's request is still refused."""
+    sensor = EmulatedContact(bytes.fromhex("5e" * 32), "Shed", node_type=4)
+    key = sensor.public_key.hex()
+    for asked, expected in ((frozenset({1}), "refused"), (frozenset({1, 4}), "excluded")):
+        manager, observer, bus, _ = telemetry_manager(read=False)
+        observer.telemetry_types = asked
+        observer.radio_event(ContactsRead(records(ALICE, sensor, RELAY), NOW))
+        ask(manager, key, {"telemetry": "off", "id": "shed"})
+        event = last_result(bus)
+        assert (event["event_type"], event["key"]) == (expected, key)
+        assert (key in observer.exclusions) == (expected == "excluded")
+        ask(manager, RELAY_KEY, "off")
+        assert last_result(bus)["reason"] == "not_a_companion"
+
+
 def test_a_key_not_on_the_radio_can_be_excluded_in_advance() -> None:
     """Also before the first table read: exclusion only narrows what the gateway does."""
     manager, observer, bus, _ = telemetry_manager(read=False)

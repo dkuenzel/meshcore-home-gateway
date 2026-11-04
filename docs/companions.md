@@ -173,6 +173,30 @@ it, or after a restart of the gateway between hearing and adding it) and has not
 So press *Advert* once on each companion within range of the gateway's radio, or send a flood
 advert from its app, after the update whatever its sensor shows, and after switching sharing off.
 
+## Sensors
+
+A node with MeshCore's sensor firmware (a temperature probe in the shed, a water level in the
+tank) answers the same telemetry request as a companion: battery, the MCU temperature and its
+readings, and its position if it has a GPS. The gateway asks sensors only with
+`[telemetry] ask_types = ["chat", "sensor"]` ([configuration.md](configuration.md#telemetry)),
+and then as it asks companions: excluded, included, `ask = "household"`, the switch *Telemetry*
+and its state work the same.
+
+A sensor answers only radios in its own access list, which nobody else can change. Add the
+gateway's radio once, with its full key (`public_key` in the [`state`](mqtt-api.md#state-state)
+document; the gateway's device in Home Assistant shows it as its serial number), on the sensor's
+command line over USB or as its administrator in the MeshCore app's remote command line:
+
+```text
+setperm <the gateway radio's full key> 1
+```
+
+`1` is the read-only role, which is enough: the gateway never logs in and never sends a sensor
+commands. Then add the sensor as a contact of the gateway's radio (*Add heard node*, or its key)
+so the radio can reach it. A sensor without a GPS reports no position: its state is
+`no_position` while it answers, and it is asked once an hour, as a companion without a position
+is. The sensor answers every radio of its list the same way.
+
 ## Privacy
 
 "Allow All" instead of "From Specific Contacts" gives the position to every contact of the

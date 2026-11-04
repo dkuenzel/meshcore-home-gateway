@@ -271,7 +271,9 @@ requests off for all of them.
 The gateway asks the companions of its radio for their battery, their sensors and their position
 ([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)); a handheld answers
 once it is set up as [companions.md](companions.md) says. Telemetry is on by default
-([configuration.md](configuration.md#telemetry)). Alice's handheld, with its GPS on and a BME280
+([configuration.md](configuration.md#telemetry)). With `ask_types = ["chat", "sensor"]` the
+household's sensors get the same entities, without *Position in adverts*
+([companions.md](companions.md#sensors)). Alice's handheld, with its GPS on and a BME280
 on channel 2, shows on its device page:
 
 | Section | Entity | Shows |
@@ -642,9 +644,11 @@ Home Assistant. It has four views:
   sensor while it is on, and the radio's health: noise floor, transmit time, telemetry status,
   radio profile and a day of airtime.
 * *Messages*: the form to write a message (the script below), the last message received and the
-  last delivery step, with its reason as a code.
+  last delivery step, with its reason as a text (a reason without one, such as a refusal of the
+  radio, as its code).
 * *Contacts*: the contacts on the radio with their type, when they were heard and their telemetry
-  state, newest first; *Add heard node* and *Add contact (key or link)*; the last contact event,
+  state, newest first; *Telemetry and removal*, each contact's switch *Telemetry* and button
+  *Remove from radio*; *Add heard node* and *Add contact (key or link)*; the last contact event,
   also a refused or failed request with its reason; the nodes heard; and the QR code of the
   gateway ([above](#adding-and-removing-contacts)).
 * *Map*: the contacts with a position and their traces of the last 24 hours
@@ -734,8 +738,9 @@ stays a text: written as `message: "{{ message }}"`, Home Assistant would read `
 `None`.
 
 **Make it again** after an update of the gateway (the overview then shows a warning with both
-versions) and when the map's hint names a contact: one that got a position after the dashboard
-was made. The contacts table, the last contact event and the nodes heard follow by themselves.
+versions), when the map's hint names a contact (one that got a position after the dashboard
+was made), and after the radio got a contact that should have its switch and button there. The
+contacts table, the last contact event and the nodes heard follow by themselves.
 The dashboard names the entity IDs the gateway gives: a gateway entity whose ID was renamed shows
 as missing, and a contact whose IDs were renamed drops out of the table and off the map, also in
 a dashboard made again. A dashboard pasted again loses the edits made to it: to change it, copy
@@ -748,10 +753,11 @@ map is right. For two nodes of one name, the map shows the other gateway's node,
 keeps naming the contact: put the tracker's ID ending in `_2` (as *Settings → Entities* shows it)
 into the map card, which the next paste undoes.
 
-The dashboard has no control to remove a contact or exclude it from telemetry: those are on the
-contact's device page, which Home Assistant opens for administrators only. That does not keep
-other users from them: any user of Home Assistant can open a contact's *Remove from radio* button
-or its *Telemetry* switch from the entity search (press `e`) and use it, or call its action.
+*Telemetry and removal* gives every user of the dashboard what Home Assistant already gives
+every user: a contact's *Remove from radio* button and *Telemetry* switch, which the device page
+shows to administrators only, are open to any user through the entity search (press `e`) and the
+actions. A press removes the contact at once, as on the device page; Home Assistant asks no
+question first.
 
 The dashboard shows messages, names and the contacts' positions to every user of Home Assistant,
 as the entities do. The file holds the names of the contacts on the map: do not post it.

@@ -23,6 +23,7 @@ from meshcore_home_gateway import i18n
 from meshcore_home_gateway.core.commands import MIN_SECRET_BYTES, REPLIES, CommandRules
 from meshcore_home_gateway.core.contacts import HEARD_NODES, HeardNodes, normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
+from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.texts import Text, TextError
 
 ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
@@ -173,16 +174,24 @@ class ContactsConfig:
 
 TelemetryAsk = Literal["all", "household"]
 TELEMETRY_ASK: tuple[TelemetryAsk, ...] = ("all", "household")
+# the node types a telemetry request may go to (EXT-005): a sensor answers only a radio in its
+# access list, which its owner adds there (docs/companions.md)
+TELEMETRY_TYPES: Mapping[str, int] = {"chat": NodeType.CHAT, "sensor": NodeType.SENSOR}
 
 
 @dataclass(frozen=True, slots=True)
 class TelemetryConfig:
     """Asking the radio's companions for their telemetry (ADR 0018): every one not excluded
     (`all`), or only those the household included and the protected keys (`household`,
-    SEC-016)."""
+    SEC-016). `ask_types`: which contacts count, by type: companions, also sensors."""
 
     enabled: bool = True
     ask: TelemetryAsk = "all"
+    ask_types: frozenset[str] = frozenset({"chat"})
+
+    @property
+    def node_types(self) -> frozenset[int]:
+        return frozenset(TELEMETRY_TYPES[name] for name in self.ask_types)
 
 
 @dataclass(frozen=True, slots=True)
@@ -867,7 +876,16 @@ def _telemetry(s: _Section) -> TelemetryConfig:
     ask = s.string("ask", "all")
     if ask not in TELEMETRY_ASK:
         raise _one_of(s.key("ask"), TELEMETRY_ASK, ask)
-    return TelemetryConfig(enabled=s.boolean("enabled", True), ask=ask)
+    types = s.strings("ask_types") if s.raw("ask_types") is not None else ["chat"]
+    for name in types:
+        if name not in TELEMETRY_TYPES:
+            raise _one_of(s.key("ask_types"), tuple(TELEMETRY_TYPES), name)
+    if not types:
+        raise ConfigError(
+            "{key}: name at least one type; to ask none, set enabled = false",
+            key=s.key("ask_types"),
+        )
+    return TelemetryConfig(enabled=s.boolean("enabled", True), ask=ask, ask_types=frozenset(types))
 
 
 def _diagnostics(s: _Section) -> DiagnosticsConfig:
@@ -942,6 +960,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "contacts.heard_nodes": str,
     "telemetry.enabled": bool,
     "telemetry.ask": str,
+    "telemetry.ask_types": list,
     "diagnostics.publish_rx_log": bool,
     "diagnostics.log_level": str,
 }

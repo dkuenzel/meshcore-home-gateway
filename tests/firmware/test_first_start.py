@@ -81,7 +81,7 @@ def test_the_first_start_holds_then_a_later_start_asks_b_after_76_s(
     millivolts, up, asked = asyncio.run(scenario())
     warnings = log_lines(scene.caplog, "telemetry paused: the first requests go out in")
     assert len(warnings) == 1
-    assert "to 1 companions of the radio" in warnings[0]
+    assert "to 1 contacts of the radio" in warnings[0]  # also sensors, with ask_types
     assert FIRST_REQUEST_S - 1 < asked - up < FIRST_REQUEST_S + 4
     document = watcher.latest(f"contacts/{household.bob_key.hex()}")
     latitude, longitude, altitude = LANDMARK

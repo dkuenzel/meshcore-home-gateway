@@ -324,7 +324,8 @@ def contact_payload(
         availability_mode="all",
     )
     companion = node.node_type == NodeType.CHAT
-    if companion or "telemetry" in kept:  # also with telemetry off: exclude before it asks
+    asked = node.node_type in config.telemetry.node_types  # companions, also sensors (EXT-005)
+    if asked or "telemetry" in kept:  # also with telemetry off: exclude before it asks
         components["telemetry"] = component(
             "telemetry",
             "switch",
@@ -343,7 +344,7 @@ def contact_payload(
                 else {}
             ),
         )
-    if companion or "telemetry_state" in kept:
+    if asked or "telemetry_state" in kept:
         components["telemetry_state"] = component(
             "telemetry_state",
             "sensor",
@@ -368,7 +369,9 @@ def contact_payload(
             value_template=ADVERT_POSITION,
             **state,
         )
-    sensors = _telemetry_sensors(tracked, keep, component, topics, document, ha_name=ha_name)
+    sensors = _telemetry_sensors(
+        tracked, keep, component, topics, document, ha_name=ha_name, asked=asked
+    )
     components.update(sensors)
     if tracked.fix is not None or "position" in kept:
         components["position"] = component(
@@ -412,11 +415,12 @@ def _telemetry_sensors(
     document: str,
     *,
     ha_name: Callable[..., str],
+    asked: bool,
 ) -> dict[str, dict[str, Any]]:
-    """Battery, MCU temperature and the readings of a companion's newest answer, and those it
-    was announced with; unavailable while its answers are not current."""
+    """Battery, MCU temperature and the readings of the newest answer of a contact that is
+    asked, and those it was announced with; unavailable while its answers are not current."""
     kept = frozenset(keep)
-    readings = tracked.readings if tracked.node.node_type == NodeType.CHAT else None  # asked
+    readings = tracked.readings if asked else None
     named = readings.named if readings is not None else None
     options = {
         "state_class": "measurement",
@@ -717,7 +721,7 @@ class ContactDevices:
     def _log_beyond(self, tracked: Tracked, components: Mapping[str, Any]) -> None:
         """A reading beyond the limit is in the document only: logged once per key and run."""
         readings, key = tracked.readings, tracked.node.public_key
-        if readings is None or tracked.node.node_type != NodeType.CHAT:
+        if readings is None or tracked.node.node_type not in self._config.telemetry.node_types:
             return
         for reading in readings.named.readings:
             if lpp.component_of(reading) not in components and (key, reading) not in self._beyond:

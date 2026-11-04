@@ -116,8 +116,9 @@ target: no new entity, topic or setting, only the entities and the cards Home As
 * **Four sections views:** *Overview* (a status line, a card while the gateway runs another
   version than the dashboard was made for, the radio's link, airtime, queue, battery and health,
   each problem sensor while it is on), *Messages* (the form, the last message, the last delivery
-  step), *Contacts* (the contacts on the radio, the add controls, the last contact event, the
-  nodes heard, the QR code) and *Map* (the contacts' trackers with 24 hours of traces). Sections
+  step), *Contacts* (the contacts on the radio, each contact's switch *Telemetry* and button
+  *Remove from radio*, the add controls, the last contact event, the nodes heard, the QR code)
+  and *Map* (the contacts' trackers with 24 hours of traces). Sections
   reflow on a phone, so there is one variant; visibility conditions only on states.
 * **The form** is the guide's script *Mesh message* (`script.mesh_message`): its more-info dialog
   asks for a notify entity of MQTT and a text and calls `notify.send_message`. A hint replaces the
@@ -125,9 +126,11 @@ target: no new entity, topic or setting, only the entities and the cards Home As
 * **What changes while the dashboard stays** comes from Markdown templates over the device
   registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
   the heard nodes, the last contact event. What a card needs as fixed IDs is written when the
-  dashboard is made: the gateway's entity IDs from `mqtt.node_id`, and the map's trackers from
-  the state file (`ha_contact_devices`, the announced contacts with a position, read only). A
-  hint names a tracker of this gateway whose contact's key no listed tracker has.
+  dashboard is made: the gateway's entity IDs from `mqtt.node_id`, and from the state file
+  (`ha_contact_devices`, read only) the map's trackers (the announced contacts with a position)
+  and the contacts' switches and buttons (IMP-049; a contact announced later needs the dashboard
+  made again, as for the map). A hint names a tracker of this gateway whose contact's key no
+  listed tracker has.
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
   filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
   `["@trackers@"]`, one conditional in comment lines, and texts marked `_("…")` with
@@ -144,7 +147,9 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   `<table>` or `<ha-qr-code>` element: a CommonMark HTML block, which a blank line would end. The
   alerts carry only our texts and integers. Machine values of a closed list (delivery steps,
   telemetry states, contact events) are mapped to texts, with the value itself, through `m`, for
-  one added later; reason codes stay codes, in `<code>`.
+  one added later; so are the reason codes the API documents for deliveries and contact
+  requests (IMP-049). A reason added later, and the radio's own refusals (`error_<code>`,
+  `not_found`), stay codes, in `<code>`.
 * **Interface:** the command is the only growth (`cli > commands > dashboard`); the dashboard's
   content is not an interface, the entity IDs it names are.
 
@@ -153,17 +158,14 @@ Where the MVP departs from ADR 0021:
 1. The template lives in the package, not in `home-assistant/dashboard/`: a file outside it
    reaches neither the zipapp nor the wheel.
 2. The map shows the contacts' trackers only, no heard repeater without a contact: the gateway
-   keeps no stranger's position ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Showing them
-   needs a gateway change.
+   keeps no stranger's position ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)), and keeping
+   them was rejected in the review of 2026-11 (IMP-049).
 3. Relative times ("5 min ago") and counts are formatted in the templates: a Markdown card cannot
    hand a value to the frontend's formatter. The tiles still format their own values; the
    dashboard shows no clock time, so no time zone is involved.
 4. The version card says that the versions differ, not which is newer.
 
 Deferred: release files per node and language, `--language` and `--output`, a second variant,
-more languages, a message history, the gateway's own compose entities, remove and telemetry
-controls per contact on the dashboard (today on the device page, which only administrators open,
-and through the entity search or the actions, which every user of Home Assistant can use),
-settings and help views, heard repeaters on the map, reason codes as texts, a colour
-legend, a list of the gateways on the broker, and the right tracker IDs when the contacts of two
+more languages, a message history, the gateway's own compose entities, settings and help views,
+a colour legend, a list of the gateways on the broker, and the right tracker IDs when the contacts of two
 gateways share a name.

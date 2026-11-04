@@ -412,6 +412,25 @@ def test_only_companions_are_asked_so_only_they_get_telemetry_entities(node_type
     assert set(cmps) <= {"last_heard", "hops", "snr", "message", "remove"}
 
 
+def test_with_sensors_asked_a_sensor_gets_the_telemetry_entities_and_its_readings() -> None:
+    """EXT-005: `ask_types = ["chat", "sensor"]` asks the household's sensors as it asks
+    companions. The position in adverts stays the companions' (a sensor shares its position by
+    design), and a repeater is still never asked."""
+    config = parse_config(BASE_CONFIG + '[telemetry]\nask_types = ["chat", "sensor"]\n')
+    cmps = contact_payload(
+        config, TOPICS, answered(HILL, "Shed", node_type=NodeType.SENSOR), "shed"
+    )
+    assert {"telemetry", "telemetry_state", "battery", "mcu_temperature"} <= set(cmps["cmps"])
+    assert cmps["cmps"]["telemetry"]["default_entity_id"] == "switch.mesh_shed_telemetry"
+    assert {"advert_position", "send"}.isdisjoint(cmps["cmps"])
+    repeater = answered(HILL, "Hilltop", node_type=NodeType.REPEATER)
+    assert "telemetry" not in contact_payload(config, TOPICS, repeater, "hilltop")["cmps"]
+    only_sensors = parse_config(BASE_CONFIG + '[telemetry]\nask_types = ["sensor"]\n')
+    companion = contact_payload(only_sensors, TOPICS, answered(ALICE, "Alice"), "alice")["cmps"]
+    assert {"telemetry", "telemetry_state", "battery"}.isdisjoint(companion)
+    assert "advert_position" in companion  # adverts are checked also when it is not asked
+
+
 def test_the_readings_get_their_sensors_with_their_data() -> None:
     """Battery, MCU temperature and each reading with its class, unit and precision; all of
     them unavailable while the answers are not current."""
@@ -657,6 +676,12 @@ def test_a_reading_beyond_the_limit_is_logged_once(
     mesh = mesh_of(node(ALICE, "Alice", NodeType.REPEATER), mesh=mesh)  # flashed: never asked
     repeater.update(mesh)
     assert "readings" not in caplog.text
+    sensors = parse_config(BASE_CONFIG + '[telemetry]\nask_types = ["chat", "sensor"]\n')
+    sensor, _ = devices(tmp_path / "sensor", config=sensors)
+    mesh = mesh_of(node(ALICE, "Shed", NodeType.SENSOR), mesh=mesh)  # EXT-005: asked
+    mesh.contact_answered(ALICE, NOW, None, None, Readings(NOW, Named(None, None, many)))
+    sensor.update(mesh)
+    assert "ch17_temperature_c only in its document" in caplog.text
 
 
 def test_contacts_without_a_device_are_still_asked_unless_excluded(

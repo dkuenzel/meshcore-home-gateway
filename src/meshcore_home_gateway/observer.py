@@ -152,6 +152,9 @@ class Observer:
         self._names = names
         # what is published and kept of the nodes heard but not added (SEC-015)
         self.heard_nodes: HeardNodes = "full"
+        # the node types asked for telemetry, `[telemetry] ask_types`: the poller, the contact
+        # manager and the documents read it here
+        self.telemetry_types: frozenset[int] = frozenset({NodeType.CHAT})
         self._bus = bus
         self._topics = topics
         self._history = history
@@ -868,8 +871,9 @@ class Observer:
             self.flush()
 
     def _state_of(self, tracked: Tracked) -> TelemetryState | None:
-        """A companion's telemetry state; None for a contact that is never asked."""
-        if tracked.node.node_type != NodeType.CHAT:
+        """A companion's telemetry state, or a sensor's when sensors are asked; None for a
+        contact that is never asked."""
+        if tracked.node.node_type not in self.telemetry_types:
             return None
         return self._companion_state(tracked.node.public_key)
 

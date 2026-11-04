@@ -298,6 +298,7 @@ A companion answers only contacts it allows: set the household's companions up
 | --- | --- | --- |
 | `enabled` | `true` | ask every companion (chat contact) of the radio's table that is not excluded, one at a time, after the messages; battery, readings and positions go to `contacts/<key>` and the contact's device in Home Assistant |
 | `ask` | `"all"` | whom: `"all"` every companion not excluded; `"household"` only the companions the household included (the switch *Telemetry*, `contacts telemetry KEY on`, `on` on `contacts/<key>/telemetry`) and the contact targets and command senders, unless excluded. A new installation from the installer gets `"household"` |
+| `ask_types` | `["chat"]` | which contacts are asked, by type: `"chat"` the companions, `"sensor"` also the sensors (MeshCore's sensor firmware), as companions are: excluded, included, `ask`, switch and state alike. A sensor answers only a radio in its access list ([companions.md](companions.md#sensors)). Repeaters and room servers are never asked |
 
 **Household.** With `ask = "household"` a contact the radio adds is not asked until somebody
 includes it: its switch *Telemetry* is off and its state `excluded`, there is no first-start

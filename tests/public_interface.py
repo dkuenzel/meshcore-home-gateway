@@ -217,6 +217,7 @@ words = ["{WORD}"]
 publish_rx_log = true
 [telemetry]
 enabled = true
+ask_types = ["chat", "sensor"]
 """
 # every setting with an answer type, for `config answers` (MINIMAL adds radio.device)
 ANSWERED = f"""
@@ -299,6 +300,7 @@ log_level = "debug"
 [telemetry]
 enabled = true
 ask = "household"
+ask_types = ["chat", "sensor"]
 """
 
 
