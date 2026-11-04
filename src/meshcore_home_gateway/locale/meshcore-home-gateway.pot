@@ -56,6 +56,11 @@ msgid "check the configuration, the broker, the running gateway and this host"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "codes for the senders of commands"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
 #, python-brace-format
 msgid "configuration error: {detail}"
 msgstr ""
@@ -115,6 +120,12 @@ msgstr ""
 msgid "from this date or time on (ISO 8601; without a zone, UTC)"
 msgstr ""
 
+#. security text (docs/translations.md): a new secret replaces the old one
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "give a command sender a new code secret for an authenticator app; its commands then need the app's code"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "group that may read the file (mode 0640)"
@@ -133,7 +144,7 @@ msgstr ""
 #. security text (docs/translations.md): the archive keeps the secrets
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
-msgid "keep the secrets: the broker password, also the file password_file names"
+msgid "keep the secrets: the broker password, also the file password_file names, and the file codes_file names"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
@@ -238,6 +249,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
+msgid "the sender's full public key, as in [commands] senders"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
 msgid "the service's state, read only, for its exact plan (default: $STATE_DIRECTORY or /var/lib/meshcore-home-gateway)"
 msgstr ""
 
@@ -298,12 +314,12 @@ msgid "write the configuration and the state into an archive (tar.gz, mode 0600)
 msgstr ""
 
 #. detail is the system's reason, such as "No such file or directory".
-#: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/history.py src/meshcore_home_gateway/config.py
+#: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/codes.py src/meshcore_home_gateway/cli/history.py src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "cannot read {path}: {detail}"
 msgstr ""
 
-#: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/config_cmd.py
+#: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/codes.py src/meshcore_home_gateway/cli/config_cmd.py
 #, python-brace-format
 msgid "cannot write {path}: {detail}"
 msgstr ""
@@ -358,6 +374,21 @@ msgstr ""
 msgid "request not sent: {detail}"
 msgstr ""
 
+#: src/meshcore_home_gateway/cli/codes.py
+msgid "set [commands] codes_file first, such as /etc/meshcore-home-gateway/command-codes (docs/configuration.md)"
+msgstr ""
+
+#. security text (docs/translations.md): the secret makes the sender's codes
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "the code secret of {key} is in {path}: restart the service to use it (systemctl restart meshcore-home-gateway). Add the line above to the sender's authenticator app (as a QR code: qrencode -t ansiutf8 'LINE'), or type in {secret}. Commands from this sender then end with the app's 6-digit code; its earlier secret no longer works."
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "{key} is not in [commands] senders: add it there first"
+msgstr ""
+
 #. a line of check-config's summary. Its value starts in the column where the
 #. other lines start theirs (12 in English): pad the label with spaces to keep one column.
 #: src/meshcore_home_gateway/cli/config_cmd.py
@@ -382,6 +413,14 @@ msgstr ""
 #, python-brace-format
 msgid "  broker     {host}:{port}, {login}, topics {root}/..."
 msgstr ""
+
+#. security text (docs/translations.md): their commands need a code
+#: src/meshcore_home_gateway/cli/config_cmd.py
+#, python-brace-format
+msgid "  codes      {count} sender ends commands with a code"
+msgid_plural "  codes      {count} senders end commands with a code"
+msgstr[0] ""
+msgstr[1] ""
 
 #. a line of check-config's summary. Its value starts in the column where the
 #. other lines start theirs (12 in English): pad the label with spaces to keep one column.
@@ -1364,6 +1403,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
+msgid "{key}: the secret of {sender} must be base32 of at least {bits} bits"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
 msgid "{key}: unknown answer"
 msgstr ""
 
@@ -1392,6 +1436,17 @@ msgstr ""
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: {path} holds no password"
+msgstr ""
+
+#. detail is the TOML reader's English text, with the line and column.
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: {path}: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/config.py
+#, python-brace-format
+msgid "{key}: {sender} has a code secret but is not in commands.senders"
 msgstr ""
 
 #. security text (docs/translations.md); insecure = true is a setting

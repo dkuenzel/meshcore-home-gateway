@@ -153,16 +153,17 @@ class JsonStateFile:
 
 
 class CommandLedger:
-    """Newest accepted sender timestamp per sender key; only ever moves forward."""
+    """Newest accepted sender timestamp per sender key, and the time step of the newest accepted
+    code of a sender with a code secret; both only ever move forward."""
 
     _KEY = "command_timestamps"
+    _CODES = "command_code_steps"
 
     def __init__(self, store: JsonStateFile) -> None:
         self._store = store
-        raw = store.load().get(self._KEY, {})
-        self._last: dict[str, int] = {}
-        if isinstance(raw, dict):
-            self._last = {k: v for k, v in raw.items() if isinstance(v, int)}
+        data = store.load()
+        self._last = _int_map(data.get(self._KEY))
+        self._steps = _int_map(data.get(self._CODES))
 
     def last(self, sender_key: str) -> int | None:
         return self._last.get(sender_key)
@@ -176,15 +177,25 @@ class CommandLedger:
     def view(self) -> Mapping[str, int]:
         return MappingProxyType(self._last)
 
-    def record(self, sender_key: str, timestamp: int) -> None:
-        """Store the timestamp durably; memory follows only after a successful save."""
-        if timestamp <= self._last.get(sender_key, -1):
+    @property
+    def code_steps(self) -> Mapping[str, int]:
+        return MappingProxyType(self._steps)
+
+    def record(self, sender_key: str, timestamp: int, code_step: int | None = None) -> None:
+        """Store the timestamp (and the code's time step) durably; memory follows only after a
+        successful save."""
+        steps = self._steps
+        if code_step is not None and code_step > steps.get(sender_key, -1):
+            steps = {**steps, sender_key: code_step}
+        if timestamp <= self._last.get(sender_key, -1) and steps is self._steps:
             return
-        updated = {**self._last, sender_key: timestamp}
+        last = {**self._last, sender_key: max(timestamp, self._last.get(sender_key, timestamp))}
         data = self._store.load()
-        data[self._KEY] = updated
+        data[self._KEY] = last
+        if steps:
+            data[self._CODES] = steps
         self._store.save(data)
-        self._last = updated
+        self._last, self._steps = last, steps
 
 
 class AnnouncedComponents:

@@ -747,11 +747,12 @@ the file.
 | `meshcore-home-gateway contacts add [--wait S] CONTACT` | Add a contact: a full key, a heard node as `KEY12…KEY8` (a name may follow, as Home Assistant's select lists it), a contact link or card; prints the full key to compare. Exit 0 on `added` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline, 2 when the text is no key, link or card, or a label names no single node. |
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
 | `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
+| `meshcore-home-gateway commands enrol KEY` | Give a command sender (a full key of `[commands] senders`) a new code secret in `[commands] codes_file` (160 random bits; the file keeps its mode and group, a new one gets 0640 and the configuration's group) and print it as an `otpauth://` line for an authenticator app on standard output; standard error says the secret to type in and to restart the service. Exit 1 without `codes_file`, for a key that is not a sender or a file it cannot read or write, 2 for text that is no full key. |
 | `meshcore-home-gateway contacts telemetry [--wait S] [--forget] CONTACT {on,off}` | Ask a companion for telemetry again (`on`) or exclude it (`off`; a full key also before it is on the radio, `KEY12…KEY8` from the index); `--forget` with `off` also deletes its readings and positions from telemetry from the history. Exit 0 on `excluded` or `included` without a reason, 1 on `refused`, `failed`, any reason, no result in time or the gateway offline, 2 on a usage error. |
 | `meshcore-home-gateway dashboard [--state-dir DIR]` | Print a Home Assistant dashboard for this gateway as YAML, its texts in `[homeassistant] language`; the map lists the contacts with a position in the service's state (read only, default `$STATE_DIRECTORY` or `/var/lib/meshcore-home-gateway`), and standard error says how many. Exit 1 when `[homeassistant] discovery` is off. |
 | `meshcore-home-gateway status [--json]` | What the running gateway reports of itself, from its retained documents: availability, radio, battery, the radio's clock, a contested TCP link, airtime, queue, telemetry, the health section and the contacts; `--json` gives `availability`, `state` and `contacts` as published. Exit 0 while the gateway is online and its health section is not degraded, 1 otherwise and when the broker cannot be reached. |
 | `meshcore-home-gateway doctor [--state-dir DIR]` | One line per check, `ok`, `warning` or `problem`: the configuration and its warnings, a radio over TCP, TLS, the broker login and whether the broker takes clients without a user name, the gateway online, its radio, a radio clock more than 60 s off, a contested link, untested firmware, the health section, then on this host the free space for the state, automatic security updates and a restart that updates wait for. Exit 1 when a check finds a problem. |
-| `meshcore-home-gateway backup FILE [--with-secrets] [--state-dir DIR]` | Write the configuration, `state.json`, `telemetry-excluded.json`, a copy of `history.sqlite3` made with SQLite's online backup and `MANIFEST.json` (version, time, paths, files, whether the password is in it) into a tar.gz that only its owner can read, while the service runs; never over an existing file. The broker password's line becomes a comment unless `--with-secrets`, which also takes the file `password_file` names. Exit 1 when a file cannot be read or the archive written. |
+| `meshcore-home-gateway backup FILE [--with-secrets] [--state-dir DIR]` | Write the configuration, `state.json`, `telemetry-excluded.json`, a copy of `history.sqlite3` made with SQLite's online backup and `MANIFEST.json` (version, time, paths, files, whether the password is in it) into a tar.gz that only its owner can read, while the service runs; never over an existing file. The broker password's line becomes a comment unless `--with-secrets`, which also takes the files `password_file` and `codes_file` name. Exit 1 when a file cannot be read or the archive written. |
 | `meshcore-home-gateway retire [--yes] [--state-dir DIR]` | With the service stopped: remove the gateway, its controls and every contact device (also one whose removal is pending) from Home Assistant, each bound to all components it had first; clear every retained document under the gateway's topics; leave its availability `offline`. Without `--yes`, count what it would do. Exit 1 while the gateway is online or when the broker refuses. |
 | `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Exit 1 without a history or with one of a newer version. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
@@ -1120,7 +1121,8 @@ A received message is an accepted command only if: it is a plain-text direct mes
 (case-insensitive, ended by any whitespace) is in `commands.words`; its 6-byte sender prefix
 resolves to exactly one contact; that contact's full key is in `commands.senders`; its sender
 timestamp is newer than the last accepted command of that sender; and, unless `max_age_s` is 0, it
-lies within `max_age_s` of the bridge clock in either direction (with 0, at most a day ahead)
+lies within `max_age_s` of the bridge clock in either direction (with 0, at most a day ahead); and,
+if the sender has a code secret, its last word is the sender's code (below)
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
 
 The sender check is the hard part: the frame names the sender only by the prefix, and the contact
@@ -1159,6 +1161,19 @@ whatever the radio hears. The checks run in this order:
 A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a USB-UART bridge at
 115200 baud. The rejection reasons are published, so misconfiguration and attacks are visible.
 
+**Codes** (IMP-002). The sender checks rest on the firmware's decryption and the prefix; whoever
+can hand the bridge frames (a host that took the radio's TCP address) or has a look-alike added
+defeats them. A sender with a code secret (`[commands] codes_file`) therefore ends each command
+with the 6-digit code of an authenticator app: RFC 6238's TOTP with SHA-1 and 30-second steps, as
+the apps compute it. After the checks above, the last word must be the code of the bridge
+clock's step or of the step before or after (`code_missing`, `code_invalid`), of a step newer
+than the sender's last accepted code (`code_reused`); `args` leaves it out. The step is stored
+with the timestamp, before the event goes out, so a code serves once, also across a restart.
+The code authenticates the text, not the frame: it comes from the secret, which neither the
+radio, the link nor the mesh carries. The secret is 160 random bits from
+`meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
+stops the service rather than let commands pass without codes.
+
 ### 7.4 Residual risks
 
 * A contact can keep the radio busy with direct messages: the firmware acknowledges each before
@@ -1168,12 +1183,19 @@ A read costs about 150 bytes per contact, about 4.6 s for 350 contacts over a US
   floods. The radio's statistics, read once a minute, come too late to extend the
   acknowledgement wait by the radio's queue.
 * Whoever controls an allowlisted handheld (or its key) can send commands. Keep the word list
-  small and make automations confirm critical actions.
+  small and make automations confirm critical actions; a code secret (§7.3) adds the phone
+  with the authenticator app as a second factor.
 * A look-alike needs a 48-bit prefix collision with an allowlisted key, which takes considerable
   but feasible computing effort (about 2^48 key generations). If the radio adds it, the real
   sender's commands are rejected (`sender_ambiguous`) for 24 hours after the bridge last saw it.
   A restart of the service ends that early; commands that waited in the radio meanwhile are
-  rejected anyway (§7.3, step 2).
+  rejected anyway (§7.3, step 2). Without its code secret a look-alike that got past those checks
+  cannot command a sender who has one.
+* A code authenticates the text, not its sender's radio, and it lives up to 90 seconds: whoever
+  reads a code before the bridge accepted it (a host posing as the radio over TCP sees the text;
+  so does a reader of the `received` event of a command rejected for another reason) can use it
+  for another command of that sender in that time. Once the bridge accepted a code, that code and
+  all earlier ones are spent.
 * A command rejected as `sender_unverified` or `state_unwritable` leaves the sender's last
   timestamp as it was (the sender was not verified, or the file could not be written). A replayed
   copy of its packet is dropped as a repeat for as long as it could pass the age check: an hour,

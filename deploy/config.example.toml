@@ -60,6 +60,7 @@ burst_s = 10
 senders = []                                           # full public keys
 words = []                                             # e.g. ["status", "arm", "disarm"]
 max_age_s = 900                                        # 0 disables the clock check
+# codes_file = "/etc/meshcore-home-gateway/command-codes"  # codes from an app: commands enrol
 
 # Contacts: Home Assistant's controls, the MQTT requests and the command line add contacts to the
 # radio and remove them. Every user of Home Assistant can use the controls

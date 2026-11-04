@@ -6,6 +6,8 @@ silently fall back to a default.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import ipaddress
 import math
 import os
@@ -18,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from meshcore_home_gateway import i18n
-from meshcore_home_gateway.core.commands import CommandRules
+from meshcore_home_gateway.core.commands import MIN_SECRET_BYTES, CommandRules
 from meshcore_home_gateway.core.contacts import HEARD_NODES, HeardNodes, normalise_key
 from meshcore_home_gateway.core.model import MessageKind, Target
 from meshcore_home_gateway.texts import Text, TextError
@@ -204,25 +206,88 @@ class Config:
 
 
 def load_config(path: Path) -> Config:
-    """The configuration in the file, with the broker password read from `password_file`."""
+    """The configuration in the file, with the broker password read from `password_file` and the
+    command senders' code secrets from `codes_file`."""
     config = parse_config(read_text(path))
-    if config.mqtt.password_file is None:
-        return config
-    password = read_password(Path(config.mqtt.password_file))
-    return replace(config, mqtt=replace(config.mqtt, password=password))
+    if config.mqtt.password_file is not None:
+        password = read_password(Path(config.mqtt.password_file))
+        config = replace(config, mqtt=replace(config.mqtt, password=password))
+    if config.commands.codes_file is not None:
+        secrets = read_code_secrets(Path(config.commands.codes_file), config.commands.senders)
+        config = replace(config, commands=replace(config.commands, secrets=secrets))
+    return config
+
+
+def _credential(path: Path) -> Path:
+    """systemd's copy of a secret file (`LoadCredential=` with the file's name), so that the file
+    itself may be root's alone (docs/deployment.md); else the file."""
+    credentials = os.environ.get("CREDENTIALS_DIRECTORY")
+    if credentials and (copy := Path(credentials) / path.name).is_file():
+        return copy
+    return path
 
 
 def read_password(path: Path) -> str:
     """The broker password in its file: the text without one line break at the end. A file that
     cannot be read, or holds none, is a configuration error: the service would not log in. A
-    systemd credential of the file's name (`LoadCredential=`) is read instead, so that the file
-    itself may be root's alone (docs/deployment.md)."""
+    systemd credential of the file's name is read instead."""
     key = "mqtt.password_file"
-    credentials = os.environ.get("CREDENTIALS_DIRECTORY")
-    if credentials and (copy := Path(credentials) / path.name).is_file():
-        path = copy
+    path = _credential(path)
+    text = _secret_text(key, path)
+    password = text.removesuffix("\n").removesuffix("\r")
+    if not password:
+        raise ConfigError("{key}: {path} holds no password", key=key, path=path)
+    return password
+
+
+def read_code_secrets(path: Path, senders: frozenset[str]) -> tuple[tuple[str, bytes], ...]:
+    """The code secrets of command senders (IMP-002): a TOML file of `<public key> = "<base32>"`
+    lines, as `commands enrol` writes it. A file that cannot be read is a configuration error,
+    also a missing one: commands would no longer need the codes. A systemd credential of the
+    file's name is read instead."""
+    key = "commands.codes_file"
+    path = _credential(path)
     try:
-        text = path.read_text(encoding="utf-8")
+        entries = tomllib.loads(_secret_text(key, path))
+    except tomllib.TOMLDecodeError as exc:
+        # Translators: detail is the TOML reader's English text, with the line and column.
+        raise ConfigError("{key}: {path}: {detail}", key=key, path=path, detail=str(exc)) from exc
+    secrets = []
+    for sender, value in entries.items():
+        try:
+            public_key = normalise_key(sender)
+        except TextError as exc:
+            raise ConfigError("{key}: {detail}", key=key, detail=exc.text) from exc
+        if public_key not in senders:
+            raise ConfigError(
+                "{key}: {sender} has a code secret but is not in commands.senders",
+                key=key,
+                sender=public_key,
+            )
+        secret = decode_secret(value) if isinstance(value, str) else None
+        if secret is None or len(secret) < MIN_SECRET_BYTES:
+            raise ConfigError(
+                "{key}: the secret of {sender} must be base32 of at least {bits} bits",
+                key=key,
+                sender=public_key,
+                bits=MIN_SECRET_BYTES * 8,
+            )
+        secrets.append((public_key, secret))
+    return tuple(sorted(secrets))
+
+
+def decode_secret(text: str) -> bytes | None:
+    """A base32 secret as authenticator apps show it: any case, spaces and padding optional."""
+    compact = "".join(text.split()).upper().rstrip("=")
+    try:
+        return base64.b32decode(compact + "=" * (-len(compact) % 8))
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _secret_text(key: str, path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(
             "{key}: cannot read {path}: {detail}", key=key, path=path, detail=exc.strerror
@@ -234,10 +299,6 @@ def read_password(path: Path) -> str:
             path=path,
             byte=exc.start,
         ) from exc
-    password = text.removesuffix("\n").removesuffix("\r")
-    if not password:
-        raise ConfigError("{key}: {path} holds no password", key=key, path=path)
-    return password
 
 
 def with_password_file(answers: str, path: Path) -> tuple[str, str | None]:
@@ -715,8 +776,11 @@ def _airtime(s: _Section) -> AirtimeConfig:
 def _commands(s: _Section) -> CommandRules:
     senders, words = s.strings("senders"), s.strings("words")
     max_age = s.number("max_age_s", 900.0, 0.0, 86_400.0)
+    codes_file = _absolute_path(s, "codes_file")
     try:
-        return CommandRules.create(senders=senders, words=words, max_age_s=max_age)
+        return CommandRules.create(
+            senders=senders, words=words, max_age_s=max_age, codes_file=codes_file
+        )
     except TextError as exc:
         name = "senders" if "public key" in str(exc) else "words"
         raise ConfigError("{key}: {detail}", key=s.key(name), detail=exc.text) from exc
@@ -829,6 +893,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "commands.senders": list,
     "commands.words": list,
     "commands.max_age_s": float,
+    "commands.codes_file": str,
     "history.enabled": bool,
     "history.messages_days": float,
     "history.positions_days": float,

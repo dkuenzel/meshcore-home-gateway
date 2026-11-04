@@ -165,6 +165,21 @@ def test_ledger_remembers_the_newest_timestamp_per_sender(tmp_path: Path) -> Non
     assert json.loads(path.read_text(encoding="utf-8")) == {"command_timestamps": {"aa" * 32: 100}}
 
 
+def test_ledger_remembers_the_time_step_of_the_newest_code(tmp_path: Path) -> None:
+    """A code serves once (IMP-002), also across a restart; a sender without one stores none."""
+    path = tmp_path / "state.json"
+    ledger = CommandLedger(JsonStateFile(path))
+    ledger.record("aa" * 32, 100, 7)
+    ledger.record("aa" * 32, 110, 6)  # a newer command, an older code: the step stays
+    ledger.record("bb" * 32, 120)
+    assert dict(ledger.code_steps) == {"aa" * 32: 7}
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "command_timestamps": {"aa" * 32: 110, "bb" * 32: 120},
+        "command_code_steps": {"aa" * 32: 7},
+    }
+    assert dict(CommandLedger(JsonStateFile(path)).code_steps) == {"aa" * 32: 7}
+
+
 def test_ledger_ignores_malformed_content(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text('{"command_timestamps": {"x": "not a number"}}', encoding="utf-8")

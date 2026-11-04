@@ -1,5 +1,6 @@
 """Configuration: TOML parsing with strict validation, and rendering from installer answers."""
 
+import base64
 import re
 import tomllib
 from dataclasses import fields
@@ -630,6 +631,75 @@ def test_a_password_file_needs_a_user_an_absolute_path_and_no_password(
 ) -> None:
     with pytest.raises(ConfigError, match=message):
         parse_config(MINIMAL + login + "\n")
+
+
+CODE_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"  # 160 bits
+
+
+def _coded_config(tmp_path: Path, codes: str) -> Path:
+    codes_file = tmp_path / "command-codes"
+    codes_file.write_text(codes, encoding="utf-8")
+    path = tmp_path / "config.toml"
+    commands = f'[commands]\nsenders = ["{KEY}"]\nwords = ["arm"]\ncodes_file = "{codes_file}"\n'
+    path.write_text(MINIMAL + "insecure = true\n" + commands, encoding="utf-8")
+    return path
+
+
+def test_the_senders_code_secrets_are_in_a_file_of_their_own(tmp_path: Path) -> None:
+    """IMP-002: load_config reads them (any case, spaces allowed, as apps show a secret);
+    parse_config does not, so `config answers` prints the path and never a secret."""
+    spaced = f"{CODE_SECRET[:16].lower()} {CODE_SECRET[16:]}"
+    path = _coded_config(tmp_path, f'# the codes\n{KEY.upper()} = "{spaced}"\n')
+    text = path.read_text(encoding="utf-8")
+    assert parse_config(text).commands.secrets == ()
+    assert load_config(path).commands.secrets == ((KEY, base64.b32decode(CODE_SECRET)),)
+    assert f"commands.codes_file={tmp_path / 'command-codes'}" in config_answers(text)
+
+
+@pytest.mark.parametrize(
+    ("codes", "message"),
+    [
+        (f'{"b2" * 32} = "{CODE_SECRET}"\n', "is not in commands.senders"),
+        (f'{KEY} = "not base32!"\n', "must be base32 of at least 128 bits"),
+        (f'{KEY} = "{CODE_SECRET[:16]}"\n', "must be base32 of at least 128 bits"),
+        (f"{KEY} = 12\n", "must be base32"),
+        (f'nokey = "{CODE_SECRET}"\n', r"^commands\.codes_file: "),
+        ("not toml", r"^commands\.codes_file: .*command-codes"),
+        ("\udcff", "not valid UTF-8"),
+    ],
+    ids=["not-a-sender", "not-base32", "80-bits", "number", "no-key", "not-toml", "not-utf8"],
+)
+def test_a_code_file_that_holds_anything_else_is_refused(
+    tmp_path: Path, codes: str, message: str
+) -> None:
+    path = _coded_config(tmp_path, "")
+    (tmp_path / "command-codes").write_bytes(codes.encode("utf-8", "surrogateescape"))
+    with pytest.raises(ConfigError, match=message):
+        load_config(path)
+
+
+def test_a_missing_code_file_is_refused_rather_than_taken_as_none(tmp_path: Path) -> None:
+    """Commands would no longer need their codes without anyone noticing."""
+    path = _coded_config(tmp_path, "")
+    (tmp_path / "command-codes").unlink()
+    with pytest.raises(ConfigError, match=r"commands\.codes_file: cannot read"):
+        load_config(path)
+
+
+def test_a_systemd_credential_of_the_code_file_s_name_is_read_instead(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _coded_config(tmp_path, "")
+    credentials = tmp_path / "credentials"
+    credentials.mkdir()
+    (credentials / "command-codes").write_text(f'{KEY} = "{CODE_SECRET}"\n', encoding="utf-8")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+    assert load_config(path).commands.secrets == ((KEY, base64.b32decode(CODE_SECRET)),)
+
+
+def test_the_code_file_has_an_absolute_path() -> None:
+    with pytest.raises(ConfigError, match=r"commands\.codes_file: must be an absolute path"):
+        parse_config(MINIMAL + 'insecure = true\n[commands]\ncodes_file = "codes"\n')
 
 
 def test_answers_put_the_password_into_a_file() -> None:

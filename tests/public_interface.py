@@ -276,6 +276,7 @@ burst_s = 12
 senders = ["{KEY}"]
 words = ["{WORD}"]
 max_age_s = 300
+codes_file = "/etc/meshcore-home-gateway/command-codes"
 [targets.{ALIAS}]
 contact = "{KEY}"
 [targets.{CHANNEL_ALIAS}]

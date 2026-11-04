@@ -10,15 +10,20 @@ A received message is a command only if all of these hold:
   arrived, and no other key with that prefix may have been a contact of the radio recently: a
   look-alike can enter the table and leave it again, sometimes without telling;
 * the sender timestamp is newer than the last accepted command of that sender (replay) and,
-  unless disabled, within `max_age_s` of the bridge clock.
+  unless disabled, within `max_age_s` of the bridge clock;
+* if the sender has a code secret (IMP-002), its last word is the sender's 6-digit code (RFC 6238)
+  for the bridge clock, within a time step either way, of a step newer than its last accepted
+  code's: the code authenticates the text whatever reached the bridge, and serves once.
 
 The bridge publishes accepted commands as events; it never executes anything itself.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from meshcore_home_gateway.core.contacts import ContactBook, normalise_key
@@ -36,6 +41,15 @@ class Rejection(StrEnum):
     SENDER_UNVERIFIED = "sender_unverified"  # the bridge cannot rule out a look-alike sender
     STATE_UNWRITABLE = "state_unwritable"  # the replay ledger could not be saved
     BROKER_UNAVAILABLE = "broker_unavailable"  # the event could only reach automations late
+    CODE_MISSING = "code_missing"  # the sender has a code secret; the last word is no code
+    CODE_INVALID = "code_invalid"  # not the sender's code within a time step of the bridge clock
+    CODE_REUSED = "code_reused"  # the code of a time step this sender already used
+
+
+CODE_DIGITS = 6
+CODE_STEP_S = 30  # RFC 6238's time step, as authenticator apps use it
+CODE_SKEW_STEPS = 1  # the sender's clock may be a step off the bridge's, either way
+MIN_SECRET_BYTES = 16  # RFC 4226: a secret has at least 128 bits
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,9 +57,17 @@ class CommandRules:
     senders: frozenset[str]  # full public keys, lower-case hex
     words: frozenset[str]  # lower-case, single words
     max_age_s: float = 900.0  # 0 disables the age check
+    codes_file: str | None = None  # the senders' code secrets, which load_config reads
+    secrets: tuple[tuple[str, bytes], ...] = field(default=(), repr=False)  # key, secret
 
     @classmethod
-    def create(cls, senders: Iterable[str], words: Iterable[str], max_age_s: float) -> CommandRules:
+    def create(
+        cls,
+        senders: Iterable[str],
+        words: Iterable[str],
+        max_age_s: float,
+        codes_file: str | None = None,
+    ) -> CommandRules:
         normalised_words = set()
         for word in words:
             value = word.strip().casefold()
@@ -55,16 +77,24 @@ class CommandRules:
         if max_age_s < 0:
             raise TextError("max_age_s must not be negative, got {value}", value=max_age_s)
         return cls(
-            frozenset(normalise_key(k) for k in senders), frozenset(normalised_words), max_age_s
+            frozenset(normalise_key(k) for k in senders),
+            frozenset(normalised_words),
+            max_age_s,
+            codes_file,
         )
+
+    def secret(self, sender: str) -> bytes | None:
+        """The sender's code secret; None for a sender without one."""
+        return next((secret for key, secret in self.secrets if key == sender), None)
 
 
 @dataclass(frozen=True, slots=True)
 class Command:
     word: str
-    args: str
+    args: str  # without the code
     sender_key: str
     sender_timestamp: int
+    code_step: int | None = None  # the time step of its code, for a sender with a secret
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,12 +123,14 @@ def evaluate_command(
     now: float,
     *,
     seen: Iterable[str] = (),
+    last_codes: Mapping[str, int] | None = None,
 ) -> CommandDecision | None:
     """None if the message is not a command at all, otherwise acceptance or the reason.
 
     For an acceptance, `contacts` must be the radio's contact table as read after the message
     arrived; an older table can only confirm a rejection. `seen` are full keys the radio
     reported recently (table reads, pushes); they only add doubt, never a sender (ADR 0009).
+    `last_codes` are the time steps of the senders' last accepted codes.
     """
     word = command_word(message, rules)
     if word is None or message.sender_prefix is None:
@@ -107,9 +139,14 @@ def evaluate_command(
     sender, rejection = _authorise(message.sender_prefix, rules, contacts, seen)
     if rejection is None and sender is not None:
         rejection = _check_time(message.sender_timestamp, rules, last_accepted.get(sender), now)
+    step = None
+    if rejection is None and sender is not None and (secret := rules.secret(sender)) is not None:
+        last_step = (last_codes or {}).get(sender)
+        args, step, rejection = _check_code(args, secret, last_step, now)
     if sender is None or rejection is not None:
         return CommandDecision(word, rejection=rejection)
-    return CommandDecision(word, command=Command(word, args, sender, message.sender_timestamp))
+    command = Command(word, args, sender, message.sender_timestamp, step)
+    return CommandDecision(word, command=command)
 
 
 def _split(text: str) -> tuple[str, str]:
@@ -149,3 +186,35 @@ def _check_time(
     if last_accepted is not None and sent <= last_accepted:
         return Rejection.REPLAY
     return None
+
+
+def code_at(secret: bytes, step: int) -> str:
+    """The code of a time step: RFC 6238's TOTP with SHA-1 and 6 digits, the default of
+    authenticator apps (RFC 4226's HOTP of the step)."""
+    digest = hmac.new(secret, step.to_bytes(8, "big"), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    number = int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFF_FFFF
+    return f"{number % 10**CODE_DIGITS:0{CODE_DIGITS}d}"
+
+
+def _check_code(
+    args: str, secret: bytes, last_step: int | None, now: float
+) -> tuple[str, int | None, Rejection | None]:
+    """The arguments without the code, the code's time step, or why the code is refused."""
+    parts = args.rsplit(maxsplit=1)
+    code = parts[-1] if parts else ""
+    if len(code) != CODE_DIGITS or not (code.isascii() and code.isdigit()):
+        return args, None, Rejection.CODE_MISSING
+    rest = parts[0] if len(parts) == 2 else ""
+    current = int(now // CODE_STEP_S)
+    steps = [
+        step
+        for step in range(current - CODE_SKEW_STEPS, current + CODE_SKEW_STEPS + 1)
+        if hmac.compare_digest(code_at(secret, step), code)
+    ]
+    fresh = [step for step in steps if last_step is None or step > last_step]
+    if not steps:
+        return rest, None, Rejection.CODE_INVALID
+    if not fresh:
+        return rest, None, Rejection.CODE_REUSED
+    return rest, fresh[0], None

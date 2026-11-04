@@ -432,12 +432,15 @@ updates wait for.
   (tar.gz, mode 0600) while the service runs: the configuration, the three files of
   `/var/lib/meshcore-home-gateway/` (the history copied with SQLite's online backup) and
   `MANIFEST.json`, which names the version and where each file came from. The configuration goes
-  without the broker password unless `--with-secrets` (which also takes the file
-  `password_file` names); without it, set the password again after a restore. To restore: stop
+  without the broker password, and the archive without the command senders' code secrets, unless
+  `--with-secrets` (which also takes the file `password_file` names and the one `codes_file`
+  names, as `password` and `command-codes`); without it, set the password again after a restore
+  and enrol the senders anew. To restore: stop
   the service, unpack the archive, copy `config.toml` to `/etc/meshcore-home-gateway/` and the
   files under `state/` to `/var/lib/meshcore-home-gateway/` (owned by `meshcore-home-gateway`),
-  then start it. By hand: back up `/etc/meshcore-home-gateway/` (`config.toml`, and
-  `mqtt-password` where the installer wrote it) and the three files of
+  put the secrets back where `MANIFEST.json` says they came from, then start it. By hand: back up
+  `/etc/meshcore-home-gateway/` (`config.toml`, and `mqtt-password` where the installer wrote it,
+  and the file `codes_file` names) and the three files of
   `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop
   meshcore-home-gateway`), or use a Proxmox backup of the whole container (`vzdump`): a backup of
   the running container holds the files as a power cut would leave them, which both survive
@@ -452,7 +455,9 @@ updates wait for.
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
   older `telemetry-excluded.json` asks companions excluded since.
   * `state.json` holds the newest accepted command time per sender (without it a restored system
-    accepts older recorded commands again until a sender sends a new one, within `max_age_s`);
+    accepts older recorded commands again until a sender sends a new one, within `max_age_s`),
+    and for a sender with a code secret the time step of its last accepted code (without it, a
+    code seen in the last 90 seconds would serve once more);
     the Home Assistant components last announced; the contacts whose documents are published;
     the last document of each companion whose answers are current, with its position and
     readings, so that they still expire after a restart without the radio (kept in its latest

@@ -207,7 +207,8 @@ Only accepted commands ([ADR 0009](decisions/0009-inbound-commands-from-allowlis
 a plain direct message whose first word (ended by any whitespace, also a line break) is in
 `commands.words`, from a contact whose full key is
 in `commands.senders`, newer than the last accepted command of that sender and within
-`max_age_s` of the gateway clock.
+`max_age_s` of the gateway clock; from a sender with a code secret, also ending with a fresh code
+([configuration.md](configuration.md#commands)), which `args` then leaves out.
 
 ```json
 {"event_type": "arm", "args": "now", "sender_key": "a1b2…", "sender_name": "Alice",
@@ -227,6 +228,9 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `broker_unavailable` | the gateway knew the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the gateway clock; with `max_age_s = 0`, more than a day ahead |
+| `code_missing` | the sender has a code secret, and the last word is no 6-digit code |
+| `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, or the phone's clock or the host's off) |
+| `code_reused` | a code of 30 seconds whose code this sender already used, or of earlier ones: a code serves once |
 
 An identical copy of a command's packet, also of a rejected one, is dropped as a repeat: it is
 the sender's retry after a lost acknowledgement or a replay, which cannot be told apart. To have

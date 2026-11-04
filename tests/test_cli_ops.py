@@ -326,23 +326,35 @@ def test_backup_writes_the_state_and_the_configuration_without_the_password(
     assert "exists: choose another name" in capsys.readouterr().err
 
 
-def test_backup_keeps_the_password_only_when_asked(tmp_path: Path) -> None:
-    secret = tmp_path / "password"
+def test_backup_keeps_the_secrets_only_when_asked(tmp_path: Path) -> None:
+    secret, codes = tmp_path / "password", tmp_path / "command-codes"
     secret.write_text("s3cret\n", encoding="utf-8")
+    codes.write_text(f'{KEY} = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"\n', encoding="utf-8")
     config = tmp_path / "config.toml"
     config.write_text(
-        f'[mqtt]\nhost = "h"\nnode_id = "radio1"\nusername = "gw"\npassword_file = "{secret}"\n',
+        f'[mqtt]\nhost = "h"\nnode_id = "radio1"\nusername = "gw"\npassword_file = "{secret}"\n'
+        f'[commands]\nsenders = ["{KEY}"]\nwords = ["arm"]\ncodes_file = "{codes}"\n',
         encoding="utf-8",
     )
     archive = tmp_path / "b.tgz"
     argv = ["backup", str(archive), "--config", str(config), "--state-dir", str(tmp_path / "none")]
     assert main([*argv, "--with-secrets"]) == EX_OK
     members = _members(archive)
-    assert members["password"] == b"s3cret\n"
-    assert json.loads(members["MANIFEST.json"])["password"] == "kept"
+    assert (members["password"], members["command-codes"]) == (
+        secret.read_bytes(),
+        codes.read_bytes(),
+    )
+    manifest = json.loads(members["MANIFEST.json"])
+    assert (manifest["password"], manifest["codes"], manifest["codes_file"]) == (
+        "kept",
+        "kept",
+        str(codes),
+    )
     archive.unlink()
     assert main(argv) == EX_OK
-    assert "password" not in _members(archive)
+    members = _members(archive)
+    assert {"password", "command-codes"} & set(members) == set()
+    assert json.loads(members["MANIFEST.json"])["codes"] == "left_out"
 
 
 def test_backup_refuses_a_password_it_cannot_leave_out(

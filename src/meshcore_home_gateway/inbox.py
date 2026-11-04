@@ -47,6 +47,9 @@ _FINAL_FROM_CACHE = frozenset(
         Rejection.REPLAY,
         Rejection.TOO_OLD,
         Rejection.FROM_THE_FUTURE,
+        Rejection.CODE_MISSING,
+        Rejection.CODE_INVALID,
+        Rejection.CODE_REUSED,
     }
 )
 
@@ -183,7 +186,7 @@ class Inbox:
         if decision is not None and command is not None:
             try:
                 # first; also when the broker is unreachable (below): the sender was verified
-                self._ledger.record(command.sender_key, command.sender_timestamp)
+                self._ledger.record(command.sender_key, command.sender_timestamp, command.code_step)
             except OSError:
                 log.exception("command not published: the state file cannot be written")
                 command = None
@@ -280,6 +283,7 @@ class Inbox:
             self._ledger.view,
             self._wall(),
             seen=self._seen,
+            last_codes=self._ledger.code_steps,
         )
 
     def contact_key(self, key: str, held: bool) -> None:

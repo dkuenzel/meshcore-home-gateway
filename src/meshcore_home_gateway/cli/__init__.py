@@ -26,6 +26,7 @@ from typing import Any
 
 from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.cli.backup import _backup
+from meshcore_home_gateway.cli.codes import _enrol
 from meshcore_home_gateway.cli.common import (
     DEFAULT_CONFIG,
     EX_CONFIG,
@@ -177,6 +178,24 @@ def _parser() -> argparse.ArgumentParser:
 
     _contacts_parser(commands)
 
+    codes = commands.add_parser("commands", help=tr_help("codes for the senders of commands"))
+    codes_actions = codes.add_subparsers(required=True, metavar="action")
+    enrol = codes_actions.add_parser(
+        "enrol",
+        # Translators: security text (docs/translations.md): a new secret replaces the old one
+        help=tr_help(
+            "give a command sender a new code secret for an authenticator app; its commands "
+            "then need the app's code"
+        ),
+    )
+    enrol.set_defaults(handler=_enrol)
+    enrol.add_argument(
+        "key", help=tr_help("the sender's full public key, as in [commands] senders")
+    )
+    enrol.add_argument(
+        "--config", type=Path, default=DEFAULT_CONFIG, help=tr_help("configuration file")
+    )
+
     _operations_parser(commands, command, state_dir_help)
 
     dashboard = command(
@@ -256,7 +275,10 @@ def _operations_parser(
         "--with-secrets",
         action="store_true",
         # Translators: security text (docs/translations.md): the archive keeps the secrets
-        help=tr_help("keep the secrets: the broker password, also the file password_file names"),
+        help=tr_help(
+            "keep the secrets: the broker password, also the file password_file names, and the "
+            "file codes_file names"
+        ),
     )
     backup.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
 

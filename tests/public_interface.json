@@ -4,6 +4,7 @@
    "keys": [
     "airtime.budget_s_per_hour",
     "airtime.burst_s",
+    "commands.codes_file",
     "commands.max_age_s",
     "commands.senders",
     "commands.words",
@@ -133,6 +134,35 @@
      }
     },
     "positionals": {}
+   },
+   "commands": {
+    "options": {},
+    "positionals": {
+     "1": {
+      "name": "action",
+      "required": true,
+      "takes_value": true
+     }
+    }
+   },
+   "commands enrol": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {
+     "1": {
+      "name": "key",
+      "required": true,
+      "takes_value": true
+     }
+    }
    },
    "config": {
     "options": {},
@@ -839,6 +869,10 @@
   },
   "commands": {
    "type": "table"
+  },
+  "commands.codes_file": {
+   "answer": "str",
+   "type": "string"
   },
   "commands.max_age_s": {
    "answer": "float",
@@ -2397,6 +2431,9 @@
    ],
    "received:command.reason": [
     "broker_unavailable",
+    "code_invalid",
+    "code_missing",
+    "code_reused",
     "from_the_future",
     "replay",
     "sender_ambiguous",

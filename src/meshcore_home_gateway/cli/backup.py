@@ -1,6 +1,7 @@
 """`backup FILE`: the configuration and the state in one archive (IMP-016, OPS-008), while the
 service runs: the state file is replaced atomically, the history is copied with SQLite's online
-backup. The configuration goes without the broker password unless `--with-secrets`; the archive
+backup. The configuration goes without the broker password, and the archive without the command
+senders' code secrets, unless `--with-secrets`; the archive
 holds the household's positions and messages either way, so it is written for its owner only."""
 
 from __future__ import annotations
@@ -54,15 +55,18 @@ def contents(config_path: Path, state_dir: Path, *, with_secrets: bool) -> dict[
     """The archive's files by name, MANIFEST.json included."""
     try:
         config_text = _read(config_path).decode("utf-8")
-        mqtt = tomllib.loads(config_text).get("mqtt", {})
+        parsed = tomllib.loads(config_text)
     except (UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise _RefusedError(
             tr("cannot read {path}: {detail}", path=config_path, detail=exc)
         ) from None
-    secret = mqtt.get("password_file")
+    mqtt, commands = parsed.get("mqtt", {}), parsed.get("commands", {})
+    secret, codes = mqtt.get("password_file"), commands.get("codes_file")
     members = {"config.toml": _configuration(config_text, mqtt, with_secrets=with_secrets)}
     if with_secrets and isinstance(secret, str):
         members["password"] = _read(Path(secret))
+    if with_secrets and isinstance(codes, str):
+        members["command-codes"] = _read(Path(codes))
     for name in STATE_FILES:
         if (state_dir / name).exists():
             members[f"state/{name}"] = _read(state_dir / name)
@@ -82,6 +86,8 @@ def contents(config_path: Path, state_dir: Path, *, with_secrets: bool) -> dict[
         "state_dir": str(state_dir),
         "password": ("kept" if with_secrets else "left_out") if has_password else "none",
         "password_file": secret if isinstance(secret, str) else None,
+        "codes": ("kept" if with_secrets else "left_out") if isinstance(codes, str) else "none",
+        "codes_file": codes if isinstance(codes, str) else None,
         "files": sorted(members),
     }
     members["MANIFEST.json"] = json.dumps(manifest, indent=2).encode("utf-8") + b"\n"

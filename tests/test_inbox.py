@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import inbox as inbox_module
+from meshcore_home_gateway.core.commands import CODE_STEP_S, code_at
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.state import CommandLedger, JsonStateFile
 from meshcore_home_gateway.wiring import gateway
@@ -459,6 +460,44 @@ def test_a_command_sent_anew_after_an_unverified_one_is_judged_again(tmp_path: P
             assert len(bus.payloads("/received")) == 2  # the identical copy gave no event
 
     scenario(main)
+
+
+def test_a_sender_with_a_code_secret_commands_only_with_a_fresh_code(tmp_path: Path) -> None:
+    """IMP-002: the code leaves the arguments, its time step is stored before the command is
+    published, and a code serves once, also after a restart."""
+    secret = b"12345678901234567890"
+    config = make_config()
+    sender = ALICE.public_key.hex()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, secrets=((sender, secret),))
+    )
+    code = code_at(secret, int(NOW // CODE_STEP_S))
+    radio = EmulatedRadio(contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(ALICE.public_key[:6], f"arm now {code}", NOW - 10)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert command["args"] == "now"
+            reads = radio.commands().count(Command.GET_CONTACTS)
+            radio.queue_direct_message(ALICE.public_key[:6], f"arm {code}", NOW - 9)
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now", NOW - 8)
+            radio.queue_direct_message(ALICE.public_key[:6], "arm 000000", NOW - 7)
+            await bus.wait_for("/received", lambda r: r["text"] == "arm 000000")
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == [None, "code_reused", "code_missing", "code_invalid"]
+            assert radio.commands().count(Command.GET_CONTACTS) == reads  # the cache's verdict
+        restarted = EmulatedRadio(contacts=[ALICE])
+        async with running(config, restarted, tmp_path) as (_, bus, _notes):
+            restarted.queue_direct_message(ALICE.public_key[:6], f"arm {code}", NOW - 6)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "code_reused"
+            assert not bus.payloads("/command")
+
+    assert code != "000000"
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert stored["command_code_steps"] == {sender: int(NOW // CODE_STEP_S)}
 
 
 def test_names_come_from_the_table_just_read(tmp_path: Path) -> None:

@@ -143,4 +143,10 @@ command. The hardware checklist repeats the restart case.
   instead of being judged again (a retry after a lost acknowledgement and a replay look the same;
   the sender sends a rejected command anew), the repeat memory covers the age window, and
   `broker_unavailable` stores the timestamp; the remaining gap is listed under Consequences.
+* Amended on 2026-11-04 after the security review of 2026-11 (IMP-002): a sender may get a code
+  secret (`[commands] codes_file`, written by `meshcore-home-gateway commands enrol`). Its
+  commands then end with the code of an authenticator app (TOTP, RFC 6238, the time step of the
+  gateway clock or the one before or after, each step once), which authenticates the text
+  whatever reached the gateway: a host posing as a radio over TCP or an added look-alike cannot
+  command without the secret. The prefix checks stay; senders without a secret keep them alone.
 * Revisit if MeshCore adds signed commands or a challenge–response mechanism for companion clients.
