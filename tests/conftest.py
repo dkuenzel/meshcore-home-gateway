@@ -108,7 +108,7 @@ def msgfmt() -> str:
     return found
 
 
-def _free_port() -> int:
+def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
@@ -138,12 +138,21 @@ def refusing_broker(tmp_path: Path) -> Iterator[Broker]:
 def _run_broker(tmp_path: Path, *, anonymous: bool) -> Iterator[Broker]:
     if SKIP_BROKER:
         pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
-    port = _free_port()
+    port = free_port()
     conf = tmp_path / "mosquitto.conf"
     conf.write_text(
         f"listener {port} 127.0.0.1\nallow_anonymous {str(anonymous).lower()}\npersistence false\n",
         encoding="utf-8",
     )
+    process = start_mosquitto(conf, port)
+    try:
+        yield Broker("127.0.0.1", port)
+    finally:
+        stop_mosquitto(process)
+
+
+def start_mosquitto(conf: Path, port: int) -> subprocess.Popen[bytes]:
+    """mosquitto with `conf`, once it takes connections on `port`; else the test fails."""
     process = subprocess.Popen(  # noqa: S603 - fixed arguments, test only
         [_mosquitto(), "-c", str(conf)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
     )
@@ -158,10 +167,11 @@ def _run_broker(tmp_path: Path, *, anonymous: bool) -> Iterator[Broker]:
         process.kill()
         _, errors = process.communicate(timeout=5)  # also closes the pipe
         pytest.fail(f"mosquitto did not start: {errors.decode(errors='replace').strip()}")
-    try:
-        yield Broker("127.0.0.1", port)
-    finally:
-        process.terminate()
-        process.wait(timeout=5)
-        if process.stderr:
-            process.stderr.close()
+    return process
+
+
+def stop_mosquitto(process: subprocess.Popen[bytes]) -> None:
+    process.terminate()
+    process.wait(timeout=5)
+    if process.stderr:
+        process.stderr.close()

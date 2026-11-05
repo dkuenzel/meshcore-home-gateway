@@ -30,9 +30,9 @@ FIRMWARE_BUILD ?= build/firmware
 # what `make firmware-test` runs, e.g. FIRMWARE_TESTS=tests/firmware/test_paths.py
 FIRMWARE_TESTS ?= tests/firmware
 
-.PHONY: help venv lock ha-lock lint shellcheck workflows unit-check test matrix ha-test interface \
-  translations firmware-fetch firmware firmware-test firmware-play dist pyz release release-plan \
-  check hooks \
+.PHONY: help venv lock ha-lock lint shellcheck workflows unit-check unit-run test matrix ha-test \
+  interface translations firmware-fetch firmware firmware-test firmware-play dist pyz release \
+  release-plan check hooks \
   clean audit
 
 help: ## List the targets
@@ -158,6 +158,10 @@ unit-check: dist ## systemd-analyze: verify the unit, exposure score at most 2.0
 	  systemd-analyze verify "$$tmp/$(UNIT)" && \
 	  systemd-analyze security --offline=true --threshold=20 "$$tmp/$(UNIT)" | tail -n 1
 
+# Installs into the system: only on a machine to throw away, as root, after `make dist`
+unit-run: ## The zipapp and the unit under this host's systemd, as installed (CI; as root)
+	PYTHONDONTWRITEBYTECODE=1 MESHCORE_HOME_GATEWAY_UNIT_RUN=1 \
+	  $(BIN)/python -m pytest -p no:cacheprovider tests/test_unit_run.py
 # flit packs every file of the package, untracked ones too: a catalog compiled by Poedit next to
 # its PO file would reach the wheel and the sdist (the program compiles them itself, ADR 0027).
 dist: venv ## Wheel, sdist and the single-file zipapp in dist/

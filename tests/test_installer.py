@@ -101,7 +101,8 @@ STUBS = {
                 code=${codes[n]:-${codes[-1]}}  # the last one repeats; 3: a version without it
                 case $code in
                   0) printf '  ok       the gateway is online\n' ;;
-                  1) printf '  ok       the gateway is online\n  problem  the radio is not connected\n' ;;
+                  1) printf '  ok       the gateway is online\n'
+                     printf '  problem  the radio is not connected\n' ;;
                 esac
                 exit "$code" ;;
               *"--broker"*)  # the login check: exit statuses in turn from BROKER_ANSWERS
@@ -710,8 +711,11 @@ def test_a_version_without_doctor_is_not_checked(host: Host) -> None:
     ("program", "status", "output"),
     [
         ('[ "$*" != "doctor --help" ] || exit 2', 3, ""),  # a version without the command
-        ('[ "$*" != doctor ] || { echo "  ok  online"; echo "  problem  radio" >&2; exit 1; }', 1,
-         "  ok  online\n  problem  radio\n"),
+        (
+            '[ "$*" != doctor ] || { echo "  ok  online"; echo "  problem  radio" >&2; exit 1; }',
+            1,
+            "  ok  online\n  problem  radio\n",
+        ),
         ('[ "$*" != doctor ] || echo "  ok  online"', 0, "  ok  online\n"),
     ],
 )

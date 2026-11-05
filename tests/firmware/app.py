@@ -20,6 +20,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from types import TracebackType
 
+from meshcore_home_gateway.core.model import InboundMessage
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, ContactFlag, Push, Response
 from meshcore_home_gateway.protocol.framing import FrameDecoder, encode_frame
@@ -42,6 +43,15 @@ GATEWAY_FLAGS = (
     | ContactFlag.TELEMETRY_LOCATION
     | ContactFlag.TELEMETRY_ENVIRONMENT
 )
+MESSAGES = frozenset(
+    {
+        Response.CONTACT_MSG_RECV,
+        Response.CONTACT_MSG_RECV_V3,
+        Response.CHANNEL_MSG_RECV,
+        Response.CHANNEL_MSG_RECV_V3,
+    }
+)
+MESSAGE_POLL_S = 0.5
 
 
 class AppError(Exception):
@@ -62,6 +72,7 @@ class App:
     def __init__(self, node: Node) -> None:
         self.node = node
         self.frames: list[Frame] = []
+        self.received: list[InboundMessage] = []  # the messages fetched so far, in order
         self._transport = SerialTransport(str(node.serial))
         self._decoder = FrameDecoder()
         self._changed = asyncio.Condition()
@@ -240,6 +251,35 @@ class App:
         found = codec.decode(await self.command(request, {Response.SENT}, "send text"))
         assert isinstance(found, codec.Sent)  # by its code
         return found
+
+    async def send_channel_text(self, index: int, text: str) -> None:
+        await self.ok(codec.send_channel_text(index, text, int(time.time())), "send channel text")
+
+    async def fetch_messages(self) -> list[InboundMessage]:
+        """The messages the radio holds for the app, fetched one by one as the app does."""
+        found: list[InboundMessage] = []
+        while True:
+            answer = await self.command(
+                codec.sync_next_message(), {*MESSAGES, Response.NO_MORE_MESSAGES}, "next message"
+            )
+            if answer[0] == Response.NO_MORE_MESSAGES:
+                self.received.extend(found)
+                return found
+            found.append(codec.decode_message(answer, time.time()))
+
+    async def wait_for_message(
+        self, found: Callable[[InboundMessage], bool], what: str, timeout_s: float = 30.0
+    ) -> InboundMessage:
+        """The first message fetched, now or before, that `found` accepts."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            await self.fetch_messages()
+            match = next((m for m in self.received if found(m)), None)
+            if match is not None:
+                return match
+            if time.monotonic() > deadline:
+                raise AppError(f"{self.node.name}: no {what} within {timeout_s:g} s")
+            await asyncio.sleep(MESSAGE_POLL_S)
 
     async def request_telemetry(self, key: bytes) -> codec.Sent:
         request = codec.send_telemetry_request(key)

@@ -75,7 +75,7 @@ jobs:
   check:
     name: lint, shellcheck, workflow audit, build, unit check
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,6 +91,17 @@ jobs:
       # One invocation: unit-check takes the zipapp that dist builds.
       - name: Build wheel, sdist and zipapp, verify the systemd unit and its exposure score
         run: make dist unit-check
+      # The runner is thrown away: the zipapp and the unit installed and run under its systemd, as
+      # in a container, with the distribution's Python and the paho-mqtt of the lock (Debian
+      # ships it, Ubuntu 24.04 an older one); its readiness, sandbox, watchdog and broker restart.
+      - name: The zipapp and the unit under systemd, as an installation runs them
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends mosquitto python3-pip
+          sed -n '/^paho-mqtt==/,/^    # via/p' requirements/dev.txt >"$RUNNER_TEMP/paho.txt"
+          sudo python3 -m pip install --quiet --break-system-packages --no-deps \
+            --require-hashes --requirement "$RUNNER_TEMP/paho.txt"
+          sudo make unit-run
 
   release-plan:
     name: release plan

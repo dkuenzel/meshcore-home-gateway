@@ -156,8 +156,8 @@ class Scene:
     directory: Path
     caplog: pytest.LogCaptureFixture
 
-    def configuration(self, radio: Node, more: str = "") -> str:
-        return configuration(radio.serial, self.broker, more)
+    def configuration(self, radio: Node, more: str = "", *, mqtt: str = "") -> str:
+        return configuration(radio.serial, self.broker, more, mqtt=mqtt)
 
     @property
     def state_dir(self) -> Path:
