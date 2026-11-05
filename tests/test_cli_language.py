@@ -1553,7 +1553,7 @@ def test_check_config_keeps_its_english_summary(tmp_path: Path) -> None:
         "  commands   open, status from 2 senders\n"
         "  airtime    36 s per hour, burst 10 s\n"
         "  contacts   managed on request\n"
-        "  telemetry  asked of every companion not excluded\n"
+        "  telemetry  asked of the companions the household included\n"
     )
     serial = _main(["check-config", "--config", _written(tmp_path, "s.toml", SUMMARIES["serial"])])
     assert serial.out.splitlines()[1:] == [

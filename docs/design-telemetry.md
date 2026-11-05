@@ -8,9 +8,10 @@ when, what the answers become, and what is kept across a restart.
 [ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md): the gateway asks the
 household's companions for battery, readings and position with `SEND_TELEMETRY_REQ`; a companion
 answers only contacts it allows (denial is silence). On by default (`[telemetry] enabled`); the
-household excludes every companion that is not its own, or, with `[telemetry] ask = "household"`,
-includes those that are (SEC-016): then a contact is asked only once included, or as a contact
-target or command sender, and the first start holds nothing. Values expire when a companion stops
+household includes its companions (`[telemetry] ask = "household"`, the default since 2.0.0,
+SEC-016): a contact is asked only once included, or as a contact target or command sender, and
+the first start holds nothing. With `ask = "all"` it excludes every companion that is not its
+own instead. Values expire when a companion stops
 answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
 
 ```mermaid
@@ -31,7 +32,8 @@ sequenceDiagram
 ```
 
 * **Who.** Every chat contact of the radio's table (with `[telemetry] ask_types`, also every
-  sensor, EXT-005; the observer holds the types) that the household did not exclude and whose
+  sensor, EXT-005; the observer holds the types) that the household included, or that is a
+  contact target or command sender (with `ask = "all"`: that it did not exclude), and whose
   first 6 key bytes no other contact and not the radio's own key share: the 0x8B names the
   answering contact by those bytes only (an excluded look-alike still blocks its twin). Nothing is
   asked while the radio adds contacts of any type on its own (a look-alike could enter the table

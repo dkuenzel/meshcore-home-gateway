@@ -66,7 +66,7 @@ def test_check_config_summarises_a_valid_file(capsys: pytest.CaptureFixture[str]
     assert "valid" in out
     assert "target     alerts: channel 1" in out
     assert "broker     broker.example.org:1883" in out
-    assert "  telemetry  asked of every companion not excluded\n" in out
+    assert "  telemetry  asked of the companions the household included\n" in out
 
 
 def test_check_config_says_when_telemetry_is_off(
@@ -77,12 +77,12 @@ def test_check_config_says_when_telemetry_is_off(
     off.write_text(text, encoding="utf-8")
     assert main(["check-config", "--config", str(off)]) == EX_OK
     assert "  telemetry  off\n" in capsys.readouterr().out
-    household = tmp_path / "household.toml"
-    text = EXAMPLE.read_text(encoding="utf-8").replace("# enabled = true", 'ask = "household"')
-    household.write_text(text, encoding="utf-8")
-    assert main(["check-config", "--config", str(household)]) == EX_OK
+    every = tmp_path / "all.toml"
+    text = EXAMPLE.read_text(encoding="utf-8").replace("# enabled = true", 'ask = "all"')
+    every.write_text(text, encoding="utf-8")
+    assert main(["check-config", "--config", str(every)]) == EX_OK
     out = capsys.readouterr().out
-    assert "  telemetry  asked of the companions the household included\n" in out
+    assert "  telemetry  asked of every companion not excluded\n" in out
 
 
 def test_check_config_reports_errors_with_ex_config(
@@ -718,7 +718,7 @@ def test_the_service_keeps_the_documents_of_current_companions_in_its_state_file
     config = parse_config(
         '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
         'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
-        "[history]\nenabled = false\n[telemetry]\nenabled = false\n"
+        '[history]\nenabled = false\n[telemetry]\nenabled = false\nask = "all"\n'
     )
     assert asyncio.run(cli_run._serve(config, tmp_path)) == EX_OK
     (bridge,) = bridges

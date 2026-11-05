@@ -37,13 +37,14 @@ format, the command line and Home Assistant discovery are public interfaces
 - `[messages] clean_received` (default `false`): received texts lose their control and direction
   characters before they are published and kept in the history, as outgoing texts do
   ([configuration.md](docs/configuration.md#messages)). Off, texts stay as they came.
-- `[messages] publish_channels` (default `all`): `targets` publishes and keeps only the messages
-  of channels that are a target; on the *Public* channel, whose key is in the firmware, most
-  messages are strangers' ([configuration.md](docs/configuration.md#messages)).
-- `[contacts] heard_nodes` (default `full`): `keys` publishes and keeps of the nodes heard but not
-  added, other people's radios, only their keys and types, no names, times or signal, also in the
-  history and in the select *Add heard node*; `off` nothing but the keys of look-alikes
-  ([configuration.md](docs/configuration.md#contacts)).
+- `[messages] publish_channels` (default `targets`): only the messages of channels that are a
+  target are published and kept; on the *Public* channel, whose key is in the firmware, most
+  messages are strangers'. `all` publishes every channel
+  ([configuration.md](docs/configuration.md#messages)).
+- `[contacts] heard_nodes` (default `keys`): of the nodes heard but not added, other people's
+  radios, only their keys and types are published and kept, no names, times or signal, also in
+  the history and in the select *Add heard node*; `off` nothing but the keys of look-alikes,
+  `full` everything ([configuration.md](docs/configuration.md#contacts)).
 - [`docs/threat-model.md`](docs/threat-model.md): the assets, the actors, seven trust boundaries
   and what stands in the way at each; design §7 is now its summary, and every decision record
   names the boundaries it touches. [ADR 0029](docs/decisions/0029-what-a-contact-is-trusted-with.md)
@@ -53,11 +54,11 @@ format, the command line and Home Assistant discovery are public interfaces
   ([design §6](docs/design.md#6-detailed-design) lists where each section went).
 - [`docs/privacy.md`](docs/privacy.md): what the gateway keeps of the household and of other
   people, where, for how long and how to switch it off; a *Privacy* section in the README.
-- `[telemetry] ask` (default `all`): `household` asks only the companions the household included
-  (the switch *Telemetry*, `contacts telemetry KEY on`) and the contact targets and command
-  senders; a new contact is not asked until included, and the first start holds nothing. The
-  inclusions are kept in `telemetry-excluded.json` beside the exclusions
-  ([configuration.md](docs/configuration.md#telemetry)).
+- `[telemetry] ask` (default `household`): only the companions the household included (the switch
+  *Telemetry*, `contacts telemetry KEY on`) and the contact targets and command senders are
+  asked; a new contact is not asked until included, and the first start holds nothing. `all` asks
+  every companion not excluded. The inclusions are kept in `telemetry-excluded.json` beside the
+  exclusions ([configuration.md](docs/configuration.md#telemetry)).
 - `[homeassistant] controls` (default `true`): with `false`, Home Assistant shows the controls
   that change the radio or the telemetry unavailable (*Add heard node*, *Add contact*, *Show
   hidden contacts*, each contact's *Remove from radio* and *Telemetry*), so no user of it can
@@ -205,6 +206,20 @@ format, the command line and Home Assistant discovery are public interfaces
   connects with its id, and the fixed one could be read off the topics. A broker ACL or
   `clientid_prefixes` that names the id can use the prefix `meshcore-home-gateway-`; set
   `[mqtt] client_id` to keep a fixed one.
+- **Breaking:** only the messages of the channels that are a target are published and kept in
+  the history (`[messages] publish_channels = "targets"`): the neighbours' chatter on the
+  *Public* channel no longer reaches the bus, Home Assistant or the history. Set
+  `publish_channels = "all"` after the update to keep every channel; the version before does not
+  know the setting.
+- **Breaking:** of the nodes heard but not added, other people's radios, only their keys and
+  types are published and kept (`[contacts] heard_nodes = "keys"`): no names, times or signal in
+  `nodes`, the `node` events, the history or the select *Add heard node*. Set
+  `heard_nodes = "full"` after the update to keep them.
+- **Breaking:** telemetry asks only the companions the household included, and the contact
+  targets and command senders (`[telemetry] ask = "household"`): after the update no other
+  companion is asked until it is included with its switch *Telemetry* or
+  `contacts telemetry KEY on`. Set `ask = "all"` after the update to keep asking every companion
+  that is not excluded.
 - The select *Add heard node* (and the dashboard's table of the nodes heard) marks a node with a
   taken name ` (name taken)`; a contact whose name the gateway's device or a contact added before
   has gets a device named with its key's first 8 digits, such as *Bob (b0b0b0b0)*.
@@ -314,16 +329,12 @@ format, the command line and Home Assistant discovery are public interfaces
   off the mesh's frequency; with how to isolate such a radio and what to do after a takeover
   ([configuration.md](docs/configuration.md#radio),
   [design §7.2](docs/design.md#72-threats-and-mitigations), [protocol.md](docs/protocol.md)).
-- A new installation from the installer publishes only the messages of the channels the
-  household chose as targets (`messages.publish_channels = targets`), not the neighbours'
-  chatter on the *Public* channel; installations that run keep their setting.
-- A new installation from the installer keeps of other people's radios their keys and types
-  only (`contacts.heard_nodes = keys`): no names, times or signal on the bus, in the history or in
-  Home Assistant; installations that run keep their setting.
-- A new installation from the installer asks only the companions the household includes for
-  their telemetry (`telemetry.ask = household`): adding a neighbour's node to exchange messages no
-  longer starts tracking it when its companion allows everyone; installations that run keep
-  their setting.
+- By default the gateway keeps less of other people: it publishes only the messages of the
+  channels the household chose as targets, not the neighbours' chatter on the *Public* channel;
+  it keeps of other people's radios their keys and types only; and it asks only the companions
+  the household includes for their telemetry, so adding a neighbour's node to exchange messages
+  no longer starts tracking it when its companion allows everyone. The **Breaking:** entries
+  under *Changed* name the settings that keep the old behaviour.
 - A contact or a channel that floods messages no longer fills the bus, the history and Home
   Assistant's recorder: beyond a burst of 10 direct messages of one sender, one every 2 seconds
   is published, beyond 20 on one channel, one a second; the others are still judged as commands

@@ -49,6 +49,7 @@ queue_ttl_s = 600                                      # give up on messages old
 max_attempts = 3                                       # direct messages: sends until acknowledged
 flood_after = 2                                        # unanswered sends, then path reset (flood)
 ignore_channels = []                                   # channel indices not to publish
+# publish_channels = "targets"  # the default: only target channels; "all" publishes every one
 confirm_nonce = false                                  # true: random suffix, acks hard to forge
 alert_targets = []                                     # targets whose messages go first
 
@@ -70,16 +71,15 @@ max_age_s = 900                                        # 0 disables the clock ch
 # (docs/home-assistant.md); false switches contact management off everywhere.
 [contacts]
 # manage = true                                        # the default
-# heard_nodes = "full"  # the default; "keys" or "off" keep less of other people's radios
+# heard_nodes = "keys"  # the default; "full" also names, times, signal; "off" keeps less
 
 # Telemetry: battery, readings and position of the radio's companions, asked of each in turn
-# (docs/companions.md sets them up). Every companion of the radio that is not excluded is asked,
-# the first time an hour after the radio connects. Exclude every one that is not the household's:
-# the Telemetry switch on its device in Home Assistant, or
-# meshcore-home-gateway contacts telemetry KEY off
+# (docs/companions.md sets them up). Only the companions the household included are asked, and
+# the targets and command senders: the Telemetry switch on its device in Home Assistant, or
+# meshcore-home-gateway contacts telemetry KEY on
 [telemetry]
 # enabled = true                                       # the default
-# ask = "all"  # the default; "household": only the contacts included and targets, senders
+# ask = "household"  # the default; "all": every one not excluded, first an hour after connect
 # ask_types = ["chat", "sensor"]  # also the household's sensors (docs/companions.md)
 
 # History of messages, positions and readings in the state directory (docs/configuration.md).

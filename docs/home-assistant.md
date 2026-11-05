@@ -145,7 +145,7 @@ the contact's telemetry ([companions.md](companions.md), `[telemetry]`) or its a
 *Battery*, *MCU temperature* and the reading sensors appear with the first telemetry answer that
 carries them, at most 16 readings per contact. Every companion has the switch *Telemetry*,
 *Telemetry state* and *Position in adverts* at once, also while telemetry is off, so it can be
-excluded before it is asked.
+included or excluded before it is asked.
 Every contact has the remove button. A component, once there, stays as long as the
 contact does (Home Assistant would clear the whole device when the gateway removed a disabled
 one). The tracker is the only entity with coordinates,
@@ -343,7 +343,7 @@ advert no longer carries it.
 
 | Moment (EU/UK Narrow, next to the gateway) | In Home Assistant |
 | --- | --- |
-| added to the radio | its device with *Telemetry* on and *Telemetry state* `waiting` (`no_path` if the radio has no path to it and has not heard it within 30 minutes) |
+| added to the radio | its device with *Telemetry* off and *Telemetry state* `excluded` until it is switched on (a contact target or command sender: on and `waiting`); with `ask = "all"` on and `waiting`, or `no_path` if the radio has no path to it and has not heard it within 30 minutes |
 | first answer (about 76 s after the radio connects, then about every 15 minutes at rest) | *Battery*, *MCU temperature*, the readings and the tracker appear; `answering`; event `answered` |
 | a lost answer | nothing: it is asked again 30 s later |
 | GPS off | `no_position` an hour after the last answer with a position; the tracker `unavailable`, the sensors stay |
@@ -381,13 +381,14 @@ contact's readings and telemetry positions for `readings_days` and `positions_da
 history stays ([Privacy](#privacy)). Every user who may switch entities can switch it on again;
 the broker's ACL decides who may write `contacts/+/telemetry`.
 
-**Only the household's.** With `[telemetry] ask = "household"` (a new installation from the
-installer has it) the switch *Telemetry* of a new companion is off: the gateway asks only the
-companions you switch on, and the contact targets and command senders
-([configuration.md](configuration.md#telemetry)). Switching one off excludes it as above.
+**Only the household's.** By default (`[telemetry] ask = "household"`) the switch *Telemetry* of
+a new companion is off: the gateway asks only the companions you switch on, and the contact
+targets and command senders ([configuration.md](configuration.md#telemetry)). Switching one off
+excludes it as above. With `ask = "all"` every companion that is not excluded is asked.
 
-**The first hour.** Where telemetry never ran (an update from 1.0.0, from 1.1.0a1 with telemetry
-off, or a new installation), the gateway asks nobody for an hour after the radio first connects:
+**The first hour.** With `ask = "all"`, where telemetry never ran (an update from 1.0.0, from
+1.1.0a1 with telemetry off, or a new installation), the gateway asks nobody for an hour after the
+radio first connects:
 *Telemetry status* reads `paused` with the reason `first_start`, and its log names the number of
 companions it will ask. The switches and states are there meanwhile: exclude every companion that
 is not the household's. Then the status reads `on`.
@@ -1116,17 +1117,17 @@ The same in the interface: *Settings → People → Alice → Track device*, bot
 ## Privacy
 
 Messages on a channel come from anyone who knows its key: the *Public* channel's key is in the
-firmware, so in a lively mesh most of them are strangers' texts and claimed names, and they become
-events, history rows and recorder entries like the household's own. `[messages] publish_channels
-= "targets"` publishes and keeps only the channels you chose as targets (the installer sets it on
-a new installation); `ignore_channels` leaves out single channels
+firmware, so in a lively mesh most of them are strangers' texts and claimed names. By default
+(`[messages] publish_channels = "targets"`) only the channels you chose as targets are published
+and kept; with `"all"` every channel's messages become events, history rows and recorder entries
+like the household's own. `ignore_channels` leaves out single channels
 ([configuration.md](configuration.md#messages)).
 
-The nodes heard are other people's radios: *Nodes heard*, the *New node* event (with the name its
-owner chose, its key and signal) and *Look-alike node heard*. `[contacts] heard_nodes = "keys"`
-keeps their keys and types only, `"off"` nothing but the look-alikes' keys
-([configuration.md](configuration.md#contacts)). What the gateway keeps, of whom and for how long,
-is in [privacy.md](privacy.md).
+The nodes heard are other people's radios: *Nodes heard*, the *New node* event and *Look-alike
+node heard*. By default (`[contacts] heard_nodes = "keys"`) they show their keys and types only;
+`"full"` adds the name its owner chose and its signal, `"off"` keeps nothing but the look-alikes'
+keys ([configuration.md](configuration.md#contacts)). What the gateway keeps, of whom and for how
+long, is in [privacy.md](privacy.md).
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in

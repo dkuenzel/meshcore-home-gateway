@@ -10,7 +10,7 @@ import pytest
 from tests.firmware.air import Transmission
 from tests.firmware.app import App
 from tests.firmware.conftest import Scene
-from tests.firmware.gateway import log_lines, logged, running
+from tests.firmware.gateway import ASK_ALL, log_lines, logged, running
 from tests.firmware.household import household_ready, start
 
 
@@ -29,7 +29,7 @@ def test_an_answer_after_a_flood_is_shorter_by_one_byte_per_repeater(
         async with App(household.bob) as bob:
             async with App(household.alice) as alice:
                 await household_ready(household, alice, bob, route=False)
-            async with running(scene.configuration(household.alice), scene.state_dir):
+            async with running(scene.configuration(household.alice, ASK_ALL), scene.state_dir):
                 key = household.bob_key.hex()
                 await scene.watcher.wait(f"contacts/{key}")
                 await bob.advert(flood=bool(hops))  # heard: without a path it may flood
@@ -66,7 +66,7 @@ def test_a_late_answer_is_taken_until_the_next_request_then_ignored(scene: Scene
         async with App(household.bob) as bob:
             async with App(household.alice) as alice:
                 await household_ready(household, alice, bob)
-            async with running(scene.configuration(household.alice), scene.state_dir):
+            async with running(scene.configuration(household.alice, ASK_ALL), scene.state_dir):
                 await logged(caplog, "answer of 28 bytes, 19 of them readings")
                 await answer_held_back(8.0)  # after the 5 s wait, before the retry
                 await logged(caplog, "answer of 28 bytes, 19 of them readings (late)")

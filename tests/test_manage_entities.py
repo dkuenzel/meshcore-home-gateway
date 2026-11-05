@@ -32,7 +32,7 @@ from tests.test_discovery import STATE_KEYS, template_keys
 CONFIG = parse_config(
     '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
     'host = "192.0.2.10"\n[mqtt]\nhost = "broker.example.org"\n'
-    'node_id = "radio1"\n'
+    'node_id = "radio1"\n[contacts]\nheard_nodes = "full"\n'
 )
 TOPICS = Topics(CONFIG.mqtt.base_topic, CONFIG.mqtt.node_id)
 UID = "meshcore_home_gateway_radio1"

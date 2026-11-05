@@ -906,7 +906,7 @@
   },
   "contacts.heard_nodes": {
    "answer": "str",
-   "default": "full",
+   "default": "keys",
    "type": "string"
   },
   "contacts.manage": {
@@ -1082,7 +1082,7 @@
   },
   "messages.publish_channels": {
    "answer": "str",
-   "default": "all",
+   "default": "targets",
    "type": "string"
   },
   "messages.queue_size": {
@@ -1278,7 +1278,7 @@
   },
   "telemetry.ask": {
    "answer": "str",
-   "default": "all",
+   "default": "household",
    "type": "string"
   },
   "telemetry.ask_types": {

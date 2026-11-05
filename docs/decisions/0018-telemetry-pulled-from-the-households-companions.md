@@ -44,10 +44,10 @@ decrypted it, while the answer to command 50 (push 0x8C) carries only a tag
 * **Who is polled**: every chat contact on the radio, without configuration. A contact that never
   answers is asked less and less often (back-off up to 6 h, reset by any sign of life: an advert, a
   message, a path update). A contact can be excluded from Home Assistant or the command line.
-  *Amended 2026-11 (audit SEC-016):* with `[telemetry] ask = "household"`, which the installer
-  writes on a new installation, only the contacts the household included and the contact targets
-  and command senders are polled: a companion's *Allow All* is not its owner's consent to be
-  tracked by every gateway that adds it. `"all"` stays the default for running installations.
+  *Amended 2026-11 (audit SEC-016):* with `[telemetry] ask = "household"`, the default since
+  2.0.0, only the contacts the household included and the contact targets and command senders
+  are polled: a companion's *Allow All* is not its owner's consent to be tracked by every gateway
+  that adds it. `"all"` polls every chat contact the household did not exclude.
 * **One request in flight** for the whole gateway: the firmware keeps a single pending request and
   every new one replaces it (`MyMesh.h:192-194`); it never times out a request itself. The gateway
   waits `max(5 s, 1.25 × est_timeout)` from `SENT`, accepts a 0x8B only when its prefix matches the
@@ -136,6 +136,9 @@ items for routes, permissions, GPS states and padding.
   same exclusions, inclusions and lanes. Repeaters and room servers stay out of scope: what the
   household wants of them (status, uptime, their own counters) needs a login, which is
   administration (ADR 0014; deferred as EXT-006 of the review).
+* Amended on 2026-11-05: `[telemetry] ask = "household"` is the default from 2.0.0 on, for every
+  configuration that does not set it; before, only the installer wrote it on a new installation.
+  The first-start hour remains for `ask = "all"`.
 * Frames, routes, permissions, payload and airtime with firmware citations: research for the
   design sprint (2026-10-23), summarised in [protocol.md](../protocol.md) with the implementation.
 * Revisit when MeshCore offers pushed or subscribed telemetry, when command 39 is deprecated, or

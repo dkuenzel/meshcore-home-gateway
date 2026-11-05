@@ -25,8 +25,9 @@ from tests.firmware.conftest import Scene
 from tests.firmware.gateway import Published, log_lines, logged, running
 from tests.firmware.household import LANDMARK, Household, household_ready, start
 
-# in [diagnostics], then a table: the packet log on `rx`, and no telemetry
-SETTINGS = "publish_rx_log = true\n[telemetry]\nenabled = false\n"
+# in [diagnostics], then a table: the packet log on `rx`, no telemetry, and B counted as the
+# household's without being included, as in step 41 of the hardware checklist
+SETTINGS = 'publish_rx_log = true\n[telemetry]\nenabled = false\nask = "all"\n'
 CHECKED_S = 3.0  # the gateway reads the table 2 s after the radio's push
 REPEATED_S = 5.0  # longer than a repeater's longest delay for an advert
 STRANGER = 9  # a stand-in on the air: a stranger's radio in range of A

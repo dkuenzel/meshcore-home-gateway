@@ -519,11 +519,11 @@ delay is 0, only from the advert's own log, `null` without it; with a delay abov
 radio does not report, from a log of its key within 10 s. That log is not authenticated, so treat
 them as a hint.
 
-The nodes are other people's radios ([What the gateway keeps](privacy.md)). With `[contacts]
-heard_nodes = "keys"` each entry has its key, prefix, type and `look_alike` only: `name`,
-`first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`. With
-`"off"`, `total` is 0 and `nodes` empty; `look_alike` and `look_alike_total` still name the
-look-alikes ([configuration](configuration.md#contacts)).
+The nodes are other people's radios ([What the gateway keeps](privacy.md)). By default
+(`[contacts] heard_nodes = "keys"`) each entry has its key, prefix, type and `look_alike` only:
+`name`, `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`;
+`"full"` fills them, as in the example. With `"off"`, `total` is 0 and `nodes` empty; `look_alike`
+and `look_alike_total` still name the look-alikes ([configuration](configuration.md#contacts)).
 
 ## History: `history`
 
@@ -575,8 +575,9 @@ carries. It comes after the contact's document and the index, with `request`, `i
 while the newest advert is not checked, for a further advert that still carries one, when it
 stops, or at a restart. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
-adverts with invented keys does not flood the bus. With `[contacts] heard_nodes = "keys"` its
-`name`, `hops`, `snr_db`, `rssi_dbm` and `heard_at` are `null`; with `"off"` there is none.
+adverts with invented keys does not flood the bus. By default (`[contacts] heard_nodes = "keys"`)
+its `name`, `hops`, `snr_db`, `rssi_dbm` and `heard_at` are `null`; `"full"` fills them, as in
+the example; with `"off"` there is none.
 `look_alike` and `name_taken` are as in [`nodes`](#nodes-heard-nodes).
 
 ## Managing contacts: `add_contact` and `contacts/<key>/remove`
@@ -668,13 +669,12 @@ nodes while it counts as heard.
 
 ## Excluding a contact from telemetry: `contacts/<key>/telemetry`
 
-The gateway asks every companion of its radio (with `[telemetry] ask_types`, also every sensor)
-for its telemetry unless the household excluded it
-([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)); with `[telemetry]
-ask = "household"` only the companions the household included and the contact targets and command
-senders, unless excluded ([configuration](configuration.md#telemetry)). Here `on` includes and
-`off` excludes; below, "excluded" means not asked, which with `household` is also a contact not
-included.
+The gateway asks the companions of its radio (with `[telemetry] ask_types`, also the sensors) that
+the household included, and the contact targets and command senders, for their telemetry, unless
+excluded ([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md)); with
+`[telemetry] ask = "all"` every one that the household did not exclude
+([configuration](configuration.md#telemetry)). Here `on` includes and `off` excludes; below,
+"excluded" means not asked, which with `household` is also a contact not included.
 `contacts/<key>/telemetry`, `<key>` the full key in lower-case hex, takes `on` or `off` (spaces
 around them are ignored), or a JSON object such as `{"telemetry": "off", "id": "x1", "forget":
 true}`: `id` as for the other contact requests, and `forget` (only with `off`) also deletes the

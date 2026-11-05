@@ -177,7 +177,11 @@ def test_a_new_node_is_heard_with_its_signal_but_without_its_position(tmp_path: 
     radio = EmulatedRadio(contacts=[ALICE])
 
     async def main() -> None:
-        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+        async with running(make_config('[contacts]\nheard_nodes = "full"'), radio, tmp_path) as (
+            _,
+            bus,
+            _notes,
+        ):
             radio.emit(advert_log(CAROL, hops=3))
             radio.advertise(CAROL)
             event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")

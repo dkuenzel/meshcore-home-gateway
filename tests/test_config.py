@@ -538,7 +538,7 @@ def test_the_shipped_example_is_valid() -> None:
     text = example.read_text(encoding="utf-8")
     assert "\n# enabled = true " in text.split("[telemetry]")[1]
     assert "\n# readings_days = 30 " in text.split("[history]")[1]
-    assert "contacts telemetry KEY off" in text
+    assert "contacts telemetry KEY on" in text
 
 
 def test_every_setting_can_be_answered() -> None:
@@ -927,12 +927,12 @@ def test_telemetry_is_on_by_default() -> None:
     assert "telemetry.enabled=true" in config_answers(FULL).splitlines()
 
 
-def test_telemetry_asks_every_companion_unless_only_the_households() -> None:
-    """SEC-016: `ask = "household"` asks the contacts the household included and the protected
-    keys only; the default stays `all`."""
-    assert parse_config(MINIMAL).telemetry.ask == "all"
-    household = parse_config(MINIMAL + '\n[telemetry]\nask = "household"\n')
-    assert household.telemetry.ask == "household"
+def test_telemetry_asks_only_the_households_companions_unless_all() -> None:
+    """SEC-016: `ask = "household"`, the default since 2.0.0, asks the contacts the household
+    included and the protected keys only; `all` every companion not excluded."""
+    assert parse_config(MINIMAL).telemetry.ask == "household"
+    every = parse_config(MINIMAL + '\n[telemetry]\nask = "all"\n')
+    assert every.telemetry.ask == "all"
     with pytest.raises(ConfigError, match=r"telemetry\.ask: one of all, household, got 'some'"):
         parse_config(MINIMAL + '\n[telemetry]\nask = "some"\n')
 
@@ -972,9 +972,9 @@ def test_home_assistant_controls_hidden_targets_and_entity_prefix() -> None:
 
 def test_contacts_are_managed_on_request_by_default() -> None:
     assert parse_config(MINIMAL).contacts.manage is True
-    assert parse_config(MINIMAL).contacts.heard_nodes == "full"
-    keys = parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "keys"\n')
-    assert keys.contacts.heard_nodes == "keys"
+    assert parse_config(MINIMAL).contacts.heard_nodes == "keys"  # SEC-015, since 2.0.0
+    full = parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "full"\n')
+    assert full.contacts.heard_nodes == "full"
     with pytest.raises(ConfigError, match=r"contacts\.heard_nodes: one of full, keys, off"):
         parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "names"\n')
     assert parse_config(MINIMAL + "\n[contacts]\nmanage = false\n").contacts.manage is False

@@ -15,7 +15,7 @@ from meshcore_home_gateway.protocol.codes import ContactFlag
 from tests.firmware.air import Transmission
 from tests.firmware.app import BY_CONTACT, App
 from tests.firmware.conftest import Scene
-from tests.firmware.gateway import log_lines, running
+from tests.firmware.gateway import ASK_ALL, log_lines, running
 from tests.firmware.household import Household, household_ready, start
 
 ANSWER_S = 6.5  # the gateway waits 5 s for a direct answer
@@ -75,7 +75,7 @@ def test_b_answers_only_what_it_allows_the_gateway(scene: Scene) -> None:
             (lambda: bob.remove_contact(alice_key), None),
         ]
         outcomes = []
-        async with running(scene.configuration(household.alice), scene.state_dir):
+        async with running(scene.configuration(household.alice, ASK_ALL), scene.state_dir):
             for change, state in steps:
                 await change()
                 outcomes.append(await next_outcome(state))

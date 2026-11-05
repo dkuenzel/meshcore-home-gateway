@@ -40,8 +40,8 @@ direct message needs, and every further grant then has an owner and a place:
   history) as data, never acted on, and rate-limited per sender; it may be sent to over
   `contacts/<key>/send` by whoever the broker's ACL lets write that topic; it gets a device in
   Home Assistant ([ADR 0017](0017-contacts-on-the-radio-each-with-its-own-device.md)).
-* **The household mark** grants telemetry: with `[telemetry] ask = "household"`, which the
-  installer gives new installations, only the contacts the household included are asked, and the
+* **The household mark** grants telemetry: with `[telemetry] ask = "household"`, the default
+  since 2.0.0, only the contacts the household included are asked, and the
   protected ones (contact targets and command senders); with `ask = "all"`, every chat contact
   the household did not exclude. The marks are kept in `telemetry-excluded.json` (`excluded`,
   `included`) and set from Home Assistant, MQTT or the command line (SEC-016).
@@ -58,7 +58,7 @@ direct message needs, and every further grant then has an owner and a place:
   neighbour's handheld stays a contact the household can write to and nothing more.
 * Good, because each grant is visible where it is made: the configuration (allowlist, targets,
   exposure) or the marks file, which a backup keeps.
-* Bad, because a household on `ask = "all"` (the default of existing configurations) still asks
+* Bad, because a household on `ask = "all"` (the default before 2.0.0) still asks
   every chat contact until it excludes the strangers or switches.
 * Bad, because Home Assistant's users still share one set of controls: who may act on contacts is
   decided per gateway, not per user.
@@ -99,4 +99,8 @@ codes), `tests/test_announcer.py` and `tests/test_manage_entities.py` (the expos
 
 The privacy consequences are in [privacy.md](../privacy.md); the actors and boundaries in the
 [threat model](../threat-model.md). Revisit if Home Assistant gains per-user permissions for
-entities, or when the defaults of 2.0.0 are decided (`ask`, `publish_channels`, `heard_nodes`).
+entities.
+
+* Amended on 2026-11-05: the defaults of 2.0.0 are decided. Every configuration that does not set
+  them gets `[telemetry] ask = "household"`, `[messages] publish_channels = "targets"` and
+  `[contacts] heard_nodes = "keys"`; before, only the installer wrote them on a new installation.

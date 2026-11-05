@@ -724,7 +724,11 @@ def test_a_heard_node_picked_in_the_select_is_added(tmp_path: Path) -> None:
     dave = DAVE.public_key.hex()
 
     async def main() -> None:
-        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+        async with running(make_config('[contacts]\nheard_nodes = "full"'), radio, tmp_path) as (
+            _,
+            bus,
+            _n,
+        ):
             await heard(bus, radio, DAVE)
             await bus.wait_for("/manage_contacts/config", lambda d: label(DAVE) in options(d))
             request(bus, "add", label(DAVE), node_label=True)
