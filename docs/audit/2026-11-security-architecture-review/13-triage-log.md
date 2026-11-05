@@ -34,7 +34,8 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
   decision the records rule out, is deferred or rejected with the reason.
 * Repository settings (immutable releases, code scanning, the description, labels) are changed
   where the review suggested it; a second GitHub identity for the agent and branch protection stay
-  with the maintainer.
+  with the maintainer. On 2026-11-05 the maintainer added a ruleset for `main` and accepted the
+  shared identity ([#67](https://github.com/dkuenzel/meshcore-home-gateway/pull/67)).
 
 ## Security findings
 
@@ -172,13 +173,13 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
-| SUP-001 | fix | `CODEOWNERS`, a reviewer's checklist in the pull request template and a note on the agent's inputs. A separate GitHub identity for the agent and required reviews are deferred to the maintainer (an account and a ruleset only the maintainer can create); a release cooldown is deferred with them | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| SUP-001 | fix | `CODEOWNERS`, a reviewer's checklist in the pull request template and a note on the agent's inputs; a release candidate or a release is tagged a day after its version reached `main` (`release-due.yml`). A separate GitHub identity for the agent with required reviews is not set up: on 2026-11-05 the maintainer accepted the shared identity, as a mandatory review would make every change wait | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54), [#67](https://github.com/dkuenzel/meshcore-home-gateway/pull/67) |
 | SUP-002 | fix | The release workflow builds in a job with a minimal, hash-pinned environment, a rebuild on another runner image must give the same `SHA256SUMS`, and only then is it attested | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | SUP-003 | fix | The installer's pinned digests (OPS-002); immutable releases switched on for the repository | [#53](https://github.com/dkuenzel/meshcore-home-gateway/pull/53); immutable releases: repository settings, 2026-11-02 |
 | SUP-004 | fix | `make lock` and Dependabot write the same form | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | SUP-005 | fix | `pip-audit` against every lock file in CI (`make audit`; the Home Assistant lock warns); code scanning switched on; the 43 open alerts of the Home Assistant lock resolved by overrides (Pillow 13.0.0, certifi 2026.10.19, uv 0.13.4) | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54); code scanning: repository settings, 2026-11-02 |
 | SUP-006 | fix | Translations reviewed by a second speaker; security-relevant texts carry a translators' note | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
-| SUP-007 | fix | The tag ruleset exported to `.github/rulesets/`; `SECURITY.md` names the repository's security settings; branch protection of `main` stays with the maintainer | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| SUP-007 | fix | The tag ruleset exported to `.github/rulesets/`; `SECURITY.md` names the repository's security settings; `main` has a ruleset since 2026-11-05 (pull requests and squash merges only, the CI jobs required, no force push or deletion), exported beside it | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54), [#67](https://github.com/dkuenzel/meshcore-home-gateway/pull/67) |
 
 ## Improvement opportunities
 
@@ -210,7 +211,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | IMP-024 | fix | Through OPS-004 and OPS-005 | [#52](https://github.com/dkuenzel/meshcore-home-gateway/pull/52) |
 | IMP-025 | fix | Outage examples and a paragraph for shared households in the guide | [#44](https://github.com/dkuenzel/meshcore-home-gateway/pull/44) |
 | IMP-026 | fix | Through ARC-001 | [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
-| IMP-027 | fix | Through SUP-001 (code owners, checklist); identity and cooldown deferred to the maintainer | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
+| IMP-027 | fix | Through SUP-001 (code owners, checklist, the release cooldown; the shared identity accepted) | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54), [#67](https://github.com/dkuenzel/meshcore-home-gateway/pull/67) |
 | IMP-028 | fix | Through SUP-002 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-029 | fix | Through SUP-005 | [#54](https://github.com/dkuenzel/meshcore-home-gateway/pull/54) |
 | IMP-030 | fix | Through DOC-011, DOC-013 and CODE-006 | [#55](https://github.com/dkuenzel/meshcore-home-gateway/pull/55), [#61](https://github.com/dkuenzel/meshcore-home-gateway/pull/61) |
@@ -240,7 +241,7 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 | ID | Decision | Reasoning | Reference |
 | --- | --- | --- | --- |
 | EXT-001 | defer | An add-on is a second deployment path without the systemd sandbox; it cannot be tested here without Home Assistant OS, and it revisits ADR 0002 and ADR 0006. Back with a test host and a record | – |
-| EXT-002 | defer | PyPI needs an account and a trusted publisher, a Debian package and an image each a channel to support; the maintainer decides which to open | – |
+| EXT-002 | defer | PyPI needs an account and a trusted publisher, a Debian package and an image each a channel to support; on 2026-11-05 the maintainer decided to open none for now | – |
 | EXT-003 | defer | BLE needs a new runtime dependency (a record under ADR 0005), BlueZ in the container and hardware to test | – |
 | EXT-004 | fix | Split into issue #23 and resolved there: `docs/mqtt-api.asyncapi.yaml`, an AsyncAPI 3.1 document that `tools/asyncapi.py` generates from the interface snapshot (`make interface`), tested against the snapshot and published with each release | [#23](https://github.com/dkuenzel/meshcore-home-gateway/issues/23), [#64](https://github.com/dkuenzel/meshcore-home-gateway/pull/64) |
 | EXT-005 | fix | Sensor nodes (MeshCore's sensor firmware) as telemetry candidates: with `"sensor"` in `[telemetry] ask_types` (companions only by default) they are asked as companions are, exclusions, inclusions, `ask`, switch and state alike; `docs/companions.md` (Sensors) says that a sensor answers only a radio in its access list | [#63](https://github.com/dkuenzel/meshcore-home-gateway/pull/63) |

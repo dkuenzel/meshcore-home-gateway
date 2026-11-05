@@ -52,13 +52,16 @@ system. The threat model, with its assets, actors and trust boundaries, is
 
 ## How the repository and the releases are protected
 
-What GitHub enforces for this repository, as set on 2026-11-03 (SUP-007). The tag ruleset is
-exported to [`.github/rulesets/`](.github/rulesets/); the settings themselves are the authority
-(`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them).
+What GitHub enforces for this repository, as set on 2026-11-03 and 2026-11-05 (SUP-007). The
+rulesets are exported to [`.github/rulesets/`](.github/rulesets/); the settings themselves are
+the authority (`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them).
 
-- `main` has no branch protection: changes arrive by pull request and squash merge, after CI, by
-  practice. Whether a ruleset enforces that, and a review by a second identity, is the
-  maintainer's to decide (SUP-001).
+- `main` (ruleset `main`): changes arrive by pull request and squash merge only, once the CI
+  jobs passed; no force push, no deletion. No review is required: a second identity for the
+  agent, whose approval would mean something, would make every change wait for the
+  maintainer, who accepted the shared identity instead (SUP-001, 2026-11-05).
+- A release candidate or a release is tagged a day after its version reached `main`
+  (`release-due.yml`): time to stop a merged change before it is signed and published.
 - Release tags `v*` (ruleset `v-star`): cannot be moved or deleted
   ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)).
 - Releases are immutable once published. Each carries Sigstore-signed build provenance (SLSA Build
@@ -70,7 +73,7 @@ exported to [`.github/rulesets/`](.github/rulesets/); the settings themselves ar
 - [`.github/CODEOWNERS`](.github/CODEOWNERS) names the security-relevant paths; the pull request
   template's review checklist asks to read their diff.
 - Most changes are written by an AI coding agent that works through the maintainer's GitHub login
-  on the maintainer's computer; its commits name it as their author, and the maintainer reviews
-  and merges them ([CONTRIBUTING.md](CONTRIBUTING.md#changes-written-by-an-agent)). The login's
+  on the maintainer's computer; its commits name it as their author, and it merges them once the
+  required jobs passed ([CONTRIBUTING.md](CONTRIBUTING.md#changes-written-by-an-agent)). The login's
   protection (two-factor authentication, the scope of its token) is the account's and not visible
   here.

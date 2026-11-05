@@ -283,6 +283,36 @@ def test_main_tags_the_commit_that_changed_the_version(repo: Repo) -> None:
     assert plan.tag() == ("", False, False)
 
 
+def test_a_pre_release_is_due_at_once(repo: Repo, capsys: pytest.CaptureFixture[str]) -> None:
+    repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
+    head = repo.commit("1.0.0a1", "## [Unreleased]\n\n" + section("1.0.0a1", "A start."))
+    assert plan.due(0) == ("v1.0.0a1", head, False, 0)
+    assert plan.main(["tag"]) == 0  # CI on main tags it with the push
+    assert capsys.readouterr().out.endswith("\nwaits=false\n")
+
+
+def test_a_candidate_is_due_a_day_after_its_version_commit(repo: Repo) -> None:
+    """SUP-001: the time to stop a merged change before it is signed and published counts from
+    the commit that wrote the version, also when main moved on since."""
+    repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    candidate = repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    repo.env["GIT_COMMITTER_DATE"] = "@1800050000 +0000"
+    repo.commit("1.0.0rc1", "## [Unreleased]\n\n### Fixed\n\n- Later.\n\n" + FIRST)
+    day = plan.COOLDOWN_S
+    assert plan.due(1800000000 + day - 60) == ("v1.0.0rc1", candidate, False, 60)
+    assert plan.due(1800000000 + day) == ("v1.0.0rc1", candidate, False, 0)
+    repo.git("tag", "-a", "v1.0.0rc1", "-m", "v1.0.0rc1", candidate)
+    assert plan.due(1800000000 + day) == ("v1.0.0rc1", candidate, True, 0)
+
+
+def test_a_release_is_due_a_day_after_its_version_commit(repo: Repo) -> None:
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    head = repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    assert plan.due(1800000000) == ("v1.0.0", head, False, plan.COOLDOWN_S)
+
+
 def test_main_refuses_a_version_tagged_elsewhere(repo: Repo) -> None:
     repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
     repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
@@ -306,9 +336,12 @@ def test_main_tags_a_release_only_when_it_is_the_next(repo: Repo) -> None:
 
 def test_the_command_line(repo: Repo, capsys: pytest.CaptureFixture[str]) -> None:
     repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
-    repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    head = repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
     assert plan.main(["tag"]) == 0
-    assert capsys.readouterr().out == "tag=v1.0.0rc1\nexists=false\nfinal=false\n"
+    assert capsys.readouterr().out == "tag=v1.0.0rc1\nexists=false\nfinal=false\nwaits=true\n"
+    assert plan.main(["due"]) == 0
+    due = capsys.readouterr().out
+    assert due.startswith(f"tag=v1.0.0rc1\nsha={head}\nexists=false\ndue=false\nleft=")
     assert plan.main(["check"]) == 0
     assert capsys.readouterr().out == (
         "releases v1.0.0rc1 as a pre-release\npublic interface: no release yet to compare with\n"

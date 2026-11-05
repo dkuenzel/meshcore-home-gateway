@@ -419,12 +419,16 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    the commit, not the working tree, so commit first.
    `RELEASE_TAG=vX.Y.Z make release` builds the release files into `dist/release/` as the
    workflow does. A pull request that keeps `__version__` releases nothing.
-3. After the merge, CI on `main` tags the merge commit once every job passed on it, and starts
-   `release.yml` on the tag (job *tag and release*); a push of several commits is tagged on its
-   last one. A re-run, of the failed job or of all jobs, is safe: it finds the tag on the same
-   commit and starts the release only if there is none and none is running. Until a release is
-   tagged, the release plan of every other change refuses ("no tag vX.Y.Z here"): run it again
-   once the tag is there.
+3. After the merge of a pre-release, CI on `main` tags the merge commit once every job passed on
+   it, and starts `release.yml` on the tag (job *tag and release*); a push of several commits is
+   tagged on its last one. A release candidate or a release waits a day (SUP-001): the workflow
+   `release-due.yml` looks every hour and tags the commit that wrote the version once it has
+   been on `main` for 24 hours, then starts the release the same way. Until then, a revert of the
+   version stops it; a published release cannot be withdrawn. A re-run, of the failed job or of
+   all jobs, is safe: it finds the tag on the same commit and starts the release only if there
+   is none and none is running. Until a release is tagged, the release plan of every other
+   change refuses ("no tag vX.Y.Z here"): merge other changes before the version change or
+   after the tag, and run it again once the tag is there.
 4. The workflow runs `make check` in one job and builds the release files in another, in an
    environment of the build tools alone
    (`make release VENV=.venv-release REQUIREMENTS=requirements/release.txt`), so that no test or

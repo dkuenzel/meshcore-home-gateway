@@ -409,6 +409,68 @@ def test_release_tags_cannot_be_moved_or_deleted() -> None:
     assert {"deletion", "non_fast_forward", "update"} <= {rule["type"] for rule in tags["rules"]}
 
 
+GITHUB_ACTIONS = 15368  # the app id of GitHub Actions: no other app can report a required check
+
+
+def test_main_takes_pull_requests_that_passed_every_job_of_ci() -> None:
+    """SUP-007: no push, force push or deletion on main, and a squash merge only after the jobs
+    CI runs on a pull request passed. A job renamed in ci.yml without the ruleset would block
+    every merge, so the required checks are the names of those jobs, the matrix spelt out."""
+    main = ruleset("main")
+    assert (main["target"], main["enforcement"]) == ("branch", "active")
+    assert main["conditions"]["ref_name"]["include"] == ["~DEFAULT_BRANCH"]
+    rules = {rule["type"]: rule.get("parameters", {}) for rule in main["rules"]}
+    assert {"deletion", "non_fast_forward", "pull_request", "required_status_checks"} <= set(rules)
+    assert rules["pull_request"]["allowed_merge_methods"] == ["squash"]
+    checks = rules["required_status_checks"]["required_status_checks"]
+    assert {check["integration_id"] for check in checks} == {GITHUB_ACTIONS}
+    names = set()
+    for text in workflow_jobs("ci.yml").values():
+        if "github.event_name == 'push'" in text:  # the release: on main, never on a pull request
+            continue
+        [name] = re.findall(r"^    name: (.+)$", text, flags=re.MULTILINE)
+        versions = re.findall(r"^\s+python: \[(.+)\]$", text, flags=re.MULTILINE)
+        values = [v.strip(' "') for v in versions[0].split(",")] if versions else [""]
+        names |= {name.replace("${{ matrix.python }}", value) for value in values}
+    assert {check["context"] for check in checks} == names
+
+
+def test_a_candidate_or_a_release_is_tagged_a_day_after_its_version_commit() -> None:
+    """SUP-001: CI's job tags a pre-release at once and leaves a release candidate or a release to
+    release-due.yml, which every hour tags the version commit of main once it is due."""
+    release = workflow_jobs("ci.yml")["release"]
+    assert "python3 -I tools/release_plan.py tag --base" in release
+    assert release.count("steps.plan.outputs.waits != 'true'") == 2
+    due = (ROOT / ".github" / "workflows" / "release-due.yml").read_text(encoding="utf-8")
+    assert re.search(r'^    - cron: "\d+ \* \* \* \*"$', due, flags=re.MULTILINE)
+    assert "python3 -I tools/release_plan.py due" in due
+    assert "SHA: ${{ steps.plan.outputs.sha }}" in due
+
+
+def _numbers(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def test_the_home_assistant_lock_keeps_its_overrides() -> None:
+    """SUP-005: home-assistant/overrides.txt raises versions past known vulnerabilities, and only
+    `make ha-lock` applies it: Dependabot's lock in #56 dropped them. Every package it names is
+    locked at a version it allows."""
+    home_assistant = ROOT / "home-assistant"
+    overrides = (home_assistant / "overrides.txt").read_text(encoding="utf-8")
+    raised = re.findall(r"^([\w.-]+)(>=|==)([\d.]+)$", overrides, flags=re.MULTILINE)
+    lock = (home_assistant / "requirements.txt").read_text(encoding="utf-8")
+    locked = {
+        name.lower().replace("_", "-"): version
+        for name, version in re.findall(r"^([\w.-]+)==([\d.]+) ", lock, flags=re.MULTILINE)
+    }
+    assert raised
+    for name, operator, version in raised:
+        found = locked.get(name.lower().replace("_", "-"))
+        assert found is not None, f"{name} is not in the lock: make ha-lock"
+        allowed = _numbers(found) >= _numbers(version) if operator == ">=" else found == version
+        assert allowed, f"{name}=={found} in the lock, {operator}{version} in overrides.txt"
+
+
 def test_make_targets_are_read_from_commands() -> None:
     assert make_targets("make check") == {"check"}
     assert make_targets('make --jobs="$(nproc)" firmware-test') == {"firmware-test"}

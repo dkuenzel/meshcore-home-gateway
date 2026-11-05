@@ -1,0 +1,67 @@
+# Release cooldown (SUP-001, ADR 0022, docs/development.md): a release candidate or a release is
+# tagged a day after its version commit reached main, so that a merged change can still be stopped
+# before release.yml signs and publishes it; releases are immutable. CI's job "tag and release"
+# tags a pre-release at once. This run tags the version commit of main once it is due and starts
+# release.yml on the tag, as that job does; a later run finds the tag and the release and does
+# nothing. Tags are not moved or deleted (the tag ruleset).
+name: Release due
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  due:
+    name: tag a release that is due
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # the tag
+      actions: write # start release.yml on it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the version commit, the tags and the release candidate
+      - id: plan
+        name: The version of main, and whether it is due
+        run: python3 -I tools/release_plan.py due >>"$GITHUB_OUTPUT"
+      - name: Annotated tag on the version commit
+        if: steps.plan.outputs.due == 'true' && steps.plan.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          object=$(gh api "repos/$GH_REPO/git/tags" -f tag="$TAG" -f object="$SHA" \
+            -f type=commit -f message="meshcore-home-gateway ${TAG#v}" --jq .sha)
+          gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$object" >/dev/null
+          echo "tagged $SHA as $TAG"
+      - name: Start the release on the tag
+        if: steps.plan.outputs.due == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          running=$(gh run list --workflow release.yml --branch "$TAG" --json status \
+            --jq '[.[] | select(.status != "completed")] | length')
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG is released already"
+          elif [[ $running != 0 ]]; then
+            echo "release.yml is running on $TAG already"
+          else
+            gh workflow run release.yml --ref "$TAG"
+            echo "release.yml started on $TAG"
+          fi
