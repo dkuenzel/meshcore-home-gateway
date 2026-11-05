@@ -437,7 +437,8 @@ def test_main_takes_pull_requests_that_passed_every_job_of_ci() -> None:
 
 def test_a_candidate_or_a_release_is_tagged_a_day_after_its_version_commit() -> None:
     """SUP-001: CI's job tags a pre-release at once and leaves a release candidate or a release to
-    release-due.yml, which every hour tags the version commit of main once it is due."""
+    release-due.yml, which every hour tags the version commit of main once it is due and CI passed
+    on it, and starts its release once: it had tagged 2.0.0a1 before CI on main had finished."""
     release = workflow_jobs("ci.yml")["release"]
     assert "python3 -I tools/release_plan.py tag --base" in release
     assert release.count("steps.plan.outputs.waits != 'true'") == 2
@@ -445,6 +446,9 @@ def test_a_candidate_or_a_release_is_tagged_a_day_after_its_version_commit() -> 
     assert re.search(r'^    - cron: "\d+ \* \* \* \*"$', due, flags=re.MULTILINE)
     assert "python3 -I tools/release_plan.py due" in due
     assert "SHA: ${{ steps.plan.outputs.sha }}" in due
+    assert 'gh run list --workflow ci.yml --commit "$SHA" --event push --status success' in due
+    assert "        if: steps.tested.outputs.passed == 'true'\n" in due
+    assert 'gh run list --workflow release.yml --branch "$TAG" --json status --jq length' in due
 
 
 def _numbers(version: str) -> tuple[int, ...]:
