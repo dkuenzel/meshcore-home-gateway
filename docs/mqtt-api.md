@@ -805,9 +805,11 @@ decides whether the packet is for it — useful to compare antennas or locations
 With `[homie] enabled = true` ([configuration.md](configuration.md#homie)) the gateway also
 publishes the radio's contacts as one device of the [Homie convention 4.0.0](https://homieiot.github.io/specification/spec-core-v4_0_0/),
 which openHAB and the other Homie controllers discover without configuration. It is fed by the
-documents above (`state` and `contacts/<key>`): it shows nothing they do not. `<homie_device>` is
-`meshcore-<node_id>` with `_` as `-` (`meshcore-radio1`): Homie's IDs are lower-case letters,
-digits and `-`.
+documents above (`state` and `contacts/<key>`): it shows nothing they do not. Its documents have
+unit tests; openHAB's side is maintained by those who use it, as releases are checked with Home
+Assistant ([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)).
+`<homie_device>` is `meshcore-<node_id>` with `_` as `-` (`meshcore-radio1`): Homie's IDs are
+lower-case letters, digits and `-`.
 
 Homie wants the device's `$state` as the last will of its connection, and a connection has one
 last will, which the gateway's carries for `availability`. So the device has a connection of its

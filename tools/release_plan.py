@@ -415,8 +415,8 @@ def validate(written: Version, rev: str) -> None:
         raise PlanError(msg)
     if not ships_alike(rev, f"v{candidates[-1]}"):
         msg = (
-            f"{written} does not ship the program of v{candidates[-1]}, which the hardware"
-            f" checklist ran with: in {', '.join(SHIPPED)} only __version__ may change"
+            f"{written} does not ship the program of v{candidates[-1]}, which the release"
+            f" check ran with: in {', '.join(SHIPPED)} only __version__ may change"
         )
         raise PlanError(msg)
 

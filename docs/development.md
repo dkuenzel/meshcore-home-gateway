@@ -386,14 +386,17 @@ major version, a feature (a slice of the roadmap,
 Every finished increment is published as a pre-release, so each step is visible, signed and
 installable: the increments of a feature as `X.Y.0aN` of the minor version it leads to (the
 telemetry slices 6a, 6b and 6c as `1.1.0a1`, `1.1.0a2`, `1.1.0a3`), fixes as `X.Y.ZaN`. A
-release candidate `X.Y.ZrcN` is what the hardware checklist runs with; the release follows when it
-passes. `releases/latest` and the installer's default never pick a pre-release
+release candidate `X.Y.ZrcN` is what the [release check](testing.md#release-check) runs with
+([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)); the release follows when
+it passes. `releases/latest` and the installer's default never pick a pre-release
 ([deployment.md](deployment.md)). Nobody tags by hand
 ([ADR 0022](decisions/0022-releases-tagged-by-ci-on-main.md)):
 
-1. For a release (not a pre-release): run the [hardware checklist](testing.md#hardware-checklist)
-   with the release candidate, the core steps always and the steps of the features that changed
-   since the last release. The release ships the program of that candidate: only `__version__`
+1. For a release (not a pre-release): the release check with the release candidate. CI passed on
+   it; the maintainer updates his installation with the candidate's installer, its self-test
+   passes, and he uses Home Assistant as every day (checks R1–R5 of
+   [testing.md](testing.md#release-check)); the pull request of the release names the Home
+   Assistant version. The release ships the program of that candidate: only `__version__`
    may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`. So before the
    candidate, a change raises `RELEASED_AFTER` in `src/meshcore_home_gateway/radio/session.py` to
    the date of the last release: the gateway takes a host clock before it, or more than ten years
@@ -403,9 +406,8 @@ passes. `releases/latest` and the installer's default never pick a pre-release
    `src/meshcore_home_gateway/__init__.py`, runs `make interface` (the AsyncAPI document names the
    version), adds its row to the table of Home Assistant releases tested with
    ([home-assistant.md](home-assistant.md#requirements)) and moves the *Unreleased* entries of
-   `CHANGELOG.md`
-   under `## [X.Y.Z] - YYYY-MM-DD` (a pre-release's section says that the hardware checklist was
-   not run for it). The version must be the next one, which `make release-plan` and the CI job
+   `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD` (a pre-release's section says that it had no
+   release check). The version must be the next one, which `make release-plan` and the CI job
    *release plan* check: the kind of change comes from the changelog entries since the last
    release (an entry that starts with `**Breaking:**` or a `### Removed` section: major; Added,
    Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version

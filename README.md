@@ -52,7 +52,8 @@ flowchart LR
   ([`docs/home-assistant.md`](docs/home-assistant.md#dashboard)).
 - **openHAB and other Homie controllers:** with `[homie] enabled = true` the contacts are a Homie
   device that they discover on their own, with battery, position, last heard and a field to send
-  ([`docs/mqtt-api.md`](docs/mqtt-api.md#homie-homiehomie_device)).
+  ([`docs/mqtt-api.md`](docs/mqtt-api.md#homie-homiehomie_device)); maintained by those who use
+  it, releases are checked with Home Assistant.
 - **Prometheus, and the API for machines:** configurations for the exporter mqtt2prometheus
   ([`contrib/mqtt2prometheus`](contrib/mqtt2prometheus/README.md)); the MQTT API as an AsyncAPI
   document generated from the code and attached to each release
@@ -76,7 +77,7 @@ companion firmware 1.18.0 over USB, in a Proxmox container. Its four public inte
 Semantic Versioning: the MQTT API, the configuration format, the command line and Home Assistant
 discovery ([compatibility](docs/development.md#compatibility)); see [`CHANGELOG.md`](CHANGELOG.md).
 Every finished step is published as a signed pre-release on the repository's releases page, every
-release after the [hardware checklist](docs/testing.md#hardware-checklist).
+release after a [release check](docs/testing.md#release-check) on a real installation.
 
 ## Quick start
 
@@ -175,7 +176,7 @@ the bus.
 | [`docs/companions.md`](docs/companions.md) | Setting up the household's companions for telemetry |
 | [`docs/deployment.md`](docs/deployment.md) | Proxmox installer, manual installation, updates, operations |
 | [`docs/protocol.md`](docs/protocol.md) | The companion protocol subset, with firmware sources |
-| [`docs/testing.md`](docs/testing.md) | Test suites and the hardware checklist |
+| [`docs/testing.md`](docs/testing.md) | Test suites and the release check |
 | [`docs/platform-notes.md`](docs/platform-notes.md) | What we verified about Proxmox VE, whiptail, Mosquitto, Home Assistant and the firmware, with the evidence |
 | [`docs/development.md`](docs/development.md) | Development workflow and releases |
 | [`docs/privacy.md`](docs/privacy.md) | What the gateway keeps of the household and of other people, where, how long, how to switch it off |
