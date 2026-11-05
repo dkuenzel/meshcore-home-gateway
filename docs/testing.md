@@ -210,7 +210,7 @@ stands in for Home Assistant's *Add heard node*. The restart test stops and star
 one state directory. A stand-in on the air (`StandIn` in `air.py`) plays a stranger's radio that
 sends A copies of B's adverts with a path of its own.
 
-The whole suite takes about 14 minutes on four cores, the longest test about 2 minutes, so none is
+The whole suite takes about 17 minutes on four cores, the longest test about 2 minutes, so none is
 marked slow. A failed scenario's report ends with the last lines of each node's log
 and of the air's; `--log-file=gateway.log --log-file-level=DEBUG` keeps the gateway's own log.
 

@@ -19,7 +19,9 @@ from tests.firmware.household import Household, household_ready, start
 
 CHANNEL = 0  # Public: every firmware holds its key, so A and B share it
 LONG = "Long " * 40  # 200 bytes, more than the 160 of a direct message
-FINAL = {"sent", "confirmed", "failed", "expired", "rejected", "duplicate"}
+# the final events (docs/mqtt-api.md, Delivery): `sent` ends a channel message, not a direct one
+CHANNEL_FINAL = ("sent", "failed", "expired", "rejected", "duplicate")
+DIRECT_FINAL = ("confirmed", "failed", "expired", "rejected", "duplicate")
 
 
 def settings(household: Household) -> str:
@@ -59,7 +61,9 @@ def test_what_the_gateway_sends_and_receives(scene: Scene) -> None:
                 await watcher.wait(f"contacts/{bob_key}")
 
                 watcher.publish("send/public", "Hello channel")
-                sent = (await watcher.wait("delivery", event("Hello channel", *FINAL))).json()
+                sent = (
+                    await watcher.wait("delivery", event("Hello channel", *CHANNEL_FINAL))
+                ).json()
                 assert sent["event_type"] == "sent", sent
                 queued = [e.json() for e in watcher.on("delivery")]
                 assert {"queued", "sent"} <= {
@@ -72,7 +76,9 @@ def test_what_the_gateway_sends_and_receives(scene: Scene) -> None:
                 assert shown.channel_index == CHANNEL
 
                 watcher.publish("send/bob", "Hello Bob")
-                confirmed = (await watcher.wait("delivery", event("Hello Bob", *FINAL))).json()
+                confirmed = (
+                    await watcher.wait("delivery", event("Hello Bob", *DIRECT_FINAL))
+                ).json()
                 assert confirmed["event_type"] == "confirmed", confirmed
                 assert confirmed["rtt_ms"] > 0
                 assert confirmed["suspect"] is False
@@ -88,7 +94,7 @@ def test_what_the_gateway_sends_and_receives(scene: Scene) -> None:
                         lambda e: (
                             e is not None
                             and e["text"].startswith("Long Long")
-                            and e["event_type"] in FINAL
+                            and e["event_type"] in DIRECT_FINAL
                         ),
                     )
                 ).json()
