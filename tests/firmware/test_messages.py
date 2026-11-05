@@ -122,7 +122,8 @@ def test_what_the_gateway_sends_and_receives(scene: Scene) -> None:
         assert direct["command"] is None
         assert channel["event_type"] == "channel"
         assert (channel["channel_index"], channel["target"]) == (CHANNEL, "public")
-        assert channel["sender_name"] == household.bob.name  # claimed in the text
+        # claimed in the text: B's radio name, which A also holds from B's advert
+        assert channel["sender_name"] == direct["sender_name"]
         assert channel["hops"] == 0  # flooded, heard straight from B
         assert isinstance(channel["snr_db"], float)
 
