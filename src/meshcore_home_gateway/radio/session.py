@@ -72,7 +72,7 @@ CLOCK_AHEAD_WARNING_S = 60
 # No release of the gateway is older than this: a clock before it was never set. A radio without
 # a clock chip starts at 2024-05-15, or at the newest time it wrote to a contact
 # (ArduinoHelpers.h:11, BaseChatMesh.cpp:60-70). Raised at every release (docs/development.md).
-RELEASED_AFTER = 1_793_404_800  # 2026-10-31T00:00:00Z, the release of 1.1.0a4
+RELEASED_AFTER = 1_793_836_800  # 2026-11-05T00:00:00Z, the release of 2.0.0a1
 HOST_CLOCK_PLAUSIBLE_S = 10 * 365 * 86_400  # a host clock beyond the release by more is wrong
 DAY_S = 86_400
 SYNC_INTERVAL_S = 300.0  # safety net in case a MSG_WAITING push was lost

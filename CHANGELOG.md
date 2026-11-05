@@ -8,6 +8,31 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.0.0rc1] - 2026-11-05
+
+The release candidate of 2.0.0: the program of 2.0.0a1, and the installer now ends with the
+gateway's own check. 2.0.0 ships this program. It is the first release checked without the
+hardware checklist: CI, the installer's self-test on a real installation and the maintainer's use
+of Home Assistant check it ([testing.md](docs/testing.md#release-check),
+[ADR 0030](docs/decisions/0030-release-checked-by-ci-self-test-and-use.md)).
+
+### Added
+
+- The installer ends with the gateway's own check: after an installation, a reconfiguration and an
+  update it runs `meshcore-home-gateway doctor` in the container until it passes, for about a
+  minute while the radio connects. The final message says `Self-test: passed`, or shows the
+  problems with doctor's report; the service keeps running either way
+  ([deployment.md](docs/deployment.md#install)).
+
+### Changed
+
+- A release is checked by CI, the installer's self-test and the maintainer's use of Home Assistant
+  with its release candidate, no longer by the hardware checklist, which now describes the
+  behaviour on real radios and names the test of each step
+  ([ADR 0030](docs/decisions/0030-release-checked-by-ci-self-test-and-use.md)). The Homie device
+  is maintained by those who use it: its documents keep their tests, openHAB is not checked
+  before a release.
+
 ### Fixed
 
 - The hourly release run tags a release candidate or a release only once CI passed on the commit
