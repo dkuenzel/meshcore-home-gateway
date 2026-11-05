@@ -90,7 +90,8 @@ STUBS = {
                 cp "$STUB/input" "$STUB/pushed/${BASH_REMATCH[1]}"
               fi
             fi
-            [[ -z ${SLEEP_AT-} || $* != *"$SLEEP_AT"* ]] || sleep 60
+            # exec, not a child: a signal to the group while bash forks reaches the parent only
+            [[ -z ${SLEEP_AT-} || $* != *"$SLEEP_AT"* ]] || exec sleep 60
             case "$*" in
               *"--broker"*)  # the login check: exit statuses in turn from BROKER_ANSWERS
                 n=$(cat "$STUB/broker-checks" 2>/dev/null || echo 0)
