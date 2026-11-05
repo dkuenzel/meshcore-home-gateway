@@ -35,6 +35,10 @@ STOP_S = 15.0
 WAIT_S = 30.0
 
 
+# as in steps 29-45 of the hardware checklist: B is asked without being included
+ASK_ALL = '[telemetry]\nask = "all"\n'
+
+
 def configuration(serial: Path, broker: Broker, more: str = "") -> str:
     """The service on the radio at `serial`; `more` adds settings of [diagnostics], then
     tables. Home Assistant discovery is off: these tests read the documents themselves."""

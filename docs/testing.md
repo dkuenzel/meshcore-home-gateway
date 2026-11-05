@@ -306,10 +306,11 @@ for step 30 B2, a companion with an environment sensor (a BME280 or similar); op
 tracker board that keeps a stored position, best a T1000-E (its light and temperature sensors).
 For step 42 a companion that never had a position (no GPS fix ever, none set in the app), if at
 hand; for step 43 a copy of a state directory of 1.1.0a2, taken before the update; for step 44 a
-radio over TCP; for step 45 a browser on Home Assistant. Telemetry on (the default);
-`log_level = "debug"` where the log is read. The session logs no command it sends: that the
-gateway never sends `EXPORT_CONTACT` (17) is shown by the emulator's record of the commands in the
-automated tests.
+radio over TCP; for step 45 a browser on Home Assistant. Telemetry on (the default) with
+`[telemetry] ask = "all"`, so that B is asked without being included (the default `"household"`
+asks only the companions switched on); `log_level = "debug"` where the log is read. The session
+logs no command it sends: that the gateway never sends `EXPORT_CONTACT` (17) is shown by the
+emulator's record of the commands in the automated tests.
 
 | # | Step | Expected |
 | --- | --- | --- |
@@ -353,7 +354,7 @@ Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, s
 | --- | --- | --- |
 | 55 | Set `[commands] codes_file`, run `meshcore-home-gateway commands enrol <B's key>`, scan `qrencode -t ansiutf8 '<line>'` with the app, restart the service. B sends `status <code>`, the same text anew within 30 s, then `status` | a `command` event `status` with empty `args`; then `received` shows `code_reused`, then `code_missing` |
 | 56 | Set `[commands] reply = "all"` and `prefix = "Home: "` on a channel target; restart. B sends `status <code>`, then `status`; publish `Gate open` to the channel target | B's app shows `ok: status`, then `rejected: code_missing`, each confirmed in `delivery` with B's key as `target`; the channel shows `Home: Gate open` |
-| 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
+| 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart, switch its *Telemetry* on | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
 | 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
 
 ### Steps 29–45 on the simulated air

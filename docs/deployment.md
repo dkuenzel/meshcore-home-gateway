@@ -18,9 +18,10 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   required when commands are configured. A standalone Mosquitto reads a user added with
   `mosquitto_passwd` only after `systemctl reload mosquitto`.
 * **Home Assistant:** MQTT integration with discovery enabled (the default).
-* **Telemetry:** the gateway asks the companions of its radio for their battery, sensors and
-  position, unless excluded ([companions.md](companions.md)). The first time it runs, it waits an
-  hour after the radio connects, so the household can exclude every companion that is not its own.
+* **Telemetry:** the gateway asks the companions the household includes for their battery,
+  sensors and position ([companions.md](companions.md)). With `[telemetry] ask = "all"` it asks
+  every companion that is not excluded, and the first time it runs that way it waits an hour after
+  the radio connects, so the household can exclude every companion that is not its own.
 
 ## 2 Proxmox VE
 
@@ -112,11 +113,11 @@ every setting in the table.
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
 | Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 
-Without a question, a new installation keeps of other people's radios their keys and types only
-(`contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)) and asks only the
-companions the household includes for telemetry (`telemetry.ask = household`); the answers
-`contacts.heard_nodes=full` and `telemetry.ask=all` in an answers file keep the earlier
-behaviour.
+Without a question, an installation keeps of other people's radios their keys and types only
+(the default `contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)) and asks only
+the companions the household includes for telemetry (`telemetry.ask = household`); the answers
+`contacts.heard_nodes=full`, `telemetry.ask=all` and `messages.publish_channels=all` in an
+answers file keep more.
 
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
@@ -279,8 +280,14 @@ pct stop 105 && pct destroy 105
   final message of a pre-release names its own installer. An update also installs the packages
   and the journal limit of [What the script does](#what-the-script-does) again, so an older
   installation gets `unattended-upgrades` with it.
-* **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off: telemetry is on
-  from 1.1.0a2 on, and the first time it runs on the state directory it asks nobody for an hour
+* **The privacy defaults after an update to 2.0.0:** only the messages of the channels that are a
+  target are published, of other people's radios only their keys and types, and telemetry asks
+  only the companions the household includes. Switch *Telemetry* on for each of the household's
+  companions (or `meshcore-home-gateway contacts telemetry KEY on`); the changelog's
+  **Breaking:** entries name the settings that keep the old behaviour.
+* **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with
+  `[telemetry] ask = "all"`: telemetry is on from 1.1.0a2 on, and the first time it runs on the
+  state directory it asks nobody for an hour
   after the radio connects (*Telemetry status* `paused`, reason `first_start`; the log names the
   number of companions it will ask). Exclude every companion that is not the household's in that
   hour ([companions.md](companions.md)). With a broker ACL, Home Assistant's user needs

@@ -628,9 +628,10 @@ output, exit codes and `run` never change with it.
 [ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md): the gateway asks the
 household's companions for battery, readings and position with `SEND_TELEMETRY_REQ`; a companion
 answers only contacts it allows (denial is silence). On by default (`[telemetry] enabled`); the
-household excludes every companion that is not its own, or, with `[telemetry] ask = "household"`,
-includes those that are (SEC-016): then a contact is asked only once included, or as a contact
-target or command sender, and the first start holds nothing. Values expire when a companion stops
+household includes its companions (`[telemetry] ask = "household"`, the default since 2.0.0,
+SEC-016): a contact is asked only once included, or as a contact target or command sender, and
+the first start holds nothing. With `ask = "all"` it excludes every companion that is not its
+own instead. Values expire when a companion stops
 answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
 
 The detail is in [design-telemetry.md](design-telemetry.md#611-telemetry).
@@ -875,15 +876,16 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   broker's ACL prevents it (mqtt-api.md, *Securing the broker*). The documents carry no stamp of
   the time the gateway published them, as a forger copies one, and no signature until a consumer
   can check one; Home Assistant's templates cannot.
-* Telemetry (§6.11) asks every chat contact of the radio that is not excluded, and the gateway
-  cannot read a companion's permissions: a contact that answers everyone ("Allow All") is tracked
-  like a household member until it is excluded. An update nobody looks at within the first-start
-  hour asks such a contact, and a heard node added from Home Assistant's select is asked within a
-  minute (exclude it first on the command line). An answer is bound to a contact by its 6-byte
-  prefix: a look-alike in the table could answer in its place, so no contact with a shared prefix
-  is asked and nothing is asked while the radio adds contacts on its own. A position comes from
-  the companion's receiver and may be old (some trackers send their last one with GPS off); the
-  gateway shows when it received a position and when it last changed, never when it was fixed.
+* Telemetry (§6.11) asks the companions the household included, and the gateway cannot read a
+  companion's permissions: with `ask = "all"` a contact that answers everyone ("Allow All") is
+  tracked like a household member until it is excluded. There an update nobody looks at within
+  the first-start hour asks such a contact, and a heard node added from Home Assistant's select
+  is asked within a minute (exclude it first on the command line). An answer is bound to a
+  contact by its 6-byte prefix: a look-alike in the table could answer in its place, so no contact
+  with a shared prefix is asked and nothing is asked while the radio adds contacts on its own. A
+  position comes from the companion's receiver and may be old (some trackers send their last one
+  with GPS off); the gateway shows when it received a position and when it last changed, never
+  when it was fixed.
   Values count for up to an hour (three of the companion's intervals) after its last answer, and
   coming back takes up to 30 minutes. Any Home Assistant user who may switch entities can include
   an excluded companion again; the broker's ACL decides who may write `contacts/+/telemetry`.
@@ -914,15 +916,14 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   `forget`.
 * The radio firmware and its key storage are trusted.
 * Messages on the radio are only as confidential as MeshCore's encryption; channel secrets of
-  public or hashtag channels are known to everyone. With `publish_channels = "all"`, the default
-  of the configuration, strangers' texts on such channels reach the bus, the history and Home
-  Assistant's recorder; `"targets"`, which the installer writes on a new installation, keeps only
-  the channels the household chose.
-* Every radio in range is a heard node with its owner's chosen name, its key and its signal on
-  the bus, in the history and in Home Assistant's recorder, unless `[contacts] heard_nodes` is
-  `"keys"` or `"off"`. The opt-in `rx` diagnostics publish every packet as received, other
-  people's positions in their adverts included: redacting them would make the diagnostics wrong
-  ([privacy.md](privacy.md)).
+  public or hashtag channels are known to everyone. With `publish_channels = "all"` strangers'
+  texts on such channels reach the bus, the history and Home Assistant's recorder; `"targets"`,
+  the default since 2.0.0, keeps only the channels the household chose.
+* Every radio in range is a heard node with its key and type on the bus, in the history and in
+  Home Assistant's recorder, and with `[contacts] heard_nodes = "full"` also with its owner's
+  chosen name and its signal; `"keys"`, the default since 2.0.0, and `"off"` keep less. The
+  opt-in `rx` diagnostics publish every packet as received, other people's positions in their
+  adverts included: redacting them would make the diagnostics wrong ([privacy.md](privacy.md)).
 
 ## 8 Reliability and failure modes
 
@@ -1092,8 +1093,9 @@ reasons (security review 2026-11, ARC-017).
 * **Telemetry is on by default, with a first-start hour.** It reversed ADR 0018's "off by default
   for now" in 1.1.0a2: telemetry is the reason most households run the gateway. An update to it
   has no moment of opt-in, so the first start asks nobody for an hour and says whom it will ask
-  (§6.11). Who is asked is the household's choice since `[telemetry] ask = "household"`, which new
-  installations get ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)).
+  (§6.11). Who is asked is the household's choice since `[telemetry] ask = "household"`, the
+  default since 2.0.0 ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)); the
+  first-start hour remains for `ask = "all"`.
 * **The contact table is read again after adverts, paths and table changes.** A full read is the
   only list of the table the protocol offers, and the look-alike memory of §7.3 relies on it; a
   read costs about 150 bytes per contact (4.6 s for 350 over USB). Adverts of nodes the radio did
@@ -1127,9 +1129,6 @@ reasons (security review 2026-11, ARC-017).
 ## 12 Open questions and future work
 
 * BLE transport as a further adapter, for radios without USB data or WiFi.
-* The defaults that touch privacy (published public channels, heard nodes, telemetry of every
-  contact): the settings exist and the installer gives a new installation the privacy-friendly
-  values; whether 2.0.0 changes them for existing configurations is for the maintainer to decide.
 * An acknowledgement proves knowledge of the text, not receipt
   ([protocol.md](protocol.md#5-semantics)); proving receipt needs a change of the firmware
   (SEC-001).

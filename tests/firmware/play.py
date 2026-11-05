@@ -50,7 +50,6 @@ def configuration(household: Household, port: int) -> str:
         "[homeassistant]\ndiscovery = false\n"
         f'[targets.bob]\ncontact = "{bob}"\n'
         f'[commands]\nsenders = ["{bob}"]\nwords = ["status", "arm", "disarm"]\nreply = "all"\n'
-        '[telemetry]\nask = "household"\n'
     )
 
 

@@ -390,7 +390,11 @@ def test_the_select_leaves_out_a_look_alike_of_a_protected_key(
         return options
 
     async def main() -> None:
-        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+        async with running(make_config('[contacts]\nheard_nodes = "full"'), radio, tmp_path) as (
+            _,
+            bus,
+            _n,
+        ):
             radio.advertise(TWIN)
             radio.advertise(dave)
             await bus.wait_for(

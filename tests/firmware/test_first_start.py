@@ -11,7 +11,7 @@ import pytest
 from meshcore_home_gateway import telemetry_poller
 from tests.firmware.app import App
 from tests.firmware.conftest import Scene
-from tests.firmware.gateway import log_lines, logged, running
+from tests.firmware.gateway import ASK_ALL, log_lines, logged, running
 from tests.firmware.household import LANDMARK, household_ready, start
 
 HOLD_S = 15.0  # the first-start hold, an hour on a household's gateway
@@ -49,7 +49,7 @@ def test_the_first_start_holds_then_a_later_start_asks_b_after_76_s(
                 await household_ready(household, alice, bob)
             battery = await bob.battery()  # what Bob's app shows
             first = watcher.mark()
-            async with running(scene.configuration(household.alice), scene.state_dir):
+            async with running(scene.configuration(household.alice, ASK_ALL), scene.state_dir):
                 await watcher.wait("state", held, since=first)
                 await watcher.wait("received", since=first)  # B's message, fetched now
                 over = await watcher.wait(
@@ -65,7 +65,7 @@ def test_the_first_start_holds_then_a_later_start_asks_b_after_76_s(
             assert all(held(m.json()) for m in while_connected if m.at >= first_held.at)
             assert over.at - while_connected[0].at == pytest.approx(HOLD_S, abs=3)
             later = watcher.mark()
-            async with running(scene.configuration(household.alice), scene.state_dir):
+            async with running(scene.configuration(household.alice, ASK_ALL), scene.state_dir):
                 up = await watcher.wait("state", connected, since=later)
                 request = await scene.air.next_sent(
                     alice_id, "REQ/", after=scene.air.count(), timeout_s=FIRST_REQUEST_S + 15

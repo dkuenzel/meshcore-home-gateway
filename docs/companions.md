@@ -1,7 +1,8 @@
 # Setting up the household's companions for telemetry
 
-The gateway asks each companion of its radio for its telemetry: battery, readings and, with a GPS,
-its position ([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md),
+The gateway asks the companions the household includes for their telemetry: battery, readings
+and, with a GPS, their position
+([ADR 0018](decisions/0018-telemetry-pulled-from-the-households-companions.md),
 [design §6.11](design.md#611-telemetry)). A companion answers only the contacts it allows, and
 says nothing to the others: to the gateway, "not allowed", "out of range" and "switched off" all
 look the same. The settings below are made on each companion, in the MeshCore app; the gateway
@@ -21,18 +22,17 @@ versions.
    ([positions in adverts](#positions-in-adverts)); one the gateway did not hear before the add
    (added from a key or a link first, or after a restart of the gateway between hearing and adding
    it) is checked at its next advert.
-3. **Every chat contact of the radio is asked** unless it is excluded. Exclude every chat contact
-   that is not the household's: with the switch *Telemetry* on its device in Home Assistant, or
-   `meshcore-home-gateway contacts telemetry KEY off`. Best do it before you add it: a full key
-   works also before the contact is on the radio, and a new contact is asked within a minute. The
-   first time telemetry runs on an installation, the gateway asks nobody for an hour after the
+3. **Only the companions you include are asked**, and the contact targets and command senders:
+   switch *Telemetry* on on its device in Home Assistant, or run
+   `meshcore-home-gateway contacts telemetry KEY on`; it is asked within a minute
+   ([configuration.md](configuration.md#telemetry)). With `[telemetry] ask = "all"` it is the
+   other way round: every chat contact of the radio is asked unless it is excluded (switch
+   *Telemetry* off, or `contacts telemetry KEY off`). Exclude every one that is not the
+   household's, best before you add it: a full key works also before the contact is on the
+   radio. The first time telemetry runs that way, the gateway asks nobody for an hour after the
    radio connects (*Telemetry status* `paused`, reason `first_start`, and a warning in its log with
    the number of companions it will ask): exclude the strangers in that hour
-   ([home-assistant.md](home-assistant.md#telemetry-of-the-households-companions)). With
-   `[telemetry] ask = "household"` (a new installation from the installer has it) it is the other
-   way round: only the companions you include (switch *Telemetry* on, or `contacts telemetry KEY
-   on`) and the contact targets and command senders are asked, and there is no such hour
-   ([configuration.md](configuration.md#telemetry)).
+   ([home-assistant.md](home-assistant.md#telemetry-of-the-households-companions)).
 
 ## On each companion
 

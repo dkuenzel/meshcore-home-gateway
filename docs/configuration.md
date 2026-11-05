@@ -151,7 +151,7 @@ are judged on it. A message to `contacts/<key>/send` gets neither: that recipien
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
-| `publish_channels` | `all` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's. The installer writes `targets` on a new installation |
+| `publish_channels` | `targets` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's |
 | `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones; off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
 | `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes; the events and the history carry it as sent, duplicates are judged without the suffix |
 | `alert_targets` | `[]` | [targets](#targetsalias) whose messages leave before the others: an alert overtakes the waiting messages and goes between two attempts of one in flight, which continues after it. A request chooses by its target, so a second target for the same recipient gives a client both ([design §6.2](design.md#62-outbound-path)) |
@@ -277,7 +277,7 @@ again.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `manage` | `true` | add and remove contacts on request: from Home Assistant ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), the command line (`meshcore-home-gateway contacts`) and MQTT ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)). A contact grants no rights; contact targets and command senders are never removed. With `false` the controls in Home Assistant are `unavailable` |
-| `heard_nodes` | `"full"` | what the gateway publishes and keeps of the nodes it heard but did not add, other people's radios ([privacy.md](privacy.md)): `"full"` key, type, name, when and how they were heard; `"keys"` key and type only, also in the history and in the labels of *Add heard node*; `"off"` nothing: no `nodes` entries, no `node` events, no history rows, nothing to add from the select, only the keys of look-alikes of contacts and protected keys ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Rows of an earlier setting lose name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"` |
+| `heard_nodes` | `"keys"` | what the gateway publishes and keeps of the nodes it heard but did not add, other people's radios ([privacy.md](privacy.md)): `"keys"` key and type only, also in the history and in the labels of *Add heard node*; `"full"` key, type, name, when and how they were heard; `"off"` nothing: no `nodes` entries, no `node` events, no history rows, nothing to add from the select, only the keys of look-alikes of contacts and protected keys ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Rows of an earlier setting lose name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"` |
 
 Who may send the requests is the broker's ACL to decide ([mqtt-api.md](mqtt-api.md#securing-the-broker)).
 Contacts are written only on tested firmware, like the managed profile; `radio.profile.manage =
@@ -296,8 +296,8 @@ A companion answers only contacts it allows: set the household's companions up
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `true` | ask every companion (chat contact) of the radio's table that is not excluded, one at a time, after the messages; battery, readings and positions go to `contacts/<key>` and the contact's device in Home Assistant |
-| `ask` | `"all"` | whom: `"all"` every companion not excluded; `"household"` only the companions the household included (the switch *Telemetry*, `contacts telemetry KEY on`, `on` on `contacts/<key>/telemetry`) and the contact targets and command senders, unless excluded. A new installation from the installer gets `"household"` |
+| `enabled` | `true` | ask the companions (chat contacts) of the radio's table that `ask` names, one at a time, after the messages; battery, readings and positions go to `contacts/<key>` and the contact's device in Home Assistant |
+| `ask` | `"household"` | whom: `"household"` only the companions the household included (the switch *Telemetry*, `contacts telemetry KEY on`, `on` on `contacts/<key>/telemetry`) and the contact targets and command senders, unless excluded; `"all"` every companion not excluded |
 | `ask_types` | `["chat"]` | which contacts are asked, by type: `"chat"` the companions, `"sensor"` also the sensors (MeshCore's sensor firmware), as companions are: excluded, included, `ask`, switch and state alike. A sensor answers only a radio in its access list ([companions.md](companions.md#sensors)). Repeaters and room servers are never asked |
 
 **Household.** With `ask = "household"` a contact the radio adds is not asked until somebody
@@ -307,10 +307,10 @@ kept beside the exclusions in `telemetry-excluded.json` (`"included"`); `off` tu
 into an exclusion. With `"all"` the inclusions are kept but do not count.
 
 **Exclusion.** A companion's firmware refuses telemetry to everyone until its owner allows it; one
-set to *Allow All* that has the gateway as a contact answers, and would be tracked like a
-household member. Exclude every companion that is not the household's: with the switch
-*Telemetry* on its device in Home Assistant, `meshcore-home-gateway contacts telemetry KEY off`, or
-`off` on `contacts/<key>/telemetry`
+set to *Allow All* that has the gateway as a contact answers, and with `ask = "all"` would be
+tracked like a household member. Exclude every companion that is not the household's: with the
+switch *Telemetry* on its device in Home Assistant, `meshcore-home-gateway contacts telemetry KEY
+off`, or `off` on `contacts/<key>/telemetry`
 ([mqtt-api.md](mqtt-api.md#excluding-a-contact-from-telemetry-contactskeytelemetry)). A full key
 works also before the contact is on the radio. `--forget` (`"forget": true`) also deletes the
 contact's readings and positions from telemetry from the history. The gateway keeps the
@@ -319,13 +319,12 @@ radio, while telemetry is off, and across restarts. With `enabled = false` it as
 the switches and the exclusions still work, so a household can exclude before it switches
 telemetry on.
 
-**The first-start hour.** The first time telemetry runs on a state directory (an update from
-1.0.0, from 1.1.0a1 with telemetry off, or a new installation), the gateway asks nobody for an
-hour after the radio first connects: `state.telemetry` is `paused` with the reason `first_start`,
-and one warning in the log names the number of companions it will ask. Exclude the strangers in
-that hour; then the log says "telemetry resumed". What is left of the hour is saved, so a restart
-neither skips nor extends it. An installation that already ran telemetry has no hold, nor has
-one with `ask = "household"`.
+**The first-start hour.** With `ask = "all"`, the first time telemetry runs on a state directory
+(an update from 1.0.0, from 1.1.0a1 with telemetry off, or a new installation), the gateway asks
+nobody for an hour after the radio first connects: `state.telemetry` is `paused` with the reason
+`first_start`, and one warning in the log names the number of companions it will ask. Exclude the
+strangers in that hour; then the log says "telemetry resumed". What is left of the hour is saved,
+so a restart neither skips nor extends it. An installation that already ran telemetry has no hold.
 
 **Expiry** ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)). A
 companion's answers are current while at most one request in a row went unanswered and its last

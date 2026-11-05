@@ -14,7 +14,7 @@ from meshcore_home_gateway.protocol.packet import PAYLOAD_TYPE_RESPONSE, parse_p
 from tests.firmware.air import Transmission
 from tests.firmware.app import App, AppError
 from tests.firmware.conftest import Scene
-from tests.firmware.gateway import log_lines, log_mark, logged, running
+from tests.firmware.gateway import ASK_ALL, log_lines, log_mark, logged, running
 from tests.firmware.household import SNR, Household, household_ready, start
 
 ANSWER = "answer of 28 bytes, 19 of them readings"
@@ -41,7 +41,7 @@ def test_a_stale_direct_path_fails_until_b_floods_a_message(scene: Scene) -> Non
 
     async def scenario(app: App) -> None:
         topic = f"contacts/{key}"
-        async with running(scene.configuration(household.alice), scene.state_dir):
+        async with running(scene.configuration(household.alice, ASK_ALL), scene.state_dir):
             found = await scene.watcher.wait(topic, answering)
             assert found.json()["path_hops"] == 0
             scene.air.unlink(alice, bob)  # out of direct range, the repeater hears both
@@ -104,7 +104,7 @@ def test_a_flooded_answer_brings_the_path_back_three_seconds_later(scene: Scene)
     more = "publish_rx_log = true\n"  # in [diagnostics]
 
     async def scenario(app: App) -> tuple[Transmission, float, float]:
-        async with running(scene.configuration(household.alice, more), scene.state_dir):
+        async with running(scene.configuration(household.alice, more + ASK_ALL), scene.state_dir):
             await logged(scene.caplog, ANSWER)
             await asyncio.sleep(2.5)  # a state document after the charge of the first request
             before = scene.watcher.latest("state")["telemetry_mesh_airtime_1h_s"]

@@ -140,7 +140,7 @@ class MessagesConfig:
     flood_after: int = 2
     ignore_channels: frozenset[int] = frozenset()
     # "targets": only the channels of `[targets.*]` entries are published and kept (SEC-012)
-    publish_channels: Literal["all", "targets"] = "all"
+    publish_channels: Literal["all", "targets"] = "targets"
     clean_received: bool = False  # control and direction characters out of received texts
     confirm_nonce: bool = False  # a random suffix on direct messages: unforgeable acks (SEC-001)
     # targets whose messages overtake the others in the outgoing queue (IMP-032)
@@ -169,7 +169,7 @@ class ContactsConfig:
     nodes heard but not added (SEC-015)."""
 
     manage: bool = True
-    heard_nodes: HeardNodes = "full"
+    heard_nodes: HeardNodes = "keys"
 
 
 TelemetryAsk = Literal["all", "household"]
@@ -186,7 +186,7 @@ class TelemetryConfig:
     SEC-016). `ask_types`: which contacts count, by type: companions, also sensors."""
 
     enabled: bool = True
-    ask: TelemetryAsk = "all"
+    ask: TelemetryAsk = "household"
     ask_types: frozenset[str] = frozenset({"chat"})
 
     @property
@@ -778,7 +778,7 @@ def _not_segments(key: str, value: str) -> ConfigError:
 
 def _messages(s: _Section) -> MessagesConfig:
     max_attempts = s.integer("max_attempts", 3, 1, 4)  # the radio's attempt counter is 0..3
-    publish_channels = s.string("publish_channels", "all")
+    publish_channels = s.string("publish_channels", "targets")
     if publish_channels not in ("all", "targets"):
         raise _one_of(s.key("publish_channels"), ("all", "targets"), publish_channels)
     return MessagesConfig(
@@ -876,14 +876,14 @@ def _history(s: _Section) -> HistoryConfig:
 
 
 def _contacts(s: _Section) -> ContactsConfig:
-    heard_nodes = s.string("heard_nodes", "full")
+    heard_nodes = s.string("heard_nodes", "keys")
     if heard_nodes not in HEARD_NODES:
         raise _one_of(s.key("heard_nodes"), HEARD_NODES, heard_nodes)
     return ContactsConfig(manage=s.boolean("manage", True), heard_nodes=heard_nodes)
 
 
 def _telemetry(s: _Section) -> TelemetryConfig:
-    ask = s.string("ask", "all")
+    ask = s.string("ask", "household")
     if ask not in TELEMETRY_ASK:
         raise _one_of(s.key("ask"), TELEMETRY_ASK, ask)
     types = s.strings("ask_types") if s.raw("ask_types") is not None else ["chat"]
