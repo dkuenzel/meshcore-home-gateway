@@ -106,11 +106,12 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: python3 -I tools/release_plan.py check --base "$BASE"
 
-  # Release (ADR 0022, docs/development.md): a push to main that changed __version__ and passed
-  # every job above is tagged vX.Y.Z on its last commit, and release.yml is started on the tag;
-  # it builds, attests and publishes. A re-run (of this job or of all) finds the tag on this
-  # commit and starts the release only if there is none and none is running. Tags are not moved
-  # or deleted (the tag ruleset).
+  # Release (ADR 0022, docs/development.md): a push to main that changed __version__ to a
+  # pre-release and passed every job above is tagged vX.Y.Z on its last commit, and release.yml
+  # is started on the tag; it builds, attests and publishes. A release candidate or a release
+  # waits a day (SUP-001): release-due.yml tags it then. A re-run (of this job or of all) finds
+  # the tag on this commit and starts the release only if there is none and none is running.
+  # Tags are not moved or deleted (the tag ruleset).
   release:
     name: tag and release
     needs: [test, homeassistant, firmware, check, release-plan]
@@ -130,8 +131,15 @@ jobs:
         env:
           BASE: ${{ github.event.before }}
         run: python3 -I tools/release_plan.py tag --base "$BASE" >>"$GITHUB_OUTPUT"
+      - name: A release candidate or a release waits a day
+        if: steps.plan.outputs.waits == 'true'
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: echo "$TAG is tagged by release-due.yml a day after this push"
       - name: Annotated tag on the commit CI tested
-        if: steps.plan.outputs.tag != '' && steps.plan.outputs.exists != 'true'
+        if: >-
+          steps.plan.outputs.tag != '' && steps.plan.outputs.exists != 'true'
+          && steps.plan.outputs.waits != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -144,7 +152,7 @@ jobs:
           gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$object" >/dev/null
           echo "tagged $SHA as $TAG"
       - name: Start the release on the tag
-        if: steps.plan.outputs.tag != ''
+        if: steps.plan.outputs.tag != '' && steps.plan.outputs.waits != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

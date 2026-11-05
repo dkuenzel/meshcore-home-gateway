@@ -289,6 +289,9 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Security
 
+- A release candidate or a release is published at the earliest a day after its version reached
+  `main`, so that a merged change can still be stopped before it is signed and published for
+  good; pre-releases go out at once ([development.md](docs/development.md#release)).
 - The installer published with a release carries the SHA-256 of that release's zipapp and unit
   and installs only those files: whoever could replace them in the release could replace its
   `SHA256SUMS` too, but not the installer's attestation, so verifying the installer now verifies

@@ -114,11 +114,15 @@ A second speaker of the language reads a translation before it is merged
 
 Most changes are written by an AI coding agent under the maintainer's direction, working through
 the maintainer's GitHub login ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md));
-its commits name it as their author. A green CI shows that a change does what its own tests
-say, not that it is right, so the review is the gate between the agent and a signed release
-(SUP-001):
+its commits name it as their author, and it merges its pull requests once the jobs the ruleset
+of `main` requires passed. A green CI shows that a change does what its own tests say, not that
+it is right. A review of every change by a second identity would make each one wait for the
+maintainer, who decided against it (SUP-001, 2026-11-05); what stands between the agent and a
+signed release instead:
 
-- The review follows the pull request template's checklist, not the agent's report of what it
+- The required jobs, and a release candidate or a release that is tagged only a day after its
+  version reached `main`: time for the maintainer, or anyone watching, to stop it.
+- A review follows the pull request template's checklist, not the agent's report of what it
   did.
 - Whatever the agent reads can instruct it: issues and pull requests, test logs, the firmware
   source, documentation, and data from the mesh. Never give it a `debug` log of a live mesh
@@ -126,8 +130,6 @@ say, not that it is right, so the review is the gate between the agent and a sig
   from someone you do not know as input you would not run.
 - Standing instructions for the agent about this repository belong in the repository, where a
   reviewer reads them too.
-- Not set up, because they need the maintainer's account: a GitHub identity of the agent's own
-  with a required review of its pull requests, and a release that waits a day after its merge.
 
 ## Releases
 

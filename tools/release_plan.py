@@ -2,6 +2,7 @@
 
     python3 -I tools/release_plan.py check [--base REV]   # CI: a pull request, or a push
     python3 -I tools/release_plan.py tag [--base REV]     # CI on main: prints tag=, exists=, final=
+    python3 -I tools/release_plan.py due                  # on a schedule: tag=, sha=, exists=, due=
 
 A change releases when it changes `__version__` (docs/development.md, ADR 0022). It must then
 write exactly the next version: the kind of change comes from the changelog entries since the
@@ -14,8 +15,9 @@ tools/public_interface.py) with that of the last release, which the revision mus
 it removes or narrows needs a `**Breaking:**` entry or a `### Removed` section since then, what it
 adds or changes an entry that makes the next release at least a minor one
 (docs/development.md#compatibility); the changelog sections since the last release stay as
-tagged. It reads the commit, not the working tree. Standard library only; git runs as a
-subprocess in the current directory.
+tagged. A release candidate or a release is tagged a day after its version reached main, a
+pre-release at once (SUP-001). It reads the commit, not the working tree. Standard library only;
+git runs as a subprocess in the current directory.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +48,9 @@ _DATED = re.compile(r"^## \[([^\]]+)\] - \d{4}-\d{2}-\d{2}", re.MULTILINE)
 _SUBSECTION = re.compile(r"^### (.+?)[ \t]*$", re.MULTILINE)
 _UNRELEASED = re.compile(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 _STAGES = ("a", "b", "rc", "")  # in order; "" is the release
+# a release candidate or a release waits this long after its version commit reached main: time to
+# stop a merged change before it is signed and published for good (SUP-001)
+COOLDOWN_S = 24 * 3600
 KINDS = ("patch", "minor", "major")
 _KIND_OF = {
     "added": "minor",
@@ -105,6 +111,11 @@ class Version:
     @property
     def final(self) -> bool:
         return self.stage == ""
+
+    @property
+    def waits(self) -> bool:
+        """A release candidate or a release: tagged only COOLDOWN_S after its version commit."""
+        return self.rank >= _STAGES.index("rc")
 
     def __str__(self) -> str:
         return self.base + (f"{self.stage}{self.number}" if self.stage else "")
@@ -471,15 +482,36 @@ def tag(base: str = "") -> tuple[str, bool, bool]:
     return f"v{written}", tagged, written.final
 
 
+def due(now: float) -> tuple[str, str, bool, int]:
+    """For main on a schedule: the tag of the version HEAD carries, the commit that wrote it,
+    whether the tag is on that commit already, and the seconds until the commit is due: at once for
+    a pre-release, COOLDOWN_S after the commit for a release candidate or a release. A tag on
+    another commit is an error."""
+    found = git("log", "-1", "--format=%H %ct", "-G^__version__ = ", "HEAD", "--", VERSION_FILE)
+    sha, committed = found.split()
+    written = Version.parse(version_text(sha))
+    existing = tags().get(written)
+    if existing is not None and existing != sha:
+        msg = f"v{written} already tags {existing}, not {sha}"
+        raise PlanError(msg)
+    if existing is None:
+        validate(written, sha)
+    left = int(committed) + COOLDOWN_S - int(now) if written.waits else 0
+    return f"v{written}", sha, existing is not None, max(0, left)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     commands = parser.add_subparsers(dest="command", required=True)
     checking = commands.add_parser("check", help="refuse a version that is not the next one")
-    tagging = commands.add_parser("tag", help="print tag=vX.Y.Z or tag=, exists= and final=")
+    tagging = commands.add_parser(
+        "tag", help="print tag=vX.Y.Z or tag=, exists=, final= and waits="
+    )
     for command in (checking, tagging):
         command.add_argument(
             "--base", default="", help="the revision the change starts from (default: HEAD^)"
         )
+    commands.add_parser("due", help="print tag=, sha=, exists=, due= and left= for main")
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
@@ -487,9 +519,15 @@ def main(argv: list[str] | None = None) -> int:
                 note = f"the check reads HEAD; commit first ({', '.join(changed)} changed)"
                 print(f"release_plan: {note}", file=sys.stderr)
             print(check(args.base))
+        elif args.command == "due":
+            name, sha, exists, left = due(time.time())
+            print(f"tag={name}\nsha={sha}\nexists={str(exists).lower()}")
+            print(f"due={str(left == 0).lower()}\nleft={left}")
         else:
             name, exists, final = tag(args.base)
+            waits = bool(name) and not exists and Version.parse(name[1:]).waits
             print(f"tag={name}\nexists={str(exists).lower()}\nfinal={str(final).lower()}")
+            print(f"waits={str(waits).lower()}")
     except PlanError as exc:
         print(f"release_plan: {exc}", file=sys.stderr)
         return 1

@@ -138,3 +138,12 @@ release line besides `main` is needed.
 
 Amended on 2026-10-25 by [ADR 0023](0023-public-interfaces-kept-by-a-snapshot.md): the check also
 compares the public interface.
+
+Amended on 2026-11-05 after the security review of 2026-11 (SUP-001, SUP-007): a release
+candidate or a release is tagged a day after the commit that wrote its version reached `main`.
+The job *tag and release* tags a pre-release at once, as before; `release-due.yml` looks every
+hour, tags the version commit once it is due and starts `release.yml` the same way, so a merged
+version can still be reverted within the day. The maintainer accepted the shared identity: one
+of the agent's own with a required review would make every change wait for the maintainer.
+`main` has a ruleset: pull requests and squash merges only, the CI jobs required, no force push
+or deletion (`.github/rulesets/main.json`).
