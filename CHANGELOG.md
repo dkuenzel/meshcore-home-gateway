@@ -8,6 +8,13 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- The hourly release run tags a release candidate or a release only once CI passed on the commit
+  that wrote its version, and starts its release only once. It had tagged 2.0.0a1 a minute after
+  the merge, before CI on `main` had finished; 2.0.0a1 holds exactly what CI passed in its pull
+  request.
+
 ## [2.0.0a1] - 2026-11-05
 
 A pre-release of 2.0.0, with the changes from the independent security and architecture review of
