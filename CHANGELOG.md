@@ -8,6 +8,21 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.0.0a1] - 2026-11-05
+
+A pre-release of 2.0.0, with the changes from the independent security and architecture review of
+2026-11 ([issue #34](https://github.com/dkuenzel/meshcore-home-gateway/issues/34), [triage
+log](docs/audit/2026-11-security-architecture-review/13-triage-log.md)). By default the gateway now
+keeps less of other people. It refuses setups that would let strangers command it or control the
+radio. The outgoing queue survives a stop. New options: MQTT 5, a Homie device, command codes from
+an authenticator app, and the MQTT API as an AsyncAPI document.
+
+Read the **Breaking:** entries under *Changed* before updating. A radio over TCP and commands over a
+broker without credentials or TLS each need a setting, added right after the update. Telemetry asks
+only the companions the household includes: switch *Telemetry* on for each of them
+([deployment.md](docs/deployment.md#update-reconfigure-remove)). The hardware checklist was not run
+for it.
+
 ### Added
 
 - `radio_clock_offset_s` in the `state` document and the diagnostic sensor *Radio clock offset*:
