@@ -150,7 +150,7 @@ def test_a_corrupt_state_file_is_moved_aside_once_for_every_section(tmp_path: Pa
         {},
         {},
     )
-    assert [p.name for p in tmp_path.iterdir()] == sorted(["state.json", "state.json.corrupt"])
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["state.json", "state.json.corrupt"]
 
 
 def test_ledger_remembers_the_newest_timestamp_per_sender(tmp_path: Path) -> None:
