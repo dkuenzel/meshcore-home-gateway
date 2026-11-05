@@ -35,6 +35,7 @@ row.
 
 | Gateway | Contract tests | Hardware checklist |
 | --- | --- | --- |
+| 2.0.0a1 | 2026.10.2 | not run (pre-release) |
 | 1.1.0a1 – 1.1.0a4 | 2026.10.0 | not run (pre-releases) |
 | 1.0.0, the program of 1.0.0rc1 | 2026.10.0 | 2026.10 |
 | 0.1.0a1 | 2026.10.0 | not run (pre-release) |

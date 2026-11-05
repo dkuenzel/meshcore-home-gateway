@@ -3,14 +3,14 @@
   "id": "urn:meshcore-home-gateway:mqtt-api",
   "info": {
     "title": "meshcore-home-gateway MQTT API",
-    "version": "1.1.0a4",
+    "version": "2.0.0a1",
     "description": "The topics the gateway publishes and reads, generated from its interface snapshot by tools/asyncapi.py. docs/mqtt-api.md is normative: it gives what each key means and its type. Every value may be null. `x-values` lists the values the gateway uses at this release, in a key or in the items of a list; within a major version keys and values are only added: ignore a key you do not know, and treat a value you do not know as other.",
     "license": {
       "name": "MIT",
       "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/main/LICENSE"
     },
     "externalDocs": {
-      "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/v1.1.0a4/docs/mqtt-api.md"
+      "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/v2.0.0a1/docs/mqtt-api.md"
     }
   },
   "servers": {
