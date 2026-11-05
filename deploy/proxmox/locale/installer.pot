@@ -405,12 +405,14 @@ msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (s
 msgstr ""
 
 #. the values start in one column; they are commands to copy, but {login} and
-#. {posture} (how the broker connection is secured).
+#. {posture} (how the broker connection is secured) and {selftest} (the result of the
+#. gateway's own check after the start).
 #, python-brace-format
 msgid ""
 "meshcore-home-gateway {version} runs in container {ctid}.\n"
 "\n"
 "Broker:       {login} ({posture})\n"
+"Self-test:    {selftest}\n"
 "Logs:         {logs}\n"
 "Check:        {check}\n"
 "Reconfigure:  {reconfigure}\n"
@@ -459,11 +461,25 @@ msgstr ""
 msgid "not checked (version {version} cannot; check after --update)"
 msgstr ""
 
+msgid "not run (the broker login failed)"
+msgstr ""
+
+#, python-brace-format
+msgid "not run (version {version} has no doctor command)"
+msgstr ""
+
 msgid "package pve-container not found"
+msgstr ""
+
+msgid "passed"
 msgstr ""
 
 #, python-brace-format
 msgid "passing {device} to container {ctid} failed (see above)"
+msgstr ""
+
+#, python-brace-format
+msgid "problems found (see above): {command}"
 msgstr ""
 
 #, python-brace-format
