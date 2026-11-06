@@ -118,8 +118,8 @@ jobs:
         run: python3 -I tools/release_plan.py check --base "$BASE"
 
   # Release (ADR 0022, docs/development.md): a push to main that changed __version__ to a
-  # pre-release and passed every job above is tagged vX.Y.Z on its last commit, and release.yml
-  # is started on the tag; it builds, attests and publishes. A release candidate or a release
+  # pre-release (a release candidate too) and passed every job above is tagged vX.Y.Z on its last
+  # commit, and release.yml is started on the tag; it builds, attests and publishes. A release
   # waits a day (SUP-001): release-due.yml tags it then. A re-run (of this job or of all) finds
   # the tag on this commit and starts the release only if there is none and none is running.
   # Tags are not moved or deleted (the tag ruleset).
@@ -142,7 +142,7 @@ jobs:
         env:
           BASE: ${{ github.event.before }}
         run: python3 -I tools/release_plan.py tag --base "$BASE" >>"$GITHUB_OUTPUT"
-      - name: A release candidate or a release waits a day
+      - name: A release waits a day
         if: steps.plan.outputs.waits == 'true'
         env:
           TAG: ${{ steps.plan.outputs.tag }}

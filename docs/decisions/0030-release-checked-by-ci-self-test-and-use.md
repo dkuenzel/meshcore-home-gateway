@@ -135,3 +135,6 @@ This record supersedes the part of ADR 0022 that a release follows the hardware 
 part of ADR 0026 that what the simulation cannot show stays on the checklist. Revisit when a second
 maintainer with hardware joins, when a hardware rig becomes possible, or when a regression reaches
 a release that a checklist step would have caught.
+
+Amended on 2026-11-06 with [ADR 0022](0022-releases-tagged-by-ci-on-main.md): the release
+candidate is tagged once CI passed on it, as every pre-release; the release waits a day.

@@ -1,10 +1,10 @@
-# Release cooldown (SUP-001, ADR 0022, docs/development.md): a release candidate or a release is
-# tagged a day after its version commit reached main, so that a merged change can still be stopped
-# before release.yml signs and publishes it; releases are immutable. CI's job "tag and release"
-# tags a pre-release once every job passed on it. This run tags the version commit of main once it
-# is due and CI passed on it, and starts release.yml on the tag, as that job does, once: a release
-# that failed is followed by the next version. A later run finds the tag and the release, or the
-# run of release.yml, and does nothing. Tags are not moved or deleted (the tag ruleset).
+# Release cooldown (SUP-001, ADR 0022, docs/development.md): a release is tagged a day after its
+# version commit reached main, so that a merged change can still be stopped before release.yml
+# signs and publishes it; releases are immutable. CI's job "tag and release" tags a pre-release, a
+# release candidate too, once every job passed on it. This run tags the version commit of main once
+# it is due and CI passed on it, and starts release.yml on the tag, as that job does, once: a
+# release that failed is followed by the next version. A later run finds the tag and the release,
+# or the run of release.yml, and does nothing. Tags are not moved or deleted (the tag ruleset).
 name: Release due
 
 on:
