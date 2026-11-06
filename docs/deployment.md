@@ -81,7 +81,7 @@ Options follow a `--`, for example `bash -c "$(wget -qO- URL)" -- --answers FILE
 them. If the command does nothing at all, the address could not be downloaded (`bash -c` gets an
 empty script): `wget -O- URL` shows why.
 
-Once the gateway offers a language besides English (1.1.0a4 offers English only), the first
+Once the gateway offers a language besides English (2.0.0 offers English only), the first
 dialog chooses the installer's language, preselected from your session (`LANGUAGE`, `LC_ALL`,
 `LC_MESSAGES`, `LANG`). The script reads that language's pack from where the script comes from
 (its release, the checkout next to it, else `main`) into memory, stores nothing, and uses it only
@@ -328,12 +328,11 @@ pct stop 105 && pct destroy 105
   ([mqtt-api.md](mqtt-api.md#securing-the-broker)): the example ACL of earlier versions lacks it,
   and without it the switch does nothing. To update from 1.0.0 without any request, switch
   telemetry off right before the update; 1.0.0 refuses the `[telemetry]` table when it starts, so
-  update at once, and name the version (while 1.1 is a pre-release, `latest` installs 1.0.0,
-  which refuses the table):
+  update at once:
 
   ```sh
   pct exec 105 -- sh -c 'grep -q "^\[telemetry\]" /etc/meshcore-home-gateway/config.toml || printf "\n[telemetry]\nenabled = false\n" >> /etc/meshcore-home-gateway/config.toml'
-  bash -c "$(wget -qO- $installer)" -- --release 1.1.0a2 --update 105
+  bash -c "$(wget -qO- $installer)" -- --update 105
   ```
 
   A configuration copied from the 1.1.0a1 example says `enabled = false`: remove that line to follow
