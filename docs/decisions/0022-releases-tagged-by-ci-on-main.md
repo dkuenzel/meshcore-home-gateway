@@ -160,3 +160,8 @@ only a release waits a day. A pre-release reaches only an installation that name
 version commit. A faulty candidate is now followed by the next one as soon as CI passed on it, not
 two days later. The review had suggested that candidates wait too (SUP-001); the maintainer chose
 otherwise.
+
+Amended on 2026-11-07: within its day a release is stopped by disabling the workflow
+`release-due.yml`, not by a revert of its version, which the release plan refuses (the tag of the
+version it goes back to is on another commit); a run of `release.yml` that failed before it
+published is re-run on the same tag ([development.md](../development.md#release)).
