@@ -18,7 +18,9 @@ import hashlib
 import http.server
 import io
 import os
+import pty
 import re
+import select
 import shutil
 import signal
 import stat
@@ -97,12 +99,15 @@ STUBS = {
               *"meshcore-home-gateway doctor"*)  # the self-test: statuses in turn, DOCTOR_ANSWERS
                 n=$(cat "$STUB/doctor-runs" 2>/dev/null || echo 0)
                 echo $(( n + 1 )) >"$STUB/doctor-runs"
+                # lxc-attach gives the command a terminal when one of its descriptors is one: on
+                # Proxmox doctor's script left it and was hung up (SIGHUP, nothing printed)
+                if [[ -t 0 || -t 1 || -t 2 ]]; then exit 129; fi
                 read -ra codes <<<"${DOCTOR_ANSWERS:-0}"
                 code=${codes[n]:-${codes[-1]}}  # the last one repeats; 3: a version without it
                 case $code in
                   0) printf '  ok       the gateway is online\n' ;;
                   1) printf '  ok       the gateway is online\n'
-                     printf '  problem  the radio is not connected\n' ;;
+                     printf '  problem  the radio is not connected\n' >&2 ;;  # both streams count
                 esac
                 exit "$code" ;;
               *"--broker"*)  # the login check: exit statuses in turn from BROKER_ANSWERS
@@ -685,16 +690,71 @@ def test_the_self_test_waits_for_the_radio(host: Host) -> None:
 
 
 def test_problems_of_the_self_test_are_shown_and_the_installation_stays(host: Host) -> None:
-    """After about a minute the report is shown: the service keeps running, the container stays."""
+    """After about a minute the report is shown, both of doctor's streams, once: the service keeps
+    running, the container stays."""
     answers = str(answers_file(host))
     result = run_installer(host, "--answers", answers, env={"DOCTOR_ANSWERS": "1"})
     assert result.returncode == 0, result.stderr
     assert doctor_runs(host) == 8
-    assert "warning: the self-test found problems" in result.stderr
-    assert "  problem  the radio is not connected\n" in result.stderr
+    _, report = result.stderr.split("warning: the self-test found problems")
+    assert "  ok       the gateway is online\n  problem  the radio is not connected\n" in report
+    assert result.stderr.count("problem  the radio") == 1
     command = "pct exec 105 -- /usr/local/bin/meshcore-home-gateway doctor"
     assert f"Self-test:    problems found (see above): {command}\n" in result.stderr
     assert not host.pct("destroy")
+
+
+def test_a_self_test_that_prints_nothing_shows_its_status(host: Host) -> None:
+    """Never an empty report: doctor hung up on Proxmox printed nothing, and the warning stood
+    alone."""
+    answers = str(answers_file(host))
+    result = run_installer(host, "--answers", answers, env={"DOCTOR_ANSWERS": "129"})
+    assert result.returncode == 0, result.stderr
+    assert (
+        "(meshcore-home-gateway doctor in container 105):\n"
+        "(doctor printed nothing, exit status 129)\n"
+    ) in result.stderr
+
+
+def run_from_a_terminal(host: Host, *args: str) -> tuple[int, str]:
+    """The installer with its messages on a terminal, as on a Proxmox host: its exit status and
+    what the terminal showed."""
+    controller, terminal = pty.openpty()
+    process = subprocess.Popen(  # noqa: S603 - our script with fixed arguments
+        [BASH, str(host.installer), *args],
+        env=installer_env(host),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=terminal,
+    )
+    os.close(terminal)
+    shown = bytearray()
+    deadline = time.monotonic() + 60
+    try:
+        while time.monotonic() < deadline:
+            if not select.select([controller], [], [], 1)[0]:
+                continue
+            try:
+                chunk = os.read(controller, 4096)
+            except OSError:  # Linux: EIO once nothing holds the terminal
+                break
+            if not chunk:
+                break
+            shown += chunk
+    finally:
+        os.close(controller)
+        if process.poll() is None:
+            process.kill()
+    return process.wait(timeout=10), shown.decode().replace("\r\n", "\n")
+
+
+def test_the_self_test_runs_doctor_without_a_terminal(host: Host) -> None:
+    """Run from a terminal, as on a Proxmox host: lxc-attach gives the command a terminal when one
+    of its own descriptors is one, and doctor was hung up (an empty report). It gets none."""
+    status, shown = run_from_a_terminal(host, "--answers", str(answers_file(host)))
+    assert status == 0, shown
+    assert doctor_runs(host) == 1
+    assert "Self-test:    passed\n" in shown
 
 
 def test_a_version_without_doctor_is_not_checked(host: Host) -> None:
@@ -708,26 +768,26 @@ def test_a_version_without_doctor_is_not_checked(host: Host) -> None:
 
 
 @pytest.mark.parametrize(
-    ("program", "status", "output"),
+    ("program", "status", "streams"),
     [
-        ('[ "$*" != "doctor --help" ] || exit 2', 3, ""),  # a version without the command
+        ('[ "$*" != "doctor --help" ] || exit 2', 3, ("", "")),  # a version without the command
         (
             '[ "$*" != doctor ] || { echo "  ok  online"; echo "  problem  radio" >&2; exit 1; }',
             1,
-            "  ok  online\n  problem  radio\n",
+            ("  ok  online\n", "  problem  radio\n"),
         ),
-        ('[ "$*" != doctor ] || echo "  ok  online"', 0, "  ok  online\n"),
+        ('[ "$*" != doctor ] || echo "  ok  online"', 0, ("  ok  online\n", "")),
     ],
 )
 def test_the_self_test_script_tells_a_version_without_doctor(
-    host: Host, container: Container, program: str, status: int, output: str
+    host: Host, container: Container, program: str, status: int, streams: tuple[str, str]
 ) -> None:
     """The script run in the container: exit 3 when the program has no `doctor`, else doctor's
-    status with its whole report (both streams) for the log."""
+    status and its two streams as they are; the installer joins them on its side."""
     assert run_installer(host, "--answers", str(answers_file(host))).returncode == 0
     container.stub("meshcore-home-gateway", program)
     run = container.run(host.script(SELF_TEST))
-    assert (run.returncode, run.stdout) == (status, output)
+    assert (run.returncode, (run.stdout, run.stderr)) == (status, streams)
 
 
 def test_a_radio_over_tcp_needs_the_acknowledgement(host: Host) -> None:

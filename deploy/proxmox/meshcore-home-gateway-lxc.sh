@@ -550,9 +550,10 @@ self_test() {  # self_test CTID: the running gateway's own check (doctor), retri
   if [[ $BROKER_LOGIN == failed ]]; then SELF_TEST=skipped; return 0; fi
   for (( attempt = 1; ; attempt++ )); do
     status=0
-    # exit 3: a version without doctor; its report goes to stdout, into $report
+    # exit 3: a version without doctor. 2>&1 out here: lxc-attach gives the command a terminal when
+    # one of its own descriptors is one, and hangs it up once it leaves it (SIGHUP, nothing printed)
     report=$(in_ct "$ctid" bash -c 'meshcore-home-gateway doctor --help >/dev/null 2>&1 || exit 3
-      exec meshcore-home-gateway doctor 2>&1') || status=$?
+      exec meshcore-home-gateway doctor' 2>&1) || status=$?
     if (( status == 3 )); then
       log "meshcore-home-gateway $VERSION in container $ctid has no self-test (doctor)"
       SELF_TEST=unchecked
@@ -567,7 +568,7 @@ self_test() {  # self_test CTID: the running gateway's own check (doctor), retri
   else
     SELF_TEST=problems
     log "warning: the self-test found problems (meshcore-home-gateway doctor in container $ctid):"
-    printf '%s\n' "$report" >&2 || true
+    printf '%s\n' "${report:-(doctor printed nothing, exit status $status)}" >&2 || true
   fi
 }
 
