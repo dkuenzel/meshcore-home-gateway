@@ -8,12 +8,25 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.0.0rc2] - 2026-11-06
+
+The release candidate of 2.0.0: the program of 2.0.0rc1 with the installer's self-test fixed,
+which had stopped the release check of 2.0.0rc1 with an empty report. 2.0.0 ships this program
+([testing.md](docs/testing.md#release-check)).
+
 ### Changed
 
 - A release candidate is published once CI passed on it, as every pre-release, so that a faulty
   one is followed by the next at once. A release still waits a day after its version reached
   `main`, and ships the program of a candidate tagged before
   ([development.md](docs/development.md#release)).
+
+### Fixed
+
+- The installer's self-test, run from a terminal on the Proxmox host, found problems and showed
+  an empty report: `pct exec` gives the command a terminal when one of the installer's outputs is
+  one, and hung `doctor` up as soon as it started (exit status 129). It now runs `doctor` without
+  one; a report that stays empty names doctor's exit status.
 
 ## [2.0.0rc1] - 2026-11-05
 
