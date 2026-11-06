@@ -23,6 +23,7 @@ from meshcore_home_gateway.ports import (
     PathReset,
     RadioError,
     RadioEvent,
+    RadioRestartedError,
     StatsRead,
     TelemetryReceived,
     TelemetrySent,
@@ -250,13 +251,133 @@ def test_a_radio_clock_ahead_is_warned_about_with_what_it_does(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """DOC-002: the radio's own clock matters for its adverts, not for the age of commands
-    (the sender's and the host's clocks decide that)."""
+    (the sender's and the host's clocks decide that). The warning says why it stays."""
     caplog.set_level(logging.WARNING)
     run(EmulatedRadio(clock=START_TIME + 1000), start_only, now=START_TIME)
     messages = [r.getMessage() for r in caplog.records]
     (warning,) = [m for m in messages if m.startswith("radio clock")]
-    assert "1000 s ahead of the host's and cannot be set back: its adverts and" in warning
+    assert "1000 s ahead of the host's and not set back (without contacts" in warning
+    assert "its adverts and contact times carry that time" in warning
     assert "age" not in warning
+
+
+AHEAD_S = 300  # a radio clock five minutes ahead of the host's
+
+
+async def connect(
+    radio: EmulatedRadio, now: int, may_restart: Callable[[], bool] | None = lambda: True
+) -> tuple[RadioError | None, int | None]:
+    """One connect as the service's: what ended it, if anything, and the clock offset."""
+    events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+    session = CompanionSession(
+        radio, events, wall_clock=lambda: now, command_timeout_s=0.3, flush_settle_s=0.01
+    )
+    session.may_restart = may_restart
+    try:
+        await session.start()
+    except RadioError as exc:
+        return exc, session.clock_offset_s
+    finally:
+        await session.close()
+    return None, session.clock_offset_s
+
+
+def test_a_radio_clock_ahead_is_set_back_by_a_restart() -> None:
+    """The radio refuses an earlier time, but at start it takes its newest contact time plus a
+    second (BaseChatMesh.cpp:60-70). The session takes the radio's messages, restarts it and
+    ends at once; the next connect moves the clock forward to the host's."""
+    now = START_TIME + 100
+    radio = EmulatedRadio(clock=now + AHEAD_S, contacts=[ALICE])  # changed at START_TIME - 60
+    radio.queue_channel_message(0, "Carol: hi", START_TIME, push=False)
+
+    async def main() -> None:
+        events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        session = CompanionSession(
+            radio, events, wall_clock=lambda: now, command_timeout_s=0.3, flush_settle_s=0.01
+        )
+        session.may_restart = lambda: True
+        with pytest.raises(RadioRestartedError, match=f"set its clock back by {AHEAD_S} s"):
+            await session.start()
+        assert not radio.opened  # closed before its owner does: a USB radio keeps its name
+        await session.close()
+        assert radio.received[-1] == bytes([Command.REBOOT]) + b"reboot"
+        assert radio.queue == []  # taken before the restart
+        assert radio.clock == START_TIME - 59
+        assert await connect(radio, now) == (None, 0)
+
+    asyncio.run(main())
+    assert radio.clock == now
+    assert radio.reboots == 1
+
+
+@pytest.mark.parametrize(
+    ("ahead", "changed", "allowed", "reason"),
+    [
+        (AHEAD_S, START_TIME - 60, False, "once no message is being delivered, at most once a day"),
+        (3601, START_TIME - 60, True, "more than an hour"),
+        (AHEAD_S, START_TIME + 99, True, "a restart starts it at its newest contact time"),
+        (AHEAD_S, None, True, "without contacts a restart does not set it back"),
+        (60, START_TIME - 60, True, None),  # a minute: not worth a word
+    ],
+    ids=["not-now", "more-than-an-hour", "contact-changed-just-now", "no-contacts", "a-minute"],
+)
+def test_a_radio_clock_ahead_stays_when_a_restart_would_not_set_it_back(
+    caplog: pytest.LogCaptureFixture,
+    ahead: int,
+    changed: int | None,
+    allowed: bool,
+    reason: str | None,
+) -> None:
+    caplog.set_level(logging.WARNING)
+    now = START_TIME + 100
+    contacts = [] if changed is None else [replace(ALICE, last_modified=changed)]
+    radio = EmulatedRadio(clock=now + ahead, contacts=contacts)
+    assert asyncio.run(connect(radio, now, lambda: allowed)) == (None, ahead)
+    assert radio.reboots == 0
+    warnings = [r.getMessage() for r in caplog.records if r.getMessage().startswith("radio clock")]
+    if reason is None:
+        assert warnings == []
+    else:
+        (warning,) = warnings
+        assert f"{ahead} s ahead of the host's and not set back ({reason}" in warning
+
+
+def test_the_heartbeat_restarts_the_radio_once_the_bridge_allows_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A message being delivered at connect: the restart waits for a heartbeat after it."""
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.05)
+    now = START_TIME + 100
+    radio = EmulatedRadio(clock=now + AHEAD_S, contacts=[ALICE])
+    allowed = False
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        nonlocal allowed
+        session.may_restart = lambda: allowed
+        await session.start()
+        assert radio.reboots == 0
+        allowed = True
+        with pytest.raises(RadioRestartedError):
+            await asyncio.wait_for(session.wait_closed(), 2)
+        assert radio.reboots == 1
+
+    run(radio, scenario, now=now)
+
+
+def test_a_radio_clock_behind_is_moved_forward_at_the_heartbeat() -> None:
+    """Not only at connect: a radio clock that runs slow falls behind while connected."""
+    radio = EmulatedRadio(clock=START_TIME + 100)
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        radio.clock -= 2  # within the reading's resolution
+        await session.read_status()
+        assert radio.clock == START_TIME + 98
+        radio.clock -= 30
+        await session.read_status()
+        assert (radio.clock, session.clock_offset_s) == (START_TIME + 100, 0)
+
+    run(radio, scenario, now=START_TIME + 100)
 
 
 def test_the_release_date_floor_is_a_past_date() -> None:

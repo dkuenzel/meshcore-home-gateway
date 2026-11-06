@@ -788,7 +788,12 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/doctor.py
 #, python-brace-format
-msgid "the radio's clock is {seconds} s off the host's: messages and commands carry the wrong time ([radio] set_clock, docs/configuration.md)"
+msgid "the radio's clock is {seconds} s ahead of the host's: up to an hour ahead, the gateway restarts the radio to set it back once no message is being delivered (docs/deployment.md, Troubleshooting)"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "the radio's clock is {seconds} s behind the host's: with [radio] set_clock the gateway moves it forward when the host's clock is plausible (docs/configuration.md)"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/doctor.py

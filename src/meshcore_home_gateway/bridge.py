@@ -47,8 +47,10 @@ from meshcore_home_gateway.ports import (
     PathChanged,
     RadioError,
     RadioEvent,
+    RadioInfo,
     RadioPort,
     RadioProfileHook,
+    RadioRestartedError,
     SessionFactory,
     TelemetryReceived,
     Transport,
@@ -65,6 +67,8 @@ log = logging.getLogger(__name__)
 log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
 
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1.0, 60.0
+CLOCK_RESTART_INTERVAL_S = 86_400.0  # the radio is restarted for its clock at most this often
+RESTART_WAIT_S = 5.0  # a restarted radio is back after a few seconds
 STATUS_INTERVAL_S = 60.0
 STOP_DRAIN_S = 2.0  # on stop, received messages already out of the radio are handled this long
 
@@ -100,6 +104,7 @@ class Bridge:
         self.outbox, self.inbox, self.announcer, self.status = outbox, inbox, announcer, status
         self._contacts, self._telemetry, self._profile = contacts, telemetry, profile
         self._notify, self._mono = notifier, monotonic
+        self._clock_restarted_at: float | None = None  # the monotonic clock's
 
     # --- life cycle -----------------------------------------------------------------------------
 
@@ -175,49 +180,71 @@ class Bridge:
                 self._transport_factory(), self._events, self.config.radio.set_clock
             )
             session.set_clock_max_days = self.config.radio.set_clock_max_days
+            session.may_restart = self._may_restart
             try:
                 info = radio.info = await session.start()
+            except RadioRestartedError as exc:
+                delay = self._restarted(exc)
             except (RadioError, OSError) as exc:
                 log.warning("radio: cannot connect (%s); retry in %.0f s", exc, delay)
             except Exception:  # a bug while connecting: keep the service up, retry later
                 log.exception("radio: cannot connect; retry in %.0f s", delay)
             else:
-                radio.session = session
-                radio.ready.set()
-                if self.config.radio.transport == "tcp":
-                    self._link_started(session)
-                if self._telemetry is not None:
-                    observe(self._telemetry.radio_connected)
-                delay = RECONNECT_MIN_S
-                # untested firmware takes no request: the documents and the controls say so, and
-                # why (OPS-007); before the index the connect publishes
-                takes = self._contacts.takes_requests(info)
-                observe(self.observer.set_manage, takes, self._contacts.refusal(info))
-                observe(self.observer.radio_connected, info.device.max_contacts, session.tuning)
-                for report in self._profile.take_reports() if self._profile else []:
-                    observe(self.observer.profile_applied, report)
-                self._check_radio(session)
-                if self.config.homeassistant.discovery and self.announcer.radio_changed():
-                    self.announcer.announce()  # the device page shows the radio
-                else:
-                    self.status.publish()
-                try:
-                    await session.wait_closed()
-                except RadioError as exc:
-                    log.warning("radio: connection lost (%s)", exc)
-                finally:
-                    radio.ready.clear()
-                    radio.session = None
-                    radio.watch.ended(*_uptime(session), by_radio=session.closed_by_radio)
-                    # requests are refused until the radio is back: the index says why
-                    observe(
-                        self.observer.set_manage, self.observer.manage, self._contacts.refusal(None)
-                    )
-                    self.status.publish()
+                delay = await self._serve(session, info)
             finally:
                 await session.close()
             await asyncio.sleep(delay * random.uniform(1.0, 1.2))  # noqa: S311 - jitter only
             delay = min(delay * 2, RECONNECT_MAX_S)
+
+    async def _serve(self, session: RadioPort, info: RadioInfo) -> float:
+        """The connected session until it ends; the delay before connecting again."""
+        radio, delay = self.radio, RECONNECT_MIN_S
+        radio.session = session
+        radio.ready.set()
+        if self.config.radio.transport == "tcp":
+            self._link_started(session)
+        if self._telemetry is not None:
+            observe(self._telemetry.radio_connected)
+        # untested firmware takes no request: the documents and the controls say so, and
+        # why (OPS-007); before the index the connect publishes
+        takes = self._contacts.takes_requests(info)
+        observe(self.observer.set_manage, takes, self._contacts.refusal(info))
+        observe(self.observer.radio_connected, info.device.max_contacts, session.tuning)
+        for report in self._profile.take_reports() if self._profile else []:
+            observe(self.observer.profile_applied, report)
+        self._check_radio(session)
+        if self.config.homeassistant.discovery and self.announcer.radio_changed():
+            self.announcer.announce()  # the device page shows the radio
+        else:
+            self.status.publish()
+        try:
+            await session.wait_closed()
+        except RadioRestartedError as exc:
+            delay = self._restarted(exc)
+        except RadioError as exc:
+            log.warning("radio: connection lost (%s)", exc)
+        finally:
+            radio.ready.clear()
+            radio.session = None
+            radio.watch.ended(*_uptime(session), by_radio=session.closed_by_radio)
+            # requests are refused until the radio is back: the index says why
+            observe(self.observer.set_manage, self.observer.manage, self._contacts.refusal(None))
+            self.status.publish()
+        return delay
+
+    def _may_restart(self) -> bool:
+        """Whether the session may restart the radio now to set its clock back: no message is
+        queued or being delivered, and it did not do so in the last day."""
+        last = self._clock_restarted_at
+        if last is not None and self._mono() - last < CLOCK_RESTART_INTERVAL_S:
+            return False
+        return not self.outbox.activity.busy
+
+    def _restarted(self, exc: RadioRestartedError) -> float:
+        """The session restarted the radio: the delay before connecting again."""
+        self._clock_restarted_at = self._mono()
+        log.info("radio: %s; connecting again in %.0f s", exc, RESTART_WAIT_S)
+        return RESTART_WAIT_S
 
     def _link_started(self, session: RadioPort) -> None:
         """Over TCP: whether another client took the link before this one (core.link)."""

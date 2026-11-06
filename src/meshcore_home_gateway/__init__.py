@@ -1,3 +1,3 @@
 """Bridge between a MeshCore companion radio and an MQTT message bus."""
 
-__version__ = "2.0.0rc2"
+__version__ = "2.0.0rc3"

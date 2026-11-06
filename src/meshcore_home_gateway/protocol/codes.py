@@ -24,6 +24,7 @@ class Command(IntEnum):
     SYNC_NEXT_MESSAGE = 10
     RESET_PATH = 13
     REMOVE_CONTACT = 15
+    REBOOT = 19  # only to set a radio clock ahead of the host's back (docs/protocol.md section 5)
     GET_BATT_AND_STORAGE = 20
     SET_TUNING_PARAMS = 21
     DEVICE_QUERY = 22

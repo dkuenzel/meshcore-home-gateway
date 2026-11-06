@@ -19,7 +19,7 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial` |
 | `port` | `5000` | TCP port; only with `tcp` |
 | `tcp_unauthenticated` | `false` | required as `true` with `tcp`, an error with `serial`: says that you know what the TCP interface exposes (below) |
-| `set_clock` | `true` | move the radio clock forward to the host's clock at connect, when the host's clock is plausible (`set_clock_max_days`); it cannot be moved back |
+| `set_clock` | `true` | keep the radio clock on the host's: move it forward when it is behind, at connect and every minute, when the host's clock is plausible (`set_clock_max_days`); restart the radio when it is 1 minute to 1 hour ahead, which sets it back (at most once a day, when no message is being delivered) |
 | `set_clock_max_days` | `30` | the largest step, in days, by which `set_clock` moves a radio clock that was set, 0–3650; a host clock further ahead, before the gateway's release or more than ten years after it is not written (a warning says why). A radio without a clock chip restarts at the newest time it wrote to a contact, so a radio that lay unused needs a larger step once. `0`: no limit (the behaviour of earlier versions) |
 
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it

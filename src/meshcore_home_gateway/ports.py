@@ -31,6 +31,10 @@ class NotSentError(RadioError):
     """The session ended before the command was sent: the radio never got it."""
 
 
+class RadioRestartedError(RadioError):
+    """The session restarted the radio to set its clock back: connect again."""
+
+
 class CommandFailedError(RadioError):
     """The radio refused a command: ERR with an error name, or `disabled`."""
 
@@ -201,6 +205,7 @@ class RadioPort(Protocol):
     contacts_read_started_at: int  # command count of the newest read, also one running
     clock_offset_s: int | None  # the radio's clock minus the host's, last read
     set_clock_max_days: int
+    may_restart: Callable[[], bool] | None  # whether a restart to set the clock back fits now
     serial: int  # tells this session's frame numbers from another's
     closed_by_radio: bool
     on_contact_key: Callable[[str, bool], None] | None  # key, held as contact
