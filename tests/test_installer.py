@@ -49,6 +49,7 @@ NL = "\x1e"  # stands for a newline inside an argument
 LIB = "/usr/local/lib/meshcore-home-gateway"
 CONFIG = "/etc/meshcore-home-gateway/config.toml"
 ANSWERS = "/root/meshcore-home-gateway-answers"
+SELF_TEST = "meshcore-home-gateway doctor --help"  # a line of the self-test's script
 
 STUBS = {
     "pct": r"""
@@ -93,6 +94,17 @@ STUBS = {
             # exec, not a child: a signal to the group while bash forks reaches the parent only
             [[ -z ${SLEEP_AT-} || $* != *"$SLEEP_AT"* ]] || exec sleep 60
             case "$*" in
+              *"meshcore-home-gateway doctor"*)  # the self-test: statuses in turn, DOCTOR_ANSWERS
+                n=$(cat "$STUB/doctor-runs" 2>/dev/null || echo 0)
+                echo $(( n + 1 )) >"$STUB/doctor-runs"
+                read -ra codes <<<"${DOCTOR_ANSWERS:-0}"
+                code=${codes[n]:-${codes[-1]}}  # the last one repeats; 3: a version without it
+                case $code in
+                  0) printf '  ok       the gateway is online\n' ;;
+                  1) printf '  ok       the gateway is online\n'
+                     printf '  problem  the radio is not connected\n' ;;
+                esac
+                exit "$code" ;;
               *"--broker"*)  # the login check: exit statuses in turn from BROKER_ANSWERS
                 n=$(cat "$STUB/broker-checks" 2>/dev/null || echo 0)
                 echo $(( n + 1 )) >"$STUB/broker-checks"
@@ -362,6 +374,7 @@ def installer_env(host: Host, env: dict[str, str] | None = None) -> dict[str, st
         "ALICE": ALICE,
         "RELAY": RELAY,
         "MESHCORE_HOME_GATEWAY_SERIAL_DIR": str(host.serial.parent),
+        "MESHCORE_HOME_GATEWAY_SELF_TEST_WAIT_S": "0",
         "STUB_VERSION": __version__,
         **(env or {}),
     }
@@ -552,9 +565,10 @@ def test_unattended_install_creates_and_configures_the_container(host: Host) -> 
     assert any("SystemMaxUse=100M" in c for c in inside)  # OPS-009
     assert any("build_pyz.py" in c and "/usr/bin/python3 -I" in c for c in inside)
     assert any("config render" in c and "--group meshcore-home-gateway" in c for c in inside)
-    assert inside[-2:] == [
+    assert inside[-3:] == [
         "systemctl enable --now meshcore-home-gateway",
         "systemctl is-active --quiet meshcore-home-gateway",
+        f"bash -c {host.script(SELF_TEST)}",
     ]
 
     config = host.config()
@@ -641,6 +655,79 @@ def test_the_summary_names_how_the_broker_connection_is_secured(
     assert result.returncode == 0, result.stderr
     assert f"Broker:       login accepted ({posture})\n" in result.stderr
     assert "After re-plugging the radio: pct reboot 105" in result.stderr
+
+
+def doctor_runs(host: Host) -> int:
+    runs = host.root / "doctor-runs"
+    return int(runs.read_text(encoding="utf-8")) if runs.exists() else 0
+
+
+def test_the_installation_ends_with_the_gateway_s_own_check(host: Host) -> None:
+    """Once the service runs, the gateway checks itself (`doctor`: the configuration, the broker,
+    the radio it reports, the host). Passed, the summary says so in one line."""
+    result = run_installer(host, "--answers", str(answers_file(host)))
+    assert result.returncode == 0, result.stderr
+    assert host.inside()[-1] == f"bash -c {host.script(SELF_TEST)}"
+    assert doctor_runs(host) == 1
+    assert "self-test passed (meshcore-home-gateway doctor in container 105)" in result.stderr
+    assert "Self-test:    passed\n" in result.stderr
+
+
+def test_the_self_test_waits_for_the_radio(host: Host) -> None:
+    """The service reports itself ready before its radio connects: the check runs again until
+    it passes."""
+    answers = str(answers_file(host))
+    result = run_installer(host, "--answers", answers, env={"DOCTOR_ANSWERS": "1 1 0"})
+    assert result.returncode == 0, result.stderr
+    assert doctor_runs(host) == 3
+    assert "Self-test:    passed\n" in result.stderr
+    assert "problem  the radio" not in result.stderr
+
+
+def test_problems_of_the_self_test_are_shown_and_the_installation_stays(host: Host) -> None:
+    """After about a minute the report is shown: the service keeps running, the container stays."""
+    answers = str(answers_file(host))
+    result = run_installer(host, "--answers", answers, env={"DOCTOR_ANSWERS": "1"})
+    assert result.returncode == 0, result.stderr
+    assert doctor_runs(host) == 8
+    assert "warning: the self-test found problems" in result.stderr
+    assert "  problem  the radio is not connected\n" in result.stderr
+    command = "pct exec 105 -- /usr/local/bin/meshcore-home-gateway doctor"
+    assert f"Self-test:    problems found (see above): {command}\n" in result.stderr
+    assert not host.pct("destroy")
+
+
+def test_a_version_without_doctor_is_not_checked(host: Host) -> None:
+    answers = str(answers_file(host))
+    result = run_installer(host, "--answers", answers, env={"DOCTOR_ANSWERS": "3"})
+    assert result.returncode == 0, result.stderr
+    assert doctor_runs(host) == 1
+    assert f"Self-test:    not run (version {__version__} has no doctor command)\n" in (
+        result.stderr
+    )
+
+
+@pytest.mark.parametrize(
+    ("program", "status", "output"),
+    [
+        ('[ "$*" != "doctor --help" ] || exit 2', 3, ""),  # a version without the command
+        (
+            '[ "$*" != doctor ] || { echo "  ok  online"; echo "  problem  radio" >&2; exit 1; }',
+            1,
+            "  ok  online\n  problem  radio\n",
+        ),
+        ('[ "$*" != doctor ] || echo "  ok  online"', 0, "  ok  online\n"),
+    ],
+)
+def test_the_self_test_script_tells_a_version_without_doctor(
+    host: Host, container: Container, program: str, status: int, output: str
+) -> None:
+    """The script run in the container: exit 3 when the program has no `doctor`, else doctor's
+    status with its whole report (both streams) for the log."""
+    assert run_installer(host, "--answers", str(answers_file(host))).returncode == 0
+    container.stub("meshcore-home-gateway", program)
+    run = container.run(host.script(SELF_TEST))
+    assert (run.returncode, run.stdout) == (status, output)
 
 
 def test_a_radio_over_tcp_needs_the_acknowledgement(host: Host) -> None:
@@ -1032,6 +1119,7 @@ def test_a_refused_login_can_be_kept(host: Host) -> None:
     assert "warning: the broker login failed: broker refused the connection" in result.stderr
     assert "login failed (see above), the service keeps trying" in result.stderr
     assert host.inside()[-1].startswith("systemctl is-active")
+    assert "Self-test:    not run (the broker login failed)\n" in result.stderr
 
 
 def test_without_dialogs_a_refused_login_is_a_warning(host: Host) -> None:
@@ -1391,7 +1479,10 @@ def test_update_installs_this_checkout_and_restarts_the_service(
     existing_container(host)
     result = run_installer(host, "--update", "105")
     assert result.returncode == 0, result.stderr
-    assert host.inside()[-1] == "systemctl restart meshcore-home-gateway"
+    assert host.inside()[-2:] == [
+        "systemctl restart meshcore-home-gateway",
+        f"bash -c {host.script(SELF_TEST)}",
+    ]
     assert not host.pct("create")
 
     container.receive(host, "/root/meshcore-home-gateway-src.tar.gz")
@@ -1436,6 +1527,28 @@ def test_update_keeps_the_active_version_when_the_configuration_does_not_pass(
     assert sorted(p.name for p in lib.iterdir()) == ["current.pyz", active.name]  # no .new
     assert not list(container.path("/root").iterdir())
     assert container.calls("systemctl") == []
+
+
+def test_update_checks_the_gateway_after_the_restart(host: Host) -> None:
+    existing_container(host)
+    result = run_installer(host, "--update", "105", env={"DOCTOR_ANSWERS": "1 0"})
+    assert result.returncode == 0, result.stderr
+    inside = host.inside()
+    restart = inside.index("systemctl restart meshcore-home-gateway")
+    after = inside[restart + 1 :]
+    assert len(after) == 2
+    assert all(c.startswith("bash -c ") and SELF_TEST in c for c in after)
+    assert "self-test passed" in result.stderr
+
+
+def test_update_with_problems_says_how_to_go_back(host: Host) -> None:
+    """The new version keeps running: going back is the user's choice (docs/deployment.md)."""
+    existing_container(host)
+    result = run_installer(host, "--update", "105", env={"DOCTOR_ANSWERS": "1"})
+    assert result.returncode == 0, result.stderr
+    assert "warning: the self-test found problems" in result.stderr
+    assert "  problem  the radio is not connected\n" in result.stderr
+    assert "to go back to the version before: docs/deployment.md, Roll back" in result.stderr
 
 
 def test_the_journal_keeps_at_most_100_mb(host: Host, container: Container) -> None:
@@ -2088,7 +2201,7 @@ def test_update_from_a_url_downloads_into_the_container(host: Host) -> None:
     result = run_from_url(host, "--update", "105", release="1.2.3")
     assert result.returncode == 0, result.stderr
     assert fetches(host)[0][:3] == ["release", fetches(host)[0][1], "1.2.3"]
-    assert host.inside()[-1] == "systemctl restart meshcore-home-gateway"
+    assert host.inside()[-2] == "systemctl restart meshcore-home-gateway"
 
 
 PYZ_PIN, UNIT_PIN = "a1" * 32, "b2" * 32

@@ -26,7 +26,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.cli import run as cli_run
-from meshcore_home_gateway.config import parse_config
+from meshcore_home_gateway.config import load_config
 from tests.conftest import Broker
 
 BASE = "meshcore/test"  # base_topic and node_id of the configuration below
@@ -39,13 +39,14 @@ WAIT_S = 30.0
 ASK_ALL = '[telemetry]\nask = "all"\n'
 
 
-def configuration(serial: Path, broker: Broker, more: str = "") -> str:
-    """The service on the radio at `serial`; `more` adds settings of [diagnostics], then
-    tables. Home Assistant discovery is off: these tests read the documents themselves."""
+def configuration(serial: Path, broker: Broker, more: str = "", *, mqtt: str = "") -> str:
+    """The service on the radio at `serial`; `mqtt` adds settings of [mqtt], `more` settings of
+    [diagnostics], then tables. Home Assistant discovery is off: these tests read the documents
+    themselves."""
     return (
         f'[radio]\ntransport = "serial"\ndevice = "{serial}"\n'
         f'[mqtt]\nhost = "{broker.host}"\nport = {broker.port}\nbase_topic = "meshcore"\n'
-        'node_id = "test"\n[homeassistant]\ndiscovery = false\n'
+        f'node_id = "test"\n{mqtt}[homeassistant]\ndiscovery = false\n'
         f'[diagnostics]\nlog_level = "debug"\n{more}'
     )
 
@@ -141,8 +142,11 @@ class Service:
 @contextlib.asynccontextmanager
 async def running(text: str, state_dir: Path) -> AsyncIterator[Service]:
     """The service with this configuration until the end of the block, then stopped as SIGTERM
-    stops it (the stop event of `Bridge.run`)."""
-    config = parse_config(text)
+    stops it (the stop event of `Bridge.run`). The configuration is read from a file, with the
+    files it names (`codes_file`), as `run --config` reads it."""
+    path = state_dir.parent / "config.toml"
+    path.write_text(text, encoding="utf-8")
+    config = load_config(path)
     started: list[tuple[Bridge, asyncio.Event]] = []
     run = Bridge.run
 

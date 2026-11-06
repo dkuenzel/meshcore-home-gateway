@@ -30,11 +30,12 @@ is a state change of its own, also two events within the same millisecond.
 
 The Home Assistant releases each gateway release was tested with: the contract tests
 ([testing.md](testing.md#home-assistant-contract-tests)) run against the one their environment
-pins, the hardware checklist against a real installation. The pull request of a release adds its
-row.
+pins, the release check against a real installation ([testing.md](testing.md#release-check); up to
+1.0.0 the hardware checklist). The pull request of a release adds its row.
 
-| Gateway | Contract tests | Hardware checklist |
+| Gateway | Contract tests | Release check |
 | --- | --- | --- |
+| 2.0.0rc1 | 2026.10.2 | runs with it once it is published |
 | 2.0.0a1 | 2026.10.2 | not run (pre-release) |
 | 1.1.0a1 – 1.1.0a4 | 2026.10.0 | not run (pre-releases) |
 | 1.0.0, the program of 1.0.0rc1 | 2026.10.0 | 2026.10 |

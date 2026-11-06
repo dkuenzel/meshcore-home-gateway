@@ -147,3 +147,8 @@ same way, once, so a merged version can still be reverted within the day. The ma
 accepted the shared identity: one of the agent's own with a required review would make every
 change wait for the maintainer. `main` has a ruleset: pull requests and squash merges only, the
 CI jobs required, no force push or deletion (`.github/rulesets/main.json`).
+
+Amended on 2026-11-05 by [ADR 0030](0030-release-checked-by-ci-self-test-and-use.md): a release
+follows the release check with its candidate (CI, the installer's self-test on the maintainer's
+installation and his use of Home Assistant), no longer the hardware checklist; the release still
+ships the candidate's program.

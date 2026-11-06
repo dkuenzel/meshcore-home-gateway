@@ -2,7 +2,7 @@
 whether a companion's newest advert carries its position (ADR 0025), with the real firmware, the
 gateway's service and the broker. Telemetry is off in these tests, so a position on B's document
 can only come from B's adverts. Home Assistant, the exclusion from telemetry and the update from
-1.1.0a2 stay on the hardware checklist."""
+1.1.0a2 are not shown here (docs/testing.md, Where each step is checked)."""
 
 from __future__ import annotations
 

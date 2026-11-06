@@ -4,8 +4,9 @@
 
 ## How it was tested
 
-<!-- Tests added or changed; results of `make check` and `make matrix`; for radio behaviour,
-the steps of the hardware checklist (docs/testing.md) with radio models and firmware versions. -->
+<!-- Tests added or changed; results of `make check` and `make matrix`; for radio behaviour run
+on real radios, the steps of the hardware checklist (docs/testing.md) with radio models and
+firmware versions; for a release, the release check (docs/testing.md#release-check). -->
 
 ## Compatibility
 

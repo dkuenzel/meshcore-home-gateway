@@ -105,7 +105,8 @@ A second speaker of the language reads a translation before it is merged
 - One logical change per commit; imperative subject line of at most 72 characters.
 - Update `CHANGELOG.md` (section *Unreleased*) for every user-visible change.
 - A pull request describes what changed, why, and how it was tested, including tests on real
-  hardware where relevant (see the checklist in [`docs/testing.md`](docs/testing.md)); the pull
+  hardware where relevant (the steps of the feature in the checklist of
+  [`docs/testing.md`](docs/testing.md#hardware-checklist)); the pull
   request template lists the points.
 - The maintainer reviews every change; [`.github/CODEOWNERS`](.github/CODEOWNERS) names the
   security-relevant paths, whose diff the template's review checklist asks to read line by line.

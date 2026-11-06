@@ -1,6 +1,6 @@
 """Hardware checklist step 30, B's part: what B answers the gateway under each of its telemetry
 permissions, and what the gateway makes of it. B2's environment sensor and C, the tracker board,
-need sensors this board does not have; they stay on the hardware checklist."""
+need sensors this board does not have; they are not shown here."""
 
 from __future__ import annotations
 

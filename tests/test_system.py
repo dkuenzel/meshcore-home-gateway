@@ -22,7 +22,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway.cli import EX_OK, main
 from meshcore_home_gateway.history import History
-from tests.conftest import Broker
+from tests.conftest import SKIP_BROKER, Broker, free_port, start_mosquitto, stop_mosquitto
 from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
 
 ALICE = EmulatedContact(bytes.fromhex("a1" * 32), "Alice")
@@ -162,3 +162,66 @@ def test_service_end_to_end(
         assert late.wait("meshcore/radio1/availability") == b"offline"
     finally:
         late.close()
+
+
+@pytest.mark.broker
+def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> None:
+    """Hardware checklist step 16: the broker stops and starts again, without the retained
+    messages it had (`persistence false`). The service reconnects by itself and publishes
+    `online` and its documents again."""
+    if SKIP_BROKER:
+        pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
+    port = free_port()
+    conf = tmp_path / "mosquitto.conf"
+    conf.write_text(f"listener {port} 127.0.0.1\nallow_anonymous true\npersistence false\n")
+    broker = Broker("127.0.0.1", port)
+    mosquitto = start_mosquitto(conf, port)
+    try:
+        with TcpRadioServer(EmulatedRadio(contacts=[ALICE])) as server:
+            config = tmp_path / "config.toml"
+            config.write_text(
+                '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+                f'host = "127.0.0.1"\nport = {server.port}\n'
+                f'[mqtt]\nhost = "{broker.host}"\nport = {broker.port}\nnode_id = "radio1"\n'
+                "[homeassistant]\ndiscovery = false\n[telemetry]\nenabled = false\n",
+                encoding="utf-8",
+            )
+            service = subprocess.Popen(  # noqa: S603 - our own module with fixed arguments
+                [
+                    sys.executable,
+                    "-m",
+                    "meshcore_home_gateway",
+                    "run",
+                    "--config",
+                    str(config),
+                    "--state-dir",
+                    str(tmp_path / "state"),
+                ],
+                stderr=subprocess.PIPE,
+                env={**os.environ, "JOURNAL_STREAM": "1:1", "PYTHONPATH": str(SRC)},
+            )
+            try:
+                watcher = Watcher(broker)
+                watcher.wait("meshcore/radio1/availability", lambda p: p == b"online")
+                watcher.close()
+                stop_mosquitto(mosquitto)
+                time.sleep(2)  # the service notices the lost connection
+                mosquitto = start_mosquitto(conf, port)
+                watcher = Watcher(broker)
+                try:
+                    watcher.wait("meshcore/radio1/availability", lambda p: p == b"online", 60)
+                    state = json.loads(watcher.wait("meshcore/radio1/state", timeout=10))
+                    assert state["radio"] == "connected"
+                finally:
+                    watcher.close()
+            finally:
+                service.send_signal(signal.SIGTERM)
+                try:
+                    _, errors = service.communicate(timeout=15)
+                except subprocess.TimeoutExpired:
+                    service.kill()
+                    _, errors = service.communicate()
+            assert service.returncode == 0, errors.decode()
+            assert b"Traceback" not in errors
+    finally:
+        stop_mosquitto(mosquitto)

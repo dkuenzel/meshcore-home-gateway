@@ -125,12 +125,42 @@ settings with the program's own configuration code (when it installs a clone: al
 container is created), logs in to the broker with the user name and password given, reads the
 radio's channels and contacts for the last questions, writes the configuration and starts the
 service. When the broker refuses the login, the script shows its answer and offers to enter the
-broker settings again (without dialogs it warns and goes on: the service keeps trying). The final
-message shows the result of the login and how to read the logs. If a step fails or the script is
+broker settings again (without dialogs it warns and goes on: the service keeps trying). Once the
+service runs, the script has the gateway check itself (`meshcore-home-gateway doctor`: the
+configuration, the broker, the radio as the gateway reports it, the container) and repeats the
+check for about a minute while the radio connects. The final message shows the result of the
+login, the self-test's `passed` (or the problems it found, with the report above it) and how to
+read the logs. If a step fails or the script is
 interrupted after the container was created, the error message says how to remove it.
 
 The dialogs run in the `C.UTF-8` locale: in a locale the host lacks (for example one passed on by
 ssh), whiptail would drop every non-ASCII character typed, passwords included.
+
+**"Already passed through to another container (ID …)".** The script refuses a radio that
+another container of the host can open ([below](#what-the-script-does)). Containers made by setup
+scripts, for zigbee2mqtt or Home Assistant for example, often get the host's serial devices by
+their kernel names, whatever is plugged in (`lxc.mount.entry: /dev/ttyACM0 dev/ttyACM0 …`, the
+same for `/dev/ttyUSB0` and `/dev/serial/by-id`): the radio, once the kernel numbers it
+`ttyACM0`, is then that container's as well. When the container named needs no serial device
+(zigbee2mqtt with a coordinator on the network, say), take those lines out of its configuration,
+here for container 101:
+
+```sh
+cp /etc/pve/lxc/101.conf /root/101.conf.bak
+sed -E '1,/^\[/{/^lxc\.mount\.entry: *\/dev\/(tty(USB|ACM)[0-9]+|serial\/by-id)[ \/]/d; /^lxc\.cgroup2\.devices\.allow: *c (166|188|189):/d}' \
+  /root/101.conf.bak > /root/101.conf.new
+diff /root/101.conf.bak /root/101.conf.new   # what goes
+cp /root/101.conf.new /etc/pve/lxc/101.conf
+pct reboot 101
+```
+
+This removes the bind mounts of `/dev/ttyUSB*`, `/dev/ttyACM*` and `/dev/serial/by-id` and the
+permissions for USB serial devices (major numbers 166, 188 and 189) from the container's current
+settings, not from its snapshots; `cp /root/101.conf.bak /etc/pve/lxc/101.conf` undoes it. The
+copy through `/root` is on purpose: `sed -i` writes a temporary file beside the original, which
+Proxmox's cluster file system (`/etc/pve`) may refuse. When the other container does use a serial
+device of its own, give it that device's `/dev/serial/by-id/…` path instead of the kernel name,
+which follows the order in which the devices were plugged in. Then run the installer again.
 
 ### What the script does
 
@@ -205,7 +235,8 @@ the keys of the next section), which gives the same file with the same mode.
   `lxc.mount.entry` of `pct config`, compared after following links, so `/dev/ttyACM0` and its
   `/dev/serial/by-id/` name are the same radio): a radio takes one client at a time, and the
   container that opens it second could not use it. With dialogs it says so and offers the
-  radios again.
+  radios again. A container that gets serial devices by their kernel names counts too
+  ([Install](#install) says how to take them out).
 * **Updates of the container:** the script installs `unattended-upgrades`, which installs
   Debian's updates every day (see [Operations](#4-operations)), and empties the package cache
   afterwards (`apt-get clean`). It limits the journal to 100 MB of the container's disk.
@@ -279,7 +310,9 @@ pct stop 105 && pct destroy 105
   (`releases/download/vX.Y.Zrc1/meshcore-home-gateway-lxc.sh`) or with `--release X.Y.Zrc1`; the
   final message of a pre-release names its own installer. An update also installs the packages
   and the journal limit of [What the script does](#what-the-script-does) again, so an older
-  installation gets `unattended-upgrades` with it.
+  installation gets `unattended-upgrades` with it. After the restart it runs the same self-test
+  as an installation; with problems the new version keeps running, and the log shows the report
+  and points to [Roll back](#update-reconfigure-remove).
 * **The privacy defaults after an update to 2.0.0:** only the messages of the channels that are a
   target are published, of other people's radios only their keys and types, and telemetry asks
   only the companions the household includes. Switch *Telemetry* on for each of the household's
@@ -512,6 +545,7 @@ updates wait for.
 | Symptom | Cause and remedy |
 | --- | --- |
 | `pct start` fails: `Device /dev/serial/by-id/... does not exist` | The radio is unplugged or has a different name (another radio, other firmware): plug it in, or pass the new path with `pct set <id> --dev0 path=<path>,gid=20,mode=0660` and set the same path as `device` in `[radio]` of `/etc/meshcore-home-gateway/config.toml` |
+| Installer: `… is already passed through to another container (ID …)` | That container can open the radio: often one made by a setup script that gets every `/dev/ttyACM*` and `/dev/ttyUSB*` by name. If it needs none, take those lines out of its configuration ([Install](#install)) |
 | `radio: cannot connect (... No such file or directory)` | Device not passed through: check `pct config <id>` for `dev0` |
 | `radio: cannot connect (no answer from the radio)` | Another program or the phone app holds the radio, or wrong firmware: a BLE-only build, or a USB build made without its USB interface (four of the release builds, among them the T-Echo Lite's with display: [platform-notes.md](platform-notes.md#meshcore-companion-firmware)); close the app, check the firmware type |
 | State `disconnected` after re-plugging the radio | The device number changed: `pct reboot <id>` |

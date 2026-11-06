@@ -1,7 +1,7 @@
 # Testing
 
 The strategy is described in [design §10](design.md#10-testing-strategy). This page says how to run
-the automated tests and how to test with real radios before a release.
+the automated tests and how a release is checked ([Release check](#release-check)).
 
 ## Automated tests
 
@@ -70,10 +70,11 @@ request. The Home Assistant releases tested with are listed in
 | CLI | `tests/test_cli.py`, `test_cli_contacts.py`, `test_cli_language.py` (every command in a pseudo-language and with catalogs that would break it; machine output the same in every language; `run` English), `test_cli_dashboard.py` | `mosquitto` for the tests marked `broker` |
 | Dashboard | `tests/test_dashboard.py` (the generator, and the template's rules on the shipped template: markers, the macro `m`, quoting, translator notes, the mapping macros against the gateway's value lists) | nothing |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
-| System | `tests/test_system.py` (the service as a process with an emulated radio and a broker) | `mosquitto` |
+| Service manager | `tests/test_unit_run.py` (`make unit-run` after `make dist`: the zipapp and the unit installed as an installation has them and run under systemd as the service user, with an emulated radio over TCP and a private broker: readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog fed and firing on `SIGSTOP`) | root, systemd, `mosquitto`, the distribution's `python3` with paho-mqtt 2; it installs into the system, so only on a machine to throw away: CI's job *unit check* |
+| System | `tests/test_system.py` (the service as a process with an emulated radio and a broker; a broker restart, without its retained messages) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
 | Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_dashboard.py` (above) | `make ha-test`: Python 3.14.2 or newer |
-| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)), and `test_acknowledgements.py`, forged acknowledgements (SEC-001): a stand-in beside A who knows the text confirms a message B never received, not with `confirm_nonce`, and one that answers sooner than a repeater allows is `suspect` while B's genuine one is not | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
+| Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 3–6 and 10 (`test_messages.py`: to a channel and to B, a text cut to 160 bytes, B out of reach, what B sends), 11–13, 55 and 56 (`test_commands.py`: commands of a sender and of another contact, one that waited in the radio, codes and replies) and 14 (`test_radio_profile.py`: the profile set back and kept), of steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)), and `test_acknowledgements.py`, forged acknowledgements (SEC-001): a stand-in beside A who knows the text confirms a message B never received, not with `confirm_nonce`, and one that answers sooner than a repeater allows is `suspect` while B's genuine one is not | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`; a copy of the script that offers English only), `test_installer_language.py` (the messages block cut out and run alone, packs and their pins, the language menu with a pseudo-language, where a pack comes from, the program's messages in the dialogs' language, the size of the published script) | bash |
 
 ### The dashboard in the frontend's Markdown pipeline
@@ -161,20 +162,25 @@ without GPS takes about 5 s to start, because the firmware looks that long for a
 
 The simulation does not show radio propagation, the noise floor and the capture of a stronger
 packet, the time on air of a real chip, GPS, USB, the code paths of ESP32 and nRF52 boards (it
-builds the RP2040 ones), the phone app or Home Assistant. Those stay on the hardware checklist.
+builds the RP2040 ones), the phone app or Home Assistant. Home Assistant has its contract tests and
+the maintainer's use; the rest is not checked before a release ([Release check](#release-check)).
 The nodes run in real time, so a scenario of an hour takes an hour.
 
 ### Scenarios of the hardware checklist
 
-The scenarios play parts of steps 29–43 of the [hardware checklist](#hardware-checklist) with
-the gateway's service and the real firmware; [below the checklist](#steps-2945-on-the-simulated-air)
-it says which. `tests/firmware/household.py` starts radio A, Bob's companion B with a GPS (its fix
-at a public landmark) and, for the steps with hops, repeaters in a chain.
+The scenarios play steps of the [hardware checklist](#hardware-checklist) with the gateway's
+service and the real firmware: 3–6, 10–14, 55 and 56, and parts of 29–43;
+[the table after the checklist](#where-each-step-is-checked) says which. `tests/firmware/household.py`
+starts radio A, Bob's companion B with a GPS (its fix at a public landmark) and, for the steps with
+hops, repeaters in a chain; `test_commands.py` adds C, a companion on A's table that is no command
+sender, and `test_radio_profile.py` needs A alone.
 `tests/firmware/app.py` plays Bob's phone app on B's serial port, on the gateway's own transport,
-framing and codec: it sets B up as [companions.md](companions.md) says, and sends adverts,
-messages and path resets when a scenario says so. The app's own policies, such as when it gives up
+framing and codec: it sets B up as [companions.md](companions.md) says, sends adverts, direct and
+channel messages and path resets when a scenario says so, and fetches the messages B receives. The
+app's own policies, such as when it gives up
 a direct attempt and floods, are scripted. `tests/firmware/gateway.py` runs the service in the
-test's process, as `meshcore-home-gateway run` runs it, on A's pseudo terminal and a private
+test's process, as `meshcore-home-gateway run --config` runs it (with the files its configuration
+names), on A's pseudo terminal and a private
 `mosquitto`, and keeps everything it publishes.
 
 The nodes run in real time. So that a scenario takes a minute, not hours, the fixture
@@ -204,7 +210,7 @@ stands in for Home Assistant's *Add heard node*. The restart test stops and star
 one state directory. A stand-in on the air (`StandIn` in `air.py`) plays a stranger's radio that
 sends A copies of B's adverts with a path of its own.
 
-The whole suite takes about 14 minutes on four cores, the longest test about 2 minutes, so none is
+The whole suite takes about 17 minutes on four cores, the longest test about 2 minutes, so none is
 marked slow. A failed scenario's report ends with the last lines of each node's log
 and of the air's; `--log-file=gateway.log --log-file-level=DEBUG` keeps the gateway's own log.
 
@@ -217,8 +223,9 @@ and of the air's; `--log-file=gateway.log --log-file-level=DEBUG` keeps the gate
 2. Run `make firmware-test`. A release that needs more of the Arduino core or of a library fails
    to build or to link: extend the stand-in in `tests/firmware/shim` or `tests/firmware/board`.
 3. The smoke test expects the gateway to count the release as tested. Adding its firmware code to
-   `TESTED_FIRMWARE` in `src/meshcore_home_gateway/core/profile.py` follows the hardware checklist
-   with the release and is an addition to the public interface
+   `TESTED_FIRMWARE` in `src/meshcore_home_gateway/core/profile.py` follows the firmware tests
+   with the release and the maintainer's radio updated to it (the [release check](#release-check)
+   of a release candidate), and is an addition to the public interface
    ([development.md](development.md#compatibility)).
 
 **How soon** (EXT-020). A radio updated to a release the gateway is not tested with keeps
@@ -226,7 +233,8 @@ working, but the gateway writes nothing to it: the radio profile is only observe
 to add or remove contacts are refused, so Home Assistant's controls for them turn unavailable
 ([deployment.md](deployment.md#5-troubleshooting)). The target is to run these steps within two
 weeks of a MeshCore companion release and to publish a pre-release that counts it as tested
-once the hardware checklist passed with it. A release that changes what the gateway relies on
+once the firmware tests pass with it and the maintainer's radio runs it. A release that changes
+what the gateway relies on
 (a frame, a command, the contact record) takes longer; the pull request that adds it says why.
 
 ## Installer dialogs with the real whiptail
@@ -250,18 +258,50 @@ language, the menu comes first and the script needs a key for it. Whether whipta
 no-break space (U+00A0, U+202F) is not checked yet: until it is, the catalog checks refuse one in
 the command line's texts, which the installer's boxes show too.
 
+## Release check
+
+A release is checked in three places, none of them a procedure by hand
+([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)):
+
+1. **CI**, on every pull request and every push to `main`: the suites above; the firmware tests,
+   which play the steps of the [hardware checklist](#hardware-checklist) that a simulation can
+   ([where each step is checked](#where-each-step-is-checked)); and in the job *unit check* the
+   zipapp and the unit run under systemd (`make unit-run`).
+2. **The installer's self-test**, on every installation, reconfiguration and update: once the
+   service runs, the installer runs `meshcore-home-gateway doctor` in the container until it
+   passes, for about a minute while the radio connects. It checks the configuration, the broker
+   login, the radio connected as the gateway reports it, its clock and firmware, the gateway's
+   health and the container ([deployment.md](deployment.md#install)). The final message says
+   `Self-test: passed`, or shows the problems; nothing is undone.
+3. **The maintainer's use of the release candidate**: he updates his installation with the
+   candidate's installer and uses Home Assistant as every day.
+
+   | # | Check | Expected |
+   | --- | --- | --- |
+   | R1 | `bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/download/vX.Y.ZrcN/meshcore-home-gateway-lxc.sh)" -- --update <id>` | the log ends with `self-test passed` |
+   | R2 | The gateway's device in Home Assistant | online, the radio connected |
+   | R3 | A companion of the household sends the gateway a message | it shows in Home Assistant |
+   | R4 | A companion's switch *Telemetry* | it switches; battery and position follow within the companion's interval |
+   | R5 | The map | the household's companions with a position |
+
+   The features he uses besides are checked by using them, and what he finds goes into issues.
+   The pull request of the release names the Home Assistant version in the table of
+   [home-assistant.md](home-assistant.md#requirements).
+
+Not checked before a release: real radio propagation and timing, real GPS fixes, a USB cable
+pulled out of a real host, a host switched off, the telemetry intervals in real time (hours),
+radios over TCP, MeshCore's sensor firmware, the phone app scanning a QR code, and the Homie
+convention in openHAB, which is maintained by whoever uses it. The unit tests cover what the gateway
+does in those cases; reports from use cover the rest.
+
 ## Hardware checklist
 
-The automated tests emulate the radio or run its firmware on a simulated air. This checklist covers
-what they cannot: real radio links, acknowledgements over the air, a USB cable pulled out, the watchdog of a real systemd. It is
-the same for every installation and needs no particular hardware: any two MeshCore radios with
-companion firmware will do. Run it before every release and after raising the supported firmware
-version, and record the firmware versions, radio models and results in the pull request. The
-core steps 1–4, 10–12, 15, 16 and 18 test the gateway end to end and are run for every release
-(docs/development.md); the others where their feature changed. Steps 15 and 46 (the `pct` parts),
-19 and 20 apply to the Proxmox installer only. Pre-releases (`X.Y.0aN`) are not checked on
-hardware; their changelog sections say so, and the release that follows them runs the checklist
-for every feature they added.
+The steps below say what the gateway does on real radios. They are not run before a release
+([Release check](#release-check)): [the table after them](#where-each-step-is-checked) says where
+each step is checked instead. A contributor who changes a feature and has the hardware runs its
+steps and gives the radio models, firmware versions and results in the pull request. Any two
+MeshCore radios with companion firmware will do. Steps 15 and 46 (the `pct` parts), 19 and 20
+apply to the Proxmox installer only.
 
 Setup: radio **A** on the gateway (USB), radio **B** as a handheld or phone companion in range,
 both on the same channel settings; B knows A as a contact and the reverse. Steps 21–28 add and
@@ -357,13 +397,37 @@ Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, s
 | 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart, switch its *Telemetry* on | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
 | 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
 
+### Where each step is checked
+
+| Steps | Checked by |
+| --- | --- |
+| 1 | the installer, which reads the radio with `probe` on every installation; `tests/firmware/test_smoke.py` |
+| 2 | the installer's self-test (`doctor`) after every installation and update; `tests/test_unit_run.py` under systemd; `tests/test_system.py` |
+| 3–6, 10 | `tests/firmware/test_messages.py`; the unit tests of the outgoing queue and the inbox (`test_outbox.py`, `test_inbox.py`) |
+| 7–9 | the unit tests (`test_text.py`, `test_outbox.py`, `test_budget.py`, `test_airtime.py`) |
+| 11–13 | `tests/firmware/test_commands.py`; `test_commands.py`, `test_inbox.py` |
+| 14 | `tests/firmware/test_radio_profile.py`; `test_profile.py` |
+| 15 | the unit tests of the transport, the session and the outgoing queue (`test_transport.py`, `test_session.py`, `test_outbox.py`); a USB cable pulled out of a real host: not checked |
+| 16 | `tests/test_system.py`; `tests/test_unit_run.py` |
+| 17 | `tests/test_unit_run.py`: the watchdog of the CI runner's systemd |
+| 18, 27, 28, 45–54 | the Home Assistant contract tests; the maintainer's use of the release candidate ([R2–R5](#release-check)) |
+| 19 | the installer tests; the maintainer's update with the release candidate (R1) |
+| 20 | not checked: Proxmox's behaviour, described in [deployment.md](deployment.md#what-the-script-does) |
+| 21, 22, 26 | `tests/firmware/test_advert_check.py` (B added on request after its advert); the unit tests of links and cards (`test_links.py`) and of the contact manager; a replayed advert: not checked |
+| 23, 24 | the unit tests of the contact manager (`test_contact_manager.py`) |
+| 25 | the unit tests of the contact link (`test_links.py`); the phone app's scan: not checked |
+| 29–44 | the firmware tests, in part ([below](#steps-2945-on-the-simulated-air)), and the unit tests of telemetry and adverts; the hours in real time, a real GPS and a radio over TCP: not checked |
+| 55, 56 | `tests/firmware/test_commands.py` |
+| 57 | the unit tests of telemetry from sensors (`test_telemetry_poller.py`); MeshCore's sensor firmware: not checked |
+| 58 | the unit tests of the Homie documents (`test_homie.py`); openHAB: not checked, Homie is maintained by whoever uses it |
+
 ### Steps 29–45 on the simulated air
 
 The [firmware tests](#scenarios-of-the-hardware-checklist) play parts of steps 29–43 against the
 real firmware, with the gateway's service: the telemetry steps on a shortened schedule, the steps
-on adverts with telemetry off. They do not replace a step: what they cannot show stays here.
+on adverts with telemetry off. The last column says what they cannot show.
 
-| # | Shown by the firmware tests | Stays on the hardware checklist |
+| # | Shown by the firmware tests | Not shown by them |
 | --- | --- | --- |
 | 29 | **partly**, `test_first_start.py`: the first-start hold (`paused`, `first_start` from connected, one warning with the number of companions, no request; the hour shortened to 15 s); on the later start the first request 75.6 s after connected, direct; B's document with the position from telemetry, `position_accuracy_m` 15, `answering`, `battery_v` as B's app reads it; *Telemetry* `answered` once; an answer of 28 bytes | the hour itself; the intervals (15, 31 and 47 minutes, 82 s behind a repeater); Home Assistant's entities and log; a real board's battery and MCU temperature; `telemetry_airtime_1h_s` against `stats.tx_airtime_1h_s` (the simulation measures its own estimate) |
 | 30 | **partly**, B's part, `test_permissions.py`: "No", nothing allowed, base only, base and location, everything, the gateway removed give silence, silence, battery and MCU temperature only, the position, the same (B has no environment sensor), silence; every request direct; `no_answer` without `unanswered`, then `no_position`, then `answering` | B2 and C: their sensors; the app's labels and counts |

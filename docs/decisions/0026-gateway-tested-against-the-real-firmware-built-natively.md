@@ -131,3 +131,8 @@ MeshCore: <https://github.com/meshcore-dev/MeshCore> (MIT); CayenneLPP:
 firmware release: [testing.md](../testing.md#tests-against-the-real-firmware). Revisit when
 MeshCore offers a native build target of its own, or when the stand-ins of a release cost more
 than a day.
+
+Amended on 2026-11-05 by [ADR 0030](0030-release-checked-by-ci-self-test-and-use.md): the
+scenarios also play the checklist's messages, commands, codes, replies, an unreachable contact and
+the radio profile (steps 3–6, 10–14, 55 and 56). What the simulation cannot show is no longer
+checked by hand before a release; testing.md says where each step is checked.

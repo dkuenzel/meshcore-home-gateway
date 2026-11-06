@@ -29,6 +29,9 @@ VERSION=""     # known in advance for a checkout and a release, else after the i
 OWN_PROGRAM=0  # 1: the program to configure is this checkout's own (not on --reconfigure)
 TITLE="meshcore-home-gateway"
 BROKER_LOGIN=""   # check_broker's result for the final message: accepted, unchecked, failed
+SELF_TEST=""      # self_test's result for the final message: passed, problems, unchecked, skipped
+SELF_TEST_TRIES=8   # the gateway reports its radio some seconds after the start: about a minute
+SELF_TEST_WAIT_S=${MESHCORE_HOME_GATEWAY_SELF_TEST_WAIT_S:-5}   # tests shorten it
 SERIAL_DIR=${MESHCORE_HOME_GATEWAY_SERIAL_DIR:-/dev/serial/by-id}   # tests point this elsewhere
 DIALOUT_GID=20            # static in Debian's base-passwd; checked inside the container
 MIN_PVE_CONTAINER=5.3.1   # first pve-container that accepts every Debian 13 point release
@@ -540,6 +543,32 @@ Enter the broker settings again? (No: continue; the service keeps trying, --reco
     fi
     ask_broker_again
   done
+}
+
+self_test() {  # self_test CTID: the running gateway's own check (doctor), retried until it passes
+  local ctid=$1 report status attempt
+  if [[ $BROKER_LOGIN == failed ]]; then SELF_TEST=skipped; return 0; fi
+  for (( attempt = 1; ; attempt++ )); do
+    status=0
+    # exit 3: a version without doctor; its report goes to stdout, into $report
+    report=$(in_ct "$ctid" bash -c 'meshcore-home-gateway doctor --help >/dev/null 2>&1 || exit 3
+      exec meshcore-home-gateway doctor 2>&1') || status=$?
+    if (( status == 3 )); then
+      log "meshcore-home-gateway $VERSION in container $ctid has no self-test (doctor)"
+      SELF_TEST=unchecked
+      return 0
+    fi
+    if (( status == 0 || attempt >= SELF_TEST_TRIES )); then break; fi
+    sleep "$SELF_TEST_WAIT_S"
+  done
+  if (( status == 0 )); then
+    SELF_TEST=passed
+    log "self-test passed (meshcore-home-gateway doctor in container $ctid)"
+  else
+    SELF_TEST=problems
+    log "warning: the self-test found problems (meshcore-home-gateway doctor in container $ctid):"
+    printf '%s\n' "$report" >&2 || true
+  fi
 }
 
 # --- container ------------------------------------------------------------------------------
@@ -1406,16 +1435,24 @@ start_service() {  # Type=notify: "active" means the service has reported readin
 
 summary() {  # summary CTID: the final message, in the log and in a box
   log "$(summary_text _fill "$1")"
-  # 22 rows hold it with the wrapped commands; with --scrolltext, Enter would not close the box
+  # 24 rows hold it with the wrapped commands; with --scrolltext, Enter would not close the box
   if (( INTERACTIVE )); then
-    whiptail --title "$TITLE" --msgbox -- "$(summary_text t "$1")" 22 78 >&2 || true
+    whiptail --title "$TITLE" --msgbox -- "$(summary_text t "$1")" 24 78 >&2 || true
   fi
 }
 
 summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _fill, the log) or
   # in the dialogs' language (SAY t, the box): one set of texts. Commands for the user: pct exec
   # takes the host's PATH, which may lack /usr/local/bin
-  local say=$1 ctid=$2 login posture update text user=${OUT[mqtt.username]-}
+  local say=$1 ctid=$2 login posture selftest update text user=${OUT[mqtt.username]-}
+  case $SELF_TEST in  # self_test's result
+    passed) selftest=$($say 'passed') ;;
+    problems)
+      selftest=$($say 'problems found (see above): {command}' \
+        command "pct exec $ctid -- /usr/local/bin/meshcore-home-gateway doctor") ;;
+    unchecked) selftest=$($say 'not run (version {version} has no doctor command)' version "$VERSION") ;;
+    *) selftest=$($say 'not run (the broker login failed)') ;;
+  esac
   case $BROKER_LOGIN in  # check_broker's result
     accepted) login=$($say 'login accepted') ;;
     unchecked)
@@ -1442,15 +1479,17 @@ summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _f
       releases "$RELEASES" ctid "$ctid")
   fi
   # Translators: the values start in one column; they are commands to copy, but {login} and
-  # {posture} (how the broker connection is secured).
+  # {posture} (how the broker connection is secured) and {selftest} (the result of the
+  # gateway's own check after the start).
   text=$($say 'meshcore-home-gateway {version} runs in container {ctid}.
 
 Broker:       {login} ({posture})
+Self-test:    {selftest}
 Logs:         {logs}
 Check:        {check}
 Reconfigure:  {reconfigure}
 Update:       {update}' \
-    version "$VERSION" ctid "$ctid" login "$login" posture "$posture" \
+    version "$VERSION" ctid "$ctid" login "$login" posture "$posture" selftest "$selftest" \
     logs "pct exec $ctid -- journalctl -u meshcore-home-gateway -f" \
     check "pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config" \
     reconfigure "$(invocation) --reconfigure $ctid" update "$update")
@@ -1493,6 +1532,7 @@ install() {
   configure "${CT[id]}"
   start_service "${CT[id]}"
   CREATED=""
+  self_test "${CT[id]}"
   summary "${CT[id]}"
 }
 
@@ -1507,6 +1547,10 @@ update() {
     || die 'the service did not restart; see: {command}' \
       command "pct exec $ctid -- journalctl -u meshcore-home-gateway"
   log "container $ctid runs meshcore-home-gateway $VERSION"
+  self_test "$ctid"
+  if [[ $SELF_TEST == problems ]]; then
+    log "the service keeps running; to go back to the version before: docs/deployment.md, Roll back"
+  fi
 }
 
 reconfigure() {
@@ -1539,6 +1583,7 @@ reconfigure() {
   configure "$ctid"
   STOPPED=""
   start_service "$ctid"
+  self_test "$ctid"
   summary "$ctid"
 }
 

@@ -1213,9 +1213,11 @@ def test_every_state_of_the_login_has_its_words(
     env = {"BROKER_ANSWERS": answers, "STUB_VERSION": "1.2.3"}
     result = run(host, script, *args, dialog=dialog, env=env)
     assert result.returncode == 0, result.stderr
-    (summary,) = [c[-3] for c in host.calls("whiptail") if c[-2:] == ["22", "78"]]
+    (summary,) = [c[-3] for c in host.calls("whiptail") if c[-2:] == ["24", "78"]]
     assert f"Broker:       {words} (no TLS, user 'bridge')\n" in result.stderr
     assert f"Broker:       ‹{words}› (‹no TLS, user 'bridge'›)\n" in summary
+    selftest = "not run (the broker login failed)" if answers == "1" else "passed"
+    assert f"Self-test:    ‹{selftest}›\n" in summary
     assert summary.startswith("‹meshcore-home-gateway 1.2.3 runs in container 105.")
 
 

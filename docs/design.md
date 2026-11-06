@@ -1023,8 +1023,9 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   `telemetry-excluded.json` next to it, and the history (`history.sqlite3`).
 * **Releases** ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)):
   semantic versioning from 1.0.0 on; every finished increment is a pre-release of the minor
-  version it leads to (`vX.Y.0aN`), a release candidate is what the hardware checklist runs with
-  ([development.md](development.md#release)). The pull request writes the version, a check
+  version it leads to (`vX.Y.0aN`), a release candidate is what the release check runs with
+  ([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md),
+  [development.md](development.md#release)). The pull request writes the version, a check
   refuses one that is not the next, and CI on `main` tags the merge commit
   ([ADR 0022](decisions/0022-releases-tagged-by-ci-on-main.md)). A tag runs
   `.github/workflows/release.yml`. A read-only job runs `make check` and
@@ -1042,13 +1043,15 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 | Component | session and bridge | an in-memory radio that emulates the firmware's responses and pushes |
 | Integration | MQTT adapter and bridge end to end | a private `mosquitto` per test on a free port; the system test runs the service as a process (its coverage is measured too) |
 | Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text |
-| Firmware | the gateway against MeshCore's own companion and repeater firmware | the pinned release built natively on stand-ins, nodes as processes on a simulated LoRa air, the gateway on a pseudo terminal; scenarios of the hardware checklist's steps 29, 30, 33, 34, 35 and 39 and parts of steps 41 and 43 (the check for positions in adverts) run the gateway's service against it, and a test pins down the firmware's part of step 31 (`make firmware-test`, [which parts](testing.md#steps-2945-on-the-simulated-air), [ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)) |
+| Firmware | the gateway against MeshCore's own companion and repeater firmware | the pinned release built natively on stand-ins, nodes as processes on a simulated LoRa air, the gateway on a pseudo terminal; scenarios of the hardware checklist run the gateway's service against it: messages, commands, codes and replies, an unreachable contact and the radio profile (steps 3–6, 10–14, 55 and 56), steps 29, 30, 33, 34, 35 and 39 and parts of steps 41 and 43 (the check for positions in adverts), and a test pins down the firmware's part of step 31 (`make firmware-test`, [which parts](testing.md#where-each-step-is-checked), [ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)) |
+| Service manager | the zipapp and the systemd unit as installed | on CI's runner, thrown away after the job: the service under systemd as its user, with an emulated radio and a private broker; readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog (`make unit-run`) |
 | Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a manual check drives the real whiptail |
 | Static | style, types, shell, workflows, unit file, translations | ruff, mypy --strict, shellcheck, zizmor, systemd-analyze (verify, exposure score); the catalog checks of `tools/i18n.py` as tests, the compiler against GNU `msgfmt` |
-| Hardware | real radios | checklist in [`testing.md`](testing.md), with each release candidate before its release (not for the pre-releases of increments) |
+| Installation | every real installation | the installer's self-test: `doctor` in the container after an installation, a reconfiguration and an update, until it passes ([deployment.md](deployment.md#install)) |
+| Release | the release candidate on the maintainer's installation | its self-test and the maintainer's use of Home Assistant ([testing.md](testing.md#release-check), [ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)); the hardware checklist describes the behaviour on real radios and is no longer run before a release |
 
-`make check` runs everything except the contract and firmware tests, which have their own targets
-and CI jobs, and the hardware checklist; `make matrix` runs the tests with every supported Python
+`make check` runs everything except the contract and firmware tests and the run under systemd,
+which have their own targets and CI jobs; `make matrix` runs the tests with every supported Python
 version, like the CI matrix, and fails if one is missing.
 
 ## 11 Alternatives considered
@@ -1083,6 +1086,7 @@ version, like the CI matrix, and fails if one is missing.
 | Public interfaces kept by a policy and a snapshot | [0023](decisions/0023-public-interfaces-kept-by-a-snapshot.md) |
 | The outgoing queue kept across restarts, alerts first | [0028](decisions/0028-outgoing-queue-kept-across-restarts.md) |
 | What a contact of the radio is trusted with | [0029](decisions/0029-what-a-contact-is-trusted-with.md) |
+| A release checked by CI, the installer's self-test and the maintainer's use | [0030](decisions/0030-release-checked-by-ci-self-test-and-use.md) |
 
 
 ### 11.1 Choices without a record of their own
