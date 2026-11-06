@@ -645,7 +645,7 @@ The detail is in [design-telemetry.md](design-telemetry.md#611-telemetry).
 ### 6.12 Translations
 
 The command line, the installer and the names sent to Home Assistant are translatable through
-gettext catalogs ([ADR 0019](decisions/0019-internationalisation-with-gettext.md)). 1.1.0a4 ships
+gettext catalogs ([ADR 0019](decisions/0019-internationalisation-with-gettext.md)). 2.0.0 ships
 the machinery and English only: `i18n.LANGUAGES` is `{"en": "English"}`. A language comes as a
 contribution of its catalog files ([translations.md](translations.md#adding-a-language)).
 
@@ -1143,6 +1143,10 @@ reasons (security review 2026-11, ARC-017).
 * An acknowledgement proves knowledge of the text, not receipt
   ([protocol.md](protocol.md#5-semantics)); proving receipt needs a change of the firmware
   (SEC-001).
+* Whether radio clocks drift: one that runs fast is set back by a restart of the radio at most
+  once a day (§6.1). The *Radio clock offset* of real installations over days shows whether that
+  is enough, or whether the firmware should take a bounded step back.
+* Proposals for MeshCore, drafted and not yet sent: [upstream/](upstream/README.md).
 * What the security and architecture review of 2026-11 deferred, each with the condition that
   brings it back, is in its
   [triage log](audit/2026-11-security-architecture-review/13-triage-log.md).

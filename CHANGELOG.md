@@ -8,6 +8,32 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-07
+
+The second stable release. It ships the program of 2.0.0rc3, which CI, the installer's self-test
+on the maintainer's installation and his use of Home Assistant 2026.11.0 checked
+([release check](docs/testing.md#release-check)).
+
+Since 1.0.0 the gateway asks the household's companions, and with `[telemetry] ask_types` also its
+sensors, for their battery, readings and position. Home Assistant shows them, with the
+companions' traces on a map, and each contact has a switch *Telemetry* (1.1.0a1 to 1.1.0a3,
+2.0.0a1). `meshcore-home-gateway dashboard` writes a Home Assistant dashboard, the texts come from
+translation catalogs (English is the only language so far), and the gateway is tested against
+MeshCore's real firmware (1.1.0a4). With the changes of the independent security and
+architecture review of 2026-11 (2.0.0a1) the gateway keeps less of other people by default,
+refuses setups that would let strangers command it or control the radio, and keeps its outgoing
+queue over a stop. New are MQTT 5, a Homie device, command codes from an authenticator app, the
+commands `status`, `doctor`, `backup`, `retire` and `history export`, and the MQTT API as an
+AsyncAPI document. The installer ends with the gateway's own check (2.0.0rc1, 2.0.0rc2), and the
+gateway keeps the radio's clock on the host's (2.0.0rc3).
+
+Read the **Breaking:** entries of 2.0.0a1 before updating from 1.x: a radio over TCP and commands
+over a broker without credentials or TLS each need a setting, telemetry asks only the companions
+the household includes, the MQTT client id gets a random part, only the channels that are a target
+are published, and of other people's radios only their keys and types are kept
+([deployment.md](docs/deployment.md#update-reconfigure-remove)). The sections from 1.1.0a1 to
+2.0.0rc3 of [CHANGELOG.md](CHANGELOG.md) list every change.
+
 ## [2.0.0rc3] - 2026-11-06
 
 The release candidate of 2.0.0: the program of 2.0.0rc2, and the gateway keeps the radio's clock

@@ -421,6 +421,7 @@ def test_an_unknown_base_falls_back_to_the_parent(repo: Repo, base: str) -> None
     [
         ("### Internal\n\n- A tool.\n\n", "unknown heading '### Internal'"),
         ("- A loose entry.\n\n", "an entry outside a subsection"),
+        ("## [1.0.1] - 2026-11-07\n\n- A loose entry.\n\n", "subsection: '- A loose entry.'"),
         ("### Added\n\n- A thing.\n  - **Breaking:** its old name goes.\n\n", None),
     ],
 )

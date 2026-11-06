@@ -35,7 +35,7 @@ pins, the release check against a real installation ([testing.md](testing.md#rel
 
 | Gateway | Contract tests | Release check |
 | --- | --- | --- |
-| 2.0.0rc3 | 2026.10.2 | runs with it once it is published |
+| 2.0.0, the program of 2.0.0rc3 | 2026.10.2 | 2026.11.0 |
 | 2.0.0rc2 | 2026.10.2 | not finished: the clock correction followed in 2.0.0rc3 |
 | 2.0.0rc1 | 2026.10.2 | stopped: the installer's self-test showed an empty report |
 | 2.0.0a1 | 2026.10.2 | not run (pre-release) |

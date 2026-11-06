@@ -171,8 +171,9 @@ def kind(changelog: str, last: Version | None) -> str | None:
         lines = changelog[body:stop].splitlines()
         entries = [e for e in lines if _ENTRY.match(e)]
         if name is None:
-            if any(not e[:1].isspace() for e in entries):  # a section's text may say anything
-                msg = f"{CHANGELOG}: an entry outside a subsection: {entries[0].strip()!r}"
+            loose = [e for e in entries if not e[:1].isspace()]  # a section's text may say anything
+            if loose:
+                msg = f"{CHANGELOG}: an entry outside a subsection: {loose[0].strip()!r}"
                 raise PlanError(msg)
             continue
         this = _KIND_OF.get(name.strip().lower())
