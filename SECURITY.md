@@ -60,8 +60,10 @@ the authority (`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them
   jobs passed; no force push, no deletion. No review is required: a second identity for the
   agent, whose approval would mean something, would make every change wait for the
   maintainer, who accepted the shared identity instead (SUP-001, 2026-11-05).
-- A release candidate or a release is tagged a day after its version reached `main`
-  (`release-due.yml`): time to stop a merged change before it is signed and published.
+- A release is tagged a day after its version reached `main` (`release-due.yml`): time to stop
+  a merged change before it is signed and published. It ships the program of a release
+  candidate tagged before; pre-releases, candidates too, are tagged once CI passed on them and
+  reach only installations that name them.
 - Release tags `v*` (ruleset `v-star`): cannot be moved or deleted
   ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)).
 - Releases are immutable once published. Each carries Sigstore-signed build provenance (SLSA Build

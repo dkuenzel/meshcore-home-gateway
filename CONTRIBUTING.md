@@ -121,8 +121,9 @@ it is right. A review of every change by a second identity would make each one w
 maintainer, who decided against it (SUP-001, 2026-11-05); what stands between the agent and a
 signed release instead:
 
-- The required jobs, and a release candidate or a release that is tagged only a day after its
-  version reached `main`: time for the maintainer, or anyone watching, to stop it.
+- The required jobs, and a release that is tagged only a day after its version reached `main`,
+  with the program of a release candidate tagged before: time for the maintainer, or anyone
+  watching, to stop it.
 - A review follows the pull request template's checklist, not the agent's report of what it
   did.
 - Whatever the agent reads can instruct it: issues and pull requests, test logs, the firmware

@@ -152,3 +152,11 @@ Amended on 2026-11-05 by [ADR 0030](0030-release-checked-by-ci-self-test-and-use
 follows the release check with its candidate (CI, the installer's self-test on the maintainer's
 installation and his use of Home Assistant), no longer the hardware checklist; the release still
 ships the candidate's program.
+
+Amended on 2026-11-06: a release candidate is tagged once CI passed on it, as every pre-release;
+only a release waits a day. A pre-release reaches only an installation that names it
+(`releases/latest` and the installer's default skip it). Everything a release is built from was on
+`main` for a day before it is tagged, and its program was tagged as the candidate before its own
+version commit. A faulty candidate is now followed by the next one as soon as CI passed on it, not
+two days later. The review had suggested that candidates wait too (SUP-001); the maintainer chose
+otherwise.

@@ -15,9 +15,9 @@ tools/public_interface.py) with that of the last release, which the revision mus
 it removes or narrows needs a `**Breaking:**` entry or a `### Removed` section since then, what it
 adds or changes an entry that makes the next release at least a minor one
 (docs/development.md#compatibility); the changelog sections since the last release stay as
-tagged. A release candidate or a release is tagged a day after its version reached main, a
-pre-release at once (SUP-001). It reads the commit, not the working tree. Standard library only;
-git runs as a subprocess in the current directory.
+tagged. A release is tagged a day after its version reached main, a pre-release (a release
+candidate too) at once (SUP-001). It reads the commit, not the working tree. Standard library
+only; git runs as a subprocess in the current directory.
 """
 
 from __future__ import annotations
@@ -48,8 +48,8 @@ _DATED = re.compile(r"^## \[([^\]]+)\] - \d{4}-\d{2}-\d{2}", re.MULTILINE)
 _SUBSECTION = re.compile(r"^### (.+?)[ \t]*$", re.MULTILINE)
 _UNRELEASED = re.compile(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 _STAGES = ("a", "b", "rc", "")  # in order; "" is the release
-# a release candidate or a release waits this long after its version commit reached main: time to
-# stop a merged change before it is signed and published for good (SUP-001)
+# a release waits this long after its version commit reached main: time to stop a merged change
+# before it is signed and published for good (SUP-001); a pre-release reaches only who names it
 COOLDOWN_S = 24 * 3600
 KINDS = ("patch", "minor", "major")
 _KIND_OF = {
@@ -114,8 +114,8 @@ class Version:
 
     @property
     def waits(self) -> bool:
-        """A release candidate or a release: tagged only COOLDOWN_S after its version commit."""
-        return self.rank >= _STAGES.index("rc")
+        """A release: tagged only COOLDOWN_S after its version commit; a pre-release at once."""
+        return self.final
 
     def __str__(self) -> str:
         return self.base + (f"{self.stage}{self.number}" if self.stage else "")
@@ -485,7 +485,7 @@ def tag(base: str = "") -> tuple[str, bool, bool]:
 def due(now: float) -> tuple[str, str, bool, int]:
     """For main on a schedule: the tag of the version HEAD carries, the commit that wrote it,
     whether the tag is on that commit already, and the seconds until the commit is due: at once for
-    a pre-release, COOLDOWN_S after the commit for a release candidate or a release. A tag on
+    a pre-release (a release candidate too), COOLDOWN_S after the commit for a release. A tag on
     another commit is an error."""
     found = git("log", "-1", "--format=%H %ct", "-G^__version__ = ", "HEAD", "--", VERSION_FILE)
     sha, committed = found.split()

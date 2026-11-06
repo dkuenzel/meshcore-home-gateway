@@ -8,6 +8,13 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Changed
+
+- A release candidate is published once CI passed on it, as every pre-release, so that a faulty
+  one is followed by the next at once. A release still waits a day after its version reached
+  `main`, and ships the program of a candidate tagged before
+  ([development.md](docs/development.md#release)).
+
 ## [2.0.0rc1] - 2026-11-05
 
 The release candidate of 2.0.0: the program of 2.0.0a1, and the installer now ends with the
