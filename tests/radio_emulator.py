@@ -122,6 +122,7 @@ class EmulatedContact:
     latitude_e6: int = 0
     longitude_e6: int = 0
     last_advert: int = START_TIME - 3600
+    last_modified: int = START_TIME - 60  # the radio's clock when it last changed the record
 
     def record(self, code: int = Response.CONTACT) -> bytes:
         """The contact layout (MyMesh.cpp:171-192), also of the NEW_ADVERT push."""
@@ -133,7 +134,7 @@ class EmulatedContact:
             + self.out_path.ljust(64, b"\x00")
             + name
             + struct.pack(
-                "<IiiI", self.last_advert, self.latitude_e6, self.longitude_e6, START_TIME - 60
+                "<IiiI", self.last_advert, self.latitude_e6, self.longitude_e6, self.last_modified
             )
         )
 
@@ -208,6 +209,7 @@ class EmulatedRadio:
         self.texts: list[SentText] = []
         self.channel_texts: list[tuple[int, str, int]] = []
         self.path_resets: list[bytes] = []
+        self.reboots = 0
         self.telemetry_requests: list[tuple[bytes, bool]] = []  # key, flooded
         self._asked: tuple[bytes, bool] | None = None  # the pending telemetry request
         self._tag = 0x11223344
@@ -510,6 +512,10 @@ class EmulatedRadio:
                 if contact.public_key == p[1:33]:
                     contact.out_path_len = 0xFF
             self.emit(bytes([Response.OK]))
+        elif code == Command.REBOOT and p[1:7] == b"reboot":  # no answer (MyMesh.cpp:1512-1516)
+            self.reboots += 1
+            if self.contacts:  # bootstrapRTCfromContacts (BaseChatMesh.cpp:60-70)
+                self.clock = max(c.last_modified for c in self.contacts) + 1
         else:
             self.emit(bytes([Response.ERR, 1]))
 

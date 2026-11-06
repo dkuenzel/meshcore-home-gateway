@@ -61,6 +61,11 @@ def set_device_time(timestamp: int) -> bytes:
     return bytes([Command.SET_DEVICE_TIME]) + _u32(timestamp, "timestamp")
 
 
+def reboot() -> bytes:
+    """No answer: the radio saves its contacts and restarts (MyMesh.cpp:1512-1516)."""
+    return bytes([Command.REBOOT]) + b"reboot"
+
+
 def send_text(prefix: bytes, text: str, timestamp: int, attempt: int) -> bytes:
     """Plain direct message (txt_type 0) to the contact whose key starts with `prefix`."""
     if len(prefix) != PREFIX_BYTES or not any(prefix):

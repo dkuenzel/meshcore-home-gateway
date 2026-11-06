@@ -138,3 +138,10 @@ the reference radio.
   (`custom_components/meshcore/coordinator.py:2034-2049` at v3.0.3).
 * Revisit when further firmware versions are tested (extend the gate) or when the firmware offers a
   per-key read-back for every setting.
+
+Amended on 2026-11-06: the gateway also sends `REBOOT` (19), only to set a radio clock that is a
+minute to an hour ahead of the host's back. The firmware sets its clock back at a start alone, to
+its newest contact time plus a second. The session restarts the radio when that time is behind the
+host's, after taking its messages; the bridge allows it when no message is queued or being
+delivered, at most once a day. `set_clock = false` leaves the clock alone (design §6.1,
+protocol.md section 5).

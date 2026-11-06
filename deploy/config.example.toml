@@ -10,7 +10,8 @@ device = "/dev/serial/by-id/usb-Example_Radio_0001-if00"
 # tcp_unauthenticated = true                           # tcp: required; anyone who reaches
                                                        # the radio controls it and reads its
                                                        # private key (configuration.md)
-set_clock = true                                       # move the radio clock forward to ours
+set_clock = true                                       # keep the radio clock on ours (ahead:
+                                                       # a restart of the radio sets it back)
 # set_clock_max_days = 30                              # never more at once (0: no limit)
 
 [mqtt]

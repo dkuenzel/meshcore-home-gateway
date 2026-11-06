@@ -16,6 +16,8 @@ frames (codes >= 0x80) in between. The session therefore
   held that contact: pushes (advert, path, overwrite; a new advert is from a node it did not add)
   before any later frame is handled, a table read record by record before the read returns. The
   bridge's memory of look-alikes is therefore never behind a verdict (ADR 0009);
+* keeps the radio's clock on the host's: forward whenever it falls behind, back by a restart of
+  the radio when it is ahead and `may_restart` allows it (docs/protocol.md, section 5);
 * closes itself on a transport error or a command timeout; the bridge then reconnects.
 """
 
@@ -47,6 +49,7 @@ from meshcore_home_gateway.ports import (
     RadioEvent,
     RadioInfo,
     RadioProfileHook,
+    RadioRestartedError,
     StatsRead,
     TelemetryReceived,
     TelemetrySent,
@@ -67,8 +70,12 @@ FLUSH_BYTES = 256  # completes any partial frame in the serial parser (docs/prot
 FLUSH_SETTLE_S = 0.5
 CLOCK_SET_THRESHOLD_S = 2
 CLOCK_AHEAD_WARNING_S = 60
-# The radio's clock moves only forward (SET_DEVICE_TIME refuses an earlier time, docs/protocol.md
-# section 5), so a wrong host clock written to it stays until real time passes it (SEC-002).
+# The radio's clock moves only forward over the protocol (SET_DEVICE_TIME refuses an earlier time,
+# docs/protocol.md section 5), so a wrong host clock written to it stays (SEC-002). At start the
+# firmware sets it to its newest contact time plus a second, also back (BaseChatMesh.cpp:60-70):
+# a restart sets a clock ahead back. Up to an hour: nodes and repeaters ignore the radio's adverts
+# and logins until real time passes the times it sent before (BaseChatMesh.cpp:133).
+CLOCK_RESTART_MAX_S = 3600
 # No release of the gateway is older than this: a clock before it was never set. A radio without
 # a clock chip starts at 2024-05-15, or at the newest time it wrote to a contact
 # (ArduinoHelpers.h:11, BaseChatMesh.cpp:60-70). Raised at every release (docs/development.md).
@@ -120,6 +127,8 @@ class CompanionSession:
         self._set_clock = set_clock
         self.set_clock_max_days = set_clock_max_days  # 0: no limit
         self.clock_offset_s: int | None = None  # the radio's clock minus the host's, last read
+        self.may_restart: Callable[[], bool] | None = None  # None: never restarted for the clock
+        self._clock_refusal_said = False  # a refused forward step is logged once until one is made
         self._decoder = FrameDecoder()
         self._lock = asyncio.Lock()
         self._pending: _Pending | None = None
@@ -199,6 +208,9 @@ class CompanionSession:
         await self.read_status()
         if fetch_messages:
             await self.sync_messages(at_connect=True)
+        # after the sync: a restart drops the messages the radio keeps
+        await self._set_back_if_ahead(quiet=False, restart=fetch_messages)
+        if fetch_messages:
             self._tasks.append(asyncio.create_task(self._maintenance(), name="radio-maintenance"))
         return self.info
 
@@ -340,7 +352,7 @@ class CompanionSession:
         this session.
         """
         self.battery = battery = await self.get_battery()
-        await self._read_clock()
+        await self._forward_clock(await self._read_clock(), loud=False)
         core = radio = packets = None
         if self._stats_supported:
             core = await self._stats(StatsType.CORE, codec.CoreStats)
@@ -509,28 +521,79 @@ class CompanionSession:
         return radio_time
 
     async def _sync_clock(self) -> None:
-        """Read the radio's clock at connect and, with `set_clock`, move it forward to the host's.
-        The radio cannot be set back, so the host's time is written only when it is plausible:
-        not before the release, at most ten years after it, and at most `set_clock_max_days`
-        ahead of a radio clock that was set (0: no limit, also not the ten years). A radio clock
-        before the release was never set: after a restart without a clock chip and contacts."""
-        radio_time = await self._read_clock()
+        """At connect: read the radio's clock and, with `set_clock`, move it forward."""
+        await self._forward_clock(await self._read_clock(), loud=True)
+
+    async def _forward_clock(self, radio_time: int, *, loud: bool) -> None:
+        """With `set_clock`, move a radio clock behind the host's forward to it, at connect and
+        at every heartbeat (a small step then logged at debug level). The host's time is written
+        only when it is plausible: not before the release, at most ten years after it, and at
+        most `set_clock_max_days` ahead of a radio clock that was set (0: no limit, also not the
+        ten years). A radio clock before the release was never set: after a restart without a
+        clock chip and contacts."""
         now = int(self._wall())
         ahead = now - radio_time
-        if ahead > CLOCK_SET_THRESHOLD_S and self._set_clock:
-            refused = self._clock_refused(now, radio_time)
-            if refused is None:
-                await self.set_time(now)
-                self.clock_offset_s = 0
-                log.info("radio clock moved forward by %d s", ahead)
-            else:
-                log.warning("radio clock left %d s behind the host's: %s", ahead, refused)
-        elif -ahead > CLOCK_AHEAD_WARNING_S:
-            log.warning(
-                "radio clock is %d s ahead of the host's and cannot be set back: its adverts and "
-                "contact times carry that time (docs/deployment.md, Troubleshooting)",
-                -ahead,
+        if ahead <= CLOCK_SET_THRESHOLD_S or not self._set_clock:
+            return
+        refused = self._clock_refused(now, radio_time)
+        if refused is None:
+            await self.set_time(now)
+            self.clock_offset_s = 0
+            self._clock_refusal_said = False
+            level = logging.INFO if loud or ahead > CLOCK_AHEAD_WARNING_S else logging.DEBUG
+            log.log(level, "radio clock moved forward by %d s", ahead)
+        elif not self._clock_refusal_said:
+            self._clock_refusal_said = True
+            log.warning("radio clock left %d s behind the host's: %s", ahead, refused)
+
+    async def _set_back_if_ahead(self, *, quiet: bool, restart: bool = True) -> None:
+        """A radio clock more than CLOCK_AHEAD_WARNING_S ahead of the host's: restart the radio when
+        that sets it back and `may_restart` allows it, which ends the session with
+        RadioRestartedError; else say why, unless `quiet`. `restart=False`: only read the radio."""
+        ahead = self.clock_offset_s
+        if ahead is None or ahead <= CLOCK_AHEAD_WARNING_S:
+            return
+        refused = self._restart_refused(ahead) if restart else "the radio is only read"
+        if refused is not None:
+            if not quiet:
+                log.warning(
+                    "radio clock is %d s ahead of the host's and not set back (%s): its adverts "
+                    "and contact times carry that time (docs/deployment.md, Troubleshooting)",
+                    ahead,
+                    refused,
+                )
+            return
+        await self.sync_messages()  # the radio keeps waiting messages in memory only
+        log.warning(
+            "radio clock is %d s ahead of the host's: restarting the radio to set it back", ahead
+        )
+        async with self._command(codec.reboot(), ()):
+            pass  # it restarts without an answer
+        error = RadioRestartedError(f"restarted to set its clock back by {ahead} s")
+        self._end(error)
+        await self._transport.close()  # before it is back: a USB radio keeps its device name
+        raise error
+
+    def _restart_refused(self, ahead: int) -> str | None:
+        """Why the radio is not restarted to set its clock back now, or None. After a restart its
+        clock is its newest contact time plus a second, and the next connect moves it forward."""
+        if not self._set_clock:
+            return "set_clock = false"
+        if ahead > CLOCK_RESTART_MAX_S:
+            return (
+                "more than an hour: nodes and repeaters would ignore it that long after a restart"
             )
+        newest = max((record.last_modified for record in self.contact_records.values()), default=0)
+        if not newest:
+            return "without contacts a restart does not set it back"
+        if newest + 1 > int(self._wall()) - CLOCK_SET_THRESHOLD_S:
+            return (
+                f"a restart starts it at its newest contact time, {_iso(newest)}; "
+                "checked again every minute"
+            )
+        if self.may_restart is None or not self.may_restart():
+            return "once no message is being delivered, at most once a day"
+        return None
 
     def _clock_refused(self, now: int, radio_time: int) -> str | None:
         """Why the host's time `now` is not written to the radio, or None."""
@@ -579,6 +642,7 @@ class CompanionSession:
                     next_sync = loop.time() + SYNC_INTERVAL_S
                 if loop.time() >= next_beat:
                     await self.read_status()
+                    await self._set_back_if_ahead(quiet=True)  # said at connect
                     self._report_malformed()  # the end of a run of malformed pushes
                     next_beat = loop.time() + HEARTBEAT_INTERVAL_S
         except RadioError as exc:

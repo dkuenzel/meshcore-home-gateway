@@ -131,11 +131,19 @@ def gateway_findings(availability: Any, state: Any, contacts: Any) -> list[Findi
     if state.get("radio") != "connected":
         findings.append(Finding(PROBLEM, tr("the radio is not connected")))
     offset = state.get("radio_clock_offset_s")
-    if isinstance(offset, int | float) and abs(offset) > CLOCK_OFF_S:
+    if isinstance(offset, int | float) and offset > CLOCK_OFF_S:
         clock = tr(
-            "the radio's clock is {seconds} s off the host's: messages and commands carry the "
-            "wrong time ([radio] set_clock, docs/configuration.md)",
+            "the radio's clock is {seconds} s ahead of the host's: up to an hour ahead, the "
+            "gateway restarts the radio to set it back once no message is being delivered "
+            "(docs/deployment.md, Troubleshooting)",
             seconds=offset,
+        )
+        findings.append(Finding(WARNING, clock))
+    elif isinstance(offset, int | float) and -offset > CLOCK_OFF_S:
+        clock = tr(
+            "the radio's clock is {seconds} s behind the host's: with [radio] set_clock the "
+            "gateway moves it forward when the host's clock is plausible (docs/configuration.md)",
+            seconds=-offset,
         )
         findings.append(Finding(WARNING, clock))
     if state.get("radio_link_contested"):

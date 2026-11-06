@@ -277,9 +277,10 @@ reason, and every 60 s.
 
 `radio_clock_offset_s` is how far the radio's clock is ahead of the host's, in seconds (negative:
 behind), as last read: at connect and with every heartbeat (60 s); `null` while the radio is not
-connected. A change of a second or two is the reading's resolution and is not reported. The
-radio's clock cannot be set back ([design §6.1](design.md#61-radio-session)): far above 0 it
-needs attention ([deployment.md](deployment.md#5-troubleshooting)).
+connected. A change of a second or two is the reading's resolution and is not reported. With
+`set_clock` the gateway moves a clock behind forward and sets one up to an hour ahead back by
+restarting the radio ([design §6.1](design.md#61-radio-session)): far from 0 it needs attention
+([deployment.md](deployment.md#5-troubleshooting)).
 
 `radio_link_contested` is `true` for an hour after another client took the radio's TCP link: the
 radio closed the gateway's connection while it kept running, as it does when another client

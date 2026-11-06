@@ -332,6 +332,33 @@ def test_the_step_limit_of_the_radio_clock_comes_from_the_configuration(tmp_path
     assert Command.SET_DEVICE_TIME not in radio.commands()
 
 
+class KeepsItsClock(EmulatedRadio):
+    """A radio whose restart does not set its clock back."""
+
+    def _handle(self, p: bytes) -> None:
+        clock = self.clock
+        super()._handle(p)
+        if p[0] == Command.REBOOT:
+            self.clock = clock
+
+
+def test_the_radio_is_restarted_for_its_clock_at_most_once_a_day(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A radio clock ahead of the host's is set back by a restart (test_session.py); one that
+    stays ahead after it is not restarted again within the day."""
+    monkeypatch.setattr(bridge_module, "RESTART_WAIT_S", 0.02)
+    radio = KeepsItsClock(clock=int(NOW) + 300, contacts=[ALICE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _n):
+            state = await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+            assert state["radio_clock_offset_s"] == 300
+
+    scenario(main)
+    assert radio.reboots == 1
+
+
 def test_a_tcp_link_the_radio_closed_while_running_was_taken_over(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

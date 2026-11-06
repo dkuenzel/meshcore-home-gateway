@@ -8,6 +8,27 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.0.0rc3] - 2026-11-06
+
+The release candidate of 2.0.0: the program of 2.0.0rc2, and the gateway keeps the radio's clock
+on the host's in both directions. 2.0.0 ships this program
+([testing.md](docs/testing.md#release-check)).
+
+### Changed
+
+- With `[radio] set_clock` (the default) the gateway keeps the radio's clock on the host's. It
+  moves a clock that falls behind forward at every heartbeat, not only when it connects. A clock
+  a minute to an hour ahead, which the firmware sets back at a start alone, it sets back by
+  restarting the radio: when no message is queued or being delivered, at most once a day, after
+  taking the radio's messages. The radio is gone for a few seconds; over USB it comes back under
+  the same device ([design §6.1](docs/design.md#61-radio-session)).
+
+### Fixed
+
+- `doctor` sent a radio clock ahead of the host's to `[radio] set_clock`, which could not move it
+  back, and said that messages and commands carried the wrong time; they carry the host's. It now
+  tells a clock ahead from one behind and says what the gateway does about each.
+
 ## [2.0.0rc2] - 2026-11-06
 
 The release candidate of 2.0.0: the program of 2.0.0rc1 with the installer's self-test fixed,

@@ -303,25 +303,31 @@ sequenceDiagram
         B->>R: SYNC_NEXT_MESSAGE
         R-->>B: CONTACT_MSG_RECV_V3 / CHANNEL_MSG_RECV_V3
     end
+    opt set_clock, radio clock 1 min to 1 h ahead, a restart sets it back, nothing delivered
+        B->>R: REBOOT
+        Note over B,R: the session ends; the next connect sets the clock forward
+    end
     Note over B,R: connected: pushes MSG_WAITING, SEND_CONFIRMED, LOG_RX_DATA,<br/>ADVERT, NEW_ADVERT, PATH_UPDATED,<br/>CONTACT_DELETED, CONTACTS_FULL
 ```
 
 * **Clock.** The session reads the radio clock at connect and with every heartbeat; the `state`
   document shows how far it is ahead of the host's (`radio_clock_offset_s`, also an entity). With
-  `set_clock` (the default) it sets the radio clock at connect when it is behind. The firmware
-  only moves its clock forward, and a radio without a clock chip restarts at the newest time it
-  wrote to a contact ([protocol.md](protocol.md#5-semantics)), so a wrong host clock written to
-  it stays until real time passes it. The host's time is therefore written only when it is
-  plausible: not before the gateway's release, at most ten years after it, and at most
-  `set_clock_max_days` (30) ahead of a radio clock that was set (one before the release never
-  was); otherwise a warning says why ([SEC-002](audit/2026-11-security-architecture-review/03-security-findings.md#sec-002-set_clock-moves-the-radios-clock-forward-irreversibly-from-a-wrong-host-clock)).
-  `set_clock_max_days = 0` lifts both bounds. If the radio is ahead of the host by more than
-  60 s the gateway logs a warning: the radio stamps its adverts and its contacts' last-modified
-  times with its clock, and if that clock ever comes back with the identity kept, every node that
-  holds the radio drops its adverts until real time passes the last one
-  ([protocol.md](protocol.md#5-semantics)). Command age checks do not use the radio's clock: they
-  compare the sender's timestamp with the host's clock (§7.3). The unit starts after
-  `time-sync.target` where a service provides it.
+  `set_clock` (the default) it keeps the radio clock on the host's. Behind by more than 2 s, it
+  sets it forward, at connect and at every heartbeat. The firmware moves its clock forward only,
+  so a wrong host clock written to it would stay ([protocol.md](protocol.md#5-semantics)): the
+  host's time is written only when it is plausible, not before the gateway's release, at most ten
+  years after it, and at most `set_clock_max_days` (30) ahead of a radio clock that was set (one
+  before the release never was); otherwise a warning says why ([SEC-002](audit/2026-11-security-architecture-review/03-security-findings.md#sec-002-set_clock-moves-the-radios-clock-forward-irreversibly-from-a-wrong-host-clock)).
+  `set_clock_max_days = 0` lifts both bounds. Ahead by more than a minute and at most an hour,
+  the session restarts the radio: at start the firmware sets its clock to its newest contact time
+  plus a second, also back, and the next connect sets it forward. It does so only when that time
+  is behind the host's, after taking the radio's messages, when no message is queued or being
+  delivered, and at most once a day (the bridge's `may_restart`); the check runs at connect and
+  at every heartbeat. Further ahead, a warning says so: nodes and repeaters ignore the radio's
+  adverts and logins until real time passes the times it sent before, which is fine for minutes
+  but not for days. Command age checks do not use the radio's clock: they compare the sender's
+  timestamp with the host's clock (§7.3). The unit starts after `time-sync.target` where a
+  service provides it.
 * **Messages.** On `MSG_WAITING`, after connecting, and every 5 minutes as a safety net, the session
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
@@ -932,7 +938,7 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 | Radio unplugged or rebooted | read error, command timeout | session closed, reconnect with back-off; queue waits; an interrupted attempt is repeated | `state.radio = disconnected`; connectivity entity off |
 | Malformed or unexpected answer | decoding | session closed, resynchronised on reconnect | log warning |
 | Malformed pushes (a radio out of step, or a client posing as one over TCP) | decoding | each dropped; 20 in a row end the session, which the reconnect resynchronises | a log warning at most once a minute with the count |
-| Radio clock wrong | `CURR_TIME` vs host clock, at connect and every heartbeat | with `set_clock`: set forward from a plausible host clock; warn if ahead | `radio_clock_offset_s`; log warning; its adverts carry the later time, and are dropped by every node that holds it if the clock comes back with the identity kept |
+| Radio clock wrong | `CURR_TIME` vs host clock, at connect and every heartbeat | with `set_clock`: set forward from a plausible host clock; 1 min to 1 h ahead, a restart of the radio sets it back; further ahead, warn | `radio_clock_offset_s`; log warning; its adverts carry the later time, and nodes that took them ignore the radio's adverts and logins for as long once it is set back |
 | Host clock wrong | sender timestamps vs host clock; the release date and the step from the radio's clock | commands outside `max_age_s` rejected; a host clock before the release, more than ten years after it or more than `set_clock_max_days` ahead of the radio's is not written to the radio | command rejections `too_old` / `from_the_future`; log warning `radio clock left ... behind` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
@@ -1122,8 +1128,9 @@ reasons (security review 2026-11, ARC-017).
   [ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md). Each bound has its reason
   beside its constant; raising one is a decision.
 * **The gateway writes the radio's clock.** A radio without a clock starts at the newest time its
-  contacts gave it, and its messages carry that time; the host's clock is the better source, so
-  `[radio] set_clock` writes it at connect, within plausible bounds (SEC-002, §6.1).
+  contacts gave it, and its adverts carry that time; the host's clock is the better source, so
+  `[radio] set_clock` keeps the radio on it within plausible bounds, and restarts the radio for a
+  clock up to an hour ahead, which the firmware sets back no other way (SEC-002, §6.1).
 * **Text from the mesh is published as it came.** Texts and names are data for automations and
   people, never commands or markup; cleaning them on the way in would change what was received
   and hide what an attacker sent. Consumers escape them where they display them

@@ -241,7 +241,7 @@ def test_doctor_reports_each_check_and_fails_on_a_problem(
     assert f"  ok       configuration {config}: valid" in out
     assert "  ok       broker broker.lan:1883: logged in" in out
     assert "  warning  the broker accepts clients without a user name" in out
-    assert "  warning  the radio's clock is 120 s off the host's" in out
+    assert "  warning  the radio's clock is 120 s ahead of the host's: up to an hour ahead" in out
     assert "  warning  firmware v1.9.0 is not one the gateway is tested with" in out
     assert "  warning  unattended-upgrades is not installed" in out
     assert "  warning  an update waits for a restart of the container" in out
@@ -268,6 +268,17 @@ def test_doctor_names_a_degraded_health_and_a_radio_away(
     assert "  problem  the radio is not connected" in out
     assert "  problem  health     degraded (state_file: unwritable)" in out
     assert "  ok       the broker refuses clients without a user name" in out
+
+
+def test_doctor_tells_a_radio_clock_behind_from_one_ahead(
+    tmp_path: Path, fake: FakeBroker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Behind, the gateway moves it forward; ahead, it restarts the radio (radio/session.py)."""
+    publish(fake, {"availability": "online", "state": state(radio_clock_offset_s=-120)})
+    main(["doctor", "--config", str(config_file(tmp_path)), "--state-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert "  warning  the radio's clock is 120 s behind the host's: with [radio] set_clock" in out
+    assert "ahead" not in out
 
 
 # --- backup ------------------------------------------------------------------------------------

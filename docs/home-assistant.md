@@ -35,7 +35,8 @@ pins, the release check against a real installation ([testing.md](testing.md#rel
 
 | Gateway | Contract tests | Release check |
 | --- | --- | --- |
-| 2.0.0rc2 | 2026.10.2 | runs with it once it is published |
+| 2.0.0rc3 | 2026.10.2 | runs with it once it is published |
+| 2.0.0rc2 | 2026.10.2 | not finished: the clock correction followed in 2.0.0rc3 |
 | 2.0.0rc1 | 2026.10.2 | stopped: the installer's self-test showed an empty report |
 | 2.0.0a1 | 2026.10.2 | not run (pre-release) |
 | 1.1.0a1 – 1.1.0a4 | 2026.10.0 | not run (pre-releases) |
@@ -52,7 +53,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | --- | --- | --- |
 | `binary_sensor.meshcore_home_gateway_radio1_radio` | connectivity, diagnostic | radio link up; attributes below |
 | `sensor.meshcore_home_gateway_radio1_battery` | voltage (V), diagnostic | radio battery |
-| `sensor.meshcore_home_gateway_radio1_radio_clock_offset` | duration (s), diagnostic | how far the radio's clock is ahead of the gateway's (negative: behind); it cannot be set back ([deployment.md](deployment.md#5-troubleshooting)) |
+| `sensor.meshcore_home_gateway_radio1_radio_clock_offset` | duration (s), diagnostic | how far the radio's clock is ahead of the gateway's (negative: behind); the gateway moves it forward, and sets it back by restarting the radio when it is up to an hour ahead ([deployment.md](deployment.md#5-troubleshooting)) |
 | `binary_sensor.meshcore_home_gateway_radio1_radio_link_contested` | problem, diagnostic; only with a radio over TCP | *Radio link taken over*: on for an hour after another client took the TCP link to the radio, which lets it control the radio and read its private key ([deployment.md](deployment.md#5-troubleshooting)); unknown while the radio is away or reports no uptime |
 | `sensor.meshcore_home_gateway_radio1_airtime` | duration (s), diagnostic | airtime of the last hour |
 | `sensor.meshcore_home_gateway_radio1_airtime_available` | duration (s), diagnostic | airtime that may be spent now; attribute `budget_s_per_hour` |
