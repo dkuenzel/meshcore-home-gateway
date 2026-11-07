@@ -210,6 +210,7 @@ def test_revoke_removes_a_secret_and_keeps_the_others_and_the_mode(
     status, out, err = revoke(config, ALICE.upper(), capsys)
     assert (status, out) == (EX_OK, "")
     assert f"the code secret of {ALICE} is removed from {codes}" in err
+    assert "without a code" not in err  # Carol, the sender left, has her secret
     assert ALICE not in codes.read_text(encoding="utf-8")
     commands = load_config(config).commands
     assert (commands.secrets, commands.ignored_secrets) == (((CAROL, carol),), ())
@@ -321,5 +322,30 @@ def test_a_corrected_key_commands_only_after_enrol_or_revoke(
     status, _, err = revoke(config, ALICE, capsys)
     assert status == EX_OK
     assert "The service reads the file at its start: restart it to apply this" in err
+    assert f"after the restart, {CAROL} commands without a code" in err
+    assert f"after the restart, {FIXED}" not in err
     assert verdict(config, CAROL, "arm now") == "accepted"
     assert verdict(config, FIXED, f"arm now {code}") == "accepted"
+
+
+def test_revoke_names_the_senders_that_then_command_without_a_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#80: `revoke` of the last ignored secret ends the refusal of the senders without one:
+    after the restart they command without a code, also a key corrected by hand that was not
+    enrolled. Revoke says so by name, and how to give one a secret; while another secret is
+    still ignored they stay refused, and it says nothing of it."""
+    config = config_file(tmp_path)
+    enrol(config, ALICE, capsys)
+    enrol(config, CAROL, capsys)
+    text = config.read_text(encoding="utf-8").replace(ALICE, FIXED)
+    config.write_text(text.replace(f', "{CAROL}"', ""), encoding="utf-8")  # Carol's phone lost
+    status, _, err = revoke(config, CAROL, capsys)
+    assert status == EX_OK
+    assert "without a code" not in err
+    assert verdict(config, FIXED, "arm now") == "code_missing"
+    status, _, err = revoke(config, ALICE, capsys)
+    assert status == EX_OK
+    assert f"after the restart, {FIXED} commands without a code" in err
+    assert f"'meshcore-home-gateway commands enrol {FIXED}' gives it one" in err
+    assert verdict(config, FIXED, "arm now") == "accepted"

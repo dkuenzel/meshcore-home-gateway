@@ -100,7 +100,9 @@ def test_a_sender_without_a_secret_beside_an_ignored_secret_is_warned_about() ->
     """#80: a sender's key corrected by hand leaves the old key's secret ignored and the new
     key without one; before, that made the configuration an error. While a secret is ignored,
     the commands of each sender without one are refused, so each is named, with the command
-    that gives it one. A sender with a secret is not named, nor is any without an ignored one."""
+    that gives it one, and what `commands revoke` does to it instead: once no secret is ignored,
+    it commands without a code. A sender with a secret is not named, nor is any without an
+    ignored one."""
     base = make_config()
     sender = next(iter(base.commands.senders))
     coded = "d4" * 32
@@ -118,7 +120,8 @@ def test_a_sender_without_a_secret_beside_an_ignored_secret_is_warned_about() ->
     named = (
         f"commands.senders: {sender} has no code secret while one is ignored: its commands "
         f"are refused (code_missing) until 'meshcore-home-gateway commands enrol {sender}' "
-        f"gives it one or the ignored one is revoked; restart the service after either"
+        f"gives it one. Once no secret is ignored (commands revoke), it commands without a "
+        f"code: enrol a key corrected by hand first. Restart the service after enrol or revoke"
     )
     assert warnings[1:] == [named]
     assert len(warnings) == 2

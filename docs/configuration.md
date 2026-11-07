@@ -248,9 +248,11 @@ start, `check-config`, `doctor` and the installer's self-test warn about it. Suc
 be a sender's under its key before a correction by hand: the corrected key has none. So while a
 secret is ignored, the commands of every sender without a secret are refused as `code_missing`,
 and the warnings name each such sender. Senders with a secret command with their codes, and the
-rest of the gateway keeps running. `revoke` removes the ignored secret, or `enrol` gives the
-sender one. The gateway reads the file only at its start: restart it after either. These
-refusals do not count as wrong codes.
+rest of the gateway keeps running. `enrol` gives the sender a secret; `revoke` removes the
+ignored one, and once none is ignored, every sender without a secret commands without a code
+again: `revoke` then names them. So enrol a key corrected by hand before its old secret is
+revoked, or instead. The gateway reads the file only at its start: restart it after either.
+These refusals do not count as wrong codes.
 
 Commands that the gateway fetches while it connects are rejected: those that waited in the radio
 while the gateway was not running (restart, update, unplugged radio), and those that arrive during

@@ -601,7 +601,7 @@ the file.
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
 | `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
 | `meshcore-home-gateway commands enrol KEY` | Give a command sender (a full key of `[commands] senders`) a new code secret in `[commands] codes_file` (160 random bits; the file keeps its mode and group, a new one gets 0640 and the configuration's group) and print it as an `otpauth://` line for an authenticator app on standard output; standard error says the secret to type in and to restart the service. Exit 1 without `codes_file`, for a key that is not a sender or a file it cannot read or write, 2 for text that is no full key. |
-| `meshcore-home-gateway commands revoke KEY` | Remove the code secret of a key that is no longer in `[commands] senders` from `[commands] codes_file`; the file keeps its mode and group, and stays when it holds no secret any more. Standard error says to restart the service. Exit 1 without `codes_file`, for a key that is still a sender (without its secret it would command without a code), a key without a secret, or a file it cannot read or write; 2 for text that is no full key. |
+| `meshcore-home-gateway commands revoke KEY` | Remove the code secret of a key that is no longer in `[commands] senders` from `[commands] codes_file`; the file keeps its mode and group, and stays when it holds no secret any more. Standard error says to restart the service and, when no secret is ignored any more, names each sender without a secret: it then commands without a code. Exit 1 without `codes_file`, for a key that is still a sender (without its secret it would command without a code), a key without a secret, or a file it cannot read or write; 2 for text that is no full key. |
 | `meshcore-home-gateway contacts telemetry [--wait S] [--forget] CONTACT {on,off}` | Ask a companion for telemetry again (`on`) or exclude it (`off`; a full key also before it is on the radio, `KEY12…KEY8` from the index); `--forget` with `off` also deletes its readings and positions from telemetry from the history. Exit 0 on `excluded` or `included` without a reason, 1 on `refused`, `failed`, any reason, no result in time or the gateway offline, 2 on a usage error. |
 | `meshcore-home-gateway dashboard [--state-dir DIR]` | Print a Home Assistant dashboard for this gateway as YAML, its texts in `[homeassistant] language`; the map lists the contacts with a position in the service's state (read only, default `$STATE_DIRECTORY` or `/var/lib/meshcore-home-gateway`), and standard error says how many. Exit 1 when `[homeassistant] discovery` is off. |
 | `meshcore-home-gateway status [--json]` | What the running gateway reports of itself, from its retained documents: availability, radio, battery, the radio's clock, a contested TCP link, airtime, queue, telemetry, the health section and the contacts; `--json` gives `availability`, `state` and `contacts` as published. Exit 0 while the gateway is online and its health section is not degraded, 1 otherwise and when the broker cannot be reached. |
@@ -815,7 +815,8 @@ the apps compute it. After the checks above, the last word must be the code of t
 clock's step or of the step before or after (`code_missing`, `code_invalid`), of a step newer
 than the sender's last accepted code (`code_reused`); `args` leaves it out. The step is stored
 with the timestamp, before the event goes out, so a code serves once, also across a restart.
-After 5 wrong codes of a sender within an hour (`code_missing` and `code_invalid`), its commands
+After 5 wrong codes of a sender within an hour (`code_missing` and `code_invalid`; not the
+`code_missing` of a sender without a secret while one is ignored, below), its commands
 are refused without a look at the code (`code_locked`, RFC 4226 section 7.3) until the first of
 them is an hour old, and the log warns each time the sender reaches the limit; their times are
 in the state file, so a restart does not end it (§7.4). A command that came late (it waited in
@@ -836,7 +837,10 @@ secret behind the same way, and the corrected key has none. So while a secret is
 commands of each sender without one are refused (`code_missing`, not counted as a wrong code),
 and the warnings name it, until `commands revoke` removes the ignored secret or `commands enrol`
 gives the sender one, and the service restarts. 2.0 did not start then (exit 78); now the rest
-of the gateway keeps running, and the commands still fail closed.
+of the gateway keeps running, and the commands still fail closed. The revoke of the last ignored
+secret ends the refusal of every sender without one, a corrected key's too if it was not
+enrolled: so `commands revoke` names those senders, and the warnings say to enrol a corrected
+key first.
 
 **Answers** (EXT-009). With `[commands] reply`, the bridge answers the sender of a published
 command (`ok: <word>`) and, with `all`, of a command it refused after the sender checks passed

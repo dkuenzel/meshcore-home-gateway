@@ -389,6 +389,13 @@ msgstr ""
 msgid "[commands] codes_file is not set: no secret to revoke"
 msgstr ""
 
+#. security text (docs/translations.md): sender is a full public key;
+#. command is the command line that gives it a code secret
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "after the restart, {sender} commands without a code: it has no code secret, and no secret is ignored any more; '{command}' gives it one"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/codes.py
 msgid "set [commands] codes_file first, such as /etc/meshcore-home-gateway/command-codes (docs/configuration.md)"
 msgstr ""
@@ -404,6 +411,11 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/codes.py
 #, python-brace-format
 msgid "the code secret of {key} is removed from {path}. The service reads the file at its start: restart it to apply this (systemctl restart meshcore-home-gateway)."
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/codes.py src/meshcore_home_gateway/cli/config_cmd.py
+#, python-brace-format
+msgid "warning: {detail}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/codes.py
@@ -577,11 +589,6 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/config_cmd.py
 #, python-brace-format
 msgid "user {user!r} without a password"
-msgstr ""
-
-#: src/meshcore_home_gateway/cli/config_cmd.py
-#, python-brace-format
-msgid "warning: {detail}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/config_cmd.py
@@ -1519,10 +1526,11 @@ msgid "commands.codes_file: {key} has a code secret but is not in commands.sende
 msgstr ""
 
 #. security text (docs/translations.md): sender is a full public key;
-#. command is the command line that gives it a code secret; code_missing stays as it is
+#. command is the command line that gives it a code secret; code_missing, commands
+#. revoke, enrol and revoke stay as they are
 #: src/meshcore_home_gateway/config_checks.py
 #, python-brace-format
-msgid "commands.senders: {sender} has no code secret while one is ignored: its commands are refused (code_missing) until '{command}' gives it one or the ignored one is revoked; restart the service after either"
+msgid "commands.senders: {sender} has no code secret while one is ignored: its commands are refused (code_missing) until '{command}' gives it one. Once no secret is ignored (commands revoke), it commands without a code: enrol a key corrected by hand first. Restart the service after enrol or revoke"
 msgstr ""
 
 #: src/meshcore_home_gateway/config_checks.py

@@ -120,7 +120,9 @@ format, the command line and Home Assistant discovery are public interfaces
   corrected key has none: so while one is ignored, the commands of every sender without a secret
   are refused as `code_missing`, which counts as no wrong code, and the warnings name each such
   sender. That lasts until `commands revoke` removes the secret or `commands enrol` gives the
-  sender one, and the service restarts. Senders with a secret command with their codes. The
+  sender one, and the service restarts. Once no secret is ignored, every sender without one
+  commands without a code again: `commands revoke` then names them, and the warnings say to
+  enrol a key corrected by hand first. Senders with a secret command with their codes. The
   installer shows the self-test's report also when it passed, with these warnings. 2.0 refuses
   such a secret again (exit 78): before a downgrade to 2.0, remove it with `commands revoke`
   (#80).

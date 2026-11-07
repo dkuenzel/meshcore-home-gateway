@@ -119,7 +119,30 @@ def _revoke(args: argparse.Namespace) -> int:
         path=path,
     )
     print(PREFIX + done, file=sys.stderr)
+    for sender in _uncoded_after_revoke(config.commands.senders, entries, key):
+        # Translators: security text (docs/translations.md): sender is a full public key;
+        # command is the command line that gives it a code secret
+        uncoded = tr(
+            "after the restart, {sender} commands without a code: it has no code secret, and "
+            "no secret is ignored any more; '{command}' gives it one",
+            sender=sender,
+            command=f"meshcore-home-gateway commands enrol {sender}",
+        )
+        print(PREFIX + tr("warning: {detail}", detail=uncoded), file=sys.stderr)
     return EX_OK
+
+
+def _uncoded_after_revoke(
+    senders: frozenset[str], entries: dict[str, str], revoked: str
+) -> list[str]:
+    """The senders that command without a code once the service reads the file without the
+    secret of `revoked`: while a secret is ignored they are refused (code_missing), so they
+    lose that only with the last ignored one (#80). A key corrected by hand and not enrolled
+    is one of them."""
+    left = {key for key in entries if key != revoked}
+    if any(key not in senders for key in left):
+        return []
+    return sorted(sender for sender in senders if sender not in left)
 
 
 def otpauth_uri(secret: str, node_id: str, key: str) -> str:
