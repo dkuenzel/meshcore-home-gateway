@@ -111,6 +111,8 @@ format, the command line and Home Assistant discovery are public interfaces
   the device up (#97). Its empty `$extensions` reaches only the controllers subscribed at the
   time, as Homie 4.0.0 has no other form of an empty value; openHAB does not read it
   ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
+- A text on a Homie node's `send/set` that comes while the gateway stops is no longer taken and
+  echoed after `$state` `disconnected`: the gateway had stopped sending, so it never went out.
 
 ## [2.0.0] - 2026-11-07
 

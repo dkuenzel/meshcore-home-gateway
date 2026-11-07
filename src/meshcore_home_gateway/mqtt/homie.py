@@ -185,7 +185,12 @@ class HomieDevice:
 
     def message(self, topic: str, payload: bytes, retained: bool) -> None:
         """A message on `<node>/send/set`: a text for that companion, refused as on
-        `contacts/<key>/send` (a retained one, one too long); the echo Homie asks for."""
+        `contacts/<key>/send` (a retained one, one too long); the echo Homie asks for. None is
+        taken while the device is not online: a stop silences it first, once the bridge that
+        would send the text has stopped."""
+        if not self._online:
+            log.info("Homie: not connected; message dropped")
+            return
         prefix, suffix = self.base + "/", "/send/set"
         key = topic[len(prefix) : -len(suffix)]
         if not (topic.startswith(prefix) and topic.endswith(suffix)) or "/" in key:

@@ -477,6 +477,21 @@ def test_a_table_just_before_hold_s_ends_announces_the_device_settle_s_later() -
     assert HOLD_S + SETTLE_S == 65.0
 
 
+def test_a_text_after_the_stop_began_is_neither_taken_nor_echoed() -> None:
+    """The stop silences the device before `$state` `disconnected`: a text on `send/set` that
+    comes then would wait for a bridge that has stopped, and its echo would follow
+    `disconnected`."""
+    recorder = Recorder()
+    started(recorder)
+    contact(recorder.device, ALICE, "Alice")
+    recorder.timers.fire()
+    recorder.take()
+    recorder.device.disconnected()
+    recorder.device.message(f"{BASE}/{ALICE}/send/set", b"hi", False)
+    assert recorder.sent == []
+    assert recorder.take() == []
+
+
 def test_send_set_hands_the_text_over_as_contacts_send_and_echoes_it() -> None:
     """As `contacts/<key>/send`: a retained message is handed over too and refused there, so
     its delivery event tells why; the echo Homie asks for is not retained."""
@@ -609,6 +624,46 @@ def test_a_stop_publishes_nothing_after_disconnected(monkeypatch: pytest.MonkeyP
         await connection.stop()
         await asyncio.sleep(0.05)
         assert fake.published[-1] == (f"{BASE}/$state", b"disconnected", 1, True)
+
+    asyncio.run(scenario())
+
+
+def test_a_stop_takes_no_text_while_it_waits_for_disconnected() -> None:
+    """While the stop waits for the broker to confirm `$state` `disconnected`, a text on
+    `send/set` still reaches the device from paho's thread: it is not taken, and nothing follows
+    `disconnected`."""
+    sent: list[SendRequest] = []
+    fake = FakePaho()
+
+    def slow(
+        topic: str, payload: bytes, qos: int = 0, retain: bool = False, properties: Any = None
+    ) -> Any:
+        fake.published.append((topic, payload, qos, retain))
+        return SimpleNamespace(wait_for_publish=lambda _timeout: time.sleep(0.2))
+
+    fake.publish = slow  # type: ignore[method-assign]
+
+    async def scenario() -> None:
+        connection = homie_client.homie_adapter(
+            MqttConfig(host="h", node_id="radio1"),
+            50,
+            "MeshCore radio",
+            TOPICS,
+            send=sent.append,
+            client_factory=lambda _: fake,
+        )
+        await connection.start()
+        connection.device.contacts_read()
+        contact(connection.device, ALICE, "Alice")
+        fake.on_connect(fake, None, None, SimpleNamespace(is_failure=False), None)
+        await asyncio.sleep(0.01)
+        stopping = asyncio.create_task(connection.stop())
+        await asyncio.sleep(0.05)  # the stop waits for `disconnected` to be confirmed
+        message = SimpleNamespace(topic=f"{BASE}/{ALICE}/send/set", payload=b"hi", retain=False)
+        fake.on_message(fake, None, message)
+        await stopping
+        assert fake.published[-1] == (f"{BASE}/$state", b"disconnected", 1, True)
+        assert sent == []
 
     asyncio.run(scenario())
 
