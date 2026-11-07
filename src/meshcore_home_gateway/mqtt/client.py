@@ -42,6 +42,8 @@ OFFLINE = b"offline"
 MAX_QUEUED_EVENTS = 1000  # events kept for the broker while it is unreachable
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1, 60
 ECHO_WAIT_S = 10  # the gateway's `online` comes back within this, or it cannot read its topics
+# the CONNACK reason of MQTT 5, and paho's for the return code 1 of MQTT 3.1.1
+UNSUPPORTED_PROTOCOL_VERSION = 0x84
 
 
 class PahoLike(Protocol):
@@ -303,6 +305,15 @@ class MqttBus(Bus):
     def _paho_connected(self, client: Any, _u: Any, _f: Any, reason: Any, _p: Any) -> None:
         self._answered = True
         if getattr(reason, "is_failure", False):
+            if getattr(reason, "value", None) == UNSUPPORTED_PROTOCOL_VERSION:
+                # whatever the login: a broker of MQTT 3.1.1 only, asked with MQTT 5 (#107)
+                log.warning(
+                    "MQTT: connection refused: %s: the broker does not speak MQTT %s; set "
+                    "protocol in [mqtt] to the version it speaks",
+                    reason,
+                    self._config.protocol,
+                )
+                return
             # Mosquitto answers 'Not authorized' for a wrong password, an unknown user and
             # missing credentials alike: the user name tells the user what was sent
             user = f"user {self._config.username!r}" if self._config.username else "no user name"

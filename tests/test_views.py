@@ -654,6 +654,30 @@ def test_a_heard_node_with_a_taken_name_is_flagged() -> None:
     assert name_taken_nodes(mesh) == {impostor, twin_a, twin_b}  # nothing reserved
 
 
+def test_a_name_with_an_invisible_character_of_any_category_is_taken() -> None:
+    """#89: a variation selector, a Hangul filler or a braille blank does not make a name
+    another one: the node is marked as one whose name is taken."""
+    mesh = Mesh()
+    mesh.contacts_read([Node(KEY, "Bob", 1)], T)
+    imitations = [f"{n:064x}" for n in range(1, 4)]
+    for key, name in zip(imitations, ("Bob\ufe0f", "B\u3164ob", "Bob\u2800"), strict=True):
+        mesh.node_heard(Node(key, name, 1), Heard(T, "advert"))
+    assert name_taken_nodes(mesh) == set(imitations)
+
+
+def test_a_name_drawn_as_nothing_is_taken_as_any_other() -> None:
+    """#89: a contact named with a Hangul filler alone shows a blank name, which a heard node
+    named so, or with a braille blank, imitates. A name of zero-width characters alone is none:
+    two such nodes are not marked."""
+    mesh = Mesh()
+    mesh.contacts_read([Node(KEY, "\u3164", 1)], T)
+    copy, other, none_a, none_b = (f"{n:064x}" for n in range(1, 5))
+    names = {copy: "\u3164", other: "\u2800", none_a: "\u200b", none_b: "\u200b"}
+    for key, name in names.items():
+        mesh.node_heard(Node(key, name, 1), Heard(T, "advert"))
+    assert name_taken_nodes(mesh) == {copy, other}
+
+
 def test_heard_nodes_keys_or_off_publish_less_of_strangers() -> None:
     """`[contacts] heard_nodes` (SEC-015): `keys` keeps a stranger's key, type and look-alike
     mark, not its name, times or signal; `off` lists none, only the look-alikes' keys."""

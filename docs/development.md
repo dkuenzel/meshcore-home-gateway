@@ -528,7 +528,19 @@ it passes. `releases/latest` and the installer's default never pick a pre-releas
    Until a release is tagged, the release plan of every other change refuses ("no tag vX.Y.Z
    here"): merge other changes before the version change or after the tag, and run it again once
    the tag is there.
-4. The workflow runs `make check` in one job and builds the release files in another, in an
+4. The workflow's first job, *admit*, checks the tag (`tools/release_plan.py admit`): its commit
+   must be on `main`. A release must be where `release-due.yml` would tag it, which `admit` asks
+   the same way (`release_plan.py due` on `main`): on the commit that wrote the version `main`
+   has, a day after that commit's date, with CI passed on it on `main`, and while
+   `release-due.yml` is enabled. So a tag pushed by hand, by mistake or as told by an injected
+   text, is not published before its time, nor after the release was stopped. One pushed within
+   the day is refused with the time it is due; `release-due.yml` then starts the release on it,
+   as on its own tag, because it does not count a run that *admit* refused. A pre-release needs
+   only a commit of `main` that carries its version: CI's job tags one only after every job
+   passed, but one tagged by hand is published also where CI has not passed. The check is part
+   of the tagged commit: a tag on a commit off `main` brings that commit's `release.yml`, which
+   can leave it out. Then the workflow runs
+   `make check` in one job and builds the release files in another, in an
    environment of the build tools alone
    (`make release VENV=.venv-release REQUIREMENTS=requirements/release.txt`), so that no test or
    lint tool runs where they are made (SUP-002). The build refuses a tag that differs from
@@ -551,15 +563,18 @@ it passes. `releases/latest` and the installer's default never pick a pre-releas
      --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
    ```
 
-The release tags are protected by a repository ruleset for `v*`: only its bypass actors (the
-maintainer, for emergencies) can move or delete them, and by policy nobody does, so the
-attestation's tag names one commit. Creating them is open to write access, which only the
+The release tags are protected by a repository ruleset for `v*`: only its bypass actor, a
+repository role of the maintainer's login, can move or delete them (for emergencies), and by
+policy nobody does, so the attestation's tag names one commit. The agent works through that
+login, so the ruleset does not hold against it, nor does the one of `main`
+([SECURITY.md](../SECURITY.md#how-the-repository-and-the-releases-are-protected)). Creating them is open to write access, which only the
 maintainer and the workflows of this repository have (pull requests from forks get read-only
-tokens). A release that failed is followed by the next version, never by a moved tag.
+tokens); *admit* refuses a release that `release-due.yml` would not tag. A release that failed is
+followed by the next version, never by a moved tag.
 
 A manual run of the workflow ("Run workflow" in the Actions tab) is a dry run on a branch: it
 checks, builds and rebuilds the same files and keeps them as a workflow artifact, without
-attestation or release; on a tag it releases that tag, as a pushed tag does.
+attestation or release; on a tag it releases that tag, as a pushed tag does, if *admit* lets it.
 
 The provenance meets SLSA Build Level 2: a hosted build platform makes and signs it
 ([GitHub](https://docs.github.com/en/actions/concepts/security/artifact-attestations)). Level 3

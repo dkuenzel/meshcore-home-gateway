@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, Protocol
 
@@ -227,6 +227,22 @@ class Observer:
             self._restore_contact(key, None, fix, readings.pop(key, None))
         for key, kept in readings.items():
             self._restore_contact(key, None, None, kept)
+
+    def show_channels(self, published: Callable[[int | None], bool]) -> None:
+        """The channels whose received messages are published (`[messages] publish_channels`,
+        `ignore_channels`). Those of the others that the history holds, which an earlier version
+        kept of every channel, leave the `history` document, and the newest of the rest take
+        their place; they stay in the history until they are `messages_days` old (#103). The
+        gateway's own messages to a channel stay, as while it runs."""
+
+        def shown(entry: HistoryEntry) -> bool:
+            channel, own = entry.kind == "channel", entry.direction == "out"
+            return not channel or own or published(entry.channel_index)
+
+        recent: Iterable[HistoryEntry] = filter(shown, self._recent)
+        if self._history is not None and not self._history.broken:  # also from further back
+            recent = reversed(self._history.recent_messages(RECENT_MESSAGES, shown))
+        self._recent = deque(recent, maxlen=RECENT_MESSAGES)
 
     def _restore_contact(
         self, key: str, heard: Heard | None, fix: Fix | None, readings: Readings | None

@@ -105,7 +105,8 @@ STUBS = {
                 read -ra codes <<<"${DOCTOR_ANSWERS:-0}"
                 code=${codes[n]:-${codes[-1]}}  # the last one repeats; 3: a version without it
                 case $code in
-                  0) printf '  ok       the gateway is online\n' ;;
+                  0) printf '  ok       the gateway is online\n'
+                     [[ -z ${DOCTOR_WARNING-} ]] || printf '  warning  %s\n' "$DOCTOR_WARNING" ;;
                   1) printf '  ok       the gateway is online\n'
                      printf '  problem  the radio is not connected\n' >&2 ;;  # both streams count
                 esac
@@ -675,6 +676,20 @@ def test_the_installation_ends_with_the_gateway_s_own_check(host: Host) -> None:
     assert host.inside()[-1] == f"bash -c {host.script(SELF_TEST)}"
     assert doctor_runs(host) == 1
     assert "self-test passed (meshcore-home-gateway doctor in container 105)" in result.stderr
+    assert "Self-test:    passed\n" in result.stderr
+
+
+def test_the_warnings_of_a_self_test_that_passed_are_shown(host: Host) -> None:
+    """doctor passes with warnings, such as the code secret of a sender that --reconfigure
+    dropped (#80): the warning, which the journal alone showed before, is in the report the
+    installer shows, as are the lines that are ok."""
+    warning = "commands.codes_file: the secret is ignored"
+    answers = str(answers_file(host))
+    result = run_installer(host, "--answers", answers, env={"DOCTOR_WARNING": warning})
+    assert result.returncode == 0, result.stderr
+    _, report = result.stderr.split("self-test passed (meshcore-home-gateway doctor in container")
+    assert f"  ok       the gateway is online\n  warning  {warning}\n" in report
+    assert result.stderr.count(warning) == 1
     assert "Self-test:    passed\n" in result.stderr
 
 

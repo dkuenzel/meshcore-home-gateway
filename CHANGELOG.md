@@ -13,12 +13,10 @@ format, the command line and Home Assistant discovery are public interfaces
 - The attribute `manage_reason` of *Contacts* in Home Assistant, which the guide and the
   changelog of 2.0.0 already named: why requests to add or remove contacts are refused now,
   `null` while they are taken (#99).
-
 - A warning at the start and in `check-config` for targets whose aliases differ only in `-` and
   `_`, such as `a-b` and `a_b`: Home Assistant makes the same entity IDs of them and numbers the
   later ones (`_2`). Their chat pages in the dashboard have no message field and say why, and
   `meshcore-home-gateway dashboard` names the pair.
-
 - The entries of the `history` document name the target a message came through or went to
   (`target`), and a sent message's also the id of its delivery events (`id`), when the gateway
   accepted it (`queued_at`, also across a stop), whether its acknowledgement was `suspect`, and
@@ -26,12 +24,10 @@ format, the command line and Home Assistant discovery are public interfaces
   The history database keeps them in new columns, which 2.0 leaves empty after a downgrade, and
   `history export` adds them at the end of `messages` (`delivery_id` for the id)
   ([mqtt-api.md](docs/mqtt-api.md#history-history)).
-
 - The sensor *Message history* in Home Assistant: the time of the newest message, and the latest
   messages in and out as attributes. It stays available while the gateway is offline. The
   recorder stores the messages with every change unless it excludes the sensor
   ([home-assistant.md](docs/home-assistant.md#privacy)).
-
 - The retained document `pending` and the sensor *Messages on their way* in Home Assistant: the
   messages the gateway accepted and has not delivered or given up yet, the one being sent
   included, which *Queue* never counts (#112). Each names its step (`queued` or `sent`), its
@@ -40,7 +36,6 @@ format, the command line and Home Assistant discovery are public interfaces
   the broker keeps the last `pending`; an empty retained message clears it, such as
   `mosquitto_pub -r -n -t meshcore/radio1/pending`
   ([mqtt-api.md](docs/mqtt-api.md#messages-on-their-way-pending)).
-
 - Writing from Home Assistant, then sending: a draft text and a *Send* button for each target not
   in `hidden_targets` (*Write to …*, *Send what is written to …* on the gateway's device) and for
   each companion that is no contact target (*Write*, *Send what is written* on its device). The
@@ -56,7 +51,6 @@ format, the command line and Home Assistant discovery are public interfaces
   Assistant's user needs `topic write meshcore/radio1/homeassistant/draft/+/+/request`, which the
   example ACL of earlier versions lacks: without it *Send* does nothing
   ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)).
-
 - The retained document `config` and the sensor *Configuration* in Home Assistant: the settings
   in effect since the gateway started, read only, so that the household sees what the
   administrator set. Each target with its kind, prefix, suffix, whether it is an alert or hidden
@@ -67,7 +61,10 @@ format, the command line and Home Assistant discovery are public interfaces
   downgrade to 2.0 the broker keeps the last `config`; an empty retained message clears it, such
   as `mosquitto_pub -r -n -t meshcore/radio1/config`
   ([mqtt-api.md](docs/mqtt-api.md#configuration-config)).
-
+- `meshcore-home-gateway commands revoke KEY` removes the code secret of a key that is no longer
+  in `[commands] senders` from the codes file. It refuses a key that is still a sender, which
+  would then command without a code; `enrol` gives such a sender a new secret
+  ([configuration.md](docs/configuration.md#commands)) (#80).
 - The dashboard has a page for each chat: one per channel target, one per contact target
   without a device, and one per contact with a device that takes texts, at most 30 besides the
   contact targets'. A chat that has a message field shows it at the bottom of its page, with a
@@ -75,7 +72,6 @@ format, the command line and Home Assistant discovery are public interfaces
   `meshcore-home-gateway dashboard` says on standard error how many chat pages the dashboard
   has, which contacts have none, and which chat pages, switches and buttons it left out because
   a name does not fit a page's address or an entity ID.
-
 - A chat's page shows the chat as a messenger does: received messages on the left, those sent
   from this home on the right with ✓ or ✓✓, a message not delivered, not sent or maybe forged in
   yellow with the reason in words, one on its way in italics, the newest open and the older ones
@@ -87,13 +83,11 @@ format, the command line and Home Assistant discovery are public interfaces
   device answers, the text the gateway adds before and after each message. A person removed from
   the radio or hidden keeps the page, which says how to get the contact back. These need the
   message history and the messages on their way of gateway 2.1.
-
 - *Chats* lists every chat page under *All chats* with its newest message, one not sent yet as
   on its way, and "new" for a message received in the last 15 minutes, the contacts and channels
   that have no page yet, and all messages together under *Latest messages*. *Overview* shows the
   three latest chats and where everyone is. *Help* explains the problems and why a message was
   not sent, and opens from each tab's *What this view is for* and from each chat's help.
-
 - *Contacts* on the dashboard, written again for the household: buttons to *Gateway*,
   *Settings* and *Help*; *People and devices*, this gateway's contacts by their devices, each with its type (person, repeater, room or sensor), its
   battery and *Asking*, how its device answers asking for position and battery, and a link to its
@@ -107,7 +101,6 @@ format, the command line and Home Assistant discovery are public interfaces
   (#99); above the switches also asking turned off in the settings. A list whose rows all hide
   shows no empty frame. Cards that find the contacts' devices in Home Assistant's registry, on
   every page, render again each minute, so a new contact or tracker shows within a minute.
-
 - *Gateway* on the dashboard: *Health*, each part of the gateway with its state, those that need
   a look named first, the messages on their way counted as the first line of *Overview* counts
   them, and the airtime left of the hour's budget; *Radio*; *Radio settings*, with who may ask
@@ -123,35 +116,43 @@ format, the command line and Home Assistant discovery are public interfaces
 - A message that ended `failed` or `expired` no longer counts as a duplicate: the same text to the
   same target can be sent again at once. A `confirmed` one still does, for `dedup_window_s`
   ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
-
 - `add_contact` and `contacts add` drop the invisible characters a copied key, contact link or
   card may carry before they read it: the soft hyphen, the zero-width space, direction marks and
   controls, the invisible operators and the byte order mark. The joiners stay, as part of a name
   ([mqtt-api.md](docs/mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
-
 - Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery
   topic once for each of its entities; the gateway takes the copies as one deletion (#115).
-
+- A command sender with a code secret gets at most 5 wrong codes an hour; a command without a
+  code counts too, but not a command that came late (it waited in the radio or the mesh) with
+  the sender's code of the time it was sent. Then the gateway refuses its commands without a
+  look at the code, with the new reason `code_locked`, until the first of them is an hour old,
+  and its log warns each time the sender reaches the limit; the times are in `state.json`, so a
+  restart does not end it. Before, nothing counted wrong codes: a host posing as the radio over
+  TCP found a code within a minute, a stolen handheld over the air in about two weeks; now a
+  guesser wins with about 1 in 2,800 a day
+  ([design §7.4](docs/design.md#74-residual-risks)) (#79).
+- With `[messages] confirm_nonce`, the random suffix of a direct message reaches the broker only
+  once its delivery ended: in the final delivery event and the history. The `queued` and `sent`
+  events and `pending` show the text without it, also for a message a stop kept when the next
+  start has the setting changed. Before, every event carried it from `queued` on, so a client
+  that may read the gateway's topics, with a board in range, could compute the acknowledgement's
+  code and forge `confirmed` ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#87).
 - The dashboard shows three tabs, *Overview*, *Chats* (before: *Messages*) and *Contacts*, with
   their titles and without icons, so that they fit a phone. *Map*, *Gateway*, *Settings* and
   *Help* are pages without a tab: *Overview* links to them, and the *Contacts* heading has
   buttons for *Gateway*, *Settings* and *Help*. The back arrow of every page goes back to the
   page it was opened from. The radio's health moved from *Overview* to *Gateway*.
-
 - The generated dashboard needs Home Assistant 2026.10 or later: it shows cards by template
   conditions, which the frontend evaluates since 2026.10. `meshcore-home-gateway dashboard` says
   so after every dashboard it writes. The gateway and its entities still work with Home
   Assistant 2026.8 and later ([home-assistant.md](docs/home-assistant.md#requirements)).
-
 - *Overview* says in its first line, in a colour, whether everything is fine, and names the
   first problem; a card for each problem says what to do, in place of the problem sensors' tiles
   and of the tiles of the radio link, airtime, queue and battery. The messages waiting over a
   minute count the message being sent too. The version card shows only for another major or
   minor version, and says which of the two to update.
-
 - The dashboard drops control and direction characters from every name and text, and breaks long
   words in messages so that they fit a phone.
-
 - The dashboard says how a contact's device answers asking for position and battery in the
   words of a chat's page: "not asked (switch off)" for a companion nobody turned on, which 2.0
   called "excluded"; it shows times as a history does, such as "10:31" or "yesterday 10:31",
@@ -164,7 +165,6 @@ format, the command line and Home Assistant discovery are public interfaces
 - The dashboard's tile *Write a message* and its hint to add the script *Mesh message*, which
   Home Assistant 2026.10 and later never showed (#110): each chat page has its own field. The
   guide keeps the script for automations.
-
 - The dashboard's card *Telemetry and removal*, a fixed list of the contacts' switches and
   remove buttons, which pressed a button without asking first; each contact's switch and
   *Remove* now stand in *Ask for position and battery* and *Add or remove*.
@@ -175,41 +175,219 @@ format, the command line and Home Assistant discovery are public interfaces
   as it has the gateway's announcement, and available again at once when the setting is back to
   `true`; before, the change waited for the next message on the gateway's availability topic
   (#82).
-
 - The `history` document stays within 15 KiB as a whole; before, only its messages did, and the
   document could be up to 43 bytes larger (#111).
-
 - The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
   the one being sent, so a single message that waits reads 0 (#112).
-
 - A send request or the answer to a command that came while a stop handled the last received
-  messages was published `queued` and then lost: the stop had kept the queue already. It now ends
-  `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
-  stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
-
+  messages was published `queued` and then lost: the stop had kept the queue already. The stop
+  now keeps the queue as its last step, with these requests and those still waiting to be taken.
+  A request after it, such as a press of *Send* or a request that comes as the radio closes, ends
+  `rejected` with the new reason `stopping`, until the gateway publishes `offline`, which the
+  dashboard shows as "the gateway was stopping"
+  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)) (#92).
+- `retire` also clears the Homie device `homie/meshcore-<node_id>/…`, also with `[homie]` off
+  now while the broker lets the gateway's user read and write it; before, its contacts' names,
+  battery, last heard and position stayed on the broker (#96). It reads the retained messages
+  with QoS 0 now, until none has come for a second, and looks again after clearing: one left is
+  an error. With QoS 1, Mosquitto passes on at most 1040 retained messages to a subscription, and
+  a device with 50 companions has 1062. It leaves alone a Homie device that a gateway is
+  connected to: node IDs that differ only in `_` and `-` share one. Switching `[homie]` off
+  leaves the device there: the privacy page lists it, and
+  [mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device) says how to clear it.
+- A start announces the Homie device once, with its nodes. It stays `init` until 5 s after the
+  radio's first contact table (at most 65 s), and a change of its nodes waits 5 s for those that
+  follow it. Before, it went out `ready` without nodes and then once more for every contact, up
+  to 50 times a start, each making a controller read it again (#97).
+- The Homie device has a node `gateway` with the property `radio` (`connected` or
+  `disconnected`), so that `$nodes` is never empty. Before, a device without contacts sent an
+  empty `$nodes`, which removes the retained one: openHAB, which requires `$nodes`, never brought
+  the device up (#97). Its empty `$extensions` reaches only the controllers subscribed at the
+  time, as Homie 4.0.0 has no other form of an empty value; openHAB does not read it
+  ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
+- A text on a Homie node's `send/set` that came after the gateway published `offline` as it
+  stopped was still echoed, also after `$state` `disconnected`, and then lost without a delivery
+  event. It is no longer taken or echoed. One that comes earlier in the stop takes the way of one
+  on `contacts/<key>/send`: it is kept for the next start, or ends `rejected` with reason
+  `stopping` ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
+- After a restart of the broker the log no longer warns that another client wrote the gateway's
+  documents. paho sends again what the broker had not acknowledged when it stopped, such as a
+  state from before the radio was connected; the gateway takes those copies as its own, and
+  publishes the current document again if the old one arrived last. As it stops, the broker still
+  sends the gateway its own last will, which the log names once for `availability`: harmless
+  ([deployment.md](docs/deployment.md#5-troubleshooting)). The system test of a broker restart
+  read the state paho sent again for the current one, and failed now and then (#101).
+- The guide's restore of a backup puts each file back with its owner, group and mode: the
+  configuration and the secrets `root:meshcore-home-gateway` 0640, the state the service's own.
+  It said only where the files go, and the archive holds them as `root` with mode 0600: in a new
+  container the copy of the codes file of `--with-secrets` kept that, and the service stopped
+  with a configuration error ([deployment.md](docs/deployment.md#4-operations), #98). It also
+  removes the history's write-ahead log, which a stop cut short leaves behind: SQLite applied it
+  to the restored history at the next start, which then held the old messages again.
+- The security documents state three controls as strong as they are (#105). A command code shows
+  that the sender's app made it in that time window, but does not bind the text: whoever reads a
+  command before the gateway, such as a host posing as the radio over TCP, can send another text
+  with its code, once ([configuration.md](docs/configuration.md#commands)); the guide said it
+  authenticates the text. The broker password and the code secrets are files the service's group
+  reads; a systemd credential that root alone reads takes a drop-in, which the guide now gives
+  for the codes file too ([deployment.md](docs/deployment.md#4-operations)); the threat model
+  listed the credential as a control. And `time-sync.target`, which the unit is ordered after,
+  waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled,
+  neither by default nor in a container; the unit, the design, the guide and the entry of 2.0.0a1
+  said the service starts after the clock was synchronised.
+- User documents that 2.0.0 left outdated (#106): the privacy page named `message` events, a
+  topic the gateway never had, where received messages go to `received` and
+  `contacts/<key>/received` ([privacy.md](docs/privacy.md)); the README said that every message
+  is published, where only the channels that are a target are, by default, and a flood is cut to
+  bursts; the update note of 2.0.0 left out that telemetry also asks the contact targets and
+  command senders, at once after the update
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)), as did the summary of 2.0.0
+  above; the Home Assistant guide called *Telemetry* and *Telemetry state* the companions' alone,
+  where `[telemetry] ask_types` gives sensors both, and said that contact entity IDs start with
+  `mesh_`, where `contact_entity_prefix` chooses the start
+  ([home-assistant.md](docs/home-assistant.md#contacts)); and the design's note on the
+  dashboard's template named neither `@contact@`, `["@controls@"]` nor its second conditional.
+- The triage log of the review of 2026-11 states where the work is: its state was that of
+  2026-11-04, with pull requests up to #64, and its 162 fixed items counted six that defer a
+  part. It now lists the 10 deferred items, the 6 deferred parts and the 3 drafts for MeshCore
+  not sent, each with the condition that brings it back and the issue that tracks it
+  ([triage log](docs/audit/2026-11-security-architecture-review/13-triage-log.md#deferred-to-be-tracked),
+  #104).
 - The update guide: from 1.x to 2.0, the setting that a radio over TCP (`[radio]
   tcp_unauthenticated`) or commands over a broker without credentials or TLS (`[mqtt] insecure`)
   need cannot come from `--reconfigure`, which asks with the installed version. The guide shows
   the line to add by hand right before `--update`, and the troubleshooting table has a row for
   `mqtt.insecure` ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
-
 - The development guide: a release that is due is stopped by disabling the workflow *Release
   due*, not by a revert of its version, which the release plan refuses; a run of `release.yml`
   that failed before it published is re-run on the same tag
   ([development.md](docs/development.md#release)).
-
+- With `set_clock`, the radio is no longer restarted for a clock 1 minute to 1 hour ahead when
+  no contact changed for longer than `set_clock_max_days`, or the host's clock is before the
+  release: the restart starts the clock at the newest contact time, and the next connect then
+  refused to move it forward, which left the radio weeks behind. The log says why it waits
+  ([deployment.md](docs/deployment.md#5-troubleshooting)) (#86).
+- *Radio link taken over* (`radio_link_contested`) is on also when the radio restarted after it
+  closed the gateway's TCP link: the firmware closes it only for another client, and that client
+  can restart the radio to hide that it read the key. Before, the restart read as a harmless one,
+  and the log names it now (`radio: the radio closed the TCP connection, then restarted`). The
+  gateway's own restart for the clock no longer counts as a link the radio closed. The guide
+  calls the sensor what it is, a best effort: `false` is no proof
+  ([mqtt-api.md](docs/mqtt-api.md#state-state)) (#88).
+- Names are compared without any of the characters drawn as nothing, not only without the
+  format characters: a node named `Bob` with a variation selector, a grapheme joiner, a Hangul
+  filler or a braille blank added gets the `name_taken` mark, ` (name taken)` in *Add heard
+  node* and, once added, its key's digits in its device name. A combining mark that shows, such
+  as an accent, still makes another name. A name of such characters alone, such as one Hangul
+  filler, is still a name: a blank one, the same as every other blank name; one of format
+  characters alone is none. One table of these characters serves the names and what
+  `add_contact` drops from a copied key or link
+  ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)) (#89).
+- The guide names a limit of `suspect`: its bound takes every hop at the radio's coding rate,
+  so where repeaters or the recipient send at a faster one (4/5 against the radio's 4/8), a
+  genuine acknowledgement of a long text can read `suspect`. Set the gateway's radio to the
+  fastest coding rate of its mesh
+  ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#90).
+- The guide says what `at` of a received message in `history` and `received_at` of `received`
+  are: when the gateway took the message from the radio, whose frame holds no time of its own.
+  The messages that waited in the radio while the gateway was away share the time of the
+  connect; of two with one `at`, the one listed first came later. To list them oldest first,
+  reverse the list, then sort it by `at` with a stable sort
+  ([mqtt-api.md](docs/mqtt-api.md#history-history)) (#113).
+- The guide says that contact names, like texts, are published as they came, control
+  characters included, also with `clean_received`, which cleans only texts and the name a
+  channel message claims; and that the 15 KiB of `history` hold fewer messages whose names and
+  texts are full of control characters, about 10, since JSON writes each in 6 bytes
+  ([mqtt-api.md](docs/mqtt-api.md#received-messages-received)) (#114).
+- A stop cut short while it waited up to a minute for an acknowledgement lost every queued
+  message: the queue was written only after the wait. A kill does that, and so does the unit of
+  1.x with `TimeoutStopSec=20`, which a manual installation keeps when it updates only the
+  zipapp. The queue is now in `state.json` from the stop's start, with the message in flight and
+  its attempts, and written again at each change in the stop. The guide for other Linux systems
+  has an update step, which installs the release's unit
+  ([deployment.md](docs/deployment.md#3-other-linux-systems)) (#92).
+- An alert waited behind a message that the gateway had taken out of the queue and that waited
+  for the radio or for airtime before its first attempt: until that message had used the airtime
+  and its acknowledgement had come, with the default budget more than a minute and a half. Such
+  a wait now ends when an alert comes; the message goes back to the queue, first among the
+  others, and continues after the alert
+  ([configuration.md](docs/configuration.md#messages)) (#93).
+- An acknowledgement that came in the moment its wait ended, by its time or by an alert, was
+  lost: the message sent one more attempt, and could end `failed` with `no_acknowledgement`
+  although it had arrived (#93).
+- After a command's write of `state.json` failed (a full disk), `state_file` stayed `unwritable`
+  and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
+  which can take hours on a quiet system. The gateway now writes the file again within a minute,
+  also with nothing else changed, and clears both once the write succeeds (#94).
+- After an update from 1.x, the retained `history` document of the start showed the newest
+  messages of the history database, also those of channels that are no target, which 1.x had
+  kept: strangers' texts and claimed names on the Public channel went back to the broker until
+  50 new messages pushed them out. The document now leaves out the received messages of channels
+  that are not published (`publish_channels`, `ignore_channels`), and shows the newest of the
+  rest, also from behind them; the gateway's own messages to a channel target stay, as while it
+  runs. The database keeps them until they are `messages_days` old; the update guide says how to
+  be rid of them at once ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#103).
+- The guide's roll back did not say what 1.x does with the state directory of 2.0: it asks every
+  companion that is not excluded for telemetry, other people's too, and its first exclusion
+  writes `telemetry-excluded.json` without the household's inclusions, so that 2.0, back again,
+  asks none of them. It now says to keep a copy of the file and switch telemetry off first, and
+  that the messages a stop kept stay in `state.json` while 1.x runs
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#95).
+- When a broker that speaks MQTT 3.1.1 only refused the connection of `[mqtt] protocol = "5"`
+  (`Unsupported protocol version`), the log said to test the login, and `check-config --broker`
+  pointed to the broker's users and `mosquitto_passwd`. Both now say that the broker does not
+  speak that version and name the setting
+  ([deployment.md](docs/deployment.md#5-troubleshooting)) (#107).
+- `doctor` said that security updates are installed automatically as soon as
+  `unattended-upgrades` was installed, also with `APT::Periodic::Unattended-Upgrade "0"`. It now
+  reads that setting and `APT::Periodic::Update-Package-Lists` as apt's daily job does, and warns
+  when either is `"0"` or missing (#107).
+- The release plan told a change checked before a merged release was tagged that CI on main tags
+  it once its jobs pass. CI on main tags only pre-releases; the message now names
+  `release-due.yml`, which tags a release a day after its version commit, and the time from which
+  it does (#107).
+- Removing a command sender that had a code secret stopped the gateway: the secret made the
+  configuration an error (exit 78), which systemd does not restart, so alerts, telemetry and Home
+  Assistant went down with the sender's commands. The installer's `--reconfigure` got there on
+  its own when a sender was unticked or the insecure broker was declined. The gateway now ignores
+  the secret of a key that is not a sender, and its start, `check-config` and `doctor` warn about
+  it. Such a secret may be a sender's under its key before a correction by hand, and the
+  corrected key has none: so while one is ignored, the commands of every sender without a secret
+  are refused as `code_missing`, which counts as no wrong code, and the warnings name each such
+  sender. That lasts until `commands revoke` removes the secret or `commands enrol` gives the
+  sender one, and the service restarts. Once no secret is ignored, every sender without one
+  commands without a code again: `commands revoke` then names them, and the warnings say to
+  enrol a key corrected by hand first. Senders with a secret command with their codes. The
+  installer shows the self-test's report also when it passed, with these warnings. 2.0 refuses
+  such a secret again (exit 78): before a downgrade to 2.0, remove it with `commands revoke`
+  (#80).
 - The dashboard's cards that show only while they have something to say (the problems on
   *Overview*, the line under a chat's field that says a message was not sent, the map's hints)
   now appear on a page that is open. Home Assistant took such a card out of the page once it was
   empty, so it stayed away until the page was loaded again; it now shows by a condition of its
   own content.
-
 - The dashboard's switches and remove buttons of the contacts show only while their entity is
   that of this gateway's contact with the key the dashboard was made for: a second gateway's
   dashboard operated the first gateway's contacts of the same name (#81), a removed contact's
   rows turned into warnings that the entity was not found (#100), and a contact prefix set later
   emptied the contacts table (#81). A yellow line names the entity ID such a contact has, for the
   administrator.
+
+### Security
+
+- The release workflow checks a tag pushed by hand as well. Its commit must be on `main`. A
+  release must be where the hourly `release-due.yml` would tag it: on the commit that wrote the
+  version of `main`, a day after that commit's date, with CI passed on it on `main`, and while
+  `release-due.yml` is enabled, so that disabling it stops the release. A pre-release needs a
+  commit of `main` with its version. Before, a `v*` tag pushed by hand on any commit was signed
+  and published within minutes. A release tagged by hand within its day is refused with the time
+  it is due, and `release-due.yml` starts it then. The check is part of the tagged commit, so a
+  tag on a commit off `main` can still bring a workflow without it
+  ([SECURITY.md](SECURITY.md#how-the-repository-and-the-releases-are-protected), #84).
+- `SECURITY.md` names the exception to the protection of `main` and of the release tags: both
+  rulesets let a repository role bypass them at any time, which the maintainer's login has, and
+  the agent works through that login. It can push to `main` directly and move or delete a tag
+  until its release is published (#102).
 
 ## [2.0.0] - 2026-11-07
 

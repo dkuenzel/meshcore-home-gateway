@@ -16,7 +16,7 @@ import contextlib
 import json
 import logging
 import sqlite3
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,7 @@ MAX_POSITIONS = 100_000  # beyond it the oldest go, except each contact's newest
 MAX_READINGS = 200_000  # beyond it the oldest go, never a contact's newest answer
 MAX_HELD = 10_000  # writes held while a purge runs; beyond them, rows are lost (logged once)
 PURGE_BUSY_S = 10.0  # the purge's connection waits this long for the lock (sqlite3 timeout)
+READ_PAGE = 500  # rows read at a time when messages are sought past others
 _SCHEMA = """
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,
@@ -98,6 +99,11 @@ _ADDED_COLUMNS = (
 )
 
 
+_RECENT_MESSAGES = (
+    "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, snr_db, "
+    "target, delivery_id, queued_at, suspect, reason FROM message "
+    "ORDER BY at DESC, id DESC LIMIT ? OFFSET ?"
+)
 _MESSAGES_BEYOND_CAP = (
     "DELETE FROM message WHERE id <= (SELECT id FROM message ORDER BY id DESC LIMIT 1 OFFSET ?)"
 )
@@ -384,15 +390,20 @@ class History:
 
     # --- reading --------------------------------------------------------------------------------
 
-    def recent_messages(self, limit: int) -> list[HistoryEntry]:
-        rows = self._read(
-            "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, "
-            "snr_db, target, delivery_id, queued_at, suspect, reason FROM message "
-            "ORDER BY at DESC, id DESC LIMIT ?",
-            (limit,),
-        )
-        entries = [HistoryEntry(*row) for row in rows]  # SQLite keeps a truth value as 1 or 0
-        return [e if e.suspect is None else replace(e, suspect=bool(e.suspect)) for e in entries]
+    def recent_messages(
+        self, limit: int, shown: Callable[[HistoryEntry], bool] | None = None
+    ) -> list[HistoryEntry]:
+        """The newest `limit` messages, the newest first. With `shown`, the newest `limit` of
+        those it shows: read page by page past the others (#103), through at most the
+        MAX_MESSAGES rows the table holds."""
+        entries: list[HistoryEntry] = []
+        offset, page = 0, limit if shown is None else max(limit, READ_PAGE)
+        while True:
+            rows = self._read(_RECENT_MESSAGES, (page, offset))
+            entries += [e for e in map(_message, rows) if shown is None or shown(e)]
+            if len(entries) >= limit or len(rows) < page:
+                return entries[:limit]
+            offset += page
 
     def last_fixes(self) -> dict[str, Fix]:
         """The newest position of every contact that has one."""
@@ -449,6 +460,12 @@ class History:
             self.broken = True
             log.warning("history cannot be read (%s): running without it until restart", exc)
             return []
+
+
+def _message(row: tuple[Any, ...]) -> HistoryEntry:
+    entry = HistoryEntry(*row)
+    # SQLite keeps a truth value as 1 or 0
+    return entry if entry.suspect is None else replace(entry, suspect=bool(entry.suspect))
 
 
 def _named(values: Mapping[str, float]) -> lpp.Named:

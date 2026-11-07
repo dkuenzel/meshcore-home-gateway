@@ -760,7 +760,6 @@ def test_the_senders_code_secrets_are_in_a_file_of_their_own(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("codes", "message"),
     [
-        (f'{"b2" * 32} = "{CODE_SECRET}"\n', "is not in commands.senders"),
         (f'{KEY} = "not base32!"\n', "must be base32 of at least 128 bits"),
         (f'{KEY} = "{CODE_SECRET[:16]}"\n', "must be base32 of at least 128 bits"),
         (f"{KEY} = 12\n", "must be base32"),
@@ -768,7 +767,7 @@ def test_the_senders_code_secrets_are_in_a_file_of_their_own(tmp_path: Path) -> 
         ("not toml", r"^commands\.codes_file: .*command-codes"),
         ("\udcff", "not valid UTF-8"),
     ],
-    ids=["not-a-sender", "not-base32", "80-bits", "number", "no-key", "not-toml", "not-utf8"],
+    ids=["not-base32", "80-bits", "number", "no-key", "not-toml", "not-utf8"],
 )
 def test_a_code_file_that_holds_anything_else_is_refused(
     tmp_path: Path, codes: str, message: str
@@ -776,6 +775,21 @@ def test_a_code_file_that_holds_anything_else_is_refused(
     path = _coded_config(tmp_path, "")
     (tmp_path / "command-codes").write_bytes(codes.encode("utf-8", "surrogateescape"))
     with pytest.raises(ConfigError, match=message):
+        load_config(path)
+
+
+def test_the_secret_of_a_key_that_is_no_sender_is_ignored(tmp_path: Path) -> None:
+    """#80: removing a sender ends its commands and nothing else. Its secret stays in the file
+    until `commands revoke` removes it; the gateway ignores it and says so at the start. A key
+    that is no sender cannot command, so its secret changes no verdict. A malformed secret is
+    refused all the same: the file is the one `enrol` writes."""
+    other = "b2" * 32
+    path = _coded_config(tmp_path, f'{KEY} = "{CODE_SECRET}"\n{other} = "{CODE_SECRET}"\n')
+    commands = load_config(path).commands
+    assert commands.secrets == ((KEY, base64.b32decode(CODE_SECRET)),)
+    assert commands.ignored_code_keys == (other,)
+    (tmp_path / "command-codes").write_text(f'{other} = "not base32!"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="must be base32"):
         load_config(path)
 
 

@@ -8,6 +8,7 @@ import importlib.util
 import json
 import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -86,6 +87,15 @@ def _matches(address: str, topic: str) -> bool:
     return re.fullmatch(pattern, topic) is not None
 
 
+def _address(addresses: Iterable[str], topic: str) -> str:
+    """The address of a topic of the snapshot: of those it matches, the one with the fewest
+    parameters, as a literal level is not a parameter's value (`gateway` is no key of 64 hex
+    digits)."""
+    found = sorted((a for a in addresses if _matches(a, topic)), key=lambda a: a.count("{"))
+    [address] = [a for a in found if a.count("{") == found[0].count("{")] or [f"none for {topic}"]
+    return address
+
+
 def _operations(action: str) -> dict[str, dict[str, Any]]:
     """The operations of an action by the address of their channel."""
     found = {}
@@ -103,7 +113,7 @@ def test_every_topic_of_the_code_has_its_operation(direction: str, action: str) 
     operations = _operations(action)
     used = set()
     for topic, entry in SNAPSHOT["mqtt"][direction].items():
-        [address] = [a for a in operations if _matches(a, topic)] or [f"none for {topic}"]
+        address = _address(operations, topic)
         mqtt = operations[address]["bindings"]["mqtt"]
         assert mqtt["qos"] == entry["qos"], topic
         if direction == "publish":

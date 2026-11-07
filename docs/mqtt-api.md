@@ -107,8 +107,10 @@ message and `confirmed` for a direct message. A stop keeps the queued messages, 
 whose acknowledgement does not come within a minute, for the next start: it publishes `queued`
 again with the same `id` (and `attempt` the transmissions so far), then the rest of the steps, or
 the final event the message would have had meanwhile
-([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A request that comes later
-in the stop, once the queue is kept, ends `rejected` with reason `stopping`. A crash drops the
+([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). Requests are taken until
+the stop's last step, after the received messages the radio had handed over (with the answers to
+their commands); one that comes later ends `rejected` with reason `stopping`, until the gateway
+publishes `offline`, and one that comes after that gets no event. A crash drops the
 queued messages without a final event, and so does a broker outage with more than 1000 events
 waiting; wait for a final event with a timeout. Messages to `[messages] alert_targets` leave before the others. The `rejected` and `duplicate` events of
 requests refused at once are limited to 20 per second, in bursts of up to 100: a client that floods
@@ -129,8 +131,11 @@ the send topics gets no event for the excess, which the log counts (at most once
 | `duplicate` | same target and text within `dedup_window_s`, unless that message ended `failed` or `expired`: one that never arrived can be sent again at once | – |
 | `rejected` | not accepted | `unknown_target`, `unknown_contact`, `not_a_companion`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full`, `stopping` (the gateway stops and has kept its queue already) |
 
-`id` is a random identifier per request. In final events, `attempt` is the number of
-transmissions so far (0 if the message never left). Retries of a direct message keep the radio
+`id` is a random identifier per request. `text` is the text as it is sent, with the target's
+prefix and suffix; with `[messages] confirm_nonce` the events before the final one leave out the
+random suffix, which the final event carries ([below](#what-confirmed-proves)). A message a stop
+kept goes by whether it got the suffix, not by the setting of the next start. In final events,
+`attempt` is the number of transmissions so far (0 if the message never left). Retries of a direct message keep the radio
 timestamp, so a recipient that got the message but whose acknowledgement was lost may show it
 twice. An attempt that a radio disconnect interrupted after the radio had sent it is repeated as
 the identical packet: nodes that saw the first copy drop it, so it earns no acknowledgement, and
@@ -153,14 +158,25 @@ acknowledgement with the secret the two radios share; the gateway can narrow it:
   every direct message with ` #` and 8 random hex digits, the same on each attempt, which the
   recipient sees: 32 bits, as many as the code, so that guessing the text is no easier than
   guessing the code. Even sending nothing but guesses at the fastest LoRa settings during the
-  longest wait, four attempts of 60 s, a forger succeeds about once in 160,000 messages.
+  longest wait, four attempts of 60 s, a forger succeeds about once in 160,000 messages. The
+  suffix is the only secret of the code, so it stays off the broker until no acknowledgement
+  counts any more: `queued`, `sent` and `pending` show the text without it, the final event and
+  `history` with it. A reader of the gateway's topics with a board in range cannot compute the
+  code before then; whoever reads the gateway's state directory can, while a stop keeps the
+  message there.
 * **`suspect`** is `true` in a `confirmed` event whose round trip is shorter than a genuine
   acknowledgement takes over the path the radio stored: the message on every hop through the
   repeaters and the acknowledgement on one, at the radio's modulation, without preamble so that
   any firmware's is longer. A forger beside the gateway's radio who answers at once is that fast,
-  and the log warns. One who waits is not caught, nor anything sent to a neighbour or flooded,
-  which a genuine acknowledgement can answer as fast as a forged one; nor an attempt repeated
-  after the radio's link broke. `meshcore-home-gateway send --wait` exits 1 on it.
+  and the log warns. The bound takes every hop at the radio's coding rate. The LoRa header
+  carries the coding rate, so the repeaters and the recipient may send at a faster one, 4/5
+  where the radio uses 4/8: then a genuine acknowledgement of a long text can come sooner and
+  read `suspect` (at SF 8, 62.5 kHz and 4/8, a text of 140 bytes over 2 hops: a bound of 4.5 s,
+  a genuine answer in about 4.2 s). Set the gateway's radio, in the MeshCore app, to the fastest
+  coding rate its mesh uses (#90). One who waits is not caught, nor anything sent to a
+  neighbour or flooded, which a genuine acknowledgement can answer as fast as a forged one; nor
+  an attempt repeated after the radio's link broke. `meshcore-home-gateway send --wait` exits 1
+  on it.
 * **An answer** is the proof an alert that must arrive deserves: the recipient sends a word back
   as a [command](#commands-command), which the gateway checks
   ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)), and the automation
@@ -180,11 +196,14 @@ kept in the history; the log counts them at most once a minute. An accepted comm
 published. The radio has acknowledged them all before the gateway sees them, which spends its
 own transmit time ([design §7.4](design.md#74-residual-risks)).
 
-Texts are published as they came: control and direction characters included, which a terminal,
-a file or a page must not take for instructions
+Texts and names are published as they came: control and direction characters included, which a
+terminal, a file or a page must not take for instructions
 ([development.md](development.md#text-from-the-mesh-and-the-bus)). `[messages] clean_received`
-drops them before publishing ([configuration.md](configuration.md#messages)); commands are
-judged on the text as it came.
+drops them from texts before publishing, and so from the name a channel message claims
+([configuration.md](configuration.md#messages)); commands are judged on the text as it came. A
+contact's name stays as its adverts gave it, also in `sender_name`, `history` and the device
+names in Home Assistant; the command line prints such characters escaped in JSON and as spaces
+in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -205,7 +224,7 @@ judged on the text as it came.
 | `sender_name` | contact name from the same table; for channels the **claimed** name from the text, not authenticated |
 | `target` | alias of a configured target matching the sender or channel, else `null` |
 | `channel_index` | channel messages only |
-| `sent_at` | sender's clock; `received_at` the gateway's clock |
+| `sent_at` | sender's clock; `received_at` the gateway's clock when it took the message from the radio: for one that waited in the radio while the gateway was away, the time of the connect ([`history`](#history-history)) |
 | `snr_db` | signal-to-noise ratio of the last hop, 0.25 dB steps; `null` for legacy frames |
 | `hops` | repeaters a flooded message passed; `null` if it arrived by direct route |
 | `command` | `null` unless the first word is a command word; then `accepted` and `reason` |
@@ -242,9 +261,10 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `broker_unavailable` | the gateway knew the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the gateway clock; with `max_age_s = 0`, more than a day ahead |
-| `code_missing` | the sender has a code secret, and the last word is no 6-digit code |
-| `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, or the phone's clock or the host's off) |
+| `code_missing` | the sender has a code secret, and the last word is no 6-digit code; or the sender has none while the gateway ignores the code secret of a key that is no sender, which is no wrong code ([configuration.md](configuration.md#commands)) |
+| `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, the phone's clock or the host's off, or a command that came late: it waited in the radio or the mesh) |
 | `code_reused` | a code of 30 seconds whose code this sender already used, or of earlier ones: a code serves once |
+| `code_locked` | this sender sent 5 wrong codes within the last hour (`code_missing` or `code_invalid`, except the sender's code of the time it sent a command that came late, and the `code_missing` of the time it had no secret while the gateway ignored one): its commands are refused without a look at the code until the first of them is an hour old, also across a restart ([configuration.md](configuration.md#commands)) |
 
 An identical copy of a command's packet, also of a rejected one, is dropped as a repeat: it is
 the sender's retry after a lost acknowledgement or a replay, which cannot be told apart. To have
@@ -292,10 +312,13 @@ restarting the radio ([design §6.1](design.md#61-radio-session)): far from 0 it
 ([deployment.md](deployment.md#5-troubleshooting)).
 
 `radio_link_contested` is `true` for an hour after another client took the radio's TCP link: the
-radio closed the gateway's connection while it kept running, as it does when another client
-connects, and such a client can control the radio and read its private key
-([configuration.md](configuration.md#radio)). `false` while that has not happened; `null` over
-USB, while the radio is not connected, and when its firmware reports no uptime.
+radio closed the gateway's connection, which it does only when another client connects, whether
+it kept running or restarted since (any client can restart it, also to hide what it did), and
+such a client can control the radio and read its private key
+([configuration.md](configuration.md#radio)). `false` while the gateway saw no such close: it is
+a best effort, not proof. A client that connects while the gateway is stopped or away from the
+radio leaves no trace. `null` over USB, while the radio is not connected, and when its firmware
+reports no uptime.
 
 `contact_link` adds the gateway in the MeshCore app, for example as a QR code (`null` until the
 radio is known). It carries no position.
@@ -325,7 +348,7 @@ Assistant shows as the problem sensor *Gateway degraded* ([what to do](deploymen
 | Key | Meaning | Degraded when |
 | --- | --- | --- |
 | `history` | `ok`, `off` (`[history] enabled = false`), `broken`: it could not be opened or a write failed, and it is off until the next start | `broken` |
-| `state_file` | `ok`, or `unwritable`: the last write of `state.json` failed (a full or read-only disk) | not `ok` |
+| `state_file` | `ok`, or `unwritable`: the last write of `state.json` failed (a full or read-only disk); the gateway tries again within a minute, also when nothing else changed, and it is `ok` again once a write succeeds | not `ok` |
 | `exclusions` | `ok`, `unsaved`: an exclusion from telemetry waits to be written to `telemetry-excluded.json`, or `unreadable`: that file cannot be parsed and telemetry is paused | not `ok` |
 | `errors_1h` | bugs that a part caught and logged with their traceback in the last hour; the journal shows each place at most once a minute, with how many came since | above 0 |
 | `loop_lag_max_s` | the longest the gateway's event loop was held up in the last hour: a host that gives it no CPU or a slow disk (a backup, swapping); `null` in the first second | 1 s or more |
@@ -520,9 +543,14 @@ of its newest one, also not after a restart.
 `name_taken` marks a node whose name a contact has, a name the gateway goes by (its device in
 Home Assistant, its radio's name when `[radio.profile] name` sets it) or another heard node, as a
 person reads names: compared after NFKC normalisation and case folding, Cyrillic and Greek letters
-that look Latin taken as those, invisible format characters left out. Anyone can name a node
-anything: a stranger may pass for a member of the household. The top-level list names up to 16 of
-them, `name_taken_total` counts them all, also with `heard_nodes = "keys"` or `"off"`.
+that look Latin taken as those, characters drawn as nothing left out (Unicode's default
+ignorable characters of any category, such as variation selectors and Hangul fillers, and every
+format character), the braille blank as a space. A combining mark that shows, such as an accent,
+makes another name. A name of such characters alone, such as one Hangul filler or a braille
+blank, is a blank name, the same as every other blank name; a name of format characters or
+spaces alone is none. Anyone can name a node anything: a stranger may pass for a member of the
+household. The top-level list names up to 16 of them, `name_taken_total` counts them all, also
+with `heard_nodes = "keys"` or `"off"`.
 
 `hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert: while its receive
 delay is 0, only from the advert's own log, `null` without it; with a delay above 0, or one the
@@ -538,7 +566,10 @@ and `look_alike_total` still name the look-alikes ([configuration](configuration
 ## History: `history`
 
 The latest messages in and out (up to 50), newest first. The whole document stays within 15 KiB
-(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). They are
+(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). The bound
+counts the bytes as published, in which a control character takes 6 (`\u0001`): a few long texts
+from senders whose names and texts are full of them leave about 10 messages in the document, long
+plain ones about 30. The database keeps each of them (`history export`, #114). They are
 kept in the gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
 [configuration](configuration.md)).
 
@@ -556,10 +587,22 @@ kept in the gateway's history database, so they survive a restart ([ADR 0016](de
                "reason": null}]}
 ```
 
+`at` is the gateway's clock: for an incoming message when it took the message from the radio,
+for an outgoing one when it became final. The radio does not say when it received a message
+([protocol.md](protocol.md#3-responses)), so the messages that waited in the radio while
+the gateway was away share the time of the connect (#113). Of two with the same `at`, the one
+listed first came later: to list them oldest first, reverse the list, then sort it by `at` with a
+stable sort; or use the list's order. After the host's clock went back, a later message can have
+an earlier `at` and is listed below the earlier one.
+
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message
 (`confirmed`, `failed`, `expired`, or `sent` for a channel). Requests refused at once
-(`rejected`, `duplicate`) are not in the history.
+(`rejected`, `duplicate`) are not in the history. Of the messages received on channels, the
+document has only those of the channels that are published (`[messages] publish_channels`,
+`ignore_channels`): since 2.1 also at the start, when the history database still holds messages
+of other channels that an earlier version kept, and it then shows the newest of the rest (#103).
+The gateway's own messages to a channel target are in it, also when that channel is ignored.
 
 Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
 message from an earlier version):
@@ -588,7 +631,7 @@ only within a topic). The whole document stays within 8 KiB: `total` counts ever
 {"total": 2, "truncated": false,
  "messages": [{"id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00", "target": "alice",
                "kind": "contact", "contact_key": "a1b2…", "channel_index": null,
-               "name": "Alice", "text": "Back soon #0f1e2d3c", "step": "sent", "attempt": 1,
+               "name": "Alice", "text": "Back soon", "step": "sent", "attempt": 1,
                "max_attempts": 3},
               {"id": "9f8e7d6c", "queued_at": "2026-10-18T09:01:10+00:00", "target": "family",
                "kind": "channel", "contact_key": null, "channel_index": 1, "name": "family",
@@ -602,7 +645,7 @@ only within a topic). The whole document stays within 8 KiB: `total` counts ever
 | `queued_at` | when the gateway accepted the request, also for a message kept across a stop; `null` for one that 2.0 kept |
 | `target` | the target it goes to; `null` for a message sent through `contacts/<key>/send`, whose key is `contact_key` |
 | `kind`, `contact_key`, `channel_index`, `name` | as in `history`: `name` is the contact's name, else the target's alias |
-| `text` | as it is sent, with the target's prefix and suffix and the code of `confirm_nonce` |
+| `text` | as it is sent, with the target's prefix and suffix, but without the random suffix of `confirm_nonce`: that one only the final delivery event and `history` show ([what `confirmed` proves](#what-confirmed-proves)) |
 | `step` | its latest delivery event: `queued` (not sent yet; again after a restart that kept it) or `sent` (an attempt went out; it waits for the acknowledgement or its next attempt, also while an alert goes first) |
 | `attempt`, `max_attempts` | the transmissions so far, and how many it may take: `max_attempts` for a direct message, 1 for a channel |
 
@@ -997,8 +1040,10 @@ retained with QoS 1, the echo of `send` aside.
 
 | Topic below `homie/<homie_device>` | Direction | Retained | Payload |
 | --- | --- | --- | --- |
-| `$homie`, `$name`, `$extensions`, `$implementation`, `$nodes` | gateway → | yes | `4.0.0`; the name of the gateway's device in Home Assistant; empty; `meshcore-home-gateway`; the nodes' IDs, separated by `,` |
-| `$state` | gateway → | yes | `init` while the device is announced, `ready`, `alert` while the radio is not connected, `disconnected` after a clean stop, `lost` as the last will |
+| `$homie`, `$name`, `$extensions`, `$implementation`, `$nodes` | gateway → | yes | `4.0.0`; the name of the gateway's device in Home Assistant; empty (below); `meshcore-home-gateway`; the nodes' IDs, separated by `,`: `gateway` first, then the contacts' keys |
+| `$state` | gateway → | yes | `init` while the device is announced, and after a start until 5 s after the radio's first contact table; `ready`; `alert` while the radio is not connected; `disconnected` after a clean stop; `lost` as the last will |
+| `gateway/$name`, `gateway/$type`, `gateway/$properties` | gateway → | yes | `Gateway`, `gateway`, `radio`: the gateway's own node |
+| `gateway/radio`, `gateway/radio/$<attribute>` | gateway → | yes | `connected` or `disconnected`, as `radio` in [`state`](#state-state); `$datatype` `enum`, `$format` `connected,disconnected` |
 | `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document), its properties |
 | `<key>/<property>`, `<key>/<property>/$<attribute>` | gateway → | yes | the property's value (below) and its Homie attributes |
 | `<key>/send` | gateway → | no | the echo of a text taken on `send/set` |
@@ -1007,12 +1052,40 @@ retained with QoS 1, the echo of `send` aside.
 | --- | --- | --- | --- |
 | `homie/<homie_device>/<key>/send/set` | → gateway | must not be | UTF-8 text for that companion, as on `contacts/<key>/send` |
 
-A node is a contact, its ID the contact's full key. The nodes are the contacts that come first as
-for their devices in Home Assistant (protected contacts, favourites, companions, then the most
-recently heard), at most `[homie] contacts`; a contact keeps its node while it stays in the
-table. A change of the nodes goes out between `$state` `init` and `ready`, so that a controller
-reads the device again, and the topics of a node that is gone are cleared. Those of a node whose
-contact left while the gateway was stopped stay on the broker, no longer listed in `$nodes`.
+The first node is the gateway's own, `gateway`, with the radio's state. The others are contacts,
+each with the contact's full key as its ID: those that come first as for their devices in Home
+Assistant (protected contacts, favourites, companions, then the most recently heard), at most
+`[homie] contacts`; a contact keeps its node while it stays in the table. A change of the nodes
+goes out between `$state` `init` and `ready`, so that a controller reads the device again, and
+the topics of a node that is gone are cleared. Those of a node whose contact left while the
+gateway was stopped stay on the broker, no longer listed in `$nodes`.
+
+The connection comes up before the radio's contacts, which arrive one by one. A start keeps the
+device `init` until 5 s after the radio's first contact table, at most 65 s, and then announces
+it once, with its nodes; a reconnect later announces it at once. A change of the nodes waits 5 s
+for those that follow it: a table read changes them once, not once per contact. The values of a
+node go out as they change.
+
+`$nodes` is never empty: the gateway's node is there also without contacts and with
+`[homie] contacts = 0`. openHAB takes `$nodes` and a node's `$properties` as mandatory and skips
+an empty message, so a device without nodes would never come up there
+([platform notes](platform-notes.md#openhab-homie-binding)). `$extensions` is empty.
+Homie 4.0.0 asks for it "even if it is just an empty string", but an empty retained message
+removes the topic's retained message (MQTT 3.1.1, section 3.3.1.3). So only the controllers
+subscribed at that moment get it; one that subscribes later gets none. Read a missing one as
+empty; openHAB does not read it. Homie 4.0.0 has no other form of an empty value; 5.0.0 writes an
+empty string value as a single byte 0, which a Homie 4 controller would read as a value.
+
+The device stays on the broker after `[homie]` is switched off, with its nodes' names and
+positions: nothing clears it then. Clear it by hand, for example with
+`mosquitto_sub -t 'homie/meshcore-radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
+2.0). `meshcore-home-gateway retire` clears it before the gateway goes, also with `[homie]` off
+while the broker still lets the gateway's user read and write `homie/meshcore-radio1/#`
+([operations](deployment.md#4-operations)). Without the grant to read, it finds nothing of the
+device and leaves it there without a word; without the grant to write, it says what is left. It
+leaves a device alone whose `$state` says that a gateway is connected to it (`init`, `ready`,
+`alert` or `sleeping`): with this gateway stopped, that is another one. Node IDs that differ only
+in `_` and `-`, such as `radio_1` and `radio-1`, share a Homie device.
 
 | Property | Datatype | From the document | Notes |
 | --- | --- | --- | --- |
@@ -1025,7 +1098,10 @@ contact left while the gateway was stopped stay on the broker, no longer listed 
 A value that is unknown (`null` in the document) is cleared: an empty retained message removes it
 from the broker. A text on `<key>/send/set` takes the way of one on `contacts/<key>/send`, with
 its limits and its `delivery` events; the gateway echoes it on `<key>/send` as Homie asks, which
-tells only that it was taken. A retained one is refused as there.
+tells only that it was taken. A retained one is refused as there. A stop takes it as one there
+too ([delivery](#delivery-delivery)): it is kept for the next start, or ends `rejected` with
+reason `stopping` after the stop's last step. One that comes after the gateway publishes
+`offline` is neither taken nor echoed, and gets no event.
 
 The Homie topics are part of the public interface, as the topics above. A broker that serves
 them needs these lines for the gateway's user in addition to those of

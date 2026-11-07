@@ -151,6 +151,7 @@ class Bridge:
                     await asyncio.wait([telemetry])
                 await self.outbox.finish(tasks["outbox"])  # before the radio: it may await an ack
                 await self._finish_inbound(tasks["radio"])
+                self.outbox.keep()  # last: with the answers to the commands just handled (#92)
                 for task in tasks.values():
                     task.cancel()
         finally:
@@ -258,7 +259,18 @@ class Bridge:
     def _link_started(self, session: RadioPort) -> None:
         """Over TCP: whether another client took the link before this one (core.link)."""
         uptime_s, read_at = _uptime(session)
-        if self.radio.watch.started(uptime_s, read_at):
+        watch = self.radio.watch
+        if not watch.started(uptime_s, read_at):
+            return
+        if watch.restarted:
+            log.warning(
+                "radio: the radio closed the TCP connection, then restarted (uptime %s s): "
+                "another client connected to it, which can control the radio, read its private "
+                "key and restart it; the gateway took the link back "
+                "(docs/deployment.md, Troubleshooting)",
+                uptime_s,
+            )
+        else:
             log.warning(
                 "radio: the radio closed the TCP connection and kept running (uptime %s "
                 "s): another client connected to it, which can control the radio and "

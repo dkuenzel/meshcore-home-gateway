@@ -5,6 +5,8 @@ import dataclasses
 import pytest
 
 from meshcore_home_gateway.core.commands import (
+    CODE_FAILURE_LIMIT,
+    CODE_FAILURE_WINDOW_S,
     CODE_STEP_S,
     CommandDecision,
     CommandRules,
@@ -12,6 +14,7 @@ from meshcore_home_gateway.core.commands import (
     code_at,
     command_word,
     evaluate_command,
+    recent_code_failures,
 )
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
@@ -90,6 +93,7 @@ def test_only_the_rejections_of_an_identified_sender_are_answered(rejection: Rej
         "code_missing",
         "code_invalid",
         "code_reused",
+        "code_locked",
         "state_unwritable",
         "broker_unavailable",
     }
@@ -266,9 +270,16 @@ def code(at: float = NOW, secret: bytes = SECRET) -> str:
 
 
 def coded(
-    text: str, *, now: float = NOW, last: dict[str, int] | None = None, key: str = ALICE
+    text: str,
+    *,
+    now: float = NOW,
+    last: dict[str, int] | None = None,
+    key: str = ALICE,
+    failures: dict[str, list[float]] | None = None,
 ) -> CommandDecision | None:
-    return evaluate_command(dm(text, key=key), CODED, CODED_BOOK, {}, now, last_codes=last)
+    return evaluate_command(
+        dm(text, key=key), CODED, CODED_BOOK, {}, now, last_codes=last, code_failures=failures
+    )
 
 
 @pytest.mark.parametrize(
@@ -296,6 +307,20 @@ def test_a_sender_with_a_secret_ends_its_commands_with_the_code() -> None:
     assert alone is not None
     assert alone.command is not None
     assert alone.command.args == ""
+
+
+def test_a_code_does_not_bind_the_text() -> None:
+    """#105, design §7.4: a code shows that the sender's app made it in that time window, not
+    which text it came with. Whoever reads `arm now <code>` before the gateway, such as a host
+    posing as the radio over TCP, can send `status <code>` instead, once."""
+    seen = code()
+    taken = coded(f"status {seen}")
+    assert taken is not None
+    assert taken.command is not None
+    assert (taken.command.word, taken.command.code_step) == ("status", STEP)
+    again = coded(f"arm now {seen}", last={ALICE: STEP})  # the sender's own comes too late
+    assert again is not None
+    assert again.rejection is Rejection.CODE_REUSED
 
 
 @pytest.mark.parametrize(("steps", "accepted"), [(-1, True), (1, True), (-2, False), (2, False)])
@@ -343,10 +368,66 @@ def test_a_code_serves_once() -> None:
 
 
 def test_senders_without_a_secret_keep_the_rules() -> None:
+    """While no secret is ignored (#80), a sender without one commands without a code."""
+    assert CODED.ignored_code_keys == ()
     decision = coded(f"arm now {code()}", key=CAROL)
     assert decision is not None
     assert decision.command is not None
     assert (decision.command.args, decision.command.code_step) == (f"now {code()}", None)
+
+
+FORMER = "d4" * 32  # a key with a secret in the codes file that is no sender (any more)
+IGNORING = dataclasses.replace(CODED, ignored_code_keys=(FORMER,))
+
+
+def test_while_a_secret_is_ignored_a_sender_without_one_is_refused() -> None:
+    """#80: a sender's key corrected by hand leaves its secret under the old key, which the
+    gateway ignores, and the corrected key has none. 2.0 did not start then (exit 78); now each
+    sender without a secret is refused as code_missing while a secret is ignored, also with a
+    last word that looks like a code. It is no wrong code (not late, nothing to guess). The
+    other checks come first, and with `reply = "all"` the sender learns the reason."""
+    for text in ("arm", "arm now", f"arm now {code()}"):
+        decision = evaluate_command(dm(text, key=CAROL), IGNORING, CODED_BOOK, {}, NOW)
+        assert decision is not None
+        assert (decision.command, decision.rejection, decision.sender_key, decision.late) == (
+            None,
+            Rejection.CODE_MISSING,
+            CAROL,
+            False,
+        )
+        answering = dataclasses.replace(IGNORING, reply="all")
+        assert answering.reply_text(decision) == "rejected: code_missing"
+    replayed = evaluate_command(dm("arm", key=CAROL), IGNORING, CODED_BOOK, {CAROL: int(NOW)}, NOW)
+    assert replayed is not None
+    assert replayed.rejection is Rejection.REPLAY
+    stranger = evaluate_command(dm("arm", key=BOB), IGNORING, CODED_BOOK, {}, NOW)
+    assert stranger is not None
+    assert stranger.rejection is Rejection.SENDER_NOT_ALLOWED
+
+
+def test_while_a_secret_is_ignored_a_sender_with_one_keeps_its_codes() -> None:
+    """#80: the refusal is for senders without a secret: one with a secret commands with its
+    code and is refused without one or with a wrong one, as before; after its wrong codes, the
+    right one too (#79): an ignored secret lifts no lockout."""
+    accepted = evaluate_command(dm(f"arm now {code()}"), IGNORING, CODED_BOOK, {}, NOW)
+    assert accepted is not None
+    assert accepted.command is not None
+    assert (accepted.command.args, accepted.command.code_step) == ("now", STEP)
+    right = code()
+    wrong = f"{(int(right[0]) + 1) % 10}{right[1:]}"
+    for text, rejection in (
+        ("arm now", Rejection.CODE_MISSING),
+        (f"arm {wrong}", Rejection.CODE_INVALID),
+    ):
+        decision = evaluate_command(dm(text), IGNORING, CODED_BOOK, {}, NOW)
+        assert decision is not None
+        assert (decision.rejection, decision.sender_key) == (rejection, ALICE)
+    failures = {ALICE: [NOW] * CODE_FAILURE_LIMIT}
+    locked = evaluate_command(
+        dm(f"arm {right}"), IGNORING, CODED_BOOK, {}, NOW, code_failures=failures
+    )
+    assert locked is not None
+    assert (locked.rejection, locked.sender_key) == (Rejection.CODE_LOCKED, ALICE)
 
 
 def test_the_other_checks_come_before_the_code() -> None:
@@ -364,3 +445,90 @@ def test_the_rules_never_show_a_secret() -> None:
     assert "1234567890" not in repr(CODED)
     assert CODED.secret(ALICE) == SECRET
     assert CODED.secret(CAROL) is None
+
+
+def test_a_sender_with_too_many_wrong_codes_is_locked_out_for_a_while() -> None:
+    """#79, RFC 4226 section 7.3: a code is one of 10^6 and three time steps pass, so each guess
+    wins with 3 in 10^6. After CODE_FAILURE_LIMIT wrong codes within CODE_FAILURE_WINDOW_S a
+    sender's codes are not even checked, the right one neither: at most that many guesses an
+    hour. The other checks come first, and other senders keep their own count."""
+    recent = [NOW - CODE_FAILURE_WINDOW_S + 1 + n for n in range(CODE_FAILURE_LIMIT)]
+    locked = coded(f"arm {code()}", failures={ALICE: recent})
+    assert locked is not None
+    assert (locked.command, locked.rejection, locked.sender_key) == (
+        None,
+        Rejection.CODE_LOCKED,
+        ALICE,
+    )
+    without_code = coded("arm now", failures={ALICE: recent})
+    assert without_code is not None
+    assert without_code.rejection is Rejection.CODE_LOCKED
+    expired = [NOW - CODE_FAILURE_WINDOW_S, *recent[1:]]  # the oldest is an hour old
+    for fewer in (recent[1:], expired):
+        decision = coded(f"arm {code()}", failures={ALICE: fewer})
+        assert decision is not None
+        assert decision.command is not None
+    replayed = evaluate_command(
+        dm(f"arm {code()}"),
+        CODED,
+        CODED_BOOK,
+        {ALICE: int(NOW)},
+        NOW,
+        code_failures={ALICE: recent},
+    )
+    assert replayed is not None
+    assert replayed.rejection is Rejection.REPLAY
+    other = coded(f"arm now {code()}", key=CAROL, failures={ALICE: recent})
+    assert other is not None
+    assert other.command is not None
+
+
+def test_the_code_of_the_time_a_late_command_was_sent_is_no_guess() -> None:
+    """#79: a command that waited in the radio (a restart, an update, a re-plug) or in the mesh
+    ends with the sender's code of the time it was sent, a step the bridge clock no longer
+    accepts. It is refused as code_invalid, but marked late: it does not count as a wrong code,
+    or the household's own late commands would lock their sender out. Only a step before the
+    bridge's accepts is late: a code of one ahead would tell a guesser a code to use later."""
+    sent = NOW - 300
+    late = evaluate_command(dm(f"arm {code(sent)}", ts=sent), CODED, CODED_BOOK, {}, NOW)
+    assert late is not None
+    assert (late.command, late.rejection, late.late) == (None, Rejection.CODE_INVALID, True)
+    near = [code(sent + d * CODE_STEP_S) for d in (-1, 1)]  # the sender's clock a step off
+    for text in near:
+        decision = evaluate_command(dm(f"arm {text}", ts=sent), CODED, CODED_BOOK, {}, NOW)
+        assert decision is not None
+        assert (decision.rejection, decision.late) == (Rejection.CODE_INVALID, True)
+    wrong = next(c for c in (f"{n:06d}" for n in range(10)) if c not in {code(sent), *near})
+    guess = evaluate_command(dm(f"arm {wrong}", ts=sent), CODED, CODED_BOOK, {}, NOW)
+    assert guess is not None
+    assert (guess.rejection, guess.late) == (Rejection.CODE_INVALID, False)
+    ahead = NOW + 300
+    early = evaluate_command(dm(f"arm {code(ahead)}", ts=ahead), CODED, CODED_BOOK, {}, NOW)
+    assert early is not None
+    assert (early.rejection, early.late) == (Rejection.CODE_INVALID, False)
+    missing = evaluate_command(dm("arm now", ts=sent), CODED, CODED_BOOK, {}, NOW)
+    assert missing is not None
+    assert (missing.rejection, missing.late) == (Rejection.CODE_MISSING, False)
+    accepted = coded(f"arm {code()}")
+    assert accepted is not None
+    assert (accepted.rejection, accepted.late) == (None, False)
+
+
+def test_wrong_codes_ahead_of_the_clock_count_only_within_the_window() -> None:
+    """#79: a wrong code's time ahead of now (the clock went back since) counts as far as the
+    window reaches, not until the clock catches up with it: else a clock set back by a day
+    would keep the sender locked out for that day."""
+    later = [NOW + 10, NOW + CODE_FAILURE_WINDOW_S + 100]
+    assert recent_code_failures([*later, NOW - 10, NOW - CODE_FAILURE_WINDOW_S], NOW) == [
+        NOW - 10,
+        NOW + 10,
+    ]
+
+
+def test_a_code_with_a_sender_timestamp_of_the_epoch_is_judged() -> None:
+    """With the age check off a sender timestamp may be 0: the steps around its own are not
+    negative, which no code has, so a wrong code is code_invalid and nothing raises."""
+    rules = dataclasses.replace(CODED, max_age_s=0.0)
+    decision = evaluate_command(dm("arm 000000", ts=0), rules, CODED_BOOK, {}, NOW)
+    assert decision is not None
+    assert (decision.rejection, decision.late) == (Rejection.CODE_INVALID, False)
