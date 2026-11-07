@@ -94,6 +94,25 @@ format, the command line and Home Assistant discovery are public interfaces
   three latest chats and where everyone is. *Help* explains the problems and why a message was
   not sent, and opens from each tab's *What this view is for* and from each chat's help.
 
+- *Contacts* on the dashboard, written again for the household: *People and devices*, this
+  gateway's contacts by their devices, each with its battery and *Asking*, how its device answers
+  asking for position and battery, and a link to its chat page; *Sensors*, the readings of the
+  contacts that report some; *Ask for position and battery*, a switch for each person; *Add or
+  remove* with the result of the last request under the fields, the QR code under *Let someone
+  add this home*, a *Remove* for each contact that asks first, naming the contact, and *Hidden
+  contacts* with *Show again*; *Nodes heard nearby*. A line above the controls says why they
+  cannot act when they cannot: the gateway offline, `controls = false`, contact management off,
+  the radio away, or firmware the gateway is not tested with (#99).
+
+- *Gateway* on the dashboard: *Health*, each part of the gateway with its state, those that need
+  a look named first, the messages on their way counted as the first line of *Overview* counts
+  them, and the airtime left of the hour's budget; *Radio*; *Radio settings*, with who may ask
+  the radio for its battery, position and readings as the radio acts on it; *Latest of each
+  kind*, the newest event of each kind. *Settings*: what the administrator set, read only, from
+  the sensor *Configuration*, each setting with its key, and the versions. *Help* names every
+  page, button and switch, and says what the dashboard cannot do, the kinds of messages and what
+  each word of the cards means ([home-assistant.md](docs/home-assistant.md#dashboard)).
+
 ### Changed
 
 - A message that ended `failed` or `expired` no longer counts as a duplicate: the same text to the
@@ -128,11 +147,22 @@ format, the command line and Home Assistant discovery are public interfaces
 - The dashboard drops control and direction characters from every name and text, and breaks long
   words in messages so that they fit a phone.
 
+- The dashboard says how a contact's device answers asking for position and battery in the
+  words of a chat's page: "not asked (switch off)" for a companion nobody turned on, which 2.0
+  called "excluded"; it shows times as a history does, such as "10:31" or "yesterday 10:31",
+  not "5 min ago". The field to add a contact is *Add by key or contact link*; the line below it
+  says to tap Return. *Gateway* has no tile of the airtime left: its *Health* row shows it with
+  the budget. Make the dashboard again to get these.
+
 ### Removed
 
 - The dashboard's tile *Write a message* and its hint to add the script *Mesh message*, which
   Home Assistant 2026.10 and later never showed (#110): each chat page has its own field. The
   guide keeps the script for automations.
+
+- The dashboard's card *Telemetry and removal*, a fixed list of the contacts' switches and
+  remove buttons, which pressed a button without asking first; each contact's switch and
+  *Remove* now stand in *Ask for position and battery* and *Add or remove*.
 
 ### Fixed
 
@@ -151,6 +181,13 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+
+- The dashboard's switches and remove buttons of the contacts show only while their entity is
+  that of this gateway's contact with the key the dashboard was made for: a second gateway's
+  dashboard operated the first gateway's contacts of the same name (#81), a removed contact's
+  rows turned into warnings that the entity was not found (#100), and a contact prefix set later
+  emptied the contacts table (#81). A yellow line names the entity ID such a contact has, for the
+  administrator.
 
 ## [2.0.0] - 2026-11-07
 
