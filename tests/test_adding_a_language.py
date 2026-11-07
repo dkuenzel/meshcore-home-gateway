@@ -104,14 +104,22 @@ def marked(text: str) -> str:
     return f"‹{body}›{newline}"
 
 
+# the dashboard's three tabs, whose titles have at most 22 letters together in every language
+# (docs/development.md, the dashboard's template, rule 14): marked, they would have 27
+TABS = frozenset({"Overview", "Chats", "Contacts"})
+
+
 def translated(template: str) -> str:
     """Steps 1 and 2: the template as a catalog of the language, every text translated, the
-    plural rule in its header."""
+    plural rule in its header; the tabs' titles as in English, which fit."""
     header, entries = read_po(template)
     complete = []
     for entry in entries:
         english = [entry.msgid, entry.msgid_plural] if entry.msgid_plural else [entry.msgid]
-        complete.append(dataclasses.replace(entry, msgstr=tuple(map(marked, english))))
+        tab = entry.msgctxt == "dashboard" and entry.msgid in TABS
+        complete.append(
+            dataclasses.replace(entry, msgstr=tuple(english if tab else map(marked, english)))
+        )
     return str(tool.write_po({**header, "Plural-Forms": GERMANIC}, complete))
 
 

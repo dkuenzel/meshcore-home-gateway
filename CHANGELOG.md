@@ -8,6 +8,29 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard has a page for each chat: one per channel target, one per contact target
+  without a device, and one per contact with a device that takes texts, at most 30. A chat that
+  has a message field shows it at the bottom of its page, with a *Send* button. The page of a
+  contact target with a device is that contact's. `meshcore-home-gateway dashboard` says on
+  standard error how many chat pages the dashboard has, which contacts have none, and which
+  chat pages it left out because a name does not fit a page's address.
+- Two targets whose aliases differ only in `-` and `_` (such as `a-b` and `a_b`) get the same
+  entity IDs in Home Assistant. Their chat pages have no message field and say why, and
+  `meshcore-home-gateway dashboard` names the pair.
+
+### Changed
+
+- The dashboard shows three tabs, *Overview*, *Chats* (before: *Messages*) and *Contacts*, with
+  their titles and without icons, so that they fit a phone. *Map*, *Gateway*, *Settings* and
+  *Help* are pages without a tab: *Overview* links to them, and the *Contacts* heading has
+  buttons for *Gateway*, *Settings* and *Help*. The back arrow of every page goes back to the
+  page it was opened from. The radio's health moved from *Overview* to *Gateway*.
+- The generated dashboard needs Home Assistant 2026.10 or later, and
+  `meshcore-home-gateway dashboard` says so after every dashboard it writes. The gateway itself
+  still works with Home Assistant 2026.8 and later.
+
 ## [2.0.0] - 2026-11-07
 
 The second stable release. It ships the program of 2.0.0rc3, which CI, the installer's self-test

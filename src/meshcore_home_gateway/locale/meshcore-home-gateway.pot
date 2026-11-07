@@ -706,14 +706,55 @@ msgstr[1] ""
 msgid "{detail} ({reason})"
 msgstr ""
 
+#. after the dashboard was written: how many chat pages it has, for the
+#. channels of the configuration and for people (contacts with a device)
+#: src/meshcore_home_gateway/cli/dashboard.py
+#, python-brace-format
+msgid "Chat pages: {channels} for channels, {people} for people."
+msgstr ""
+
+#. time is the date and time of the service's state file, such as
+#. 2026-11-07 14:10
+#: src/meshcore_home_gateway/cli/dashboard.py
+#, python-brace-format
+msgid "Contacts as of the gateway's state written at {time}; a contact added since then is missing until the dashboard is made again."
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/dashboard.py
 msgid "Home Assistant discovery is off ([homeassistant] discovery = false): the dashboard would find no entities."
+msgstr ""
+
+#. field is the name of a value of the page (path, title, key), value the
+#. value as written in the service's state, quoted
+#: src/meshcore_home_gateway/cli/dashboard.py
+#, python-brace-format
+msgid "Skipped a chat page: its {field} {value} is not allowed."
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/dashboard.py
 #, python-brace-format
 msgid "The map lists {count} contact with a position."
 msgid_plural "The map lists {count} contacts with a position."
+msgstr[0] ""
+msgstr[1] ""
+
+#. a and b are aliases of targets of the configuration; Home Assistant
+#. turns '-' into '_' in entity IDs, so both get the same
+#: src/meshcore_home_gateway/cli/dashboard.py
+#, python-brace-format
+msgid "The targets {a} and {b} get the same entity IDs in Home Assistant; their chat pages have no message field. Rename one of them."
+msgstr ""
+
+#. version is a version of Home Assistant, such as 2026.10
+#: src/meshcore_home_gateway/cli/dashboard.py
+#, python-brace-format
+msgid "This dashboard needs Home Assistant {version} or later."
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/dashboard.py
+#, python-brace-format
+msgid "{count} contact has no chat page; it shows in Chats without one."
+msgid_plural "{count} contacts have no chat page; they show in Chats without one."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -1542,11 +1583,20 @@ msgctxt "dashboard"
 msgid "Add the gateway in the MeshCore app"
 msgstr ""
 
+#. a tab's title. Overview, Chats and Contacts together have at most 22 letters,
+#. or the tabs do not fit a phone 360 pixels wide
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Chats"
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Check the problems below."
 msgstr ""
 
+#. a tab's title. Overview, Chats and Contacts together have at most 22 letters,
+#. or the tabs do not fit a phone 360 pixels wide
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contacts"
@@ -1555,6 +1605,13 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contacts on the radio"
+msgstr ""
+
+#. name is the chat's title, a and b are aliases of targets of the gateway's configuration
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "For your administrator: the targets {a} and {b} get the same entity IDs in Home Assistant. Rename one of them in the gateway's configuration."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1580,6 +1637,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Heard"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Help"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1617,11 +1679,6 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Mesh"
-msgstr ""
-
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "Messages"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1682,6 +1739,8 @@ msgctxt "dashboard"
 msgid "Nothing sent yet."
 msgstr ""
 
+#. a tab's title. Overview, Chats and Contacts together have at most 22 letters,
+#. or the tabs do not fit a phone 360 pixels wide
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Overview"
@@ -1700,6 +1759,24 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio health"
+msgstr ""
+
+#. the name beside a chat's send button: the keyboard's key in the words
+#. the phones of your language show, then the button's label exactly as translated
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Return, then Send"
+msgstr ""
+
+#. the label on a chat's send button; keep it one short word
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Send"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Settings"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1767,6 +1844,21 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Write a message"
+msgstr ""
+
+#. the label of a chat's message field; name is the chat's title, a
+#. channel or a person
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Write to {name}"
+msgstr ""
+
+#. name is the chat's title, a and b are aliases of targets of the gateway's configuration
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "You cannot write to {name} from here."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

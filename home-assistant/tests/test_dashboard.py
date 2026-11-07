@@ -176,8 +176,13 @@ MESSAGE, SENT, TABLE = "_message'", "_delivery'", "_last_heard"
 EVENT = re.compile(r"event\.meshcore_home_gateway_\w+_contact'")
 HEARD, QR, HINT = "_add_node'", "contact_link", "set listed"
 # the line a value from Home Assistant stands on: one whole HTML element
-ELEMENT = re.compile(r"<div>.*</div>|<table>.*</table>|<ha-qr-code .*></ha-qr-code>")
+ELEMENT = re.compile(
+    r"<div>.*</div>|<table>.*</table>|<ha-qr-code .*></ha-qr-code>|<details>.*</details>"
+    r'|<table role="presentation" width="100%">.*</table>'
+)
 NONE = "\u2013"  # what a card shows for no value: an en dash
+# the pages that are no chat: the three tabs first
+PAGES = ("overview", "messages", "contacts", "map", "gateway", "settings", "help")
 MARKDOWN = "MESHCORE_HOME_GATEWAY_MARKDOWN_DIR"
 ENTITY_ID = re.compile(
     r"\b(?:binary_sensor|sensor|event|notify|select|text|button|switch|script|device_tracker)"
@@ -459,7 +464,9 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """For a node ID with and without '-'; in xx every title is the catalog's."""
+    """For a node ID with and without '-'; in xx every title is the catalog's, but a chat page's,
+    which is its alias or contact's slug. Three tabs show their titles alone; the other pages
+    have no tab and no fixed way back."""
     files = {}
     for node_id in ("radio1", "radio-2"):
         config = speaking(language, monkeypatch, node_id)
@@ -467,28 +474,34 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
         contacts_of(config, tmp_path / node_id, broker).update(household(ALICE_NODE))
         files[f"mesh-{node_id}"] = dashboard.dashboard(config, tmp_path / node_id)[0]
     loaded = await load(hass, hass_ws_client, files)
+    chats = ["chat-alerts", "chat-my-target", "contact-alice"]  # Alice is the target operator
     for node_id, gw in (("radio1", "radio1"), ("radio-2", "radio_2")):
         views = loaded[f"mesh-{node_id}"]["views"]
-        assert [v["path"] for v in views] == ["overview", "messages", "contacts", "map"]
+        assert [v["path"] for v in views] == [*PAGES, *chats]
+        assert [v["path"] for v in views if not v.get("subview")] == list(PAGES[:3])
+        assert not [v["path"] for v in views if "icon" in v or "back_path" in v]
         own = {e for e in referenced(views) if ".meshcore_home_gateway_" in e}
         assert len(own) > 15
         assert all(f".meshcore_home_gateway_{gw}_" in e for e in own)
-        titles = [loaded[f"mesh-{node_id}"]["title"], *(v["title"] for v in views)]
+        pages = [v for v in views if v["path"] in PAGES]
+        titles = [loaded[f"mesh-{node_id}"]["title"], *(v["title"] for v in pages)]
         titles += [
             c.get("heading") or c.get("title") or c["name"]
-            for v in views
+            for v in pages
             for c in walk(v["sections"])
             if c["type"] == "heading" or "title" in c or "name" in c
         ]
-        assert len(titles) == 17  # with *Telemetry and removal*: Alice has a device
+        assert len(titles) == 23  # with *Telemetry and removal*: Alice has a device
         for title in titles:
             if language == "xx":
                 assert title.startswith("‹xx: ")
                 assert title.endswith("›")
             else:
                 assert "‹" not in title
-    assert [v["title"] for v in loaded["mesh-radio1"]["views"]] == [
-        said(config, title) for title in ("Overview", "Messages", "Contacts", "Map")
+        assert [v["title"] for v in views if v["path"] in chats] == ["Alerts", "My target", "Alice"]
+    assert [v["title"] for v in loaded["mesh-radio1"]["views"][:7]] == [
+        said(config, title)
+        for title in ("Overview", "Chats", "Contacts", "Map", "Gateway", "Settings", "Help")
     ]
     assert problems(caplog) == []
 
@@ -548,7 +561,17 @@ async def test_the_dashboard_uses_only_the_frontends_cards(
     sections = [s for v in views for s in v["sections"]]
     assert {s["type"] for s in sections} <= SECTIONS
     used = {c["type"] for s in sections for c in walk(s["cards"])}
-    assert used == {"heading", "markdown", "tile", "entities", "history-graph"}  # no map: none
+    used |= {c["type"] for v in views for c in walk(v.get("footer", {}).get("card", {}))}
+    # no map: no tracker; button: a heading's badges; vertical-stack: a chat page's footer
+    assert used == {
+        "heading",
+        "markdown",
+        "tile",
+        "entities",
+        "history-graph",
+        "button",
+        "vertical-stack",
+    }
     assert used <= CARDS
     assert problems(caplog) == []
 

@@ -3,9 +3,10 @@
 # Translators: the dashboard's title, above its views
 title: _("Mesh")
 views:
+  # Translators: a tab's title. Overview, Chats and Contacts together have at most 22 letters,
+  # or the tabs do not fit a phone 360 pixels wide
   - title: _("Overview")
     path: overview
-    icon: mdi:radio-tower
     type: sections
     max_columns: 3
     sections:
@@ -53,6 +54,10 @@ views:
               {%- set running = m(state_attr('binary_sensor.@gw@_radio', 'bridge_version')) -%}
               {#- Translators: version and running are versions of the gateway, such as 1.1.0 -#}
               <div><ha-alert alert-type="warning">_("This dashboard was made for version {version}; the gateway runs {running}. Generate it again.")</ha-alert></div>
+          - type: markdown
+            text_only: true
+            content: |-
+              <div><a href="./map">_("Map")</a> · <a href="./gateway">_("Gateway")</a> · <a href="./settings">_("Settings")</a> · <a href="./help">_("Help")</a></div>
           - type: tile
             entity: binary_sensor.@gw@_radio
             color: green
@@ -86,26 +91,10 @@ views:
               - condition: state
                 entity: binary_sensor.@gw@_degraded
                 state: "on"
-      - type: grid
-        cards:
-          - type: heading
-            heading: _("Radio health")
-          - type: tile
-            entity: sensor.@gw@_noise_floor
-          - type: tile
-            entity: sensor.@gw@_radio_airtime
-          - type: tile
-            entity: sensor.@gw@_telemetry_status
-          - type: tile
-            entity: sensor.@gw@_profile
-          - type: history-graph
-            hours_to_show: 24
-            entities:
-              - entity: sensor.@gw@_airtime
-              - entity: sensor.@gw@_radio_airtime
-  - title: _("Messages")
+  # Translators: a tab's title. Overview, Chats and Contacts together have at most 22 letters,
+  # or the tabs do not fit a phone 360 pixels wide
+  - title: _("Chats")
     path: messages
-    icon: mdi:message-text
     type: sections
     max_columns: 2
     sections:
@@ -197,9 +186,10 @@ views:
               {#- Translators: security text (docs/translations.md): after "confirmed": the acknowledgement came sooner than the message's way through the mesh allows -#}
               <div><b>{{ m(state_attr(e, 'target') or '?') }}</b> {{ said(step) }}{% if state_attr(e, 'suspect') %} _("(sooner than the path allows: maybe forged)"){% endif %}{% if reason %} ({{ why(reason) }}){% endif %}<br>{{ m(state_attr(e, 'text')) }}</div>
               {%- endif %}
+  # Translators: a tab's title. Overview, Chats and Contacts together have at most 22 letters,
+  # or the tabs do not fit a phone 360 pixels wide
   - title: _("Contacts")
     path: contacts
-    icon: mdi:account-group
     type: sections
     max_columns: 2
     sections:
@@ -207,6 +197,25 @@ views:
         cards:
           - type: heading
             heading: _("Contacts on the radio")
+            badges:
+              - type: button
+                text: _("Gateway")
+                icon: mdi:router-wireless
+                tap_action:
+                  action: navigate
+                  navigation_path: ./gateway
+              - type: button
+                text: _("Settings")
+                icon: mdi:cog
+                tap_action:
+                  action: navigate
+                  navigation_path: ./settings
+              - type: button
+                text: _("Help")
+                icon: mdi:help-circle
+                tap_action:
+                  action: navigate
+                  navigation_path: ./help
           - type: tile
             entity: sensor.@gw@_contacts
           - type: markdown
@@ -354,7 +363,7 @@ views:
               {%- endif %}
   - title: _("Map")
     path: map
-    icon: mdi:map
+    subview: true
     type: sections
     max_columns: 2
     sections:
@@ -392,3 +401,135 @@ views:
               {#- Translators: names are the contacts' names, separated by commas -#}
               <div><ha-alert alert-type="info">_("Not on this map: {names}. Generate the dashboard again to add them.")</ha-alert></div>
               {%- endif %}
+  - title: _("Gateway")
+    path: gateway
+    subview: true
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: _("Gateway")
+            badges:
+              - type: button
+                text: _("Settings")
+                icon: mdi:cog
+                tap_action:
+                  action: navigate
+                  navigation_path: ./settings
+              - type: button
+                text: _("Help")
+                icon: mdi:help-circle
+                tap_action:
+                  action: navigate
+                  navigation_path: ./help
+      - type: grid
+        cards:
+          - type: heading
+            heading: _("Radio health")
+          - type: tile
+            entity: sensor.@gw@_noise_floor
+          - type: tile
+            entity: sensor.@gw@_radio_airtime
+          - type: tile
+            entity: sensor.@gw@_telemetry_status
+          - type: tile
+            entity: sensor.@gw@_profile
+          - type: history-graph
+            hours_to_show: 24
+            entities:
+              - entity: sensor.@gw@_airtime
+              - entity: sensor.@gw@_radio_airtime
+  - title: _("Settings")
+    path: settings
+    subview: true
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: _("Settings")
+  - title: _("Help")
+    path: help
+    subview: true
+    type: sections
+    max_columns: 1
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: _("Help")
+# @each chats
+  - title: "@chats.title@"
+    path: "@chats.path@"
+    subview: true
+    type: sections
+    max_columns: 1
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: "@chats.title@"
+# @if chats.pair
+          - type: markdown
+            text_only: true
+            content: |-
+              {%- macro m(x) -%}{{ (x or '') | string | replace('\r', ' ') | replace('\n', ' ') | e }}{%- endmacro -%}
+              {%- set a = m('@chats.target@') -%}
+              {%- set b = m('@chats.pair@') -%}
+              {#- Translators: name is the chat's title, a and b are aliases of targets of the gateway's configuration -#}
+              <div><ha-alert alert-type="warning"><b>_("You cannot write to {name} from here.")</b><br>_("For your administrator: the targets {a} and {b} get the same entity IDs in Home Assistant. Rename one of them in the gateway's configuration.")</ha-alert></div>
+# @end
+# @if chats.write
+    footer:
+      card:
+        type: vertical-stack
+        visibility:
+          - condition: template
+            value_template: >-
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set t = '@chats.write@' -%}{%- set b = '@chats.send@' -%}{%- set d = device_id(t) -%}
+              {{ gw is not none and d is not none and device_id(b) == d
+                 and states[t] is not none and not is_state(t, 'unavailable')
+                 and states[b] is not none and not is_state(b, 'unavailable')
+                 and (d == gw if '@chats.target@' != '' else
+                      device_attr(d, 'via_device_id') == gw and
+                      device_attr(d, 'serial_number') == '@chats.key@') }}
+        cards:
+          - type: markdown
+            text_only: true
+            show_empty: false
+            content: |-
+              {#- the refused line: shown when a Send of this chat was refused -#}
+          - type: entities
+            entities:
+              - entity: "@chats.write@"
+                # Translators: the label of a chat's message field; name is the chat's title, a
+                # channel or a person
+                name: _("Write to {name}")
+                tap_action:
+                  action: none
+                hold_action:
+                  action: none
+                double_tap_action:
+                  action: none
+          - type: tile
+            entity: "@chats.send@"
+            # Translators: the name beside a chat's send button: the keyboard's key in the words
+            # the phones of your language show, then the button's label exactly as translated
+            name: _("Return, then Send")
+            icon: mdi:send
+            hide_state: true
+            tap_action:
+              action: none
+            icon_tap_action:
+              action: none
+            features_position: inline
+            features:
+              - type: button
+                # Translators: the label on a chat's send button; keep it one short word
+                action_name: _("Send")
+# @end
+# @end

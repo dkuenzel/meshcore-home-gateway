@@ -60,6 +60,8 @@ the same without the other tests).
 * `# Translators:` notes in the code reach the catalogs as `#.` comments: they say where a text
   is shown, what a field holds, and limits such as "at most 12 characters" for the installer's
   buttons.
+* The dashboard's three tabs, *Overview*, *Chats* and *Contacts*, have at most 22 letters
+  together, or they do not fit a phone.
 
 A translation that breaks a rule is refused by `make check`; at run time the program shows the
 English text instead.
