@@ -256,6 +256,20 @@ def discovery_payload(
             json_attributes_topic=topics.history,
             availability=[{"topic": topics.history, "value_template": "{{ 'online' }}"}],
         ),
+        # the `pending` document: how many messages are on their way, the one being sent
+        # included (#112), the messages as attributes; available as the history is
+        "pending_messages": component(
+            "pending_messages",
+            "sensor",
+            # Translators: sensor of the gateway: how many messages it accepted and has not
+            # delivered or given up yet, the one being sent included
+            ha_name("Messages on their way"),
+            icon="mdi:tray-arrow-up",
+            state_topic=topics.pending,
+            value_template="{{ value_json.total }}",
+            json_attributes_topic=topics.pending,
+            availability=[{"topic": topics.pending, "value_template": "{{ 'online' }}"}],
+        ),
         # also with telemetry off: a disabled component that goes takes the whole device away
         "telemetry_status": component(
             "telemetry_status",

@@ -1252,12 +1252,14 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   Assistant too, makes it available.** The device's shared options (`availability`, `qos`,
   `state_topic` and the others of `SHARED_OPTIONS`) reach only a component that does not set them.
   *Verified:* 2026.10.2 and 2026.11.0,
-  `test_the_message_history_shows_the_newest_message_and_outlives_the_gateway` and
-  `test_the_message_history_comes_back_after_a_restart_of_home_assistant`; source
+  `test_the_message_history_shows_the_newest_message_and_outlives_the_gateway`,
+  `test_the_message_history_comes_back_after_a_restart_of_home_assistant` and the same two tests of
+  *Messages on their way*; source
   `components/mqtt/discovery.py` lines 335-357 at 2026.10.2 and 395-417 at 2026.11.0
   (`_merge_common_device_options`), `components/mqtt/schemas.py` lines 64-76 at 2026.10.2
-  (`SHARED_OPTIONS`). *Here:* *Message history* reads the retained `history` document, which the
-  gateway never clears, so the messages stay readable while it is offline. *Check:* `make ha-test`.
+  (`SHARED_OPTIONS`). *Here:* *Message history* and *Messages on their way* read the retained
+  `history` and `pending` documents, which the gateway never clears, so the messages stay readable
+  while it is offline. *Check:* `make ha-test`.
 * **Event attributes, message texts and sender keys included, are recorded, and the last event of
   each event entity is kept as restore data in `.storage/core.restore_state`.** The event platform
   keeps only `event_types` out of the recorder. *Verified:* 2026.10.0, source

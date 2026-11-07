@@ -53,7 +53,13 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.links import contact_link
-from meshcore_home_gateway.views import HistoryEntry, history_document, settings_document
+from meshcore_home_gateway.views import (
+    HistoryEntry,
+    PendingEntry,
+    history_document,
+    pending_document,
+    settings_document,
+)
 
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "home-assistant.md"
 SENDER = "a1" * 32
@@ -571,6 +577,103 @@ async def test_the_message_history_comes_back_after_a_restart_of_home_assistant(
     history = hass.states.get(f"sensor.{PREFIX}_message_history")
     assert (history.state, history.attributes["total"]) == ("2027-01-15T08:00:00+00:00", 1)
     assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    assert problems(caplog) == []
+
+
+# --- the messages on their way ------------------------------------------------------------------
+
+NOW = 1_800_000_300.0  # 2027-01-15T08:05:00+00:00
+# the rule of the dashboard's status line (#112): messages not sent yet, accepted over a minute ago
+WAITING = """
+{%- set ns = namespace(waiting=0) -%}
+{%- for e in (state_attr('sensor.meshcore_home_gateway_radio1_pending_messages', 'messages')
+   or []) -%}
+{%- set t = (e.get('queued_at') or '') | as_datetime(default=none) -%}
+{%- if e.get('step') == 'queued' and t is not none and now() - t > timedelta(seconds=60) -%}
+{%- set ns.waiting = ns.waiting + 1 -%}
+{%- endif -%}
+{%- endfor -%}
+{{ ns.waiting }}"""
+
+
+def on_its_way(step: str, age_s: float, text: str = "Back soon") -> PendingEntry:
+    attempt = 0 if step == "queued" else 1
+    return PendingEntry(
+        f"{int(age_s):08x}",
+        NOW - age_s,
+        "operator",
+        "contact",
+        SENDER,
+        None,
+        "Alice",
+        text,
+        step,
+        attempt,
+        3,
+    )
+
+
+async def test_the_messages_on_their_way_show_their_count_and_outlive_the_gateway(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The `pending` document as a sensor: the number of messages on their way, 0 with its keys
+    readable when there is none, the messages as attributes. Its own availability keeps it while
+    the gateway is offline, and after a restart of Home Assistant meanwhile."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    sensor = f"sensor.{PREFIX}_pending_messages"
+    await fire(hass, TOPICS.pending, pending_document([]), retain=True)
+    empty = hass.states.get(sensor)
+    assert empty.state == "0"
+    assert [empty.attributes[k] for k in ("total", "truncated", "messages")] == [0, False, []]
+
+    document = pending_document([on_its_way("sent", 30), on_its_way("queued", 10, "Gate open")])
+    await fire(hass, TOPICS.pending, document)
+    pending = hass.states.get(sensor)
+    assert (pending.state, pending.attributes["messages"]) == ("2", document["messages"])
+    assert pending.attributes["friendly_name"].endswith("Messages on their way")
+
+    await fire(hass, TOPICS.availability, "offline")  # the last will, or a clean stop
+    assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    kept = hass.states.get(sensor)
+    assert (kept.state, kept.attributes["messages"]) == ("2", document["messages"])
+    assert problems(caplog) == []
+
+
+async def test_the_messages_on_their_way_come_back_after_a_restart_of_home_assistant(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "offline", retain=True)
+    await fire(hass, TOPICS.pending, pending_document([on_its_way("queued", 5)]), retain=True)
+    assert hass.states.get(f"sensor.{PREFIX}_pending_messages").state == "1"
+    assert problems(caplog) == []
+
+
+async def test_a_stuck_message_waits_over_a_minute_while_the_queue_reads_0(
+    hass: HomeAssistant,
+    mqtt: Any,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#112: the only message is the one in flight, which the queue never counts. Counted from
+    the pending sensor, it waits over a minute once it was accepted more than 60 s ago and is
+    not sent yet; one that was sent and waits for its acknowledgement as long does not count."""
+    freezer.move_to("2027-01-15T08:05:00+00:00")
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    await fire(hass, TOPICS.state, state_document(known=True) | {"queue": 0}, retain=True)
+    waiting = Template(WAITING, hass)
+    for entries, count in (
+        ([on_its_way("queued", 59)], "0"),
+        ([on_its_way("queued", 61)], "1"),
+        ([on_its_way("sent", 61)], "0"),
+        ([on_its_way("sent", 300), on_its_way("queued", 61, "Gate open")], "1"),
+    ):
+        await fire(hass, TOPICS.pending, pending_document(entries))
+        assert hass.states.get(f"sensor.{PREFIX}_queue").state == "0"
+        assert hass.states.get(f"sensor.{PREFIX}_pending_messages").state == str(len(entries))
+        assert waiting.async_render(parse_result=False).strip() == count, entries
     assert problems(caplog) == []
 
 

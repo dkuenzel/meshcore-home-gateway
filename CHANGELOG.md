@@ -27,11 +27,12 @@ format, the command line and Home Assistant discovery are public interfaces
   messages in and out as attributes. It stays available while the gateway is offline. The
   recorder stores the messages with every change unless it excludes the sensor
   ([home-assistant.md](docs/home-assistant.md#privacy)).
-- The retained document `pending`: the messages the gateway accepted and has not delivered or
-  given up yet, the one being sent included, which the `queue` of `state` never counts (#112).
-  Each names its step (`queued` or `sent`), its attempts and when it was accepted: one `queued`
-  for more than a minute waits for the radio or for airtime. After a downgrade to 2.0 the broker
-  keeps the last `pending`; an empty retained message clears it, such as
+- The retained document `pending` and the sensor *Messages on their way* in Home Assistant: the
+  messages the gateway accepted and has not delivered or given up yet, the one being sent
+  included, which *Queue* never counts (#112). Each names its step (`queued` or `sent`), its
+  attempts and when it was accepted: one `queued` for more than a minute waits for the radio or
+  for airtime. The sensor stays available while the gateway is offline. After a downgrade to 2.0
+  the broker keeps the last `pending`; an empty retained message clears it, such as
   `mosquitto_pub -r -n -t meshcore/radio1/pending`
   ([mqtt-api.md](docs/mqtt-api.md#messages-on-their-way-pending)).
 
@@ -57,6 +58,8 @@ format, the command line and Home Assistant discovery are public interfaces
   missing; since Home Assistant 2026.10 it never showed (#110).
 - The `history` document stays within 15 KiB as a whole; before, only its messages did, and the
   document could be up to 43 bytes larger (#111).
+- The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
+  the one being sent, so a single message that waits reads 0 (#112).
 
 ## [2.0.0] - 2026-11-07
 

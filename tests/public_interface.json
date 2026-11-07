@@ -1767,6 +1767,11 @@
      "platform": "sensor",
      "state_class": "total_increasing"
     },
+    "pending_messages": {
+     "attributes": "<document pending>",
+     "entity_id": "sensor.<device>_pending_messages",
+     "platform": "sensor"
+    },
     "profile": {
      "attributes": "<document settings>",
      "device_class": "enum",

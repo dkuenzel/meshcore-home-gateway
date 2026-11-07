@@ -40,6 +40,7 @@ from meshcore_home_gateway.views import (
     contacts_document,
     history_document,
     nodes_document,
+    pending_document,
     settings_document,
     stats_document,
 )
@@ -194,6 +195,7 @@ def test_entities_and_their_sources() -> None:
         "radio_link_contested",
         "degraded",
         "message_history",
+        "pending_messages",
     }
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -222,6 +224,7 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.nodes: nodes_document(mesh),
         TOPICS.settings: settings_document(ProfileReport("auto", 14, True, False, {}, {}), 0.0),
         TOPICS.history: history_document([]),
+        TOPICS.pending: pending_document([]),
     }
     for topic, document in documents.items():
         assert _template_keys(cmps, topic) <= set(document), topic
@@ -255,6 +258,26 @@ def test_the_message_history_is_a_timestamp_sensor_that_outlives_the_gateway() -
     assert discovery_payload(off, TOPICS)["cmps"]["message_history"] == history  # no control
     newest = history_document([HistoryEntry(1_800_000_000.0, "in", "channel", "Hi")])
     assert newest["messages"][0]["at"] == "2027-01-15T08:00:00+00:00"  # what the template reads
+
+
+def test_the_messages_on_their_way_are_a_count_that_outlives_the_gateway() -> None:
+    """The `pending` document as a sensor (#112): its state the number of messages accepted and
+    not final, the one being sent included; the document its attributes. Its own availability
+    keeps it readable while the gateway is offline, as the history's."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["pending_messages"]
+    assert sensor == {
+        "p": "sensor",
+        "unique_id": "meshcore_home_gateway_radio-1_pending_messages",
+        "default_entity_id": "sensor.meshcore_home_gateway_radio-1_pending_messages",
+        "name": "Messages on their way",
+        "icon": "mdi:tray-arrow-up",
+        "state_topic": "meshcore/radio-1/pending",
+        "value_template": "{{ value_json.total }}",
+        "json_attributes_topic": "meshcore/radio-1/pending",
+        "availability": [{"topic": "meshcore/radio-1/pending", "value_template": "{{ 'online' }}"}],
+    }
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    assert discovery_payload(off, TOPICS)["cmps"]["pending_messages"] == sensor  # no control
 
 
 def test_the_profile_sensor_names_every_status_the_document_has() -> None:

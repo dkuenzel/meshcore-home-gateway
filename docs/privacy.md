@@ -35,7 +35,7 @@ the history holds: treat both as the history itself.
 | Contacts: key, name, type, path, when and how they were last heard, the checks of their adverts | the contacts' documents (retained), `state.json`, the history | while they are contacts; the history's row 7 days after the last time heard | remove the contact |
 | Companions' positions and readings, from telemetry and from adverts | the contacts' documents (retained), `state.json` while current, the history | 30 days (`positions_days`, `readings_days`) | only the companions included are asked (`[telemetry] ask = "household"`, the default); exclude a companion from telemetry; `contacts telemetry --forget KEY off` deletes what the history has of it ([companions](companions.md#privacy)) |
 | The newest accepted command time of each sender | `state.json` | while the sender is one | — |
-| Messages on their way, accepted and not sent or given up yet: target, recipient's name and text | `pending` (retained); `state.json` when the service stops | until each is final; in `state.json` until the next start queues them again | — |
+| Messages on their way, accepted and not sent or given up yet: target, recipient's name and text | `pending` (retained) and Home Assistant's *Messages on their way*; `state.json` when the service stops | until each is final; in `state.json` until the next start queues them again | Home Assistant's recorder: [exclusions](home-assistant.md#privacy) |
 
 ## Other people
 

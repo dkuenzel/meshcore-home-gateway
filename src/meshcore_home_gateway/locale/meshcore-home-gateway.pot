@@ -2421,6 +2421,13 @@ msgctxt "home assistant"
 msgid "Message history"
 msgstr ""
 
+#. sensor of the gateway: how many messages it accepted and has not
+#. delivered or given up yet, the one being sent included
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Messages on their way"
+msgstr ""
+
 #. event entity of the gateway: its radio heard a node for the first
 #. time
 #: src/meshcore_home_gateway/mqtt/discovery.py
