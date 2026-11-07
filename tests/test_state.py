@@ -287,11 +287,9 @@ def test_a_failed_save_is_written_again_by_the_next_flush_with_nothing_else_chan
         with pytest.raises(OSError, match="No space left"):
             ledger.record("aa" * 32, 200)
         assert store.failed
-        assert not store.flush()  # the disk is still full: tried, and still failed
-        assert store.failed
+        assert (store.flush(), store.failed) == (False, True)  # the disk is still full: tried
     assert len(attempts) == 2
-    assert store.flush()
-    assert not store.failed
+    assert (store.flush(), store.failed) == (True, False)
     assert store.flush()  # nothing left to write
     assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100  # not the refused one
 
