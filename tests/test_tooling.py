@@ -694,6 +694,19 @@ def test_release_due_starts_a_release_that_admit_refused_before(
     assert not any(call.startswith("workflow run") for call in released.calls)
 
 
+def test_release_due_starts_no_release_while_it_cannot_list_the_runs(tmp_path: Path) -> None:
+    """#84 review: the runs on the tag were listed in a `for` loop's word list, where a failing gh
+    does not stop the step (bash checks the loop's body, not its words). An API error counted as
+    no run and started a release that had failed already, or a second run of one still running.
+    The step stops instead, as it did before #84, and the next hour asks again."""
+    script = step_script("release-due.yml", "due", "Start the release on the tag")
+    answers = {"release view v2.0.1": ("", 1), RUNS: ("", 1), "workflow run": ("", 0)}
+    env = {"TAG": "v2.0.1", "GH_REPO": "owner/repo", "GH_TOKEN": "token"}
+    ran = run_step(tmp_path, script, answers, **env)
+    assert ran.status != 0, ran.output
+    assert not any(call.startswith("workflow run") for call in ran.calls), ran.calls
+
+
 def _numbers(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 

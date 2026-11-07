@@ -79,8 +79,10 @@ jobs:
           set -euo pipefail
           admit="a tag that CI would make" # the name of release.yml's first job
           tried=0 # runs on the tag that admit let through, or has not refused yet
-          for run in $(gh run list --workflow release.yml --branch "$TAG" --json databaseId \
-            --jq '.[].databaseId'); do
+          # an assignment, so that a failing gh stops the step: in a for loop's words it would not
+          runs=$(gh run list --workflow release.yml --branch "$TAG" --json databaseId \
+            --jq '.[].databaseId')
+          for run in $runs; do
             refused=$(gh run view "$run" --json jobs \
               --jq "[.jobs[] | select(.name == \"$admit\" and .conclusion == \"failure\")] | length")
             if [[ $refused == 0 ]]; then
