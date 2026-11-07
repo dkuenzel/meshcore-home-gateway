@@ -37,11 +37,13 @@ def mqtt_client(mqtt: MqttConfig, suffix: str) -> Any:
 
 
 class Connection:
-    """Tracks the broker's answers to CONNECT; `on_ready` runs after each accepted one."""
+    """Tracks the broker's answers to CONNECT; `on_ready` runs after each accepted one. A refusal
+    leaves its text (paho's) and its reason code's value."""
 
     def __init__(self, on_ready: Callable[[Any], None] | None = None) -> None:
         self.answered = threading.Event()
         self.refusal: str | None = None
+        self.refusal_value: int | None = None
         self._on_ready = on_ready
 
     def on_connect(
@@ -49,6 +51,7 @@ class Connection:
     ) -> None:
         if reason_code.is_failure:
             self.refusal = str(reason_code)
+            self.refusal_value = getattr(reason_code, "value", None)
         elif self._on_ready is not None:
             self._on_ready(client)
         self.answered.set()

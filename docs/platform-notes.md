@@ -800,8 +800,10 @@ mosquitto -c m.conf & broker=$!
   affected."; `ExecReload=/bin/kill -HUP $MAINPID` in the package's `mosquitto.service`. *Here:*
   [deployment.md](deployment.md#1-before-you-start) and its troubleshooting row say to run
   `systemctl reload mosquitto` after `mosquitto_passwd`; `check-config --broker` repeats it when
-  the login is refused. *Check:* `mosquitto_passwd -b pw bob pw1`; `mosquitto_sub -p 18830 -u bob
-  -P pw1 -t x -E` exits with 5; `kill -HUP $broker`, and the same command exits with 0.
+  the login is refused, and names `protocol` in `[mqtt]` instead when the broker refuses the MQTT
+  version (`Unsupported protocol version`). *Check:* `mosquitto_passwd -b pw bob pw1`;
+  `mosquitto_sub -p 18830 -u bob -P pw1 -t x -E` exits with 5; `kill -HUP $broker`, and the same
+  command exits with 0.
 * **`mosquitto_passwd -c` creates the file anew, without the users already in it**, as
   [deployment.md](deployment.md#5-troubleshooting) says. *Verified:* 2.0.18. *Check:*
   `mosquitto_passwd -c -b f a x; mosquitto_passwd -b f b y; mosquitto_passwd -c -b f c z; cut -d:

@@ -952,27 +952,30 @@ def test_check_config_warns_about_the_log_level_debug(
 
 
 class _Code:
-    """paho's reason code of a CONNACK."""
+    """paho's reason code of a CONNACK: `Not authorized` (0x87) unless given."""
 
-    def __init__(self, failure: bool) -> None:
+    def __init__(self, failure: bool, reason: str = "Not authorized", value: int = 0x87) -> None:
         self.is_failure = failure
+        self.value = value
+        self._reason = reason
 
     def __str__(self) -> str:
-        return "Not authorized"
+        return self._reason
 
 
 class _Answering:
-    """A paho client that the broker answers at once: accepted, or refused."""
+    """A paho client that the broker answers at once: accepted, or refused (with `code`)."""
 
-    def __init__(self, refused: bool) -> None:
+    def __init__(self, refused: bool, code: _Code | None = None) -> None:
         self.refused = refused
+        self.code = code or _Code(refused)
         self.on_connect: Any = None
 
     def connect(self, host: str, port: int, keepalive: int) -> None:
         pass
 
     def loop_start(self) -> None:
-        self.on_connect(self, None, None, _Code(self.refused), None)
+        self.on_connect(self, None, None, self.code, None)
 
     def disconnect(self) -> None:
         pass
@@ -1013,6 +1016,42 @@ def test_check_config_tries_the_broker_without_credentials(
     expected = EX_OK if anonymous else EX_FAILURE
     assert main(["check-config", "--config", str(path), "--broker"]) == expected
     assert logins == [None]  # the login itself was the one without credentials
+
+
+@pytest.mark.parametrize(
+    ("code", "protocol_hint"),
+    [
+        (
+            _Code(True, "Unsupported protocol version", client_module.UNSUPPORTED_PROTOCOL_VERSION),
+            True,
+        ),
+        (_Code(True), False),
+    ],
+    ids=["protocol", "login"],
+)
+def test_check_config_names_the_protocol_setting_for_a_broker_of_another_mqtt_version(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    code: _Code,
+    protocol_hint: bool,
+) -> None:
+    """A broker of MQTT 3.1.1 only refuses a client of MQTT 5 whatever its login: the hint names
+    `protocol` in `[mqtt]`, not the login and `mosquitto_passwd` (deployment.md, troubleshooting).
+    Any other refusal gets the login hint."""
+    monkeypatch.setattr(cli_broker, "mqtt_client", lambda _mqtt, _suffix: _Answering(True, code))
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "h"\n'
+        '[mqtt]\nhost = "h"\nnode_id = "n"\nprotocol = "5"\n'
+        'username = "gw"\npassword = "pw"\ntls = true\n'
+    )
+    assert main(["check-config", "--config", str(path), "--broker"]) == EX_FAILURE
+    error = capsys.readouterr().err
+    assert f"broker refused the connection: {code} (user 'gw' with a password)" in error
+    expected = "the broker does not speak MQTT 5; set protocol in [mqtt] to the version it speaks"
+    assert (expected in error) is protocol_hint
+    assert ("mosquitto_passwd" in error) is not protocol_hint
 
 
 @pytest.mark.broker

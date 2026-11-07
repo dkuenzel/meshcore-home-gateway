@@ -583,6 +583,12 @@ msgstr ""
 msgid "the broker accepts clients without a user name: unless its ACL keeps them off the gateway's topics, any client that reaches it can read messages and positions and publish command events (docs/mqtt-api.md, Securing the broker)"
 msgstr ""
 
+#. "protocol" and "[mqtt]" are the setting and its section, not translated
+#: src/meshcore_home_gateway/cli/config_cmd.py
+#, python-brace-format
+msgid "the broker does not speak MQTT {protocol}; set protocol in [mqtt] to the version it speaks ({guide})"
+msgstr ""
+
 #. security text (docs/translations.md)
 #: src/meshcore_home_gateway/cli/config_cmd.py
 #, python-brace-format

@@ -262,8 +262,9 @@ format, the command line and Home Assistant discovery are public interfaces
   that the messages a stop kept stay in `state.json` while 1.x runs
   ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#95).
 - When a broker that speaks MQTT 3.1.1 only refused the connection of `[mqtt] protocol = "5"`
-  (`Unsupported protocol version`), the log said to test the login. It now says that the broker
-  does not speak that version and names the setting
+  (`Unsupported protocol version`), the log said to test the login, and `check-config --broker`
+  pointed to the broker's users and `mosquitto_passwd`. Both now say that the broker does not
+  speak that version and name the setting
   ([deployment.md](docs/deployment.md#5-troubleshooting)) (#107).
 - `doctor` said that security updates are installed automatically as soon as
   `unattended-upgrades` was installed, also with `APT::Periodic::Unattended-Upgrade "0"`. It now
