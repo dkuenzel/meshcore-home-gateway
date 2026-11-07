@@ -83,7 +83,7 @@ Events (not retained): `delivery`, `received`, `command`, `contact`, `node`, `te
 
 | Where | What | Detail |
 | --- | --- | --- |
-| `state.json` | the command ledger, Home Assistant's components, the kept documents and advert checks, the telemetry schedule, the radio profile's memory, the budget's level, the queue at a stop | one store, written atomically ([design §5.2](design.md#52-concurrency)) |
+| `state.json` | the command ledger with the senders' wrong codes of the last hour, Home Assistant's components, the kept documents and advert checks, the telemetry schedule, the radio profile's memory, the budget's level, the messages on their way from the start of a stop | one store, written atomically ([design §5.2](design.md#52-concurrency)) |
 | `telemetry-excluded.json` | the household's telemetry marks | [ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md) |
 | `history.sqlite3` | messages, positions, readings, nodes heard | [ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md) |
 | the broker | the retained documents | the gateway restores them when others write there |

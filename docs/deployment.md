@@ -579,7 +579,9 @@ updates wait for.
   * `state.json` holds the newest accepted command time per sender (without it a restored system
     accepts older recorded commands again until a sender sends a new one, within `max_age_s`),
     and for a sender with a code secret the time step of its last accepted code (without it, a
-    code seen in the last 90 seconds would serve once more);
+    code seen in the last 90 seconds would serve once more) and the times of its wrong codes
+    within the last hour (`command_code_failures`; without them a restored system gives a
+    guesser up to 5 new guesses);
     the Home Assistant components last announced; the contacts whose documents are published;
     the last document of each companion whose answers are current, with its position and
     readings, so that they still expire after a restart without the radio (kept in its latest
@@ -588,8 +590,8 @@ updates wait for.
     profile's memory; the telemetry schedule: per companion when it is next due, its unanswered
     requests, when it last answered, was asked and flooded, how long its answers count and when
     one last carried a position, and whether it was last moving, no positions; and what is left
-    of the first-start hour; the airtime budget's level; and at a stop, the messages still
-    queued, until the next start takes them.
+    of the first-start hour; the airtime budget's level; and from the start of a stop, the
+    messages on their way, the one in flight included, until the next start takes them.
   * `telemetry-excluded.json` holds the companions the household excluded from telemetry, and
     with `[telemetry] ask = "household"` those it included: without it a restored system asks the
     excluded ones again, or no longer the included ones. An exclusions file that cannot be parsed

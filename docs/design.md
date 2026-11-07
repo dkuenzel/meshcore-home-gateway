@@ -240,10 +240,11 @@ reporter writes what changed at its tick (every 30 s under systemd's watchdog, e
 minute) and at the stop, so a
 table read that changes the contact devices, the published keys and the components costs one
 write. What a crash must not lose is written at once: the newest accepted command time per sender
-before the command is published (§6.4), the observer's kept documents and advert checks when they
-change (a place a companion stopped sharing must not come back, §6.6), the telemetry schedule
-after a flood and at the first-start hour (§6.11) and the radio profile's attempts before its
-setters. A crash loses at most the other changes since the last tick, which the next table read
+before the command is published (§6.4), a sender's wrong code as it comes (§7.3), the observer's
+kept documents and advert checks when they change (a place a companion stopped sharing must not
+come back, §6.6), the telemetry schedule after a flood and at the first-start hour (§6.11), the
+radio profile's attempts before its setters, and from the stop's start the messages on their way
+(above). A crash loses at most the other changes since the last tick, which the next table read
 makes again. A file replaced on disk while the service runs is overwritten with every section by
 the next write; a backup is restored with the service stopped (§9).
 
