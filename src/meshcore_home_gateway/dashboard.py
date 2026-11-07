@@ -6,7 +6,8 @@ Text in, text out: no YAML parser at run time (ADR 0005).
 The template is YAML as it stands, every branch of its conditionals included:
 
 * `@gw@` (the gateway's part of its entity IDs), `@contact@` (how its contacts' entity IDs
-  begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers),
+  begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers), `@guide@`
+  (the address of the guide, docs/home-assistant.md, of this version),
   `["@trackers@"]` (the map's trackers, a JSON list), `["@chats@"]` (the chat pages, a list of
   JSON objects, which Jinja reads) and `["@controls@"]` (the contacts' telemetry switches and
   remove buttons) are filled in.
@@ -43,6 +44,7 @@ from typing import TYPE_CHECKING, Final
 from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.core.model import MessageKind, Target
 from meshcore_home_gateway.core.text import CONFIRM_NONCE_BYTES
+from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
 from meshcore_home_gateway.state import ContactDeviceRecords, DeviceRecord, JsonStateFile
 
@@ -463,6 +465,7 @@ def render(
             .replace("@major@", str(int(numbers.group(1))))
             .replace("@minor@", str(int(numbers.group(2))))
             .replace("@contact@", contact_prefix)
+            .replace("@guide@", DOCUMENTATION_URL.replace("/blob/main/", f"/blob/v{version}/"))
         )
         # before any text goes in: no translation can trip it
         if '_("' in MARKER.sub("", line) or _PLACEHOLDER.search(line):

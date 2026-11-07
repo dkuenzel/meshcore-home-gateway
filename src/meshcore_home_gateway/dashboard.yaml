@@ -456,57 +456,158 @@ views:
       - type: grid
         cards:
           - type: heading
-            heading: _("Write")
-          - type: tile
-            entity: script.mesh_message
-            name: _("Write a message")
-            visibility:
-              - condition: state
-                entity: script.mesh_message
-                state: ["on", "off"]
+            heading: _("All chats")
           - type: markdown
-            visibility:
-              - condition: state
-                entity: script.mesh_message
-                state_not: ["on", "off"]
             content: |-
-              > [!NOTE]
-              > _("To write messages here, add the script Mesh message once, as the guide shows (Home Assistant, Dashboard).")
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
+              {%- macro mon(v) -%}
+              {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
+              {%- if v == 1 -%}_("Jan")
+              {%- elif v == 2 -%}_("Feb")
+              {%- elif v == 3 -%}_("Mar")
+              {%- elif v == 4 -%}_("Apr")
+              {%- elif v == 5 -%}_("May")
+              {%- elif v == 6 -%}_("Jun")
+              {%- elif v == 7 -%}_("Jul")
+              {%- elif v == 8 -%}_("Aug")
+              {%- elif v == 9 -%}_("Sep")
+              {%- elif v == 10 -%}_("Oct")
+              {%- elif v == 11 -%}_("Nov")
+              {%- elif v == 12 -%}_("Dec")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro when(v) -%}
+              {%- set t = v | as_datetime(default=none) -%}
+              {%- if t is none -%}–
+              {%- else -%}
+              {%- set t = t | as_local -%}{%- set days = ((now() | as_local).date() - t.date()).days -%}
+              {%- set time = m(t.strftime('%H:%M')) -%}{%- set day = t.day | int -%}{%- set month = mon(t.month) -%}
+              {%- if days <= 0 -%}{{ m(t.strftime('%H:%M')) }}
+              {%- elif days == 1 -%}
+              {#- Translators: the day before today and a clock time such as 23:50 -#}
+              _("yesterday {time}")
+              {%- else -%}
+              {#- Translators: an older day: the day of the month, an abbreviated month name and a clock time, as in 22 Oct 10:31 -#}
+              _("{day} {month} {time}")
+              {%- endif -%}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro kind(v) -%}
+              {#- Translators: what a chat is, under its name in All chats -#}
+              {%- if v == 'channel' -%}_("channel")
+              {%- elif v == 'person' -%}_("person")
+              {%- elif v == 'automations' -%}_("only automations write here")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro line(e) -%}
+              {%- set raw = e.get('text') or '' -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') != 'in' and e.get('kind') == 'contact' else raw -%}
+              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
+              {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
+              {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
+              _("{sender}: {text}")
+              {%- elif e.get('direction') == 'in' -%}{{ mt(raw[:60] ~ ('…' if raw | length > 60 else '')) }}
+              {%- elif e.get('state') == 'failed' -%}
+              {#- Translators: the text of a message sent from this home that the person's radio did not confirm -#}
+              _("Sent: {text} – not delivered")
+              {%- elif e.get('state') == 'expired' -%}
+              {#- Translators: the text of a message that waited too long to be sent -#}
+              _("Not sent: {text}")
+              {%- else -%}
+              {#- Translators: the text of a message sent from this home -#}
+              _("Sent: {text}")
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set ns = namespace(rows=[], ids=[], entries=[], keys=[], channels=[], without=[], heard=[]) -%}
+              {%- for e in (state_attr('sensor.@gw@_message_history', 'messages') or []) if e is mapping -%}{%- set ns.entries = ns.entries + [e] -%}{%- if e.get('id') -%}{%- set ns.ids = ns.ids + [e.get('id')] -%}{%- endif -%}{%- endfor -%}
+              {%- for e in (state_attr('sensor.@gw@_pending_messages', 'messages') or []) if e is mapping and e.get('id') not in ns.ids -%}{%- set ns.entries = ns.entries + [e] -%}{%- endfor -%}
+              {%- for x in ["@chats@"] -%}
+              {%- set c = namespace(e=none, k='', heard='') -%}
+              {%- for e in ns.entries if ((e.get('kind') == 'channel' and e.get('channel_index') == x.channel) if x.channel >= 0 else (e.get('kind') == 'contact' and e.get('contact_key') == x.key)) -%}
+              {%- set k = e.get('queued_at') or e.get('at') or '' -%}
+              {%- if c.e is none or k > c.k -%}{%- set c.e = e -%}{%- set c.k = k -%}{%- endif -%}
+              {%- if e.get('direction') == 'in' and (e.get('at') or '') > c.heard -%}{%- set c.heard = e.get('at') -%}{%- endif -%}
+              {%- endfor -%}
+              {%- set heard = c.heard | as_datetime(default=none) -%}
+              {%- set ns.keys = ns.keys + ([x.key] if x.key else []) -%}{%- set ns.channels = ns.channels + ([x.channel] if x.channel >= 0 else []) -%}
+              {%- set ns.rows = ns.rows + [dict(path=x.path, title=x.title, e=c.e, k=c.k, new=heard is not none and now() - heard < timedelta(minutes=15), kind='automations' if not x.write and not x.pair else 'channel' if x.channel >= 0 else 'person', quiet=0 if x.write else 1)] -%}
+              {%- endfor -%}
+              {#- the contacts of this gateway that take texts and have no page yet, and the channels heard that have none -#}
+              {%- for d in ([] if gw is none else integration_entities('mqtt') | select('match', 'notify\\.') | map('device_id') | reject('none') | unique | list) if device_attr(d, 'via_device_id') == gw and device_attr(d, 'serial_number') not in ns.keys -%}{%- set ns.without = ns.without + [device_attr(d, 'name_by_user') or device_attr(d, 'name') or '?'] -%}{%- endfor -%}
+              {%- for e in ns.entries if e.get('kind') == 'channel' and e.get('channel_index') is number and e.get('channel_index') not in ns.channels and e.get('channel_index') not in ns.heard -%}{%- set ns.heard = ns.heard + [e.get('channel_index')] -%}{%- endfor -%}
+              {%- set names = m(ns.without | sort | join(', ')) -%}{%- set channels = m(ns.heard | sort | join(', ')) -%}
+              {%- if states['binary_sensor.@gw@_radio'] is none -%}
+              <div>_("The gateway is not found: see the first line of Overview.")</div>
+              {%- elif not ns.rows -%}
+              <div>_("No one to write to yet. The administrator sets up channels, and makes a chat page for each contact you add under Contacts.")</div>
+              {%- else -%}
+              {#- Translators: new marks a chat with a message received less than 15 minutes ago -#}
+              <table role="presentation" width="100%">{%- for r in ns.rows | sort(attribute='k', reverse=true) | sort(attribute='quiet') -%}<tr><td><a href="./{{ m(r.path) }}"><b>{{ m(r.title) }}</b></a><br><small>{{ kind(r.kind) }}</small>{% if r.e is not none %}<br><small>{{ line(r.e) }}</small>{% endif %}</td><td align="right" valign="top"><small>{% if r.e is not none %}{{ when(r.e.get('at') or r.e.get('queued_at')) }}{% endif %}{% if r.new %} · _("new"){% endif %}</small></td></tr>{%- endfor -%}</table>
+              {%- endif %}
+              {%- if ns.without %}
+              {#- Translators: names are contacts' names, separated by commas #}
+              <div>_("Without a chat page yet (your administrator makes them): {names}")</div>
+              {%- endif %}
+              {%- if ns.heard %}
+              {#- Translators: channels are the numbers of the radio's channels, separated by commas #}
+              <div>_("Channels heard without a chat page: {channels}")</div>
+              {%- endif %}
+              {#- Translators: security text (docs/translations.md): who can read a chat, and that a name on a channel proves nothing #}
+              <details><summary>_("Who reads what")</summary><ul><li>_("A channel is shared by everyone who has its key, also outside this home; a name shown on a channel is what the sender typed: anyone can type any name.")</li><li>_("A person's chat is direct: only that person's device can read it.")</li><li>_("Everyone in this home who uses Home Assistant reads and writes these chats.")</li><li>_("A chat marked only automations write here has no field: your administrator keeps it for automations.")</li><li>_("New: a message arrived less than 15 minutes ago.")</li><li>_("A contact added later gets a chat page when the administrator makes the dashboard again.")</li></ul></details>
       - type: grid
         cards:
           - type: heading
-            heading: _("Last message")
+            heading: _("Latest messages")
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
-              {%- macro ago(value) -%}
-              {%- set t = value | as_datetime(default=none) -%}
-              {%- if t is none -%}–{%- else -%}
-              {%- set s = (now() - t).total_seconds() | int -%}
-              {#- Translators: how long ago; n is a whole number -#}
-              {%- if s < 3600 -%}{%- set n = [s // 60, 0] | max -%}_("{n} min ago"){%- elif s < 86400 -%}{%- set n = s // 3600 -%}_("{n} h ago"){%- else -%}{%- set n = s // 86400 -%}_("{n} d ago"){%- endif -%}
+              {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
+              {%- macro mon(v) -%}
+              {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
+              {%- if v == 1 -%}_("Jan")
+              {%- elif v == 2 -%}_("Feb")
+              {%- elif v == 3 -%}_("Mar")
+              {%- elif v == 4 -%}_("Apr")
+              {%- elif v == 5 -%}_("May")
+              {%- elif v == 6 -%}_("Jun")
+              {%- elif v == 7 -%}_("Jul")
+              {%- elif v == 8 -%}_("Aug")
+              {%- elif v == 9 -%}_("Sep")
+              {%- elif v == 10 -%}_("Oct")
+              {%- elif v == 11 -%}_("Nov")
+              {%- elif v == 12 -%}_("Dec")
+              {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
-              {%- set e = 'event.@gw@_message' -%}
-              {%- set text = state_attr(e, 'text') -%}
-              {%- if text is none -%}
-              _("No message yet.")
+              {%- macro when(v) -%}
+              {%- set t = v | as_datetime(default=none) -%}
+              {%- if t is none -%}–
               {%- else -%}
-              <div><b>{{ m(state_attr(e, 'sender_name') or '?') }}</b> {{ ago(state_attr(e, 'received_at')) }}<br>{{ m(text) }}</div>
-              {%- endif %}
-          - type: heading
-            heading: _("Last sent")
-          - type: markdown
-            content: |-
-              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
-              {%- macro said(v) -%}
-              {%- if v == 'queued' -%}_("queued")
-              {%- elif v == 'sent' -%}_("sent")
-              {%- elif v == 'confirmed' -%}_("confirmed")
-              {%- elif v == 'failed' -%}_("failed")
-              {%- elif v == 'expired' -%}_("expired")
-              {%- elif v == 'duplicate' -%}_("not sent again: a duplicate")
-              {%- elif v == 'rejected' -%}_("rejected")
+              {%- set t = t | as_local -%}{%- set days = ((now() | as_local).date() - t.date()).days -%}
+              {%- set time = m(t.strftime('%H:%M')) -%}{%- set day = t.day | int -%}{%- set month = mon(t.month) -%}
+              {%- if days <= 0 -%}{{ m(t.strftime('%H:%M')) }}
+              {%- elif days == 1 -%}
+              {#- Translators: the day before today and a clock time such as 23:50 -#}
+              _("yesterday {time}")
+              {%- else -%}
+              {#- Translators: an older day: the day of the month, an abbreviated month name and a clock time, as in 22 Oct 10:31 -#}
+              _("{day} {month} {time}")
+              {%- endif -%}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro mark(v) -%}
+              {#- Translators: how far a message sent from this home came, after its time -#}
+              {%- if v == 'sent' -%}_("✓ sent")
+              {%- elif v == 'confirmed' -%}_("✓✓ delivered")
+              {#- Translators: security text (docs/translations.md): the confirmation came sooner than the message's way through the mesh allows -#}
+              {%- elif v == 'suspect' -%}_("⚠ delivered? maybe forged")
+              {%- elif v == 'failed' -%}_("✗ not delivered")
+              {%- elif v == 'expired' -%}_("✗ not sent: waited too long")
+              {%- elif v == 'queued' -%}_("… waiting to send")
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
@@ -532,15 +633,74 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
-              {%- set e = 'event.@gw@_delivery' -%}
-              {%- set step = state_attr(e, 'event_type') -%}
-              {%- if step is none -%}
-              _("Nothing sent yet.")
+              {%- macro label(e) -%}
+              {%- set c = namespace(title='') -%}
+              {%- for x in ["@chats@"] if not c.title and ((x.channel >= 0 and e.get('kind') == 'channel' and e.get('channel_index') == x.channel) or (x.channel < 0 and x.key != '' and e.get('kind') == 'contact' and e.get('contact_key') == x.key)) -%}{%- set c.title = x.title -%}{%- endfor -%}
+              {%- set n = e.get('channel_index') | int(0) -%}
+              {%- if c.title -%}{{ m(c.title) }}
+              {%- elif e.get('kind') == 'channel' -%}
+              {#- Translators: a channel of the radio without a chat page; n is its number -#}
+              _("channel {n}")
+              {%- else -%}{{ m(e.get('name') or '?') }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro entry(e) -%}
+              {%- set raw = (e.get('text') or '') | string -%}
+              {#- a direct message sent from this home ends in the code of confirm_nonce, also while it is on its way (no direction yet): hidden (PC 16) -#}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') != 'in' and e.get('kind') == 'contact' else raw -%}
+              {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
+              {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
+              {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
+              {%- set sender = m(e.get('name') or '?') -%}{%- set chat = label(e) -%}
+              {%- if e.get('direction') == 'in' -%}
+              {#- Translators: who wrote a message of Latest messages: sender is the name the sender gave, chat the chat it came in -#}
+              <table role="presentation" width="100%"><tr><td width="85%" align="left"><small><b>{% if e.get('kind') == 'channel' %}_("{sender} in {chat}"){% elif not e.get('contact_key') %}_("{sender} (not a contact)"){% else %}{{ m(e.get('name') or '?') }}{% endif %}</b> · {{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
               {%- else -%}
-              {%- set reason = state_attr(e, 'reason') -%}
-              {#- Translators: security text (docs/translations.md): after "confirmed": the acknowledgement came sooner than the message's way through the mesh allows -#}
-              <div><b>{{ m(state_attr(e, 'target') or '?') }}</b> {{ said(step) }}{% if state_attr(e, 'suspect') %} _("(sooner than the path allows: maybe forged)"){% endif %}{% if reason %} ({{ why(reason) }}){% endif %}<br>{{ m(state_attr(e, 'text')) }}</div>
+              {#- Translators: on its way: attempt and attempts are whole numbers; ✓✓ {later}: delivered, later the time the person's radio confirmed it, such as 10:34; to {chat}: to whom it went, chat is a chat's name -#}
+              <table role="presentation" width="100%"><tr><td width="15%"></td><td width="85%" align="right">{% if trouble %}<ha-alert alert-type="warning">{% endif %}<small>_("to {chat}") · {{ when(e.get('queued_at') or e.get('at')) }} · {% if state == 'sent' and e.get('step') %}_("… sent, waiting for confirmation (try {attempt} of {attempts})"){% elif state == 'confirmed' and e.get('queued_at') and when(e.get('queued_at')) != later %}_("✓✓ {later}"){% else %}{{ mark(state) }}{% endif %}{% if trouble and e.get('reason') %} ({{ why(e.get('reason')) }}){% endif %}</small><br>{% if e.get('step') %}<i>{{ mt(raw) }}</i>{% else %}{{ mt(raw) }}{% endif %}{% if trouble %}</ha-alert>{% endif %}</td></tr></table>
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set h = 'sensor.@gw@_message_history' -%}
+              {%- set all = state_attr(h, 'messages') -%}
+              {%- set ns = namespace(rows=[], ids=[], open=0, chars=0, stop=false, trouble=0) -%}
+              {#- every chat's messages -#}
+              {%- for e in (all or []) if e is mapping -%}
+              {%- if e.get('id') -%}{%- set ns.ids = ns.ids + [e.get('id')] -%}{%- endif -%}
+              {%- if true -%}{%- set ns.rows = [{'k': e.get('queued_at') or e.get('at') or '', 'e': e}] + ns.rows -%}{%- endif -%}
+              {%- endfor -%}
+              {#- the messages on their way, but one the history holds already (PC 20) -#}
+              {%- for e in (state_attr('sensor.@gw@_pending_messages', 'messages') or []) if e is mapping and e.get('id') not in ns.ids -%}{%- set ns.rows = ns.rows + [{'k': e.get('queued_at') or '', 'e': e}] -%}{%- endfor -%}
+              {#- oldest first, by acceptance or arrival; the sort is stable, so a batch of one time keeps its arrival order (D-17) -#}
+              {%- set rows = ns.rows | sort(attribute='k') -%}
+              {#- open: the newest, at most 6, past the second only while their texts stay within 360 characters (D-17) -#}
+              {%- for r in rows | reverse -%}{%- set size = (r.e.get('text') or '') | string | length -%}{%- if not ns.stop and ns.open < 6 and (ns.open < 2 or ns.chars + size <= 360) -%}{%- set ns.open = ns.open + 1 -%}{%- set ns.chars = ns.chars + size -%}{%- else -%}{%- set ns.stop = true -%}{%- endif -%}{%- endfor -%}
+              {%- set earlier = (rows | count - ns.open) | int -%}
+              {%- for r in rows[:earlier] if r.e.get('direction') != 'in' and (r.e.get('state') in ['failed', 'expired'] or r.e.get('suspect') == true) -%}{%- set ns.trouble = ns.trouble + 1 -%}{%- endfor -%}
+              {%- set trouble = ns.trouble | int -%}
+              {%- if states['binary_sensor.@gw@_radio'] is none -%}
+              <div>_("The gateway is not found: see the first line of Overview.")</div>
+              {%- elif states[h] is none -%}
+              <div>_("Chats need gateway version 2.1 or later. Ask your administrator to update the gateway.")</div>
+              {%- elif all is none -%}
+              <div>_("No messages known yet.")</div>
+              {%- elif not rows -%}
+              <div>_("No message yet.")</div>
+              {%- else -%}
+              {%- if state_attr(h, 'truncated') == true -%}
+              <div>_("Older messages are no longer kept for Home Assistant.")</div>
+              {% endif -%}
+              {%- if earlier > 0 -%}
+              {#- Translators: a fold of the older messages of a chat; earlier and trouble are whole numbers -#}
+              <details><summary>{% if trouble > 0 %}_("Earlier messages ({earlier}) · with problems: {trouble}"){% else %}_("Earlier messages ({earlier})"){% endif %}</summary>{%- for r in rows[:earlier] -%}{{ entry(r.e) }}{%- endfor -%}</details>
+              {% endif -%}
+              <div>{%- for r in rows[earlier:] -%}{{ entry(r.e) }}{%- endfor -%}</div>
               {%- endif %}
+              {#- Translators: security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged #}
+              <details><summary>_("What ✓ and ✓✓ mean")</summary><ul><li>_("✓ sent: it left the radio. Channels never confirm, so one tick is all a channel message gets.")</li><li>_("✓✓ delivered: the person's radio confirmed it. It does not say the person read it.")</li><li>_("⚠ delivered? maybe forged: the confirmation came faster than the mesh path normally allows. Ask in another way whether it arrived.")</li><li>_("✗ not delivered and ✗ not sent: waited too long show in yellow, with the reason. Send it again or ask in another way.")</li><li>_("… waiting to send, and a text in italics: the message is on its way.")</li><li>_("Left: received. Right: sent from this home, by anyone or by an automation.")</li><li>_("A direct message may end in a short code such as #1a2b3c4d; it is hidden here and makes a faked confirmation harder.")</li><li>_("Long keys and links are shown in pieces here. Copied into Contacts, they still work; pasted elsewhere, they may not.")</li></ul></details>
+          - type: markdown
+            text_only: true
+            content: |-
+              <details><summary>_("What this view is for")</summary><p>_("All conversations: tap one to read it as a chat and to write. Below, all messages together, newest last.")</p></details>
   # Translators: a tab's title. Overview, Chats and Contacts together have at most 22 letters,
   # or the tabs do not fit a phone 360 pixels wide
   - title: _("Contacts")
@@ -820,6 +980,7 @@ views:
             text_only: true
             content: |-
               <details><summary>_("When something is wrong")</summary><ul><li>_("The first line of Overview names the problem; the card below it says what to do. Tell your administrator the time and what the card says.")</li><li><b>_("a fault in the gateway")</b>: _("A part of the gateway does not work as it should. Messages still go out.")</li><li><b>_("a node imitates a contact")</b>: _("A radio nearby has a key that starts like a contact's.")</li><li><b>_("remote access to the radio")</b>: _("A contact may change this home's radio over the air.")</li><li><b>_("a position broadcast to everyone")</b>: _("A person's device tells everyone in range where it is.")</li><li><b>_("the radio's settings")</b>: _("The radio's settings could not be set, or someone changed them.")</li><li><b>_("asking for position and battery is paused")</b>: _("The gateway asks nobody for now; the card says why.")</li><li><b>_("the radio's clock")</b>: _("The radio's clock is far off.")</li><li><b>_("the contact table is full")</b>: _("The radio cannot add a new contact.")</li><li><b>_("the dashboard and the gateway are of different versions")</b>: _("Some cards may be missing or empty until your administrator updates one of them.")</li></ul></details>
+              <details><summary>_("Why a message was not sent")</summary><ul><li><b>_("no acknowledgement")</b>: _("The person's radio did not confirm it: out of range, switched off, or the way through the mesh changed.")</li><li><b>_("not a contact on the radio")</b>, <b>_("not a companion")</b>: _("The radio cannot send to this person now; your administrator checks the contact.")</li><li><b>_("no such target")</b>, <b>_("channel not set up on the radio")</b>: _("The chat does not exist on the gateway or on the radio; your administrator checks the configuration.")</li><li><b>_("another contact has the same key prefix")</b>: _("Two contacts start alike, so the radio cannot tell them apart; your administrator removes one.")</li><li><b>_("text too long")</b>, <b>_("request too large")</b>: _("Write a shorter text.")</li><li><b>_("text not UTF-8")</b>, <b>_("published with the retain flag")</b>: _("An automation sent it in a wrong form; your administrator fixes it.")</li><li><b>_("empty text")</b>: _("There was nothing to send.")</li><li><b>_("queue full")</b>, <b>_("waited too long")</b>, <b>_("airtime used up")</b>, <b>_("needs more airtime than one burst")</b>: _("The radio may send only so much per hour, and many messages were waiting. Send it again later, or shorter.")</li><li><b>_("no radio")</b>: _("The gateway had no connection to its radio.")</li><li><b>_("internal error: see the log")</b>: _("The gateway hit an error; tell your administrator the time.")</li></ul></details>
 # @each chats
   - title: "@chats.title@"
     path: "@chats.path@"
@@ -829,8 +990,295 @@ views:
     sections:
       - type: grid
         cards:
-          - type: heading
-            heading: "@chats.title@"
+# @if chats.write
+          - type: markdown
+            text_only: true
+            content: |-
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro mon(v) -%}
+              {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
+              {%- if v == 1 -%}_("Jan")
+              {%- elif v == 2 -%}_("Feb")
+              {%- elif v == 3 -%}_("Mar")
+              {%- elif v == 4 -%}_("Apr")
+              {%- elif v == 5 -%}_("May")
+              {%- elif v == 6 -%}_("Jun")
+              {%- elif v == 7 -%}_("Jul")
+              {%- elif v == 8 -%}_("Aug")
+              {%- elif v == 9 -%}_("Sep")
+              {%- elif v == 10 -%}_("Oct")
+              {%- elif v == 11 -%}_("Nov")
+              {%- elif v == 12 -%}_("Dec")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro when(v) -%}
+              {%- set t = v | as_datetime(default=none) -%}
+              {%- if t is none -%}–
+              {%- else -%}
+              {%- set t = t | as_local -%}{%- set days = ((now() | as_local).date() - t.date()).days -%}
+              {%- set time = m(t.strftime('%H:%M')) -%}{%- set day = t.day | int -%}{%- set month = mon(t.month) -%}
+              {%- if days <= 0 -%}{{ m(t.strftime('%H:%M')) }}
+              {%- elif days == 1 -%}
+              {#- Translators: the day before today and a clock time such as 23:50 -#}
+              _("yesterday {time}")
+              {%- else -%}
+              {#- Translators: an older day: the day of the month, an abbreviated month name and a clock time, as in 22 Oct 10:31 -#}
+              _("{day} {month} {time}")
+              {%- endif -%}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set key = '@chats.key@' -%}{%- set chan = @chats.channel@ -%}
+              {%- set ns = namespace(device=none, heard=none) -%}
+              {%- for d in ([] if gw is none or key == '' else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list) if device_attr(d, 'serial_number') == key -%}{%- set ns.device = d -%}{%- endfor -%}
+              {%- for e in (device_entities(ns.device) if ns.device is not none else []) | select('match', 'sensor\\.\\w+_last_heard(_\\d+)?$') -%}{%- set ns.heard = e -%}{%- endfor -%}
+              {%- set heard = when(states(ns.heard) if ns.heard is not none else '') -%}
+              {%- set fresh = ns.heard is not none and states(ns.heard) not in ['unknown', 'unavailable'] -%}
+              {%- set gone = '@chats.path@'.startswith('contact-') and gw is not none and ns.device is none -%}
+              {%- set cfg = state_attr('sensor.@gw@_configuration', 'targets') -%}
+              {%- set messages = state_attr('sensor.@gw@_configuration', 'messages') -%}
+              {%- set t = namespace(found=none) -%}
+              {%- for x in ((cfg.get('items') or []) if cfg is mapping else []) if x is mapping and x.get('alias') == '@chats.target@' -%}{%- set t.found = x -%}{%- endfor -%}
+              {%- set room = (t.found.get('room') if t.found is not none and t.found.get('room') is number else @chats.room@) | int -%}
+              {%- set cut = not (messages is mapping and messages.get('truncate') == false) -%}
+              {%- set window = ((messages.get('dedup_window_s') if messages is mapping else 0) | float(0) / 60) | round | int -%}
+              {%- set minutes = 15 | int -%}
+              {#- Translators: heard is a time, such as 10:31 or yesterday 10:31 -#}
+              <div><b>{{ m('@chats.title@') }}</b>{% if chan >= 0 %} · _("channel · everyone with the channel's key reads it"){% elif fresh %} · _("heard {heard}"){% endif %}</div>
+              {%- if gone %}
+              <div><ha-alert alert-type="warning"><b>_("{name} is no longer a contact of this radio.")</b> _("The messages stay readable here until they leave the window; writing is not possible.")</ha-alert></div>
+              {%- endif %}
+              <details><summary>{% if gone %}_("Why you cannot write here"){% else %}_("How to write"){% endif %}</summary><ul>{% if gone %}<li>_("The radio no longer has {name} as a contact, so the gateway cannot send to this person. To write again, add the contact again (Contacts).")</li>{% else %}<li>_("Type in the field “Write to {name}” at the bottom, tap Return (↵), then tap Send. Return only keeps the text; Send sends it.")</li><li>_("Wait until the field is empty before you write the next message. It empties when the gateway has taken yours, and your message shows in the chat.")</li><li>_("Everyone in this home who uses Home Assistant shares this field. What someone else leaves in it is what Send sends, and their text can replace yours while you type. Read the field before you tap Send.")</li><li>_("If the connection drops, the field can show an older text again. Read it before you tap Send.")</li><li>_("A text left in the field is cleared after {minutes} minutes. Reloading the page or a Home Assistant restart loses only what you were still typing. A restart of the gateway empties the field. The messages in the chat show what was really sent.")</li><li>{% if cut %}_("About {room} letters; a longer text is cut and ends in ...; letters with accents and emoji count double or more."){% else %}_("About {room} letters; a longer text is not sent and stays in the field; letters with accents and emoji count double or more."){% endif %}</li><li>{% if window > 0 %}_("The same text to the same chat within {window} minutes is not sent again, unless it was not delivered."){% else %}_("The same text to the same chat within a few minutes is not sent again, unless it was not delivered."){% endif %}</li><li>_("A text that is only the word unknown or unavailable cannot be written here.")</li><li>_("What you leave in the field is kept in Home Assistant's history, also if you delete it before sending, unless your administrator turned that off.")</li>{% endif %}</ul></details>
+# @else
+          - type: markdown
+            text_only: true
+            content: |-
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro mon(v) -%}
+              {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
+              {%- if v == 1 -%}_("Jan")
+              {%- elif v == 2 -%}_("Feb")
+              {%- elif v == 3 -%}_("Mar")
+              {%- elif v == 4 -%}_("Apr")
+              {%- elif v == 5 -%}_("May")
+              {%- elif v == 6 -%}_("Jun")
+              {%- elif v == 7 -%}_("Jul")
+              {%- elif v == 8 -%}_("Aug")
+              {%- elif v == 9 -%}_("Sep")
+              {%- elif v == 10 -%}_("Oct")
+              {%- elif v == 11 -%}_("Nov")
+              {%- elif v == 12 -%}_("Dec")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro when(v) -%}
+              {%- set t = v | as_datetime(default=none) -%}
+              {%- if t is none -%}–
+              {%- else -%}
+              {%- set t = t | as_local -%}{%- set days = ((now() | as_local).date() - t.date()).days -%}
+              {%- set time = m(t.strftime('%H:%M')) -%}{%- set day = t.day | int -%}{%- set month = mon(t.month) -%}
+              {%- if days <= 0 -%}{{ m(t.strftime('%H:%M')) }}
+              {%- elif days == 1 -%}
+              {#- Translators: the day before today and a clock time such as 23:50 -#}
+              _("yesterday {time}")
+              {%- else -%}
+              {#- Translators: an older day: the day of the month, an abbreviated month name and a clock time, as in 22 Oct 10:31 -#}
+              _("{day} {month} {time}")
+              {%- endif -%}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set key = '@chats.key@' -%}{%- set chan = @chats.channel@ -%}
+              {%- set ns = namespace(device=none, heard=none) -%}
+              {%- for d in ([] if gw is none or key == '' else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list) if device_attr(d, 'serial_number') == key -%}{%- set ns.device = d -%}{%- endfor -%}
+              {%- for e in (device_entities(ns.device) if ns.device is not none else []) | select('match', 'sensor\\.\\w+_last_heard(_\\d+)?$') -%}{%- set ns.heard = e -%}{%- endfor -%}
+              {%- set heard = when(states(ns.heard) if ns.heard is not none else '') -%}
+              {%- set fresh = ns.heard is not none and states(ns.heard) not in ['unknown', 'unavailable'] -%}
+              {%- set gone = '@chats.path@'.startswith('contact-') and gw is not none and ns.device is none -%}
+              {#- Translators: heard is a time, such as 10:31 or yesterday 10:31 -#}
+              <div><b>{{ m('@chats.title@') }}</b>{% if chan >= 0 %} · {% if '@chats.pair@' %}_("channel · everyone with the channel's key reads it"){% else %}_("channel · only automations write here"){% endif %}{% elif fresh %} · _("heard {heard}"){% endif %}</div>
+              {%- if gone %}
+              <div><ha-alert alert-type="warning"><b>_("{name} is no longer a contact of this radio.")</b> _("The messages stay readable here until they leave the window; writing is not possible.")</ha-alert></div>
+              {%- endif %}
+              {#- Translators: security text (docs/translations.md): who can read a chat, and that a name on a channel proves nothing #}
+              <details><summary>_("Who reads this chat")</summary><ul><li>{% if chan >= 0 %}_("A channel is shared by everyone who has its key, also outside this home; a name shown on a channel is what the sender typed: anyone can type any name."){% else %}_("A person's chat is direct: only that person's device can read it."){% endif %}</li><li>_("Everyone in this home who uses Home Assistant reads this chat. Only automations write to it, unless the line below says why there is no field.")</li></ul></details>
+# @end
+          - type: markdown
+            content: |-
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
+              {%- macro mon(v) -%}
+              {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
+              {%- if v == 1 -%}_("Jan")
+              {%- elif v == 2 -%}_("Feb")
+              {%- elif v == 3 -%}_("Mar")
+              {%- elif v == 4 -%}_("Apr")
+              {%- elif v == 5 -%}_("May")
+              {%- elif v == 6 -%}_("Jun")
+              {%- elif v == 7 -%}_("Jul")
+              {%- elif v == 8 -%}_("Aug")
+              {%- elif v == 9 -%}_("Sep")
+              {%- elif v == 10 -%}_("Oct")
+              {%- elif v == 11 -%}_("Nov")
+              {%- elif v == 12 -%}_("Dec")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro when(v) -%}
+              {%- set t = v | as_datetime(default=none) -%}
+              {%- if t is none -%}–
+              {%- else -%}
+              {%- set t = t | as_local -%}{%- set days = ((now() | as_local).date() - t.date()).days -%}
+              {%- set time = m(t.strftime('%H:%M')) -%}{%- set day = t.day | int -%}{%- set month = mon(t.month) -%}
+              {%- if days <= 0 -%}{{ m(t.strftime('%H:%M')) }}
+              {%- elif days == 1 -%}
+              {#- Translators: the day before today and a clock time such as 23:50 -#}
+              _("yesterday {time}")
+              {%- else -%}
+              {#- Translators: an older day: the day of the month, an abbreviated month name and a clock time, as in 22 Oct 10:31 -#}
+              _("{day} {month} {time}")
+              {%- endif -%}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro mark(v) -%}
+              {#- Translators: how far a message sent from this home came, after its time -#}
+              {%- if v == 'sent' -%}_("✓ sent")
+              {%- elif v == 'confirmed' -%}_("✓✓ delivered")
+              {#- Translators: security text (docs/translations.md): the confirmation came sooner than the message's way through the mesh allows -#}
+              {%- elif v == 'suspect' -%}_("⚠ delivered? maybe forged")
+              {%- elif v == 'failed' -%}_("✗ not delivered")
+              {%- elif v == 'expired' -%}_("✗ not sent: waited too long")
+              {%- elif v == 'queued' -%}_("… waiting to send")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {#- the reasons of mqtt-api.md, Delivery; one added later, and the radio's refusals, stay codes -#}
+              {%- macro why(v) -%}
+              {%- if v == 'no_acknowledgement' -%}_("no acknowledgement")
+              {%- elif v == 'unknown_contact' -%}_("not a contact on the radio")
+              {%- elif v == 'unknown_target' -%}_("no such target")
+              {%- elif v == 'ambiguous_target' -%}_("another contact has the same key prefix")
+              {%- elif v == 'not_a_companion' -%}_("not a companion")
+              {%- elif v == 'channel_not_configured' -%}_("channel not set up on the radio")
+              {%- elif v == 'too_long' -%}_("text too long")
+              {%- elif v == 'too_large' -%}_("request too large")
+              {%- elif v == 'invalid_utf8' -%}_("text not UTF-8")
+              {%- elif v == 'empty' -%}_("empty text")
+              {%- elif v == 'retained' -%}_("published with the retain flag")
+              {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'queue_ttl' -%}_("waited too long")
+              {%- elif v == 'no_radio' -%}_("no radio")
+              {%- elif v == 'airtime_budget' -%}_("airtime used up")
+              {%- elif v == 'exceeds_airtime_burst' -%}_("needs more airtime than one burst")
+              {%- elif v == 'internal_error' -%}_("internal error: see the log")
+              {%- else -%}<code>{{ m(v) }}</code>
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro row(e) -%}
+              {%- set raw = (e.get('text') or '') | string -%}
+              {#- a direct message sent from this home ends in the code of confirm_nonce, also while it is on its way (no direction yet): hidden (PC 16) -#}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') != 'in' and e.get('kind') == 'contact' else raw -%}
+              {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
+              {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
+              {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
+              {%- if e.get('direction') == 'in' -%}<table role="presentation" width="100%"><tr><td width="85%" align="left"><small>{% if e.get('kind') == 'channel' %}<b>{{ m(e.get('name') or '?') }}</b> · {% endif %}{{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
+              {%- else -%}
+              {#- Translators: on its way: attempt and attempts are whole numbers; ✓✓ {later}: delivered, later the time the person's radio confirmed it, such as 10:34 -#}
+              <table role="presentation" width="100%"><tr><td width="15%"></td><td width="85%" align="right">{% if trouble %}<ha-alert alert-type="warning">{% endif %}<small>{{ when(e.get('queued_at') or e.get('at')) }} · {% if state == 'sent' and e.get('step') %}_("… sent, waiting for confirmation (try {attempt} of {attempts})"){% elif state == 'confirmed' and e.get('queued_at') and when(e.get('queued_at')) != later %}_("✓✓ {later}"){% else %}{{ mark(state) }}{% endif %}{% if trouble and e.get('reason') %} ({{ why(e.get('reason')) }}){% endif %}</small><br>{% if e.get('step') %}<i>{{ mt(raw) }}</i>{% else %}{{ mt(raw) }}{% endif %}{% if trouble %}</ha-alert>{% endif %}</td></tr></table>
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set h = 'sensor.@gw@_message_history' -%}
+              {%- set all = state_attr(h, 'messages') -%}
+              {%- set chan = @chats.channel@ -%}{%- set key = '@chats.key@' -%}
+              {%- set ns = namespace(rows=[], ids=[], open=0, chars=0, stop=false, trouble=0) -%}
+              {#- this chat's messages: a channel's by its index, whatever alias they went through; a person's by the key (D-15) -#}
+              {%- for e in (all or []) if e is mapping -%}
+              {%- if e.get('id') -%}{%- set ns.ids = ns.ids + [e.get('id')] -%}{%- endif -%}
+              {%- if ((e.get('kind') == 'channel' and e.get('channel_index') == chan) if chan >= 0 else (e.get('kind') == 'contact' and e.get('contact_key') == key)) -%}{%- set ns.rows = [{'k': e.get('queued_at') or e.get('at') or '', 'e': e}] + ns.rows -%}{%- endif -%}
+              {%- endfor -%}
+              {#- the messages on their way, but one the history holds already (PC 20) -#}
+              {%- for e in (state_attr('sensor.@gw@_pending_messages', 'messages') or []) if e is mapping and e.get('id') not in ns.ids and ((e.get('kind') == 'channel' and e.get('channel_index') == chan) if chan >= 0 else (e.get('kind') == 'contact' and e.get('contact_key') == key)) -%}{%- set ns.rows = ns.rows + [{'k': e.get('queued_at') or '', 'e': e}] -%}{%- endfor -%}
+              {#- oldest first, by acceptance or arrival; the sort is stable, so a batch of one time keeps its arrival order (D-17) -#}
+              {%- set rows = ns.rows | sort(attribute='k') -%}
+              {#- open: the newest, at most 6, past the second only while their texts stay within 360 characters (D-17) -#}
+              {%- for r in rows | reverse -%}{%- set size = (r.e.get('text') or '') | string | length -%}{%- if not ns.stop and ns.open < 6 and (ns.open < 2 or ns.chars + size <= 360) -%}{%- set ns.open = ns.open + 1 -%}{%- set ns.chars = ns.chars + size -%}{%- else -%}{%- set ns.stop = true -%}{%- endif -%}{%- endfor -%}
+              {%- set earlier = (rows | count - ns.open) | int -%}
+              {%- for r in rows[:earlier] if r.e.get('direction') != 'in' and (r.e.get('state') in ['failed', 'expired'] or r.e.get('suspect') == true) -%}{%- set ns.trouble = ns.trouble + 1 -%}{%- endfor -%}
+              {%- set trouble = ns.trouble | int -%}
+              {%- if states['binary_sensor.@gw@_radio'] is none -%}
+              <div>_("The gateway is not found: see the first line of Overview.")</div>
+              {%- elif states[h] is none -%}
+              <div>_("Chats need gateway version 2.1 or later. Ask your administrator to update the gateway.")</div>
+              {%- elif all is none -%}
+              <div>_("No messages known yet.")</div>
+              {%- elif not rows -%}
+              <div>_("No message here yet.")</div>
+              {%- else -%}
+              {%- if state_attr(h, 'truncated') == true -%}
+              <div>_("Older messages are no longer kept for Home Assistant.")</div>
+              {% endif -%}
+              {%- if earlier > 0 -%}
+              {#- Translators: a fold of the older messages of a chat; earlier and trouble are whole numbers -#}
+              <details><summary>{% if trouble > 0 %}_("Earlier messages ({earlier}) · with problems: {trouble}"){% else %}_("Earlier messages ({earlier})"){% endif %}</summary>{%- for r in rows[:earlier] -%}{{ row(r.e) }}{%- endfor -%}</details>
+              {% endif -%}
+              <div>{%- for r in rows[earlier:] -%}{{ row(r.e) }}{%- endfor -%}</div>
+              {%- endif %}
+              {#- Translators: security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged #}
+              <details><summary>_("What ✓ and ✓✓ mean")</summary><ul><li>_("✓ sent: it left the radio. Channels never confirm, so one tick is all a channel message gets.")</li><li>_("✓✓ delivered: the person's radio confirmed it. It does not say the person read it.")</li><li>_("⚠ delivered? maybe forged: the confirmation came faster than the mesh path normally allows. Ask in another way whether it arrived.")</li><li>_("✗ not delivered and ✗ not sent: waited too long show in yellow, with the reason. Send it again or ask in another way.")</li><li>_("… waiting to send, and a text in italics: the message is on its way.")</li><li>_("Left: received. Right: sent from this home, by anyone or by an automation.")</li><li>_("A direct message may end in a short code such as #1a2b3c4d; it is hidden here and makes a faked confirmation harder.")</li><li>_("Long keys and links are shown in pieces here. Copied into Contacts, they still work; pasted elsewhere, they may not.")</li></ul></details>
+# @if chats.write
+          - type: markdown
+            text_only: true
+            show_empty: false
+            content: |-
+              {%- set radio = 'binary_sensor.@gw@_radio' -%}
+              {%- if states[radio] is not none and (is_state(radio, 'unavailable') or is_state(radio, 'off')) -%}
+              {%- if is_state(radio, 'unavailable') -%}
+              <div><ha-alert alert-type="error"><b>_("You cannot write now: the gateway is offline.")</b> _("Writing comes back when it is.")</ha-alert></div>
+              {%- else -%}
+              <div><ha-alert alert-type="error"><b>_("The radio is disconnected.")</b> _("Messages wait and go out when it is back.")</ha-alert></div>
+              {%- endif %}
+              <details><summary>_("Why you cannot write now")</summary><ul><li>_("The gateway sends what you write over its radio. While it is offline, Home Assistant cannot reach it, and the field is gone; the messages stay readable.")</li><li>_("While the radio is disconnected, a message you send waits at the gateway and goes out when the radio is back.")</li><li>_("If this lasts more than a few minutes, tell your administrator.")</li></ul></details>{%- endif -%}
+          - type: markdown
+            text_only: true
+            show_empty: false
+            visibility:
+              - condition: template
+                value_template: >-
+                  {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+                  {%- set t = '@chats.write@' -%}{%- set b = '@chats.send@' -%}{%- set d = device_id(t) -%}
+                  {{ not (gw is not none and d is not none and device_id(b) == d
+                     and states[t] is not none and not is_state(t, 'unavailable')
+                     and states[b] is not none and not is_state(b, 'unavailable')
+                     and (d == gw if '@chats.target@' != '' else
+                          device_attr(d, 'via_device_id') == gw and
+                          device_attr(d, 'serial_number') == '@chats.key@')) }}
+            content: |-
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set key = '@chats.key@' -%}{%- set part = '@chats.target@' | replace('-', '_') -%}
+              {%- set ns = namespace(field=none) -%}
+              {#- the field this chat has on this gateway, found by its device: the gateway's for a target, the contact's for a person -#}
+              {%- if gw is not none and part -%}
+              {%- for e in device_entities(gw) | select('match', 'text\\.\\w+_write_' ~ part ~ '(_\\d+)?$') -%}{%- set ns.field = e -%}{%- endfor -%}
+              {%- elif gw is not none -%}
+              {%- for d in integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list if device_attr(d, 'serial_number') == key -%}{%- for e in device_entities(d) | select('match', 'text\\.') -%}{%- set ns.field = e -%}{%- endfor -%}{%- endfor -%}
+              {%- endif -%}
+              {%- set radio = 'binary_sensor.@gw@_radio' -%}
+              {#- not found, offline or a gateway before 2.1: the thread and the line above say so -#}
+              {%- set quiet = gw is none or states[radio] is none or is_state(radio, 'unavailable') or states['sensor.@gw@_message_history'] is none -%}
+              {%- if not quiet -%}
+              {%- set real = m(ns.field) -%}
+              {%- if ns.field is not none and not is_state(ns.field, 'unavailable') -%}
+              {#- Translators: real is the entity ID of the message field; the menus as Home Assistant's own translation names them -#}
+              <div><ha-alert alert-type="warning"><b>_("You cannot write to {name} from here.")</b><br>_("For your administrator: this chat's message field has another name on this gateway: {real}. Rename it in Home Assistant's Settings › Devices & services › Entities, or set a contact prefix for this gateway.") <a href="@guide@#a-second-gateway">_("How, in the guide")</a></ha-alert></div>
+              {%- elif ns.field is not none -%}
+              <div><ha-alert alert-type="info">_("Only automations write to {name} from this home.")</ha-alert></div>
+              {%- else -%}
+              <div><ha-alert alert-type="warning"><b>_("You cannot write to {name} from here.")</b><br>_("Ask your administrator to make the dashboard again.")</ha-alert></div>
+              {%- endif %}
+              <details><summary>_("Why you cannot write here")</summary><ul><li>_("This page's field is missing, belongs to another gateway or contact, or is switched off on purpose.")</li><li>_("The messages stay readable here; your administrator can fix the field.")</li></ul></details>{%- endif -%}
+# @else
 # @if chats.pair
           - type: markdown
             text_only: true
@@ -840,7 +1288,77 @@ views:
               {%- set b = m('@chats.pair@') -%}
               {#- Translators: name is the chat's title, a and b are aliases of targets of the gateway's configuration -#}
               <div><ha-alert alert-type="warning"><b>_("You cannot write to {name} from here.")</b><br>_("For your administrator: the targets {a} and {b} get the same entity IDs in Home Assistant. Rename one of them in the gateway's configuration.")</ha-alert></div>
+              <details><summary>_("Why you cannot write here")</summary><ul><li>_("Home Assistant cannot tell this chat's field from another one's, so this page has none until your administrator renames one of the two.")</li><li>_("The messages stay readable here.")</li></ul></details>
+# @else
+# @if chats.key
+          - type: markdown
+            text_only: true
+            content: |-
+              <div><ha-alert alert-type="info">_("Only automations write to {name} from this home.")</ha-alert></div>
+              <details><summary>_("Why you cannot write here")</summary><ul><li>_("Your administrator keeps this chat for automations: the gateway sends only what they write.")</li><li>_("The messages stay readable here.")</li></ul></details>
 # @end
+# @end
+# @end
+          - type: markdown
+            text_only: true
+            content: |-
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro place(v) -%}
+              {%- if v == 'home' -%}_("at home")
+              {%- elif v == 'not_home' -%}_("away")
+              {%- elif v == 'unavailable' -%}_("position not current")
+              {%- elif v == 'unknown' -%}_("no position yet")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro asking(v) -%}
+              {#- Translators: whether the gateway asks this person's device for its position and battery -#}
+              {%- if v == 'on' -%}_("on")
+              {%- elif v == 'off' -%}_("off")
+              {%- elif v in ['', 'unknown', 'unavailable'] -%}–
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set key = '@chats.key@' -%}{%- set chan = @chats.channel@ -%}
+              {%- set ns = namespace(device=none, tracker=none, battery=none, asking=none, hops=none, snr=none) -%}
+              {%- for d in ([] if gw is none or key == '' else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list) if device_attr(d, 'serial_number') == key -%}{%- set ns.device = d -%}{%- endfor -%}
+              {%- for e in (device_entities(ns.device) if ns.device is not none else []) -%}
+              {%- if e is match('device_tracker\\.') -%}{%- set ns.tracker = e -%}
+              {%- elif e is match('switch\\.') -%}{%- set ns.asking = e -%}
+              {%- elif e is match('sensor\\.\\w+_battery(_\\d+)?$') and state_attr(e, 'device_class') == 'voltage' -%}{%- set ns.battery = e -%}
+              {%- elif e is match('sensor\\.\\w+_hops(_\\d+)?$') -%}{%- set ns.hops = e -%}
+              {%- elif e is match('sensor\\.\\w+_snr(_\\d+)?$') -%}{%- set ns.snr = e -%}
+              {%- endif -%}
+              {%- endfor -%}
+              {%- set cfg = state_attr('sensor.@gw@_configuration', 'targets') -%}
+              {%- set messages = state_attr('sensor.@gw@_configuration', 'messages') -%}
+              {%- set t = namespace(found=none) -%}
+              {%- for x in ((cfg.get('items') or []) if cfg is mapping else []) if x is mapping and x.get('alias') == '@chats.target@' -%}{%- set t.found = x -%}{%- endfor -%}
+              {%- set room = (t.found.get('room') if t.found is not none and t.found.get('room') is number else @chats.room@) | int -%}
+              {%- set where = states(ns.tracker) if ns.tracker is not none else 'unknown' -%}
+              {%- set zone = m(where) -%}
+              {%- set volts = m(states(ns.battery) if ns.battery is not none else '') -%}
+              {%- set prefix = m(t.found.get('prefix') if t.found is not none else '') -%}{%- set suffix = m(t.found.get('suffix') if t.found is not none else '') -%}
+              {%- set short = m(key[:8]) -%}{%- set hops = m(states(ns.hops) if ns.hops is not none else '') -%}{%- set snr = m(states(ns.snr) if ns.snr is not none else '') -%}
+              {%- set measured = ns.hops is not none and states(ns.hops) not in ['unknown', 'unavailable'] -%}
+              {%- if ns.device is not none %}
+              {#- Translators: volts is a battery's voltage, such as 3.9 #}
+              <table role="presentation" width="100%"><tr><td>_("Where")</td><td>{% if where in ['home', 'not_home', 'unavailable', 'unknown'] %}{{ place(where) }}{% else %}_("at {zone}"){% endif %}</td></tr><tr><td>_("Battery")</td><td>{% if volts %}_("{volts} V"){% else %}–{% endif %}</td></tr><tr><td>_("Ask for position and battery")</td><td>{{ asking(states(ns.asking) if ns.asking is not none else '') }}</td></tr></table>
+              <div><a href="./contacts">_("Change on Contacts")</a></div>
+              {%- endif %}
+              {%- if t.found is not none and (t.found.get('prefix') or t.found.get('suffix')) %}
+              {#- Translators: prefix and suffix are the texts the gateway adds before and after each message to this chat #}
+              <div>_("Text before or after messages: {prefix} … {suffix}")</div>
+              {%- endif %}
+              {%- if t.found is not none and t.found.get('alert') == true %}
+              <div>_("Sent before other messages.")</div>
+              {%- endif %}
+              {%- if '@chats.target@' and not (ns.device is not none) %}
+              {#- Translators: room is a whole number #}
+              <div>_("About {room} letters per message.")</div>
+              {%- endif %}
+              <details><summary>{% if ns.device is not none %}_("About {name}'s entry"){% else %}_("About this chat"){% endif %}</summary><ul>{% if ns.device is not none %}<li><b>_("at home")</b>, <b>_("away")</b>: _("Where the device was at its last answer; a place's name when it was in another zone of Home Assistant.")</li><li><b>_("position not current")</b>: _("A position counts for an hour after the last answer.")</li><li><b>_("no position yet")</b>: _("GPS off, location not allowed in the app, out of range, or asking is off (Contacts).")</li><li>_("Ask for position and battery: on means the gateway asks this device for both now and then. Change it on Contacts.")</li><li>_("Its key starts with {short}.")</li>{% if measured %}<li>_("At its last message it was {hops} hops away, at a signal of {snr} dB.")</li>{% endif %}<li>_("The name comes from {name}'s own device and can change.")</li>{% endif %}<li>_("Text before or after messages: the gateway adds it to every message sent here, and the chat shows it.")</li><li>_("Sent before other messages: an alert goes out before the messages that wait.")</li></ul></details>
 # @if chats.write
     footer:
       card:
@@ -861,7 +1379,49 @@ views:
             text_only: true
             show_empty: false
             content: |-
-              {#- the refused line: shown when a Send of this chat was refused -#}
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
+              {#- the reasons of mqtt-api.md, Delivery; one added later, and the radio's refusals, stay codes -#}
+              {%- macro why(v) -%}
+              {%- if v == 'no_acknowledgement' -%}_("no acknowledgement")
+              {%- elif v == 'unknown_contact' -%}_("not a contact on the radio")
+              {%- elif v == 'unknown_target' -%}_("no such target")
+              {%- elif v == 'ambiguous_target' -%}_("another contact has the same key prefix")
+              {%- elif v == 'not_a_companion' -%}_("not a companion")
+              {%- elif v == 'channel_not_configured' -%}_("channel not set up on the radio")
+              {%- elif v == 'too_long' -%}_("text too long")
+              {%- elif v == 'too_large' -%}_("request too large")
+              {%- elif v == 'invalid_utf8' -%}_("text not UTF-8")
+              {%- elif v == 'empty' -%}_("empty text")
+              {%- elif v == 'retained' -%}_("published with the retain flag")
+              {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'queue_ttl' -%}_("waited too long")
+              {%- elif v == 'no_radio' -%}_("no radio")
+              {%- elif v == 'airtime_budget' -%}_("airtime used up")
+              {%- elif v == 'exceeds_airtime_burst' -%}_("needs more airtime than one burst")
+              {%- elif v == 'internal_error' -%}_("internal error: see the log")
+              {%- else -%}<code>{{ m(v) }}</code>
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set e = 'event.@gw@_delivery' -%}
+              {%- set step = state_attr(e, 'event_type') -%}{%- set code = state_attr(e, 'reason') -%}
+              {%- set at = states(e) | as_datetime(default=none) -%}
+              {#- now(): the line goes 10 minutes after the refusal, also when nothing else changes -#}
+              {%- set clock = now() -%}
+              {%- set chan = @chats.channel@ -%}{%- set key = '@chats.key@' -%}
+              {#- a refusal of this chat: its target is an alias of the chat's, or the person's key (D-15) -#}
+              {%- set ours = ('@chats.aliases@'.split(',') if '@chats.aliases@' else []) + ([key] if key else []) -%}
+              {%- set ns = namespace(later=false) -%}
+              {#- a message of this chat accepted after the refusal ends its line -#}
+              {%- for f in (state_attr('sensor.@gw@_message_history', 'messages') or []) + (state_attr('sensor.@gw@_pending_messages', 'messages') or []) if f is mapping and ((f.get('kind') == 'channel' and f.get('channel_index') == chan) if chan >= 0 else (f.get('kind') == 'contact' and f.get('contact_key') == key)) -%}
+              {%- set q = (f.get('queued_at') or '') | as_datetime(default=none) -%}
+              {%- if q is not none and at is not none and q > at -%}{%- set ns.later = true -%}{%- endif -%}
+              {%- endfor -%}
+              {%- if step in ['rejected', 'duplicate'] and state_attr(e, 'target') in ours and at is not none and clock - at < timedelta(minutes=10) and not ns.later -%}
+              {%- set reason = why(code) -%}
+              {#- Translators: reason says why the gateway refused the message, such as text too long. Return is the keyboard's key, as on the field's line -#}
+              <div><ha-alert alert-type="warning"><b>{% if step == 'duplicate' %}_("Not sent again: the same text went to this chat a moment ago."){% elif code == 'empty' %}_("Nothing was sent: the gateway had no text. Tap Return (↵) in the field (on a phone this also closes the keyboard), then Send."){% else %}_("Not sent: {reason}."){% endif %}</b>{% if state_attr(e, 'text') %}<br>{{ mt(state_attr(e, 'text')) }}{% endif %}</ha-alert></div>
+              {%- endif -%}
           - type: entities
             entities:
               - entity: "@chats.write@"

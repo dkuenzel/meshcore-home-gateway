@@ -377,7 +377,7 @@ def test_reason_codes_read_as_texts_and_an_unknown_one_stays_a_code() -> None:
     macros = [part.split("endmacro")[0] for part in template.split("macro why(v)")[1:]]
     delivery = [macro for macro in macros if "v == 'no_acknowledgement'" in macro]
     contact = [macro for macro in macros if "v == 'invalid_request'" in macro]
-    assert (len(delivery), len(contact)) == (1, 1)
+    assert (len(delivery), len(contact)) == (3, 1)  # Latest messages, a chat, its refused line
     assert len(set(delivery)) == 1  # one text, copied (DR-30)
     for found, codes in ((delivery[0], DELIVERY_REASONS), (contact[0], CONTACT_REASONS)):
         for code in codes:
@@ -475,7 +475,7 @@ def test_the_same_inputs_give_the_same_bytes() -> None:
     assert first == render(shipped(), trackers=list(reversed(listed)))
     assert first == render(shipped(), trackers=sorted(listed))
     assert "\r" not in first
-    assert first.endswith("updates one of them.</li></ul></details>\n")  # Help, the last
+    assert first.endswith("tell your administrator the time.</li></ul></details>\n")  # Help
     assert not first.endswith("\n\n")
 
 
@@ -502,6 +502,7 @@ _PLACEHOLDERS = {
     "@trackers@",
     "@controls@",
     "@chats@",
+    "@guide@",
 }
 _JINJA_NOTE = re.compile(r"\{#-?\s*Translators:.*-?#\}")
 _CLASS = re.compile(r"\{#- problem: \w+ -#\}")  # a problem card's class (rule 9)
@@ -734,8 +735,8 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         for _, t in block.lines
         for name in re.findall(r"macro (\w+)\(", t)
     }
-    assert {"m", "mt", "when", "said", "why", "problem", "place", "telemetry", "what"} <= names
-    assert template.count(MACRO) == 19
+    assert {"m", "mt", "when", "mark", "why", "problem", "place", "telemetry", "what"} <= names
+    assert template.count(MACRO) == 25
     assert len(list(dashboard.MARKER.finditer(template))) > 70
 
 
@@ -747,8 +748,8 @@ LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
     ("old", "new", "finding"),
     [
         (
-            '              _("No message yet.")',
-            '              {{ m(_("No message yet.")) }}',
+            '              _("No contact event yet.")',
+            '              {{ m(_("No contact event yet.")) }}',
             "a marker inside a Jinja tag",
         ),
         ("<b>{{ m(r.title) }}</b>", "<b>{{ r.title | e }}</b>", "| e outside the macro m"),
@@ -759,8 +760,8 @@ LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
             "starts with the macro m",
         ),
         (
-            '              _("No message yet.")',
-            '              # Translators: x\n              _("No message yet.")',
+            '              _("No contact event yet.")',
+            '              # Translators: x\n              _("No contact event yet.")',
             "'# Translators:' line",
         ),
         ("              {%- elif v == 'away' -%}_(\"away\")\n", "", "telemetry: the branches"),
@@ -808,7 +809,7 @@ def _cards(template: str) -> Iterator[list[str]]:
 def test_every_card_that_prints_a_value_defines_the_macro_first() -> None:
     """After a problem card's class (rule 9)."""
     printing = [card for card in _cards(shipped()) if any(re.search(r"\bm\(", t) for t in card)]
-    assert len(printing) == 19
+    assert len(printing) == 25
     assert all(card[_CLASS.fullmatch(card[0]) is not None] == MACRO for card in printing)
     assert sum(_CLASS.fullmatch(card[0]) is not None for card in printing) == 8
 
@@ -1342,19 +1343,16 @@ def test_the_dashboard_has_a_page_per_chat(tmp_path: Path) -> None:
 
 # --- the rules of 2.1 that need the dashboard's structure (dashboard_rules.py) -------------------
 
-# What the shipped template still breaks, by rule: the cards of 2.0 that stages 4 and 5 rewrite
-# (docs/development.md, the dashboard's template); Overview breaks none. Each rewrite lowers the
-# counts, to none.
+# What the shipped template still breaks, by rule: the cards of 2.0 that stage 5 rewrites
+# (docs/development.md, the dashboard's template); Overview, Chats and the chat pages break none.
+# Each rewrite lowers the counts, to none.
 PENDING = {
     "rule 3": 2,  # the 2.0 card of the switches and remove buttons
-    "rule 4": 2,  # the script's tile and hint
     "rule 5": 1,  # the remove buttons as entity rows
-    # help at the cards of Chats, Contacts, Map and Gateway and of the chat pages, About in those
-    # views and in Settings, the words of 2.0's cards, and the views and controls on Help
-    "rule 8": 107,
-    "rule 11": 2,  # the script's hint, the map's note
-    "rule 13": 4,  # Last message and Last sent
-    "rule 17": 1,  # the script's hint
+    # help at the cards of Contacts, Map and Gateway, About in those views and in Settings, the
+    # words of the contacts table and the last contact event, the views and controls on Help
+    "rule 8": 63,
+    "rule 11": 1,  # the map's note
 }
 
 
@@ -1475,7 +1473,7 @@ def test_the_shipped_template_breaks_only_what_stages_4_and_5_rewrite() -> None:
         above = (re.match(r'    path: "?([^"]+)"?$', line) for line in lines[: int(where)])
         return [match.group(1) for match in above if match][-1]
 
-    written = ["overview"]
+    written = ["overview", "messages", "@chats.path@"]  # a chat page: its path in the template
     assert [page(f) for f in found if "Help does not list" not in f and page(f) in written] == []
 
 
@@ -1521,7 +1519,9 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
     assert pages <= paths
     # each chat of Latest chats and All chats, from the list of the chat pages
     assert {link for link in links if link.startswith("./{{")} == {"./{{ m(r.path) }}"}
-    assert not [link for link in links if link.startswith("http")]
+    # the guide's section, of this dashboard's version (D-30)
+    guide = rules.GUIDE_URL.format(version=rules.VERSION) + "#a-second-gateway"
+    assert {link for link in links if link.startswith("http")} == {guide}
     assert rules.rule_6(shipped(), None, loaded, rules.HOUSEHOLD) == []
 
 
@@ -1899,8 +1899,10 @@ def test_the_name_beside_send_says_the_buttons_label() -> None:
     texts["Return, then Send"] = "Eingabe, dann Abschicken"
     fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
     assert rules.quote_findings(shipped(), rules.QUOTES, [fixed, i18n.ENGLISH]) == []
+    write = next(help_ for help_, label in rules.QUOTES.items() if label == "Write to {name}")
     assert rules.quote_findings(shipped(), {}, [i18n.ENGLISH]) == [
-        "rule 16: 'Return, then Send' names 'Send', not in QUOTES"
+        f"rule 16: {write!r} quotes 'Write to {{name}}', not in QUOTES",
+        "rule 16: 'Return, then Send' names 'Send', not in QUOTES",
     ]
 
 

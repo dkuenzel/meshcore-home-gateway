@@ -33,6 +33,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.service import async_get_cached_service_description
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 from pytest_homeassistant_custom_component.common import CLIENT_ID
 from test_contract import (
@@ -178,7 +179,7 @@ CARDS = frozenset(
 VIEWS = frozenset({"masonry", "panel", "sidebar", "sections"})
 SECTIONS = frozenset({"grid"})
 # the Markdown cards, by a part of their content or visibility
-WRITE, MESSAGE, SENT = "script.mesh_message", "_message'", "_delivery'"
+WRITE = "script.mesh_message"  # the guide's script, for automations: no card names it (D-22)
 TABLE = "sort(attribute=0, reverse=true)"  # the contacts table of 2.0
 # the gateway's sensors of 2.1 that the cards read; a gateway of 2.0 has none of them
 HISTORY = f"sensor.{PREFIX}_message_history"
@@ -520,7 +521,7 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
             for c in walk(v["sections"])
             if c["type"] == "heading" or "title" in c or "name" in c
         ]
-        assert len(titles) == 24  # with *Telemetry and removal*: Alice has a device
+        assert len(titles) == 22  # with *Telemetry and removal*: Alice has a device
         for title in titles:
             if language == "xx":
                 assert title.startswith("‹xx: ")
@@ -546,9 +547,9 @@ async def test_the_dashboard_names_only_entities_that_exist(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """The gateway's entities, its controls, the trackers, the contacts' switches and buttons
-    and the guide's script; the same in English and in xx, with the household discovered in
-    `language`. Not here: the gateway's sensors of 2.1
+    """The gateway's entities, its controls, the trackers, the contacts' switches and buttons;
+    the same in English and in xx, with the household discovered in `language`; not the guide's
+    script (D-22). Not here: the gateway's sensors of 2.1
     (test_the_dashboard_reads_the_sensors_of_a_gateway_of_2_1) and the chat pages' fields and
     Send buttons, which only their guards name (the footers' tests)."""
     offer("xx", monkeypatch, XX)
@@ -557,7 +558,6 @@ async def test_the_dashboard_names_only_entities_that_exist(
     contacts_of(config, tmp_path, broker).update(mesh)
     await gateway(hass, config)
     await deliver(hass, config, broker, mesh)
-    await guide_script(hass)
     files = {
         f"mesh-{each}": dashboard.dashboard(in_language(config, each), tmp_path)[0]
         for each in LANGUAGES
@@ -565,7 +565,8 @@ async def test_the_dashboard_names_only_entities_that_exist(
     loaded = await load(hass, hass_ws_client, files)
     names = referenced(loaded["mesh-en"])
     assert names == referenced(loaded["mesh-xx"])
-    assert {"device_tracker.mesh_alice", "device_tracker.mesh_hilltop", WRITE} <= names
+    assert {"device_tracker.mesh_alice", "device_tracker.mesh_hilltop"} <= names
+    assert WRITE not in names
     controls = {
         "switch.mesh_alice_telemetry",
         "button.mesh_alice_remove",
@@ -646,10 +647,12 @@ async def test_every_card_renders_in_every_situation(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """Strictly and without a warning or a blank line: no gateway, not online yet, offline, no
-    report yet, the radio disconnected, a gateway of 2.0 (none of the sensors of 2.1), the
-    messages waiting, a problem. No card listens to a domain or to every state. The status
-    line's words in each: test_overview.py."""
+    """Contract items 10 and 11: strictly and without a warning or a blank line: no gateway,
+    not online yet, offline, no report yet, the radio disconnected, a gateway of 2.0 (none of the
+    sensors of 2.1), the messages waiting, a problem, no message yet, the most messages the
+    history and the pending messages hold, the configuration with telemetry off and its targets
+    cut, offline with messages. No card listens to a domain or to every state. The status line's
+    words in each: test_overview.py."""
     config = speaking(language, monkeypatch)
     broker, mesh = Broker(), household(ALICE_NODE, HILL_NODE)
     contacts_of(config, tmp_path, broker).update(mesh)
@@ -673,16 +676,40 @@ async def test_every_card_renders_in_every_situation(
     await fire(hass, topics.state, state_document(known=False), retain=True)
     situation("radio disconnected")
     await fire(hass, topics.state, state_document(known=True) | {"queue": 0})
+    for entity in OF_2_1:  # discovered by a gateway of 2.1
+        hass.states.async_remove(entity)
     situation("a gateway of 2.0")
     assert render(hass, card(loaded, TABLE)) == said(
         config, "No contact has a device in Home Assistant."
     )
-    assert render(hass, card(loaded, MESSAGE)) == said(config, "No message yet.")
-    assert render(hass, card(loaded, SENT)) == said(config, "Nothing sent yet.")
+    update = (
+        "Chats need gateway version 2.1 or later. Ask your administrator to update the gateway."
+    )
+    assert render(hass, card(loaded, "macro entry(e)")).startswith(f"<div>{said(config, update)}")
     await fire(hass, topics.state, state_document(known=True))
     situation("messages waiting")
     await fire(hass, topics.nodes, {"total": 1, "look_alike": [BOB], "look_alike_total": 1})
     situation("a problem")
+    documented(hass, HISTORY, [])
+    documented(hass, PENDING, [])
+    situation("no message yet")
+    assert render(hass, card(loaded, "macro entry(e)")).startswith(
+        "<div>" + said(config, "No message yet.") + "</div>"
+    )
+    _, pending = entries(0, "Bob", "x" * 160)
+    worst = [entries(i, "Bob", "<&>" * 53)[0]["messages"][i % 2] for i in range(50)]
+    documented(hass, HISTORY, worst, truncated=True, total=60)
+    documented(hass, PENDING, pending["messages"] * 6, truncated=True, total=9)
+    situation("the most messages")
+    configuration = {
+        "telemetry": {"enabled": False},
+        "messages": {"truncate": False, "dedup_window_s": 120},
+        "targets": {"total": 200, "truncated": True, "items": []},
+    }
+    hass.states.async_set(CONFIGURATION, iso(time.time()), configuration)
+    situation("telemetry off, targets cut")
+    await fire(hass, topics.availability, "offline")
+    situation("offline with messages")
     for name, outputs in seen.items():
         assert form_findings(outputs) == [], name
     assert problems(caplog) == []
@@ -727,6 +754,59 @@ async def test_the_contacts_table_lists_fifty_contacts_newest_first(
     assert problems(caplog) == []
 
 
+# what else anyone may write, or a radio may hold in a name (#114, H-22): direction and invisible
+# characters, controls, the soft hyphen, line and paragraph separators, NUL
+INVISIBLE = [
+    "right\u202eleft",
+    "zero\u200bwidth",
+    "iso\u2066late\u2069",
+    "ctl\u0001x",
+    "nel\u0085x",
+    "soft\u00adhy",
+    "ls\u2028ps\u2029x",
+    "nul\u0000x",
+]
+# what m() drops or turns into a space: no output may hold one (U+200B: only mt()'s breaks)
+DROPPED = re.compile(
+    "[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200e\u200f\u202a-\u202e\u2028\u2029\u2060-\u2064\u2066-\u2069\ufeff]"
+)
+
+
+def entries(i: int, name: str, text: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A message from `name` on channel 1 and one to Alice that failed for the reason `name`,
+    both with `text`, and one to Alice on its way: the history and the pending messages as the
+    gateway of 2.1 publishes them (docs/mqtt-api.md, History and Messages on their way)."""
+    at = iso(time.time() - 60 - i)
+    keys: dict[str, Any] = {"hops": None, "snr_db": None, "suspect": None, "reason": None}
+    history = [
+        keys
+        | {"at": at, "direction": "in", "kind": "channel", "contact_key": None, "channel_index": 1}
+        | {"name": name, "text": text, "state": None, "target": "alerts", "id": None}
+        | {"queued_at": None},
+        keys
+        | {"at": at, "direction": "out", "kind": "contact", "contact_key": ALICE}
+        | {"channel_index": None, "name": name, "text": text, "state": "failed", "target": None}
+        | {"id": f"h{i}", "queued_at": at, "suspect": False, "reason": name},
+    ]
+    pending = {
+        "id": f"p{i}",
+        "queued_at": iso(time.time() - 5),
+        "target": None,
+        "kind": "contact",
+        "contact_key": ALICE,
+        "channel_index": None,
+        "name": name,
+        "text": text,
+        "step": "sent",
+        "attempt": 1,
+        "max_attempts": 3,
+    }
+    return (
+        {"total": 2, "truncated": False, "messages": history},
+        {"total": 1, "truncated": False, "messages": [pending]},
+    )
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
     hass: HomeAssistant,
@@ -738,10 +818,14 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """Each hostile name in turn as a contact's (device and tracker) name, a message's sender, a
-    delivery's target, the name of a contact event, a heard node (raw and labelled), the version
-    and the contact link; each text as a message's and a delivery's: every card shows it escaped
-    on one line that is one HTML element, and no card has a blank line."""
+    """Contract item 9: each hostile name in turn as a contact's (device and tracker) name, a
+    message's sender and recipient, a reason, the name of a contact event, a heard node (raw
+    and labelled), the version and the contact link; each text as a message's, received, sent
+    and on its way, and as a refused one: every card shows it escaped on one line that is one
+    HTML element, no card has a blank line, a Jinja expression stays text, no image and no link
+    but the dashboard's own, one alert in the refused line, no control, direction or invisible
+    character, and a zero-width space only from mt(). The messages are set as the gateway of 2.1
+    announces them (documented())."""
     config = speaking(language, monkeypatch)
     broker = Broker()
     devices = contacts_of(config, tmp_path, broker)
@@ -752,22 +836,26 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
     devices.update(mesh)
     await deliver(hass, config, broker, mesh, telemetry_state="no_position")
     places = {
-        MESSAGE: "sender and text",
-        SENT: "target and text",
         EVENT: "name",
         TABLE: "device name",
         HEARD: "a heard node's label",
         HINT: "tracker not on the map",
         QR: "contact link",
+        "Why someone is missing": "device name, where everyone is",
+        "macro entry(e)": "sender, Latest messages",
     }
+    alices = card(cards(loaded, "alice"), "macro row(e)")
     every: dict[str, str] = {}
-    for i, (key, name, text) in enumerate(zip(KEYS, NAMES, TEXTS, strict=True)):
-        message = InboundMessage(
-            MessageKind.CONTACT, text, 1_760_000_000 + i, NOW + i, sender_prefix=key[:12]
-        )
-        await fire(hass, topics.received, received_payload(message, Contact(key, name), None))
-        failed = DeliveryEvent(f"m{i}", name, DeliveryState.FAILED, text, 1, "no_acknowledgement")
-        await fire(hass, topics.delivery, delivery_payload(failed))
+    corpus = [*zip(KEYS, NAMES, TEXTS, strict=True)]
+    corpus += [(f"{0x60 + i:02x}" * 32, x, x) for i, x in enumerate(INVISIBLE)]
+    without_mt = {i for i, c in enumerate(markdown(loaded)) if "macro mt(x)" not in c["content"]}
+    refused = page(loaded, "alice")["footer"]["card"]["cards"][0]
+    for i, (key, name, text) in enumerate(corpus):
+        history, pending = entries(i, name, text)
+        hass.states.async_set(HISTORY, history["messages"][0]["at"], history)
+        hass.states.async_set(PENDING, "1", pending)
+        duplicate = DeliveryEvent(f"m{i}", ALICE, DeliveryState.DUPLICATE, text, 0)
+        await fire(hass, topics.delivery, delivery_payload(duplicate))
         await fire(
             hass,
             topics.contact_event,
@@ -784,27 +872,38 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
         await fire(
             hass,
             topics.state,
-            state_document(known=True)
-            | {
-                "version": name,
-                "contact_link": name,
-            },
+            state_document(known=True) | {"version": name, "contact_link": name},
         )
         outputs = rendered(hass, loaded)
+        outputs["the refused line"] = render(hass, refused)
         every |= {f"{i} {where}": output for where, output in outputs.items()}
         assert form_findings(outputs, [name, text]) == [], (i, name)
+        for n, (where, output) in enumerate(outputs.items()):
+            assert "<img" not in output, where
+            assert not DROPPED.search(output), (where, name)
+            assert n not in without_mt or "\u200b" not in output, where
+            for href in re.findall(r'href="([^"]*)"', output):
+                assert href.startswith(("./", "https://github.com/")), (where, href)
+        if "{{ 7 * 7 }}" in text:
+            assert "49" not in render(hass, card(loaded, "macro entry(e)"))
+        if i >= len(NAMES):
+            continue
         for needle, place in places.items():
-            assert shown(name) in render(hass, card(loaded, needle)), (name, place)
-        for needle in (MESSAGE, SENT):
-            assert shown(text) in render(hass, card(loaded, needle)), (text, needle)
+            said = render(hass, card(loaded, needle)).replace("\u200b", "")
+            assert shown(name) in said, (name, place)
+        said = render(hass, alices).replace("\u200b", "")
+        assert shown(name) in said, (name, "Alice's thread: the reason, a code")
+        for each in (alices, card(loaded, "macro entry(e)")):
+            said = render(hass, each).replace("\u200b", "")
+            assert shown(text) in said, (text, each["content"][:40])
+        said = outputs["the refused line"].replace("\u200b", "")
+        assert shown(text) in said, text
+        assert said.count("<ha-alert") == 1
     keep(language, every)
     assert problems(caplog) == []
 
 
-# --- what shows when ----------------------------------------------------------------------------
-
-
-async def test_the_script_hint_shows_while_the_script_is_missing(
+async def test_long_texts_with_many_escapes_stay_within_a_card(
     hass: HomeAssistant,
     mqtt: Any,
     hass_ws_client: Any,
@@ -812,19 +911,59 @@ async def test_the_script_hint_shows_while_the_script_is_missing(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """For a household user, the hint "add the script Mesh message" in place of the script's
-    tile until the script exists (HA-09). Red on the released template since Home Assistant
-    2026.10: core decides its `state_not` on a missing entity and answers an error, which hides
-    the card (visibility.py)."""
+    """Contract item 13: 50 messages of 160 characters that escape to several times their
+    length, and 50 contacts: every card stays under 200 000 characters, renders in under 50 ms
+    (the median of five renders), and keeps its lines whole."""
+    config = make_config()
+    many = [Node(f"{i:02x}" * 32, f"Contact {i}", COMPANION) for i in range(16, 66)]
+    broker, mesh = Broker(), household(ALICE_NODE, *many)
+    contacts_of(config, tmp_path, broker).update(mesh)
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    await gateway(hass, config)
+    await deliver(hass, config, broker, mesh)
+    heavy = ("<&>\"'" * 32)[:160]
+    messages = [entries(i, f"Contact {i + 16}", heavy)[0]["messages"][i % 2] for i in range(50)]
+    documented(hass, HISTORY, messages, truncated=True, total=50)
+    outputs = {}
+    for each in markdown(loaded):
+        times = []
+        for _ in range(5):
+            started = time.perf_counter()
+            output = render(hass, each)
+            times.append(time.perf_counter() - started)
+        where = each["content"][:60]
+        outputs[where] = output
+        assert len(output) < 200_000, where
+        assert sorted(times)[2] < 0.05, (where, sorted(times)[2])
+    assert form_findings(outputs, [heavy]) == []
+    assert problems(caplog) == []
+
+
+# --- what shows when ----------------------------------------------------------------------------
+
+
+async def test_no_card_needs_the_guides_script(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Contract item 18, HA-09 (#110), D-22: no card names the script Mesh message, and no
+    condition is a state condition on an entity that may be missing (rule 4): writing is the
+    chat pages' fields."""
     config = make_config()
     loaded = await made(hass, hass_ws_client, config, tmp_path)
-    viewer = await household_viewer(hass, hass_ws_client)
-    hint = card(loaded, WRITE)
-    (tile,) = [c for c in walk(loaded) if c["type"] == "tile" and c["entity"] == WRITE]
-    await gateway(hass, config)
-    assert (await viewer.visible(tile), await viewer.visible(hint)) == (False, True), viewer.errors
-    await guide_script(hass)
-    assert (await viewer.visible(tile), await viewer.visible(hint)) == (True, False)
+    assert WRITE not in json.dumps(loaded)
+    assert "state_not" not in json.dumps(loaded)
+    states = [
+        c
+        for node in walk(loaded)
+        for c in [*node.get("visibility", []), *node.get("conditions", [])]
+        if c.get("condition") == "state"
+    ]
+    assert all(c["entity"] == f"binary_sensor.{PREFIX}_radio" and "attribute" in c for c in states)
     assert problems(caplog) == []
 
 
@@ -1108,14 +1247,16 @@ async def test_the_guides_script_is_a_form_that_sends_for_a_household_user(
 
 # --- machine values as texts --------------------------------------------------------------------
 
+# each step of a delivery as a chat shows it: in the thread (the history's final states, the pending
+# messages' steps) or in the footer's refused line
 STEPS = {
-    "queued": "queued",
-    "sent": "sent",
-    "confirmed": "confirmed",
-    "failed": "failed",
-    "expired": "expired",
-    "duplicate": "not sent again: a duplicate",
-    "rejected": "rejected",
+    "queued": "… waiting to send",
+    "sent": "… sent, waiting for confirmation (try 1 of 3)",
+    "confirmed": "✓✓ delivered",
+    "failed": "✗ not delivered (no acknowledgement)",
+    "expired": "✗ not sent: waited too long (waited too long)",
+    "duplicate": "Not sent again: the same text went to this chat a moment ago.",
+    "rejected": "Not sent: text too long.",
 }
 STATES = {
     "waiting": "waiting",
@@ -1130,7 +1271,7 @@ STATES = {
 }
 
 
-async def test_steps_states_and_contact_events_show_as_texts(
+async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 - one by one
     hass: HomeAssistant,
     mqtt: Any,
     hass_ws_client: Any,
@@ -1138,9 +1279,9 @@ async def test_steps_states_and_contact_events_show_as_texts(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A delivery step, a telemetry state, a contact event and a reason as the dashboard's
-    text; a reason added later, or one of the radio's refusals, as its code: the codes are an
-    open list (docs/mqtt-api.md)."""
+    """A delivery step (in a chat's thread or its refused line), a telemetry state, a contact
+    event and a reason as the dashboard's text; a reason added later, or one of the radio's
+    refusals, as its code: the codes are an open list (docs/mqtt-api.md)."""
     assert set(STEPS) == {s.value for s in DeliveryState}
     assert set(STATES) == set(telemetry.STATES)
     config = make_config()
@@ -1149,7 +1290,12 @@ async def test_steps_states_and_contact_events_show_as_texts(
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     topics = await gateway(hass, config)
     await deliver(hass, config, broker, mesh)
-    event, sent, table = card(loaded, EVENT), card(loaded, SENT), card(loaded, TABLE)
+    event, table = card(loaded, EVENT), card(loaded, TABLE)
+    alice = page(loaded, "alice")
+    thread, line = (
+        card(cards(loaded, "alice"), "macro row(e)"),
+        alice["footer"]["card"]["cards"][0],
+    )
 
     assert render(hass, event) == "No contact event yet."
     await fire(
@@ -1171,30 +1317,50 @@ async def test_steps_states_and_contact_events_show_as_texts(
     added = r"<div><b>Alice</b> added to the radio \d+ min ago</div>"
     assert re.fullmatch(added, render(hass, event))
 
+    at = iso(time.time() - 30)
+    keys = {"kind": "contact", "contact_key": ALICE, "channel_index": None, "name": "Alice"}
+    keys |= {"text": "Gate open", "target": "operator", "id": "m1", "queued_at": at}
     for step, text in STEPS.items():
-        reason = "no_acknowledgement" if step == "failed" else None
-        delivered = DeliveryEvent("m1", "alerts", DeliveryState(step), "Gate open", 1, reason)
-        await fire(hass, topics.delivery, delivery_payload(delivered))
-        why = " (no acknowledgement)" if reason else ""
-        assert render(hass, sent) == f"<div><b>alerts</b> {text}{why}<br>Gate open</div>", step
-    refusal = DeliveryEvent("m3", "alerts", DeliveryState.FAILED, "Gate open", 1, "error_7")
-    await fire(hass, topics.delivery, delivery_payload(refusal))
-    code = "failed (<code>error_7</code>)"  # the radio's refusal: an open list
-    assert render(hass, sent) == f"<div><b>alerts</b> {code}<br>Gate open</div>"
-    forged = DeliveryEvent(
-        "m2", "alerts", DeliveryState.CONFIRMED, "Gate open", 1, rtt_ms=400, suspect=True
+        documented(hass, HISTORY, [])
+        documented(hass, PENDING, [])
+        state = DeliveryState(step)
+        if step in ("queued", "sent"):
+            entry = keys | {"step": step, "attempt": int(step == "sent"), "max_attempts": 3}
+            documented(hass, PENDING, [entry])
+        elif step in ("rejected", "duplicate"):
+            reason = "too_long" if step == "rejected" else None
+            await fire(
+                hass,
+                topics.delivery,
+                delivery_payload(DeliveryEvent("r", ALICE, state, reason=reason)),
+            )
+            assert text in render(hass, line), step
+            continue
+        else:
+            reason = {"failed": "no_acknowledgement", "expired": "queue_ttl"}.get(step)
+            entry = keys | {"at": at, "direction": "out", "state": step, "suspect": False}
+            documented(hass, HISTORY, [entry | {"reason": reason, "hops": None, "snr_db": None}])
+        assert text in render(hass, thread), step
+    documented(
+        hass,
+        HISTORY,
+        [keys | {"at": at, "direction": "out", "state": "failed"} | {"reason": "error_7"}],
     )
-    await fire(hass, topics.delivery, delivery_payload(forged))
-    mark = "confirmed (sooner than the path allows: maybe forged)"  # SEC-001
-    assert render(hass, sent) == f"<div><b>alerts</b> {mark}<br>Gate open</div>"
+    assert "✗ not delivered (<code>error_7</code>)" in render(hass, thread)  # the radio's: open
+    documented(
+        hass,
+        HISTORY,
+        [keys | {"at": at, "direction": "out", "state": "confirmed"} | {"suspect": True}],
+    )
+    assert "⚠ delivered? maybe forged" in render(hass, thread)  # SEC-001
 
-    alice = "<tr><td>Alice</td><td>Companion</td><td>0 min ago</td><td>{}</td></tr>"
+    row = "<tr><td>Alice</td><td>Companion</td><td>0 min ago</td><td>{}</td></tr>"
     for state, text in STATES.items():
         document = contact_document(mesh.contacts[ALICE]) | {"telemetry_state": state}
         await fire(hass, topics.contact(ALICE), document)
-        assert alice.format(text) in render(hass, table), state
+        assert row.format(text) in render(hass, table), state
     await fire(hass, topics.contact(ALICE), contact_document(mesh.contacts[ALICE]))
-    assert alice.format(NONE) in render(hass, table)  # unknown
+    assert row.format(NONE) in render(hass, table)  # unknown
     hilltop = f"<tr><td>Hilltop</td><td>Repeater</td><td>{NONE}</td><td>{NONE}</td></tr>"
     assert hilltop in render(hass, table)  # a repeater is not asked
     assert problems(caplog) == []
@@ -1209,8 +1375,9 @@ async def test_the_cards_say_how_long_ago(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The last message, the last contact event and a contact's last heard time, minutes, hours
-    and days later: each card counts on its own."""
+    """The last contact event and a contact's last heard time, minutes, hours and days later:
+    each card counts on its own. A chat shows a message's clock time: today "10:31", the day
+    before "yesterday 10:31", older ones with the day and the month (D-9)."""
     config = make_config()
     broker, mesh = Broker(), household(ALICE_NODE)
     contacts_of(config, tmp_path, broker).update(mesh)
@@ -1232,11 +1399,21 @@ async def test_the_cards_say_how_long_ago(
     ):
         freezer.tick(timedelta(seconds=seconds))
         ago = said(config, text, n=n)
-        assert render(hass, card(loaded, MESSAGE)) == f"<div><b>Alice</b> {ago}<br>Dinner</div>"
         assert (
             render(hass, card(loaded, EVENT)) == f"<div><b>Alice</b> added to the radio {ago}</div>"
         )
         assert f"<td>Alice</td><td>Companion</td><td>{ago}</td>" in render(
             hass, card(loaded, TABLE)
         )
+    thread = card(cards(loaded, "alice"), "macro row(e)")
+    at = dt_util.as_local(dt_util.utc_from_timestamp(now))
+    keys = {"direction": "in", "kind": "contact", "contact_key": ALICE, "name": "Alice"}
+    documented(hass, HISTORY, [keys | {"at": iso(now), "text": "Dinner"}])
+    output = render(hass, thread)
+    month = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    assert f"<small>{at.day} {month[at.month - 1]} {at:%H:%M}</small>" in output
+    freezer.move_to(dt_util.utc_from_timestamp(now + 86400))
+    assert f"<small>yesterday {at:%H:%M}</small>" in render(hass, thread)
+    freezer.move_to(dt_util.utc_from_timestamp(now + 60))
+    assert f"<small>{at:%H:%M}</small>" in render(hass, thread)
     assert problems(caplog) == []

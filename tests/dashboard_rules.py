@@ -56,7 +56,13 @@ MAPPINGS = (
 SELF_EVIDENT = frozenset({"mon"})
 # rule 16: a text that quotes a label of the dashboard, by msgid: text -> label. The name
 # beside a chat's Send button names the button's label (design §6.2)
-QUOTES: dict[str, str] = {"Return, then Send": "Send"}
+QUOTES: dict[str, str] = {
+    "Return, then Send": "Send",
+    (
+        "Type in the field “Write to {name}” at the bottom, tap Return (↵), then tap Send. "
+        "Return only keeps the text; Send sends it."
+    ): "Write to {name}",
+}
 # rule 19: what m() removes: C0 controls but tab, LF and CR; C1 controls; the invisible
 # characters the gateway drops before it parses a contact link; never U+200C and U+200D
 INVISIBLE = frozenset(
