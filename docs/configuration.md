@@ -182,7 +182,7 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
-| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error. The secret of a key that is not in `senders` is ignored, with a warning |
+| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error. The secret of a key that is not in `senders` is ignored, with a warning; while one is, senders without a secret cannot command (below) |
 | `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `code_locked`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
@@ -205,7 +205,8 @@ authenticator app (TOTP, RFC 6238: SHA-1, 30 s), as in `arm now 492039`; the cod
 and after, each code once (`code_missing`, `code_invalid`, `code_reused` otherwise,
 [mqtt-api.md](mqtt-api.md#commands-command)). A code authenticates the text whatever reached the
 gateway: a host that poses as a radio over TCP, or a node that shares an allowed sender's key
-prefix, cannot command without the secret. Senders without a secret keep the rules above.
+prefix, cannot command without the secret. Senders without a secret keep the rules above,
+except while a secret is ignored (below).
 After 5 wrong codes of a sender within an hour, a command without a code included, the gateway
 refuses that sender's commands without a look at the code (`code_locked`) until the first of
 them is an hour old, and its log warns: someone may be guessing the codes. A restart does not
@@ -230,20 +231,26 @@ systemd credential of its name is read instead, as for the broker password
 30 seconds; phones set theirs from the network. The code travels in the message's text: the
 `received` event and the history show it, which is harmless once the code is used.
 
-**A lost phone.** Remove its key from `senders` and restart the service: that ends the sender's
-commands, and nothing else. The gateway ignores the secret of a key that is not a sender, and
-its start, `check-config`, `doctor` and the installer's self-test warn about it. Then remove the
-secret from the file:
+**A lost phone.** Remove its key from `senders`, remove its secret from the file, and restart
+the service:
 
 ```sh
 meshcore-home-gateway commands revoke <full key>
+systemctl restart meshcore-home-gateway
 ```
 
 `revoke` takes only a key that is no longer in `senders`: a sender without its secret would
 command without a code. To keep the sender with a new phone, run `enrol` again instead; the new
-secret ends the old one. Correcting a sender's key in `senders` leaves its secret behind under
-the old key: the corrected key then commands without a code. While a secret is ignored, the
-warnings also name each sender without one; `enrol` gives it one, and `revoke` removes the old.
+secret ends the old one.
+
+**An ignored secret.** The gateway ignores the secret of a key that is not a sender, and its
+start, `check-config`, `doctor` and the installer's self-test warn about it. Such a secret may
+be a sender's under its key before a correction by hand: the corrected key has none. So while a
+secret is ignored, the commands of every sender without a secret are refused as `code_missing`,
+and the warnings name each such sender. Senders with a secret command with their codes, and the
+rest of the gateway keeps running. `revoke` removes the ignored secret, or `enrol` gives the
+sender one. The gateway reads the file only at its start: restart it after either. These
+refusals do not count as wrong codes.
 
 Commands that the gateway fetches while it connects are rejected: those that waited in the radio
 while the gateway was not running (restart, update, unplugged radio), and those that arrive during

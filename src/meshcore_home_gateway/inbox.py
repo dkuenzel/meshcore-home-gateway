@@ -261,10 +261,11 @@ class Inbox:
         """A wrong code is counted before anything is published (#79): at the limit the
         sender's codes are refused unchecked for a while (core.commands.codes_locked), and the
         log says so. The sender's own code of the time it sent a command that came late (it
-        waited in the radio or the mesh) is no guess and is not counted."""
+        waited in the radio or the mesh) is no guess and is not counted, nor is the refusal of
+        a sender without a secret while one is ignored (#80): it has no code to guess."""
         if decision is None or decision.rejection not in WRONG_CODES or decision.late:
             return
-        if not decision.sender_key:
+        if not decision.sender_key or self.config.commands.secret(decision.sender_key) is None:
             return
         key = decision.sender_key
         if self._ledger.code_failure(key, self._wall()):

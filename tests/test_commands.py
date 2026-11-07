@@ -354,10 +354,59 @@ def test_a_code_serves_once() -> None:
 
 
 def test_senders_without_a_secret_keep_the_rules() -> None:
+    """While no secret is ignored (#80), a sender without one commands without a code."""
+    assert CODED.ignored_secrets == ()
     decision = coded(f"arm now {code()}", key=CAROL)
     assert decision is not None
     assert decision.command is not None
     assert (decision.command.args, decision.command.code_step) == (f"now {code()}", None)
+
+
+FORMER = "d4" * 32  # a key with a secret in the codes file that is no sender (any more)
+IGNORING = dataclasses.replace(CODED, ignored_secrets=(FORMER,))
+
+
+def test_while_a_secret_is_ignored_a_sender_without_one_is_refused() -> None:
+    """#80: a sender's key corrected by hand leaves its secret under the old key, which the
+    gateway ignores, and the corrected key has none. 2.0 did not start then (exit 78); now each
+    sender without a secret is refused as code_missing while a secret is ignored, also with a
+    last word that looks like a code. It is no wrong code (not late, nothing to guess). The
+    other checks come first, and with `reply = "all"` the sender learns the reason."""
+    for text in ("arm", "arm now", f"arm now {code()}"):
+        decision = evaluate_command(dm(text, key=CAROL), IGNORING, CODED_BOOK, {}, NOW)
+        assert decision is not None
+        assert (decision.command, decision.rejection, decision.sender_key, decision.late) == (
+            None,
+            Rejection.CODE_MISSING,
+            CAROL,
+            False,
+        )
+        answering = dataclasses.replace(IGNORING, reply="all")
+        assert answering.reply_text(decision) == "rejected: code_missing"
+    replayed = evaluate_command(dm("arm", key=CAROL), IGNORING, CODED_BOOK, {CAROL: int(NOW)}, NOW)
+    assert replayed is not None
+    assert replayed.rejection is Rejection.REPLAY
+    stranger = evaluate_command(dm("arm", key=BOB), IGNORING, CODED_BOOK, {}, NOW)
+    assert stranger is not None
+    assert stranger.rejection is Rejection.SENDER_NOT_ALLOWED
+
+
+def test_while_a_secret_is_ignored_a_sender_with_one_keeps_its_codes() -> None:
+    """#80: the refusal is for senders without a secret: one with a secret commands with its
+    code and is refused without one or with a wrong one, as before."""
+    accepted = evaluate_command(dm(f"arm now {code()}"), IGNORING, CODED_BOOK, {}, NOW)
+    assert accepted is not None
+    assert accepted.command is not None
+    assert (accepted.command.args, accepted.command.code_step) == ("now", STEP)
+    right = code()
+    wrong = f"{(int(right[0]) + 1) % 10}{right[1:]}"
+    for text, rejection in (
+        ("arm now", Rejection.CODE_MISSING),
+        (f"arm {wrong}", Rejection.CODE_INVALID),
+    ):
+        decision = evaluate_command(dm(text), IGNORING, CODED_BOOK, {}, NOW)
+        assert decision is not None
+        assert (decision.rejection, decision.sender_key) == (rejection, ALICE)
 
 
 def test_the_other_checks_come_before_the_code() -> None:

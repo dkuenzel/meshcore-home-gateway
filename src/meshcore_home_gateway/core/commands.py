@@ -17,7 +17,10 @@ A received message is a command only if all of these hold:
   with CODE_FAILURE_LIMIT wrong codes within CODE_FAILURE_WINDOW_S has its codes refused
   unchecked (RFC 4226, section 7.3): each guess wins with 3 in 10^6, so guesses must be few. The
   sender's code of the time it sent the command, which came too late for the bridge clock, is
-  refused too, but is no guess.
+  refused too, but is no guess;
+* while a code secret is ignored (its key is no sender, #80), a sender without a secret is
+  refused as if its code were missing: the ignored one may be its own under its key before a
+  correction by hand, and the corrected key must not command without a code. It is no guess.
 
 The bridge publishes accepted commands as events; it never executes anything itself.
 """
@@ -45,7 +48,9 @@ class Rejection(StrEnum):
     SENDER_UNVERIFIED = "sender_unverified"  # the bridge cannot rule out a look-alike sender
     STATE_UNWRITABLE = "state_unwritable"  # the replay ledger could not be saved
     BROKER_UNAVAILABLE = "broker_unavailable"  # the event could only reach automations late
-    CODE_MISSING = "code_missing"  # the sender has a code secret; the last word is no code
+    # the sender has a code secret and the last word is no code, or it has none while a secret
+    # is ignored (#80)
+    CODE_MISSING = "code_missing"
     CODE_INVALID = "code_invalid"  # not the sender's code within a time step of the bridge clock
     CODE_REUSED = "code_reused"  # the code of a time step this sender already used
     CODE_LOCKED = "code_locked"  # too many wrong codes of this sender of late: none is checked
@@ -86,7 +91,8 @@ class CommandRules:
     codes_file: str | None = None  # the senders' code secrets, which load_config reads
     secrets: tuple[tuple[str, bytes], ...] = field(default=(), repr=False)  # key, secret
     reply: str = "none"  # REPLIES: answer accepted commands, and also safe rejections
-    # keys with a secret in codes_file that are not senders: ignored, and the start says so (#80)
+    # keys with a secret in codes_file that are not senders: ignored, and the start says so;
+    # while there is one, senders without a secret are refused (#80)
     ignored_secrets: tuple[str, ...] = ()
 
     @classmethod
@@ -193,6 +199,8 @@ def evaluate_command(
             last_step = (last_codes or {}).get(sender)
             sent = message.sender_timestamp
             args, step, rejection, late = _check_code(args, secret, last_step, now, sent)
+    elif rejection is None and sender is not None and rules.ignored_secrets:
+        rejection = Rejection.CODE_MISSING  # until revoked or the sender enrolled (#80)
     if sender is None or rejection is not None:
         return CommandDecision(word, rejection=rejection, sender_key=sender, late=late)
     command = Command(word, args, sender, message.sender_timestamp, step)

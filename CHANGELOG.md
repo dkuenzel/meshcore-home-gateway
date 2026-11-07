@@ -116,10 +116,14 @@ format, the command line and Home Assistant discovery are public interfaces
   Assistant went down with the sender's commands. The installer's `--reconfigure` got there on
   its own when a sender was unticked or the insecure broker was declined. The gateway now ignores
   the secret of a key that is not a sender, and its start, `check-config` and `doctor` warn about
-  it; while one is ignored, they also name each sender without a secret, which a key corrected by
-  hand would be. The installer shows the self-test's report also when it passed, with these
-  warnings. 2.0 refuses such a secret again (exit 78): before a downgrade to 2.0, remove it with
-  `commands revoke` (#80).
+  it. Such a secret may be a sender's under its key before a correction by hand, and the
+  corrected key has none: so while one is ignored, the commands of every sender without a secret
+  are refused as `code_missing`, which counts as no wrong code, and the warnings name each such
+  sender. That lasts until `commands revoke` removes the secret or `commands enrol` gives the
+  sender one, and the service restarts. Senders with a secret command with their codes. The
+  installer shows the self-test's report also when it passed, with these warnings. 2.0 refuses
+  such a secret again (exit 78): before a downgrade to 2.0, remove it with `commands revoke`
+  (#80).
 
 ## [2.0.0] - 2026-11-07
 

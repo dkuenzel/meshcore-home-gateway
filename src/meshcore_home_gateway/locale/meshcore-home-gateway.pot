@@ -399,10 +399,11 @@ msgstr ""
 msgid "the code secret of {key} is in {path}: restart the service to use it (systemctl restart meshcore-home-gateway). Add the line above to the sender's authenticator app (as a QR code: qrencode -t ansiutf8 'LINE'), or type in {secret}. Commands from this sender then end with the app's 6-digit code; its earlier secret no longer works."
 msgstr ""
 
-#. the service reads the codes file and the senders only when it starts
+#. the service reads the codes file only when it starts; while it ignores a
+#. secret, it refuses the commands of senders without one (#80)
 #: src/meshcore_home_gateway/cli/codes.py
 #, python-brace-format
-msgid "the code secret of {key} is removed from {path}. The service reads the file and [commands] senders at its start: restart it after a change of the senders (systemctl restart meshcore-home-gateway)."
+msgid "the code secret of {key} is removed from {path}. The service reads the file at its start: restart it to apply this (systemctl restart meshcore-home-gateway)."
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/codes.py
@@ -1517,11 +1518,11 @@ msgstr ""
 msgid "commands.codes_file: {key} has a code secret but is not in commands.senders: the secret is ignored; '{command}' removes it"
 msgstr ""
 
-#. sender is a full public key; command is the command line that gives it
-#. a code secret
+#. security text (docs/translations.md): sender is a full public key;
+#. command is the command line that gives it a code secret; code_missing stays as it is
 #: src/meshcore_home_gateway/config_checks.py
 #, python-brace-format
-msgid "commands.senders: {sender} has no code secret while one is ignored: if it is the ignored key corrected, its commands now pass without a code; '{command}' gives it one"
+msgid "commands.senders: {sender} has no code secret while one is ignored: its commands are refused (code_missing) until '{command}' gives it one or the ignored one is revoked; restart the service after either"
 msgstr ""
 
 #: src/meshcore_home_gateway/config_checks.py

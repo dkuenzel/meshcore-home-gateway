@@ -12,6 +12,9 @@ import pytest
 
 from meshcore_home_gateway.cli import EX_FAILURE, EX_OK, EX_USAGE, main
 from meshcore_home_gateway.config import load_config
+from meshcore_home_gateway.core.commands import CODE_STEP_S, code_at, evaluate_command
+from meshcore_home_gateway.core.contacts import Contact, ContactBook
+from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
 
 ALICE, CAROL = "a1" * 32, "c3" * 32
 
@@ -270,3 +273,53 @@ def test_revoke_leaves_a_file_it_cannot_read_as_it_is(
     assert (result, out) == (EX_FAILURE, "")
     assert "cannot read" in err
     assert codes.read_text(encoding="utf-8") == "not toml\n"
+
+
+FIXED = "a2" * 32  # Alice's key as corrected by hand
+NOW = 1_800_000_000.0
+
+
+def verdict(config: Path, key: str, text: str) -> str:
+    """The verdict on a command of `key` by the configuration as the service loads it at its
+    start: `accepted` or the reason."""
+    message = InboundMessage(
+        kind=MessageKind.CONTACT,
+        text=text,
+        sender_timestamp=int(NOW) - 5,
+        received_at=NOW,
+        text_type=TextType.PLAIN,
+        sender_prefix=key[:12],
+    )
+    book = ContactBook([Contact(k, "x") for k in (ALICE, CAROL, FIXED)])
+    decision = evaluate_command(message, load_config(config).commands, book, {}, NOW)
+    assert decision is not None
+    return "accepted" if decision.command is not None else str(decision.rejection)
+
+
+def test_a_corrected_key_commands_only_after_enrol_or_revoke(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#80: correcting a sender's key by hand leaves its secret under the old key. 2.0 then did
+    not start (exit 78); now the commands of each sender without a secret are refused as
+    code_missing, and check-config says so, until `enrol` gives the sender a secret or `revoke`
+    removes the old one. The service reads the files at its start: each verdict loads them
+    anew, as a restart does."""
+    config = config_file(tmp_path)
+    enrol(config, ALICE, capsys)
+    config.write_text(config.read_text(encoding="utf-8").replace(ALICE, FIXED), encoding="utf-8")
+    assert [verdict(config, key, "arm now") for key in (FIXED, CAROL)] == ["code_missing"] * 2
+    assert main(["check-config", "--config", str(config)]) == EX_OK
+    err = capsys.readouterr().err
+    for sender in (FIXED, CAROL):
+        refused = f"{sender} has no code secret while one is ignored: its commands are refused"
+        assert refused in err
+    enrol(config, FIXED, capsys)
+    code = code_at(dict(load_config(config).commands.secrets)[FIXED], int(NOW // CODE_STEP_S))
+    assert verdict(config, FIXED, f"arm now {code}") == "accepted"
+    assert verdict(config, FIXED, "arm now") == "code_missing"
+    assert verdict(config, CAROL, "arm now") == "code_missing"
+    status, _, err = revoke(config, ALICE, capsys)
+    assert status == EX_OK
+    assert "The service reads the file at its start: restart it to apply this" in err
+    assert verdict(config, CAROL, "arm now") == "accepted"
+    assert verdict(config, FIXED, f"arm now {code}") == "accepted"

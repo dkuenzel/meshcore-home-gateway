@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import inbox as inbox_module
+from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.commands import (
     CODE_FAILURE_LIMIT,
     CODE_FAILURE_WINDOW_S,
@@ -597,6 +598,96 @@ def test_genuine_codes_that_came_late_do_not_lock_their_sender_out(tmp_path: Pat
     scenario(main)
     stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
     assert not stored.get("command_code_failures")
+
+
+SECRET = b"12345678901234567890"
+FORMER = "d4" * 32  # a key with a secret in the codes file that is no sender (any more)
+
+
+def ignoring(enrolled: bool = False, revoked: bool = False) -> Config:
+    """Alice and Bob are senders and Alice has a code secret; the codes file also holds the
+    secret of FORMER, as after a sender's key was corrected by hand, unless revoked; with
+    `enrolled`, Bob has a secret too. As load_config reads the files at the start."""
+    base = make_config()
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    secrets = ((alice, SECRET), (bob, SECRET[::-1])) if enrolled else ((alice, SECRET),)
+    commands = dataclasses.replace(
+        base.commands,
+        senders=frozenset({alice, bob}),
+        secrets=secrets,
+        ignored_secrets=() if revoked else (FORMER,),
+    )
+    return dataclasses.replace(base, commands=commands)
+
+
+def test_while_a_code_secret_is_ignored_senders_without_one_cannot_command(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#80: a sender's key corrected by hand leaves its secret under the old key, ignored, and
+    the corrected key without one. 2.0 did not start then (exit 78). Now the gateway runs, and
+    while a secret is ignored the commands of a sender without one are refused as code_missing:
+    published on `received`, never as a command event. They are no wrong codes: no count, no
+    lockout warning. A sender with a secret commands with its code. The codes file is read at
+    the start: after `commands revoke` and a restart the sender without a secret commands."""
+    caplog.set_level(logging.WARNING)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    tries = CODE_FAILURE_LIMIT + 1
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(tries):
+                radio.queue_direct_message(BOB.public_key[:6], "arm now", NOW - 100 + n)
+            right = f"arm now {code_at(SECRET, int(NOW // CODE_STEP_S))}"
+            radio.queue_direct_message(ALICE.public_key[:6], right, NOW - 50)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["sender_key"], command["args"]) == (alice, "now")
+            refused = [(r["sender_key"], r["command"]) for r in bus.payloads("/received")]
+            assert refused == [
+                (bob, {"word": "arm", "accepted": False, "reason": "code_missing"})
+            ] * tries + [(alice, {"word": "arm", "accepted": True, "reason": None})]
+            assert len(bus.payloads("/command")) == 1
+        assert "wrong command codes" not in caplog.text
+        restarted = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(revoked=True), restarted, tmp_path) as (_, bus, _notes):
+            restarted.queue_direct_message(BOB.public_key[:6], "arm now", NOW - 40)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["sender_key"], command["args"]) == (bob, "now")
+
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert not stored.get("command_code_failures")
+
+
+def test_a_sender_enrolled_while_a_secret_is_ignored_commands_with_its_code(
+    tmp_path: Path,
+) -> None:
+    """#80: `commands enrol` and a restart are the other way out: the sender then commands with
+    its code, though the old secret is still ignored. Its refusals before were no wrong codes,
+    so its codes are not locked (code_locked)."""
+    bob = BOB.public_key[:6]
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(CODE_FAILURE_LIMIT):
+                radio.queue_direct_message(bob, "arm", NOW - 100 + n)
+            await bus.wait_for(
+                "/received", lambda r: len(bus.payloads("/received")) == CODE_FAILURE_LIMIT
+            )
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_missing"] * CODE_FAILURE_LIMIT
+        restarted = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(enrolled=True), restarted, tmp_path) as (_, bus, _notes):
+            right = code_at(SECRET[::-1], int(NOW // CODE_STEP_S))
+            restarted.queue_direct_message(bob, "arm now", NOW - 41)
+            restarted.queue_direct_message(bob, f"arm now {right}", NOW - 40)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["sender_key"], command["args"]) == (BOB.public_key.hex(), "now")
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_missing", None]
+
+    scenario(main)
 
 
 def test_commands_are_answered_when_asked(tmp_path: Path) -> None:

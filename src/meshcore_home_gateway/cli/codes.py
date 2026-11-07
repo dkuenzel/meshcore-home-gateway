@@ -110,11 +110,11 @@ def _revoke(args: argparse.Namespace) -> int:
             PREFIX + tr("{key} has no code secret in {path}", key=key, path=path), file=sys.stderr
         )
         return EX_FAILURE
-    # Translators: the service reads the codes file and the senders only when it starts
+    # Translators: the service reads the codes file only when it starts; while it ignores a
+    # secret, it refuses the commands of senders without one (#80)
     done = tr(
-        "the code secret of {key} is removed from {path}. The service reads the file and "
-        "[commands] senders at its start: restart it after a change of the senders (systemctl "
-        "restart meshcore-home-gateway).",
+        "the code secret of {key} is removed from {path}. The service reads the file at its "
+        "start: restart it to apply this (systemctl restart meshcore-home-gateway).",
         key=key,
         path=path,
     )

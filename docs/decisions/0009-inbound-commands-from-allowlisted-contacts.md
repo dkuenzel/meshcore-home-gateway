@@ -155,4 +155,9 @@ command. The hardware checklist repeats the restart case.
   (replay, age, code, state file, broker). A sender the checks did not identify gets no answer,
   which would tell a stranger the words and that its key is not allowed. The answer goes through
   the queue and the airtime budget like any message; it is off by default.
+* Amended on 2026-11-07 (#80): the secret of a key that is not a sender no longer stops the
+  service; it is ignored, with a warning, and `meshcore-home-gateway commands revoke` removes it.
+  While one is ignored, senders without a secret are refused (`code_missing`) until it is revoked
+  or they get one: it may be a sender's under its key before a correction by hand, and the
+  corrected key must not command without a code.
 * Revisit if MeshCore adds signed commands or a challenge–response mechanism for companion clients.
