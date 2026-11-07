@@ -29,8 +29,10 @@ flowchart LR
   path reset to flood after unanswered attempts, as the official clients do.
 - **Respectful of the shared channel:** an airtime budget computed from the radio's own modulation
   settings, duplicate suppression ("one alert per cause"), a bounded queue with expiry.
-- **Receive** every message as JSON, with sender, channel, SNR and hop count; retries of a sender
-  are deduplicated.
+- **Receive** the messages of contacts and of the channels that are a target as JSON (every
+  channel with `[messages] publish_channels = "all"`), with sender, channel, SNR and hop count;
+  retries of a sender are deduplicated, and a sender or a channel that floods is cut to bursts of
+  10 per sender and 20 per channel.
 - **Commands** only from direct messages of allowlisted contacts (bound to their full public key),
   with replay protection; channel messages never command.
 - **Telemetry of the household's companions:** battery, sensor readings and position, asked only

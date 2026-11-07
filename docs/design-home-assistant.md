@@ -154,8 +154,11 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   made again, as for the map). A hint names a tracker of this gateway whose contact's key no
   listed tracker has.
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
-  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
-  `["@trackers@"]`, one conditional in comment lines, and texts marked `_("…")` with
+  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@contact@` (how the contacts'
+  entity IDs begin), `@node@`, `@version@`, `["@trackers@"]` (the map's trackers) and
+  `["@controls@"]` (the contacts' telemetry switches and remove buttons), two conditionals in
+  comment lines (`# @if trackers` while the map lists a tracker, `# @if controls` while there
+  are controls, each with `# @else` and `# @end`), and texts marked `_("…")` with
   `msgctxt "dashboard"`. A marked whole YAML value becomes a quoted scalar; a marked text inside a
   card's content becomes the text, `{node}` and `{version}` filled in, any other field the Jinja
   variable of that name. The same inputs give the same bytes.

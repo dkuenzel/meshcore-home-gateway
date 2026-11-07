@@ -199,3 +199,100 @@ def test_the_unit_is_not_said_to_wait_for_a_synchronised_clock() -> None:
     for block in naming:
         assert "systemd-time-wait-sync" in block, block
         assert "chrony-wait" in block, block
+
+
+# --- the user documents describe 2.0 (#106) ---------------------------------------------------
+
+
+def test_the_privacy_page_names_the_event_topics_the_gateway_has() -> None:
+    """#106: the privacy page named `message` events, a topic the gateway never had; received
+    messages go to `received` and `contacts/<key>/received`. Every topic it names as events is
+    one the gateway publishes events on."""
+    from meshcore_home_gateway.mqtt.topics import Topics
+
+    topics = Topics("meshcore", "radio1")
+    events = {
+        topic.removeprefix(topics.root + "/")
+        for topic in (
+            topics.received,
+            topics.command,
+            topics.delivery,
+            topics.rx,
+            topics.contact_event,
+            topics.node_event,
+            topics.setting_event,
+            topics.telemetry_event,
+            topics.contact_received("<key>"),
+        )
+    }
+    privacy = _words((ROOT / "docs" / "privacy.md").read_text(encoding="utf-8"))
+    named = set(re.findall(r"`([\w/<>]+)`(?:,| and| or)? (?:\S+ )?events\b", privacy))
+    listed = re.search(r"\| Events on the broker \(([^)]*)\)", privacy)
+    assert listed is not None
+    named |= set(re.findall(r"`([\w/<>]+)`", listed[1]))
+    assert {"received", "contacts/<key>/received"} <= named
+    assert named <= events, named - events
+
+
+def test_the_readme_says_which_messages_are_published() -> None:
+    """#106: "Receive every message as JSON": since 2.0.0 only the channels of targets are
+    published by default, and a sender or a channel that floods is cut to bursts."""
+    from meshcore_home_gateway.config import MessagesConfig
+    from meshcore_home_gateway.inbox import RECEIVED_PER_CHANNEL_BURST, RECEIVED_PER_SENDER_BURST
+
+    assert MessagesConfig().publish_channels == "targets"
+    readme = _words((ROOT / "README.md").read_text(encoding="utf-8"))
+    receive = readme.partition("- **Receive**")[2].partition(" - **")[0]
+    assert "every message" not in receive
+    assert "the channels that are a target" in receive
+    assert f"bursts of {int(RECEIVED_PER_SENDER_BURST)} per sender" in receive
+    assert f"{int(RECEIVED_PER_CHANNEL_BURST)} per channel" in receive
+
+
+def test_the_update_note_says_whom_telemetry_asks() -> None:
+    """#106: the note on 2.0.0's privacy defaults said that telemetry asks only the companions
+    the household includes; `ask = "household"` also asks the contact targets and the command
+    senders (configuration.md), at once after the update."""
+    configuration = _words((ROOT / "docs" / "configuration.md").read_text(encoding="utf-8"))
+    ask = configuration.partition("| `ask` |")[2].partition(" | `")[0]
+    assert "the contact targets and command senders" in ask
+    deployment = _words((ROOT / "docs" / "deployment.md").read_text(encoding="utf-8"))
+    note = deployment.partition("**The privacy defaults after an update to 2.0.0:**")[2]
+    assert "and the contact targets and command senders, at once" in note.partition(" * **")[0]
+
+
+def test_the_guide_names_the_sensors_and_the_entity_prefix() -> None:
+    """#106: the guide said that *Telemetry* and *Telemetry state* are for companions only, while
+    `[telemetry] ask_types` gives sensors both, and that contact entity IDs start with `mesh_`,
+    while `[homeassistant] contact_entity_prefix` chooses the start."""
+    from meshcore_home_gateway.config import HomeAssistantConfig, TelemetryConfig
+
+    assert TelemetryConfig(ask_types=frozenset({"chat", "sensor"})).node_types != frozenset(
+        TelemetryConfig().node_types
+    )
+    assert HomeAssistantConfig().contact_entity_prefix == "mesh"
+    guide = (ROOT / "docs" / "home-assistant.md").read_text(encoding="utf-8")
+    telemetry = ("| `switch.mesh_alice_telemetry`", "| `sensor.mesh_alice_telemetry_state`")
+    rows = {row.split(" | ")[0]: row for row in guide.splitlines() if row.startswith(telemetry)}
+    assert len(rows) == 2
+    for row in rows.values():
+        assert "companions only" not in row, row
+        assert "ask_types`" in row, row
+    ids = _words(guide).partition("* **Entity IDs**")[2].partition(" * **")[0]
+    assert "contact_entity_prefix`" in ids
+
+
+def test_the_design_names_every_placeholder_of_the_dashboard_template() -> None:
+    """#106: the design's bullet on the template named neither `@contact@`, `["@controls@"]`
+    nor the second conditional, which `dashboard.py` fills in and keeps."""
+    module = (ROOT / "src" / "meshcore_home_gateway" / "dashboard.py").read_text(encoding="utf-8")
+    described = module.partition('"""')[2].partition('"""')[0]
+    placeholders = set(re.findall(r'\[?"?@\w+@"?\]?', described))
+    flags = set(re.findall(r"# @if (\w+)", described))
+    design = _words((ROOT / "docs" / "design-home-assistant.md").read_text(encoding="utf-8"))
+    bullet = design.partition("* **The template** is")[2].partition(" * **")[0]
+    assert {"@contact@", '["@controls@"]'} <= placeholders
+    for placeholder in placeholders:
+        assert f"`{placeholder}`" in bullet, placeholder
+    for flag in flags | {"trackers"}:
+        assert f"`# @if {flag}`" in bullet, flag

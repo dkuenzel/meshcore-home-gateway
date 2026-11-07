@@ -315,7 +315,8 @@ pct stop 105 && pct destroy 105
   and points to [Roll back](#update-reconfigure-remove).
 * **The privacy defaults after an update to 2.0.0:** only the messages of the channels that are a
   target are published, of other people's radios only their keys and types, and telemetry asks
-  only the companions the household includes. Switch *Telemetry* on for each of the household's
+  only the companions the household includes, and the contact targets and command senders, at
+  once. Switch *Telemetry* on for each of the household's
   companions (or `meshcore-home-gateway contacts telemetry KEY on`); the changelog's
   **Breaking:** entries name the settings that keep the old behaviour.
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with

@@ -115,6 +115,18 @@ format, the command line and Home Assistant discovery are public interfaces
   waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled,
   neither by default nor in a container; the unit, the design, the guide and the entry of 2.0.0a1
   said the service starts after the clock was synchronised.
+- User documents that 2.0.0 left outdated (#106): the privacy page named `message` events, a
+  topic the gateway never had, where received messages go to `received` and
+  `contacts/<key>/received` ([privacy.md](docs/privacy.md)); the README said that every message
+  is published, where only the channels that are a target are, by default, and a flood is cut to
+  bursts; the update note of 2.0.0 left out that telemetry also asks the contact targets and
+  command senders, at once after the update
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)), as did the summary of 2.0.0
+  above; the Home Assistant guide called *Telemetry* and *Telemetry state* the companions' alone,
+  where `[telemetry] ask_types` gives sensors both, and said that contact entity IDs start with
+  `mesh_`, where `contact_entity_prefix` chooses the start
+  ([home-assistant.md](docs/home-assistant.md#contacts)); and the design's note on the
+  dashboard's template named neither `@contact@`, `["@controls@"]` nor its second conditional.
 
 ### Security
 
