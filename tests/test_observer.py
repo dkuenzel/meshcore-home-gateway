@@ -237,6 +237,25 @@ def test_contacts_heard_by_advert_and_message_and_the_history(tmp_path: Path) ->
     scenario(main)
 
 
+def test_messages_that_waited_in_the_radio_share_the_time_of_the_connect(tmp_path: Path) -> None:
+    """The radio's message frame carries no time of its own, only the sender's clock
+    (MyMesh.cpp:440-466, 558-582): the messages taken from the radio at the connect get the
+    gateway's time then, one `at` for all. Of two with one `at`, the one listed first came
+    later, in the order the radio received them (#113, docs/mqtt-api.md)."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    for n, text in enumerate(("one", "two", "three")):
+        radio.queue_channel_message(0, f"Carol: {text}", int(NOW) - 3600 + n, push=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 3)
+            messages = history["messages"]
+            assert [m["text"] for m in messages] == ["three", "two", "one"]
+            assert {m["at"] for m in messages} == {iso(NOW)}
+
+    scenario(main)
+
+
 def test_the_history_survives_a_restart(tmp_path: Path) -> None:
     path = tmp_path / "history.sqlite3"
     config = make_config()

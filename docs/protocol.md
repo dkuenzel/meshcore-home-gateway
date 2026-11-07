@@ -258,6 +258,11 @@ legacy layout; the gateway decodes both.
 | 7 | 4 | 4 | sender timestamp |
 | 11 | 8 | n | `"<sender name>: <text>"`; the name is not authenticated |
 
+No field says when the radio received the message: the sender timestamp is the sender's clock,
+which anyone sets. The gateway stamps a message with its own clock when it takes it from the
+radio, so the messages that waited in the radio while the gateway was away get the time of the
+connect, in the order the radio received them (#113).
+
 `SYNC_NEXT_MESSAGE` can also return `CHANNEL_DATA_RECV` (27, binary channel data), which the gateway
 skips.
 

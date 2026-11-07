@@ -210,7 +210,7 @@ judged on the text as it came.
 | `sender_name` | contact name from the same table; for channels the **claimed** name from the text, not authenticated |
 | `target` | alias of a configured target matching the sender or channel, else `null` |
 | `channel_index` | channel messages only |
-| `sent_at` | sender's clock; `received_at` the gateway's clock |
+| `sent_at` | sender's clock; `received_at` the gateway's clock when it took the message from the radio: for one that waited in the radio while the gateway was away, the time of the connect ([`history`](#history-history)) |
 | `snr_db` | signal-to-noise ratio of the last hop, 0.25 dB steps; `null` for legacy frames |
 | `hops` | repeaters a flooded message passed; `null` if it arrived by direct route |
 | `command` | `null` unless the first word is a command word; then `accepted` and `reason` |
@@ -566,6 +566,14 @@ kept in the gateway's history database, so they survive a restart ([ADR 0016](de
                "target": "family", "id": null, "queued_at": null, "suspect": null,
                "reason": null}]}
 ```
+
+`at` is the gateway's clock: for an incoming message when it took the message from the radio,
+for an outgoing one when it became final. The radio does not say when it received a message
+([protocol.md](protocol.md#3-responses)), so the messages that waited in the radio while
+the gateway was away share the time of the connect (#113). Of two with the same `at`, the one
+listed first came later: a reader that sorts by `at` keeps that order with a stable sort, or uses
+the list's. After the host's clock went back, a later message can have an earlier `at` and is
+listed below the earlier one.
 
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message

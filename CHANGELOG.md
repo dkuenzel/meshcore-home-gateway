@@ -115,6 +115,11 @@ format, the command line and Home Assistant discovery are public interfaces
   genuine acknowledgement of a long text can read `suspect`. Set the gateway's radio to the
   fastest coding rate of its mesh
   ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#90).
+- The guide says what `at` of a received message in `history` and `received_at` of `received`
+  are: when the gateway took the message from the radio, whose frame holds no time of its own.
+  The messages that waited in the radio while the gateway was away share the time of the
+  connect; of two with one `at`, the one listed first came later, and a reader that sorts by
+  `at` keeps that with a stable sort ([mqtt-api.md](docs/mqtt-api.md#history-history)) (#113).
 
 ## [2.0.0] - 2026-11-07
 
