@@ -9,8 +9,8 @@ written; this log is the only file of the folder that changes as the work goes o
 pull requests merged on `main` (#37 to #72), 6 of them with a part deferred; 34 accepted, 10
 deferred with the condition that brings each back, 2 rejected. The deferred items, the deferred
 parts and the drafts for MeshCore that were not sent are listed in
-[Deferred, to be tracked](#deferred-to-be-tracked): each is to get an issue of its own (label
-`audit-2026-11`), which its row then names.
+[Deferred, to be tracked](#deferred-to-be-tracked): each has an issue of its own (label
+`audit-2026-11`), which its row names.
 
 | Decision | Meaning |
 | --- | --- |
@@ -298,27 +298,27 @@ Decisions taken with the maintainer on 2026-11-02 that shape many rows:
 ## Deferred, to be tracked
 
 What waits for a condition, and what this project cannot do itself, with the condition that
-brings it back. *Issue* names the issue that tracks it once it is opened; until then, a dash.
+brings it back. *Issue* names the issue that tracks it (label `audit-2026-11`).
 
 | Item | What waits | Back when | Issue |
 | --- | --- | --- | --- |
-| IMP-003 | Incremental reads of the contact table | contact re-reads show up as a load | – |
-| EXT-001 | A Home Assistant add-on | a test host with Home Assistant OS, and a record that revisits ADR 0002 and ADR 0006 | – |
-| EXT-002 | PyPI, a Debian package, an image | the maintainer opens a channel (decided on 2026-11-05: none for now) | – |
-| EXT-003 | A radio over Bluetooth (BLE) | a record for the runtime dependency (ADR 0005), BlueZ in the container and hardware to test | – |
-| EXT-006 | Logging in to repeaters | a record and a threat model for holding another node's administration password (ADR 0014) | – |
-| EXT-007 | Traces and a map of repeaters | a design of each, within the airtime and without strangers' positions | – |
-| EXT-010 | Command 50 in place of command 39 | a firmware release deprecates command 39 (the firmware tests of each release show it) | – |
-| EXT-012 | A web front end | a project of its own (ADR 0021, "later") | – |
-| EXT-014 | Two gateways that coordinate | a household that needs it; the cheap part is done (ARC-015) | – |
-| EXT-015 | Translated guides | the first translated catalogs and a speaker's review (ADR 0019) | – |
-| OPS-003 | The host-side udev rule (deferred part) | a Proxmox host to verify it on, and a record, as ADR 0006 keeps the host free of the gateway's files | – |
-| IMP-023 | The same udev rule (deferred part, OPS-003) | as OPS-003 | – |
-| CODE-009 | A mutation run (deferred part) | a calibration of the tests is due, such as before a major version | – |
-| IMP-008 | A signature of the documents (deferred part) | a consumer can verify one (EXT-012) | – |
-| SEC-001 | Authenticated acknowledgements in the firmware (option 5): the draft [Unauthenticated acknowledgements](../../upstream/acknowledgements.md), not sent | the maintainer sends it as a private vulnerability report | – |
-| ARC-010 | The advert's flags in the ADVERT push: the draft [What the ADVERT push carries](../../upstream/advert-push.md), not sent | the maintainer sends it as a public issue | – |
-| 2.0.0 | A bounded step back for the radio's clock: the draft [A bounded step back for the clock](../../upstream/clock-step-back.md), not sent | the maintainer sends it as a public issue | – |
+| IMP-003 | Incremental reads of the contact table | contact re-reads show up as a load | #118 |
+| EXT-001 | A Home Assistant add-on | a test host with Home Assistant OS, and a record that revisits ADR 0002 and ADR 0006 | #119 |
+| EXT-002 | PyPI, a Debian package, an image | the maintainer opens a channel (decided on 2026-11-05: none for now) | #120 |
+| EXT-003 | A radio over Bluetooth (BLE) | a record for the runtime dependency (ADR 0005), BlueZ in the container and hardware to test | #121 |
+| EXT-006 | Logging in to repeaters | a record and a threat model for holding another node's administration password (ADR 0014) | #122 |
+| EXT-007 | Traces and a map of repeaters | a design of each, within the airtime and without strangers' positions | #123 |
+| EXT-010 | Command 50 in place of command 39 | a firmware release deprecates command 39 (the firmware tests of each release show it) | #124 |
+| EXT-012 | A web front end | a project of its own (ADR 0021, "later") | #125 |
+| EXT-014 | Two gateways that coordinate | a household that needs it; the cheap part is done (ARC-015) | #126 |
+| EXT-015 | Translated guides | the first translated catalogs and a speaker's review (ADR 0019) | #127 |
+| OPS-003 | The host-side udev rule (deferred part) | a Proxmox host to verify it on, and a record, as ADR 0006 keeps the host free of the gateway's files | #128 |
+| IMP-023 | The same udev rule (deferred part, OPS-003) | as OPS-003 | #128 |
+| CODE-009 | A mutation run (deferred part) | a calibration of the tests is due, such as before a major version | #129 |
+| IMP-008 | A signature of the documents (deferred part) | a consumer can verify one (EXT-012) | #130 |
+| SEC-001 | Authenticated acknowledgements in the firmware (option 5): the draft [Unauthenticated acknowledgements](../../upstream/acknowledgements.md), not sent | the maintainer sends it as a private vulnerability report | #131 |
+| ARC-010 | The advert's flags in the ADVERT push: the draft [What the ADVERT push carries](../../upstream/advert-push.md), not sent | the maintainer sends it as a public issue | #132 |
+| 2.0.0 | A bounded step back for the radio's clock: the draft [A bounded step back for the clock](../../upstream/clock-step-back.md), not sent | the maintainer sends it as a public issue | #133 |
 
 ## Work packages
 
