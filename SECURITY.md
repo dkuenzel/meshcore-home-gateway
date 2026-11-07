@@ -64,6 +64,11 @@ the authority (`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them
   a merged change before it is signed and published. It ships the program of a release
   candidate tagged before; pre-releases, candidates too, are tagged once CI passed on them and
   reach only installations that name them.
+- `release.yml` publishes a tag only if CI or `release-due.yml` would have made it, also one
+  pushed by hand: its commit is on `main`, and a release is on the commit that wrote its version,
+  a day later, with CI passed on it on `main`. This check is part of the tagged commit: a tag on
+  a commit off `main` brings that commit's `release.yml`, which can leave the check out. Such a
+  tag is kept from being made only by who may create tags (below).
 - Release tags `v*` (ruleset `v-star`): cannot be moved or deleted
   ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)).
 - Releases are immutable once published. Each carries Sigstore-signed build provenance (SLSA Build

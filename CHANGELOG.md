@@ -100,6 +100,15 @@ format, the command line and Home Assistant discovery are public interfaces
   ([deployment.md](docs/deployment.md#5-troubleshooting)). The system test of a broker restart
   read the state paho sent again for the current one, and failed now and then (#101).
 
+### Security
+
+- The release workflow publishes a tag only if CI on `main` or the daily release run would have
+  made it: its commit must be on `main`, and a release must be on the commit that wrote its
+  version, a day after it, with CI passed on it on `main`. Before, a `v*` tag pushed by hand on
+  any commit was signed and published within minutes. The check is part of the tagged commit, so
+  a tag on a commit off `main` can still bring a workflow without it
+  ([SECURITY.md](SECURITY.md#how-the-repository-and-the-releases-are-protected), #84).
+
 ## [2.0.0] - 2026-11-07
 
 The second stable release. It ships the program of 2.0.0rc3, which CI, the installer's self-test

@@ -343,7 +343,7 @@ def test_the_release_is_built_where_no_test_or_lint_tool_runs() -> None:
     ]
     assert releasing == ["build", "rebuild"]
     assert "diff built/release/SHA256SUMS dist/release/SHA256SUMS" in job_commands(jobs["rebuild"])
-    assert "    needs: [check, build, rebuild]\n" in jobs["publish"]
+    assert "    needs: [admit, check, build, rebuild]\n" in jobs["publish"]
     lock = (ROOT / "requirements" / "release.txt").read_text(encoding="utf-8")
     locked = set(re.findall(r"^([\w.-]+)==", lock, flags=re.MULTILINE))
     assert {"build", "flit-core"} <= locked
@@ -494,6 +494,31 @@ def test_a_release_is_tagged_a_day_after_its_version_commit() -> None:
     assert 'gh run list --workflow ci.yml --commit "$SHA" --event push --status success' in due
     assert "        if: steps.tested.outputs.passed == 'true'\n" in due
     assert 'gh run list --workflow release.yml --branch "$TAG" --json status --jq length' in due
+
+
+def test_release_yml_publishes_only_a_tag_ci_would_have_made() -> None:
+    """#84: a tag pushed by hand started the release at once, without the commit on main, CI on
+    main or the day of waiting. The first job admits a tag on main, a release only on its
+    version commit a day later with CI passed; nothing is built or published before it. A tag on
+    a commit off main brings its own release.yml, which may lack the job (SECURITY.md)."""
+    jobs = workflow_jobs("release.yml")
+    admit = jobs["admit"]
+    assert "      - uses: actions/checkout@" in admit
+    assert "          fetch-depth: 0 # main, the version commit and the tags\n" in admit
+    assert 'python3 -I tools/release_plan.py admit "$TAG" >>"$GITHUB_OUTPUT"' in admit
+    assert admit.count("if: startsWith(github.ref, 'refs/tags/v')\n") == 2  # a branch: dry run
+    assert "        if: steps.plan.outputs.final == 'true'\n" in admit
+    assert 'gh run list --workflow ci.yml --commit "$SHA" --event push --status success' in admit
+    permissions = re.search(r"\n    permissions:\n((?:      .*\n)+)", admit)
+    assert permissions is not None
+    assert permissions[1].splitlines() == [
+        "      contents: read",
+        "      actions: read # whether CI passed on the commit of a release",
+    ]
+    assert "    needs: admit\n" in jobs["check"]
+    assert "    needs: admit\n" in jobs["build"]
+    assert "    needs: [admit, check, build, rebuild]\n" in jobs["publish"]
+    assert next(iter(jobs)) == "admit"  # before every other job
 
 
 def _numbers(version: str) -> tuple[int, ...]:

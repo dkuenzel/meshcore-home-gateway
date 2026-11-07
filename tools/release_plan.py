@@ -3,6 +3,7 @@
     python3 -I tools/release_plan.py check [--base REV]   # CI: a pull request, or a push
     python3 -I tools/release_plan.py tag [--base REV]     # CI on main: prints tag=, exists=, final=
     python3 -I tools/release_plan.py due                  # on a schedule: tag=, sha=, exists=, due=
+    python3 -I tools/release_plan.py admit vX.Y.Z         # release.yml on a tag: sha=, final=
 
 A change releases when it changes `__version__` (docs/development.md, ADR 0022). It must then
 write exactly the next version: the kind of change comes from the changelog entries since the
@@ -16,8 +17,9 @@ it removes or narrows needs a `**Breaking:**` entry or a `### Removed` section s
 adds or changes an entry that makes the next release at least a minor one
 (docs/development.md#compatibility); the changelog sections since the last release stay as
 tagged. A release is tagged a day after its version reached main, a pre-release (a release
-candidate too) at once (SUP-001). It reads the commit, not the working tree. Standard library
-only; git runs as a subprocess in the current directory.
+candidate too) at once (SUP-001). release.yml publishes a tag only if CI on main or the schedule
+would have made it, also one pushed by hand (#84). It reads the commit, not the working tree.
+Standard library only; git runs as a subprocess in the current directory.
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ _STAGES = ("a", "b", "rc", "")  # in order; "" is the release
 # a release waits this long after its version commit reached main: time to stop a merged change
 # before it is signed and published for good (SUP-001); a pre-release reaches only who names it
 COOLDOWN_S = 24 * 3600
+MAIN = "origin/main"  # main as release.yml's checkout knows it (fetch-depth 0)
 KINDS = ("patch", "minor", "major")
 _KIND_OF = {
     "added": "minor",
@@ -501,6 +504,35 @@ def due(now: float) -> tuple[str, str, bool, int]:
     return f"v{written}", sha, existing is not None, max(0, left)
 
 
+def admit(name: str, now: float, main: str = MAIN) -> tuple[str, bool]:
+    """For release.yml on the tag `name` (#84): the commit it tags and whether it is a release.
+    Refuses what neither CI on main nor release-due.yml tags: a commit that is not on `main`, a
+    version other than the tag's, and a release that is not on the commit that wrote its version
+    or not yet COOLDOWN_S after that commit. Whether CI passed on it is the workflow's to ask."""
+    written = Version.parse(name.removeprefix("v"))
+    if name != f"v{written}":
+        msg = f"{name!r} is not a release tag vX.Y.Z"
+        raise PlanError(msg)
+    sha = git("rev-parse", "--verify", f"refs/tags/{name}^{{commit}}").strip()
+    if git_fails("merge-base", "--is-ancestor", sha, main):
+        msg = f"{name} tags {sha}, not a commit of main ({main}): CI on main makes the tags"
+        raise PlanError(msg)
+    if (text := version_text(sha)) != str(written):
+        msg = f"{name} tags a commit of {text}"
+        raise PlanError(msg)
+    if written.waits:
+        found = git("log", "-1", "--format=%H %ct", "-G^__version__ = ", sha, "--", VERSION_FILE)
+        wrote, committed = found.split()
+        if wrote != sha:
+            msg = f"{name} tags {sha}, not on {wrote}, which wrote the version (release-due.yml)"
+            raise PlanError(msg)
+        left = int(committed) + COOLDOWN_S - int(now)
+        if left > 0:
+            msg = f"{name} is due in {left} s: a release waits a day after its version commit"
+            raise PlanError(msg)
+    return sha, written.final
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -513,6 +545,11 @@ def main(argv: list[str] | None = None) -> int:
             "--base", default="", help="the revision the change starts from (default: HEAD^)"
         )
     commands.add_parser("due", help="print tag=, sha=, exists=, due= and left= for main")
+    admitting = commands.add_parser(
+        "admit", help="refuse a tag CI would not have made; print sha= and final="
+    )
+    admitting.add_argument("tag", help="the tag release.yml runs on, vX.Y.Z")
+    admitting.add_argument("--main", default=MAIN, help=f"main's revision (default: {MAIN})")
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
@@ -520,6 +557,9 @@ def main(argv: list[str] | None = None) -> int:
                 note = f"the check reads HEAD; commit first ({', '.join(changed)} changed)"
                 print(f"release_plan: {note}", file=sys.stderr)
             print(check(args.base))
+        elif args.command == "admit":
+            sha, final = admit(args.tag, time.time(), args.main)
+            print(f"sha={sha}\nfinal={str(final).lower()}")
         elif args.command == "due":
             name, sha, exists, left = due(time.time())
             print(f"tag={name}\nsha={sha}\nexists={str(exists).lower()}")
