@@ -51,7 +51,7 @@ from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.drafts import Drafts
 from meshcore_home_gateway.history import History, Retention
-from meshcore_home_gateway.inbox import Inbox
+from meshcore_home_gateway.inbox import Inbox, channel_published
 from meshcore_home_gateway.mqtt.client import MqttBus
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.discovery import gateway_device_name, gateway_names
@@ -268,6 +268,7 @@ def gateway(
         config.contacts.heard_nodes,
     )
     observer.telemetry_types = config.telemetry.node_types
+    observer.show_channels(lambda index: channel_published(config, index))  # before it publishes
     radio = RadioLink(monotonic)
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()
     outbox = Delivery(

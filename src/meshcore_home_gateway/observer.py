@@ -228,6 +228,14 @@ class Observer:
         for key, kept in readings.items():
             self._restore_contact(key, None, None, kept)
 
+    def show_channels(self, published: Callable[[int | None], bool]) -> None:
+        """The channels whose messages are published (`[messages] publish_channels`,
+        `ignore_channels`). The messages of the others that the history holds, which an earlier
+        version kept of every channel, leave the `history` document; they stay in the history
+        until they are `messages_days` old (#103)."""
+        kept = [m for m in self._recent if m.kind != "channel" or published(m.channel_index)]
+        self._recent = deque(kept, maxlen=RECENT_MESSAGES)
+
     def _restore_contact(
         self, key: str, heard: Heard | None, fix: Fix | None, readings: Readings | None
     ) -> None:

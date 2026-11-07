@@ -111,6 +111,13 @@ format, the command line and Home Assistant discovery are public interfaces
   and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
   which can take hours on a quiet system. The gateway now writes the file again within a minute,
   also with nothing else changed, and clears both once the write succeeds (#94).
+- After an update from 1.x, the retained `history` document of the start showed the newest
+  messages of the history database, also those of channels that are no target, which 1.x had
+  kept: strangers' texts and claimed names on the Public channel went back to the broker until
+  50 new messages pushed them out. The document now leaves out the messages of channels that are
+  not published (`publish_channels`, `ignore_channels`). The database keeps them until they are
+  `messages_days` old; the update guide says how to be rid of them at once
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#103).
 - When a broker that speaks MQTT 3.1.1 only refused the connection of `[mqtt] protocol = "5"`
   (`Unsupported protocol version`), the log said to test the login. It now says that the broker
   does not speak that version and names the setting

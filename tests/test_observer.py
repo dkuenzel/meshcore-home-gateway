@@ -44,7 +44,7 @@ from meshcore_home_gateway.state import (
     RetainedKeys,
     TelemetryExclusions,
 )
-from meshcore_home_gateway.views import iso
+from meshcore_home_gateway.views import HistoryEntry, iso
 from tests.bridge_harness import (
     ALICE,
     BOB,
@@ -274,6 +274,57 @@ def test_the_history_survives_a_restart(tmp_path: Path) -> None:
     assert list(stored.last_fixes()) == [CAROL.public_key.hex()]  # stored once, not per run
     assert len(stored.trace(CAROL.public_key.hex(), 0)) == 1
     stored.close()
+
+
+@pytest.mark.parametrize(
+    ("messages", "shown"),
+    [
+        ("", ["to the family", "Hi from Alice", "family news"]),
+        (
+            'publish_channels = "all"',
+            ["to the family", "Hi from Alice", "Dave: chatter", "family news"],
+        ),
+        ('publish_channels = "all"\nignore_channels = [0]', ["Hi from Alice", "Dave: chatter"]),
+    ],
+    ids=["targets", "all", "all-but-ignored"],
+)
+def test_the_history_document_shows_only_the_channels_that_are_published(
+    tmp_path: Path, messages: str, shown: list[str]
+) -> None:
+    """#103: 1.x stored the messages of every channel. With `publish_channels = "targets"` (the
+    default since 2.0) the retained `history` document must not bring a stranger's text on the
+    Public channel back to the broker at the start; nor the messages of an ignored channel. The
+    rows stay in the history, until they are `messages_days` old."""
+    path = tmp_path / "history.sqlite3"
+    stored = History.open(path)
+    assert stored is not None
+    for entry in (
+        HistoryEntry(NOW - 40, "in", "channel", "family news", channel_index=0, name="Bob"),
+        HistoryEntry(NOW - 30, "in", "channel", "Dave: chatter", channel_index=1, name="Dave"),
+        HistoryEntry(NOW - 20, "in", "contact", "Hi from Alice", ALICE.public_key.hex()),
+        HistoryEntry(NOW - 10, "out", "channel", "to the family", channel_index=0, state="sent"),
+    ):
+        stored.add_message(entry)
+    stored.close()
+    config = make_config(messages=messages)  # the target `alerts` is channel 0
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, CAROL])
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            for document in bus.payloads(f"{ROOT}/history"):
+                assert [m["text"] for m in document["messages"]] == shown
+
+    scenario(main)
+    for history in histories:
+        assert len(history.recent_messages(10)) == 4  # kept: only the documents leave them out
+        history.close()
 
 
 class Stepping(EmulatedRadio):
