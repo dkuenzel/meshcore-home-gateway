@@ -55,7 +55,9 @@ _STAGES = ("a", "b", "rc", "")  # in order; "" is the release
 # a release waits this long after its version commit reached main: time to stop a merged change
 # before it is signed and published for good (SUP-001); a pre-release reaches only who names it
 COOLDOWN_S = 24 * 3600
-MAIN = "origin/main"  # main as release.yml's checkout knows it (fetch-depth 0)
+# main as release.yml's checkout knows it (fetch-depth 0), by its full ref: git takes a tag named
+# origin/main before the remote branch
+MAIN = "refs/remotes/origin/main"
 KINDS = ("patch", "minor", "major")
 _KIND_OF = {
     "added": "minor",

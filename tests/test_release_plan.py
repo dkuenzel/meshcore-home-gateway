@@ -389,6 +389,25 @@ def test_release_yml_refuses_a_release_whose_version_main_took_back(repo: Repo) 
         plan.admit("v1.0.0", day, "main")
 
 
+def test_release_yml_takes_main_from_the_remote_not_from_a_tag_of_its_name(repo: Repo) -> None:
+    """#84 review: admit named main `origin/main`, and git takes a tag of that name before the
+    remote branch (gitrevisions(7): refs/tags/ comes before refs/remotes/). A tag `origin/main`
+    pushed with a release tag on a version commit that main took back made admit publish it.
+    admit names main by its full ref."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    stopped = repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    repo.env["GIT_COMMITTER_DATE"] = "@1800003600 +0000"
+    repo.git("revert", "--no-edit", stopped)
+    repo.git("update-ref", "refs/remotes/origin/main", "HEAD")  # as release.yml's checkout has it
+    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", stopped)
+    repo.git("tag", "origin/main", stopped)  # pushed by hand with the release tag
+    repo.git("checkout", "-q", "v1.0.0")
+    day = 1800000000 + plan.COOLDOWN_S
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0: release-due.yml would tag none")):
+        plan.admit("v1.0.0", day)
+
+
 def test_release_yml_refuses_a_release_that_is_not_mains_version(repo: Repo) -> None:
     """A release tag on a version commit that main has moved on from (a re-run of all jobs of its
     run, once the next version was tagged): release-due.yml tags only main's version."""
