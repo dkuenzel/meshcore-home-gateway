@@ -560,10 +560,11 @@ kept in the gateway's history database, so they survive a restart ([ADR 0016](de
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message
 (`confirmed`, `failed`, `expired`, or `sent` for a channel). Requests refused at once
-(`rejected`, `duplicate`) are not in the history. The document has only the messages of the
-channels that are published (`[messages] publish_channels`, `ignore_channels`): since 2.1 also
-at the start, when the history database still holds messages of other channels that an earlier
-version kept (#103).
+(`rejected`, `duplicate`) are not in the history. Of the messages received on channels, the
+document has only those of the channels that are published (`[messages] publish_channels`,
+`ignore_channels`): since 2.1 also at the start, when the history database still holds messages
+of other channels that an earlier version kept, and it then shows the newest of the rest (#103).
+The gateway's own messages to a channel target are in it, also when that channel is ignored.
 
 Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
 message from an earlier version):

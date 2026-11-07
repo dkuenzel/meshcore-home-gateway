@@ -284,7 +284,10 @@ def test_the_history_survives_a_restart(tmp_path: Path) -> None:
             'publish_channels = "all"',
             ["to the family", "Hi from Alice", "Dave: chatter", "family news"],
         ),
-        ('publish_channels = "all"\nignore_channels = [0]', ["Hi from Alice", "Dave: chatter"]),
+        (
+            'publish_channels = "all"\nignore_channels = [0]',
+            ["to the family", "Hi from Alice", "Dave: chatter"],
+        ),
     ],
     ids=["targets", "all", "all-but-ignored"],
 )
@@ -293,8 +296,9 @@ def test_the_history_document_shows_only_the_channels_that_are_published(
 ) -> None:
     """#103: 1.x stored the messages of every channel. With `publish_channels = "targets"` (the
     default since 2.0) the retained `history` document must not bring a stranger's text on the
-    Public channel back to the broker at the start; nor the messages of an ignored channel. The
-    rows stay in the history, until they are `messages_days` old."""
+    Public channel back to the broker at the start; nor the received messages of an ignored
+    channel. The gateway's own message to a target's channel stays, as it does while the gateway
+    runs (all-but-ignored). The rows stay in the history, until they are `messages_days` old."""
     path = tmp_path / "history.sqlite3"
     stored = History.open(path)
     assert stored is not None
@@ -318,12 +322,87 @@ def test_the_history_document_shows_only_the_channels_that_are_published(
     async def main() -> None:
         radio = EmulatedRadio(contacts=[ALICE, CAROL])
         async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
-            for document in bus.payloads(f"{ROOT}/history"):
+            documents = bus.payloads(f"{ROOT}/history")
+            assert documents
+            for document in documents:
                 assert [m["text"] for m in document["messages"]] == shown
 
     scenario(main)
     for history in histories:
         assert len(history.recent_messages(10)) == 4  # kept: only the documents leave them out
+        history.close()
+
+
+def test_a_message_sent_to_an_ignored_channel_stays_in_the_history_document_at_a_restart(
+    tmp_path: Path,
+) -> None:
+    """#103: a target's channel may also be in `ignore_channels` (alerts go to a busy channel,
+    whose chatter is not published). The gateway's own message there is in the `history` document
+    while it runs, so the next start must not leave it out."""
+    path = tmp_path / "history.sqlite3"
+    config = make_config(messages="ignore_channels = [0]")  # the target `alerts` is channel 0
+    shown: list[list[str]] = []
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def first() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            bus.send("alerts", "Smoke in the barn")
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            shown.append([m["text"] for m in history["messages"]])
+
+    async def second() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            shown.append([m["text"] for m in bus.payloads(f"{ROOT}/history")[-1]["messages"]])
+
+    scenario(first)
+    scenario(second)
+    for history in histories:
+        history.close()
+    assert shown == [["Smoke in the barn"], ["Smoke in the barn"]]
+
+
+def test_the_history_document_finds_the_published_messages_behind_other_channels_rows(
+    tmp_path: Path,
+) -> None:
+    """#103: after an update from 1.x, the 50 newest rows may all be a busy channel's that is not
+    published. The document of the start still shows the newest messages that are, from further
+    back in the history."""
+    path = tmp_path / "history.sqlite3"
+    stored = History.open(path)
+    assert stored is not None
+    stored.add_message(
+        HistoryEntry(NOW - 200, "in", "contact", "Hi from Alice", ALICE.public_key.hex())
+    )
+    for n in range(observer_module.RECENT_MESSAGES):
+        entry = HistoryEntry(NOW - 100 + n, "in", "channel", f"chatter {n}", channel_index=1)
+        stored.add_message(entry)
+    stored.close()
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            documents = bus.payloads(f"{ROOT}/history")
+            assert documents
+            for document in documents:
+                assert [m["text"] for m in document["messages"]] == ["Hi from Alice"]
+
+    scenario(main)
+    for history in histories:
         history.close()
 
 

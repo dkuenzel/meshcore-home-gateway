@@ -114,10 +114,11 @@ format, the command line and Home Assistant discovery are public interfaces
 - After an update from 1.x, the retained `history` document of the start showed the newest
   messages of the history database, also those of channels that are no target, which 1.x had
   kept: strangers' texts and claimed names on the Public channel went back to the broker until
-  50 new messages pushed them out. The document now leaves out the messages of channels that are
-  not published (`publish_channels`, `ignore_channels`). The database keeps them until they are
-  `messages_days` old; the update guide says how to be rid of them at once
-  ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#103).
+  50 new messages pushed them out. The document now leaves out the received messages of channels
+  that are not published (`publish_channels`, `ignore_channels`), and shows the newest of the
+  rest, also from behind them; the gateway's own messages to a channel target stay, as while it
+  runs. The database keeps them until they are `messages_days` old; the update guide says how to
+  be rid of them at once ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#103).
 - The guide's roll back did not say what 1.x does with the state directory of 2.0: it asks every
   companion that is not excluded for telemetry, other people's too, and its first exclusion
   writes `telemetry-excluded.json` without the household's inclusions, so that 2.0, back again,
