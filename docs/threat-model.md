@@ -168,6 +168,7 @@ Run an automation in the home (A1)
 
 Make the household believe an alert arrived (A2)
 ├─ forge the acknowledgement (T1) ..................... confirm_nonce; suspect; an answer as proof
+├─ read the suffix on the broker, then forge (T6) ..... the suffix published only after the end
 ├─ be the radio over TCP (T5) ......................... USB
 └─ publish a `delivery` event (T6) .................... the ACL
 

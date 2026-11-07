@@ -86,6 +86,12 @@ format, the command line and Home Assistant discovery are public interfaces
   codes: a host posing as the radio over TCP found a code within a minute, a stolen handheld
   over the air in about two weeks; now a guesser wins with about 1 in 2,800 a day
   ([design §7.4](docs/design.md#74-residual-risks)) (#79).
+- With `[messages] confirm_nonce`, the random suffix of a direct message reaches the broker only
+  once its delivery ended: in the final delivery event and the history. The `queued` and `sent`
+  events and `pending` show the text without it. Before, every event carried it from `queued`
+  on, so a client that may read the gateway's topics, with a board in range, could compute the
+  acknowledgement's code and forge `confirmed`
+  ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#87).
 
 ### Fixed
 
