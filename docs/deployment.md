@@ -334,7 +334,12 @@ pct stop 105 && pct destroy 105
   target are published, of other people's radios only their keys and types, and telemetry asks
   only the companions the household includes. Switch *Telemetry* on for each of the household's
   companions (or `meshcore-home-gateway contacts telemetry KEY on`); the changelog's
-  **Breaking:** entries name the settings that keep the old behaviour.
+  **Breaking:** entries name the settings that keep the old behaviour. The messages that 1.x
+  received on other channels stay in the history database (and in `history export` and `backup`)
+  until they are `messages_days` old, 30 days by default; since 2.1 the `history` document and
+  Home Assistant's *Message history* leave them out. To be rid of them at once, stop the service
+  and delete `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files:
+  the gateway starts a new history, without the rest of the old one.
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with
   `[telemetry] ask = "all"`: telemetry is on from 1.1.0a2 on, and the first time it runs on the
   state directory it asks nobody for an hour
@@ -378,6 +383,25 @@ pct stop 105 && pct destroy 105
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
+* **Roll back to 1.x** from 2.0 or later keeps the state directory, which 1.x reads in its own
+  way (#95). 1.x knows no inclusions (`[telemetry] ask` is 2.0's): it asks every companion that
+  is not excluded, other people's too. And the first exclusion made under 1.x writes
+  `telemetry-excluded.json` without the household's inclusions, so that 2.0, back again, asks
+  none of the household's companions (*Telemetry* off on each). Before the roll back, keep a
+  copy of the file and switch telemetry off for 1.x (`enabled = false` in `[telemetry]`, removed
+  again after the return; 1.0.0 refuses the table, and has no telemetry):
+
+  ```sh
+  pct exec 105 -- cp -p /var/lib/meshcore-home-gateway/telemetry-excluded.json /root/
+  ```
+
+  Back on 2.0 or later, with the service stopped, put the copy back (`cp -p
+  /root/telemetry-excluded.json /var/lib/meshcore-home-gateway/`) if 1.x changed the file; an
+  exclusion made under 1.x is gone then, and a companion the household did not include is not
+  asked anyway.
+  Messages that the stop kept for the next start (`outbox` in `state.json`, with their texts)
+  stay there while 1.x runs, which ignores them; the next start of 2.0 or later ends those whose
+  `queue_ttl_s` has passed, `expired` or `failed`, as their final delivery event.
 
 ## 3 Other Linux systems
 
@@ -419,6 +443,19 @@ install -D -m 0640 -g meshcore-home-gateway deploy/config.example.toml \
 install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
 editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-config
 systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
+```
+
+To update, check the configuration with the new version first, then switch to it and install
+the unit of its tag too. The unit changes with releases: since 2.0 it gives a stop 90 s
+(`TimeoutStopSec`), which the gateway needs to wait for the acknowledgement of a message in
+flight; the unit of 1.x gives 20 s.
+
+```sh
+install -m 0755 meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/
+python3 -I /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-X.Y.Z.pyz check-config
+ln -sfn meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
+systemctl daemon-reload && systemctl restart meshcore-home-gateway
 ```
 
 The command line's texts follow `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`
@@ -467,9 +504,10 @@ updates wait for.
   (the kernel is the host's). A running service keeps the Python and paho-mqtt it started with:
   restart it after an update of them (`grep -E 'python3|paho'
   /var/log/unattended-upgrades/unattended-upgrades.log`). `systemctl list-timers
-  apt-daily-upgrade.timer` shows the next run, and `apt-config dump
-  APT::Periodic::Unattended-Upgrade` must say `"1"` (the package switches itself on when it is
-  installed without dialogs). An installation from before this version gets the package with its
+  apt-daily-upgrade.timer` shows the next run, and `apt-config dump APT::Periodic` must show
+  `APT::Periodic::Update-Package-Lists` and `APT::Periodic::Unattended-Upgrade` with `"1"` (the
+  package switches itself on when it is installed without dialogs); `doctor` warns when either
+  is `"0"` or missing. An installation from before this version gets the package with its
   next `--update`.
 * **Disk:** the container has 2 GB. The installer limits the journal to 100 MB
   (`/etc/systemd/journald.conf.d/meshcore-home-gateway.conf`; Debian's default is a tenth of the
@@ -581,6 +619,7 @@ updates wait for.
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
 | Commands rejected with `sender_unverified` | The gateway fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
 | `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto` (and add further users without `-c`, which replaces the file). `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on takes a Home Assistant user by its login name, not the display name (the Supervisor log names the user it refused: `Unauthorized login for '…'`), or a `logins` entry (read when the add-on starts); it remembers a refused login for about 5 minutes, so restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1-` and a random part), not the user |
+| `MQTT: connection refused: Unsupported protocol version: the broker does not speak MQTT 5` | `[mqtt] protocol = "5"` and a broker that speaks MQTT 3.1.1 only. Set `protocol = "3.1.1"` (the default) or remove the line, or update the broker; the login has nothing to do with it ([configuration.md](configuration.md#mqtt)) |
 | `MQTT: cannot reach …` | No broker answered at that name or address and port: check `mqtt.host` (a host name or IP address, no `mqtt://`) and `mqtt.port`, the network and the firewall |
 | `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
 | `MQTT: another client wrote …; restoring the gateway's payload` | Another client wrote one of the gateway's retained topics, and the gateway wrote its own again ([mqtt-api.md](mqtt-api.md#securing-the-broker)). A second gateway with the same `node_id` and `base_topic` (an old container, a test install), a tool that cleared retained messages, or a client whose ACL lets it write below the gateway's topics: only the gateway's user may |

@@ -15,6 +15,8 @@ are connected here (`gateway`). Who tells, when, and the listeners in the order 
 * `poller.on_status`, the telemetry's status changed: `status.publish`;
 * the announcer's `publish_state`, an announcement went out: `status.publish`;
 * `bus.on_connected`, the broker connected: `announcer.connected`, `observer.publish_all`;
+* `bus.on_stopping`, the bus stops, before its `offline`: `outbox.bus_stopping`, which refuses
+  the requests that came after the stop's last step (`stopping`), then `drafts.stop` (below);
 * `bus.on_ha_online`, Home Assistant's birth message: `announcer.schedule`;
 * `bus.on_ha_device`, a message on one of the gateway's discovery topics:
   `announcer.device_message`;
@@ -52,7 +54,7 @@ from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.drafts import Drafts
 from meshcore_home_gateway.history import History, Retention
-from meshcore_home_gateway.inbox import Inbox
+from meshcore_home_gateway.inbox import Inbox, channel_published
 from meshcore_home_gateway.mqtt.client import MqttBus
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.discovery import gateway_device_name, gateway_names
@@ -269,6 +271,7 @@ def gateway(
         config.contacts.heard_nodes,
     )
     observer.telemetry_types = config.telemetry.node_types
+    observer.show_channels(lambda index: channel_published(config, index))  # before it publishes
     radio = RadioLink(monotonic)
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()
     outbox = Delivery(
@@ -369,8 +372,8 @@ def gateway(
         # (design §6.11)
         observer.on_telemetry_exclusion.append(lambda key, _: records.forget(key))
         observer.on_contact_added.append(records.forget)
-    bus.on_connected.append(announcer.connected)
-    bus.on_connected.append(lambda: observe(observer.publish_all))
+    bus.on_connected.extend((announcer.connected, lambda: observe(observer.publish_all)))
+    bus.on_stopping.append(lambda: observe(outbox.bus_stopping))
     bus.on_ha_online.append(lambda: announcer.schedule(birth=True))
     bus.on_ha_device.append(announcer.device_message)
     if drafts is not None:

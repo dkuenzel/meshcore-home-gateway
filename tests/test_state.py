@@ -266,6 +266,34 @@ def test_a_failed_save_leaves_no_temporary_file_and_keeps_the_ledger(
     assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100  # not the refused one
 
 
+def test_a_failed_save_is_written_again_by_the_next_flush_with_nothing_else_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A command's write fails on a full disk; on a quiet system no other section changes after
+    it. `failed` (the health section's `state_file: unwritable`) must not stay until one does
+    (#94): the next flush writes the file once it can, and clears it."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    ledger = CommandLedger(store)
+    ledger.record("aa" * 32, 100)
+    attempts: list[int] = []
+
+    def full_disk(_fd: int) -> None:
+        attempts.append(1)
+        raise OSError(28, "No space left on device")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", full_disk)
+        with pytest.raises(OSError, match="No space left"):
+            ledger.record("aa" * 32, 200)
+        assert store.failed
+        assert (store.flush(), store.failed) == (False, True)  # the disk is still full: tried
+    assert len(attempts) == 2
+    assert (store.flush(), store.failed) == (True, False)
+    assert store.flush()  # nothing left to write
+    assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100  # not the refused one
+
+
 def test_retained_keys_are_remembered_and_survive_an_unwritable_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

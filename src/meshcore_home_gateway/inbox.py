@@ -164,12 +164,7 @@ class Inbox:
         those are published (SEC-012): neither published nor answered."""
         if message.kind is not MessageKind.CHANNEL:
             return False
-        messages = self.config.messages
-        if message.channel_index in messages.ignore_channels:
-            return True
-        return messages.publish_channels == "targets" and (
-            message.channel_index not in target_channels(self.config)
-        )
+        return not channel_published(self.config, message.channel_index)
 
     async def _on_message(self, event: MessageReceived) -> None:
         message, session = event.message, event.session
@@ -331,3 +326,12 @@ class Inbox:
 def target_channels(config: Config) -> frozenset[int]:
     """The channels of `[targets.*]` entries."""
     return frozenset(t.channel_index for t in config.targets if t.channel_index is not None)
+
+
+def channel_published(config: Config, index: int | None) -> bool:
+    """Whether the messages of channel `index` are published and kept in the history: not one of
+    `ignore_channels`, and a target's while only those are published (SEC-012)."""
+    messages = config.messages
+    if index in messages.ignore_channels:
+        return False
+    return messages.publish_channels != "targets" or index in target_channels(config)

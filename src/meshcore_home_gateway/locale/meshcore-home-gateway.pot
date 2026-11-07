@@ -736,9 +736,34 @@ msgstr ""
 msgid "another client took the radio's TCP link in the last hour"
 msgstr ""
 
+#. {setting} is the name of an apt setting, such as
+#. APT::Periodic::Unattended-Upgrade
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "automatic updates are off: apt has no {setting}, which counts as 0: security updates wait for someone to install them (docs/deployment.md)"
+msgstr ""
+
+#. {setting} is the name of an apt setting, {value} its value
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "automatic updates are off: apt has {setting} \"{value}\": security updates wait for someone to install them (docs/deployment.md)"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/doctor.py
 #, python-brace-format
 msgid "broker {host}:{port}: logged in"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "cannot read apt's settings for automatic updates ({error}): apt-config dump APT::Periodic shows them"
+msgstr ""
+
+#. why apt-config gave no answer, shown in brackets in a line of doctor;
+#. {status} is the number it exited with
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "exit status {status}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/doctor.py

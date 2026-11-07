@@ -220,12 +220,17 @@ Long-running tasks on the loop, supervised by a task group:
 On stop the telemetry poller is cancelled first, so no request goes out after it, and saves its
 schedule; an answer that arrives later is dropped. The outbox worker starts no attempt any more:
 one that waits for its acknowledgement gets it for at most 60 s (the unit's `TimeoutStopSec` is
-90 s), and the messages still queued, that one too if it needs another attempt, are kept in the
-state file for the next start (§6.2). Then the radio supervisor ends and closes the
+90 s). From the stop's start the messages on their way, that one too, are in the state file,
+written at once and again at each change, so a stop that is cut short (a kill, an older unit's
+20 s) loses none (§6.2). Then the radio supervisor ends and closes the
 session. The radio events and the message
 handler then finish the messages the radio has already handed over, for at most 2 s (a command
-waiting for its table read is rejected, `sender_unverified`); then the other tasks are cancelled.
-Messages still waiting in the radio are fetched at the next start.
+waiting for its table read is rejected, `sender_unverified`). Requests are taken until then, the
+answers to those commands too: the last step keeps the queue for the next start, with the
+requests still waiting to be taken; then the other tasks are cancelled. A request after it is
+rejected (`stopping`): a press of *Send* at once, and one from the broker when the bus stops,
+before it publishes `offline`; one that comes after `offline` gets no event. Messages still
+waiting in the radio are fetched at the next start.
 
 The state file (`state.json`, `state.py`) is one store for every part that keeps something
 across a restart (ARC-004): read once at the start, held in memory, and written whole and
@@ -416,8 +421,11 @@ sequenceDiagram
    request rejected because the queue is full does not count, so its retry is accepted.
 5. **Queue.** Bounded (`queue_size`); a full queue rejects. Each entry carries its arrival time and
    a time to live of `queue_ttl_s`. The messages to `[messages] alert_targets` leave before the
-   others (IMP-032); each kind leaves in arrival order. At a stop the queue goes to the state
-   file (`outbox`, with each message's time waited, radio timestamp and attempts sent); the next
+   others (IMP-032): an alert that comes while another message waits for the radio or for
+   airtime, also before its first attempt, or between two of its attempts, goes first, and that
+   message continues after it with its progress (#93); each kind leaves in arrival order. At a
+   stop the queue goes to the state file (`outbox`, with each message's time waited, radio
+   timestamp and attempts sent), from the stop's start to its last step (§5.2); the next
    start queues those with time left again and publishes `queued` again with their `id`, ends
    the others as they would have ended, and counts their texts for the duplicate check
    ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A message that never left within that time is `expired`:

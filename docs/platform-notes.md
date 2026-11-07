@@ -489,9 +489,15 @@ One line per fact, by section.
   2026-11-03: the version in trixie), source on sources.debian.org: `debian/templates:10-12`,
   `debian/config:19`, `debian/postinst:47-52`, `data/50unattended-upgrades.Debian:23-44`
   (`Origins-Pattern`) and `:116`. Read in the source; whether Proxmox's Debian 13 template ships
-  the package already was not checked. *Here:* the installer installs it
-  ([deployment.md](deployment.md#4-operations), *Updates of the container*). *Check:*
-  `pct exec 105 -- apt-config dump APT::Periodic::Unattended-Upgrade` says `"1"`.
+  the package already was not checked. apt's daily job runs `unattended-upgrade` only while
+  `APT::Periodic::Unattended-Upgrade`, and updates the package lists only while
+  `APT::Periodic::Update-Package-Lists`, is neither `"0"` nor missing (missing counts as 0); it
+  reads them with `apt-config shell`. *Verified:* apt 2.8.3 `debian/apt.systemd.daily:82-97`
+  (`check_stamp`: `0` never runs) and `:392-402` (the defaults and `apt-config shell`), read in
+  the installed file. *Here:* the installer installs it
+  ([deployment.md](deployment.md#4-operations), *Updates of the container*), and `doctor` reads
+  both settings the same way and warns unless both are on (#107). *Check:*
+  `pct exec 105 -- apt-config dump APT::Periodic` shows both with `"1"`.
 * **`IPAddressDeny=` and `IPAddressAllow=` need a cgroup BPF program; where systemd cannot load
   one, it starts the service without the filter and says so only at debug level.** Loading needs
   `CAP_BPF` in the initial user namespace while `kernel.unprivileged_bpf_disabled` is set, which

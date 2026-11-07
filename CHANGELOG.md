@@ -159,6 +159,58 @@ format, the command line and Home Assistant discovery are public interfaces
   channel message claims; and that the 15 KiB of `history` hold fewer messages whose names and
   texts are full of control characters, about 10, since JSON writes each in 6 bytes
   ([mqtt-api.md](docs/mqtt-api.md#received-messages-received)) (#114).
+  messages was published `queued` and then lost: the stop had kept the queue already. The stop
+  now keeps the queue as its last step, with these requests and those still waiting to be taken.
+  A request after it, such as a press of *Send* or a request that comes as the radio closes, ends
+  `rejected` with the new reason `stopping`, until the gateway publishes `offline`, which the
+  dashboard shows as "the gateway was stopping"
+  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)) (#92).
+- A stop cut short while it waited up to a minute for an acknowledgement lost every queued
+  message: the queue was written only after the wait. A kill does that, and so does the unit of
+  1.x with `TimeoutStopSec=20`, which a manual installation keeps when it updates only the
+  zipapp. The queue is now in `state.json` from the stop's start, with the message in flight and
+  its attempts, and written again at each change in the stop. The guide for other Linux systems
+  has an update step, which installs the release's unit
+  ([deployment.md](docs/deployment.md#3-other-linux-systems)) (#92).
+- An alert waited behind a message that the gateway had taken out of the queue and that waited
+  for the radio or for airtime before its first attempt: until that message had used the airtime
+  and its acknowledgement had come, with the default budget more than a minute and a half. Such
+  a wait now ends when an alert comes; the message goes back to the queue, first among the
+  others, and continues after the alert
+  ([configuration.md](docs/configuration.md#messages)) (#93).
+- An acknowledgement that came in the moment its wait ended, by its time or by an alert, was
+  lost: the message sent one more attempt, and could end `failed` with `no_acknowledgement`
+  although it had arrived (#93).
+- After a command's write of `state.json` failed (a full disk), `state_file` stayed `unwritable`
+  and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
+  which can take hours on a quiet system. The gateway now writes the file again within a minute,
+  also with nothing else changed, and clears both once the write succeeds (#94).
+- After an update from 1.x, the retained `history` document of the start showed the newest
+  messages of the history database, also those of channels that are no target, which 1.x had
+  kept: strangers' texts and claimed names on the Public channel went back to the broker until
+  50 new messages pushed them out. The document now leaves out the received messages of channels
+  that are not published (`publish_channels`, `ignore_channels`), and shows the newest of the
+  rest, also from behind them; the gateway's own messages to a channel target stay, as while it
+  runs. The database keeps them until they are `messages_days` old; the update guide says how to
+  be rid of them at once ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#103).
+- The guide's roll back did not say what 1.x does with the state directory of 2.0: it asks every
+  companion that is not excluded for telemetry, other people's too, and its first exclusion
+  writes `telemetry-excluded.json` without the household's inclusions, so that 2.0, back again,
+  asks none of them. It now says to keep a copy of the file and switch telemetry off first, and
+  that the messages a stop kept stay in `state.json` while 1.x runs
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#95).
+- When a broker that speaks MQTT 3.1.1 only refused the connection of `[mqtt] protocol = "5"`
+  (`Unsupported protocol version`), the log said to test the login. It now says that the broker
+  does not speak that version and names the setting
+  ([deployment.md](docs/deployment.md#5-troubleshooting)) (#107).
+- `doctor` said that security updates are installed automatically as soon as
+  `unattended-upgrades` was installed, also with `APT::Periodic::Unattended-Upgrade "0"`. It now
+  reads that setting and `APT::Periodic::Update-Package-Lists` as apt's daily job does, and warns
+  when either is `"0"` or missing (#107).
+- The release plan told a change checked before a merged release was tagged that CI on main tags
+  it once its jobs pass. CI on main tags only pre-releases; the message now names
+  `release-due.yml`, which tags a release a day after its version commit, and the time from which
+  it does (#107).
 
 ## [2.0.0] - 2026-11-07
 

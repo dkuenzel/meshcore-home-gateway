@@ -107,8 +107,10 @@ message and `confirmed` for a direct message. A stop keeps the queued messages, 
 whose acknowledgement does not come within a minute, for the next start: it publishes `queued`
 again with the same `id` (and `attempt` the transmissions so far), then the rest of the steps, or
 the final event the message would have had meanwhile
-([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A request that comes later
-in the stop, once the queue is kept, ends `rejected` with reason `stopping`. A crash drops the
+([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). Requests are taken until
+the stop's last step, after the received messages the radio had handed over (with the answers to
+their commands); one that comes later ends `rejected` with reason `stopping`, until the gateway
+publishes `offline`, and one that comes after that gets no event. A crash drops the
 queued messages without a final event, and so does a broker outage with more than 1000 events
 waiting; wait for a final event with a timeout. Messages to `[messages] alert_targets` leave before the others. The `rejected` and `duplicate` events of
 requests refused at once are limited to 20 per second, in bursts of up to 100: a client that floods
@@ -337,7 +339,7 @@ Assistant shows as the problem sensor *Gateway degraded* ([what to do](deploymen
 | Key | Meaning | Degraded when |
 | --- | --- | --- |
 | `history` | `ok`, `off` (`[history] enabled = false`), `broken`: it could not be opened or a write failed, and it is off until the next start | `broken` |
-| `state_file` | `ok`, or `unwritable`: the last write of `state.json` failed (a full or read-only disk) | not `ok` |
+| `state_file` | `ok`, or `unwritable`: the last write of `state.json` failed (a full or read-only disk); the gateway tries again within a minute, also when nothing else changed, and it is `ok` again once a write succeeds | not `ok` |
 | `exclusions` | `ok`, `unsaved`: an exclusion from telemetry waits to be written to `telemetry-excluded.json`, or `unreadable`: that file cannot be parsed and telemetry is paused | not `ok` |
 | `errors_1h` | bugs that a part caught and logged with their traceback in the last hour; the journal shows each place at most once a minute, with how many came since | above 0 |
 | `loop_lag_max_s` | the longest the gateway's event loop was held up in the last hour: a host that gives it no CPU or a slow disk (a backup, swapping); `null` in the first second | 1 s or more |
@@ -587,7 +589,11 @@ an earlier `at` and is listed below the earlier one.
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message
 (`confirmed`, `failed`, `expired`, or `sent` for a channel). Requests refused at once
-(`rejected`, `duplicate`) are not in the history.
+(`rejected`, `duplicate`) are not in the history. Of the messages received on channels, the
+document has only those of the channels that are published (`[messages] publish_channels`,
+`ignore_channels`): since 2.1 also at the start, when the history database still holds messages
+of other channels that an earlier version kept, and it then shows the newest of the rest (#103).
+The gateway's own messages to a channel target are in it, also when that channel is ignored.
 
 Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
 message from an earlier version):
