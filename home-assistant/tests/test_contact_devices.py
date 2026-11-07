@@ -665,14 +665,61 @@ GATEWAY_IDS = {
 }
 
 
-def test_the_recorder_exclusions_keep_only_the_texts_out() -> None:
-    globs = guide_recorder("event.mesh_*_message*")
-    assert excluded_by(globs, contact_entity_ids()) == {
+async def test_the_recorder_exclusions_keep_every_text_out_and_nothing_else(
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#116: the guide's first block keeps out every entity that holds a message's text: the
+    messages received, the steps of those sent, a command's arguments, the history, the messages
+    on their way, and the drafts of the targets and of the contacts, as Home Assistant names
+    them, also numbered `_2` and for another node ID and contact prefix; and no other entity.
+    The lines for the contacts are the last two, which the guide says to change for one's own
+    `contact_entity_prefix`."""
+    from test_contract import entity_ids, make_config  # noqa: PLC0415
+
+    from meshcore_home_gateway.mqtt.manage_entities import (  # noqa: PLC0415
+        manage_payload,
+        manage_topic,
+    )
+
+    config = make_config("[targets.alerts]\nchannel = 1\n[targets.my-target]\nchannel = 2\n")
+    await announce(hass, discovery_payload(config, TOPICS, RADIO))
+    await fire(hass, manage_topic(config), manage_payload(config, TOPICS, []))
+    await online(hass)
+    devices = ContactDevices(
+        config, TOPICS, broker, ContactDeviceRecords(store), wall_clock=lambda: NOW
+    )
+    devices.update(mesh_of(ALICE_NODE, HILL_NODE))
+    await broker.deliver(hass)
+    texts = {
+        f"event.{PREFIX}_message",
+        f"event.{PREFIX}_delivery",
+        f"event.{PREFIX}_command",
+        f"sensor.{PREFIX}_message_history",
+        f"sensor.{PREFIX}_pending_messages",
+        f"text.{PREFIX}_write_alerts",
+        f"text.{PREFIX}_write_my_target",
         "event.mesh_alice_message",
-        "event.mesh_alice_message_2",
+        "text.mesh_alice_write",
     }
-    assert not excluded_by(globs, GATEWAY_IDS)
+    ids = entity_ids(hass)
+    assert texts <= ids
+    assert f"button.{PREFIX}_write_alerts_send" in ids  # a button holds no text
+    globs = guide_recorder("event.mesh_*_message*")
+    assert excluded_by(globs, ids) == texts
+    numbered = {f"{e}_2" for e in ids}  # equal names of a second gateway
+    assert excluded_by(globs, numbered) == {f"{e}_2" for e in texts}
+
+    def second(entity_id: str) -> str:  # node radio2, contact_entity_prefix = "mesh_2"
+        return entity_id.replace("_radio1_", "_radio2_").replace(".mesh_", ".mesh_2_")
+
+    assert excluded_by(globs, {second(e) for e in ids}) == {second(e) for e in texts}
+    assert [g for g in globs if ".mesh_" in g] == globs[-2:]
     assert encode({"text": "ä"}) == '{"text":"ä"}'.encode()
+    assert problems(caplog) == []
 
 
 def test_the_telemetry_exclusions_keep_the_telemetry_out() -> None:

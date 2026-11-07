@@ -182,6 +182,12 @@ format, the command line and Home Assistant discovery are public interfaces
   document could be up to 43 bytes larger (#111).
 - The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
   the one being sent, so a single message that waits reads 0 (#112).
+- The guide's recorder block, meant to keep message texts out of Home Assistant's database, left
+  in the texts sent and the commands' arguments: it now also excludes *Delivery* and *Command*.
+  It is written as patterns only, which fit any node ID, a second gateway and the IDs Home
+  Assistant numbers with `_2`, and the guide says what each line keeps out and what to write for
+  a `contact_entity_prefix` of your own ([home-assistant.md](docs/home-assistant.md#privacy))
+  (#116).
 - A send request or the answer to a command that came while a stop handled the last received
   messages was published `queued` and then lost: the stop had kept the queue already. The stop
   now keeps the queue as its last step, with these requests and those still waiting to be taken.

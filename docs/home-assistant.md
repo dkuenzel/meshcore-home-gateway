@@ -1268,26 +1268,40 @@ long, is in [privacy.md](privacy.md).
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in
-`.storage/core.restore_state` (restored after a restart). *Message history* holds the latest
-messages in and out as attributes, so the recorder stores them again with every message, and
-*Messages on their way* the texts being sent with each of their steps. Every draft a user stores
-or the gateway empties is a state of its text entity. *Configuration* shows every user the
-settings, the names, prefixes and suffixes of the hidden targets included; the recorder stores it
-at each start and radio connect. To keep them out of the history, exclude
-these entities from the recorder, those of the contacts and the drafts with patterns:
+`.storage/core.restore_state` (restored after a restart): *Message* and each contact's *Message*
+hold the messages received, *Delivery* every step of a message sent, with its text, and
+*Command* a command's word and arguments. *Message history* holds the latest messages in and out
+as attributes, so the recorder stores them again with every message, and *Messages on their way*
+the texts being sent with each of their steps. Every draft a user stores or the gateway empties
+is a state of its text entity, *Write to …* or a contact's *Write*. To keep the texts out of the
+history, exclude these entities from the recorder by patterns, which take every target's and
+every contact's entities:
 
 ```yaml
 recorder:
   exclude:
-    entities:
-      - event.meshcore_home_gateway_radio1_message
-      - sensor.meshcore_home_gateway_radio1_message_history
-      - sensor.meshcore_home_gateway_radio1_pending_messages
     entity_globs:
-      - event.mesh_*_message*
+      - event.meshcore_home_gateway_*_message*
+      - event.meshcore_home_gateway_*_delivery*
+      - event.meshcore_home_gateway_*_command*
+      - sensor.meshcore_home_gateway_*_message_history*
+      - sensor.meshcore_home_gateway_*_pending_messages*
       - text.meshcore_home_gateway_*_write_*
+      - event.mesh_*_message*
       - text.mesh_*_write*
 ```
+
+The first three lines keep out the messages received, the messages sent and the commands'
+arguments; the next two the history and the messages on their way; the sixth the drafts of the
+targets; the last two each contact's messages and draft. The `*` after `meshcore_home_gateway_`
+stands for any `node_id`, so the block serves a second gateway too, and the `*` at the end also
+takes the IDs Home Assistant numbers with `_2`. If you set `[homeassistant] contact_entity_prefix`,
+write your prefix instead of `mesh` in the last two lines; a prefix that begins with `mesh_`,
+such as a second gateway's `mesh_2`, is taken already, any other needs its own two lines. The
+*Send* buttons hold no text and stay recorded. *Configuration* holds no message; it shows every
+user the settings, the names, prefixes and suffixes of the hidden targets included, and the
+recorder stores it at each start and radio connect: add
+`sensor.meshcore_home_gateway_*_configuration` to keep it out too.
 
 The contacts' trackers store their positions in the history too, which a map card with
 `hours_to_show` draws as their traces ([Traces on the map](#traces-on-the-map)): a companion that
@@ -1311,9 +1325,10 @@ recorder:
       - event.meshcore_home_gateway_*_telemetry
 ```
 
-The `*` at the end also takes the IDs Home Assistant numbers with `_2`. Excluding
-`device_tracker.mesh_*` keeps the positions out of the database, while a map card open at that
-moment still draws the points that come while it stays open. *Position in adverts* and the
+The `*` at the end also takes the IDs Home Assistant numbers with `_2`; with a
+`contact_entity_prefix` of your own, change `mesh` as above. Excluding `device_tracker.mesh_*`
+keeps the positions out of the database, while a map card open at that moment still draws the
+points that come while it stays open. *Position in adverts* and the
 *Contact* event record when a companion's adverts started or stopped carrying its position, never
 where: no pattern is needed for them. An excluded sensor keeps no statistics. A contact whose name
 gives such a part of an entity ID, such as *Team ch2* (`_ch` and a digit) or *Old battery*, loses
