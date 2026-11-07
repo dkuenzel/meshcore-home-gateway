@@ -60,6 +60,10 @@ format, the command line and Home Assistant discovery are public interfaces
   downgrade to 2.0 the broker keeps the last `config`; an empty retained message clears it, such
   as `mosquitto_pub -r -n -t meshcore/radio1/config`
   ([mqtt-api.md](docs/mqtt-api.md#configuration-config)).
+- `meshcore-home-gateway commands revoke KEY` removes the code secret of a key that is no longer
+  in `[commands] senders` from the codes file. It refuses a key that is still a sender, which
+  would then command without a code; `enrol` gives such a sender a new secret
+  ([configuration.md](docs/configuration.md#commands)) (#80).
 
 ### Changed
 
@@ -92,6 +96,11 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+- Removing a command sender that had a code secret stopped the gateway: the secret made the
+  configuration an error (exit 78), which systemd does not restart, so alerts, telemetry and Home
+  Assistant went down with the sender's commands. The installer's `--reconfigure` got there on
+  its own when a sender was unticked or the insecure broker was declined. The gateway now ignores the
+  secret of a key that is not a sender, and its start and `check-config` warn about it (#80).
 
 ## [2.0.0] - 2026-11-07
 

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
 import pytest
 
 from meshcore_home_gateway.config import parse_config
-from meshcore_home_gateway.config_checks import alias_pairs, broker_warnings, start_warnings
+from meshcore_home_gateway.config_checks import (
+    alias_pairs,
+    broker_warnings,
+    ignored_secrets,
+    start_warnings,
+)
 from tests.bridge_harness import (
     fast_timers,  # noqa: F401 - autouse
     make_config,
@@ -69,3 +75,20 @@ def test_target_aliases_that_differ_only_in_dash_and_underscore_are_warned_about
     apart = make_config(extra="[targets.a-b]\nchannel = 1\n[targets.a-c]\nchannel = 2")
     assert alias_pairs(apart) == []
     assert alias_pairs(make_config()) == []
+
+
+def test_the_secrets_of_keys_that_are_no_senders_are_warned_about() -> None:
+    """#80: each secret the gateway ignores is named once, with the command that removes it."""
+    config = make_config()
+    assert ignored_secrets(config) == []
+    keys = ("b2" * 32, "c3" * 32)
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, ignored_secrets=keys)
+    )
+    warnings = [str(w) for w in ignored_secrets(config)]
+    assert warnings == [
+        f"commands.codes_file: {key} has a code secret but is not in commands.senders: the "
+        f"secret is ignored; 'meshcore-home-gateway commands revoke {key}' removes it"
+        for key in keys
+    ]
+    assert [str(w) for w in start_warnings(config) if "codes_file" in str(w)] == warnings

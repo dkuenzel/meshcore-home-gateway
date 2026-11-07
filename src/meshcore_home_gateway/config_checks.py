@@ -28,9 +28,26 @@ def start_warnings(config: Config) -> list[Text]:
     return (
         protected_look_alikes(config)
         + alias_pairs(config)
+        + ignored_secrets(config)
         + broker_warnings(config)
         + log_level_warnings(config)
     )
+
+
+def ignored_secrets(config: Config) -> list[Text]:
+    """The code secrets of keys that are not command senders: removing a sender ends its
+    commands and nothing else, so its secret is ignored until `commands revoke` removes it
+    (#80). A key that is no sender cannot command, so the secret changes no verdict."""
+    return [
+        # Translators: key is a full public key; command is the command line that removes it
+        Text(
+            "commands.codes_file: {key} has a code secret but is not in commands.senders: the "
+            "secret is ignored; '{command}' removes it",
+            key=key,
+            command=f"meshcore-home-gateway commands revoke {key}",
+        )
+        for key in config.commands.ignored_secrets
+    ]
 
 
 def alias_pairs(config: Config) -> list[Text]:

@@ -1,7 +1,8 @@
 """`commands enrol KEY`: a new code secret for a command sender (IMP-002). It goes into the file
 `[commands] codes_file` names, which the service reads at its start; the sender adds it to an
 authenticator app from the otpauth:// line this prints (a QR code tool shows it as one) and ends
-each command with the app's 6-digit code (docs/configuration.md, `[commands]`)."""
+each command with the app's 6-digit code (docs/configuration.md, `[commands]`). `commands revoke
+KEY` removes the secret of a key that is no sender any more (#80)."""
 
 from __future__ import annotations
 
@@ -70,6 +71,52 @@ def _enrol(args: argparse.Namespace) -> int:
         key=key,
         path=path,
         secret=secret,
+    )
+    print(PREFIX + done, file=sys.stderr)
+    return EX_OK
+
+
+def _revoke(args: argparse.Namespace) -> int:
+    config = parse_config(read_text(args.config))
+    try:
+        key = normalise_key(args.key)
+    except TextError as exc:
+        print(PREFIX + tr_text(exc.text), file=sys.stderr)
+        return EX_USAGE
+    if config.commands.codes_file is None:
+        print(PREFIX + tr("[commands] codes_file is not set: no secret to revoke"), file=sys.stderr)
+        return EX_FAILURE
+    if key in config.commands.senders:
+        # Translators: security text (docs/translations.md): a sender without its secret would
+        # command without a code; command is the command line that gives it a new secret
+        still = tr(
+            "{key} is in [commands] senders: without its secret it would command without a code. "
+            "Remove it from the senders first, or give it a new secret: {command}",
+            key=key,
+            command=f"meshcore-home-gateway commands enrol {key}",
+        )
+        print(PREFIX + still, file=sys.stderr)
+        return EX_FAILURE
+    path = Path(config.commands.codes_file)
+    try:
+        entries = _entries(path)
+        if key in entries:
+            _write(path, {k: v for k, v in entries.items() if k != key}, args.config)
+    except _RefusedError as exc:
+        print(PREFIX + str(exc), file=sys.stderr)
+        return EX_FAILURE
+    if key not in entries:
+        print(
+            PREFIX + tr("{key} has no code secret in {path}", key=key, path=path), file=sys.stderr
+        )
+        return EX_FAILURE
+    # Translators: the service reads the codes file and the senders only when it starts
+    done = tr(
+        "the code secret of {key} is removed from {path}. The service reads the file and "
+        "[commands] senders at its start: restart it after a change of the senders (systemctl "
+        "restart meshcore-home-gateway).",
+        key=key,
+        path=path,
     )
     print(PREFIX + done, file=sys.stderr)
     return EX_OK

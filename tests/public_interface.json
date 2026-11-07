@@ -171,6 +171,25 @@
      }
     }
    },
+   "commands revoke": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {
+     "1": {
+      "name": "key",
+      "required": true,
+      "takes_value": true
+     }
+    }
+   },
    "config": {
     "options": {},
     "positionals": {

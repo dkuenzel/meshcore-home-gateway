@@ -197,6 +197,12 @@ msgstr ""
 msgid "remove a contact from the radio"
 msgstr ""
 
+#. security text (docs/translations.md): only for a key that is no sender
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "remove the code secret of a key that is no longer in [commands] senders from the codes file"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "run the bridge (the systemd service does this)"
@@ -235,6 +241,11 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "the archive; it must not exist yet"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "the former sender's full public key"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
@@ -375,6 +386,10 @@ msgid "request not sent: {detail}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/codes.py
+msgid "[commands] codes_file is not set: no secret to revoke"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/codes.py
 msgid "set [commands] codes_file first, such as /etc/meshcore-home-gateway/command-codes (docs/configuration.md)"
 msgstr ""
 
@@ -382,6 +397,24 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/codes.py
 #, python-brace-format
 msgid "the code secret of {key} is in {path}: restart the service to use it (systemctl restart meshcore-home-gateway). Add the line above to the sender's authenticator app (as a QR code: qrencode -t ansiutf8 'LINE'), or type in {secret}. Commands from this sender then end with the app's 6-digit code; its earlier secret no longer works."
+msgstr ""
+
+#. the service reads the codes file and the senders only when it starts
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "the code secret of {key} is removed from {path}. The service reads the file and [commands] senders at its start: restart it after a change of the senders (systemctl restart meshcore-home-gateway)."
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "{key} has no code secret in {path}"
+msgstr ""
+
+#. security text (docs/translations.md): a sender without its secret would
+#. command without a code; command is the command line that gives it a new secret
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "{key} is in [commands] senders: without its secret it would command without a code. Remove it from the senders first, or give it a new secret: {command}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/codes.py
@@ -1464,11 +1497,6 @@ msgstr ""
 msgid "{key}: {path}: {detail}"
 msgstr ""
 
-#: src/meshcore_home_gateway/config.py
-#, python-brace-format
-msgid "{key}: {sender} has a code secret but is not in commands.senders"
-msgstr ""
-
 #. security text (docs/translations.md); insecure = true is a setting
 #: src/meshcore_home_gateway/config_checks.py
 msgid "MQTT without TLS: the password, the messages, the positions and the command events cross the network in the clear (insecure = true accepts it)"
@@ -1481,6 +1509,12 @@ msgstr ""
 
 #: src/meshcore_home_gateway/config_checks.py
 msgid "command sender"
+msgstr ""
+
+#. key is a full public key; command is the command line that removes it
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "commands.codes_file: {key} has a code secret but is not in commands.senders: the secret is ignored; '{command}' removes it"
 msgstr ""
 
 #: src/meshcore_home_gateway/config_checks.py

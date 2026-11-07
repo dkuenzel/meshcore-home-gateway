@@ -182,7 +182,7 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
-| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error |
+| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error. The secret of a key that is not in `senders` is ignored, with a warning |
 | `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
@@ -222,6 +222,18 @@ systemd credential of its name is read instead, as for the broker password
 ([deployment.md](deployment.md#4-operations)). The phone's clock and the host's must agree within
 30 seconds; phones set theirs from the network. The code travels in the message's text: the
 `received` event and the history show it, which is harmless once the code is used.
+
+**A lost phone.** Remove its key from `senders` and restart the service: that ends the sender's
+commands, and nothing else. The gateway ignores the secret of a key that is not a sender, and
+its start and `check-config` warn about it. Then remove the secret from the file:
+
+```sh
+meshcore-home-gateway commands revoke <full key>
+```
+
+`revoke` takes only a key that is no longer in `senders`: a sender without its secret would
+command without a code. To keep the sender with a new phone, run `enrol` again instead; the new
+secret ends the old one.
 
 Commands that the gateway fetches while it connects are rejected: those that waited in the radio
 while the gateway was not running (restart, update, unplugged radio), and those that arrive during

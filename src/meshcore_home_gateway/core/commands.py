@@ -74,6 +74,8 @@ class CommandRules:
     codes_file: str | None = None  # the senders' code secrets, which load_config reads
     secrets: tuple[tuple[str, bytes], ...] = field(default=(), repr=False)  # key, secret
     reply: str = "none"  # REPLIES: answer accepted commands, and also safe rejections
+    # keys with a secret in codes_file that are not senders: ignored, and the start says so (#80)
+    ignored_secrets: tuple[str, ...] = ()
 
     @classmethod
     def create(
