@@ -150,7 +150,7 @@ lines of its own, which `dashboard.py` reads:
 * `# @each chats` … `# @end` repeats its lines once per chat page, `switches` and `removes` once
   per contact's switch or remove button. Inside, `@chats.title@` and the like are the item's
   fields. Each value matches a pattern first (`dashboard.FIELDS`): none is text from the mesh. A
-  chat page whose values do not match is left out, and the command says so.
+  chat page, switch or button whose values do not match is left out, and the command says so.
 * `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
 * `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@` and `@contact@` are filled in;
@@ -185,13 +185,15 @@ often they still break one.
    `place`, `problem`, `mon`, `kind`, `audience`) gives each branch a text, an unknown value
    through `m()`, and has a branch for each value of the gateway's list where there is one.
 3. A condition holds no marker and no `m()`, and never `has_value()`. The entity ID of a contact
-   appears only inside a card or row whose template condition tests that it exists, that it is
-   not `unavailable`, its `via_device_id` and its `serial_number`; a field of the gateway's own,
-   that its device is the gateway. A footer's condition names both its entities.
+   appears only inside a card or row whose template condition tests, for that entity, that it
+   exists, that it is not `unavailable`, its device's `via_device_id` and `serial_number`; for a
+   field of the gateway's own, that its device is the gateway. A footer's condition names both
+   its entities, each tested on its own, and its button is on its field's device.
 4. No `condition: state`, except with an `attribute` on the radio's entity; no `state_not`.
 5. No remove button as an entity row; a remove asks first, and its question names `{name}`.
 6. A link goes to `./` and a page of the same dashboard, or to an anchor of the guide of this
-   version (`v@version@`).
+   version (`v@version@`). A link to `./{{ x.path }}` stands only in a card that loops over
+   `["@chats@"]` with `for x in`.
 7. No marker inside an HTML attribute.
 8. Every card but a heading has a `<details>` last, or a `text_only` card with one follows it;
    every page ends with such a card; what a mapping macro says is explained there or on *Help*;
@@ -209,8 +211,9 @@ often they still break one.
 14. The three tabs' titles have at most 22 letters together in every language shipped, or the
     tabs do not fit a phone.
 15. No condition has `enabled`, no number in a condition is a string.
-16. A text that quotes a label of the dashboard is listed in `QUOTES`, and every language quotes
-    the label as it translates it.
+16. A text or a name that quotes a label of the dashboard, and a name that names a button's
+    label (*Return, then Send*), is listed in `QUOTES`, and every language says the label as it
+    translates it.
 17. No text names a section of the guide; it links to its anchor instead. Only a line that
     starts with "For your administrator:" names Home Assistant's menus.
 18. A chat page's footer is a `vertical-stack` of the refused line (a Markdown card with

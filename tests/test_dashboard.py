@@ -1154,6 +1154,96 @@ def test_the_controls_items_come_from_the_state(tmp_path: Path) -> None:
     ]
 
 
+LONG = "Garden shed repeater on the north side"  # its slug has the 32 characters a slug may have
+
+
+def test_a_slug_the_gateway_made_unique_keeps_its_page_and_controls(tmp_path: Path) -> None:
+    """Two companions of one long name: the gateway gives the second the slug of the first and
+    `_` with four digits of its key (mqtt/contact_devices.py), 37 characters. Its title is cut to
+    32 and keeps the digits, on its page and on its switch and button."""
+    contacts, _ = devices(tmp_path, clock=Clock())
+    contacts.update(mesh_of(node(ALICE, LONG), node(BOB, LONG)))
+    stopped(tmp_path)
+    records = ContactDeviceRecords(JsonStateFile(tmp_path / "state.json", read_only=True))
+    first, second = sorted(record.slug for record in records.announced.values())
+    assert (len(first), second) == (32, f"{first}_{BOB[:4]}")
+    chats = dashboard.chats(config(), records)
+    assert chats.skipped == ()
+    titles = ["Garden shed repeater on the nort", f"Garden shed repeater on the {BOB[:4]}"]
+    assert [(c.path, c.title) for c in chats.pages] == [
+        (f"contact-{first}", titles[0]),
+        (f"contact-{second}", titles[1]),
+    ]
+    assert [item["title"] for item in dashboard.switches(records)] == titles
+    assert [item["title"] for item in dashboard.removes(records)] == titles
+    assert dashboard.left_out(records) == ()
+
+
+def test_a_control_whose_values_fail_their_patterns_is_reported(tmp_path: Path) -> None:
+    """A switch or button of a slug the gateway never gives is left out, and the command line
+    says so (D-39), as it says so of a page."""
+    records = household(tmp_path)
+    assert dashboard.left_out(records, "mesh_2") == (("entity", 'button.mesh_2_x"]\n- y_remove'),)
+    assert dashboard.build(config(), tmp_path).left_out == dashboard.left_out(records)
+
+
+def test_a_contact_targets_page_is_not_capped(tmp_path: Path) -> None:
+    """A contact target whose contact has a device has that person's page, with the target's
+    field: the cap leaves it, as it leaves every target's page, and cuts the other people."""
+    announced = {f"{i:02x}" * 32: record(f"p{i:02d}", send="notify") for i in range(31)}
+    announced[GATE] = record("zz_gate", send="notify")
+    gate = f'[targets.gate]\ncontact = "{GATE}"\n'
+    chats = dashboard.chats(config(more=gate), state(tmp_path, announced))
+    assert [c.path for c in chats.pages[-2:]] == ["contact-p29", "contact-zz_gate"]
+    assert (chats.pages[-1].target, chats.pages[-1].write) == ("gate", f"text.{GW}_write_gate")
+    assert (chats.people, chats.without_page) == (31, 1)
+
+
+def test_a_channels_page_is_led_by_its_first_visible_alias(tmp_path: Path) -> None:
+    """alarm comes first on channel 1 but is hidden: family leads the page and gives it its
+    field, and the page lists both aliases."""
+    more = (
+        "[targets.alarm]\nchannel = 1\n[targets.family]\nchannel = 1\n"
+        '[homeassistant]\nhidden_targets = ["alarm"]\n'
+    )
+    (chat,) = dashboard.chats(config(more=more), state(tmp_path, {})).pages
+    assert chat.item() == page(
+        "chat-family",
+        "Family",
+        target="family",
+        aliases="alarm,family",
+        write=f"text.{GW}_write_family",
+        send=f"button.{GW}_write_family_send",
+    )
+
+
+def test_the_public_channel_is_a_channel(tmp_path: Path) -> None:
+    """Channel 0, the public channel, is a channel's page, not a person's."""
+    chats = dashboard.chats(config(more="[targets.public]\nchannel = 0\n"), state(tmp_path, {}))
+    assert [(c.path, c.channel) for c in chats.pages] == [("chat-public", 0)]
+    assert (chats.channels, chats.people) == (1, 0)
+
+
+def test_a_path_taken_skips_the_second_page(tmp_path: Path) -> None:
+    """Two contacts of one slug (a state the gateway does not write): the first by key has the
+    page, and the command line names the path of the other."""
+    records = state(tmp_path, {BOB: record("x", send="notify"), ALICE: record("x", send="notify")})
+    chats = dashboard.chats(config(), records)
+    assert [(c.path, c.key) for c in chats.pages] == [("contact-x", ALICE)]
+    assert chats.skipped == (("path", "contact-x"),)
+
+
+@pytest.mark.parametrize(
+    "content", [b"{not json", b"[]", b"\xff"], ids=["not json", "a list", "not utf-8"]
+)
+def test_a_state_that_cannot_be_read_gives_no_time(content: bytes, tmp_path: Path) -> None:
+    """A state that reads as no contacts has no time to report: the command line does not say
+    that its contacts are those of a state it could not read."""
+    (tmp_path / "state.json").write_bytes(content)
+    built = dashboard.build(config(), tmp_path)
+    assert (built.chats.people, built.written_at) == (0, None)
+
+
 def test_the_dashboard_has_a_page_per_chat(tmp_path: Path) -> None:
     """The pages of the chats list, each with its field, or without one and saying why."""
     household(tmp_path)
@@ -1377,6 +1467,38 @@ BROKEN = [
         ["@@", "{%- set b = '@chats.send@' -%}", "{%- set b = 'button.x' -%}"],
         "rule 3: chat-family: the footer",
     ),
+    # rule 3, per entity of a footer: neither tested to exist, the field's state not tested,
+    # the button not on the field's device
+    (
+        [
+            "@@",
+            (
+                "and states[t] is not none and not is_state(t, 'unavailable')\n"
+                "                 and states[b] is not none and not is_state(b, 'unavailable')"
+            ),
+            (
+                "and not is_state(t, 'unavailable')\n"
+                "                 and not is_state(b, 'unavailable')"
+            ),
+        ],
+        "rule 3: text.mesh_alice_write: its guard lacks states[…] is not none",
+    ),
+    (
+        [
+            "@@",
+            "and states[t] is not none and not is_state(t, 'unavailable')",
+            "and states[t] is not none",
+        ],
+        "rule 3: text.mesh_alice_write: its guard lacks not is_state(…, 'unavailable')",
+    ),
+    (
+        ["@@", "d is not none and device_id(b) == d", "d is not none"],
+        "rule 3: button.mesh_alice_write_send: its guard lacks its device",
+    ),
+    (
+        ["@@", "d is not none and device_id(b) == d", "d is not none"],
+        f"rule 3: button.{rules.GW}_write_family_send: its guard lacks its device",
+    ),
     # rule 4: a state condition
     (
         [
@@ -1429,6 +1551,26 @@ BROKEN = [
     (
         card('<div><a href="./help" target="_blank">_("Help")</a></div>'),
         "rule 6: a link of another form",
+    ),
+    # rule 6: a chat page's link outside the list of the chats, or not from a loop over it
+    (
+        card('<div><a href="./{{ x.path }}">_("Help")</a></div>'),
+        "rule 6: a link nowhere in this dashboard: ./{{ x.path }}",
+    ),
+    (
+        card(
+            '{%- set listed = ["@chats@"] -%}',
+            '<div><a href="./{{ x.path }}">_("Help")</a></div>',
+        ),
+        "rule 6: a link nowhere in this dashboard: ./{{ x.path }}",
+    ),
+    (
+        card(
+            "{%- for x in states.sensor -%}",
+            '<div><a href="./{{ x.path }}">_("Help")</a></div>',
+            "{%- endfor -%}",
+        ),
+        "rule 6: a link nowhere in this dashboard: ./{{ x.path }}",
     ),
     # rule 7: a marker in an attribute
     (card('<div><a href="./help" title="_("Help")">x</a></div>'), "rule 7: "),
@@ -1571,6 +1713,18 @@ def test_what_a_rule_allows_adds_no_finding(change: list[str]) -> None:
     assert added(into_help(*change)) == []
 
 
+@pytest.mark.real_catalogs
+def test_a_card_that_loops_over_the_chats_may_link_each_to_its_page() -> None:
+    """Rule 6: `./{{ x.path }}` resolves in a card that loops over the chats list (stage 4's All
+    chats), each x one of its pages."""
+    allowed = card(
+        '{%- for x in ["@chats@"] -%}',
+        '<div><a href="./{{ x.path }}">_("Help")</a></div>',
+        "{%- endfor -%}",
+    )
+    assert not [f for f in added(into_help(*allowed)) if f.startswith("rule 6")]
+
+
 def test_m_removes_the_controls_and_the_gateways_invisible_characters() -> None:
     """Rule 19: the class is the C0 and C1 controls but tab, LF and CR, and the invisible
     characters the gateway drops before it reads a contact link; U+200C and U+200D stay."""
@@ -1645,6 +1799,30 @@ def test_a_quoted_label_is_quoted_in_every_catalog() -> None:
     assert rules.quote_findings(template, {quoted: "Send"}, [fixed]) == []
     bare = template.replace(help_, "Type, then Send.")
     assert rules.quote_findings(bare, {}, [i18n.ENGLISH]) == []  # a bare word is no quote
+    named = bare + '    name: _("Tap \\"Help\\" first")\n'  # a quote in a whole value
+    assert rules.quote_findings(named, {}, [i18n.ENGLISH]) == [
+        "rule 16: 'Tap \"Help\" first' quotes 'Help', not in QUOTES"
+    ]
+
+
+@pytest.mark.real_catalogs
+def test_the_name_beside_send_says_the_buttons_label() -> None:
+    """Rule 16 on the shipped template: "Return, then Send", the name beside the Send button,
+    names the button's label, so it is in QUOTES; a catalog whose name says another word than
+    its button fails (§6.2). A whole value that names a button's label bare needs QUOTES too;
+    a heading that shares a word with another label does not."""
+    assert rules.QUOTES == {"Return, then Send": "Send"}
+    texts = {"Send": "Abschicken", "Return, then Send": "Eingabe, dann Senden"}
+    german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
+    assert rules.quote_findings(shipped(), rules.QUOTES, [german]) == [
+        "rule 16: de: 'Eingabe, dann Senden' does not say 'Abschicken'"
+    ]
+    texts["Return, then Send"] = "Eingabe, dann Abschicken"
+    fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
+    assert rules.quote_findings(shipped(), rules.QUOTES, [fixed, i18n.ENGLISH]) == []
+    assert rules.quote_findings(shipped(), {}, [i18n.ENGLISH]) == [
+        "rule 16: 'Return, then Send' names 'Send', not in QUOTES"
+    ]
 
 
 def test_the_example_configuration_gives_the_same_bytes_every_time(tmp_path: Path) -> None:

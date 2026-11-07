@@ -45,6 +45,8 @@ def _dashboard(args: argparse.Namespace) -> int:
         ),
     ]
     if found.without_page:
+        # Translators: after the dashboard was written: the contacts beyond the chat pages it
+        # makes. Chats is the dashboard's tab: write it as you translated the tab's title
         lines.append(
             trn(
                 "{count} contact has no chat page; it shows in Chats without one.",
@@ -58,6 +60,17 @@ def _dashboard(args: argparse.Namespace) -> int:
         lines.append(
             tr(
                 "Skipped a chat page: its {field} {value} is not allowed.",
+                field=name,
+                value=repr(value),
+            )
+        )
+    for name, value in built.left_out:  # repr: a slug of the state file may hold anything
+        # Translators: a contact's switch Telemetry or button Remove from radio, which the
+        # dashboard leaves out; field is the name of its value (entity, title, key), value the
+        # value as made from the service's state, quoted
+        lines.append(
+            tr(
+                "Skipped a contact's switch or button: its {field} {value} is not allowed.",
                 field=name,
                 value=repr(value),
             )

@@ -11,11 +11,12 @@ format, the command line and Home Assistant discovery are public interfaces
 ### Added
 
 - The dashboard has a page for each chat: one per channel target, one per contact target
-  without a device, and one per contact with a device that takes texts, at most 30. A chat that
-  has a message field shows it at the bottom of its page, with a *Send* button. The page of a
-  contact target with a device is that contact's. `meshcore-home-gateway dashboard` says on
-  standard error how many chat pages the dashboard has, which contacts have none, and which
-  chat pages it left out because a name does not fit a page's address.
+  without a device, and one per contact with a device that takes texts, at most 30 besides the
+  contact targets'. A chat that has a message field shows it at the bottom of its page, with a
+  *Send* button. The page of a contact target with a device is that contact's.
+  `meshcore-home-gateway dashboard` says on standard error how many chat pages the dashboard
+  has, which contacts have none, and which chat pages, switches and buttons it left out because
+  a name does not fit a page's address or an entity ID.
 - Two targets whose aliases differ only in `-` and `_` (such as `a-b` and `a_b`) get the same
   entity IDs in Home Assistant. Their chat pages have no message field and say why, and
   `meshcore-home-gateway dashboard` names the pair.

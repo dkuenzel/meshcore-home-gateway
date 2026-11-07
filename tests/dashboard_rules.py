@@ -52,8 +52,9 @@ MAPPINGS = (
     "kind",
     "audience",
 )
-# rule 16: a help text that quotes a label of the dashboard, by msgid: help -> label
-QUOTES: dict[str, str] = {}
+# rule 16: a text that quotes a label of the dashboard, by msgid: text -> label. The name
+# beside a chat's Send button names the button's label (design §6.2)
+QUOTES: dict[str, str] = {"Return, then Send": "Send"}
 # rule 19: what m() removes: C0 controls but tab, LF and CR; C1 controls; the invisible
 # characters the gateway drops before it parses a contact link; never U+200C and U+200D
 INVISIBLE = frozenset(
@@ -494,16 +495,56 @@ def _guards(loaded: Any, household: Household) -> list[str]:
                 for c in conditions(node)
                 if c.get("condition") == "template"
             ]
-            needs = ["is not none", "'unavailable'"]
-            if entity not in gateway:
-                needs += ["via_device_id", "serial_number"]
-            if not any(
-                entity in g
-                and all(n in g for n in needs)
-                and (entity not in gateway or _OWN.search(g))
-                for g in guards
-            ):
+            lacking = [guard_lacks(entity, g, own=entity in gateway) for g in guards]
+            named = [lack for lack in lacking if lack is not None]
+            if not named:
                 found.append(f"rule 3: {entity} without its guard")
+            elif all(named):
+                best = min(named, key=len)
+                found.append(f"rule 3: {entity}: its guard lacks {', '.join(best)}")
+    return found
+
+
+# what a guard binds to a name: an entity ID, or the device of an entity
+_SET = re.compile(r"\bset (\w+) = ('[^']*'|device_id\((?:\w+|'[^']*')\))")
+# two devices the guard says are the same: device_id(b) == d, d == gw
+_DEVICE = r"device_id\((?:\w+|'[^']*')\)|\b\w+\b"
+_SAME = re.compile(rf"(?<![\w')])({_DEVICE})\s*==\s*({_DEVICE})(?!\s*\()")
+
+
+def guard_lacks(entity: str, guard: str, *, own: bool) -> list[str] | None:
+    """What a guard lacks for one entity (D-23): that it exists, that it is not unavailable, and
+    that its device is the gateway's (`own`, a target's field) or a contact's below the gateway,
+    by its serial number; the device of a footer's button is the field's (device_id(b) == d).
+    None when the guard does not name the entity."""
+    if f"'{entity}'" not in guard:
+        return None
+    bound = dict(_SET.findall(guard))
+    names = [f"'{entity}'", *(name for name, value in bound.items() if value == f"'{entity}'")]
+    found = []
+    if not any(f"states[{name}] is not none" in guard for name in names):
+        found.append("states[…] is not none")
+    if not any(f"not is_state({name}, 'unavailable')" in guard for name in names):
+        found.append("not is_state(…, 'unavailable')")
+    devices = {f"device_id({name})" for name in names}
+    devices |= {name for name, value in bound.items() if value in devices}
+    same = _SAME.findall(guard)
+    grown = True
+    while grown:  # until no equality adds a device
+        more = {b for a, b in same if a in devices} | {a for a, b in same if b in devices}
+        grown = not more <= devices
+        devices |= more
+    pinned = (
+        "gw" in devices
+        if own
+        else any(
+            f"device_attr({device}, 'via_device_id') == gw" in guard
+            and f"device_attr({device}, 'serial_number') == '" in guard
+            for device in devices
+        )
+    )
+    if not pinned:
+        found.append("its device")
     return found
 
 
@@ -518,10 +559,6 @@ def _footer_guards(loaded: Any) -> list[str]:
             if not rows or not all(row in guard for row in rows):
                 found.append(f"rule 3: {view['path']}: the footer's guard names not both")
     return found
-
-
-# a gateway's own field: its device is the gateway's, not a device below it
-_OWN = re.compile(r"(?:device_id\('[^']*'\)|(?<![\w)'])\b\w+) == gw\b")
 
 
 def rule_4(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
@@ -581,8 +618,9 @@ def rule_6(template: str, source: Any, loaded: Any, household: Household) -> lis
             continue
         if href.startswith(guide + "#") and href.removeprefix(guide + "#") in anchors:
             continue
-        if re.fullmatch(r"\./\{\{ \w+\.path \}\}", href) and listed in content:
-            continue
+        page = re.fullmatch(r"\./\{\{ (\w+)\.path \}\}", href)
+        if page and listed in content and re.search(rf"\bfor {page.group(1)} in\b", content):
+            continue  # a page of the chats list, in a card that loops over it
         found.append(f"rule 6: a link nowhere in this dashboard: {href}")
     return found
 
@@ -769,7 +807,8 @@ def rule_15(template: str, source: Any, loaded: Any, household: Household) -> li
 
 
 def rule_16(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
-    """Quoted labels: a help that quotes a label is in QUOTES, and quotes it as written."""
+    """Quoted labels: a text that quotes a label, and a name (a whole value) that quotes one or
+    names a button's label bare, is in QUOTES; each catalog's text says its label as written."""
     return quote_findings(template, QUOTES, [i18n.translator(code) for code in i18n.LANGUAGES])
 
 
@@ -785,13 +824,33 @@ def quote_findings(
         json.loads(f'"{m}"')
         for m in re.findall(r'<a href="[^"]*">_\("((?:[^"\\]|\\.)*)"\)</a>', template)
     }
+    values = [
+        json.loads(f'"{m.group(2)}"')
+        for line in template.split("\n")
+        if (m := dashboard.VALUE.match(line))
+    ]
+    buttons = {
+        json.loads(f'"{m.group(1)}"')
+        for m in re.finditer(
+            r'^\s*(?:- )?action_name: _\("((?:[^"\\]|\\.)*)"\)$', template, re.MULTILINE
+        )
+    }
     found = []
-    for card in cards(template):
-        for help_ in (m for line in card.lines for m in msgids(line)):
-            for quoted in re.findall(r'"([^"]+)"|„([^“]+)“|“([^”]+)”', help_):
-                label = next(q for q in quoted if q)
-                if label in labels and quotes.get(help_) != label:
-                    found.append(f"rule 16: {help_!r} quotes {label!r}, not in QUOTES")
+    helps = [m for card in cards(template) for line in card.lines for m in msgids(line)]
+    for help_ in dict.fromkeys([*helps, *values]):
+        cited: dict[str, str] = {}
+        for quoted in re.findall(r'"([^"]+)"|„([^“]+)“|“([^”]+)”', help_):
+            if (label := next(q for q in quoted if q)) in labels:
+                cited[label] = "quotes"
+        if help_ in values:  # a name beside a control that names a button's label, bare
+            for label in sorted(buttons - {help_}):
+                if re.search(rf"(?<!\w){re.escape(label)}(?!\w)", help_):
+                    cited.setdefault(label, "names")
+        found += [
+            f"rule 16: {help_!r} {verb} {label!r}, not in QUOTES"
+            for label, verb in cited.items()
+            if quotes.get(help_) != label
+        ]
     for help_, label in quotes.items():
         for translator in translators:
             said = translator.pgettext(i18n.DASHBOARD, help_)

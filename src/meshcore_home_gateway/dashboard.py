@@ -66,10 +66,16 @@ UNSAFE: Final = frozenset({"Cc", "Cf", "Zl", "Zp"})
 # filled in here; any other field is a Jinja variable. {name}: the item's title, in an @each only
 FIXED: Final = ("node", "version", "name")
 LISTS: Final = ("chats", "switches", "removes")
-CHAT_PAGES: Final = 30  # people with a chat page, at most: 30 load as fast as a small dashboard
+# people with a chat page, at most, besides the contact targets': 30 load as fast as a small
+# dashboard (H-9)
+CHAT_PAGES: Final = 30
 _ALIAS: Final = r"[a-z0-9](?:[a-z0-9]|[-_](?=[a-z0-9])){0,31}"  # config.ID_RULE
 _ENTITY: Final = r"(?:text|switch|button)\.[a-z0-9_]+"
-_TITLE: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ]{0,31}")
+TITLE_CHARS: Final = 32  # a page's title, at most: one fits a phone's header (H-24)
+_TITLE: Final = re.compile(rf"[A-Za-z0-9][A-Za-z0-9 ]{{0,{TITLE_CHARS - 1}}}")
+# what the gateway adds to a slug another contact has: '_' and four digits of the key
+# (mqtt/contact_devices.py), after a slug of up to 32 characters
+_TAKEN: Final = 5
 _KEY: Final = r"[0-9a-f]{64}"
 _CONTROL: Final = {
     "entity": re.compile(_ENTITY),
@@ -187,12 +193,13 @@ class Chats:
 
 def chats(config: Config, records: ContactDeviceRecords) -> Chats:
     """The targets' pages by alias, those with a field first, then the people's, by slug: the
-    contacts with a device that takes texts, at most CHAT_PAGES. A target's conversation is its
-    channel or its contact: two aliases on one share a page, led by the first visible one
-    of the configuration; a contact target's contact with a device has the person's page, with
-    the target's field. Two visible aliases that differ in '-' and '_' only get one entity ID in
-    Home Assistant: their pages have no field. A page whose values fail their patterns is
-    skipped, and the command line says so."""
+    contacts with a device that takes texts, at most CHAT_PAGES besides the contact targets'. A
+    target's conversation is its channel or its contact: two aliases on one share a page, led by
+    the first visible one of the configuration; a contact target's contact with a device has the
+    person's page, with the target's field, and keeps it whatever the cap, as every target
+    does. Two visible aliases that differ in '-' and '_' only get one entity ID in Home
+    Assistant: their pages have no field. A page whose values fail their patterns is skipped,
+    and the command line says so."""
     gateway = _gateway(config)
     hidden = config.homeassistant.hidden_targets
     merged: dict[str, list[str]] = {}
@@ -258,12 +265,9 @@ def chats(config: Config, records: ContactDeviceRecords) -> Chats:
     targets = [chat for chat in by_alias if checked(chat)]
     valid = [chat for chat in persons if checked(chat)]
     pairs = tuple((group[0], other) for group in sorted(groups) for other in group[1:])
-    return Chats(
-        tuple(targets + valid[:CHAT_PAGES]),
-        tuple(skipped),
-        pairs,
-        max(0, len(valid) - CHAT_PAGES),
-    )
+    capped = {chat.path for chat in [chat for chat in valid if not chat.target][CHAT_PAGES:]}
+    kept = [chat for chat in valid if chat.path not in capped]
+    return Chats(tuple(targets + kept), tuple(skipped), pairs, len(capped))
 
 
 def room(config: Config, target: Target | None) -> int:
@@ -330,8 +334,12 @@ def _part(name: str) -> str:
 
 
 def _title(name: str) -> str:
-    """A page's title from an alias or a slug: words, the first letter capital."""
+    """A page's title from an alias or a slug: words, the first letter capital. A longer one is
+    cut before its last five characters, which keep the digits the gateway adds to a slug that
+    another contact has."""
     words = re.sub(r"[-_]", " ", name)
+    if len(words) > TITLE_CHARS:
+        words = words[: TITLE_CHARS - _TAKEN].rstrip() + words[-_TAKEN:]
     return words[:1].upper() + words[1:]
 
 
@@ -367,26 +375,47 @@ def controls(records: ContactDeviceRecords, prefix: str = "mesh") -> list[str]:
 
 def switches(records: ContactDeviceRecords, prefix: str = "mesh") -> list[dict[str, str]]:
     """The items of `switches`: each contact's switch *Telemetry*, by slug."""
-    return _controls("switches", records, "telemetry", f"switch.{prefix}_{{}}_telemetry")
+    return _controls("switches", records, prefix)[0]
 
 
 def removes(records: ContactDeviceRecords, prefix: str = "mesh") -> list[dict[str, str]]:
     """The items of `removes`: each contact's button *Remove from radio*, by slug."""
-    return _controls("removes", records, "remove", f"button.{prefix}_{{}}_remove")
+    return _controls("removes", records, prefix)[0]
+
+
+def left_out(records: ContactDeviceRecords, prefix: str = "mesh") -> tuple[tuple[str, str], ...]:
+    """The switches and buttons whose values fail their patterns, which switches() and removes()
+    leave out: the field and its value, for the command line (D-39)."""
+    return _controls("switches", records, prefix)[1] + _controls("removes", records, prefix)[1]
+
+
+# each list of controls: the component of a contact's device, and its entity ID
+_CONTROLS: Final = {
+    "switches": ("telemetry", "switch.{prefix}_{slug}_telemetry"),
+    "removes": ("remove", "button.{prefix}_{slug}_remove"),
+}
 
 
 def _controls(
-    name: str, records: ContactDeviceRecords, component: str, entity: str
-) -> list[dict[str, str]]:
+    name: str, records: ContactDeviceRecords, prefix: str
+) -> tuple[list[dict[str, str]], tuple[tuple[str, str], ...]]:
+    component, entity = _CONTROLS[name]
     platform = entity.partition(".")[0]
-    found = []
+    found, skipped = [], []
     for key, record in sorted(records.announced.items(), key=lambda kv: (kv[1].slug, kv[0])):
         if record.components.get(component) != platform:
             continue
-        item = {"entity": entity.format(record.slug), "title": _title(record.slug), "key": key}
-        if refused(name, item) is None:  # a slug the gateway never gives
+        slug = record.slug
+        item = {
+            "entity": entity.format(prefix=prefix, slug=slug),
+            "title": _title(slug),
+            "key": key,
+        }
+        if (bad := refused(name, item)) is None:
             found.append(item)
-    return found
+        else:  # a slug the gateway never gives
+            skipped.append(bad)
+    return found, tuple(skipped)
 
 
 # --- filling in the template --------------------------------------------------------------------
@@ -458,12 +487,14 @@ def render(
 @dataclass(frozen=True, slots=True)
 class Built:
     """A dashboard and what the command line says about it: the trackers on its map, its chat
-    pages, and when the service wrote the state it read (None: no state)."""
+    pages, when the service wrote the state it read (None: no state, or none it could read),
+    and the switches and buttons left out (left_out())."""
 
     yaml: str
     trackers: int
     chats: Chats = field(default_factory=Chats)
     written_at: float | None = None
+    left_out: tuple[tuple[str, str], ...] = ()
 
 
 def build(config: Config, state_dir: Path) -> Built:
@@ -492,11 +523,18 @@ def build(config: Config, state_dir: Path) -> Built:
         switches=switches(records, prefix),
         removes=removes(records, prefix),
     )
+    return Built(yaml, len(listed), pages, _written_at(path), left_out(records, prefix))
+
+
+def _written_at(path: Path) -> float | None:
+    """When the service wrote its state: None without a file, or for one that JsonStateFile
+    reads as empty because it is no JSON object, whose contacts the dashboard does not have."""
     try:
-        written_at = path.stat().st_mtime if path.is_file() else None
-    except OSError:
-        written_at = None
-    return Built(yaml, len(listed), pages, written_at)
+        written = path.stat().st_mtime
+        document = json.loads(path.read_bytes().decode("utf-8"))
+    except (OSError, ValueError):  # UnicodeDecodeError and JSONDecodeError are ValueErrors
+        return None
+    return written if isinstance(document, dict) else None
 
 
 def dashboard(config: Config, state_dir: Path) -> tuple[str, int]:

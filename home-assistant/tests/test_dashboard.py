@@ -1006,6 +1006,51 @@ async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
     assert problems(caplog) == []
 
 
+async def test_a_chat_pages_footer_hides_while_one_of_its_fields_cannot_be_used(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The guard tests each entity of a footer on its own: a field that is unavailable while its
+    button is not, a button with the expected ID on another device than its field, and a field
+    registered without a state (disabled) each hide their footer; a chat whose fields are as
+    the gateway announces them shows its footer."""
+    config = make_config()
+    broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
+    contacts_of(config, tmp_path, broker).update(mesh)
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    viewer = await household_viewer(hass, hass_ws_client)
+    footers = {v["path"]: v["footer"]["card"] for v in loaded["views"] if "footer" in v}
+    await gateway(hass, config)
+    await deliver(hass, config, broker, mesh)
+    own = discovery_payload(config, topics_of(config), RADIO)["dev"]["ids"][0]
+    await fire(
+        hass, f"homeassistant/device/{own}_alerts/config", drafts(own, f"{own}_write_alerts")
+    )
+    unavailable = drafts(own, f"{own}_write_my_target")  # never online
+    unavailable["cmps"][f"{own}_write_my_target_text"]["availability_topic"] = "test/never"
+    await fire(hass, f"homeassistant/device/{own}_my_target/config", unavailable)
+    split = drafts(own, f"{own}_write_operator")  # Alice's page: the button on another device
+    foreign = {"dev": {"ids": ["foreign"]}, "o": split["o"], "cmps": {}}
+    foreign["cmps"]["send"] = split["cmps"].pop(f"{own}_write_operator_send")
+    await fire(hass, f"homeassistant/device/{own}_operator/config", split)
+    await fire(hass, "homeassistant/device/foreign/config", foreign)
+    bob = f"{own}_contact_{BOB}"
+    disabled = drafts(bob, "mesh_bob_write", via=own, key=BOB)
+    disabled["cmps"]["mesh_bob_write_text"]["enabled_by_default"] = False
+    await fire(hass, f"homeassistant/device/{bob}_drafts/config", disabled)
+    assert hass.states.get(f"text.{own}_write_my_target").state == "unavailable"
+    assert hass.states.get(f"button.{own}_write_operator_send").state != "unavailable"
+    assert hass.states.get("text.mesh_bob_write") is None
+    assert er.async_get(hass).async_get("text.mesh_bob_write") is not None
+    shown = [path for path, footer in footers.items() if await viewer.visible(footer)]
+    assert shown == ["chat-alerts"], viewer.errors
+    assert problems(caplog) == []
+
+
 # --- the guide's script -------------------------------------------------------------------------
 
 

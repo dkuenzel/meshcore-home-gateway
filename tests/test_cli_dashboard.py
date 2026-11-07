@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from meshcore_home_gateway import dashboard
+from meshcore_home_gateway.catalog import read_po
 from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
 from meshcore_home_gateway.config import load_config
 from meshcore_home_gateway.core.model import Position
@@ -25,6 +26,10 @@ CONFIG = (
 )
 HERE = Position(52.1, 9.2)
 FLOOR = "This dashboard needs Home Assistant 2026.10 or later.\n"
+POT = (
+    Path(__file__).resolve().parent.parent
+    / "src/meshcore_home_gateway/locale/meshcore-home-gateway.pot"
+)
 
 
 def read_at(state: Path) -> str:
@@ -147,15 +152,15 @@ def test_standard_error_tells_the_floor_the_pages_and_the_state_it_read(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The Home Assistant the dashboard needs, after every dashboard; how many chat pages it
-    has; the alias pairs that get no field; the pages left out and skipped; and how
-    old the contacts are."""
+    has; the alias pairs that get no field; the pages left out and skipped, and the switches and
+    buttons skipped; and how old the contacts are."""
     config.write_text(CONFIG + TARGETS, encoding="utf-8")
     state = tmp_path / "state"
     state.mkdir()
     announced = {
         f"{i:02x}" * 32: {"slug": f"p{i:02d}", "cmps": {"send": "notify"}} for i in range(31)
     }
-    announced["ff" * 32] = {"slug": "x\x1b[2J", "cmps": {"send": "notify"}}
+    announced["ff" * 32] = {"slug": "x\x1b[2J", "cmps": {"send": "notify", "remove": "button"}}
     (state / "state.json").write_text(
         json.dumps({"ha_contact_devices": {"announced": announced}}), encoding="utf-8"
     )
@@ -167,6 +172,8 @@ def test_standard_error_tells_the_floor_the_pages_and_the_state_it_read(
         "Chat pages: 3 for channels, 30 for people.\n"
         "1 contact has no chat page; it shows in Chats without one.\n"
         "Skipped a chat page: its path 'contact-x\\x1b[2J' is not allowed.\n"
+        "Skipped a contact's switch or button: its entity 'button.mesh_x\\x1b[2J_remove' is "
+        "not allowed.\n"
         "The targets a-b and a_b get the same entity IDs in Home Assistant; their chat pages "
         "have no message field. Rename one of them.\n" + read_at(state) + FLOOR
     )
@@ -180,3 +187,11 @@ def test_without_a_state_standard_error_says_the_floor_and_no_contacts(
         "The map lists 0 contacts with a position.\nChat pages: 0 for channels, 0 for people.\n"
         + FLOOR
     )
+
+
+def test_the_line_of_the_people_without_a_page_tells_translators_the_tab() -> None:
+    """Its Chats is the dashboard's tab, a text of another context: the note says to use the
+    tab's translation."""
+    _, entries = read_po(POT.read_text(encoding="utf-8"))
+    (entry,) = [e for e in entries if e.msgid.startswith("{count} contact has no chat page")]
+    assert any("Chats" in note and "tab" in note for note in entry.comments), entry

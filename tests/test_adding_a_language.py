@@ -22,6 +22,7 @@ from types import ModuleType
 import pytest
 
 from meshcore_home_gateway.catalog import read_po
+from tests.dashboard_rules import QUOTES
 
 ROOT = Path(__file__).resolve().parent.parent
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -111,15 +112,20 @@ TABS = frozenset({"Overview", "Chats", "Contacts"})
 
 def translated(template: str) -> str:
     """Steps 1 and 2: the template as a catalog of the language, every text translated, the
-    plural rule in its header; the tabs' titles as in English, which fit."""
+    plural rule in its header; the tabs' titles as in English, which fit; a dashboard text that
+    says a label of the dashboard says it as translated (rule 16, QUOTES)."""
     header, entries = read_po(template)
     complete = []
     for entry in entries:
         english = [entry.msgid, entry.msgid_plural] if entry.msgid_plural else [entry.msgid]
-        tab = entry.msgctxt == "dashboard" and entry.msgid in TABS
-        complete.append(
-            dataclasses.replace(entry, msgstr=tuple(english if tab else map(marked, english)))
-        )
+        dashboard = entry.msgctxt == "dashboard"
+        if dashboard and entry.msgid in TABS:
+            msgstr = tuple(english)
+        elif dashboard and (label := QUOTES.get(entry.msgid)) is not None:
+            msgstr = (marked(entry.msgid.replace(label, marked(label))),)
+        else:
+            msgstr = tuple(map(marked, english))
+        complete.append(dataclasses.replace(entry, msgstr=msgstr))
     return str(tool.write_po({**header, "Plural-Forms": GERMANIC}, complete))
 
 
