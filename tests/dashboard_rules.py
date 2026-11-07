@@ -23,7 +23,7 @@ from typing import Any
 from meshcore_home_gateway import dashboard, i18n
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.model import DeliveryState
-from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL
+from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL, PROFILE_STATES
 from meshcore_home_gateway.protocol.links import _INVISIBLE
 from meshcore_home_gateway.views import _TELEMETRY_MODES
 
@@ -60,6 +60,9 @@ SELF_EVIDENT = frozenset({"mon"})
 # the lines for an administrator name Send too (D-63)
 QUOTES: dict[str, tuple[str, ...]] = {
     "Return, then Send": ("Send",),
+    # the heading above the remove rows and the question before a remove name its button
+    "Remove a contact": ("Remove",),
+    "Remove {name} from the radio?": ("Remove",),
     (
         "Type in the field “Write to {name}” at the bottom, tap Return (↵), then tap Send. "
         "Return only keeps the text; Send sends it."
@@ -102,13 +105,13 @@ def items(**fields: str) -> dict[str, str]:
 @dataclass(frozen=True)
 class Household:
     """What the generator puts in: a writable channel, a person, a person whose field is a
-    contact target's, a hidden target, an alias pair; Alice's switch and remove button."""
+    contact target's, a hidden target, an alias pair; Alice's switch and remove button, Bob's
+    remove button."""
 
     chats: Sequence[Mapping[str, str]]
     switches: Sequence[Mapping[str, str]]
     removes: Sequence[Mapping[str, str]]
     trackers: Sequence[str]
-    controls: Sequence[str]
 
 
 HOUSEHOLD = Household(
@@ -143,9 +146,11 @@ HOUSEHOLD = Household(
         ),
     ],
     switches=[{"entity": "switch.mesh_alice_telemetry", "title": "Alice", "key": ALICE}],
-    removes=[{"entity": "button.mesh_alice_remove", "title": "Alice", "key": ALICE}],
+    removes=[
+        {"entity": "button.mesh_alice_remove", "title": "Alice", "key": ALICE},
+        {"entity": "button.mesh_bob_remove", "title": "Bob", "key": BOB},
+    ],
     trackers=["device_tracker.mesh_alice"],
-    controls=["switch.mesh_alice_telemetry", "button.mesh_alice_remove"],
 )
 
 
@@ -160,7 +165,6 @@ def rendered(template: str, household: Household = HOUSEHOLD) -> str:
         version=VERSION,
         trackers=household.trackers,
         text=english,
-        controls=household.controls,
         chats=household.chats,
         switches=household.switches,
         removes=household.removes,
@@ -442,6 +446,7 @@ def rule_2(template: str, source: Any, loaded: Any, household: Household) -> lis
         "said": [state.value for state in DeliveryState],
         "telemetry": list(telemetry.STATES),
         "audience": list(_TELEMETRY_MODES.values()),
+        "profile": list(PROFILE_STATES),
         "mon": [str(n) for n in range(1, 13)],
     }
     found = []
@@ -484,7 +489,6 @@ def _guards(loaded: Any, household: Household) -> list[str]:
     """Every entity ID of a contact, or of a target's field, inside the guard that pins it."""
     found = []
     contact = {item["entity"] for item in [*household.switches, *household.removes]}
-    contact |= set(household.controls)
     gateway: set[str] = set()
     for chat in household.chats:
         (gateway if chat["target"] else contact).update(

@@ -737,7 +737,7 @@ async def test_all_chats_and_latest_chats_show_each_chats_newest_message(
     the three newest, All chats every page; and the contacts and channels without a page."""
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
     everything = card(loaded, "Who reads what")
-    latest = card(loaded, "./messages")
+    latest = card(cards(loaded, "overview"), "./messages")  # Latest chats
     documented(
         hass,
         HISTORY,

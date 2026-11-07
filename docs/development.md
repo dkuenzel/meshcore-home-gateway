@@ -154,6 +154,8 @@ lines of its own, which `dashboard.py` reads:
   per contact's switch or remove button. Inside, `@chats.title@` and the like are the item's
   fields. Each value matches a pattern first (`dashboard.FIELDS`): none is text from the mesh. A
   chat page, switch or button whose values do not match is left out, and the command says so.
+  A directive may also stand inside a card's content, indented as its lines: there it repeats
+  lines of the content, such as the keys of the contacts a list holds.
 * `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
 * `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@contact@` and `@guide@` (the guide of
@@ -184,8 +186,7 @@ lines of its own, which `dashboard.py` reads:
 
 The dashboard of 2.1 follows the numbered rules below as well. `tests/dashboard_rules.py` checks
 them on the dashboard made for a household with one chat of every kind, and each finding names
-its rule. Until the cards of 2.0 are written again, `tests/test_dashboard.py` counts, per rule, how
-often they still break one; *Overview*, *Chats* and the chat pages break none.
+its rule; the shipped template breaks none of them.
 
 1. A value goes onto one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element per line, or
    onto a line of `<table role="presentation" width="100%">` elements.

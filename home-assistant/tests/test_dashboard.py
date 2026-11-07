@@ -180,15 +180,19 @@ VIEWS = frozenset({"masonry", "panel", "sidebar", "sections"})
 SECTIONS = frozenset({"grid"})
 # the Markdown cards, by a part of their content or visibility
 WRITE = "script.mesh_message"  # the guide's script, for automations: no card names it (D-22)
-TABLE = "sort(attribute=0, reverse=true)"  # the contacts table of 2.0
+TABLE = "set c = namespace(heard='', word='', battery=none, path='')"  # People and devices
 # the gateway's sensors of 2.1 that the cards read; a gateway of 2.0 has none of them
 HISTORY = f"sensor.{PREFIX}_message_history"
 PENDING = f"sensor.{PREFIX}_pending_messages"
 CONFIGURATION = f"sensor.{PREFIX}_configuration"
 OF_2_1 = (HISTORY, PENDING, CONFIGURATION)
-# the contact event's entity; a reason code such as 'unknown_contact' ends the same way
-EVENT = re.compile(r"event\.meshcore_home_gateway_\w+_contact'")
+# the result of adding a contact, under the field (a reason code such as 'unknown_contact' ends
+# the same way; Latest of each kind names the event's entity too, as `c`)
+EVENT = re.compile(r"set e = 'event\.meshcore_home_gateway_\w+_contact'")
 HEARD, QR, HINT = "_add_node'", "contact_link", "set listed"
+LATEST = "macro setting(v)"  # Latest of each kind, on Gateway
+VERSIONS = "m(state_attr(radio, 'bridge_version')"  # Settings, Versions
+FACTS = "set transport = cfg.get('transport')"  # Gateway, Radio
 # the line a value from Home Assistant stands on: one whole HTML element
 ELEMENT = re.compile(
     r"<div>.*</div>|<table>.*</table>|<ha-qr-code .*></ha-qr-code>|<details>.*</details>"
@@ -490,7 +494,10 @@ def alert(output: str) -> tuple[str, str]:
 
 
 def referenced(loaded: dict[str, Any]) -> set[str]:
-    return set(ENTITY_ID.findall(json.dumps(loaded)))
+    """The entity IDs a dashboard names; not the actions its rows perform (button.press)."""
+    text = json.dumps(loaded)
+    actions = set(re.findall(r'"perform_action": "([a-z_]+\.[a-z_]+)"', text))
+    return set(ENTITY_ID.findall(text)) - actions
 
 
 async def guide_script(hass: HomeAssistant) -> dict[str, Any]:
@@ -547,13 +554,15 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
         assert all(f".meshcore_home_gateway_{gw}_" in e for e in own)
         pages = [v for v in views if v["path"] in PAGES]
         titles = [loaded[f"mesh-{node_id}"]["title"], *(v["title"] for v in pages)]
+        # a contact's row is named by the contact, as a chat page is
+        rows = [id(c["row"]) for v in pages for c in walk(v["sections"]) if "row" in c]
         titles += [
             c.get("heading") or c.get("title") or c["name"]
             for v in pages
             for c in walk(v["sections"])
-            if c["type"] == "heading" or "title" in c or "name" in c
+            if (c["type"] == "heading" or "title" in c or "name" in c) and id(c) not in rows
         ]
-        assert len(titles) == 22  # with *Telemetry and removal*: Alice has a device
+        assert len(titles) == 33, titles  # the headings of every page, Hidden contacts
         for title in titles:
             if language == "xx":
                 assert title.startswith("‹xx: ")
@@ -694,9 +703,8 @@ async def test_every_card_renders_in_every_situation(
         assert listening(hass, loaded) == [], name
 
     situation("no gateway")
-    assert render(hass, card(loaded, HEARD)) == said(
-        config, "The gateway's controls are not in Home Assistant yet."
-    )
+    controls = "The gateway's controls are not in Home Assistant yet."
+    assert render(hass, card(loaded, HEARD)).startswith(f"<div>{said(config, controls)}</div>")
     topics = await gateway(hass, config, online=False)
     situation("not online yet")
     await fire(hass, topics.availability, "offline", retain=True)
@@ -709,9 +717,8 @@ async def test_every_card_renders_in_every_situation(
     for entity in OF_2_1:  # discovered by a gateway of 2.1
         hass.states.async_remove(entity)
     situation("a gateway of 2.0")
-    assert render(hass, card(loaded, TABLE)) == said(
-        config, "No contact has a device in Home Assistant."
-    )
+    none = said(config, "No contact has a device in Home Assistant yet.")
+    assert f"<div>{none}</div>\n<details>" in render(hass, card(loaded, TABLE))
     update = (
         "Chats need gateway version 2.1 or later. Ask your administrator to update the gateway."
     )
@@ -756,7 +763,8 @@ async def test_the_contacts_table_lists_fifty_contacts_newest_first(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """Each with the time since it was heard, as the card's text, or no time."""
+    """Each by its device, heard newest first, with the time it was heard as a history shows
+    it (D-9): today's clock time, yesterday's or the day's, or no time."""
     config = speaking(language, monkeypatch)
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     topics = await gateway(hass, config)
@@ -771,17 +779,31 @@ async def test_the_contacts_table_lists_fifty_contacts_newest_first(
     outputs = rendered(hass, loaded)
     table = render(hass, card(loaded, TABLE))
     assert table.count("<tr>") == 51
-    times = [
-        said(config, text, n=n)
-        for text, n in (("{n} min ago", "5"), ("{n} h ago", "3"), ("{n} d ago", "2"))
-    ]
-    found = [table.find(f"<td>{t}</td>") for t in times]
-    assert -1 not in found
+    times = [d9(config, now - ago, now) for ago in (330, 3.5 * 3600, 2.5 * 86400)]
+    found = [table.find(f"</small></td><td>{t}</td>") for t in times]
+    assert -1 not in found, times
     assert found == sorted(found)  # newest first
-    assert table.count(f"<td>{NONE}</td><td>") == 46  # never heard: no time
+    assert table.count(f"</small></td><td>{NONE}</td>") == 46  # never heard: no time
     assert listening(hass, loaded) == []
     assert form_findings(outputs) == []
     assert problems(caplog) == []
+
+
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def d9(config: Config, at: float, now: float) -> str:
+    """A time of a history as the cards say it (D-9): today's clock time, "yesterday" and the
+    clock, or the day, the month and the clock; in Home Assistant's time zone."""
+    shown = dt_util.as_local(dt_util.utc_from_timestamp(at))
+    days = (dt_util.as_local(dt_util.utc_from_timestamp(now)).date() - shown.date()).days
+    clock = shown.strftime("%H:%M")
+    if days <= 0:
+        return clock
+    if days == 1:
+        return said(config, "yesterday {time}", time=clock)
+    month = said(config, MONTHS[shown.month - 1])
+    return said(config, "{day} {month} {time}", day=str(shown.day), month=month, time=clock)
 
 
 # what else anyone may write, or a radio may hold in a name (#114, H-22): direction and invisible
@@ -838,7 +860,7 @@ def entries(i: int, name: str, text: str) -> tuple[dict[str, Any], dict[str, Any
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
-async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
+async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(  # noqa: PLR0915 - place by place
     hass: HomeAssistant,
     mqtt: Any,
     hass_ws_client: Any,
@@ -871,9 +893,12 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
         HEARD: "a heard node's label",
         HINT: "tracker not on the map",
         QR: "contact link",
-        "Why someone is missing": "device name, where everyone is",
+        LATEST: "name, Latest of each kind",
+        VERSIONS: "the gateway's version",
+        FACTS: "the radio's name",
         "macro entry(e)": "sender, Latest messages",
     }
+    everyone = card(cards(loaded, "overview"), "Why someone is missing")
     alices = card(cards(loaded, "alice"), "macro row(e)")
     every: dict[str, str] = {}
     corpus = [*zip(KEYS, NAMES, TEXTS, strict=True)]
@@ -902,7 +927,8 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
         await fire(
             hass,
             topics.state,
-            state_document(known=True) | {"version": name, "contact_link": name},
+            state_document(known=True)
+            | {"version": name, "contact_link": name, "radio_name": name},
         )
         outputs = rendered(hass, loaded)
         outputs["the refused line"] = render(hass, refused)
@@ -923,6 +949,8 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
         for needle, place in places.items():
             said = render(hass, card(loaded, needle)).replace("\u200b", "")
             assert shown(name) in said, (name, place)
+        said = render(hass, everyone).replace("\u200b", "")
+        assert shown(name) in said, (name, "device name, where everyone is")
         said = render(hass, alices).replace("\u200b", "")
         assert shown(name) in said, (name, "Alice's thread: the reason, a code")
         for each in (alices, card(loaded, "macro entry(e)")):
@@ -1049,7 +1077,8 @@ async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others
     assert not [c for c in walk(loaded["mesh-none"]) if c["type"] == "map"]
     note = said(
         config,
-        "No contact had a position when this dashboard was made. Generate it again once one has.",
+        "Nobody had a position when this dashboard was made. People show here once your "
+        "administrator makes the dashboard again.",
     )
     assert note in json.dumps(loaded["mesh-none"], ensure_ascii=False)
     hint = render(hass, card(loaded["mesh-early"], HINT))
@@ -1092,7 +1121,7 @@ async def test_a_dashboard_shows_only_its_own_gateways_contacts(
     await deliver(hass, config, first, household(ALICE_NODE))
     await gateway(hass, other)
     await deliver(hass, other, second, zed)
-    assert "<td>Alice</td>" in render(hass, card(loaded[URL], TABLE))
+    assert ">Alice</a>" in render(hass, card(loaded[URL], TABLE))
     for needle in (TABLE, HINT):
         assert "Zed" not in render(hass, card(loaded[URL], needle)), needle
         assert "Zed" in render(hass, card(loaded["mesh-radio-2"], needle)), needle
@@ -1290,16 +1319,16 @@ STEPS = {
     "duplicate": "Not sent again: the same text went to this chat a moment ago.",
     "rejected": "Not sent: text too long.",
 }
-STATES = {
-    "waiting": "waiting",
+STATES = {  # D-8, HA-08: as a chat page says them
+    "waiting": "not asked yet",
     "answering": "answering",
-    "no_position": "no position",
-    "away": "away",
-    "no_answer": "no answer",
-    "no_path": "no path",
-    "look_alike": "look-alike",
-    "excluded": "excluded",
-    "off": "off",
+    "no_position": "answering, no position",
+    "away": "no answer lately",
+    "no_answer": "no answer for a day",
+    "no_path": "not reachable now",
+    "look_alike": "not asked: look-alike",
+    "excluded": "not asked (switch off)",
+    "off": "off for everyone",
 }
 
 
@@ -1329,7 +1358,7 @@ async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 -
         alice["footer"]["card"]["cards"][0],
     )
 
-    assert render(hass, event) == "No contact event yet."
+    assert "<div>No contact event yet.</div>" in render(hass, event)
     await fire(
         hass,
         topics.contact_event,
@@ -1343,11 +1372,14 @@ async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 -
             reason="look_alike",
         ),
     )
-    refused = "<div><b>Bob</b> request refused (another contact has the same key prefix) "
-    assert render(hass, event).startswith(refused)
+    refused = (
+        '<div><ha-alert alert-type="warning"><b>Bob</b> request refused (another contact has '
+        "the same key prefix) · "
+    )
+    assert refused in render(hass, event)
     await fire(hass, topics.contact_event, contact_event("added", ALICE, ALICE_NODE))
-    added = r"<div><b>Alice</b> added to the radio \d+ min ago</div>"
-    assert re.fullmatch(added, render(hass, event))
+    added = r"<div><b>Alice</b> added to the radio · \d\d:\d\d</div>\n<details>"
+    assert re.search(added, render(hass, event))
 
     at = iso(time.time() - 30)
     keys = {"kind": "contact", "contact_key": ALICE, "channel_index": None, "name": "Alice"}
@@ -1386,19 +1418,23 @@ async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 -
     )
     assert "⚠ delivered? maybe forged" in render(hass, thread)  # SEC-001
 
-    row = "<tr><td>Alice</td><td>Companion</td><td>0 min ago</td><td>{}</td></tr>"
+    def alice() -> str:
+        """Alice's row of the contacts table: her chat page, her type, then the cells."""
+        start = '<tr><td><a href="./contact-alice">Alice</a><br><small>Companion</small></td>'
+        return render(hass, table).split(start, 1)[1].split("</tr>", 1)[0]
+
     for state, text in STATES.items():
         document = contact_document(mesh.contacts[ALICE]) | {"telemetry_state": state}
         await fire(hass, topics.contact(ALICE), document)
-        assert row.format(text) in render(hass, table), state
+        assert alice().endswith(f"<td>{NONE}</td><td>{text}</td>"), state  # no battery
     await fire(hass, topics.contact(ALICE), contact_document(mesh.contacts[ALICE]))
-    assert row.format(NONE) in render(hass, table)  # unknown
-    hilltop = f"<tr><td>Hilltop</td><td>Repeater</td><td>{NONE}</td><td>{NONE}</td></tr>"
-    assert hilltop in render(hass, table)  # a repeater is not asked
+    assert alice().endswith(f"<td>{NONE}</td>")  # unknown
+    hilltop = render(hass, table).split("<tr><td>Hilltop<br><small>Repeater</small></td>")[1]
+    assert hilltop.split("</tr>")[0].endswith(f"<td>{NONE}</td><td>{NONE}</td>")  # not asked
     assert problems(caplog) == []
 
 
-async def test_the_cards_say_how_long_ago(
+async def test_the_cards_say_when(
     hass: HomeAssistant,
     mqtt: Any,
     hass_ws_client: Any,
@@ -1407,9 +1443,9 @@ async def test_the_cards_say_how_long_ago(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The last contact event and a contact's last heard time, minutes, hours and days later:
-    each card counts on its own. A chat shows a message's clock time: today "10:31", the day
-    before "yesterday 10:31", older ones with the day and the month (D-9)."""
+    """D-9: the last contact event, a contact's last heard time and a chat's message as a
+    history says a time: today "10:31", the day before "yesterday 10:31", older ones with the
+    day and the month; minutes, hours and days later, each card counts on its own."""
     config = make_config()
     broker, mesh = Broker(), household(ALICE_NODE)
     contacts_of(config, tmp_path, broker).update(mesh)
@@ -1422,21 +1458,21 @@ async def test_the_cards_say_how_long_ago(
     )
     await fire(hass, topics.received, received_payload(message, Contact(ALICE, "Alice"), None))
     await fire(hass, topics.contact_event, contact_event("added", ALICE, ALICE_NODE))
+    added = hass.states.get(f"event.{PREFIX}_contact")
+    assert added is not None
+    at = dt_util.parse_datetime(added.state)
+    assert at is not None
     document = contact_document(mesh.contacts[ALICE], telemetry_state="answering")
     await fire(hass, topics.contact(ALICE), document | {"heard_at": iso(now)})
-    for seconds, text, n in (
-        (330, "{n} min ago", "5"),
-        (3.5 * 3600 - 330, "{n} h ago", "3"),
-        (2 * 86400, "{n} d ago", "2"),
-    ):
+    for seconds in (330, 3.5 * 3600 - 330, 2 * 86400):
         freezer.tick(timedelta(seconds=seconds))
-        ago = said(config, text, n=n)
-        assert (
-            render(hass, card(loaded, EVENT)) == f"<div><b>Alice</b> added to the radio {ago}</div>"
+        later = time.time()
+        when = d9(config, at.timestamp(), later)
+        assert f"<div><b>Alice</b> added to the radio · {when}</div>" in render(
+            hass, card(loaded, EVENT)
         )
-        assert f"<td>Alice</td><td>Companion</td><td>{ago}</td>" in render(
-            hass, card(loaded, TABLE)
-        )
+        heard = d9(config, now, later)
+        assert f"<small>Companion</small></td><td>{heard}</td>" in render(hass, card(loaded, TABLE))
     thread = card(cards(loaded, "alice"), "macro row(e)")
     at = dt_util.as_local(dt_util.utc_from_timestamp(now))
     keys = {"direction": "in", "kind": "contact", "contact_key": ALICE, "name": "Alice"}

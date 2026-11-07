@@ -5,6 +5,7 @@ dashboard and renders its cards is for the contract tests (make ha-test)."""
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import string
@@ -12,6 +13,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -166,20 +168,18 @@ def test_a_translation_a_card_would_read_as_code_gives_the_english_text(bad: str
     """Jinja, HTML, Markdown links and web or mail addresses, a marker, a line break or another
     control or format character: the English text instead. U+2028 and U+2029 would end the
     YAML block, CR and LF the card's HTML block."""
-    template = 'title: _("Mesh")\ncontent: |-\n  {%- set n = 3 -%}_("{n} min ago")\n'
-    texts = {"Mesh": f"Netz {bad} x", "{n} min ago": f"vor {{n}} {bad} Min."}
+    template = 'title: _("Mesh")\ncontent: |-\n  {%- set mins = 3 -%}_("{mins} min")\n'
+    texts = {"Mesh": f"Netz {bad} x", "{mins} min": f"{{mins}} {bad} Min."}
     assert render(template, translated(texts)) == (
-        'title: "Mesh"\ncontent: |-\n  {%- set n = 3 -%}{{ n }} min ago\n'
+        'title: "Mesh"\ncontent: |-\n  {%- set mins = 3 -%}{{ mins }} min\n'
     )
 
 
 def test_a_translation_with_a_field_of_its_own_gives_the_english_text() -> None:
-    template = 'content: |-\n  {%- set n = 3 -%}_("{n} min ago")\n'
-    for wrong in ("vor {m} Min.", "vor {n.real} Min.", "vor {0} Min.", "vor {n Min."):
-        assert render(template, translated({"{n} min ago": wrong})).endswith("{{ n }} min ago\n")
-    assert render(template, translated({"{n} min ago": "vor {n} Min."})).endswith(
-        "vor {{ n }} Min.\n"
-    )
+    template = 'content: |-\n  {%- set mins = 3 -%}_("{mins} min")\n'
+    for wrong in ("{m} Min.", "{mins.real} Min.", "{0} Min.", "{mins Min."):
+        assert render(template, translated({"{mins} min": wrong})).endswith("{{ mins }} min\n")
+    assert render(template, translated({"{mins} min": "{mins} Min."})).endswith("{{ mins }} Min.\n")
 
 
 def test_the_pseudo_language_passes_the_guard(
@@ -189,11 +189,11 @@ def test_the_pseudo_language_passes_the_guard(
     speaking(monkeypatch, pseudo())
     text, _ = dashboard.dashboard(config(more='[homeassistant]\nlanguage = "xx"\n'), tmp_path)
     assert '\ntitle: "‹Mesh›"\n' in text
-    assert "‹{{ n }} min ago›" in text
+    assert "‹{{ mins }} min›" in text
     assert "‹For your administrator: Home Assistant has no entity of node radio1. " in text
     english, _ = dashboard.dashboard(config(), tmp_path)
     assert "‹" not in english
-    assert re.sub(r"[‹›]", "", text) == english
+    assert re.sub(r"[‹›]", "", text) == re.sub(r"[‹›]", "", english)  # menus: Settings › …
 
 
 @pytest.mark.real_catalogs
@@ -291,31 +291,58 @@ def test_the_trackers_are_sorted_and_only_valid_entity_ids(tmp_path: Path) -> No
     assert dashboard.trackers(records, "mesh_2")[0] == "device_tracker.mesh_2_alice"
 
 
-def test_the_controls_card_lists_each_contacts_switch_and_button(tmp_path: Path) -> None:
-    """IMP-049: by contact, the switch Telemetry and the button Remove from radio it was
-    announced with; a slug the gateway never gives is left out, and without any the card is
-    not written."""
+def test_the_switches_and_remove_buttons_are_guarded_rows_of_the_state(tmp_path: Path) -> None:
+    """IMP-049, D-25, D-26: each contact's switch and remove button from the state, each as a
+    row whose guard pins it to this gateway and to the contact's key (rule 3); a remove asks
+    first, naming the contact; a slug the gateway never gives is left out; without any, a line
+    says so (D-32). The card of 2.0, a fixed list of IDs, is gone (HA-01, HA-05)."""
+    zed = DAVE
 
     def record(slug: str, **components: str) -> dict[str, object]:
         return {"slug": slug, "cmps": components}
 
     announced = {
-        "k1": record("zed", remove="button"),  # a repeater: never asked
-        "k2": record("alice", telemetry="switch", remove="button", last_heard="sensor"),
-        "k3": record('x"]\n- y', telemetry="switch", remove="button"),
-        "k4": record("bob", telemetry="sensor"),  # never a switch of that key
+        zed: record("zed", remove="button"),  # a repeater: never asked
+        ALICE: record("alice", telemetry="switch", remove="button", last_heard="sensor"),
+        CAROL: record('x"]\n- y', telemetry="switch", remove="button"),
+        BOB: record("bob", telemetry="sensor"),  # never a switch of that key
     }
     state = tmp_path / "state.json"
     state.write_text(json.dumps({"ha_contact_devices": {"announced": announced}}), encoding="utf-8")
-    records = ContactDeviceRecords(JsonStateFile(state, read_only=True))
-    expected = ["switch.mesh_alice_telemetry", "button.mesh_alice_remove", "button.mesh_zed_remove"]
-    assert dashboard.controls(records) == expected
-    assert dashboard.controls(records, "mesh_2")[0] == "switch.mesh_2_alice_telemetry"
     text, _ = dashboard.dashboard(config(), tmp_path)
-    assert f"entities: {json.dumps(expected)}" in text
-    assert "Telemetry and removal" in text
+    contacts = next(v for v in rules.load(text)["views"] if v["path"] == "contacts")
+    rows = [
+        (n["row"], n["conditions"][0]["value_template"])
+        for n, _ in rules.nodes(contacts)
+        if isinstance(n, dict) and n.get("type") == "conditional"
+    ]
+    switches = [row["entity"] for row, _ in rows if "entity" in row]
+    removes = [row["tap_action"]["target"]["entity_id"] for row, _ in rows if "entity" not in row]
+    assert switches == ["switch.mesh_alice_telemetry"]
+    assert removes == ["button.mesh_alice_remove", "button.mesh_zed_remove"]
+    keys = [ALICE, ALICE, zed]
+    for (row, guard), key in zip(rows, keys, strict=True):
+        assert f"device_attr(device_id(e), 'serial_number') == '{key}'" in guard, row
+    asked = [row["tap_action"]["confirmation"]["text"] for row, _ in rows if "entity" not in row]
+    assert asked[0].startswith("Alice can then no longer write to this home")
+    assert "Telemetry and removal" not in text
+    assert "No contact can be asked yet." not in text
     state.write_text(json.dumps({"ha_contact_devices": {"announced": {}}}), encoding="utf-8")
-    assert "Telemetry and removal" not in dashboard.dashboard(config(), tmp_path)[0]
+    text, _ = dashboard.dashboard(config(), tmp_path)
+    assert "No contact can be asked yet." in text
+    assert "No contact can be removed here." in text
+    assert "type: conditional" not in text
+
+
+def test_the_generator_takes_no_fixed_list_of_controls() -> None:
+    """Design §6.1: the flag `controls` and `["@controls@"]` of 2.0 are gone; the switches and
+    buttons are the items of `switches` and `removes`."""
+    assert "controls" not in inspect.signature(dashboard.render).parameters
+    assert not hasattr(dashboard, "controls")
+    assert "@controls@" not in shipped()
+    assert "# @if controls" not in shipped()
+    with pytest.raises(TemplateError, match="unknown flag"):
+        render("# @if controls\na\n# @end\n")
 
 
 # the reasons of docs/mqtt-api.md, Delivery and Managing contacts
@@ -431,19 +458,27 @@ def test_latest_messages_keep_the_threads_rules_as_the_same_text() -> None:
     assert len(set(dropped)) == 1
 
 
-def test_the_contacts_card_finds_the_contacts_by_the_configured_prefix() -> None:
-    """ARC-015: `[homeassistant] contact_entity_prefix` reaches the card's entity patterns."""
+def test_the_contacts_cards_find_the_contacts_by_their_device_not_a_prefix() -> None:
+    """HA-06, D-31: the contacts table, the sensors and the lists of Contacts find this gateway's
+    contacts by their devices below its own, never by an entity-ID prefix, so a prefix set later
+    keeps them: the dashboard is the same whatever `[homeassistant] contact_entity_prefix`."""
     template = (Path(dashboard.__file__).parent / dashboard.TEMPLATE).read_text(encoding="utf-8")
-    yaml = dashboard.render(
-        template,
-        node_id="radio1",
-        version="1.0",
-        trackers=[],
-        text=lambda m, v: m,
-        contact_prefix="mesh_2",
-    )
-    assert "sensor\\\\.mesh_2_.+_last_heard" in yaml
-    assert "sensor\\\\.mesh_.+_last_heard" not in yaml
+
+    def made(prefix: str) -> str:
+        return dashboard.render(
+            template,
+            node_id="radio1",
+            version="1.0",
+            trackers=[],
+            text=lambda m, v: m,
+            contact_prefix=prefix,
+        )
+
+    assert made("mesh_2") == made("mesh")
+    assert "@contact@" not in template
+    contacts = rules.load(rules.rendered(shipped()))["views"][2]
+    table = next(t for t in rules.texts(contacts) if "<th>Asking</th>" in t)
+    assert "select('is_device_attr', 'via_device_id', gw)" in table
 
 
 @pytest.mark.parametrize("state", ["missing", "a directory", "not json"])
@@ -454,7 +489,7 @@ def test_without_a_readable_state_the_map_is_the_note(state: str, tmp_path: Path
         (tmp_path / "state.json").write_text("{", encoding="utf-8")
     text, count = dashboard.dashboard(config(), tmp_path)
     assert count == 0
-    assert "No contact had a position when this dashboard was made." in text
+    assert "Nobody had a position when this dashboard was made." in text
     assert "type: map" not in text
     assert "{%- set listed = [] -%}" in text
     assert not (tmp_path / "state.json.corrupt").exists()  # read only
@@ -468,10 +503,11 @@ def test_with_trackers_the_map_without_them_the_note() -> None:
     assert '{%- set listed = ["device_tracker.mesh_alice", "device_tracker.mesh_zed"] -%}' in (
         with_map
     )
-    assert "No contact had a position" not in with_map
+    assert "Nobody had a position" not in with_map
     without = render(shipped())
     assert "type: map" not in without
-    assert "No contact had a position when this dashboard was made." in without
+    assert "Nobody had a position when this dashboard was made." in without
+    assert "> [!" not in with_map + without  # a coloured box, no GitHub alert (rule 11)
     assert "# @" not in with_map + without
 
 
@@ -518,7 +554,7 @@ def test_the_same_inputs_give_the_same_bytes() -> None:
     assert first == render(shipped(), trackers=list(reversed(listed)))
     assert first == render(shipped(), trackers=sorted(listed))
     assert "\r" not in first
-    assert first.endswith("tell your administrator the time.</li></ul></details>\n")  # Help
+    assert first.endswith("needs Home Assistant 2026.10 or later.</li></ul></details>\n")  # Help
     assert not first.endswith("\n\n")
 
 
@@ -543,7 +579,6 @@ _PLACEHOLDERS = {
     "@major@",
     "@minor@",
     "@trackers@",
-    "@controls@",
     "@chats@",
     "@guide@",
 }
@@ -619,7 +654,7 @@ def rule_findings(template: str) -> list[str]:  # noqa: PLR0912 - one rule after
             for placeholder in re.findall(r"@[\w.]+@", line)
             if placeholder not in _PLACEHOLDERS and not _of_item(placeholder, each.get(number))
         ]
-        for listed in ("@trackers@", "@controls@", "@chats@"):
+        for listed in ("@trackers@", "@chats@"):
             if listed in line and f'["{listed}"]' not in line:
                 found.append(f"{number}: {listed} is a whole list")
         tags = [match.span() for match in _TAG.finditer(line)]
@@ -779,7 +814,7 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         for name in re.findall(r"macro (\w+)\(", t)
     }
     assert {"m", "mt", "when", "mark", "why", "problem", "place", "telemetry", "what"} <= names
-    assert template.count(MACRO) == 25
+    assert template.count(MACRO) == 42
     assert len(list(dashboard.MARKER.finditer(template))) > 70
 
 
@@ -791,8 +826,8 @@ LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
     ("old", "new", "finding"),
     [
         (
-            '              _("No contact event yet.")',
-            '              {{ m(_("No contact event yet.")) }}',
+            '              <div>_("No contact event yet.")</div>',
+            '              <div>{{ m(_("No contact event yet.")) }}</div>',
             "a marker inside a Jinja tag",
         ),
         ("<b>{{ m(r.title) }}</b>", "<b>{{ r.title | e }}</b>", "| e outside the macro m"),
@@ -803,15 +838,22 @@ LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
             "starts with the macro m",
         ),
         (
-            '              _("No contact event yet.")',
-            '              # Translators: x\n              _("No contact event yet.")',
+            '              <div>_("No contact event yet.")</div>',
+            '              # Translators: x\n              <div>_("No contact event yet.")</div>',
             "'# Translators:' line",
         ),
-        ("              {%- elif v == 'away' -%}_(\"away\")\n", "", "telemetry: the branches"),
+        (
+            "              {%- elif v == 'away' -%}_(\"no answer lately\")\n",
+            "",
+            "telemetry: the branches",
+        ),
         ("{%- else -%}{{ m(v) }}", "{%- else -%}{{ v }}", "neither m() nor a mapping"),
         (
-            '              > _("No contact had a position',
-            '              > {{ m(states("sensor.x")) }} _("No contact had a position',
+            '              <details><summary>_("What this gateway does")',
+            (
+                '              > {{ m(states("sensor.x")) }}\n'
+                '              <details><summary>_("What this gateway does")'
+            ),
             "an alert line prints a value",
         ),
         (SETTINGS, SETTINGS + "            show_state: on\n", "on unquoted"),
@@ -852,7 +894,7 @@ def _cards(template: str) -> Iterator[list[str]]:
 def test_every_card_that_prints_a_value_defines_the_macro_first() -> None:
     """After a problem card's class (rule 9)."""
     printing = [card for card in _cards(shipped()) if any(re.search(r"\bm\(", t) for t in card)]
-    assert len(printing) == 25
+    assert len(printing) == 42
     assert all(card[_CLASS.fullmatch(card[0]) is not None] == MACRO for card in printing)
     assert sum(_CLASS.fullmatch(card[0]) is not None for card in printing) == 8
 
@@ -1399,18 +1441,6 @@ def test_the_dashboard_has_a_page_per_chat(tmp_path: Path) -> None:
 
 # --- the rules of 2.1 that need the dashboard's structure (dashboard_rules.py) -------------------
 
-# What the shipped template still breaks, by rule: the cards of 2.0 that stage 5 rewrites
-# (docs/development.md, the dashboard's template); Overview, Chats and the chat pages break none.
-# Each rewrite lowers the counts, to none.
-PENDING = {
-    "rule 3": 2,  # the 2.0 card of the switches and remove buttons
-    "rule 5": 1,  # the remove buttons as entity rows
-    # help at the cards of Contacts, Map and Gateway, About in those views and in Settings, the
-    # words of the contacts table and the last contact event, the views and controls on Help
-    "rule 8": 63,
-    "rule 11": 1,  # the map's note
-}
-
 
 def rule_counts(found: list[str]) -> dict[str, int]:
     counts: dict[str, int] = {}
@@ -1514,23 +1544,10 @@ def test_the_reader_refuses_yaml_the_template_does_not_use(text: str) -> None:
         rules.load(text)
 
 
-def test_the_shipped_template_breaks_only_what_stages_4_and_5_rewrite() -> None:
-    """The numbered rules on the shipped template: all hold but those of PENDING, and
-    those exactly as often as counted; none on a page written again."""
-    found = rules.findings(shipped())
-    assert rule_counts(found) == PENDING
-    lines = shipped().split("\n")
-
-    def page(finding: str) -> str:
-        """The view a finding names, or the view of the template's line it names."""
-        where = finding.split(": ")[1]
-        if not where.isdigit():
-            return where
-        above = (re.match(r'    path: "?([^"]+)"?$', line) for line in lines[: int(where)])
-        return [match.group(1) for match in above if match][-1]
-
-    written = ["overview", "messages", "@chats.path@"]  # a chat page: its path in the template
-    assert [page(f) for f in found if "Help does not list" not in f and page(f) in written] == []
+def test_the_shipped_template_keeps_the_rules_of_2_1() -> None:
+    """The numbered rules on the shipped template: every view of 2.1 keeps every one of them
+    (stage 5 wrote the cards of 2.0 again)."""
+    assert rules.findings(shipped()) == []
 
 
 def test_the_views_are_three_tabs_and_pages_without_a_tab() -> None:
@@ -1561,12 +1578,12 @@ def test_the_views_are_three_tabs_and_pages_without_a_tab() -> None:
 
 
 def test_help_opens_from_the_about_of_each_tab_and_from_every_chat_page() -> None:
-    """D-5: Help opens from each view's "About this view": the last card of Overview and of
-    Chats, and on a chat page the help under its thread, whose reasons in words Help explains
-    ("Why a message was not sent")."""
+    """D-5: Help opens from each view's "About this view": the last card of Overview, Chats,
+    Contacts, Map, Gateway and Settings, and on a chat page the help under its thread, whose
+    reasons in words Help explains ("Why a message was not sent")."""
     views = rules.load(rules.rendered(shipped()))["views"]
     link = '<a href="./help">Help</a>'
-    for view in views[:2]:
+    for view in views[:6]:
         about = view["sections"][-1]["cards"][-1]["content"].split("\n")[-1]
         assert about.startswith("<details>"), view["path"]
         assert link in about, view["path"]
@@ -1606,13 +1623,22 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
     ]
     links += [h for t in rules.texts(loaded) for h in re.findall(r'href="([^"]*)"', t)]
     pages = {link.removeprefix("./") for link in links if not link.startswith(("./{{", "http"))}
-    assert sorted(pages) == ["contacts", "gateway", "help", "map", "messages", "settings"]
+    assert sorted(pages) == [
+        "contacts",
+        "gateway",
+        "help",
+        "map",
+        "messages",
+        "overview",
+        "settings",
+    ]
     assert pages <= paths
     # each chat of Latest chats and All chats, from the list of the chat pages
     assert {link for link in links if link.startswith("./{{")} == {"./{{ m(r.path) }}"}
     # the guide's section, of this dashboard's version (D-30)
-    guide = rules.GUIDE_URL.format(version=rules.VERSION) + "#a-second-gateway"
-    assert {link for link in links if link.startswith("http")} == {guide}
+    guide = rules.GUIDE_URL.format(version=rules.VERSION)
+    sections = {guide + "#a-second-gateway", guide + "#privacy"}
+    assert {link for link in links if link.startswith("http")} == sections
     assert rules.rule_6(shipped(), None, loaded, rules.HOUSEHOLD) == []
 
 
@@ -1944,6 +1970,26 @@ GERMAN = {  # a catalog that says the labels and the key as its controls do
         "Eingabe behält nur den Text; Abschicken sendet ihn."
     ),
     NOTHING: "Nichts gesendet. Tippe im Feld Eingabe (↵), dann Abschicken.",
+    "Remove": "Entfernen",
+    "Remove a contact": "Entfernen eines Kontakts",
+    "Remove {name} from the radio?": "Entfernen von {name} aus dem Funkgerät?",
+    "Paste a key or contact link into the field above, then tap Return (↵).": (
+        "Füge einen Schlüssel oder Kontaktlink ins Feld oben ein, dann tippe Eingabe (↵)."
+    ),
+    "A key, or a contact link from the MeshCore app (Share contact), is added when you tap "
+    "Return (↵).": (
+        "Ein Schlüssel oder ein Kontaktlink aus der MeshCore-App (Kontakt teilen) kommt dazu, "
+        "wenn du Eingabe (↵) tippst."
+    ),
+    "At the bottom of a chat's page: type, tap Return (↵), then tap Send. Return only keeps the "
+    "text at the gateway; Send sends it, once.": (
+        "Unten auf der Seite eines Chats: tippe, dann Eingabe (↵), dann Abschicken. Eingabe "
+        "behält den Text nur am Gateway; Abschicken sendet ihn, einmal."
+    ),
+    "On Contacts: paste a key or a contact link from the MeshCore app, then tap Return (↵).": (
+        "Unter Kontakte: füge einen Schlüssel oder Kontaktlink aus der MeshCore-App ein, dann "
+        "tippe Eingabe (↵)."
+    ),
 }
 
 
@@ -2005,8 +2051,10 @@ def test_the_name_beside_send_says_the_buttons_label() -> None:
     fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in GERMAN.items()])
     assert rules.quote_findings(shipped(), rules.QUOTES, [fixed, i18n.ENGLISH]) == []
     assert rules.quote_findings(shipped(), {}, [i18n.ENGLISH]) == [
+        "rule 16: 'Return, then Send' names 'Send', not in QUOTES",  # also on Help
         f"rule 16: {HOW!r} quotes 'Write to {{name}}', not in QUOTES",
-        "rule 16: 'Return, then Send' names 'Send', not in QUOTES",
+        "rule 16: 'Remove a contact' names 'Remove', not in QUOTES",
+        "rule 16: 'Remove {name} from the radio?' names 'Remove', not in QUOTES",
     ]
 
 
@@ -2055,3 +2103,250 @@ def test_the_example_configuration_gives_the_same_bytes_every_time(tmp_path: Pat
     assert '    path: "chat-alerts"\n' in first
     assert '    path: "chat-operator"\n' in first  # a contact target without a device
     assert '    path: "contact-alice"\n' in first
+
+
+# --- Contacts, Map, Gateway, Settings and Help ----------------------------------------------------
+
+
+def view_of(path: str) -> dict[str, Any]:
+    """A view of the shipped template, rendered for the household of the rules."""
+    return next(v for v in rules.load(rules.rendered(shipped()))["views"] if v["path"] == path)
+
+
+def kinds(view: dict[str, Any]) -> list[str]:
+    """The cards of a view in order: a heading by its text, another card by its type."""
+    return [
+        f"heading {c['heading']}" if c["type"] == "heading" else c["type"]
+        for section in view["sections"]
+        for c in section["cards"]
+    ]
+
+
+WORDS = [  # D-8: the telemetry state and its words, as a chat page and Contacts say them
+    ("waiting", "not asked yet"),
+    ("answering", "answering"),
+    ("no_position", "answering, no position"),
+    ("away", "no answer lately"),
+    ("no_answer", "no answer for a day"),
+    ("no_path", "not reachable now"),
+    ("look_alike", "not asked: look-alike"),
+    ("excluded", "not asked (switch off)"),
+    ("off", "off for everyone"),
+]
+
+
+def test_the_asking_words_are_the_chat_pages_words() -> None:
+    """HC 23, D-8 (HA-08): the column Asking on Contacts says the telemetry state with the words
+    of a chat page, from one text of the macro telemetry(), and its help explains them as the
+    chat page does, word for word; Help explains them too. No card says "excluded" for a
+    companion nobody included (M9)."""
+    found = [card for card in _cards(shipped()) if any("macro telemetry(v)" in t for t in card)]
+    assert len(found) == 3  # People and devices, Sensors, a chat page's About
+
+    def macro(card: list[str]) -> str:
+        at = next(i for i, t in enumerate(card) if "macro telemetry(v)" in t)
+        end = next(i for i in range(at, len(card)) if "endmacro" in card[i])
+        return "\n".join(card[at : end + 1])
+
+    assert len({macro(card) for card in found}) == 1
+    for code, word in WORDS:
+        assert f"{{%- elif v == '{code}' -%}}_(\"{word}\")" in macro(found[0]) or (
+            f"{{%- if v == '{code}' -%}}_(\"{word}\")" in macro(found[0])
+        ), code
+    assert '_("excluded")' not in shipped()
+    explained = re.findall(r'<li><b>_\("([^"]*)"\)</b>: _\("([^"]*)"\)</li>', shipped())
+    chat = [pair for pair in explained if pair[0] in dict(WORDS).values()]
+    assert len(chat) == 3 * len(WORDS)  # the chat page, People and devices, Help
+    assert len(set(chat)) == len(WORDS)  # one explanation per word
+    people = next(card for card in found if any('<th>_("Asking")</th>' in t for t in card))
+    assert people != found[-1]
+
+
+def test_contacts_lists_people_then_asks_adds_and_removes() -> None:
+    """Design §2.5: People and devices with its badges and the column Asking (HC 23); Sensors;
+    Ask for position and battery; Add or remove, the QR code under "Let someone add this home"
+    before the remove rows (HC 28); Nodes heard nearby without it; About last."""
+    contacts = view_of("contacts")
+    assert kinds(contacts)[:5] == [
+        "heading People and devices",
+        "markdown",
+        "heading Sensors",
+        "markdown",
+        "heading Ask for position and battery",
+    ]
+    heading = contacts["sections"][0]["cards"][0]
+    assert [b["tap_action"]["navigation_path"] for b in heading["badges"]] == [
+        "./gateway",
+        "./settings",
+        "./help",
+    ]
+    add = kinds(contacts).index("heading Add or remove")
+    assert kinds(contacts)[add : add + 9] == [
+        "heading Add or remove",
+        "markdown",  # why adding or removing does not work now (D-29)
+        "heading Add a contact",
+        "entities",
+        "markdown",  # the result and the Return line (D-65)
+        "heading Let someone add this home",
+        "markdown",  # the QR code
+        "heading Remove a contact",
+        "entities",
+    ]
+    subtitles = [c for s in contacts["sections"] for c in s["cards"] if c["type"] == "heading"]
+    assert {c["heading"] for c in subtitles if c.get("heading_style") == "subtitle"} == {
+        "Add a contact",
+        "Let someone add this home",
+        "Remove a contact",
+    }
+    table = next(t for t in rules.texts(contacts) if "<th>Asking</th>" in t)
+    assert "<th>Name</th><th>Heard</th><th>Battery</th><th>Asking</th>" in table
+    nearby = contacts["sections"][-1]["cards"]
+    assert nearby[0]["heading"] == "Nodes heard nearby"
+    assert not any("ha-qr-code" in str(c) for c in nearby)
+    qr = [t for t in rules.texts(contacts) if "<ha-qr-code" in t]
+    assert len(qr) == 1
+    assert "Add this home's radio in the MeshCore app" in qr[0]
+
+
+def test_adding_by_key_says_return_and_never_enter() -> None:
+    """D-65, D-7: the field's label ends without "(press Enter)", and the line below it asks for
+    Return (↵); no household text says Enter. Hidden contacts and Show again (D-28)."""
+    contacts = view_of("contacts")
+    rows = [r for c in rules.nodes(contacts) for r in [c[0]] if isinstance(r, dict) and "name" in r]
+    names = {r.get("entity", r.get("type")): r["name"] for r in rows if "row" not in r}
+    assert names[f"select.{GW}_add_node"] == "Add at once: pick a node heard nearby"
+    assert names[f"text.{GW}_add_contact"] == "Add by key or contact link"
+    (hidden,) = [r for r in rows if r.get("entity") == f"button.{GW}_show_hidden"]
+    assert (hidden["type"], hidden["name"], hidden["action_name"]) == (
+        "button",
+        "Hidden contacts",
+        "Show again",
+    )
+    assert "confirmation" not in hidden["tap_action"]
+    result = next(t for t in rules.texts(contacts) if "event.meshcore_home_gateway" in t)
+    first = next(line for line in result.split("\n") if line.startswith("<div>"))
+    assert (
+        first == "<div>Paste a key or contact link into the field above, then tap Return (↵).</div>"
+    )
+    texts = rules.msgids(shipped())
+    assert [t for t in texts if re.search(r"\bEnter\b", t)] == []
+    assert "Show contacts deleted in Home Assistant again" not in shipped()
+
+
+def test_the_gateway_page_has_health_radio_settings_and_the_latest_events() -> None:
+    """Design §2.6: Health, whose row "Messages on their way" counts as the status line does
+    (contract item 8); Radio without the tile of airtime (D-65): its value is Health's row
+    "Airtime left this hour"; Radio settings with the effective audience (D-58); Latest of each
+    kind; About last."""
+    gateway = view_of("gateway")
+    assert kinds(gateway) == [
+        "heading Gateway",
+        "markdown",
+        "heading Radio",
+        "markdown",
+        "entities",
+        "markdown",
+        "history-graph",
+        "markdown",
+        "heading Radio settings",
+        "markdown",
+        "heading Latest of each kind",
+        "markdown",
+        "markdown",
+    ]
+    assert not [
+        c for c, _ in rules.nodes(gateway) if isinstance(c, dict) and c.get("type") == "tile"
+    ]
+    assert f"sensor.{GW}_airtime_available" not in [
+        r.get("entity") for r, _ in rules.nodes(gateway) if isinstance(r, dict)
+    ]
+    health = gateway["sections"][0]["cards"][1]["content"]
+    for row in ("Messages on their way", "Airtime left this hour", "Radio link", "Free disk"):
+        assert f"<td>{row}</td>" in health, row
+    waiting = "e.get('step') == 'queued'"
+    status = view_of("overview")["sections"][0]["cards"][0]["content"]
+    assert "now() - t > timedelta(seconds=60)" in health
+    assert waiting in status
+    assert "q.get('step') == 'queued'" in health
+    settings = gateway["sections"][2]["cards"][1]["content"]
+    for label in ("battery", "position", "readings"):
+        assert f"<td>Who may ask this radio for its {label}</td>" in settings
+
+
+def test_settings_show_what_the_administrator_set_and_change_nothing() -> None:
+    """Design §2.7 (owner Q2): a card per group, each a table with the configuration key in
+    <code>; no control on the page; the versions always."""
+    settings = view_of("settings")
+    assert [k for k in kinds(settings) if k.startswith("heading")] == [
+        "heading Settings",
+        "heading Chats and messages",
+        "heading Privacy",
+        "heading Contacts and Home Assistant",
+        "heading Radio and airtime",
+        "heading Versions",
+    ]
+    assert set(kinds(settings)) == {
+        *(k for k in kinds(settings) if k.startswith("heading")),
+        "markdown",
+    }
+    tables = [t for t in rules.texts(settings) if "<th>What it means</th>" in t]
+    assert len(tables) == 4
+    for key in ("messages.confirm_nonce", "contacts.heard_nodes", "homeassistant.controls"):
+        assert any(f"<code>{key}</code>" in t for t in tables), key
+    assert any("<code>radio.profile.manage</code>" in t for t in tables)
+    assert any("<code>commands.codes</code>" in t for t in tables)
+    assert any(
+        f"<td>This dashboard</td><td>{rules.VERSION}</td>" in t for t in rules.texts(settings)
+    )
+
+
+# DR-14: what Help names, besides the titles and the names rule 8 finds by themselves
+HELP_TOPICS = (
+    "What this gateway does",
+    "The views",
+    "Every button and switch",
+    "Kinds of messages",
+    "What this dashboard cannot do",
+    "When something is wrong",
+    "Why a message was not sent",
+    "Who sees what",
+    "For your administrator",
+)
+
+
+def test_help_names_every_page_and_every_control() -> None:
+    """DR-14 (rule 8): Help names every view and every name and button label of the dashboard:
+    Chats, Contacts, Map, Gateway, Settings, Write to …, Return, then Send, and those of stage 5;
+    it has the topics of the system, also what this dashboard cannot do and the kinds of
+    messages (HC 23, HC 33). Without one of them, rule 8 finds it."""
+    help_ = view_of("help")
+    summaries = [
+        m.group(1)
+        for t in rules.texts(help_)
+        for m in re.finditer(r"<details><summary>([^<]*)</summary>", t)
+    ]
+    assert [t for t in HELP_TOPICS if t not in summaries] == []
+    said = " ".join(rules.texts(help_))
+    for label in (
+        "Chats",
+        "Contacts",
+        "Map",
+        "Gateway",
+        "Settings",
+        "Write to …",
+        "Return, then Send",
+        "Ask for position and battery",
+        "Add at once: pick a node heard nearby",
+        "Add by key or contact link",
+        "Remove",
+        "Hidden contacts",
+        "Show again",
+        "Background noise",
+        "Radio battery",
+    ):
+        assert f"<b>{label}</b>" in said, label
+    assert "guide's script" not in said
+    assert "draft and send" in said
+    for label in ("Return, then Send", "Hidden contacts", "Radio battery"):
+        broken = shipped().replace(f'<b>_("{label}")</b>', "<b>x</b>")
+        assert f"rule 8: Help does not list {label!r}" in rules.findings(broken), label

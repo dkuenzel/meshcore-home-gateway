@@ -31,6 +31,7 @@ from test_dashboard import (
     LANGUAGES,
     PENDING,
     card,
+    cards,
     contacts_of,
     deliver,
     documented,
@@ -468,7 +469,7 @@ async def test_where_everyone_is_lists_the_contacts_with_a_position(
     latest change; without one, what to do; and the way to the map."""
     config = make_config()
     empty, _ = await household_of(hass, hass_ws_client, config, tmp_path / "none")
-    assert render(hass, card(empty, WHERE)).split("\n")[:2] == [
+    assert render(hass, card(cards(empty, "overview"), WHERE)).split("\n")[:2] == [
         (
             "<div>Nobody shares a position yet. Turn on Ask for position and battery for a "
             "person who agrees (Contacts).</div>"
@@ -478,7 +479,7 @@ async def test_where_everyone_is_lists_the_contacts_with_a_position(
     loaded, _ = await household_of(hass, hass_ws_client, config, tmp_path, ALICE_NODE, HILL_NODE)
 
     def rows() -> list[tuple[str, str]]:
-        where = render(hass, card(loaded, WHERE))
+        where = render(hass, card(cards(loaded, "overview"), WHERE))
         return re.findall(r"<tr><td><b>(.*?)</b></td><td>(.*?)</td><td", where)
 
     hass.states.async_set("device_tracker.mesh_hilltop", "not_home")
@@ -490,7 +491,9 @@ async def test_where_everyone_is_lists_the_contacts_with_a_position(
     assert rows()[1] == ("Alice", "position not current")
     hass.states.async_set("device_tracker.mesh_alice", "unknown")
     assert rows()[1] == ("Alice", "no position yet")
-    assert re.search(r"<small>since \d\d:\d\d</small>", render(hass, card(loaded, WHERE)))
+    assert re.search(
+        r"<small>since \d\d:\d\d</small>", render(hass, card(cards(loaded, "overview"), WHERE))
+    )
     assert problems(caplog) == []
 
 
@@ -508,9 +511,11 @@ async def test_where_everyone_is_names_the_administrator_when_asking_is_off(
     config = make_config()
     loaded, _ = await household_of(hass, hass_ws_client, config, tmp_path)
     hass.states.async_set(CONFIGURATION, iso(time.time()), {"telemetry": {"enabled": True}})
-    assert render(hass, card(loaded, WHERE)).startswith("<div>Nobody shares a position yet. Turn")
+    assert render(hass, card(cards(loaded, "overview"), WHERE)).startswith(
+        "<div>Nobody shares a position yet. Turn"
+    )
     hass.states.async_set(CONFIGURATION, iso(time.time()), {"telemetry": {"enabled": False}})
-    assert render(hass, card(loaded, WHERE)).startswith(
+    assert render(hass, card(cards(loaded, "overview"), WHERE)).startswith(
         "<div>Nobody shares a position yet. Asking for position and battery is off in this "
         "home's settings (your administrator).</div>"
     )
@@ -530,8 +535,8 @@ async def test_latest_chats_need_a_gateway_of_2_1_and_name_whom_to_ask(
     what the administrator does (HC 8)."""
     config = make_config()
     loaded = await made(hass, hass_ws_client, config, tmp_path)
-    latest = card(loaded, LATEST)
-    for found in (latest, card(loaded, WHERE)):
+    latest = card(cards(loaded, "overview"), LATEST)
+    for found in (latest, card(cards(loaded, "overview"), WHERE)):
         assert render(hass, found).startswith(
             "<div>The gateway is not found: see the first line of Overview.</div>"
         )

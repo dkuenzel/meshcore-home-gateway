@@ -8,15 +8,15 @@ The template is YAML as it stands, every branch of its conditionals included:
 * `@gw@` (the gateway's part of its entity IDs), `@contact@` (how its contacts' entity IDs
   begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers), `@guide@`
   (the address of the guide, docs/home-assistant.md, of this version),
-  `["@trackers@"]` (the map's trackers, a JSON list), `["@chats@"]` (the chat pages, a list of
-  JSON objects, which Jinja reads) and `["@controls@"]` (the contacts' telemetry switches and
-  remove buttons) are filled in.
+  `["@trackers@"]` (the map's trackers, a JSON list) and `["@chats@"]` (the chat pages, a list
+  of JSON objects, which Jinja reads) are filled in.
 * `# @each <list>` … `# @end` repeats its lines for each item of `chats`, `switches` or
   `removes`, with `@<list>.<field>@` the item's field; no @each inside another. Each item value
   matches its pattern (FIELDS) before it goes in: none is text from the mesh.
-* `# @if <flag>` … `# @else` … `# @end` keeps the first or the second part: `trackers`,
-  `controls` and a list are true while not empty, `<list>.<field>` inside that list's @each
-  while the field is not empty.
+* `# @if <flag>` … `# @else` … `# @end` keeps the first or the second part: `trackers` and a
+  list are true while not empty, `<list>.<field>` inside that list's @each while the field is
+  not empty. A directive may stand inside a card's content, indented as its lines: there it
+  repeats or keeps lines of the content.
 * `_("…")`, a JSON string inside, marks a text (msgctxt "dashboard"; tools/i18n.py extracts it).
   As a whole YAML value it becomes a quoted scalar, whose only field is {name}; inside a card's
   content (a literal block) it becomes the text, {node} and {version} filled in, and any other
@@ -351,21 +351,6 @@ def trackers(records: ContactDeviceRecords, prefix: str = "mesh") -> list[str]:
     )
 
 
-def controls(records: ContactDeviceRecords, prefix: str = "mesh") -> list[str]:
-    """The switch *Telemetry* and the button *Remove from radio* of each contact announced with
-    them, by contact (IMP-049): on the dashboard a household user, who opens no device page, has
-    them as every user has them through the entity search."""
-    found = []
-    for record in sorted(records.announced.values(), key=lambda r: r.slug):
-        if not _SLUG.fullmatch(record.slug):
-            continue
-        if record.components.get("telemetry") == "switch":
-            found.append(f"switch.{prefix}_{record.slug}_telemetry")
-        if record.components.get("remove") == "button":
-            found.append(f"button.{prefix}_{record.slug}_remove")
-    return found
-
-
 def switches(records: ContactDeviceRecords, prefix: str = "mesh") -> list[dict[str, str]]:
     """The items of `switches`: each contact's switch *Telemetry*, by slug."""
     return _controls("switches", records, prefix)[0]
@@ -422,15 +407,13 @@ def render(
     trackers: Sequence[str],
     text: Callable[[str, Mapping[str, str]], str],
     contact_prefix: str = "mesh",
-    controls: Sequence[str] = (),
     chats: Sequence[Item] = (),
     switches: Sequence[Item] = (),
     removes: Sequence[Item] = (),
 ) -> str:
     """The template filled in; `text(msgid, values)` gives a text in the dashboard's language,
-    filled with the values; `contact_prefix` begins the contacts' entity IDs; `controls`: the
-    contacts' switches and buttons, in order; `chats`, `switches`, `removes`: the items of the
-    lists, each checked against its pattern."""
+    filled with the values; `contact_prefix` begins the contacts' entity IDs; `chats`,
+    `switches`, `removes`: the items of the lists, each checked against its pattern."""
     lists = {"chats": list(chats), "switches": list(switches), "removes": list(removes)}
     for name, items in lists.items():
         for each in items:
@@ -439,7 +422,7 @@ def render(
     numbers = re.match(r"(\d+)\.(\d+)", version)
     if numbers is None:
         raise TemplateError(f"the version {version!r} has no major and minor number")
-    flags = {"trackers": bool(trackers), "controls": bool(controls)}
+    flags = {"trackers": bool(trackers)}
     tree = _parsed(template.split("\n"), flags)
     gw = "meshcore_home_gateway_" + _part(node_id)
     pages = json.dumps([_document(item) for item in lists["chats"]])
@@ -448,7 +431,6 @@ def render(
         line = kept if item is None else _with_item(kept, name, item)
         line = (
             line.replace('["@trackers@"]', json.dumps(sorted(trackers)))
-            .replace('["@controls@"]', json.dumps(list(controls)))
             .replace('["@chats@"]', pages)
             .replace("@gw@", gw)
             .replace("@node@", node_id)
@@ -512,7 +494,6 @@ def build(config: Config, state_dir: Path) -> Built:
         trackers=listed,
         text=text,
         contact_prefix=prefix,
-        controls=controls(records, prefix),
         chats=[chat.item() for chat in pages.pages],
         switches=switches(records, prefix),
         removes=removes(records, prefix),
