@@ -162,6 +162,8 @@ views:
             content: |-
               {#- problem: look_alike -#}
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set devices = [] if gw is none else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list -%}
               {#- a look-alike's first 12 key digits are those of the contact it imitates: that contact's name, else 8 digits of its key -#}
@@ -184,6 +186,8 @@ views:
             content: |-
               {#- problem: remote_cli -#}
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set devices = [] if gw is none else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list -%}
               {%- macro who(k) -%}
@@ -205,6 +209,8 @@ views:
             content: |-
               {#- problem: advert_position -#}
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set devices = [] if gw is none else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list -%}
               {%- macro who(k) -%}
@@ -434,6 +440,8 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set ns = namespace(rows=[]) -%}
               {%- for t in integration_entities('mqtt') | select('match', 'device_tracker\\.') if gw is not none and device_attr(t, 'via_device_id') == gw -%}
@@ -534,6 +542,8 @@ views:
               _("Sent: {text}")
               {%- endif -%}
               {%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set ns = namespace(rows=[], ids=[], entries=[], keys=[], channels=[], without=[], heard=[]) -%}
               {%- for e in (state_attr('sensor.@gw@_message_history', 'messages') or []) if e is mapping -%}{%- set ns.entries = ns.entries + [e] -%}{%- if e.get('id') -%}{%- set ns.ids = ns.ids + [e.get('id')] -%}{%- endif -%}{%- endfor -%}
@@ -798,8 +808,19 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
+              {%- macro node(v) -%}
+              {#- Translators: what a contact is, under its name on Contacts: the words under a person's name in All chats -#}
+              {%- if v == 'chat' -%}_("person")
+              {%- elif v == 'repeater' -%}_("repeater")
+              {%- elif v == 'room' -%}_("room")
+              {%- elif v == 'sensor' -%}_("sensor")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
               {#- now(): the card renders again each minute, so a contact that got its device shows also when no row has a time yet -#}
               {%- set clock = now() -%}
+              {#- a contact's type, from its device's model as the gateway names it in this dashboard's language (D-7) -#}
+              {%- set models = dict(["@models@"]) -%}
               {%- set radio = 'binary_sensor.@gw@_radio' -%}
               {%- set gw = device_id(radio) -%}
               {%- set count = states('sensor.@gw@_contacts') | int(0) -%}
@@ -830,7 +851,9 @@ views:
               <div>_("{count} of {limit} contacts on the radio.")</div>
               {%- endif %}
               {%- if is_state(radio, 'unavailable') %}
-              <div><ha-alert alert-type="error">_("The gateway is offline. These controls come back when it is.")</ha-alert></div>
+              <div><ha-alert alert-type="error"><b>_("The gateway is offline.")</b> _("Contacts can be added and removed again once it is back.")</ha-alert></div>
+              {%- elif is_state(radio, 'off') %}
+              <div><ha-alert alert-type="error"><b>_("The radio is disconnected.")</b> _("Contacts can be added and removed again once it is back.")</ha-alert></div>
               {%- elif off %}
               <div><ha-alert alert-type="info">_("Your administrator turned these controls off: contacts are managed outside Home Assistant.")</ha-alert></div>
               {%- elif code == 'management_off' %}
@@ -846,10 +869,10 @@ views:
               <div>_("No contact has a device in Home Assistant yet.")</div>
               {%- else %}
               {#- Translators: the columns of the contacts table; volts is a battery's voltage, such as 3.9 #}
-              <table><tr><th>_("Name")</th><th>_("Heard")</th><th>_("Battery")</th><th>_("Asking")</th></tr>{%- for r in ns.rows | sort(attribute='heard', reverse=true) -%}{%- set volts = m('%.1f' | format(r.battery) if r.battery is not none else '') -%}<tr><td>{% if r.path %}<a href="./{{ m(r.path) }}">{{ m(r.name) }}</a>{% else %}{{ m(r.name) }}{% endif %}<br><small>{{ m(r.model) }}</small></td><td>{{ when(r.heard) }}</td><td>{% if volts %}_("{volts} V"){% else %}–{% endif %}</td><td>{{ telemetry(r.word) }}</td></tr>{%- endfor -%}</table>
+              <table><tr><th>_("Name")</th><th>_("Heard")</th><th>_("Battery")</th><th>_("Asking")</th></tr>{%- for r in ns.rows | sort(attribute='heard', reverse=true) -%}{%- set volts = m('%.1f' | format(r.battery) if r.battery is not none else '') -%}<tr><td>{% if r.path %}<a href="./{{ m(r.path) }}">{{ m(r.name) }}</a>{% else %}{{ m(r.name) }}{% endif %}<br><small>{{ node(models.get(r.model, r.model)) }}</small></td><td>{{ when(r.heard) }}</td><td>{% if volts %}_("{volts} V"){% else %}–{% endif %}</td><td>{{ telemetry(r.word) }}</td></tr>{%- endfor -%}</table>
               {%- endif %}
               {%- endif %}
-              <details><summary>_("What the words mean")</summary><ul><li><b>_("Heard")</b>: _("When the gateway last heard the device: a message, an advert, or an answer to asking.")</li><li><b>_("Battery")</b>: _("The device's battery at its last answer, while its answers are current.")</li><li><b>_("Asking")</b>: _("Whether the gateway asks the device for its position and battery, and how it answers:")</li><li><b>_("not asked yet")</b>: _("The gateway has not asked yet, or not for over a day.")</li><li><b>_("answering")</b>: _("The answers are current and carry a position.")</li><li><b>_("answering, no position")</b>: _("The answers are current, without a position: GPS off, no fix, or location not allowed in the app.")</li><li><b>_("no answer lately")</b>: _("It answered today, not lately: out of range or switched off.")</li><li><b>_("no answer for a day")</b>: _("Asked, but no answer for a day: it does not allow this home, does not have it as a contact, or is out of range.")</li><li><b>_("not reachable now")</b>: _("Not asked: the radio has no way to it now. A message or an advert from it brings it back.")</li><li><b>_("not asked: look-alike")</b>: _("Another node's key starts the same, so an answer could not be told apart.")</li><li><b>_("not asked (switch off)")</b>: _("The switch is off for this person.")</li><li><b>_("off for everyone")</b>: _("Your administrator turned asking off in this home's settings.")</li><li>_("A name with a link opens the chat with that person.")</li></ul></details>
+              <details><summary>_("What the words mean")</summary><ul><li><b>_("Heard")</b>: _("When the gateway last heard the device: a message, an advert, or an answer to asking.")</li><li><b>_("Battery")</b>: _("The device's battery at its last answer, while its answers are current.")</li><li><b>_("Asking")</b>: _("Whether the gateway asks the device for its position and battery, and how it answers:")</li><li><b>_("not asked yet")</b>: _("The gateway has not asked yet, or not for over a day.")</li><li><b>_("answering")</b>: _("The answers are current and carry a position.")</li><li><b>_("answering, no position")</b>: _("The answers are current, without a position: GPS off, no fix, or location not allowed in the app.")</li><li><b>_("no answer lately")</b>: _("It answered today, not lately: out of range or switched off.")</li><li><b>_("no answer for a day")</b>: _("Asked, but no answer for a day: it does not allow this home, does not have it as a contact, or is out of range.")</li><li><b>_("not reachable now")</b>: _("Not asked: the radio has no way to it now. A message or an advert from it brings it back.")</li><li><b>_("not asked: look-alike")</b>: _("Another node's key starts the same, so an answer could not be told apart.")</li><li><b>_("not asked (switch off)")</b>: _("The switch is off for this person.")</li><li><b>_("off for everyone")</b>: _("Your administrator turned asking off in this home's settings.")</li><li><b>_("person")</b>, <b>_("repeater")</b>, <b>_("room")</b>, <b>_("sensor")</b>: _("What the contact is: a person's radio, a radio that passes messages on, a room that keeps messages for a group, or a sensor that reports readings.")</li><li>_("A name with a link opens the chat with that person.")</li></ul></details>
           - type: heading
             heading: _("Sensors")
           - type: markdown
@@ -920,7 +943,7 @@ views:
               {%- if state_attr(e, 'device_class') == 'timestamp' -%}{%- set c.heard = states(e) if states(e) not in ['unknown', 'unavailable'] else '' -%}
               {%- elif 'answering' in (state_attr(e, 'options') or []) -%}{%- set c.word = states(e) -%}
               {%- elif e is match('sensor\\.\\w+_ch\\d+_\\w+$') -%}{%- set c.readings = c.readings + 1 -%}{%- set c.values = c.values + [(label ~ ' ' ~ value ~ ' ' ~ unit) | trim] -%}
-              {%- elif e is match('sensor\\.\\w+_battery(_\\d+)?$') and state_attr(e, 'device_class') == 'voltage' -%}{%- set c.values = c.values + [(label ~ ' ' ~ value ~ ' ' ~ unit) | trim] -%}
+              {%- elif e is match('sensor\\.\\w+_battery(_\\d+)?$') and state_attr(e, 'device_class') == 'voltage' -%}{%- set volts = '%.1f' | format(value | float) if value | is_number else value -%}{%- set c.values = c.values + [(label ~ ' ' ~ volts ~ ' ' ~ unit) | trim] -%}
               {%- endif -%}
               {%- endfor -%}
               {%- if c.readings -%}{%- set ns.rows = ns.rows + [dict(heard=c.heard, name=owner, read=c.values | join(' · '), word=c.word)] -%}{%- endif -%}
@@ -950,20 +973,29 @@ views:
               {%- set hidden = 'button.@gw@_show_hidden' -%}
               {#- controls = false: from the configuration, or for a gateway before 2.1 from its controls, unavailable while the gateway is not -#}
               {%- set off = (ha.get('controls') == false) if ha is mapping else (states[hidden] is not none and is_state(hidden, 'unavailable') and not is_state(radio, 'unavailable')) -%}
+              {%- set telemetry = state_attr('sensor.@gw@_configuration', 'telemetry') -%}
               {%- if states[radio] is not none and (is_state(radio, 'unavailable') or off) -%}
               {%- if is_state(radio, 'unavailable') -%}
               <div><ha-alert alert-type="error">_("The gateway is offline. These controls come back when it is.")</ha-alert></div>
               {%- else -%}
               <div><ha-alert alert-type="info">_("Your administrator turned these controls off: contacts are managed outside Home Assistant.")</ha-alert></div>
               {%- endif %}
-              <details><summary>_("Why the switches are missing")</summary><ul><li>_("While the gateway is offline, Home Assistant cannot reach it, so its controls are hidden.")</li><li>_("Your administrator can turn the contacts' controls off for everyone who uses Home Assistant; Settings shows it.")</li></ul></details>{%- endif -%}
+              <details><summary>_("Why the switches are missing")</summary><ul><li>_("While the gateway is offline, Home Assistant cannot reach it, so its controls are hidden.")</li><li>_("Your administrator can turn the contacts' controls off for everyone who uses Home Assistant; Settings shows it.")</li></ul></details>
+              {%- elif states[radio] is not none and telemetry is mapping and telemetry.get('enabled') == false -%}
+              <div><ha-alert alert-type="info">_("Your administrator turned asking off in this home's settings: the switches take effect once it is on.")</ha-alert></div>
+              <details><summary>_("Why nobody is asked")</summary><ul><li>_("Asking for position and battery is off for everyone; Settings shows it. Each switch keeps whether its person would be asked.")</li></ul></details>{%- endif -%}
 # @if switches
           - type: entities
+            # while one of its rows shows: no empty frame (D-29, HC 10)
             visibility:
               - condition: template
                 value_template: >-
-                  {{ states['binary_sensor.@gw@_radio'] is not none
-                     and not is_state('binary_sensor.@gw@_radio', 'unavailable') }}
+                  {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+                  {%- set ns = namespace(shown=false) -%}
+                  # @each switches
+                  {%- if states['@switches.entity@'] is not none and not is_state('@switches.entity@', 'unavailable') and device_attr(device_id('@switches.entity@'), 'via_device_id') == gw and device_attr(device_id('@switches.entity@'), 'serial_number') == '@switches.key@' -%}{%- set ns.shown = true -%}{%- endif -%}
+                  # @end
+                  {{ gw is not none and ns.shown }}
             state_color: true
             entities:
 # @each switches
@@ -1062,9 +1094,11 @@ views:
               {#- controls = false: from the configuration, or for a gateway before 2.1 from its controls, unavailable while the gateway is not (D-29) -#}
               {%- set off = (ha.get('controls') == false) if ha is mapping else (states[hidden] is not none and is_state(hidden, 'unavailable') and not is_state(radio, 'unavailable')) -%}
               {%- set code = state_attr('sensor.@gw@_contacts', 'manage_reason') -%}
-              {%- if states[radio] is not none and (is_state(radio, 'unavailable') or off or code) -%}
+              {%- if states[radio] is not none and (is_state(radio, 'unavailable') or is_state(radio, 'off') or off or code) -%}
               {%- if is_state(radio, 'unavailable') %}
               <div><ha-alert alert-type="error">_("The gateway is offline. These controls come back when it is.")</ha-alert></div>
+              {%- elif is_state(radio, 'off') %}
+              <div><ha-alert alert-type="error"><b>_("The radio is disconnected.")</b> _("Contacts can be added and removed again once it is back.")</ha-alert></div>
               {%- elif off %}
               <div><ha-alert alert-type="info">_("Your administrator turned these controls off: contacts are managed outside Home Assistant.")</ha-alert></div>
               {%- elif code == 'management_off' %}
@@ -1178,7 +1212,9 @@ views:
               {%- for x in ["@chats@"] if x.key and x.key == state_attr(e, 'key') -%}{%- set ns.page = true -%}{%- endfor -%}
               {#- Translators: Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside a chat's Send button (Return, then Send) -#}
               <div>_("Paste a key or contact link into the field above, then tap Return (↵).")</div>
-              {%- if kind is none %}
+              {%- if is_state('binary_sensor.@gw@_radio', 'unavailable') %}
+              <div>_("The gateway is offline: this shows again when it is back.")</div>
+              {%- elif kind is none %}
               <div>_("No contact event yet.")</div>
               {%- elif kind in ['refused', 'failed'] %}
               <div><ha-alert alert-type="warning"><b>{{ m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') }}</b> {{ what(kind) }}{% if reason %} ({{ why(reason) }}){% endif %} · {{ when(states(e)) }}</ha-alert></div>
@@ -1210,11 +1246,16 @@ views:
             heading_style: subtitle
 # @if removes
           - type: entities
+            # while one of its rows shows: no empty frame (D-29, HC 10)
             visibility:
               - condition: template
                 value_template: >-
-                  {{ states['binary_sensor.@gw@_radio'] is not none
-                     and not is_state('binary_sensor.@gw@_radio', 'unavailable') }}
+                  {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+                  {%- set ns = namespace(shown=false) -%}
+                  # @each removes
+                  {%- if states['@removes.entity@'] is not none and not is_state('@removes.entity@', 'unavailable') and device_attr(device_id('@removes.entity@'), 'via_device_id') == gw and device_attr(device_id('@removes.entity@'), 'serial_number') == '@removes.key@' -%}{%- set ns.shown = true -%}{%- endif -%}
+                  # @end
+                  {{ gw is not none and ns.shown }}
             entities:
 # @each removes
               - type: conditional
@@ -1346,18 +1387,20 @@ views:
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
               {%- set options = state_attr('select.@gw@_add_node', 'options') -%}
-              {%- set n = states('sensor.@gw@_nodes') | int(0) -%}
+              {%- set n = (options or []) | count -%}
               {%- set contacts = state_attr('sensor.@gw@_configuration', 'contacts') -%}
               {%- set kept = contacts.get('heard_nodes') if contacts is mapping else none -%}
               {%- if options is none -%}
               <div>_("The gateway's controls are not in Home Assistant yet.")</div>
+              {%- elif is_state('binary_sensor.@gw@_radio', 'unavailable') -%}
+              <div>_("The gateway is offline: this shows again when it is back.")</div>
               {%- elif kept == 'off' -%}
               <div>_("This home keeps no list of nodes heard.")</div>
               {%- elif not options -%}
               <div>_("No node heard in the last 7 days that is not a contact.")</div>
               {%- else -%}
-              {#- Translators: n is a whole number: the nodes heard that are not contacts -#}
-              <div>_("Nodes heard in the last 7 days that are not contacts: {n}.")</div>
+              {#- Translators: n is a whole number: the nodes in the list below, which can be added as contacts -#}
+              <div>_("Nodes you can add: {n}.")</div>
               <table>{%- for o in options -%}<tr><td>{{ m(o) }}</td></tr>{%- endfor -%}</table>
               {%- endif %}
               <details><summary>{% if kept == 'keys' %}_("Why there are no names"){% else %}_("What this list is"){% endif %}</summary><ul>{% if kept == 'keys' %}<li>_("This home keeps only the keys of radios it hears, not their names, for their owners' privacy. A name shows once the node is a contact.")</li>{% endif %}<li>_("Other people's radios that this home's radio heard in the last 7 days. Add one under Add a contact.")</li><li>_("Each starts with the first digits of its key: compare them with the node's own screen before you add it.")</li></ul></details>
@@ -1398,6 +1441,8 @@ views:
             show_empty: false
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set listed = ["@trackers@"] -%}
               {#- a listed tracker counts by its contact's key (the device's serial number): with a contact shared by two gateways, the ID written from the state file can be the other gateway's tracker of the same node -#}
@@ -1417,7 +1462,7 @@ views:
               {%- endif %}
               {%- if ns.foreign %}
               {#- Translators: others are contacts' names, separated by commas: nodes of another gateway that the map shows under the names of this gateway's contacts #}
-              <div><ha-alert alert-type="warning">_("This map shows {others} of another gateway under this gateway's names.") <a href="@guide@#a-second-gateway">_("How to fix it, in the guide")</a></ha-alert></div>
+              <div><ha-alert alert-type="warning"><b>_("This map shows {others} of another gateway under this gateway's names.")</b><br>_("For your administrator: give each gateway a contact prefix of its own, then make this dashboard again.") <a href="@guide@#a-second-gateway">_("How, in the guide")</a></ha-alert></div>
               {%- endif %}
               <details><summary>_("Why the map misses someone")</summary><ul><li>_("The map lists the devices that had a position when the dashboard was made; your administrator makes it again for the others.")</li><li>_("With two gateways, a contact of the same name on both can show the other gateway's device.")</li></ul></details>{%- endif -%}
       - type: grid
@@ -1468,6 +1513,8 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set ns = namespace(rows=[]) -%}
               {%- for t in integration_entities('mqtt') | select('match', 'device_tracker\\.') if gw is not none and device_attr(t, 'via_device_id') == gw -%}
@@ -1617,6 +1664,9 @@ views:
               {%- set mhz = m(state_attr(radio, 'frequency_mhz')) -%}{%- set khz = m(state_attr(radio, 'bandwidth_khz')) -%}{%- set dbm = m(state_attr(radio, 'tx_power_dbm')) -%}{%- set cr = m(state_attr(radio, 'coding_rate')) -%}
               {%- if states[radio] is none -%}
               <div>_("The gateway is not found: see the first line of Overview.")</div>
+              {#- offline, Home Assistant drops the attributes: every value would read as never reported -#}
+              {%- elif is_state(radio, 'unavailable') -%}
+              <div>_("The gateway is offline: this shows again when it is back.")</div>
               {%- else -%}
               {#- Translators: the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22 -#}
               <table><tr><td>_("Name")</td><td>{{ m(state_attr(radio, 'radio_name') or '–') }}</td></tr><tr><td>_("Model")</td><td>{{ m(state_attr(radio, 'model') or '–') }}</td></tr><tr><td>_("Firmware")</td><td>{{ m(state_attr(radio, 'firmware') or '–') }}</td></tr><tr><td>_("Frequency")</td><td>{% if mhz %}_("{mhz} MHz"){% else %}–{% endif %}</td></tr><tr><td>_("Bandwidth")</td><td>{% if khz %}_("{khz} kHz"){% else %}–{% endif %}</td></tr><tr><td>_("Spreading factor")</td><td>{{ m(state_attr(radio, 'spreading_factor') or '–') }}</td></tr><tr><td>_("Coding rate")</td><td>{% if cr %}_("4/{cr}"){% else %}–{% endif %}</td></tr><tr><td>_("Transmit power")</td><td>{% if dbm %}_("{dbm} dBm"){% else %}–{% endif %}</td></tr><tr><td>_("Key")</td><td>{{ m((state_attr(radio, 'public_key') or '')[:8] or '–') }}</td></tr><tr><td>_("Connected by")</td><td>{% if transport == 'serial' %}_("USB"){% elif transport == 'tcp' %}_("network"){% else %}–{% endif %}</td></tr></table>
@@ -1686,6 +1736,12 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
+              {%- macro watched(v) -%}
+              {#- Translators: how the gateway keeps the radio's settings: managed, it keeps them as this home needs them; only watched, it reports them and changes nothing -#}
+              {%- if v == true -%}_("only watched")
+              {%- else -%}_("managed")
+              {%- endif -%}
+              {%- endmacro -%}
               {%- macro audience(v) -%}
               {#- Translators: who may ask this home's radio for its battery, position or readings -#}
               {%- if v == 'deny' -%}_("never")
@@ -1696,12 +1752,12 @@ views:
               {%- endif -%}
               {%- endmacro -%}
               {%- macro shown(v) -%}
-              {#- a setting's value: yes or no, a list of codes, a number or a name -#}
+              {#- a setting's value: yes or no (before a number: 1 == true in Jinja), a number, a name or a list of codes -#}
               {%- if v is none -%}–
-              {%- elif v == true -%}_("yes")
-              {%- elif v == false -%}_("no")
+              {%- elif v is boolean and v -%}_("yes")
+              {%- elif v is boolean -%}_("no")
+              {%- elif v is number -%}{{ m(v | string) }}
               {%- elif v is string -%}{{ m(v) }}
-              {%- elif v is number -%}{{ m(v) }}
               {%- elif v is sequence and v | count == 0 -%}_("none")
               {%- elif v is sequence -%}<code>{{ m(v | join(', ')) }}</code>
               {%- else -%}<code>{{ m(v) }}</code>
@@ -1723,13 +1779,26 @@ views:
               {%- set ns.rows = ns.rows + [[base] + cut.at] -%}
               {%- endfor -%}
               {%- set tstate = ((s.get('telemetry') or {}).get('state')) if s is mapping and (s.get('telemetry') or {}) is mapping else none -%}
+              {%- macro advert(v) -%}
+              {#- whether the radio's adverts carry its position (advert_location) -#}
+              {%- if v == 'share' -%}_("yes")
+              {%- elif v == 'none' -%}_("no")
+              {%- elif v is none -%}–
+              {%- else -%}<code>{{ m(v) }}</code>
+              {%- endif -%}
+              {%- endmacro -%}
               {%- macro row(k) -%}{%- set x = s.get(k) if s is mapping and s.get(k) is mapping else {} -%}<td>{{ shown(x.get('live')) }}</td><td>{{ shown(x.get('desired')) }}</td><td>{{ status(x.get('state')) }}</td>{%- endmacro -%}
-              {%- if states[e] is none or s is not mapping -%}
+              {%- macro adverts(k) -%}{%- set x = s.get(k) if s is mapping and s.get(k) is mapping else {} -%}<td>{{ advert(x.get('live')) }}</td><td>{{ advert(x.get('desired')) }}</td><td>{{ status(x.get('state')) }}</td>{%- endmacro -%}
+              {#- offline, Home Assistant drops the attributes: the settings would read as never reported -#}
+              {%- if is_state('binary_sensor.@gw@_radio', 'unavailable') -%}
+              <div>_("The gateway is offline: this shows again when it is back.")</div>
+              {%- elif states[e] is none or s is not mapping -%}
               <div>_("The gateway has not reported the radio's settings yet.")</div>
               {%- else -%}
-              {#- Translators: managed: the gateway keeps the radio's settings; only watched: it reports them and changes nothing -#}
-              <div>{% if state_attr(e, 'observing') == true %}_("Mode: only watched."){% else %}_("Mode: managed."){% endif %} {{ profile(states(e)) }}</div>
-              <table><tr><th>_("Setting")</th><th>_("On the radio")</th><th>_("Wanted")</th><th>_("State")</th></tr><tr><td>_("Contacts added only by hand")</td>{{ row('manual_add') }}</tr><tr><td>_("Contact types the radio adds by itself")</td>{{ row('autoadd') }}</tr><tr><td>_("Who may ask this radio for its battery")</td><td>{{ audience(ns.rows[0][0]) }}</td><td>{{ audience(ns.rows[1][0]) }}</td><td>{{ status(tstate) }}</td></tr><tr><td>_("Who may ask this radio for its position")</td><td>{{ audience(ns.rows[0][1]) }}</td><td>{{ audience(ns.rows[1][1]) }}</td><td>{{ status(tstate) }}</td></tr><tr><td>_("Who may ask this radio for its readings")</td><td>{{ audience(ns.rows[0][2]) }}</td><td>{{ audience(ns.rows[1][2]) }}</td><td>{{ status(tstate) }}</td></tr><tr><td>_("Position in the radio's adverts")</td>{{ row('advert_location') }}</tr><tr><td>_("Duty cycle")</td>{{ row('duty_cycle_percent') }}</tr><tr><td>_("Radio name")</td>{{ row('name') }}</tr></table>
+              {%- set mode = watched(state_attr(e, 'observing')) -%}{%- set state = profile(states(e)) -%}
+              {#- Translators: the radio's settings: mode is managed or only watched, state how they are now, such as changed by someone -#}
+              <div>_("Mode: {mode}. State: {state}.")</div>
+              <table><tr><th>_("Setting")</th><th>_("On the radio")</th><th>_("Wanted")</th><th>_("State")</th></tr><tr><td>_("Contacts added only by hand")</td>{{ row('manual_add') }}</tr><tr><td>_("Contact types the radio adds by itself")</td>{{ row('autoadd') }}</tr><tr><td>_("Who may ask this radio for its battery")</td><td>{{ audience(ns.rows[0][0]) }}</td><td>{{ audience(ns.rows[1][0]) }}</td><td>{{ status(tstate) }}</td></tr><tr><td>_("Who may ask this radio for its position")</td><td>{{ audience(ns.rows[0][1]) }}</td><td>{{ audience(ns.rows[1][1]) }}</td><td>{{ status(tstate) }}</td></tr><tr><td>_("Who may ask this radio for its readings")</td><td>{{ audience(ns.rows[0][2]) }}</td><td>{{ audience(ns.rows[1][2]) }}</td><td>{{ status(tstate) }}</td></tr><tr><td>_("Position in the radio's adverts")</td>{{ adverts('advert_location') }}</tr><tr><td>_("Duty cycle")</td>{{ row('duty_cycle_percent') }}</tr><tr><td>_("Radio name")</td>{{ row('name') }}</tr></table>
               {%- endif %}
               <details><summary>_("What the radio settings are")</summary><ul><li>_("The gateway keeps a few radio settings as this home needs them and writes them back when the radio drifts. Your administrator sets them.")</li><li>_("Wanted: – means the gateway leaves the setting as it finds it.")</li><li>_("A radio answers only contacts in its own table, and only when the battery row lets them in: the position and readings rows can only narrow it.")</li><li>_("Help explains the words of the State column.") <a href="./help">_("Help")</a></li></ul></details>
       - type: grid
@@ -1817,6 +1886,9 @@ views:
               {%- set word = m(state_attr(k, 'event_type')) -%}{%- set sender = m(state_attr(k, 'sender_name') or (state_attr(k, 'sender_key') or '')[:8] or '?') -%}
               {%- if states['binary_sensor.@gw@_radio'] is none -%}
               <div>_("The gateway is not found: see the first line of Overview.")</div>
+              {#- offline, Home Assistant drops the events' attributes: each would read as none yet -#}
+              {%- elif is_state('binary_sensor.@gw@_radio', 'unavailable') -%}
+              <div>_("The gateway is offline: this shows again when it is back.")</div>
               {%- else -%}
               {#- Translators: the newest event of each kind; sender is the name of a contact that may send commands, word a command word #}
               <table><tr><td>_("Contact")</td><td>{% if state_attr(c, 'event_type') %}<b>{{ m(state_attr(c, 'name') or state_attr(c, 'prefix') or '?') }}</b> {{ what(state_attr(c, 'event_type')) }} · {{ when(states(c)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Position and battery")</td><td>{% if state_attr(t, 'event_type') %}<b>{{ m(state_attr(t, 'name') or state_attr(t, 'prefix') or '?') }}</b> {% if state_attr(t, 'event_type') == 'answered' %}_("answers again"){% else %}_("stopped answering"){% endif %} · {{ when(states(t)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Radio settings")</td><td>{% if state_attr(s, 'event_type') %}{{ setting(state_attr(s, 'setting')) }}: {{ status(state_attr(s, 'event_type')) }} · {{ when(states(s)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("New node")</td><td>{% if state_attr(n, 'event_type') %}<b>{{ m(state_attr(n, 'name') or (state_attr(n, 'key') or '')[:8] or '?') }}</b> _("heard for the first time") · {{ when(states(n)) }}{% else %}_("none yet"){% endif %}</td></tr>{% if states[k] is not none %}<tr><td>_("Command")</td><td>{% if state_attr(k, 'event_type') %}_("{sender}: {word}") · {{ when(states(k)) }}{% else %}_("none yet"){% endif %}</td></tr>{% endif %}</table>
@@ -1860,6 +1932,12 @@ views:
         cards:
           - type: heading
             heading: _("Chats and messages")
+            # with its table, or the section shows a heading alone
+            visibility:
+              - condition: template
+                value_template: >-
+                  {{ state_attr('sensor.@gw@_configuration', 'targets') is mapping
+                     and state_attr('sensor.@gw@_configuration', 'messages') is mapping }}
           - type: markdown
             show_empty: false
             content: |-
@@ -1877,9 +1955,11 @@ views:
               {%- set dedup = s.get('dedup_window_s') if s.get('dedup_window_s') is number else 0 -%}
               {%- set window = (dedup // 60) | int -%}{%- set seconds = (dedup | round(0, 'ceil')) | int -%}
               {%- set size = s.get('queue_size') | int(0) -%}{%- set minutes = ((s.get('queue_ttl_s') or 0) / 60) | round(0, 'ceil') | int -%}{%- set tries = s.get('max_attempts') | int(0) -%}
+              {#- a target by its title, as Chats names it (D-7), then its alias, a name of the configuration -#}
+              {%- macro named(t) -%}{%- set words = (t.get('alias') or '') | string | regex_replace('[-_]', ' ') -%}<b>{{ m(words[:1] | upper ~ words[1:]) }}</b> <code>{{ m(t.get('alias')) }}</code>{%- endmacro -%}
               {#- Translators: a target of the configuration in the list of chats: n is its channel's number -#}
-              {%- macro chat(t) -%}<b>{{ m(t.get('alias')) }}</b> {% if t.get('kind') == 'channel' %}{%- set n = t.get('channel_index') | int(0) -%}_("(channel {n})"){% else %}_("(person)"){% endif %}{% if t.get('alert') == true %} · _("sent first"){% endif %}{% if t.get('hidden') == true %} · _("only automations write here"){% endif %}{%- endmacro -%}
-              {%- macro affix(t) -%}<b>{{ m(t.get('alias')) }}</b>: <code>{{ m(t.get('prefix')) }}</code> … <code>{{ m(t.get('suffix')) }}</code>{%- endmacro -%}
+              {%- macro chat(t) -%}{{ named(t) }} {% if t.get('kind') == 'channel' %}{%- set n = t.get('channel_index') | int(0) -%}_("(channel {n})"){% else %}_("(person)"){% endif %}{% if t.get('alert') == true %} · _("sent first"){% endif %}{% if t.get('hidden') == true %} · _("only automations write here"){% endif %}{%- endmacro -%}
+              {%- macro affix(t) -%}{{ named(t) }}: <code>{{ m(t.get('prefix')) }}</code> … <code>{{ m(t.get('suffix')) }}</code>{%- endmacro -%}
               {#- Translators: the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers #}
               <table><tr><th>_("Setting")</th><th>_("In this home")</th><th>_("What it means")</th></tr><tr><td>_("Chats")</td><td>{%- for t in ns.chats -%}{{ chat(t) }}{% if not loop.last %}<br>{% endif %}{%- endfor -%}{% if more > 0 %}<br>_("and {more} more"){% endif %}</td><td>_("The chats of this home. Your administrator adds them.") <code>targets</code></td></tr><tr><td>_("Text before or after messages")</td><td>{%- for t in ns.affixes -%}{{ affix(t) }}{% if not loop.last %}<br>{% endif %}{%- else -%}_("none"){%- endfor -%}</td><td>_("Added to every message sent to that chat.") <code>prefix</code> <code>suffix</code></td></tr><tr><td>_("Channel messages shown")</td><td>{% if s.get('publish_channels') == 'all' %}_("all channels"){% else %}_("only the chats' channels"){% endif %}</td><td>_("Which channels of the radio show in Chats.") <code>messages.publish_channels</code></td></tr><tr><td>_("Channels ignored")</td><td>{{ m(ignored | string) }}</td><td>_("Messages on these channels never show.") <code>messages.ignore_channels</code></td></tr><tr><td>_("Delivery code")</td><td>{% if s.get('confirm_nonce') == true %}_("on"){% else %}_("off"){% endif %}</td><td>_("On: direct messages end in a short code such as #1a2b3c4d; it makes a faked confirmation harder. The chat hides it.") <code>messages.confirm_nonce</code></td></tr><tr><td>_("Long messages")</td><td>{% if s.get('truncate') == false %}_("refused"){% else %}_("cut, ending in ..."){% endif %}</td><td>_("What happens to a text longer than a chat takes.") <code>messages.truncate</code></td></tr><tr><td>_("Letters")</td><td>{% if s.get('ascii_only') == true %}_("without accents (ä becomes ae)"){% else %}_("as written"){% endif %}</td><td>_("How the letters of a message are sent.") <code>messages.ascii_only</code></td></tr><tr><td>_("Same text again")</td><td>{% if dedup >= 120 and dedup % 60 == 0 %}_("not sent again within {window} minutes"){% elif dedup > 0 %}_("not sent again within {seconds} seconds"){% else %}_("sent again"){% endif %}</td><td>_("Stops a message sent twice by mistake.") <code>messages.dedup_window_s</code></td></tr><tr><td>_("Waiting messages")</td><td>_("up to {size}, for {minutes} minutes, {tries} tries")</td><td>_("How many messages may wait, for how long, and how often a direct message is tried.") <code>messages.queue_size</code> <code>queue_ttl_s</code> <code>max_attempts</code></td></tr></table>
               <details><summary>_("What these settings do")</summary><ul><li>_("Sent first: an alert goes out before the messages that wait.")</li><li>_("Only automations write here: the chat has no field on this dashboard.")</li><li>_("The words in code are the names in the gateway's configuration file, for your administrator.")</li></ul></details>{%- endif -%}
@@ -1887,6 +1967,14 @@ views:
         cards:
           - type: heading
             heading: _("Privacy")
+            # with its table, or the section shows a heading alone
+            visibility:
+              - condition: template
+                value_template: >-
+                  {{ state_attr('sensor.@gw@_configuration', 'telemetry') is mapping
+                     and state_attr('sensor.@gw@_configuration', 'contacts') is mapping
+                     and state_attr('sensor.@gw@_configuration', 'history') is mapping
+                     and state_attr('sensor.@gw@_configuration', 'messages') is mapping }}
           - type: markdown
             show_empty: false
             content: |-
@@ -1896,12 +1984,18 @@ views:
               {%- if t is mapping and k is mapping and h is mapping and s is mapping -%}
               {%- set messages = (h.get('messages_days') or 0) | round(0, 'ceil') | int -%}{%- set positions = (h.get('positions_days') or 0) | round(0, 'ceil') | int -%}{%- set readings = (h.get('readings_days') or 0) | round(0, 'ceil') | int -%}
               {#- Translators: the privacy settings; messages, positions and readings are whole numbers of days #}
-              <table><tr><th>_("Setting")</th><th>_("In this home")</th><th>_("What it means")</th></tr><tr><td>_("Position and battery asked from")</td><td>{% if t.get('enabled') == false %}_("nobody: asking is off"){% elif t.get('ask') == 'all' %}_("every person not turned off"){% else %}_("only people turned on"){% endif %}{% if t.get('enabled') != false %}<br>{% if 'sensor' in (t.get('ask_types') or []) %}_("persons and sensors"){% else %}_("persons"){% endif %}{% endif %}</td><td>_("Ask for position and battery on Contacts turns it on or off for each person.") <code>telemetry</code></td></tr><tr><td>_("Nodes heard nearby")</td><td>{% if k.get('heard_nodes') == 'off' %}_("not kept"){% elif k.get('heard_nodes') == 'full' %}_("keys and names"){% else %}_("keys only"){% endif %}</td><td>_("Other people's radios that this home hears.") <code>contacts.heard_nodes</code></td></tr><tr><td>_("History kept by the gateway")</td><td>{% if h.get('enabled') == false %}_("off: chats show only messages since the gateway started"){% else %}_("messages {messages} days, positions {positions} days, readings {readings} days"){% endif %}</td><td>_("The gateway's own record, besides what Home Assistant records.") <code>history</code></td></tr><tr><td>_("Received texts cleaned")</td><td>{% if s.get('clean_received') == true %}_("on"){% else %}_("off"){% endif %}</td><td>_("On: control and direction characters are removed from received texts.") <code>messages.clean_received</code></td></tr></table>
+              <table><tr><th>_("Setting")</th><th>_("In this home")</th><th>_("What it means")</th></tr><tr><td>_("Position and battery asked from")</td><td>{% if t.get('enabled') == false %}_("nobody: asking is off"){% elif t.get('ask') == 'all' %}_("every person not turned off"){% else %}_("only people turned on"){% endif %}{% if t.get('enabled') != false %}{%- set types = t.get('ask_types') or [] -%}<br>{% if 'sensor' in types and 'chat' in types %}_("persons and sensors"){% elif 'sensor' in types %}_("sensors"){% else %}_("persons"){% endif %}{% endif %}</td><td>_("Ask for position and battery on Contacts turns it on or off for each person.") <code>telemetry</code></td></tr><tr><td>_("Nodes heard nearby")</td><td>{% if k.get('heard_nodes') == 'off' %}_("not kept"){% elif k.get('heard_nodes') == 'full' %}_("keys and names"){% else %}_("keys only"){% endif %}</td><td>_("Other people's radios that this home hears.") <code>contacts.heard_nodes</code></td></tr><tr><td>_("History kept by the gateway")</td><td>{% if h.get('enabled') == false %}_("off: chats show only messages since the gateway started"){% else %}_("messages {messages} days, positions {positions} days, readings {readings} days"){% endif %}</td><td>_("The gateway's own record, besides what Home Assistant records.") <code>history</code></td></tr><tr><td>_("Received texts cleaned")</td><td>{% if s.get('clean_received') == true %}_("on"){% else %}_("off"){% endif %}</td><td>_("On: control and direction characters are removed from received texts.") <code>messages.clean_received</code></td></tr></table>
               <details><summary>_("Who sees what")</summary><ul><li>_("Everyone who uses Home Assistant here sees every chat, position, setting and unsent text, and can write to every chat.")</li><li>_("Help says what Home Assistant records.") <a href="./help">_("Help")</a></li></ul></details>{%- endif -%}
       - type: grid
         cards:
           - type: heading
             heading: _("Contacts and Home Assistant")
+            # with its table, or the section shows a heading alone
+            visibility:
+              - condition: template
+                value_template: >-
+                  {{ state_attr('sensor.@gw@_configuration', 'homeassistant') is mapping
+                     and state_attr('sensor.@gw@_configuration', 'contacts') is mapping }}
           - type: markdown
             show_empty: false
             content: |-
@@ -1917,6 +2011,13 @@ views:
         cards:
           - type: heading
             heading: _("Radio and airtime")
+            # with its table, or the section shows a heading alone
+            visibility:
+              - condition: template
+                value_template: >-
+                  {{ state_attr('sensor.@gw@_configuration', 'radio') is mapping
+                     and state_attr('sensor.@gw@_configuration', 'airtime') is mapping
+                     and state_attr('sensor.@gw@_configuration', 'commands') is mapping }}
           - type: markdown
             show_empty: false
             content: |-
@@ -1941,8 +2042,14 @@ views:
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
               {%- set radio = 'binary_sensor.@gw@_radio' -%}
+              {#- offline, Home Assistant drops the attributes: the gateway's versions would read as unknown -#}
+              {%- if is_state(radio, 'unavailable') -%}
+              <div>_("The gateway is offline: this shows again when it is back.")</div>
+              <table><tr><td>_("This dashboard")</td><td>@version@</td></tr></table>
+              {%- else -%}
               {#- Translators: the versions of this dashboard, of the gateway and of the radio -#}
               <table><tr><td>_("This dashboard")</td><td>@version@</td></tr><tr><td>_("Gateway")</td><td>{{ m(state_attr(radio, 'bridge_version') or '–') }}</td></tr><tr><td>_("Radio firmware")</td><td>{{ m(state_attr(radio, 'firmware') or '–') }}</td></tr><tr><td>_("Radio model")</td><td>{{ m(state_attr(radio, 'model') or '–') }}</td></tr></table>
+              {%- endif %}
               <details><summary>_("Why versions matter")</summary><ul><li>_("When the dashboard and the gateway differ in the first two numbers, Overview says which one to update.")</li><li>_("Tell your administrator these versions when you report a problem.")</li></ul></details>
           - type: markdown
             text_only: true
@@ -1970,7 +2077,7 @@ views:
             text_only: true
             content: |-
               {#- Translators: Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send) #}
-              <details><summary>_("Every button and switch")</summary><ul><li><b>_("Write to …")</b>, <b>_("Return, then Send")</b>: _("At the bottom of a chat's page: type, tap Return (↵), then tap Send. Return only keeps the text at the gateway; Send sends it, once.")</li><li><b>_("Ask for position and battery")</b>: _("On Contacts, a switch per person: on, the gateway asks that person's device now and then for its position and battery. Only for people who agreed.")</li><li><b>_("Add at once: pick a node heard nearby")</b>: _("On Contacts: adds the node you pick to the radio at once.")</li><li><b>_("Add by key or contact link")</b>: _("On Contacts: paste a key or a contact link from the MeshCore app, then tap Return (↵).")</li><li><b>_("Remove")</b>: _("On Contacts: takes a contact off the radio. It asks first.")</li><li><b>_("Hidden contacts")</b>, <b>_("Show again")</b>: _("On Contacts: brings back every contact whose device was deleted in Home Assistant.")</li><li><b>_("Background noise")</b>, <b>_("Radio battery")</b>: _("On Gateway: tap one for its history.")</li><li><b>_("Gateway's messages, last hour")</b>, <b>_("Everything the radio sent, last hour")</b>: _("On Gateway: the radio's airtime over the last 24 hours.")</li><li>_("Every link and button above goes to a page of this dashboard; the back arrow returns to where you came from.")</li></ul></details>
+              <details><summary>_("Every button and switch")</summary><ul><li><b>_("Write to …")</b>, <b>_("Return, then Send")</b>: _("At the bottom of a chat's page: type, tap Return (↵), then tap Send. Return only keeps the text at the gateway; Send sends it, once.")</li><li><b>_("Ask for position and battery")</b>: _("On Contacts, a switch per person: on, the gateway asks that person's device now and then for its position and battery. Only for people who agreed.")</li><li><b>_("Add at once: pick a node heard nearby")</b>: _("On Contacts: adds the node you pick to the radio at once.")</li><li><b>_("Add by key or contact link")</b>: _("On Contacts: paste a key or a contact link from the MeshCore app, then tap Return (↵).")</li><li><b>_("Remove")</b>: _("On Contacts: takes a contact off the radio. It asks first.")</li><li><b>_("Hidden contacts")</b>, <b>_("Show again")</b>: _("On Contacts: brings back every contact whose device was deleted in Home Assistant.")</li><li><b>_("Background noise")</b>, <b>_("Radio battery")</b>: _("On Gateway: tap one for its history.")</li><li><b>_("Gateway's messages, last hour")</b>, <b>_("Everything the radio sent, last hour")</b>: _("On Gateway: the radio's airtime over the last 24 hours.")</li><li>_("The links, and the badges Gateway, Settings and Help, open a page of this dashboard; the back arrow returns to where you came from.")</li></ul></details>
           - type: markdown
             text_only: true
             content: |-
@@ -2059,6 +2166,8 @@ views:
               {%- endif -%}
               {%- endif -%}
               {%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set key = '@chats.key@' -%}{%- set chan = @chats.channel@ -%}
               {%- set ns = namespace(device=none, heard=none) -%}
@@ -2125,6 +2234,8 @@ views:
               {%- endif -%}
               {%- endif -%}
               {%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set key = '@chats.key@' -%}{%- set chan = @chats.channel@ -%}
               {%- set ns = namespace(device=none, heard=none) -%}
@@ -2294,6 +2405,8 @@ views:
                           device_attr(d, 'serial_number') == '@chats.key@')) }}
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set key = '@chats.key@' -%}{%- set part = '@chats.target@' | replace('-', '_') -%}
               {%- set ns = namespace(field=none, device=none) -%}
@@ -2382,6 +2495,8 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set key = '@chats.key@' -%}{%- set chan = @chats.channel@ -%}
               {%- set ns = namespace(device=none, tracker=none, battery=none, asking=none, state=none, hops=none, snr=none) -%}

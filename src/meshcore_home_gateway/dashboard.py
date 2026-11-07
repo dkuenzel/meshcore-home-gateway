@@ -8,8 +8,10 @@ The template is YAML as it stands, every branch of its conditionals included:
 * `@gw@` (the gateway's part of its entity IDs), `@contact@` (how its contacts' entity IDs
   begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers), `@guide@`
   (the address of the guide, docs/home-assistant.md, of this version),
-  `["@trackers@"]` (the map's trackers, a JSON list) and `["@chats@"]` (the chat pages, a list
-  of JSON objects, which Jinja reads) are filled in.
+  `["@trackers@"]` (the map's trackers, a JSON list), `["@chats@"]` (the chat pages, a list
+  of JSON objects, which Jinja reads) and `["@models@"]` (each model of a contact's device as
+  the gateway names it in this language, with its node type: pairs for Jinja's dict()) are
+  filled in.
 * `# @each <list>` … `# @end` repeats its lines for each item of `chats`, `switches` or
   `removes`, with `@<list>.<field>@` the item's field; no @each inside another. Each item value
   matches its pattern (FIELDS) before it goes in: none is text from the mesh.
@@ -42,7 +44,9 @@ from importlib import resources
 from typing import TYPE_CHECKING, Final
 
 from meshcore_home_gateway import __version__, i18n
+from meshcore_home_gateway.core.mesh import type_name
 from meshcore_home_gateway.core.model import MessageKind, Target
+from meshcore_home_gateway.mqtt.contact_devices import MODELS
 from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL, text_room
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
 from meshcore_home_gateway.state import ContactDeviceRecords, DeviceRecord, JsonStateFile
@@ -410,15 +414,18 @@ def render(
     chats: Sequence[Item] = (),
     switches: Sequence[Item] = (),
     removes: Sequence[Item] = (),
+    models: Sequence[tuple[str, str]] = (),
 ) -> str:
     """The template filled in; `text(msgid, values)` gives a text in the dashboard's language,
     filled with the values; `contact_prefix` begins the contacts' entity IDs; `chats`,
-    `switches`, `removes`: the items of the lists, each checked against its pattern."""
+    `switches`, `removes`: the items of the lists, each checked against its pattern; `models`:
+    the models of the contacts' devices with their types (models())."""
     lists = {"chats": list(chats), "switches": list(switches), "removes": list(removes)}
     for name, items in lists.items():
         for each in items:
             if (bad := refused(name, each)) is not None:
                 raise TemplateError(f"an item of {name}: {bad[0]} {bad[1]!r} is not allowed")
+    named = _models(models)
     numbers = re.match(r"(\d+)\.(\d+)", version)
     if numbers is None:
         raise TemplateError(f"the version {version!r} has no major and minor number")
@@ -432,6 +439,7 @@ def render(
         line = (
             line.replace('["@trackers@"]', json.dumps(sorted(trackers)))
             .replace('["@chats@"]', pages)
+            .replace('["@models@"]', named)
             .replace("@gw@", gw)
             .replace("@node@", node_id)
             .replace("@version@", version)
@@ -497,8 +505,30 @@ def build(config: Config, state_dir: Path) -> Built:
         chats=[chat.item() for chat in pages.pages],
         switches=switches(records, prefix),
         removes=removes(records, prefix),
+        models=models(translator),
     )
     return Built(yaml, len(listed), pages, _written_at(path), left_out(records, prefix))
+
+
+def models(translator: i18n.Translator) -> list[tuple[str, str]]:
+    """The model of a contact's device as the gateway names it in Home Assistant in this
+    language, with the node's type (core.mesh.NODE_TYPES): a card says the type in the words of
+    a chat page (design D-7). A name that holds what no text of the dashboard may (unsafe())
+    stays out, the English name in its place."""
+    named = []
+    for node_type, english in MODELS.items():
+        name = translator.ha_name(english)
+        named.append((english if unsafe(name) is not None else name, type_name(node_type)))
+    return named
+
+
+def _models(models: Sequence[tuple[str, str]]) -> str:
+    """["@models@"]: the pairs as JSON, each name as a text of the dashboard may be (unsafe())
+    and each type a word of letters, digits and underscores; else an error of the caller."""
+    for name, kind in models:
+        if unsafe(name) is not None or not _SLUG.fullmatch(kind):
+            raise TemplateError(f"a model: {name!r} of {kind!r} is not allowed")
+    return json.dumps([[name, kind] for name, kind in models], ensure_ascii=False)
 
 
 def _written_at(path: Path) -> float | None:

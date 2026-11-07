@@ -62,11 +62,13 @@ from test_dashboard import (
 PEOPLE = "set c = namespace(heard='', word='', battery=none, path='')"
 SENSORS = "set c = namespace(heard='', word='', values=[], readings=0)"
 ASKING = "(is_state(radio, 'unavailable') or off) -%}"  # why the switches are missing
-ADDING = "(is_state(radio, 'unavailable') or off or code) -%}"  # why adding does not work
+# why adding does not work
+ADDING = "(is_state(radio, 'unavailable') or is_state(radio, 'off') or off or code) -%}"
 RESULT = "set e = 'event."
 FOREIGN = "set ns = namespace(items=[], found=[])"  # controls under another ID (D-30)
 UNLISTED = "set ns = namespace(keys=[], names=[])"
 SHED = "c3" * 32
+HEARD = "_add_node', 'options'"  # Nodes heard nearby
 OFFLINE = '<div><ha-alert alert-type="error">The gateway is offline. These controls come back'
 
 
@@ -159,9 +161,10 @@ async def test_people_and_devices_lists_this_gateways_contacts_with_the_words_of
 ) -> None:
     """Contract item 7, HA-08, HC 23: the count of the table's contacts, each of this gateway's
     contacts by its device, heard newest first, with a link to its chat page where it has one,
-    its type, its battery and the column Asking in the words of a chat page (D-8): "not asked
-    (switch off)" for a companion nobody included, never "excluded" (M9); a state added later
-    as its code; no word for a repeater, which is never asked."""
+    its type in the words of a chat page (D-7), its battery and the column Asking in the words
+    of a chat page (D-8): "not asked (switch off)" for a companion nobody included, never
+    "excluded" (M9); a state added later as its code; no word for a repeater, which is never
+    asked."""
     config = make_config()
     loaded, _ = await household_page(
         hass, hass_ws_client, config, tmp_path, ALICE_NODE, HILL_NODE, Node(BOB, "Bob", COMPANION)
@@ -171,9 +174,9 @@ async def test_people_and_devices_lists_this_gateways_contacts_with_the_words_of
     people = card(cards(loaded, "contacts"), PEOPLE)
     said = render(hass, people)
     assert said.startswith("<div>3 of 350 contacts on the radio.</div>\n<table><tr><th>Name</th>")
-    alice = '<a href="./contact-alice">Alice</a><br><small>Companion</small>'
+    alice = '<a href="./contact-alice">Alice</a><br><small>person</small>'  # D-7, not its model
     assert alice in said
-    assert "<td>Hilltop<br><small>Repeater</small></td>" in said  # no chat page: no link
+    assert "<td>Hilltop<br><small>repeater</small></td>" in said  # no chat page: no link
     mesh = household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
     now = time.time()
     for key, ago in ((BOB, 60), (ALICE, 3600)):
@@ -235,7 +238,8 @@ async def test_a_sensor_nodes_voltage_is_a_reading_and_no_battery(
     assert "<td>4.1 V</td>" in alice_row
     sensors = render(hass, card(cards(loaded, "contacts"), SENSORS))
     assert "<b>Shed sensor</b><br><small>Voltage 2 3.3 V</small>" in sensors
-    assert "<b>Alice</b><br><small>Battery 4.12 V · Voltage 2 3.3 V</small>" in sensors
+    # the battery as People and devices shows it, to a tenth of a volt
+    assert "<b>Alice</b><br><small>Battery 4.1 V · Voltage 2 3.3 V</small>" in sensors
     assert problems(caplog) == []
 
 
@@ -297,6 +301,8 @@ async def test_a_second_gateways_alice_has_her_own_rows_and_the_first_names_the_
         assert set(guarded) == {"switch.mesh_alice_telemetry", "button.mesh_alice_remove"}
         for entity, row in guarded.items():
             assert await viewer.shown(view, row) is shown, (node_id, entity, viewer.errors)
+            frame = entities_card(view, entity)  # no empty frame around hidden rows (HC 10)
+            assert await viewer.shown(view, frame) is shown, (node_id, entity, viewer.errors)
         lists = [c for c in markdown(view) if FOREIGN in c["content"]]
         assert len(lists) == 2  # the switches' and the remove buttons'
         for each in lists:  # while a row of its list hides, and only then (its guards)
@@ -415,6 +421,7 @@ async def test_a_prefix_set_later_keeps_the_table_and_names_the_real_ids(
     viewer = await household_viewer(hass, hass_ws_client)
     for entity, row in rows(view).items():
         assert not await viewer.shown(view, row), entity
+        assert not await viewer.shown(view, entities_card(view, entity)), entity  # no frame
     assert ">Alice</a>" in render(hass, card(cards(loaded, "contacts"), PEOPLE))
     named = [render(hass, c) for c in markdown(view) if FOREIGN in c["content"]]
     assert ["entity ID: switch.mesh_alice_telemetry. " in t for t in named] == [True, False]
@@ -475,13 +482,83 @@ async def test_while_the_gateway_is_offline_the_controls_hide_and_a_red_line_say
     ]
     assert [await viewer.shown(view, each) for each in lists] == [True, True]
     await fire(hass, topics_of(config).availability, "offline")
-    for needle in (ASKING, ADDING, PEOPLE):
+    for needle in (ASKING, ADDING):
         assert OFFLINE in render(hass, card(contacts, needle)), needle
+    assert (  # the table above them has no controls of its own
+        '<div><ha-alert alert-type="error"><b>The gateway is offline.</b> Contacts can be '
+        "added and removed again once it is back.</ha-alert></div>"
+    ) in render(hass, card(contacts, PEOPLE))
     assert [await viewer.shown(view, each) for each in lists] == [False, False]
     for section in view["sections"]:
         assert await viewer.shown(view, section)
     await fire(hass, topics_of(config).availability, "online")
     assert [await viewer.shown(view, each) for each in lists] == [True, True]
+    assert problems(caplog) == []
+
+
+async def test_while_the_radio_is_disconnected_contacts_says_so_in_red_as_every_page_does(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """D-6, D-29, HC 10: with the radio disconnected, People and devices and Add or remove say
+    so in red in the words of a chat page, also while the gateway names it no_radio; the remove
+    buttons are unavailable, so their list leaves no empty frame; the switches, which still
+    work, stay. Connected again, the line goes."""
+    config = make_config()
+    loaded, viewer = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    view = page(loaded, "contacts")
+    contacts = cards(loaded, "contacts")
+    topics = topics_of(config)
+    await fire(hass, topics.state, state_document(known=False))
+    await fire(hass, topics.contacts, index(manage_reason="no_radio"))
+    assert hass.states.get(f"binary_sensor.{PREFIX}_radio").state == "off"
+    red = (
+        '<div><ha-alert alert-type="error"><b>The radio is disconnected.</b> Contacts can be '
+        "added and removed again once it is back.</ha-alert></div>"
+    )
+    assert render(hass, card(contacts, ADDING)).startswith(red)
+    assert red in render(hass, card(contacts, PEOPLE))
+    s3 = render(hass, card(cards(loaded, "alice"), "Why messages wait"))
+    assert s3.startswith('<div><ha-alert alert-type="error"><b>The radio is disconnected.</b>')
+    shows_nothing(hass, card(contacts, ASKING))
+    switches, removes = (
+        entities_card(view, e) for e in ("switch.mesh_alice_telemetry", "button.mesh_alice_remove")
+    )
+    assert await viewer.shown(view, switches)
+    assert not await viewer.shown(view, removes)  # every row hidden: no empty frame (HC 10)
+    await connected(hass, config)
+    shows_nothing(hass, card(contacts, ADDING))
+    assert "The radio is disconnected." not in render(hass, card(contacts, PEOPLE))
+    assert await viewer.shown(view, removes)
+    assert problems(caplog) == []
+
+
+async def test_with_asking_off_in_the_settings_the_switches_say_they_wait_for_it(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """K3a, D-29: with asking turned off in the configuration ([telemetry] enabled = false) the
+    switches still show and work, and a blue line above them says who turned asking off and
+    that they take effect once it is on."""
+    config = make_config()
+    loaded, viewer = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    asking = card(cards(loaded, "contacts"), ASKING)
+    shows_nothing(hass, asking)
+    hass.states.async_set(CONFIGURATION, iso(time.time()), {"telemetry": {"enabled": False}})
+    assert render(hass, asking).startswith(
+        '<div><ha-alert alert-type="info">Your administrator turned asking off in this home\'s '
+        "settings: the switches take effect once it is on.</ha-alert></div>"
+    )
+    view = page(loaded, "contacts")
+    assert await viewer.shown(view, entities_card(view, "switch.mesh_alice_telemetry"))
     assert problems(caplog) == []
 
 
@@ -573,6 +650,8 @@ async def test_controls_turned_off_hide_the_controls_and_say_so_at_once_both_way
     for needle in (ASKING, ADDING):
         assert render(hass, card(cards(loaded, "contacts"), needle)).startswith(blue), needle
     assert [await viewer.shown(view, row) for row in rows(view).values()] == [False, False]
+    lists = [entities_card(view, entity) for entity in rows(view)]
+    assert [await viewer.shown(view, each) for each in lists] == [False, False]  # HC 10
     on_broker = Broker()
     contacts_of(config, tmp_path / "on", on_broker).update(mesh)
     await fire(hass, discovery_topic(config), discovery_payload(config, topics_of(config), RADIO))
@@ -583,10 +662,39 @@ async def test_controls_turned_off_hide_the_controls_and_say_so_at_once_both_way
         await fire(hass, topics_of(config).config, document)
     shows_nothing(hass, card(cards(loaded, "contacts"), ASKING))
     assert [await viewer.shown(view, row) for row in rows(view).values()] == [True, True]
+    assert [await viewer.shown(view, each) for each in lists] == [True, True]
     assert problems(caplog) == []
 
 
 # --- adding a contact ---------------------------------------------------------------------------
+
+
+async def test_nodes_heard_nearby_counts_the_nodes_it_lists(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """K5: the count above the list is the list's, the nodes one can add, not every node the
+    radio heard (repeaters and look-alikes too: the nodes sensor); offline, a line says so
+    instead of a list that may be old."""
+    config = make_config()
+    loaded, _ = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    heard = card(cards(loaded, "contacts"), HEARD)
+    options = hass.states.get(f"select.{PREFIX}_add_node").attributes["options"]
+    assert len(options) > 3
+    said = render(hass, heard)
+    assert said.startswith(f"<div>Nodes you can add: {len(options)}.</div>\n<table>")
+    assert said.split("<details>")[0].count("<tr>") == len(options)
+    nodes = {"total": 3, "truncated": False, "nodes": []}
+    await fire(hass, topics_of(config).nodes, nodes, retain=True)
+    assert render(hass, heard).startswith(f"<div>Nodes you can add: {len(options)}.</div>")
+    await fire(hass, topics_of(config).availability, "offline")
+    gone = "<div>The gateway is offline: this shows again when it is back.</div>"
+    assert render(hass, heard).startswith(f"{gone}\n<details>")
+    assert problems(caplog) == []
 
 
 async def test_the_result_of_adding_says_what_happened_under_the_field(
@@ -626,6 +734,9 @@ async def test_the_result_of_adding_says_what_happened_under_the_field(
     assert "<div>To write to Bob here, your administrator makes the dashboard again.</div>" in said
     await fire(hass, topics.contact_event, contact_event("added", ALICE, ALICE_NODE))
     assert "To write to" not in render(hass, result)  # Alice has her page
+    await fire(hass, topics.availability, "offline")  # not "No contact event yet."
+    gone = "<div>The gateway is offline: this shows again when it is back.</div>\n"
+    assert render(hass, result).startswith(first + gone + "<details>")
     assert problems(caplog) == []
 
 

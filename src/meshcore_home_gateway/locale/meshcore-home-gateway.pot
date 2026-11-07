@@ -1959,6 +1959,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Asking for position and battery is off for everyone; Settings shows it. Each switch keeps whether its person would be asked."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Asking for position and battery is paused until the file is fixed or deleted."
 msgstr ""
 
@@ -2217,6 +2222,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Contacts can be added and removed again once it is back."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Contacts cannot be added or removed now. Tell your administrator this code:"
 msgstr ""
 
@@ -2322,12 +2332,6 @@ msgctxt "dashboard"
 msgid "Every chat, and all messages together. Tap a chat to open its page."
 msgstr ""
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "Every link and button above goes to a page of this dashboard; the back arrow returns to where you came from."
-msgstr ""
-
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Everyone in this home who uses Home Assistant reads and writes the same chats."
@@ -2413,6 +2417,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "For your administrator: a second gateway needs its own dashboard and a contact prefix of its own."
+msgstr ""
+
+#. others are contacts' names, separated by commas: nodes of another gateway that the map shows under the names of this gateway's contacts
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "For your administrator: give each gateway a contact prefix of its own, then make this dashboard again."
 msgstr ""
 
 #. the menus and words of Home Assistant as its own translation names them
@@ -2623,12 +2633,6 @@ msgctxt "dashboard"
 msgid "How the letters of a message are sent."
 msgstr ""
 
-#. others are contacts' names, separated by commas: nodes of another gateway that the map shows under the names of this gateway's contacts
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "How to fix it, in the guide"
-msgstr ""
-
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "How to read the map"
@@ -2646,6 +2650,7 @@ msgid "How to write"
 msgstr ""
 
 #. who is a contact's name; real is the entity ID of the contact's switch or button on this gateway; the menus as Home Assistant's own translation names them
+#. others are contacts' names, separated by commas: nodes of another gateway that the map shows under the names of this gateway's contacts
 #. the menus and words of Home Assistant as its own translation names them
 #. real is the entity ID of the message field; the menus as Home Assistant's own translation names them
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2916,16 +2921,11 @@ msgctxt "dashboard"
 msgid "Messages waiting over a minute: {waiting}."
 msgstr ""
 
-#. managed: the gateway keeps the radio's settings; only watched: it reports them and changes nothing
+#. the radio's settings: mode is managed or only watched, state how they are now, such as changed by someone
 #: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
 msgctxt "dashboard"
-msgid "Mode: managed."
-msgstr ""
-
-#. managed: the gateway keeps the radio's settings; only watched: it reports them and changes nothing
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "Mode: only watched."
+msgid "Mode: {mode}. State: {state}."
 msgstr ""
 
 #. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
@@ -3052,17 +3052,17 @@ msgctxt "dashboard"
 msgid "Nobody shares a position yet. Turn on Ask for position and battery for a person who agrees (Contacts)."
 msgstr ""
 
-#. n is a whole number: the nodes heard that are not contacts
-#: src/meshcore_home_gateway/dashboard.yaml
-#, python-brace-format
-msgctxt "dashboard"
-msgid "Nodes heard in the last 7 days that are not contacts: {n}."
-msgstr ""
-
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Nodes heard nearby"
+msgstr ""
+
+#. n is a whole number: the nodes in the list below, which can be added as contacts
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Nodes you can add: {n}."
 msgstr ""
 
 #. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
@@ -3890,6 +3890,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "The gateway is offline."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The gateway is offline. Its settings show again when it is back."
 msgstr ""
 
@@ -3901,6 +3906,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The gateway is offline: its parts report again when it is back."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway is offline: this shows again when it is back."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4010,6 +4020,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The line above says what happened, also why a request did not work."
+msgstr ""
+
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The links, and the badges Gateway, Settings and Help, open a page of this dashboard; the back arrow returns to where you came from."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4462,6 +4478,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "What the contact is: a person's radio, a radio that passes messages on, a room that keeps messages for a group, or a sensor that reports readings."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "What the gateway may still send this hour; messages wait when it is used up."
 msgstr ""
 
@@ -4703,6 +4724,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Why nobody is asked"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Why someone is missing or not current"
 msgstr ""
 
@@ -4827,6 +4853,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Your administrator turned asking off in this home's settings."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Your administrator turned asking off in this home's settings: the switches take effect once it is on."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -5168,6 +5199,11 @@ msgctxt "dashboard"
 msgid "list of people not to ask unreadable"
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "managed"
+msgstr ""
+
 #. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5443,6 +5479,7 @@ msgctxt "dashboard"
 msgid "only the chats' channels"
 msgstr ""
 
+#. how the gateway keeps the radio's settings: managed, it keeps them as this home needs them; only watched, it reports them and changes nothing
 #. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5461,6 +5498,7 @@ msgctxt "dashboard"
 msgid "paused: {why}"
 msgstr ""
 
+#. what a contact is, under its name on Contacts: the words under a person's name in All chats
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "person"
@@ -5522,6 +5560,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "repeater"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "request failed"
 msgstr ""
 
@@ -5538,6 +5581,22 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "request too large"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "room"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "sensor"
+msgstr ""
+
+#. the privacy settings; messages, positions and readings are whole numbers of days
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "sensors"
 msgstr ""
 
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers

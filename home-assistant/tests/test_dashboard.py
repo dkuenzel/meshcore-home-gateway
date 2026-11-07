@@ -181,6 +181,7 @@ SECTIONS = frozenset({"grid"})
 # the Markdown cards, by a part of their content or visibility
 WRITE = "script.mesh_message"  # the guide's script, for automations: no card names it (D-22)
 TABLE = "set c = namespace(heard='', word='', battery=none, path='')"  # People and devices
+REGISTRY = ("integration_entities(", "device_entities(")  # what reads the registry
 # the gateway's sensors of 2.1 that the cards read; a gateway of 2.0 has none of them
 HISTORY = f"sensor.{PREFIX}_message_history"
 PENDING = f"sensor.{PREFIX}_pending_messages"
@@ -447,8 +448,10 @@ def rendered(hass: HomeAssistant, loaded: dict[str, Any]) -> dict[str, str]:
 
 
 def listening(hass: HomeAssistant, loaded: dict[str, Any]) -> list[str]:
-    """What the cards listen to that they should not: a domain or every state; and the contacts
-    table without the time, which it needs to show a new contact within a minute."""
+    """What the cards listen to that they should not: a domain or every state; and a card that
+    reads the registry without the time: the registry tells no listener, so only the minute
+    renders it again when a contact gets its device (the contacts table, the map's hint, Where
+    everyone is)."""
     found = []
     for each in markdown(loaded):
         info = Template(each["content"], hass).async_render_to_info(
@@ -456,8 +459,8 @@ def listening(hass: HomeAssistant, loaded: dict[str, Any]) -> list[str]:
         )
         if info.domains or info.domains_lifecycle or info.all_states:
             found.append(f"{each['content'][:60]}: {info}")
-        if TABLE in each["content"] and not info.has_time:
-            found.append("the contacts table without the time")
+        if any(read in each["content"] for read in REGISTRY) and not info.has_time:
+            found.append(f"{each['content'][:60]}: reads the registry without the time")
     return found
 
 
@@ -784,6 +787,9 @@ async def test_the_contacts_table_lists_fifty_contacts_newest_first(
     assert -1 not in found, times
     assert found == sorted(found)  # newest first
     assert table.count(f"</small></td><td>{NONE}</td>") == 46  # never heard: no time
+    person = f"<small>{said(config, 'person')}</small>"  # D-7: from the model in this language
+    assert table.count(person) == 49
+    assert f"<small>{said(config, 'repeater')}</small>" in table
     assert listening(hass, loaded) == []
     assert form_findings(outputs) == []
     assert problems(caplog) == []
@@ -1420,7 +1426,7 @@ async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 -
 
     def alice() -> str:
         """Alice's row of the contacts table: her chat page, her type, then the cells."""
-        start = '<tr><td><a href="./contact-alice">Alice</a><br><small>Companion</small></td>'
+        start = '<tr><td><a href="./contact-alice">Alice</a><br><small>person</small></td>'
         return render(hass, table).split(start, 1)[1].split("</tr>", 1)[0]
 
     for state, text in STATES.items():
@@ -1429,7 +1435,7 @@ async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 -
         assert alice().endswith(f"<td>{NONE}</td><td>{text}</td>"), state  # no battery
     await fire(hass, topics.contact(ALICE), contact_document(mesh.contacts[ALICE]))
     assert alice().endswith(f"<td>{NONE}</td>")  # unknown
-    hilltop = render(hass, table).split("<tr><td>Hilltop<br><small>Repeater</small></td>")[1]
+    hilltop = render(hass, table).split("<tr><td>Hilltop<br><small>repeater</small></td>")[1]
     assert hilltop.split("</tr>")[0].endswith(f"<td>{NONE}</td><td>{NONE}</td>")  # not asked
     assert problems(caplog) == []
 
@@ -1472,7 +1478,7 @@ async def test_the_cards_say_when(
             hass, card(loaded, EVENT)
         )
         heard = d9(config, now, later)
-        assert f"<small>Companion</small></td><td>{heard}</td>" in render(hass, card(loaded, TABLE))
+        assert f"<small>person</small></td><td>{heard}</td>" in render(hass, card(loaded, TABLE))
     thread = card(cards(loaded, "alice"), "macro row(e)")
     at = dt_util.as_local(dt_util.utc_from_timestamp(now))
     keys = {"direction": "in", "kind": "contact", "contact_key": ALICE, "name": "Alice"}

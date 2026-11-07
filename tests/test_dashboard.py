@@ -21,6 +21,7 @@ from meshcore_home_gateway import __version__, dashboard, i18n
 from meshcore_home_gateway.catalog import Entry, read_po
 from meshcore_home_gateway.config import Config, load_config, parse_config
 from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core.mesh import NODE_TYPES
 from meshcore_home_gateway.core.model import DeliveryState, Position
 from meshcore_home_gateway.dashboard import TemplateError
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, text_room
@@ -580,6 +581,7 @@ _PLACEHOLDERS = {
     "@minor@",
     "@trackers@",
     "@chats@",
+    "@models@",
     "@guide@",
 }
 _JINJA_NOTE = re.compile(r"\{#-?\s*Translators:.*-?#\}")
@@ -633,6 +635,7 @@ def _mappings() -> dict[str, list[str]]:
         "said": [state.value for state in DeliveryState],
         "telemetry": list(telemetry.STATES),
         "what": list(contact["event_types"]),
+        "node": list(NODE_TYPES.values()),
     }
 
 
@@ -654,7 +657,7 @@ def rule_findings(template: str) -> list[str]:  # noqa: PLR0912 - one rule after
             for placeholder in re.findall(r"@[\w.]+@", line)
             if placeholder not in _PLACEHOLDERS and not _of_item(placeholder, each.get(number))
         ]
-        for listed in ("@trackers@", "@chats@"):
+        for listed in ("@trackers@", "@chats@", "@models@"):
             if listed in line and f'["{listed}"]' not in line:
                 found.append(f"{number}: {listed} is a whole list")
         tags = [match.span() for match in _TAG.finditer(line)]
@@ -1131,6 +1134,45 @@ def test_the_chats_placeholder_is_the_pages_as_a_jinja_list() -> None:
     assert listed[1]["aliases"] == ["alarm"]
     assert listed[1]["write"] is False
     assert pages('x ["@chats@"]\n') == "x []\n"
+
+
+@pytest.mark.real_catalogs
+def test_the_models_placeholder_is_each_model_with_its_type(tmp_path: Path) -> None:
+    """D-7: Contacts says a contact's type in the words of a chat page, and Home Assistant knows
+    only its device's model, which the gateway names in [homeassistant] language (ADR 0019):
+    ["@models@"] is the list of each model as the gateway names it, with its node type
+    (core.mesh.NODE_TYPES), for Jinja's dict()."""
+    pairs = [("Companion", "chat"), ("Room server", "room")]
+    out = dashboard.render(
+        '{%- set models = dict(["@models@"]) -%}\n',
+        node_id="radio-1",
+        version="1.2.3",
+        trackers=[],
+        text=ENGLISH,
+        models=pairs,
+    )
+    assert out == '{%- set models = dict([["Companion", "chat"], ["Room server", "room"]]) -%}\n'
+    assert pages('x ["@models@"]\n') == "x []\n"
+    for wrong in [("<b>Companion</b>", "chat"), ("Companion", "chat }}")]:
+        with pytest.raises(TemplateError, match="a model"):
+            pages('x ["@models@"]\n', models=[wrong])
+    english = [("Companion", "chat"), ("Repeater", "repeater"), ("Room server", "room")]
+    assert dashboard.models(i18n.ENGLISH) == [*english, ("Sensor", "sensor")]
+    text, _ = dashboard.dashboard(config(), tmp_path)
+    assert json.dumps([[*pair] for pair in dashboard.models(i18n.ENGLISH)]) in text
+
+
+@pytest.mark.real_catalogs
+def test_a_model_the_guard_refuses_is_named_in_english() -> None:
+    """A model's name goes into a card's Jinja: one that holds what no text of the dashboard may
+    (dashboard.unsafe(), the catalog check's rule) stays out, its English name in its place; a
+    device of that model then shows its model through m()."""
+    names = {"Companion": "<b>Gefährte</b>", "Repeater": "Wiederholer"}
+    entries = [Entry(k, (v,), i18n.HOME_ASSISTANT) for k, v in names.items()]
+    assert dashboard.models(compiled("de", entries))[:2] == [
+        ("Companion", "chat"),
+        ("Wiederholer", "repeater"),
+    ]
 
 
 # --- the chats list and the controls' items, from the configuration and the state ----------------
@@ -1961,8 +2003,23 @@ def test_an_over_long_tab_title_is_caught() -> None:
 # the chat's help and the line of a Send without text, which name the button and the key
 HOW = next(help_ for help_, labels in rules.QUOTES.items() if "Write to {name}" in labels)
 NOTHING = next(help_ for help_ in rules.QUOTES if help_.startswith("Nothing was sent"))
+
+
+def alike(texts: Mapping[str, str]) -> dict[str, str]:
+    """These translations, and each other text of QUOTES with the labels these translate as
+    they translate them: a catalog that says every label as its control does."""
+    out = dict(texts)
+    for help_, labels in rules.QUOTES.items():
+        if help_ not in out:
+            out[help_] = help_
+            for label in sorted(labels, key=len, reverse=True):
+                out[help_] = out[help_].replace(label, texts.get(label, label))
+    return out
+
+
 GERMAN = {  # a catalog that says the labels and the key as its controls do
     "Send": "Abschicken",
+    "Contacts": "Kontakte",
     "Return, then Send": "Eingabe, dann Abschicken",
     "Write to {name}": "An {name} schreiben",
     HOW: (
@@ -1991,6 +2048,7 @@ GERMAN = {  # a catalog that says the labels and the key as its controls do
         "tippe Eingabe (↵)."
     ),
 }
+GERMAN = alike(GERMAN)
 
 
 @pytest.mark.real_catalogs
@@ -2028,9 +2086,15 @@ def test_a_quoted_label_is_quoted_in_every_catalog() -> None:
         ],
     )
     assert rules.quote_findings(template, {quoted: ("Send",)}, [fixed]) == []
-    bare = template.replace(help_, "Type, then Send.")
-    assert rules.quote_findings(bare, {}, [i18n.ENGLISH]) == []  # a bare word is no quote
-    named = bare + '    name: _("Tap \\"Help\\" first")\n'  # a quote in a whole value
+    bare = template.replace(help_, "Type, then Send.")  # D-63: a label of NAMED, bare
+    assert rules.quote_findings(bare, {}, [i18n.ENGLISH]) == [
+        "rule 16: 'Type, then Send.' names 'Send', not in QUOTES"
+    ]
+    plain = {"Type, then Send.": ("Send",)}  # the word in its plain sense
+    assert rules.quote_findings(bare, {}, [i18n.ENGLISH], plain) == []
+    other = bare.replace('_("Send")', '_("Close")').replace("then Send", "then Close")
+    assert rules.quote_findings(other, {}, [i18n.ENGLISH]) == []  # Close is not of NAMED
+    named = other + '    name: _("Tap \\"Help\\" first")\n'  # a quote in a whole value
     assert rules.quote_findings(named, {}, [i18n.ENGLISH]) == [
         "rule 16: 'Tap \"Help\" first' quotes 'Help', not in QUOTES"
     ]
@@ -2045,16 +2109,57 @@ def test_the_name_beside_send_says_the_buttons_label() -> None:
     assert rules.QUOTES["Return, then Send"] == ("Send",)
     texts = {**GERMAN, "Return, then Send": "Eingabe, dann Senden"}
     german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
-    assert rules.quote_findings(shipped(), rules.QUOTES, [german]) == [
+    assert rules.quote_findings(shipped(), rules.QUOTES, [german], rules.PLAIN) == [
         "rule 16: de: 'Eingabe, dann Senden' does not say 'Abschicken'"
     ]
     fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in GERMAN.items()])
-    assert rules.quote_findings(shipped(), rules.QUOTES, [fixed, i18n.ENGLISH]) == []
-    assert rules.quote_findings(shipped(), {}, [i18n.ENGLISH]) == [
+    assert rules.quote_findings(shipped(), rules.QUOTES, [fixed, i18n.ENGLISH], rules.PLAIN) == []
+    found = rules.quote_findings(shipped(), {}, [i18n.ENGLISH], rules.PLAIN)
+    for finding in (
         "rule 16: 'Return, then Send' names 'Send', not in QUOTES",  # also on Help
         f"rule 16: {HOW!r} quotes 'Write to {{name}}', not in QUOTES",
         "rule 16: 'Remove a contact' names 'Remove', not in QUOTES",
         "rule 16: 'Remove {name} from the radio?' names 'Remove', not in QUOTES",
+    ):
+        assert finding in found
+    assert len(found) == sum(len(labels) for labels in rules.QUOTES.values())  # each one needed
+
+
+@pytest.mark.real_catalogs
+def test_a_label_named_without_quote_marks_is_said_as_its_control_says_it() -> None:
+    """Rule 16 (D-63, HC 19): a text that names a label of NAMED by its words, with or without
+    quote marks, is in QUOTES: a catalog whose button says "Wieder anzeigen" while the help
+    says "Erneut zeigen" fails, and so for Ask for position and battery and Add a contact. A
+    text that says the words in their plain sense is in PLAIN; an entry of PLAIN whose text no
+    longer says them is found."""
+    labels = {
+        "Show again": "Wieder anzeigen",
+        "Ask for position and battery": "Nach Position und Akku fragen",
+        "Add a contact": "Kontakt hinzufügen",
+    }
+    drifting = {
+        "Show again brings back all hidden contacts.": (
+            "Erneut zeigen holt alle verborgenen Kontakte zurück."
+        ),
+        "Someone turned Ask for position and battery off or on for this person.": (
+            "Jemand hat das Abfragen von Standort und Batterie für diese Person geändert."
+        ),
+        "To write back from here, add that person under Add a contact.": (
+            "Um von hier zurückzuschreiben, nimm die Person unter Neuer Kontakt auf."
+        ),
+    }
+    texts = alike(labels) | drifting
+    german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
+    found = rules.quote_findings(shipped(), rules.QUOTES, [german], rules.PLAIN)
+    assert sorted(found) == sorted(
+        f"rule 16: de: {text!r} does not say {labels[label]!r}"
+        for text, label in zip(drifting.values(), labels, strict=True)
+    )
+    fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in alike(labels).items()])
+    assert rules.quote_findings(shipped(), rules.QUOTES, [fixed], rules.PLAIN) == []
+    gone = {**rules.PLAIN, "Gone.": ("Send",)}
+    assert rules.quote_findings(shipped(), rules.QUOTES, [i18n.ENGLISH], gone) == [
+        "rule 16: PLAIN has 'Gone.' with 'Send', which it does not say"
     ]
 
 
@@ -2068,7 +2173,7 @@ def test_the_help_says_send_and_return_as_the_button_and_its_name_do() -> None:
     assert rules.QUOTES[NOTHING] == ("Send",)
     texts = {**GERMAN, HOW: GERMAN[HOW].replace("Abschicken", "Senden")}
     german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
-    assert rules.quote_findings(shipped(), rules.QUOTES, [german]) == [
+    assert rules.quote_findings(shipped(), rules.QUOTES, [german], rules.PLAIN) == [
         f"rule 16: de: {texts[HOW]!r} does not say 'Abschicken'"
     ]
     texts = {**GERMAN, NOTHING: GERMAN[NOTHING].replace("Eingabe", "Zeilenumbruch")}
@@ -2347,6 +2452,12 @@ def test_help_names_every_page_and_every_control() -> None:
         assert f"<b>{label}</b>" in said, label
     assert "guide's script" not in said
     assert "draft and send" in said
+    # §2.8: control and its effect; the controls above act, only links and badges open a page
+    assert "Every link and button above goes to a page" not in said
+    assert (
+        "The links, and the badges Gateway, Settings and Help, open a page of this dashboard; "
+        "the back arrow returns to where you came from."
+    ) in said
     for label in ("Return, then Send", "Hidden contacts", "Radio battery"):
         broken = shipped().replace(f'<b>_("{label}")</b>', "<b>x</b>")
         assert f"rule 8: Help does not list {label!r}" in rules.findings(broken), label

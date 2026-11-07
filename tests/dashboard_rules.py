@@ -22,6 +22,7 @@ from typing import Any
 
 from meshcore_home_gateway import dashboard, i18n
 from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core.mesh import NODE_TYPES
 from meshcore_home_gateway.core.model import DeliveryState
 from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL, PROFILE_STATES
 from meshcore_home_gateway.protocol.links import _INVISIBLE
@@ -52,6 +53,7 @@ MAPPINGS = (
     "mon",
     "kind",
     "audience",
+    "node",
 )
 # rule 8: mappings whose words need no explanation: the names of the months
 SELF_EVIDENT = frozenset({"mon"})
@@ -71,6 +73,187 @@ QUOTES: dict[str, tuple[str, ...]] = {
         "Nothing was sent: the gateway had no text. Tap Return (↵) in the field (on a phone this "
         "also closes the keyboard), then Send."
     ): ("Send",),
+    # the texts that name a label of NAMED by its words (D-63)
+    "Gateway: Health": ("Gateway",),
+    (
+        "The household's map does not need it: the gateway asks for positions privately (Ask for "
+        "position and battery). The card goes when that device's next advert carries no position."
+    ): ("Ask for position and battery",),
+    "Gateway: Radio settings": ("Gateway",),
+    (
+        "Nobody shares a position yet. Turn on Ask for position and battery for a person who "
+        "agrees (Contacts)."
+    ): ("Ask for position and battery", "Contacts"),
+    ("GPS off, location not allowed in the app, out of range, or asking is off (Contacts)."): (
+        "Contacts",
+    ),
+    (
+        "Positions come from the person's device when the gateway asks it (Ask for position and "
+        "battery), or from its adverts."
+    ): ("Ask for position and battery",),
+    (
+        "No one to write to yet. The administrator sets up channels, and makes a chat page for "
+        "each contact you add under Contacts."
+    ): ("Contacts",),
+    (
+        "Long keys and links are shown in pieces here. Copied into Contacts, they still work; "
+        "pasted elsewhere, they may not."
+    ): ("Contacts",),
+    "Help explains the words under Asking.": ("Asking",),
+    (
+        "Your administrator can turn the contacts' controls off for everyone who uses Home "
+        "Assistant; Settings shows it."
+    ): ("Settings",),
+    (
+        "Asking for position and battery is off for everyone; Settings shows it. Each switch keeps "
+        "whether its person would be asked."
+    ): ("Settings",),
+    "To write back from here, add that person under Add a contact.": ("Add a contact",),
+    "Remove: the contact leaves the radio; to talk again, add it again.": ("Remove",),
+    "Show again brings back all hidden contacts.": ("Show again",),
+    (
+        "Other people's radios that this home's radio heard in the last 7 days. Add one under Add "
+        "a contact."
+    ): ("Add a contact",),
+    "Tap a dot for its name. Where everyone is, below, says it in words.": ("Where everyone is",),
+    "Where everyone is, below, lists everyone with a position now.": ("Where everyone is",),
+    "Someone missing: see Where everyone is.": ("Where everyone is",),
+    ("Ask for position and battery on Contacts turns it on or off for each person."): (
+        "Ask for position and battery",
+        "Contacts",
+    ),
+    "The switches and buttons on Contacts.": ("Contacts",),
+    (
+        "At the bottom of a chat's page: type, tap Return (↵), then tap Send. Return only keeps "
+        "the text at the gateway; Send sends it, once."
+    ): ("Send",),
+    (
+        "On Contacts, a switch per person: on, the gateway asks that person's device now and then "
+        "for its position and battery. Only for people who agreed."
+    ): ("Contacts",),
+    "On Contacts: adds the node you pick to the radio at once.": ("Contacts",),
+    ("On Contacts: paste a key or a contact link from the MeshCore app, then tap Return (↵)."): (
+        "Contacts",
+    ),
+    "On Contacts: takes a contact off the radio. It asks first.": ("Contacts",),
+    ("On Contacts: brings back every contact whose device was deleted in Home Assistant."): (
+        "Contacts",
+    ),
+    "On Gateway: tap one for its history.": ("Gateway",),
+    "On Gateway: the radio's airtime over the last 24 hours.": ("Gateway",),
+    (
+        "The links, and the badges Gateway, Settings and Help, open a page of this dashboard; the "
+        "back arrow returns to where you came from."
+    ): ("Settings", "Gateway"),
+    (
+        "This dashboard writes by draft and send: the field keeps your text at the gateway, and "
+        "Send sends it, once."
+    ): ("Send",),
+    ("Someone deleted the contact's device in Home Assistant, or tapped Show again."): (
+        "Show again",
+    ),
+    ("Someone turned Ask for position and battery off or on for this person."): (
+        "Ask for position and battery",
+    ),
+    ("Adding and removing do not work now; the line above the controls on Contacts says why."): (
+        "Contacts",
+    ),
+    ("To write again, add the contact again, or show hidden contacts again (Contacts)."): (
+        "Contacts",
+    ),
+    (
+        "Everyone in this home who uses Home Assistant shares this field. What someone else leaves "
+        "in it is what Send sends, and their text can replace yours while you type. Read the field "
+        "before you tap Send."
+    ): ("Send",),
+    (
+        "If the connection drops, the field can show an older text again. Read it before you tap "
+        "Send."
+    ): ("Send",),
+    (
+        "For your administrator: this chat's field or its Send button is disabled, unavailable or "
+        "on another device. Check both in Home Assistant's Settings › Devices & services › "
+        "Entities."
+    ): ("Send",),
+    "Change on Contacts": ("Contacts",),
+    (
+        "Ask for position and battery: on means the gateway asks this device for both now and "
+        "then. Change it on Contacts. The words after on or off say how the device answers:"
+    ): ("Ask for position and battery", "Contacts"),
+}
+# rule 16 (D-63): the labels a text may name without quote marks, by their English words: D-63's
+# and the controls, headings and column of Contacts and the map. A text that names one, as a
+# whole word, is in QUOTES with it, or in PLAIN where the word means no label
+NAMED: tuple[str, ...] = (
+    "Return, then Send",
+    "Send",
+    "Contacts",
+    "Gateway",
+    "Settings",
+    "Ask for position and battery",
+    "Asking",
+    "Add a contact",
+    "Add by key or contact link",
+    "Remove",
+    "Hidden contacts",
+    "Show again",
+    "Where everyone is",
+)
+# rule 16: the texts that say a word of NAMED in its plain sense: text -> those words
+PLAIN: dict[str, tuple[str, ...]] = {
+    "Gateway not found.": ("Gateway",),
+    "Gateway offline.": ("Gateway",),
+    "Asking for position and battery is paused until the file is fixed or deleted.": ("Asking",),
+    (
+        "Contacts are told apart by the first bytes of their key. A node with the same first bytes "
+        "may be chance or someone imitating that contact. The gateway does not act on commands "
+        "from it and does not ask it for its position. If it stays, tell your administrator."
+    ): ("Contacts",),
+    ("Asking for position and battery is paused: the list of people not to ask cannot be read."): (
+        "Asking",
+    ),
+    "Asking for position and battery is paused: the radio adds contacts by itself.": ("Asking",),
+    "Asking for position and battery starts within the hour.": ("Asking",),
+    ("Asking for position and battery is paused: the radio sent a lot in the last hour."): (
+        "Asking",
+    ),
+    "Asking for position and battery is paused.": ("Asking",),
+    "Remove contacts you no longer need.": ("Remove",),
+    (
+        "Nobody shares a position yet. Asking for position and battery is off in this home's "
+        "settings (your administrator)."
+    ): ("Asking",),
+    (
+        "✗ not delivered and ✗ not sent: waited too long show in yellow, with the reason. Send it "
+        "again or ask in another way."
+    ): ("Send",),
+    "Contacts can be added and removed again once it is back.": ("Contacts",),
+    ("The radio is not connected. Contacts can be added and removed again once it is."): (
+        "Contacts",
+    ),
+    "Contacts cannot be added or removed now. Tell your administrator this code:": ("Contacts",),
+    (
+        "Asking for position and battery is off for everyone; Settings shows it. Each switch keeps "
+        "whether its person would be asked."
+    ): ("Asking",),
+    "In the MeshCore app: Contacts, Add, Scan QR code.": ("Contacts",),
+    "Asking for position and battery": ("Asking",),
+    "Contacts added only by hand": ("Contacts",),
+    (
+        "A switch here would work for everyone who uses Home Assistant, children and guests "
+        "included. Settings that protect people, the radio or the law stay with the administrator."
+    ): ("Settings",),
+    "Contacts managed by the gateway": ("Contacts",),
+    "Contacts with a device": ("Contacts",),
+    "Contacts that may send commands to this home's automations.": ("Contacts",),
+    (
+        "The radio may send only so much per hour, and many messages were waiting. Send it again "
+        "later, or shorter."
+    ): ("Send",),
+    "The gateway was shutting down or restarting. Send it again once it is back.": ("Send",),
+    "Asking for position and battery: the words": ("Asking",),
+    "The radio's contact list is full. Remove contacts you no longer need.": ("Remove",),
+    "Contacts and Home Assistant": ("Contacts",),
 }
 # rule 16: the keyboard's key is not a label: each text that asks for it says it before ↵ in
 # the word of the name beside the Send button (D-65)
@@ -168,6 +351,7 @@ def rendered(template: str, household: Household = HOUSEHOLD) -> str:
         chats=household.chats,
         switches=household.switches,
         removes=household.removes,
+        models=dashboard.models(i18n.ENGLISH),
     )
 
 
@@ -448,6 +632,7 @@ def rule_2(template: str, source: Any, loaded: Any, household: Household) -> lis
         "audience": list(_TELEMETRY_MODES.values()),
         "profile": list(PROFILE_STATES),
         "mon": [str(n) for n in range(1, 13)],
+        "node": list(NODE_TYPES.values()),
     }
     found = []
     for card in cards(template):
@@ -827,7 +1012,8 @@ def rule_16(template: str, source: Any, loaded: Any, household: Household) -> li
     names a button's label bare, is in QUOTES; each catalog's text says its labels as written,
     and the keyboard's key as the name beside the Send button says it."""
     translators = [i18n.translator(code) for code in i18n.LANGUAGES]
-    return quote_findings(template, QUOTES, translators) + key_findings(template, translators)
+    found = quote_findings(template, QUOTES, translators, PLAIN)
+    return found + key_findings(template, translators)
 
 
 def said(translator: i18n.Translator, msgid: str) -> str:
@@ -856,8 +1042,14 @@ def key_findings(template: str, translators: Sequence[i18n.Translator]) -> list[
 
 
 def quote_findings(
-    template: str, quotes: Mapping[str, Sequence[str]], translators: Sequence[i18n.Translator]
+    template: str,
+    quotes: Mapping[str, Sequence[str]],
+    translators: Sequence[i18n.Translator],
+    plain: Mapping[str, Sequence[str]] | None = None,
 ) -> list[str]:
+    """Rule 16: a text that quotes a label, a whole value that names a button's label, and a
+    text that names a label of NAMED by its words (`plain`: where the words mean no label) is in
+    `quotes` with it; each catalog's text says the catalog's label."""
     labels = {
         json.loads(f'"{m.group(2)}"')
         for line in template.split("\n")
@@ -879,8 +1071,11 @@ def quote_findings(
         )
     }
     found = []
+    plain = plain or {}
     helps = [m for card in cards(template) for line in card.lines for m in msgids(line)]
-    for help_ in dict.fromkeys([*helps, *values]):
+    texts = dict.fromkeys([*helps, *values])
+    bare = [label for label in sorted(NAMED, key=len, reverse=True) if label in texts]
+    for help_ in texts:
         cited: dict[str, str] = {}
         for quoted in re.findall(r'"([^"]+)"|„([^“]+)“|“([^”]+)”', help_):
             if (label := next(q for q in quoted if q)) in labels:
@@ -889,11 +1084,24 @@ def quote_findings(
             for label in sorted(buttons - {help_}):
                 if re.search(rf"(?<!\w){re.escape(label)}(?!\w)", help_):
                     cited.setdefault(label, "names")
+        rest = _menus(help_)  # a label's words, the longest first: Send in Return, then Send
+        for label in (label for label in bare if label != help_):
+            word = re.compile(rf"(?<![\w']){re.escape(label)}(?![\w'])")
+            if word.search(rest) and label not in plain.get(help_, ()):
+                cited.setdefault(label, "names")
+            rest = word.sub("\0", rest)
         found += [
             f"rule 16: {help_!r} {verb} {label!r}, not in QUOTES"
             for label, verb in cited.items()
             if label not in quotes.get(help_, ())
         ]
+    found += [
+        f"rule 16: PLAIN has {help_!r} with {label!r}, which it does not say"
+        for help_, words in plain.items()
+        for label in words
+        if help_ not in texts
+        or not re.search(rf"(?<![\w']){re.escape(label)}(?![\w'])", _menus(help_))
+    ]
     for help_, listed in quotes.items():
         for translator in translators:
             text = said(translator, help_)
@@ -902,6 +1110,12 @@ def quote_findings(
                 if named not in text:
                     found.append(f"rule 16: {translator.language}: {text!r} does not say {named!r}")
     return found
+
+
+def _menus(text: str) -> str:
+    """A text without the words of Home Assistant's menus (Settings › …), which name no label
+    of the dashboard (rule 17)."""
+    return re.sub(r"\w+(?= ›)", "\0", text)
 
 
 def rule_17(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
