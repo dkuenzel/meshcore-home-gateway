@@ -235,6 +235,18 @@ def transport_for(config: Config) -> Transport:
     return TcpTransport(radio.host, radio.port)
 
 
+def _observer(config: Config, observer: Observer) -> Observer:
+    """The observer, set as the configuration says, before it publishes."""
+    observer.manage, observer.manage_reason, observer.heard_nodes = (
+        config.contacts.manage,
+        "no_radio" if config.contacts.manage else "management_off",  # until the radio connects
+        config.contacts.heard_nodes,
+    )
+    observer.telemetry_types = config.telemetry.node_types
+    observer.show_channels(lambda index: channel_published(config, index))
+    return observer
+
+
 def gateway(
     config: Config,
     bus: Bus,
@@ -263,15 +275,9 @@ def gateway(
     contacts as a Homie device (EXT-011)."""
     topics = Topics(config.mqtt.base_topic, config.mqtt.node_id)
     protected = protected_keys(config)
-    if observer is None:
-        observer = Observer(bus, topics, protected=protected, wall_clock=wall_clock)
-    observer.manage, observer.manage_reason, observer.heard_nodes = (
-        config.contacts.manage,
-        "no_radio" if config.contacts.manage else "management_off",  # until the radio connects
-        config.contacts.heard_nodes,
+    observer = _observer(
+        config, observer or Observer(bus, topics, protected=protected, wall_clock=wall_clock)
     )
-    observer.telemetry_types = config.telemetry.node_types
-    observer.show_channels(lambda index: channel_published(config, index))  # before it publishes
     radio = RadioLink(monotonic)
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()
     outbox = Delivery(
