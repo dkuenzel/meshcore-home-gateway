@@ -717,10 +717,10 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   was sent: after a change, the messages sent before it, also one kept on its way across the
   restart that changed it, show the other way until they leave the history. While the gateway
   is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
-  The thread's help links to *Help*, which explains each reason. Under the thread, why writing is
-  not possible when it is not, and *About*: where the person is, the battery, asking for
-  position and battery with how the device answers, or the chat's text before and after
-  messages. The page ends in the field
+  The thread's help links to *Help*, which explains each reason. Under the thread, why the
+  gateway refused a message to the chat, why writing is not possible when it is not, and
+  *About*: where the person is, the battery, asking for position and battery with how the
+  device answers, or the chat's text before and after messages. The page ends in the field
   to write in and its *Send* button (writing, below). A person whose device is gone, removed from
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.
@@ -816,8 +816,8 @@ next page load.
 **Writing.** A chat's page ends in a field *Write to …* and a tile *Return, then Send*: type,
 tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at the gateway; only
 *Send* sends it, once. The field is shared by everyone in the home who uses Home Assistant, and
-a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why above the
-field, also when the field held no text. The field and the button are entities of a gateway of
+a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why under the
+thread, also when the field held no text. The field and the button are entities of a gateway of
 version 2.1; with an earlier gateway, the page says so instead. A channel that only automations
 write to (`homeassistant.hidden_targets`) has no field. While the field or the button is disabled
 or unavailable in Home Assistant, or has another entity ID than the page expects, the page says

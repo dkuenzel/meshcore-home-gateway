@@ -150,7 +150,11 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   in a tile, with a hint while the script was missing. Since 2.1 each chat page ends in the
   gateway's draft of that chat, the text entity *Write to …*, and its button *Send*: the gateway
   keeps the draft until it is sent ([home-assistant.md](home-assistant.md#dashboard)). The
-  script stays for automations.
+  script stays for automations. The field and *Send* are the view's footer, which stays at the
+  bottom of the screen; why the gateway refused a *Send* stands under the thread, not in the
+  footer: the frontend caps the footer at a quarter of the screen, and the refused line on top
+  of the field pushed *Send* below a phone's screen
+  ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 * **What changes while the dashboard stays** comes from Markdown templates over the device
   registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
   the heard nodes, the last contact event. What a card needs as fixed IDs is written when the

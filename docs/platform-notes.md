@@ -1772,8 +1772,9 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   hold. *Verified:* frontends `20260930.4` (Home Assistant 2026.10.2) and `20261028.4` (2026.11.0),
   `hui-card`'s `_updateVisibility` and `_setElementVisibility` in the bundle; in Chromium against
   both versions with a real gateway (the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)):
-  a refused line under a chat's field appeared only after a reload, a problem card on an open
-  *Overview* likewise, and both appeared at once with a condition of their content instead.
+  a chat's refused line, then above its field, appeared only after a reload, a problem card on
+  an open *Overview* likewise, and both appeared at once with a condition of their content
+  instead.
   *Here:* the generator turns every `show_empty: false` of the template into a visibility
   condition of the card's own content ([development.md](development.md#translations),
   rule 21). *Check:* `grep -o '_setElementVisibility(t){[^}]*}' hass_frontend/frontend_latest/*.js`
@@ -1781,10 +1782,13 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
 * **The card in a view's footer is at most a quarter of the screen high (`25dvh`); what is taller
   runs past the bottom of the screen, where nothing scrolls it into view.** *Verified:* frontends
   `20260930.4` and `20261028.4`, `src/panels/lovelace/views/hui-view-footer.ts`, `.card {
-  max-height: 25vh; max-height: 25dvh }`; in Chromium at 360x800, a chat page's footer of 162 px
-  with a refused line of three lines above it ran 47 px past the screen's bottom, half of the
-  *Send* tile. *Here:* an open problem of the chat pages' footer (the refused line takes room the
-  footer does not have on a small phone). *Check:* `grep -n max-height
+  max-height: 25vh; max-height: 25dvh }`; in Chromium against Home Assistant 2026.10.2 and
+  2026.11.0 (the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)), a chat
+  page's footer held the field and the *Send* tile (162 px) and, while a *Send* was refused, the
+  line that says why on top of them (61 to 77 px): that line pushed the *Send* tile 15 px below
+  the screen at 360x800 and 4 px at 390x844. *Here:* since 2.1.0 the refused line stands under
+  the thread, and the footer holds only the field and the tile
+  ([development.md](development.md#translations), rule 18). *Check:* `grep -n max-height
   src/panels/lovelace/views/hui-view-footer.ts` in the frontend's source.
 
 ## openHAB Homie binding

@@ -1819,6 +1819,11 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
 MT = "{%- macro mt(x) -%}{{ m(x) }}{%- endmacro -%}"
 GUIDE_LINK = rules.GUIDE_URL.replace("{version}", "@version@")
 HELPED = '<details><summary>_("Help")</summary>_("Help")</details>'
+# a chat page's field, the footer's first card, and a Markdown card put in front of it
+FIELD = (
+    '          - type: entities\n            entities:\n              - entity: "@chats.write@"\n'
+)
+IN_FOOTER = "          - type: markdown\n            content: x\n"
 BROKEN = [
     # rule 2: a mapping over a closed list
     (
@@ -2009,7 +2014,8 @@ BROKEN = [
     # rule 17: a guide section named, Home Assistant's menus in a household line
     (card('<div>_("See A second gateway in the guide.")</div>'), "rule 17: 'See A second gateway"),
     (card('<div>_("Open Settings › Devices & services.")</div>'), "rule 17: 'Open Settings"),
-    # rule 18: the footer's tile first
+    # rule 18: the refused line shows while empty, is not under the thread, or is in the
+    # footer again, where it pushed the Send tile below a phone's screen (H-27)
     (
         [
             "@@",
@@ -2020,6 +2026,14 @@ BROKEN = [
             "          - type: markdown\n            text_only: true\n",
         ],
         "rule 18: chat-family: the refused line shows",
+    ),
+    (
+        ["@@", "{%- set e = 'event.@gw@_delivery' -%}", "{%- set e = 'event.@gw@_message' -%}"],
+        "rule 18: chat-family: the refused line is not under the thread",
+    ),
+    (
+        ["@@", f"        cards:\n{FIELD}", f"        cards:\n{IN_FOOTER}{FIELD}"],
+        "rule 18: chat-family: the footer is vertical-stack of ['markdown', 'entities', 'tile']",
     ),
     # rule 19: m() strips the joiner U+200D
     (

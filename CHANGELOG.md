@@ -77,8 +77,8 @@ format, the command line and Home Assistant discovery are public interfaces
   yellow with the reason in words, one on its way in italics, the newest open and the older ones
   folded, the delivery code of `confirm_nonce` hidden while the gateway adds one (in the history
   only, #87). At its top it says how to write (type,
-  Return, then *Send*), above its field why a *Send* was refused, also when the field held no
-  text; under the thread, why writing is not possible when it is not (the field or its *Send*
+  Return, then *Send*); under the thread, why a *Send* was refused, also when the field held no
+  text, why writing is not possible when it is not (the field or its *Send*
   button disabled, unavailable or under another ID, for the administrator), and about the person
   or the chat: where the person is, the battery, asking for position and battery with how the
   device answers, the text the gateway adds before and after each message. A person removed from
