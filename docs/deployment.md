@@ -332,7 +332,8 @@ pct stop 105 && pct destroy 105
 
 * **The privacy defaults after an update to 2.0.0:** only the messages of the channels that are a
   target are published, of other people's radios only their keys and types, and telemetry asks
-  only the companions the household includes. Switch *Telemetry* on for each of the household's
+  only the companions the household includes, and the contact targets and command senders, at
+  once. Switch *Telemetry* on for each of the household's
   companions (or `meshcore-home-gateway contacts telemetry KEY on`); the changelog's
   **Breaking:** entries name the settings that keep the old behaviour. The messages that 1.x
   received on other channels stay in the history database (and in `history export` and `backup`)
@@ -529,10 +530,30 @@ updates wait for.
   without the broker password, and the archive without the command senders' code secrets, unless
   `--with-secrets` (which also takes the file `password_file` names and the one `codes_file`
   names, as `password` and `command-codes`); without it, set the password again after a restore
-  and enrol the senders anew. To restore: stop
-  the service, unpack the archive, copy `config.toml` to `/etc/meshcore-home-gateway/` and the
-  files under `state/` to `/var/lib/meshcore-home-gateway/` (owned by `meshcore-home-gateway`),
-  put the secrets back where `MANIFEST.json` says they came from, then start it. By hand: back up
+  and enrol the senders anew. To restore, in the container as root: stop the service, unpack
+  the archive into a private directory, and put each file back with its owner, group and mode.
+  The archive holds every file as `root` with mode 0600; a file copied so cannot be read by the
+  service, which then stops with a configuration error. The configuration and the secrets are
+  `root:meshcore-home-gateway` 0640, so that the service's group reads them, and the state is the
+  service's own. The secrets go where `MANIFEST.json` says they came from (`password_file`,
+  `codes_file`), here the usual paths; leave out the line of a file the archive does not hold
+  (`files` in `MANIFEST.json`). The history uses SQLite's write-ahead log: a stop that was cut
+  short (the stop timeout, the watchdog, a crash) leaves `history.sqlite3-wal` and
+  `history.sqlite3-shm` beside it. Remove both before the restore, or SQLite applies the old log
+  to the restored history at the next start, and the history is the old one:
+
+  ```sh
+  systemctl stop meshcore-home-gateway
+  rm -f /var/lib/meshcore-home-gateway/history.sqlite3-wal /var/lib/meshcore-home-gateway/history.sqlite3-shm
+  mkdir -m 0700 /root/restore && tar -xzf FILE -C /root/restore && cd /root/restore
+  install -m 0640 -o root -g meshcore-home-gateway config.toml /etc/meshcore-home-gateway/config.toml
+  install -m 0640 -o root -g meshcore-home-gateway password /etc/meshcore-home-gateway/mqtt-password
+  install -m 0640 -o root -g meshcore-home-gateway command-codes /etc/meshcore-home-gateway/command-codes
+  install -m 0600 -o meshcore-home-gateway -g meshcore-home-gateway state/* /var/lib/meshcore-home-gateway/
+  systemctl start meshcore-home-gateway
+  ```
+
+  By hand: back up
   `/etc/meshcore-home-gateway/` (`config.toml`, and `mqtt-password` where the installer wrote it,
   and the file `codes_file` names) and the three files of
   `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop
@@ -544,7 +565,9 @@ updates wait for.
   the household's companions and message texts, and the history also other people's names, keys
   and channel texts
   ([what the gateway keeps](privacy.md)). Restore the three state files together and with the
-  service stopped: the service holds `state.json` in memory and writes it whole while it runs,
+  service stopped, and remove the old history's `-wal` and `-shm` first, as above; a Proxmox
+  backup brings back the whole container, the log with its history. The service holds
+  `state.json` in memory and writes it whole while it runs,
   over a copy restored meanwhile; an older `state.json` beside
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
   older `telemetry-excluded.json` asks companions excluded since.
@@ -578,7 +601,9 @@ updates wait for.
   `[Service]` and `LoadCredential=mqtt-password:/etc/meshcore-home-gateway/mqtt-password`, then
   `chmod 0600` the file. The service reads systemd's copy of a credential named like the file,
   the command line (as root) the file itself. `--reconfigure` writes the file with mode 0640
-  again; set 0600 after it.
+  again; set 0600 after it. The file `codes_file` names works the same way
+  (`LoadCredential=command-codes:/etc/meshcore-home-gateway/command-codes`); `commands enrol`
+  keeps its mode. The installer sets up neither credential.
 * **Times:** the gateway's documents and events give times in UTC; the journal shows the
   container's local time, which the installer takes from the host (`--timezone host`).
 * **Retained documents** stay on the broker after the gateway is removed, and its devices in Home
@@ -614,7 +639,7 @@ updates wait for.
 | Commands rejected with `too_old` / `from_the_future` | The sender's clock or the gateway host's clock is wrong: the check compares the time the sender's device stamped on the message (the phone app sets a companion's clock) with the host's clock; the clock of the gateway's own radio does not enter it. Set the wrong clock right, or set `max_age_s = 0` |
 | Log: `radio clock left ... behind the host's` | The host's time was not written to the radio: it is before this release, more than ten years after it, or more than `set_clock_max_days` (30) ahead of the radio's clock. A time written cannot be taken back without a restart of the radio, so check the host's clock first (`timedatectl`; in a container the Proxmox host's, `chronyc tracking` there). If it is right (the radio lay unused for a long time), raise `set_clock_max_days` or set it to 0 for one start |
 | Log: `radio clock is ... ahead of the host's: restarting the radio to set it back` | Expected once: the firmware sets its clock back only at a start, to its newest contact time. The gateway connects again a few seconds later and moves the clock forward (`radio clock moved forward`). Over USB the radio is gone for a moment and comes back under the same device |
-| Log: `radio clock is ... ahead of the host's and not set back (...)`, or *Radio clock offset* far above 0 | The reason in brackets: `more than an hour` (a wrong time was written to the radio earlier, or the host's clock went back; nodes and repeaters would ignore the radio as long after a restart: let real time catch up), `a restart starts it at its newest contact time` (a contact changed just now: checked again every minute), `a restart would leave it at its newest contact time, ..., and the next connect would not move it forward` (no contact changed for longer than `set_clock_max_days`, or the host's clock is wrong: a restart would leave the radio that far behind; a contact's advert makes the restart possible, and if the host's clock is right, `set_clock_max_days` raised for one start does too), `once no message is being delivered, at most once a day` (it waits), `without contacts` or `set_clock = false`. The radio keeps working: its adverts and its contacts' last-modified times carry the later time, the gateway's messages the host's. Fix the host's time first; the service starts after `time-sync.target` where a service provides it |
+| Log: `radio clock is ... ahead of the host's and not set back (...)`, or *Radio clock offset* far above 0 | The reason in brackets: `more than an hour` (a wrong time was written to the radio earlier, or the host's clock went back; nodes and repeaters would ignore the radio as long after a restart: let real time catch up), `a restart starts it at its newest contact time` (a contact changed just now: checked again every minute), `a restart would leave it at its newest contact time, ..., and the next connect would not move it forward` (no contact changed for longer than `set_clock_max_days`, or the host's clock is wrong: a restart would leave the radio that far behind; a contact's advert makes the restart possible, and if the host's clock is right, `set_clock_max_days` raised for one start does too), `once no message is being delivered, at most once a day` (it waits), `without contacts` or `set_clock = false`. The radio keeps working: its adverts and its contacts' last-modified times carry the later time, the gateway's messages the host's. Fix the host's time first. At boot the service waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled, outside a container; in a container the clock is the Proxmox host's |
 | Commands rejected with `replay` although they are new | The sender's clock went backwards (reset, battery change): its timestamps are older than its last accepted command. Set the clock right; or, with the service stopped, remove the sender's key from `command_timestamps` in `/var/lib/meshcore-home-gateway/state.json` |
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
 | Commands rejected with `sender_unverified` | The gateway fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
@@ -622,7 +647,7 @@ updates wait for.
 | `MQTT: connection refused: Unsupported protocol version: the broker does not speak MQTT 5` | `[mqtt] protocol = "5"` and a broker that speaks MQTT 3.1.1 only. Set `protocol = "3.1.1"` (the default) or remove the line, or update the broker; the login has nothing to do with it ([configuration.md](configuration.md#mqtt)) |
 | `MQTT: cannot reach …` | No broker answered at that name or address and port: check `mqtt.host` (a host name or IP address, no `mqtt://`) and `mqtt.port`, the network and the firewall |
 | `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
-| `MQTT: another client wrote …; restoring the gateway's payload` | Another client wrote one of the gateway's retained topics, and the gateway wrote its own again ([mqtt-api.md](mqtt-api.md#securing-the-broker)). A second gateway with the same `node_id` and `base_topic` (an old container, a test install), a tool that cleared retained messages, or a client whose ACL lets it write below the gateway's topics: only the gateway's user may |
+| `MQTT: another client wrote …; restoring the gateway's payload` | Another client wrote one of the gateway's retained topics, and the gateway wrote its own again ([mqtt-api.md](mqtt-api.md#securing-the-broker)). A second gateway with the same `node_id` and `base_topic` (an old container, a test install), a tool that cleared retained messages, or a client whose ACL lets it write below the gateway's topics: only the gateway's user may. Once for `availability` as the broker stops is harmless: the broker sends the gateway its own last will ([platform-notes.md](platform-notes.md#mosquitto)) |
 | `MQTT: the broker refused the subscription to …` | The broker's ACL does not let the gateway's user read these topics: requests there do not arrive, and what other clients write on its documents stays. Give the gateway's user `readwrite` below its topics ([mqtt-api.md](mqtt-api.md#securing-the-broker)) |
 | ``MQTT: the gateway's `online` on … did not come back within 10 s`` | The same with Mosquitto's `acl_file`, which grants every subscription and leaves out what the user may not read: give the gateway's user `readwrite` below its topics, not only `write` |
 | `radio.tcp_unauthenticated: the radio's TCP interface has no authentication` | A radio over TCP needs `tcp_unauthenticated = true` in `[radio]` since 2.0: read what the interface exposes ([configuration.md](configuration.md#radio)), then add the setting, or connect the radio over USB. After an update from 1.x, add it by hand ([Update](#update-reconfigure-remove)) |

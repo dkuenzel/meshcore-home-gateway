@@ -48,6 +48,7 @@ One line per fact, by section.
 * Debian's `dialout` group has the fixed GID 20.
 * Root on the host can open a serial port that another process locked with `TIOCEXCL`; root in an unprivileged container cannot.
 * With `StartLimitIntervalSec=0`, `RestartSteps=` and `RestartMaxDelaySec=`, systemd 257 restarts a failing service for ever, each automatic restart later than the one before; only a start by hand counts from the beginning again.
+* `time-sync.target` waits for a synchronised clock only where a service that waits for one is enabled and orders itself before the target: `systemd-time-wait-sync`, or chrony's `chrony-wait`.
 * journald keeps up to a tenth of the file system and drops a service's lines above 10,000 in 30 s.
 * `unattended-upgrades` in Debian 13 switches itself on when it is installed without dialogs, and installs the updates of the release and of the security archive, without a reboot.
 * `IPAddressDeny=` and `IPAddressAllow=` need a cgroup BPF program; where systemd cannot load one, it starts the service without the filter and says so only at debug level.
@@ -95,6 +96,7 @@ One line per fact, by section.
 * Over MQTT 3.1.1, a QoS 1 PUBLISH that the ACL denies is acknowledged like any other.
 * The `acl_file` check never refuses a SUBSCRIBE.
 * Mosquitto checks a will against the ACL only when it publishes it, not at CONNECT.
+* Mosquitto publishes the will of every connected client when it stops, also to the client itself when it is subscribed to the will's topic.
 * Under MQTT 3.1.1, a retained PUBLISH reaches clients that are already subscribed with the retain flag cleared; only the stored copy, sent on every new subscription, has it set.
 * A password file written by `mosquitto_passwd` 2.1 loses users on a 2.0 broker.
 * Mosquitto accepts passwords with unusual characters.
@@ -470,6 +472,19 @@ One line per fact, by section.
   container. *Here:* the unit (5 s, 5 min from the seventh restart), [deployment.md](deployment.md#4-operations),
   *Service*. *Check:* in the container, `systemctl show -p NRestarts,RestartUSecNext
   meshcore-home-gateway` (`RestartUSecNext`: `src/core/dbus-service.c:332`).
+* **`time-sync.target` waits for a synchronised clock only where a service that waits for one is
+  enabled and orders itself before the target: `systemd-time-wait-sync`, or chrony's
+  `chrony-wait`.** The target itself is ordered only after `time-set.target`; a unit with
+  `After=time-sync.target` that pulls nothing in starts as soon as the clock was set at all.
+  `systemd-time-wait-sync.service` is not enabled by default and skips containers. *Verified:*
+  systemd 255 (Ubuntu 24.04): `time-sync.target` has only `After=` and `Wants=time-set.target`;
+  `systemd-time-wait-sync.service` has `ConditionVirtualization=!container`,
+  `Before=time-sync.target`, `Wants=time-sync.target` and `WantedBy=sysinit.target`; systemd.special(7),
+  `time-sync.target`. Not checked on Debian 13's systemd 257 or with chrony. *Here:* the unit is
+  ordered `After=time-sync.target` and pulls nothing in; the radio's clock rests on the host's
+  and on the gateway's bounds of a plausible host clock ([design §6.1](design.md#61-radio-session),
+  #105). *Check:* `systemctl cat time-sync.target systemd-time-wait-sync.service` and
+  `systemctl is-enabled systemd-time-wait-sync`.
 * **journald keeps up to a tenth of the file system and drops a service's lines above 10,000 in
   30 s.** Without `SystemMaxUse=`, the journal may grow to 10 % of its file system, at least
   1 MiB and at most 4 GiB: 200 MB of the container's 2 GB disk. The rate limit
@@ -879,6 +894,16 @@ mosquitto -c m.conf & broker=$!
   -P o -t 'meshcore/#' -v` running, start `mosquitto_sub -p 18830 -u mhg -P s3cret -t x
   --will-topic meshcore/radio1/availability --will-payload offline &` and `kill -9` it: the reader
   gets nothing, and the log shows `Will message specified` and `closed its connection`, no denial.
+* **Mosquitto publishes the will of every connected client when it stops, also to the client
+  itself when it is subscribed to the will's topic.** *Verified:* 2.0.18 stopped with `SIGTERM`,
+  MQTT 3.1.1: a client with the will `offline` on a topic it subscribes to, and a second client
+  subscribed to it, both received `offline`, without the retain flag, before the connections
+  closed. *Here:* the gateway subscribes to its own `availability`, so as the broker stops it
+  receives its will and logs once that another client wrote `availability`; the connect after the
+  restart publishes `online` again ([deployment.md](deployment.md#5-troubleshooting), row `MQTT:
+  another client wrote …`; #101). *Check:* run a client with `will_set("t/a", b"offline")` that
+  subscribes to `t/#` and a second one that does too, then stop the broker with `SIGTERM`: both
+  print `offline` on `t/a`.
 * **Under MQTT 3.1.1, a retained PUBLISH reaches clients that are already subscribed with the
   retain flag cleared; only the stored copy, sent on every new subscription, has it set.** A
   clean-session client subscribes anew after every reconnect and gets the stored copy each time.
@@ -1062,8 +1087,16 @@ and of the pin in [`requirements/dev.in`](../requirements/dev.in), with Python 3
   handles no further message.
 * **`publish()` of a QoS 1 message without a connection returns `MQTT_ERR_NO_CONN` (4), but keeps
   the message and sends it after the connection is made.** *Verified:* a message published before
-  `connect()` reached a subscriber; lines 1804-1810. *Here:* `MqttBus.publish()` warns only for
-  other codes. *Check:* `python3 -c 'import paho.mqtt.client as m; c =
+  `connect()` reached a subscriber; lines 1804-1810. So does a message published after the
+  broker went away and before the gateway's event loop learnt of it, and one the broker had not
+  acknowledged: after the reconnect, paho's thread sends them, as a rule before what the gateway
+  publishes in `on_connected` (`_handle_connack()`, from line 3949). *Here:* `MqttBus.publish()` warns only
+  for other codes. A retained document sent so arrives once more after a broker restart, ahead of
+  the current one; [`mqtt/retained.py`](../src/meshcore_home_gateway/mqtt/retained.py) takes its
+  copy as the gateway's own and publishes the current one again if the old copy came last (#101,
+  `test_with_broker_what_paho_sends_again_after_a_restart_is_the_gateways_own` in
+  [`tests/test_mqtt_client.py`](../tests/test_mqtt_client.py)). *Check:* `python3 -c 'import
+  paho.mqtt.client as m; c =
   m.Client(m.CallbackAPIVersion.VERSION2); print(c.publish("t", b"x", qos=1).rc)'` prints `4`.
 * **`max_queued_messages_set()` counts the unacknowledged backlog, and at a reconnect `on_connect`
   runs before the backlog is sent again.** With a full queue, what `on_connect` publishes

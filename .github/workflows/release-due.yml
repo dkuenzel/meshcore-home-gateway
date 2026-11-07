@@ -4,7 +4,10 @@
 # release candidate too, once every job passed on it. This run tags the version commit of main once
 # it is due and CI passed on it, and starts release.yml on the tag, as that job does, once: a
 # release that failed is followed by the next version. A later run finds the tag and the release,
-# or the run of release.yml, and does nothing. Tags are not moved or deleted (the tag ruleset).
+# or the run of release.yml, and does nothing. A run whose job admit refused the tag, pushed by
+# hand before its day, does not count; a release is started only once CI passed on it, as admit
+# requires, and a pre-release that has its tag as before. Tags are not moved or deleted (the tag
+# ruleset).
 name: Release due
 
 on:
@@ -37,7 +40,7 @@ jobs:
         run: python3 -I tools/release_plan.py due >>"$GITHUB_OUTPUT"
       - id: tested
         name: CI passed on the version commit
-        if: steps.plan.outputs.due == 'true' && steps.plan.outputs.exists != 'true'
+        if: steps.plan.outputs.due == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -52,7 +55,7 @@ jobs:
             echo "CI has not passed on $SHA on main (yet)"
           fi
       - name: Annotated tag on the version commit
-        if: steps.tested.outputs.passed == 'true'
+        if: steps.tested.outputs.passed == 'true' && steps.plan.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -66,18 +69,29 @@ jobs:
           echo "tagged $SHA as $TAG"
       - name: Start the release on the tag
         if: >-
-          steps.plan.outputs.due == 'true'
-          && (steps.plan.outputs.exists == 'true' || steps.tested.outputs.passed == 'true')
+          steps.plan.outputs.due == 'true' && (steps.tested.outputs.passed == 'true'
+          || (steps.plan.outputs.exists == 'true' && steps.plan.outputs.final != 'true'))
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
           set -euo pipefail
-          runs=$(gh run list --workflow release.yml --branch "$TAG" --json status --jq length)
+          admit="a tag that CI would make" # the name of release.yml's first job
+          tried=0 # runs on the tag that admit let through, or has not refused yet
+          # an assignment, so that a failing gh stops the step: in a for loop's words it would not
+          runs=$(gh run list --workflow release.yml --branch "$TAG" --json databaseId \
+            --jq '.[].databaseId')
+          for run in $runs; do
+            refused=$(gh run view "$run" --json jobs \
+              --jq "[.jobs[] | select(.name == \"$admit\" and .conclusion == \"failure\")] | length")
+            if [[ $refused == 0 ]]; then
+              tried=$((tried + 1))
+            fi
+          done
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "$TAG is released already"
-          elif [[ $runs != 0 ]]; then
+          elif [[ $tried != 0 ]]; then
             echo "release.yml ran on $TAG already"
           else
             gh workflow run release.yml --ref "$TAG"

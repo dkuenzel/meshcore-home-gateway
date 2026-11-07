@@ -113,6 +113,49 @@ format, the command line and Home Assistant discovery are public interfaces
   ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
 - A text on a Homie node's `send/set` that comes while the gateway stops is no longer taken and
   echoed after `$state` `disconnected`: the gateway had stopped sending, so it never went out.
+- After a restart of the broker the log no longer warns that another client wrote the gateway's
+  documents. paho sends again what the broker had not acknowledged when it stopped, such as a
+  state from before the radio was connected; the gateway takes those copies as its own, and
+  publishes the current document again if the old one arrived last. As it stops, the broker still
+  sends the gateway its own last will, which the log names once for `availability`: harmless
+  ([deployment.md](docs/deployment.md#5-troubleshooting)). The system test of a broker restart
+  read the state paho sent again for the current one, and failed now and then (#101).
+- The guide's restore of a backup puts each file back with its owner, group and mode: the
+  configuration and the secrets `root:meshcore-home-gateway` 0640, the state the service's own.
+  It said only where the files go, and the archive holds them as `root` with mode 0600: in a new
+  container the copy of the codes file of `--with-secrets` kept that, and the service stopped
+  with a configuration error ([deployment.md](docs/deployment.md#4-operations), #98). It also
+  removes the history's write-ahead log, which a stop cut short leaves behind: SQLite applied it
+  to the restored history at the next start, which then held the old messages again.
+- The security documents state three controls as strong as they are (#105). A command code shows
+  that the sender's app made it in that time window, but does not bind the text: whoever reads a
+  command before the gateway, such as a host posing as the radio over TCP, can send another text
+  with its code, once ([configuration.md](docs/configuration.md#commands)); the guide said it
+  authenticates the text. The broker password and the code secrets are files the service's group
+  reads; a systemd credential that root alone reads takes a drop-in, which the guide now gives
+  for the codes file too ([deployment.md](docs/deployment.md#4-operations)); the threat model
+  listed the credential as a control. And `time-sync.target`, which the unit is ordered after,
+  waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled,
+  neither by default nor in a container; the unit, the design, the guide and the entry of 2.0.0a1
+  said the service starts after the clock was synchronised.
+- User documents that 2.0.0 left outdated (#106): the privacy page named `message` events, a
+  topic the gateway never had, where received messages go to `received` and
+  `contacts/<key>/received` ([privacy.md](docs/privacy.md)); the README said that every message
+  is published, where only the channels that are a target are, by default, and a flood is cut to
+  bursts; the update note of 2.0.0 left out that telemetry also asks the contact targets and
+  command senders, at once after the update
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)), as did the summary of 2.0.0
+  above; the Home Assistant guide called *Telemetry* and *Telemetry state* the companions' alone,
+  where `[telemetry] ask_types` gives sensors both, and said that contact entity IDs start with
+  `mesh_`, where `contact_entity_prefix` chooses the start
+  ([home-assistant.md](docs/home-assistant.md#contacts)); and the design's note on the
+  dashboard's template named neither `@contact@`, `["@controls@"]` nor its second conditional.
+- The triage log of the review of 2026-11 states where the work is: its state was that of
+  2026-11-04, with pull requests up to #64, and its 162 fixed items counted six that defer a
+  part. It now lists the 10 deferred items, the 6 deferred parts and the 3 drafts for MeshCore
+  not sent, each with the condition that brings it back and the issue that tracks it
+  ([triage log](docs/audit/2026-11-security-architecture-review/13-triage-log.md#deferred-to-be-tracked),
+  #104).
 - The update guide: from 1.x to 2.0, the setting that a radio over TCP (`[radio]
   tcp_unauthenticated`) or commands over a broker without credentials or TLS (`[mqtt] insecure`)
   need cannot come from `--reconfigure`, which asks with the installed version. The guide shows
@@ -211,6 +254,22 @@ format, the command line and Home Assistant discovery are public interfaces
   it once its jobs pass. CI on main tags only pre-releases; the message now names
   `release-due.yml`, which tags a release a day after its version commit, and the time from which
   it does (#107).
+
+### Security
+
+- The release workflow checks a tag pushed by hand as well. Its commit must be on `main`. A
+  release must be where the hourly `release-due.yml` would tag it: on the commit that wrote the
+  version of `main`, a day after that commit's date, with CI passed on it on `main`, and while
+  `release-due.yml` is enabled, so that disabling it stops the release. A pre-release needs a
+  commit of `main` with its version. Before, a `v*` tag pushed by hand on any commit was signed
+  and published within minutes. A release tagged by hand within its day is refused with the time
+  it is due, and `release-due.yml` starts it then. The check is part of the tagged commit, so a
+  tag on a commit off `main` can still bring a workflow without it
+  ([SECURITY.md](SECURITY.md#how-the-repository-and-the-releases-are-protected), #84).
+- `SECURITY.md` names the exception to the protection of `main` and of the release tags: both
+  rulesets let a repository role bypass them at any time, which the maintainer's login has, and
+  the agent works through that login. It can push to `main` directly and move or delete a tag
+  until its release is published (#102).
 
 ## [2.0.0] - 2026-11-07
 
