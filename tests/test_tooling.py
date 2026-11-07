@@ -518,7 +518,32 @@ def test_a_release_is_tagged_a_day_after_its_version_commit() -> None:
     assert "python3 -I tools/release_plan.py due" in due
     assert "SHA: ${{ steps.plan.outputs.sha }}" in due
     assert 'gh run list --workflow ci.yml --commit "$SHA" --event push --status success' in due
-    assert "        if: steps.tested.outputs.passed == 'true'\n" in due
+
+
+def step_condition(workflow: str, job: str, name: str) -> str:
+    """The `if:` of the step called `name` in a job of a workflow, folded to one line."""
+    for step in re.split(r"\n(?=      - )", workflow_jobs(workflow)[job]):
+        if re.search(rf"^(?:      - |        )name: {re.escape(name)}$", step, flags=re.MULTILINE):
+            found = re.search(r"^        if: (?:>-\n)?((?:.+\n)*?)        \w+:", step, re.MULTILINE)
+            assert found is not None, f"{workflow}, {job}: the step {name!r} has no if:"
+            return " ".join(found[1].split())
+    raise AssertionError(f"{workflow}, {job}: no step {name!r}")
+
+
+def test_release_due_starts_a_release_only_once_ci_passed_on_it() -> None:
+    """#84 review: release-due.yml asked CI only before it made the tag. On a release tag pushed by
+    hand it would start release.yml every hour, now that a run admit refused does not count, and
+    admit would refuse each while CI had not passed on the commit. It asks CI before it starts a
+    release too; a pre-release that has its tag is started as before, as CI's job would."""
+    tested = "steps.plan.outputs.due == 'true'"
+    assert step_condition("release-due.yml", "due", "CI passed on the version commit") == tested
+    tagged = "steps.tested.outputs.passed == 'true' && steps.plan.outputs.exists != 'true'"
+    assert step_condition("release-due.yml", "due", "Annotated tag on the version commit") == tagged
+    started = (
+        "steps.plan.outputs.due == 'true' && (steps.tested.outputs.passed == 'true'"
+        " || (steps.plan.outputs.exists == 'true' && steps.plan.outputs.final != 'true'))"
+    )
+    assert step_condition("release-due.yml", "due", "Start the release on the tag") == started
 
 
 def test_release_yml_publishes_only_a_tag_ci_would_have_made() -> None:

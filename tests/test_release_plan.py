@@ -315,6 +315,8 @@ def test_a_release_is_due_a_day_after_its_version_commit(
     assert plan.due(1800000000 + day) == ("v1.0.0", release, False, 0)
     repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", release)
     assert plan.due(1800000000 + day) == ("v1.0.0", release, True, 0)
+    assert plan.main(["due"]) == 0  # release-due.yml starts a release only once CI passed on it
+    assert "\nexists=true\nfinal=true\n" in capsys.readouterr().out
 
 
 def test_release_yml_admits_a_pre_release_on_main_at_once(repo: Repo) -> None:
@@ -455,7 +457,7 @@ def test_the_command_line(repo: Repo, capsys: pytest.CaptureFixture[str]) -> Non
     assert capsys.readouterr().out == "tag=v1.0.0rc1\nexists=false\nfinal=false\nwaits=false\n"
     assert plan.main(["due"]) == 0
     assert capsys.readouterr().out == (
-        f"tag=v1.0.0rc1\nsha={head}\nexists=false\ndue=true\nleft=0\n"
+        f"tag=v1.0.0rc1\nsha={head}\nexists=false\nfinal=false\ndue=true\nleft=0\n"
     )
     assert plan.main(["check"]) == 0
     assert capsys.readouterr().out == (

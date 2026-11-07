@@ -2,7 +2,7 @@
 
     python3 -I tools/release_plan.py check [--base REV]   # CI: a pull request, or a push
     python3 -I tools/release_plan.py tag [--base REV]     # CI on main: prints tag=, exists=, final=
-    python3 -I tools/release_plan.py due                  # on a schedule: tag=, sha=, exists=, due=
+    python3 -I tools/release_plan.py due                  # hourly: tag=, sha=, exists=, final=, …
     python3 -I tools/release_plan.py admit vX.Y.Z         # release.yml on a tag: sha=, final=
 
 A change releases when it changes `__version__` (docs/development.md, ADR 0022). It must then
@@ -556,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument(
             "--base", default="", help="the revision the change starts from (default: HEAD^)"
         )
-    commands.add_parser("due", help="print tag=, sha=, exists=, due= and left= for main")
+    commands.add_parser("due", help="print tag=, sha=, exists=, final=, due= and left= for main")
     admitting = commands.add_parser(
         "admit", help="refuse a tag CI would not have made; print sha= and final="
     )
@@ -574,7 +574,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sha={sha}\nfinal={str(final).lower()}")
         elif args.command == "due":
             name, sha, exists, left = due(time.time())
-            print(f"tag={name}\nsha={sha}\nexists={str(exists).lower()}")
+            final = Version.parse(name[1:]).final
+            print(
+                f"tag={name}\nsha={sha}\nexists={str(exists).lower()}\nfinal={str(final).lower()}"
+            )
             print(f"due={str(left == 0).lower()}\nleft={left}")
         else:
             name, exists, final = tag(args.base)
