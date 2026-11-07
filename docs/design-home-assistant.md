@@ -128,12 +128,16 @@ sequenceDiagram
     Note over G: the user deleted the device: the contact stays hidden<br/>until it leaves the table or is shown again
 ```
 
-## 6.13 Dashboard (MVP)
+## 6.13 Dashboard
 
 `meshcore-home-gateway dashboard` writes one Home Assistant dashboard for the gateway it runs
-beside ([home-assistant.md](home-assistant.md#dashboard)). This is the first part of
-[ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md), which stays the
-target: no new entity, topic or setting, only the entities and the cards Home Assistant has.
+beside ([home-assistant.md](home-assistant.md#dashboard)), as
+[ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) decided, with only the
+cards Home Assistant has. 2.0's dashboard, the first part, used only the entities the gateway had
+anyway; since 2.1 the gateway announces entities for it, the message history, the messages on
+their way, a draft and its *Send* for each chat and the configuration
+([§6.7](#67-home-assistant)), and the dashboard needs Home Assistant 2026.10 or later
+([ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md)). No setting was added for it.
 
 * **Views:** 2.0 had four tabs, *Overview*, *Messages*, *Contacts* and *Map*. Since 2.1 there
   are three tabs: *Overview* (a status line in a colour that names the first problem, a card for
@@ -196,7 +200,7 @@ target: no new entity, topic or setting, only the entities and the cards Home As
 * **Interface:** the command is the only growth (`cli > commands > dashboard`); the dashboard's
   content is not an interface, the entity IDs it names are.
 
-Where the MVP departs from ADR 0021:
+Where the dashboard departs from ADR 0021:
 
 1. The template lives in the package, not in `home-assistant/dashboard/`: a file outside it
    reaches neither the zipapp nor the wheel.

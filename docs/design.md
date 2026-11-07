@@ -266,7 +266,7 @@ here, so references to them hold:
 | 6.6 Observer: documents and history | [design-observer.md](design-observer.md) |
 | 6.7 Home Assistant | [design-home-assistant.md](design-home-assistant.md) |
 | 6.11 Telemetry | [design-telemetry.md](design-telemetry.md) |
-| 6.13 Dashboard (MVP) | [design-home-assistant.md](design-home-assistant.md#613-dashboard-mvp) |
+| 6.13 Dashboard | [design-home-assistant.md](design-home-assistant.md#613-dashboard) |
 
 ### 6.1 Radio session
 
@@ -674,7 +674,7 @@ contribution of its catalog files ([translations.md](translations.md#adding-a-la
 | `--help`, argparse's errors, `check-config`, `config render`'s errors, the `probe` report, the notes and errors of `send` and `contacts` | operator, installer boxes | the environment |
 | everything `run` prints, the log, `sd_notify` | journal, support | always English |
 | `probe --list`, `--json`, `listen`, `send --wait`, the results of `contacts add`, `remove` and `telemetry` with a wait, `contacts list`, `contacts link`, `config answers`, `--version` | scripts, the installer | always English |
-| entity, device and model names in Home Assistant; the dashboard ([§6.13](#613-dashboard-mvp)) | the household | `[homeassistant] language` |
+| entity, device and model names in Home Assistant; the dashboard ([§6.13](#613-dashboard)) | the household | `[homeassistant] language` |
 | the installer's dialogs, buttons and boxes | operator on the host | its first menu, shown once a language besides English is offered |
 | the installer's own log lines, `--help`, errors before the menu, `--update`, `--answers` runs | operator, support | always English |
 
@@ -722,14 +722,15 @@ contribution of its catalog files ([translations.md](translations.md#adding-a-la
   installer and Home Assistant: machine output, the snapshot and the entity IDs the same in every
   language.
 
-### 6.13 Dashboard (MVP)
+### 6.13 Dashboard
 
 `meshcore-home-gateway dashboard` writes one Home Assistant dashboard for the gateway it runs
-beside ([home-assistant.md](home-assistant.md#dashboard)). This is the first part of
-[ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md), which stays the
-target: no new entity, topic or setting, only the entities and the cards Home Assistant has.
+beside ([home-assistant.md](home-assistant.md#dashboard)), with only the cards Home Assistant has
+([ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md)). Since 2.1 the
+gateway announces entities for it: the message history, the messages on their way, a draft and its
+*Send* for each chat, and the configuration ([ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md)).
 
-The detail is in [design-home-assistant.md](design-home-assistant.md#613-dashboard-mvp).
+The detail is in [design-home-assistant.md](design-home-assistant.md#613-dashboard).
 
 ## 7 Security
 
@@ -1222,7 +1223,7 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 | 5 | Contact management: the gateway, the MQTT requests, the command line and the Home Assistant controls (add a heard node, add by key or link, remove; the gateway's QR code) | 0017 |
 | 6 | Telemetry and positions of the household's companions, with traces on the map. **6a**: the requests, the schedule and its lanes, positions in the documents and trackers, off by default; **6b**: readings, the answer's time and state, expiry, events, exclusion of a contact, on by default with a first-start hour; **6c**: the check for positions in adverts, traces on Home Assistant's map | 0018, 0024, 0025 |
 | 7 | Translations of the command line, the installer and the Home Assistant names. **The machinery** (this release), English only so far; more languages come by contribution, German first ([translations.md](translations.md#adding-a-language)). The first language is the machinery's proof: after it, review whether the installer's language packs (fetched, pinned, size-limited) are worth keeping, or whether the installer stays English and only the program and Home Assistant are translated | 0019, 0027 |
-| 8 | Generated dashboards for desktop and mobile. **MVP** (this release): four views on the existing entities, English, `meshcore-home-gateway dashboard`; deferred: [§6.13](#613-dashboard-mvp) | 0021 |
+| 8 | Generated dashboards for desktop and mobile. **MVP** (1.1.0a4): four views on the existing entities, English, `meshcore-home-gateway dashboard`; deferred: [§6.13](#613-dashboard). **2.1**: the household's chats with a draft and *Send*, the problems with what to do, the settings and help, on three tabs and pages without a tab, from entities the gateway announces for it | 0021, 0031 |
 
 Later: a terminal dashboard and a web dashboard on the same documents, Home Assistant as a
 control surface for selected radio settings, the household's own repeaters.

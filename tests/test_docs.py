@@ -107,6 +107,36 @@ def test_attestation_checks_name_the_release_workflow_and_the_tag() -> None:
         assert "--source-ref" in command, command
 
 
+DECISIONS = ROOT / "docs" / "decisions"
+INDEX_ROW = re.compile(r"^\| \[(\d{4})\]\(([^)]+)\) \| ([^|]+?) \| ([^|]+?) \|$", re.MULTILINE)
+
+
+def test_the_index_of_the_decisions_lists_every_record_and_who_amends_it() -> None:
+    """Each record has a row in docs/decisions/README.md with its number, its file and the title
+    of its heading, and a status that says `amended by` a record only where the amended record
+    links to that later one: ADR 0031 amends 0015 and 0021, and each of them ends in a line that
+    links to it."""
+    records = {path.name: path for path in DECISIONS.glob("[0-9]*.md")}
+    rows = INDEX_ROW.findall((DECISIONS / "README.md").read_text(encoding="utf-8"))
+    assert sorted(name for _, name, _, _ in rows) == sorted(records)
+    by_number = {number: name for number, name, _, _ in rows}
+    for number, name, title, status in rows:
+        text = records[name].read_text(encoding="utf-8")
+        assert name.startswith(f"{number}-"), name
+        heading = re.search(r"^# (.+)$", text, re.MULTILINE)
+        assert heading is not None, name
+        assert heading[1] == title, name
+        for amended in re.findall(r"amended by (\d{4}(?:(?:, | and )\d{4})*)", status):
+            for later in re.findall(r"\d{4}", amended):
+                assert f"]({by_number[later]})" in text, (name, later)
+    for name in (
+        "0015-provider-neutral-documents-on-the-bus.md",
+        "0021-generated-dashboards-for-desktop-and-mobile.md",
+    ):
+        (status,) = [s for _, n, _, s in rows if n == name]
+        assert "amended by 0031" in status, name
+
+
 def _load_index_tool() -> ModuleType:
     path = ROOT / "tools" / "platform_notes_index.py"
     spec = importlib.util.spec_from_file_location("platform_notes_index", path)
