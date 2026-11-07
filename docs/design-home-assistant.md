@@ -158,10 +158,10 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   entity IDs begin), `@node@`, `@version@`, `["@trackers@"]` (the map's trackers) and
   `["@controls@"]` (the contacts' telemetry switches and remove buttons), two conditionals in
   comment lines (`# @if trackers` while the map lists a tracker, `# @if controls` while there
-  are controls, each with `# @else` and `# @end`), and texts marked `_("…")` with
-  `msgctxt "dashboard"`. A marked whole YAML value becomes a quoted scalar; a marked text inside a
-  card's content becomes the text, `{node}` and `{version}` filled in, any other field the Jinja
-  variable of that name. The same inputs give the same bytes.
+  are controls, each ended by `# @end`, with an optional `# @else`), and texts marked `_("…")`
+  with `msgctxt "dashboard"`. A marked whole YAML value becomes a quoted scalar; a marked text
+  inside a card's content becomes the text, `{node}` and `{version}` filled in, any other field
+  the Jinja variable of that name. The same inputs give the same bytes.
 * **Translations of its texts** are used only when they hold no Jinja, HTML, Markdown link or
   address (`{{`, `{%`, `{#`, `<`, `>`, `@`, `](`, `://`, `www.`, `_("`), no control, format, line
   or paragraph separator character, and only the fields of the English text; else the English
