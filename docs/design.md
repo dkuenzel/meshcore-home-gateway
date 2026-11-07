@@ -233,20 +233,19 @@ before it publishes `offline`; one that comes after `offline` gets no event, and
 adapter neither takes nor echoes one then. Messages still waiting in the radio are fetched at
 the next start.
 
-The state file (`state.json`, `state.py`) is one store for every part that keeps something
-across a restart (ARC-004): read once at the start, held in memory, and written whole and
-atomically (a temporary file, `fsync`, rename). A part changes its section in memory; the status
-reporter writes what changed at its tick (every 30 s under systemd's watchdog, else every
-minute) and at the stop, so a
-table read that changes the contact devices, the published keys and the components costs one
+The state file (`state.json`, `state.py`) is one store for every part that keeps something across a
+restart (ARC-004): read once at the start, held in memory, and written whole and atomically (a
+temporary file, `fsync`, rename). A part changes its section in memory; the status reporter writes
+what changed at its tick (every 30 s under systemd's watchdog, else every minute) and at the stop,
+so a table read that changes the contact devices, the published keys and the components costs one
 write. What a crash must not lose is written at once: the newest accepted command time per sender
-before the command is published (§6.4), a sender's wrong code as it comes (§7.3), the observer's
-kept documents and advert checks when they change (a place a companion stopped sharing must not
-come back, §6.6), the telemetry schedule after a flood and at the first-start hour (§6.11), the
-radio profile's attempts before its setters, and from the stop's start the messages on their way
-(above). A crash loses at most the other changes since the last tick, which the next table read
-makes again. A file replaced on disk while the service runs is overwritten with every section by
-the next write; a backup is restored with the service stopped (§9).
+before the command is published (§6.4), the time of a sender's wrong code as it comes (§7.3), the
+observer's kept documents and advert checks when they change (a place a companion stopped sharing
+must not come back, §6.6), the telemetry schedule after a flood and at the first-start hour
+(§6.11), the radio profile's attempts before its setters, and from the stop's start the messages on
+their way (above). A crash loses at most the other changes since the last tick, which the next
+table read makes again. A file replaced on disk while the service runs is overwritten with every
+section by the next write; a backup is restored with the service stopped (§9).
 
 Each radio session runs two tasks of its own: a **reader** that routes frames, and a
 **maintenance** task that re-reads the contact table after adverts and contact pushes, drains the
