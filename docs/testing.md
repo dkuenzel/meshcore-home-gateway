@@ -225,9 +225,12 @@ Then, for each Home Assistant version to check (before a release, each series th
 7. Stop the runner with Ctrl-C. For the pages that show messages on their way, start it again with
    `--stuck` and a new work folder.
 
-`--language` sets the gateway's `homeassistant.language`: the names of its entities, and the texts
-of a dashboard made from its configuration. The language in the user's profile sets the rest of
-Home Assistant's page.
+`--language` of `tools/emulated_radio.py run` sets the gateway's `homeassistant.language`: the
+names of its entities, and the texts of a dashboard made from its configuration. The language in
+the user's profile sets the rest of Home Assistant's page. Before a release, take the screenshots
+in each language the dashboard ships, on each version: for German, steps 3 to 7 again with
+`--language de`, a new work folder and the dashboard made again, and German in the user's
+profile.
 
 ## Tests against the real firmware
 

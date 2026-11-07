@@ -221,6 +221,11 @@ refused as `empty`.
   still be too long for the radio; `[messages] truncate` then cuts it or refuses it.
 * A *Send* pressed while Home Assistant has no connection to the broker fails with an error and
   is not sent later.
+* Wait until the field is empty before you write the next message: a text typed in the moment
+  after *Send* can be cut when the gateway empties the field, and the rest goes out with the next
+  *Send*.
+* A text that is only the word `unknown` or `unavailable` cannot be stored: Home Assistant's
+  field refuses it.
 
 Writing grants nothing new: every user can send with the notify entities already, and
 `homeassistant.controls = false` changes neither. The topics, the request forms and the rules are
@@ -255,7 +260,8 @@ after a pick, so the same choice can be made again.
 
 **Add by key or link.** Paste a public key (64 hex digits) or a contact link
 (`meshcore://contact/add?…`, the text of a MeshCore QR code, for example read with the phone's
-camera) into *Add contact (key or link)*. Home Assistant refuses other text before it sends it.
+camera) into *Add contact (key or link)* and press Return (↵), as on the dashboard; leaving the
+field sends it too. Home Assistant refuses other text before it sends it.
 A link's name and type are claims until the node's first advert replaces them; a key without a
 name gets its first 12 digits. Contact cards (`meshcore://` and the hex of an advert) are not
 taken: the field ends at 255 characters, and a card cut there would still be read, with a cut
@@ -811,7 +817,9 @@ lovelace:
 ```
 
 The dashboard's path (`mesh-radio1`) needs a hyphen. Home Assistant reads a replaced file at the
-next page load.
+next page load. The dashboard's links are relative, so they stay inside it under any path; opened
+from an address typed or bookmarked with a `/` at the end, such as `/mesh-radio1/overview/`, a
+tap on a link does nothing.
 
 **Writing.** A chat's page ends in a field *Write to …* and a tile *Return, then Send*: type,
 tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at the gateway; only
@@ -1229,6 +1237,12 @@ switch telemetry for a companion. Dashboards per user hide cards, not the entiti
   channel: they send with `mqtt.publish` to `send/<alias>`
   ([configuration.md](configuration.md#homeassistant)).
 * The notify entities of the contacts send as the household's radio, for every user.
+* The dashboard grants nothing new: its fields and *Send* buttons send to the targets and
+  contacts that every user can send to already, and *Settings* only shows the configuration,
+  which the administrator changes in the file. Everyone shares a chat's draft: what one user
+  leaves in a field, another user's *Send* sends, until it is emptied after 15 minutes
+  ([Writing and sending](#writing-and-sending)). *Configuration* shows every user the settings,
+  the hidden targets' names and prefixes included.
 * Home Assistant's permission policies can restrict a group of users to reading entities, or to
   some of them; its interface does not offer them (developer documentation,
   [Permissions](https://contributors.home-assistant.io/core/internals/permissions/)).
