@@ -136,8 +136,8 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Security
 
-- The release workflow publishes a tag only if CI on `main` or the daily release run would have
-  made it: its commit must be on `main`, and a release must be on the commit that wrote its
+- The release workflow publishes a tag only if CI on `main` or the hourly `release-due.yml` would
+  have made it: its commit must be on `main`, and a release must be on the commit that wrote its
   version, a day after it, with CI passed on it on `main`. Before, a `v*` tag pushed by hand on
   any commit was signed and published within minutes. The check is part of the tagged commit, so
   a tag on a commit off `main` can still bring a workflow without it
