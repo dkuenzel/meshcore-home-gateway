@@ -13,6 +13,9 @@ format, the command line and Home Assistant discovery are public interfaces
 - The attribute `manage_reason` of *Contacts* in Home Assistant, which the guide and the
   changelog of 2.0.0 already named: why requests to add or remove contacts are refused now,
   `null` while they are taken (#99).
+- A warning at the start and in `check-config` for targets whose aliases differ only in `-` and
+  `_`, such as `a-b` and `a_b`: Home Assistant makes the same entity IDs of them and numbers the
+  later ones (`_2`).
 
 ### Changed
 
