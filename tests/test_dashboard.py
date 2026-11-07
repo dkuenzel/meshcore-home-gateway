@@ -2558,6 +2558,46 @@ def test_the_clock_card_says_how_the_gateway_keeps_the_radios_clock() -> None:
         assert words in fold, words
 
 
+def _command_fold() -> list[str]:
+    """The items of Help's fold "Why a command was refused"."""
+    help_ = " ".join(rules.texts(view_of("help")))
+    fold = help_.partition("<summary>Why a command was refused</summary>")[2]
+    return fold.partition("</ul></details>")[0].removeprefix("<ul>").split("</li>")
+
+
+def test_help_names_both_meanings_of_no_code() -> None:
+    """Since the gateway ignores the secret of a key that is no sender (#80), `code_missing`
+    also refuses a sender without a code secret, whose phone's clock is never the cause and
+    which only the administrator helps (`commands enrol` or `revoke`): Help says so apart from
+    the authenticator app's code, and Settings' row of the command codes says that the others
+    cannot command while a secret is ignored (docs/configuration.md, An ignored secret)."""
+    items = _command_fold()
+    (no_code,) = [i for i in items if i.startswith("<li><b>no code</b>:")]
+    assert "without a code secret" in no_code
+    assert "ignores" in no_code
+    assert "administrator" in no_code
+    assert "Check the clock of the sender's phone." not in no_code
+    (wrong,) = [i for i in items if "<b>wrong code</b>" in i]
+    assert "<b>code used already</b>" in wrong
+    assert "Check the clock of the sender's phone." in wrong
+    (row,) = [t for t in rules.texts(view_of("settings")) if "<code>codes_file</code>" in t]
+    codes = row.partition("<td>Command codes</td>")[2].partition("<code>")[0]
+    assert "ignore" in codes
+
+
+def test_help_says_a_refused_command_shows_until_the_next_message() -> None:
+    """The refusal is only on `received` (command.accepted false), whose next message of any
+    kind, a channel message included, replaces it: Latest of each kind shows a refused command
+    only until then (home-assistant/tests/test_gateway.py), and a sender locked out after wrong
+    codes stays in the gateway's log. Help and the guide say that, not that it is the newest."""
+    first = _command_fold()[0]
+    assert "until the next message" in first
+    assert "log" in first
+    guide = " ".join(rules.GUIDE.read_text(encoding="utf-8").split())
+    assert "counts as the newest while it came after the newest accepted one" not in guide
+    assert "until the next message" in guide
+
+
 def _configuration_keys() -> dict[str, set[str]]:
     """The keys of each section's table in docs/configuration.md, by the section's name."""
     found: dict[str, set[str]] = {}
