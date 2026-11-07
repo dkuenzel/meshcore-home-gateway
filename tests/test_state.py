@@ -1,5 +1,6 @@
 """Persistent state: atomic JSON file and the ledger of accepted command timestamps."""
 
+import dataclasses
 import json
 import logging
 import os
@@ -802,6 +803,34 @@ def test_a_kept_message_keeps_when_it_was_accepted(tmp_path: Path) -> None:
         ("c", None),
         ("d", None),
         ("e", 1_800_000_000.0),
+    ]
+
+
+def test_a_kept_message_keeps_whether_the_gateway_added_the_suffix(tmp_path: Path) -> None:
+    """#87: whether the text ends with confirm_nonce's suffix is the record's, not the next
+    start's setting: written with the stop, `null` for a message kept by 2.0, which has none,
+    or with a value that is no truth value; the start then goes by the setting."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    kept = [dataclasses.replace(KEPT[0], nonce=False), dataclasses.replace(KEPT[1], nonce=True)]
+    OutboxRecords(store).save([*kept, KEPT[2]], 1_000.0)
+    assert store.flush()
+    written = JsonStateFile(path).load()["outbox"]["messages"]
+    assert [m["nonce"] for m in written] == [False, True, None]
+    assert OutboxRecords(JsonStateFile(path)).take(1_000.0)[0] == [*kept, KEPT[2]]
+    entries: list[dict[str, Any]] = [
+        {"id": "a", "target": "alerts", "text": "x", "age_s": 1.0},  # 2.0's
+        {"id": "b", "target": "alerts", "text": "x", "age_s": 1.0, "nonce": 1},
+        {"id": "c", "target": "alerts", "text": "x", "age_s": 1.0, "nonce": "true"},
+        {"id": "d", "target": "alerts", "text": "x", "age_s": 1.0, "nonce": True},
+    ]
+    JsonStateFile(path).save({"outbox": {"saved_at": 0.0, "messages": entries}})
+    messages, _ = OutboxRecords(JsonStateFile(path)).take(1.0)
+    assert [(m.id, m.nonce) for m in messages] == [
+        ("a", None),
+        ("b", None),
+        ("c", None),
+        ("d", True),
     ]
 
 

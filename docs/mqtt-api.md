@@ -131,7 +131,8 @@ the send topics gets no event for the excess, which the log counts (at most once
 
 `id` is a random identifier per request. `text` is the text as it is sent, with the target's
 prefix and suffix; with `[messages] confirm_nonce` the events before the final one leave out the
-random suffix, which the final event carries ([below](#what-confirmed-proves)). In final events,
+random suffix, which the final event carries ([below](#what-confirmed-proves)). A message a stop
+kept goes by whether it got the suffix, not by the setting of the next start. In final events,
 `attempt` is the number of transmissions so far (0 if the message never left). Retries of a direct message keep the radio
 timestamp, so a recipient that got the message but whose acknowledgement was lost may show it
 twice. An attempt that a radio disconnect interrupted after the radio had sent it is repeated as

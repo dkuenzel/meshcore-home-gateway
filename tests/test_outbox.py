@@ -684,6 +684,97 @@ def test_a_text_that_ends_like_the_suffix_is_shown_whole_without_confirm_nonce(
     scenario(main)
 
 
+def test_a_kept_message_hides_its_suffix_after_confirm_nonce_was_switched_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#87: whether a kept message ends with a suffix is the gateway's record of how it was
+    sent, not the setting of the next start. Sent again as it was, with the suffix, its
+    acknowledgement still counts, so the suffix stays off the bus until the delivery ended,
+    also when the next start has `confirm_nonce` off."""
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.2)
+    first = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    second = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    def suffix_published(bus: Any, digits: str) -> list[str]:
+        return [topic for topic, payload, _ in bus.published if digits in payload.decode()]
+
+    async def main() -> None:
+        on = make_config(messages="confirm_nonce = true")
+        async with running(on, first, tmp_path) as (_, bus, _n):
+            bus.send("alice", "Door open")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            (sent,) = {t.text for t in first.texts}
+        digits = sent.removeprefix("Door open #")
+        async with running(make_config(), second, tmp_path) as (_, bus, _n):  # kept by the stop
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            await asyncio.sleep(0.05)  # pending follows
+            assert {t.text for t in second.texts} == {sent}
+            assert [(e["event_type"], e["text"]) for e in bus.payloads("/delivery")] == [
+                ("queued", "Door open"),
+                ("sent", "Door open"),
+            ]
+            assert bus.payloads("radio1/pending")[-1]["messages"][0]["text"] == "Door open"
+            assert suffix_published(bus, digits) == []
+            second.acknowledge(expected_ack(int(NOW), 1, sent, SELF_KEY))
+            confirmed = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert confirmed["text"] == sent
+
+    scenario(main)
+
+
+def test_a_kept_text_that_ends_like_the_suffix_stays_whole_after_confirm_nonce_was_switched_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#87: a household's text kept by a stop without `confirm_nonce` got no suffix: a start
+    with the setting on shows it whole, though it ends in ` #` and 8 hex digits, and takes the
+    whole text as its duplicate."""
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.2)
+    first = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    second = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    text = "Door code #0a1b2c3d"
+
+    async def main() -> None:
+        async with running(make_config(), first, tmp_path) as (_, bus, _n):
+            bus.send("alice", text)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+        on = make_config(messages="confirm_nonce = true")
+        async with running(on, second, tmp_path) as (_, bus, _n):  # kept by the stop
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            await asyncio.sleep(0.05)  # pending follows
+            assert {t.text for t in second.texts} == {text}
+            assert [e["text"] for e in bus.payloads("/delivery")] == [text, text]
+            assert bus.payloads("radio1/pending")[-1]["messages"][0]["text"] == text
+            bus.send("alice", text)
+            duplicate = await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
+            assert duplicate["text"] == text
+
+    scenario(main)
+
+
+def test_a_kept_message_counts_as_a_duplicate_without_its_suffix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With `confirm_nonce`, duplicates are judged without the suffix, also for a message a
+    stop kept: the same text sent again after the start is a duplicate of it."""
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.2)
+    config = make_config(messages="confirm_nonce = true")
+    first = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    second = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        async with running(config, first, tmp_path) as (_, bus, _n):
+            bus.send("alice", "Door open")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+        async with running(config, second, tmp_path) as (_, bus, _n):  # kept by the stop
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+            bus.send("alice", "Door open")
+            duplicate = await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
+            assert duplicate["text"] == "Door open"
+            assert [e["event_type"] for e in bus.payloads("/delivery")].count("queued") == 1
+
+    scenario(main)
+
+
 def test_confirm_nonce_leaves_room_for_its_digits(tmp_path: Path) -> None:
     """The 160 bytes of a direct text hold the suffix: a text is limited to 150 bytes first."""
     radio = EmulatedRadio(contacts=[ALICE, BOB])

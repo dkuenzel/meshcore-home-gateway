@@ -916,6 +916,7 @@ class SavedMessage:
     timestamp: int | None  # the radio timestamp of its attempts, once one was sent
     sent: int  # attempts sent
     queued_at: float | None = None  # wall clock at its acceptance; None: kept by 2.0
+    nonce: bool | None = None  # the gateway added confirm_nonce's suffix; None: kept by 2.0
 
 
 class OutboxRecords:
@@ -949,6 +950,7 @@ class OutboxRecords:
                         "timestamp": m.timestamp,
                         "sent": m.sent,
                         "queued_at": m.queued_at,
+                        "nonce": m.nonce,
                     }
                     for m in messages
                 ],
@@ -1006,7 +1008,9 @@ def _saved_message(entry: object) -> SavedMessage | None:
     ):
         queued_at = entry.get("queued_at")  # since 2.1; only a time, never a reason to skip it
         when = float(queued_at) if _finite(queued_at) else None
-        return SavedMessage(ident, target, text, raw, float(age), timestamp, sent, when)
+        nonce = entry.get("nonce")  # since 2.1, as queued_at
+        added = nonce if isinstance(nonce, bool) else None
+        return SavedMessage(ident, target, text, raw, float(age), timestamp, sent, when, added)
     return None
 
 
