@@ -114,16 +114,22 @@ class Deduplicator:
         self._accepted[key] = now
         return False
 
-    def forget(self, key: Hashable) -> None:
-        """Undo an acceptance whose send request was not taken after all (a full queue), so that
-        its repeat gets through. Received messages are never forgotten: a copy of one, also of a
-        rejected command, stays a duplicate (ADR 0009)."""
-        self._accepted.pop(key, None)
+    def forget(self, key: Hashable, accepted_at: float | None = None) -> None:
+        """Undo an acceptance whose send request was not taken after all (a full queue), or
+        whose message ended failed or expired, so that its repeat gets through. With
+        `accepted_at`, only the acceptance made then: once the window passed, the same key may
+        have been accepted again for another message. Received messages are never forgotten: a
+        copy of one, also of a rejected command, stays a duplicate (ADR 0009)."""
+        if accepted_at is None or self._accepted.get(key) == accepted_at:
+            self._accepted.pop(key, None)
 
-    def rekey(self, old: Hashable, new: Hashable, now: float) -> None:
-        """Replace an accepted key by the one it turned out to be (the final text)."""
+    def rekey(self, old: Hashable, new: Hashable, now: float) -> bool:
+        """Replace an accepted key by the one it turned out to be (the final text); whether
+        `new` is now accepted at `now`."""
         if self._accepted.pop(old, None) is not None and new not in self._accepted:
             self._accepted[new] = now
+            return True
+        return False
 
     def _prune(self, now: float) -> None:
         while self._accepted:

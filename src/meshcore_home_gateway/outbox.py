@@ -102,6 +102,9 @@ class Outgoing:
     timestamp: int | None = None  # of every attempt, from the first on: retries stay recognisable
     sent: int = 0  # attempts the radio has sent
     acks: Expected = field(default_factory=Expected)
+    # its key in the duplicate check and when it was accepted there, if it holds one: forgotten
+    # when it fails or expires, so that it can be sent again at once
+    dedup: tuple[tuple[str, str], float] | None = None
 
 
 class Outbox:
@@ -290,15 +293,18 @@ class Delivery:
             self._deliver_refusal(event)
             return
         state, reason = DeliveryState.QUEUED, None
-        key = (target.alias, text)
-        if deduplicate and self._dedup.is_duplicate(key, self._mono()):
+        key, now = (target.alias, text), self._mono()
+        if deduplicate and self._dedup.is_duplicate(key, now):
             state = DeliveryState.DUPLICATE
         else:
             nonce = target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
             sent = with_nonce(text) if nonce else text  # duplicates are judged without it
             alert = target.alias in self.config.messages.alert_targets
+            dedup = (key, now) if deduplicate else None
             try:
-                self._queue.put(Outgoing(event_id, target, sent, self._mono(), raw, alert=alert))
+                self._queue.put(
+                    Outgoing(event_id, target, sent, now, raw, alert=alert, dedup=dedup)
+                )
                 self.activity.touch()
                 text = sent
             except asyncio.QueueFull:
@@ -410,8 +416,7 @@ class Delivery:
                 raise
             except Exception:
                 log.exception("delivery %s failed unexpectedly", item.id)
-                failed = self._event(item, DeliveryState.FAILED, reason="internal_error")
-                self._deliver_event(failed)
+                self._end(item, self._event(item, DeliveryState.FAILED, reason="internal_error"))
             finally:
                 flight.item = None
                 flight.idle.set()
@@ -442,7 +447,7 @@ class Delivery:
                 return
             session = await self._radio.until(deadline)
             if session is None:
-                self._deliver_event(self._out_of_time(item, item.sent))
+                self._end(item, self._out_of_time(item, item.sent))
                 return
             try:
                 outcome = await self._attempt(session, item, deadline=deadline)
@@ -457,12 +462,19 @@ class Delivery:
                 # passed, _radio_until returns None, and _attempt refuses to send after it
                 continue
             if outcome is not None:
-                self._deliver_event(outcome)
+                self._end(item, outcome)
                 return
         failed = self._event(
             item, DeliveryState.FAILED, attempt=item.sent, reason="no_acknowledgement"
         )
-        self._deliver_event(failed)
+        self._end(item, failed)
+
+    def _end(self, item: Outgoing, event: DeliveryEvent) -> None:
+        """The last event of a message. One that failed or expired no longer counts as a
+        duplicate: "send it again" goes out at once. A confirmed one still does."""
+        if event.state in (DeliveryState.FAILED, DeliveryState.EXPIRED) and item.dedup:
+            self._dedup.forget(*item.dedup)
+        self._deliver_event(event)
 
     def _final(self, item: Outgoing, state: DeliveryState, reason: str, sent: int) -> DeliveryEvent:
         if state is DeliveryState.EXPIRED and sent:  # it left before: it was not acknowledged
@@ -590,9 +602,10 @@ class Delivery:
                 except TextRejectedError as exc:
                     raise _FinalError(DeliveryState.FAILED, exc.reason) from None
                 if final != item.text:  # deduplicate on the text that is sent
-                    self._dedup.rekey(
-                        (target.alias, item.text), (target.alias, final), self._mono()
-                    )
+                    key, now = (target.alias, final), self._mono()
+                    moved = self._dedup.rekey((target.alias, item.text), key, now)
+                    if item.dedup is not None:
+                        item.dedup = (key, now) if moved else None
                 item.text = final
                 size = len(item.text.encode())
             name_bytes = len(info.name.encode())
@@ -738,9 +751,9 @@ class Delivery:
                 self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))
                 continue
             nonce = target.kind is MessageKind.CONTACT and config.confirm_nonce
-            self._dedup.is_duplicate(
-                (target.alias, without_nonce(item.text) if nonce else item.text), now
-            )
+            key = (target.alias, without_nonce(item.text) if nonce else item.text)
+            if not self._dedup.is_duplicate(key, now):
+                item.dedup = (key, now)
             self._queue.restore(item)
             queued += 1
             self._deliver_event(self._event(item, DeliveryState.QUEUED, attempt=item.sent))

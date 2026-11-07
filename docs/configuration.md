@@ -145,7 +145,7 @@ are judged on it. A message to `contacts/<key>/send` gets neither: that recipien
 | --- | --- | --- |
 | `ascii_only` | `false` | transliterate to ASCII (ä → ae, typographic quotes, accents); for handhelds without Unicode fonts |
 | `truncate` | `true` | cut texts above the radio limit between whole characters (flags and emoji sequences included) and mark them with `...`; `false` rejects them |
-| `dedup_window_s` | `300` | the same text to the same target is sent once per window, 0–86400; `0` disables |
+| `dedup_window_s` | `300` | the same text to the same target is sent once per window, 0–86400; `0` disables. A message that ended `failed` or `expired` does not count |
 | `queue_size` | `20` | waiting messages, 1–1000; more are rejected. A stop keeps the waiting messages in `state.json` for the next start, which queues them again with their `id` ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)) |
 | `queue_ttl_s` | `600` | time to live of a message, 1–86400: no attempt starts after it. Never sent within it, it expires; sent but not acknowledged, it fails when the acknowledgement wait of its last attempt ends (up to 60 s after the time to live) |
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |

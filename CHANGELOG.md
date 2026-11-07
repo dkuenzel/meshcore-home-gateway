@@ -16,6 +16,9 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Changed
 
+- A message that ended `failed` or `expired` no longer counts as a duplicate: the same text to the
+  same target can be sent again at once. A `confirmed` one still does, for `dedup_window_s`
+  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
 - Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery
   topic once for each of its entities; the gateway takes the copies as one deletion (#115).
 

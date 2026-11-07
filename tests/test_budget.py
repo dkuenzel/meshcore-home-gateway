@@ -127,6 +127,19 @@ def test_forgotten_key_is_no_longer_a_duplicate() -> None:
     dedup.forget(("never", "seen"))  # no error
 
 
+def test_forgetting_an_acceptance_leaves_a_later_one_of_the_same_key() -> None:
+    """A message that ends failed undoes its own acceptance only: once the window passed, the
+    same text may have been accepted again for another message."""
+    dedup = Deduplicator(300.0)
+    key = ("alerts", "Smoke")
+    assert not dedup.is_duplicate(key, now=0.0)
+    assert not dedup.is_duplicate(key, now=400.0)  # accepted again after the window
+    dedup.forget(key, accepted_at=0.0)  # the first message ends
+    assert dedup.is_duplicate(key, now=401.0)
+    dedup.forget(key, accepted_at=400.0)
+    assert not dedup.is_duplicate(key, now=402.0)
+
+
 def test_the_hourly_budget_reads_back_as_configured() -> None:
     assert AirtimeBudget(per_hour_s=7.1, burst_s=10.0, now=0.0).per_hour_s == 7.1
 
