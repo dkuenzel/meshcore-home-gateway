@@ -317,8 +317,8 @@ pct stop 105 && pct destroy 105
   target are published, of other people's radios only their keys and types, and telemetry asks
   only the companions the household includes. Switch *Telemetry* on for each of the household's
   companions (or `meshcore-home-gateway contacts telemetry KEY on`); the changelog's
-  **Breaking:** entries name the settings that keep the old behaviour. The messages of other
-  channels that 1.x stored stay in the history database (and in `history export` and `backup`)
+  **Breaking:** entries name the settings that keep the old behaviour. The messages that 1.x
+  received on other channels stay in the history database (and in `history export` and `backup`)
   until they are `messages_days` old, 30 days by default; since 2.1 the `history` document and
   Home Assistant's *Message history* leave them out. To be rid of them at once, stop the service
   and delete `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files:

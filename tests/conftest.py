@@ -1,7 +1,8 @@
 """Shared fixtures. The broker fixture starts a private mosquitto on a free local port; telemetry's
 first-start hold is skipped unless a test is marked `first_start_hold`. Every test runs in an
-English environment, and a text looked up in a catalog must be in the template unless the test is
-marked `real_catalogs` (tools/i18n.py writes the template)."""
+English environment, on a host without what `doctor` reads of it, and a text looked up in a
+catalog must be in the template unless the test is marked `real_catalogs` (tools/i18n.py writes
+the template)."""
 
 from __future__ import annotations
 
