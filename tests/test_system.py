@@ -168,7 +168,12 @@ def test_service_end_to_end(
 def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> None:
     """Hardware checklist step 16: the broker stops and starts again, without the retained
     messages it had (`persistence false`). The service reconnects by itself and publishes
-    `online` and its documents again."""
+    `online` and its documents again. The broker is stopped only once the radio is connected,
+    and the state is read from what the broker keeps: this test once stopped it while the first
+    state, from before the radio was connected, was on its way, and took the copy paho sent again
+    after the restart for the current state (#101). That such copies draw no warning is
+    test_with_broker_what_paho_sends_again_after_a_restart_is_the_gateways_own in
+    test_mqtt_client.py; this test has nothing in flight when the broker stops."""
     if SKIP_BROKER:
         pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
     port = free_port()
@@ -203,6 +208,7 @@ def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> Non
             try:
                 watcher = Watcher(broker)
                 watcher.wait("meshcore/radio1/availability", lambda p: p == b"online")
+                watcher.wait("meshcore/radio1/state", connected)  # the radio is up before
                 watcher.close()
                 stop_mosquitto(mosquitto)
                 time.sleep(2)  # the service notices the lost connection
@@ -210,10 +216,16 @@ def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> Non
                 watcher = Watcher(broker)
                 try:
                     watcher.wait("meshcore/radio1/availability", lambda p: p == b"online", 60)
-                    state = json.loads(watcher.wait("meshcore/radio1/state", timeout=10))
-                    assert state["radio"] == "connected"
+                    watcher.wait("meshcore/radio1/state", connected, timeout=10)
+                    time.sleep(0.5)  # the copies of what paho sent again are back
                 finally:
                     watcher.close()
+                late = Watcher(broker)  # subscribes after the fact: sees what the broker keeps
+                try:
+                    state = json.loads(late.wait("meshcore/radio1/state", timeout=10))
+                    assert state["radio"] == "connected"
+                finally:
+                    late.close()
             finally:
                 service.send_signal(signal.SIGTERM)
                 try:
@@ -223,5 +235,12 @@ def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> Non
                     _, errors = service.communicate()
             assert service.returncode == 0, errors.decode()
             assert b"Traceback" not in errors
+            # a restart alone is no other client's write
+            assert b"another client wrote meshcore/radio1/state" not in errors
     finally:
         stop_mosquitto(mosquitto)
+
+
+def connected(payload: bytes) -> bool:
+    """A state document of a connected radio."""
+    return bool(json.loads(payload)["radio"] == "connected")

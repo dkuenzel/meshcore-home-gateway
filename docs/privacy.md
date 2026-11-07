@@ -21,7 +21,7 @@ the history holds: treat both as the history itself.
 | Place | Who can read it | How long |
 | --- | --- | --- |
 | Retained topics on the broker (`meshcore/<node_id>/…`) | every client the broker lets read them ([securing the broker](mqtt-api.md#securing-the-broker)) | until the gateway replaces or clears them; after the gateway is removed, until you clear them (`meshcore-home-gateway retire`, [operations](deployment.md#4-operations)) |
-| Events on the broker (`message`, `node`, `contact`, `rx`, …) | the clients subscribed at the time | not kept by the broker |
+| Events on the broker (`received`, `contacts/<key>/received`, `delivery`, `command`, `node`, `contact`, `rx`, …) | the clients subscribed at the time | not kept by the broker |
 | `history.sqlite3` in `/var/lib/meshcore-home-gateway/` | the service, and whoever has the container or a backup | per kind, below ([`[history]`](configuration.md#history)) |
 | `state.json` and `telemetry-excluded.json` beside it | as the history | while the gateway needs them ([what each holds](deployment.md#4-operations)) |
 | Home Assistant's recorder and `.storage/core.restore_state` | Home Assistant's users and backups | the recorder's `purge_keep_days` (10 days by default); the long-term statistics of sensors without end ([Home Assistant](home-assistant.md#privacy)) |
@@ -31,7 +31,7 @@ the history holds: treat both as the history itself.
 
 | What | Where | How long | Off |
 | --- | --- | --- | --- |
-| Direct messages with contacts and messages on channels: text, the sender's name and key, signal | `message` events, `history` (retained) and Home Assistant's *Message history*, the history | 30 days (`messages_days`) | `[history] enabled = false` keeps no history; Home Assistant's recorder: [exclusions](home-assistant.md#privacy) |
+| Direct messages with contacts and messages on channels: text, the sender's name and key, signal | `received` events (a contact's also on `contacts/<key>/received`), `history` (retained) and Home Assistant's *Message history*, the history | 30 days (`messages_days`) | `[history] enabled = false` keeps no history; Home Assistant's recorder: [exclusions](home-assistant.md#privacy) |
 | Contacts: key, name, type, path, when and how they were last heard, the checks of their adverts | the contacts' documents (retained), `state.json`, the history | while they are contacts; the history's row 7 days after the last time heard | remove the contact |
 | Companions' positions and readings, from telemetry and from adverts | the contacts' documents (retained), `state.json` while current, the history | 30 days (`positions_days`, `readings_days`) | only the companions included are asked (`[telemetry] ask = "household"`, the default); exclude a companion from telemetry; `contacts telemetry --forget KEY off` deletes what the history has of it ([companions](companions.md#privacy)) |
 | The newest accepted command time of each sender | `state.json` | while the sender is one | — |
@@ -44,7 +44,7 @@ the history holds: treat both as the history itself.
 | What | Where | How long | Off |
 | --- | --- | --- | --- |
 | Nodes heard but not added: key and type; with `[contacts] heard_nodes = "full"` also the name its owner chose, when it was first and last heard, hops, SNR and RSSI; never a position | `nodes` (retained, the last 50), `node` events, Home Assistant's *Nodes heard*, *New node* and *Look-alike node heard*, the history | 7 days after the last time heard, in memory and in the history | `[contacts] heard_nodes = "off"` keeps nothing but the keys of look-alikes of contacts and protected keys ([configuration](configuration.md#contacts)) |
-| Messages on the channels that are a target: text and the name the sender claims; with `[messages] publish_channels = "all"` on every channel | `message` events, `history` (retained) and Home Assistant's *Message history*, the history | 30 days | a channel that is not a target is dropped (`[messages] publish_channels = "targets"`, the default); `ignore_channels` leaves out single ones ([configuration](configuration.md#messages)) |
+| Messages on the channels that are a target: text and the name the sender claims; with `[messages] publish_channels = "all"` on every channel | `received` events, `history` (retained) and Home Assistant's *Message history*, the history | 30 days | a channel that is not a target is dropped (`[messages] publish_channels = "targets"`, the default); `ignore_channels` leaves out single ones ([configuration](configuration.md#messages)) |
 | Other people's companions among the radio's contacts | as the household's | as the household's | none of them is asked until included (`[telemetry] ask = "household"`, the default); with `"all"` exclude them ([telemetry](configuration.md#telemetry)) |
 | Every packet the radio receives: raw bytes with other people's ciphertext and the positions in their adverts, and the signal | `rx` events; Home Assistant's *Last packet RSSI* and *Last packet SNR* (disabled by default) | not kept by the gateway | off unless `[diagnostics] publish_rx_log = true`: a diagnostic, it shows the packets as received, positions included |
 

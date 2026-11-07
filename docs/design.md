@@ -328,8 +328,10 @@ sequenceDiagram
   at every heartbeat. Further ahead, a warning says so: nodes and repeaters ignore the radio's
   adverts and logins until real time passes the times it sent before, which is fine for minutes
   but not for days. Command age checks do not use the radio's clock: they compare the sender's
-  timestamp with the host's clock (§7.3). The unit starts after `time-sync.target` where a
-  service provides it.
+  timestamp with the host's clock (§7.3). The unit is ordered after `time-sync.target`, which
+  waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled:
+  neither is by default, and `systemd-time-wait-sync` skips containers, whose clock is the host's.
+  The bounds of a plausible host clock above are the guard.
 * **Messages.** On `MSG_WAITING`, after connecting, and every 5 minutes as a safety net, the session
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
@@ -814,8 +816,9 @@ the apps compute it. After the checks above, the last word must be the code of t
 clock's step or of the step before or after (`code_missing`, `code_invalid`), of a step newer
 than the sender's last accepted code (`code_reused`); `args` leaves it out. The step is stored
 with the timestamp, before the event goes out, so a code serves once, also across a restart.
-The code authenticates the text, not the frame: it comes from the secret, which neither the
-radio, the link nor the mesh carries. The secret is 160 random bits from
+The code shows that the sender's app made it in that time window, whatever frame carries it: it
+comes from the secret, which neither the radio, the link nor the mesh carries. It does not bind
+the text (§7.4). The secret is 160 random bits from
 `meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
 stops the service rather than let commands pass without codes.
 
@@ -849,10 +852,10 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2). Without its code secret a look-alike that got past those checks
   cannot command a sender who has one.
-* A code authenticates the text, not its sender's radio, and it lives up to 90 seconds: whoever
+* A code binds neither the text nor its sender's radio, and it lives up to 90 seconds: whoever
   reads a code before the bridge accepted it (a host posing as the radio over TCP sees the text;
   so does a reader of the `received` event of a command rejected for another reason) can use it
-  for another command of that sender in that time. Once the bridge accepted a code, that code and
+  for another command of that sender in that time, with a text of its own. Once the bridge accepted a code, that code and
   all earlier ones are spent.
 * A command rejected as `sender_unverified` or `state_unwritable` leaves the sender's last
   timestamp as it was (the sender was not verified, or the file could not be written). A replayed

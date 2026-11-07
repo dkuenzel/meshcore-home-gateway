@@ -148,8 +148,8 @@ by another client of the radio, such as a phone app) gets it at once. The entiti
 | `sensor.mesh_alice_snr` | signal strength (dB), diagnostic | its signal-to-noise ratio, of its last advert or message |
 | `device_tracker.mesh_alice` | GPS, attributes `latitude`, `longitude`, `altitude_m`, `position_at` (when it last changed), `position_source` (`advert`, `telemetry`); `gps_accuracy` 15 for a position from telemetry | the contact's position; only once one is known; `unavailable` while no position is known: a position from telemetry that is not current, or one from adverts that a checked advert no longer carries |
 | `button.mesh_alice_remove` | configuration | *Remove from radio* ([below](#adding-and-removing-contacts)); `unavailable` for a contact target or command sender |
-| `switch.mesh_alice_telemetry` | switch, configuration | *Telemetry*: on while the gateway may ask the companion for telemetry, off excludes it ([below](#telemetry-of-the-households-companions)); companions only |
-| `sensor.mesh_alice_telemetry_state` | enum | *Telemetry state*: whether its answers are current, and why not; companions only |
+| `switch.mesh_alice_telemetry` | switch, configuration | *Telemetry*: on while the gateway may ask the companion for telemetry, off excludes it ([below](#telemetry-of-the-households-companions)); companions, and sensors with `[telemetry] ask_types` |
+| `sensor.mesh_alice_telemetry_state` | enum | *Telemetry state*: whether its answers are current, and why not; companions, and sensors with `[telemetry] ask_types` |
 | `binary_sensor.mesh_alice_advert_position` | problem | *Position in adverts*: on while the companion's newest advert carries its position, which everyone in range can read, as the gateway checked it; while that advert is not checked (before the first check, or one the gateway missed), on while the last check carried one or the radio's record holds a position from an earlier advert; companions only |
 | `sensor.mesh_alice_battery` | voltage (V) | its battery, from its telemetry answers |
 | `sensor.mesh_alice_mcu_temperature` | temperature (°C), diagnostic | its processor's temperature |
@@ -162,7 +162,8 @@ its adverts.
 *Battery*, *MCU temperature* and the reading sensors appear with the first telemetry answer that
 carries them, at most 16 readings per contact. Every companion has the switch *Telemetry*,
 *Telemetry state* and *Position in adverts* at once, also while telemetry is off, so it can be
-included or excluded before it is asked.
+included or excluded before it is asked; with `[telemetry] ask_types` a sensor has the first
+two.
 Every contact has the remove button. A component, once there, stays as long as the
 contact does (Home Assistant would clear the whole device when the gateway removed a disabled
 one). The tracker is the only entity with coordinates,
@@ -176,7 +177,8 @@ last advert the gateway checked carried it, or, before it has checked one (after
 while the radio's record holds one (press *Advert* near the gateway after the update and after
 switching sharing off, [companions.md](companions.md#positions-in-adverts)).
 
-* **Entity IDs** start with `mesh_` and the contact's name as it was when the device first
+* **Entity IDs** start with `[homeassistant] contact_entity_prefix` (`mesh` by default, as in the
+  table) and `_`, then the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
   IDs, also when the contact leaves the table and comes back within 90 days (the gateway keeps
   the names of at most 1 000 contacts that left). Two contacts with the same name: the second gets the first four digits of its key added.

@@ -298,6 +298,20 @@ def test_a_sender_with_a_secret_ends_its_commands_with_the_code() -> None:
     assert alone.command.args == ""
 
 
+def test_a_code_does_not_bind_the_text() -> None:
+    """#105, design §7.4: a code shows that the sender's app made it in that time window, not
+    which text it came with. Whoever reads `arm now <code>` before the gateway, such as a host
+    posing as the radio over TCP, can send `status <code>` instead, once."""
+    seen = code()
+    taken = coded(f"status {seen}")
+    assert taken is not None
+    assert taken.command is not None
+    assert (taken.command.word, taken.command.code_step) == ("status", STEP)
+    again = coded(f"arm now {seen}", last={ALICE: STEP})  # the sender's own comes too late
+    assert again is not None
+    assert again.rejection is Rejection.CODE_REUSED
+
+
 @pytest.mark.parametrize(("steps", "accepted"), [(-1, True), (1, True), (-2, False), (2, False)])
 def test_a_code_may_be_a_time_step_off_and_no_more(steps: int, accepted: bool) -> None:
     """The sender's phone and the host need not agree to the second (RFC 6238, section 5.2)."""

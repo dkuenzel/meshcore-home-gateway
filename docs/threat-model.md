@@ -39,7 +39,7 @@ weakens a control updates the boundary's section here in the same pull request.
 | T6 | A broker client other than the gateway | Publish and read what the broker's ACL allows: forge events and documents, send messages, manage contacts, read the household's unsent drafts and send them | The ACL ([securing the broker](mqtt-api.md#securing-the-broker)); warnings and refusals for a broker without login or TLS; forged documents restored |
 | T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, also the draft another user left in a chat, add and remove contacts, switch telemetry, see positions and messages, and the settings in effect, the hidden targets' names and prefixes included (never a secret, host or key) | `[homeassistant] controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
 | T8 | Home Assistant's administrator or host | All of T7, automations, the recorder | Not an attacker of the gateway; a victim of what reaches Home Assistant |
-| T9 | A process in the container as the service user | The state directory, the radio's device, the login in memory | The systemd sandbox; the password as a credential root alone may read ([deployment](deployment.md#4-operations)) |
+| T9 | A process in the container as the service user | The state directory, the radio's device, the login in memory | The systemd sandbox. The broker password and the code secrets are files the service's group reads (0640), which such a process reads too; a systemd credential that root alone reads only with a drop-in ([deployment](deployment.md#4-operations)) |
 | T10 | Root in the container, the Proxmox host | Everything | Not an attacker of the gateway |
 | T11 | The supply chain | Ship code to every installation with the next update | Hash-pinned tools, pinned actions, attested and reproducible releases, immutable releases, a protected tag ([SECURITY.md](../SECURITY.md)) |
 | T12 | The operator, by mistake | A wrong clock, ACL or backup, a copied configuration | Checks that refuse or warn: `check-config`, `doctor`, the clock bounds, the confirmations of the installer |
@@ -85,7 +85,8 @@ frames (the decoder is strict and total) and, over TCP, that the other end is th
 
 **Controls:** USB by default; TCP only with `tcp_unauthenticated = true`, a warning everywhere it
 is set up and the contested link reported (`radio_link_contested`); the clock is written only
-within plausible bounds; codes authenticate commands whatever frames arrive.
+within plausible bounds; a code shows that the sender's app made it in its time window,
+whatever frames arrive, but does not bind the text ([design §7.4](design.md#74-residual-risks)).
 
 **Remains:** over TCP a host on the radio's network can export the private key and act as the
 radio; a second client of the radio can change its table unseen ([design §7.4](design.md#74-residual-risks)).
@@ -137,7 +138,9 @@ root of the container and the host. **Not trusted:** the service itself, which r
 user in a tight systemd sandbox.
 
 **Controls:** the state directory 0700; the configuration 0640; the broker password and the code
-secrets in files of their own, also as systemd credentials; backups without secrets unless asked;
+secrets in files of their own (0640, for the service's group), as systemd credentials that root
+alone reads only with a drop-in ([deployment](deployment.md#4-operations)); backups without
+secrets unless asked;
 automatic security updates in the container ([deployment](deployment.md#4-operations)).
 
 ### B7: the project and its users
