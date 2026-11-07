@@ -91,8 +91,9 @@ format, the command line and Home Assistant discovery are public interfaces
 - A send request or the answer to a command that came while a stop handled the last received
   messages was published `queued` and then lost: the stop had kept the queue already. The stop
   now keeps the queue as its last step, with these requests and those still waiting to be taken.
-  A request after it, such as a press of *Send* as the broker connection closes, ends `rejected`
-  with the new reason `stopping`, which the dashboard shows as "the gateway was stopping"
+  A request after it, such as a press of *Send* or a request that comes as the radio closes, ends
+  `rejected` with the new reason `stopping`, until the gateway publishes `offline`, which the
+  dashboard shows as "the gateway was stopping"
   ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)) (#92).
 - A stop cut short while it waited up to a minute for an acknowledgement lost every queued
   message: the queue was written only after the wait. A kill does that, and so does the unit of

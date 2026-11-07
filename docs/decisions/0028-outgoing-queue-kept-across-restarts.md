@@ -119,8 +119,8 @@ level), `tests/test_outbox.py` (the order), `tests/test_state.py` (the records).
   answer to a command that came after the write was lost. The queue is now written at the stop's
   start, with the message in flight and its attempts, again at each change in the stop, and a
   last time as the stop's last step, after those messages and with the requests still waiting
-  to be taken. A request after that is rejected with reason `stopping`. A crash still drops the
-  queue.
+  to be taken. A request after that is rejected with reason `stopping`, until the gateway
+  publishes `offline`; one after `offline` gets no event. A crash still drops the queue.
 * Amended on 2026-11-07 (review of 2.0.0, #93): an alert went only between two attempts of
   another message. One taken out of the queue that waited for the radio or for airtime before
   its first attempt held the alert up until it had used the airtime and its acknowledgement had

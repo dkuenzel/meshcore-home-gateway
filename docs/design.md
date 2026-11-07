@@ -227,8 +227,10 @@ session. The radio events and the message
 handler then finish the messages the radio has already handed over, for at most 2 s (a command
 waiting for its table read is rejected, `sender_unverified`). Requests are taken until then, the
 answers to those commands too: the last step keeps the queue for the next start, with the
-requests still waiting to be taken, and a request after it is rejected (`stopping`); then the
-other tasks are cancelled. Messages still waiting in the radio are fetched at the next start.
+requests still waiting to be taken; then the other tasks are cancelled. A request after it is
+rejected (`stopping`): a press of *Send* at once, and one from the broker when the bus stops,
+before it publishes `offline`; one that comes after `offline` gets no event. Messages still
+waiting in the radio are fetched at the next start.
 
 The state file (`state.json`, `state.py`) is one store for every part that keeps something
 across a restart (ARC-004): read once at the start, held in memory, and written whole and

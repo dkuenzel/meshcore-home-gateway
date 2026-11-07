@@ -386,6 +386,63 @@ def test_requests_and_answers_that_come_while_the_stop_drains_are_kept(
         assert (text, "sent") in sent
 
 
+def test_a_request_after_the_stops_last_step_ends_rejected_before_the_bus_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#92: after the stop's last step no task takes the requests, while the gateway still
+    closes the radio, publishes its state and only then stops the bus, which publishes `offline`.
+    A request the bus takes meanwhile must not stay without an event: it ends `rejected` with
+    reason `stopping`, before `offline`."""
+    buses: list[FakeBus] = []
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(contacts=[ALICE, BOB]), tmp_path) as (
+            bridge,
+            bus,
+            _n,
+        ):
+            buses.append(bus)
+            keep = bridge.outbox.keep
+
+            def late() -> None:
+                keep()
+                bus.send("alerts", "After the last step")  # say, while the radio closes
+
+            monkeypatch.setattr(bridge.outbox, "keep", late)
+
+    scenario(main)
+    events = [(d["target"], d["event_type"], d["reason"]) for d in buses[0].payloads("/delivery")]
+    assert events == [("alerts", "rejected", "stopping")]
+    assert buses[0].requests.empty()
+
+
+def test_a_run_that_fails_queues_no_request_as_the_bus_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bus stops also after a run that failed before the stop's last step, which kept
+    nothing: a request it took then must not be published `queued`, as nothing would keep it
+    (ADR 0028). It gets no event, as a crash gives none."""
+    buses: list[FakeBus] = []
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(contacts=[ALICE, BOB]), tmp_path) as (
+            bridge,
+            bus,
+            _n,
+        ):
+            buses.append(bus)
+
+            async def failing(_loop: asyncio.Task[None]) -> None:
+                bus.send("alerts", "As the run fails")
+                raise RuntimeError("a bug in the stop")
+
+            monkeypatch.setattr(bridge.outbox, "finish", failing)
+
+    with pytest.raises(ExceptionGroup):
+        scenario(main)
+    assert buses[0].payloads("/delivery") == []
+
+
 def test_a_stop_cut_short_while_it_waits_for_an_acknowledgement_keeps_the_queue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

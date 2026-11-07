@@ -109,7 +109,8 @@ again with the same `id` (and `attempt` the transmissions so far), then the rest
 the final event the message would have had meanwhile
 ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). Requests are taken until
 the stop's last step, after the received messages the radio had handed over (with the answers to
-their commands); one that comes later ends `rejected` with reason `stopping`. A crash drops the
+their commands); one that comes later ends `rejected` with reason `stopping`, until the gateway
+publishes `offline`, and one that comes after that gets no event. A crash drops the
 queued messages without a final event, and so does a broker outage with more than 1000 events
 waiting; wait for a final event with a timeout. Messages to `[messages] alert_targets` leave before the others. The `rejected` and `duplicate` events of
 requests refused at once are limited to 20 per second, in bursts of up to 100: a client that floods

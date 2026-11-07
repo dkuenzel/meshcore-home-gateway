@@ -813,13 +813,24 @@ class Delivery:
         """The stop's last step, after the last received messages were handled: the requests
         still waiting for the requests task are taken, and the queue is kept for the next start
         (ARC-013). A request after it is refused (`stopping`): nothing would keep it."""
-        requests = self._bus.requests
-        while not requests.empty():
-            self.accept(requests.get_nowait())
+        self._take_waiting()
         kept = self._save_queue()
         self._kept = True
         if kept:
             log.info("%d messages kept for the next start", kept)
+
+    def bus_stopping(self) -> None:
+        """The bus stops, before it publishes `offline`. The requests it took after `keep`, as
+        the radio closed, which no task takes any more, end `rejected` with reason `stopping`
+        (#92). In a run that ended without `keep` they stay: one queued now would be lost."""
+        if self._kept:
+            self._take_waiting()
+
+    def _take_waiting(self) -> None:
+        """The requests the bus took that the requests task has not taken."""
+        requests = self._bus.requests
+        while not requests.empty():
+            self.accept(requests.get_nowait())
 
     def _save_queue(self) -> int:
         """The messages on their way to the state file, at once, in the order they would leave:

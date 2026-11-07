@@ -14,6 +14,8 @@ are connected here (`gateway`). Who tells, when, and the listeners in the order 
 * `poller.on_status`, the telemetry's status changed: `status.publish`;
 * the announcer's `publish_state`, an announcement went out: `status.publish`;
 * `bus.on_connected`, the broker connected: `announcer.connected`, `observer.publish_all`;
+* `bus.on_stopping`, the bus stops, before its `offline`: `outbox.bus_stopping`, which refuses
+  the requests that came after the stop's last step (`stopping`), then `drafts.stop` (below);
 * `bus.on_ha_online`, Home Assistant's birth message: `announcer.schedule`;
 * `bus.on_ha_device`, a message on one of the gateway's discovery topics:
   `announcer.device_message`;
@@ -369,8 +371,8 @@ def gateway(
         # (design §6.11)
         observer.on_telemetry_exclusion.append(lambda key, _: records.forget(key))
         observer.on_contact_added.append(records.forget)
-    bus.on_connected.append(announcer.connected)
-    bus.on_connected.append(lambda: observe(observer.publish_all))
+    bus.on_connected.extend((announcer.connected, lambda: observe(observer.publish_all)))
+    bus.on_stopping.append(lambda: observe(outbox.bus_stopping))
     bus.on_ha_online.append(lambda: announcer.schedule(birth=True))
     bus.on_ha_device.append(announcer.device_message)
     if drafts is not None:
