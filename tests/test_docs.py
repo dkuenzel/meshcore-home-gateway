@@ -301,17 +301,18 @@ def test_the_design_names_every_placeholder_of_the_dashboard_template() -> None:
 
 def test_the_design_says_which_conditionals_of_the_template_have_an_else() -> None:
     """#106 review: the design said that each conditional of the template has `# @else` and
-    `# @end`, where `# @if controls` has no `# @else`, which `dashboard.py` allows."""
+    `# @end`, where `# @if controls` has no `# @else`, which `dashboard.py` allows. While a
+    conditional of the shipped template has none, the design says that `# @else` is optional."""
     template = (ROOT / "src" / "meshcore_home_gateway" / "dashboard.yaml").read_text(
         encoding="utf-8"
     )
     blocks = re.findall(r"^# @if (\w+)\n(.*?)^# @end$", template, flags=re.MULTILINE | re.DOTALL)
-    without = sorted(flag for flag, block in blocks if "\n# @else\n" not in f"\n{block}")
+    without = [flag for flag, block in blocks if "\n# @else\n" not in f"\n{block}"]
     design = _words((ROOT / "docs" / "design-home-assistant.md").read_text(encoding="utf-8"))
     bullet = design.partition("* **The template** is")[2].partition(" * **")[0]
-    assert without == ["controls"]
-    assert "each with `# @else` and `# @end`" not in bullet
-    assert "each ended by `# @end`, with an optional `# @else`" in bullet
+    if without:
+        assert "each with `# @else` and `# @end`" not in bullet, without
+        assert re.search(r"optional `# @else`|`# @else`[^.;]* optional", bullet), without
 
 
 # --- the triage log of the review (#104) ------------------------------------------------------

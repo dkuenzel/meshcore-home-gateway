@@ -167,7 +167,7 @@ would not tag, asked the same way on `main`: not on the commit that wrote the ve
 not a day after that commit's date, without CI passed on it on `main`, or while
 `release-due.yml` is disabled, so that disabling it stops a release also against a tag pushed by
 hand. `release-due.yml` does not count a run that this job refused, and starts the release on a
-tag pushed within the day once it is due. A pre-release is admitted on any commit of `main` that
-carries its version, also one where CI has not passed. The check is part of the tagged commit, so
-a tag on a commit off `main` can bring a `release.yml` without it; only who may create tags stands
-in its way there (SECURITY.md).
+tag pushed within the day once it is due and CI passed on it. A pre-release is admitted on any
+commit of `main` that carries its version, also one where CI has not passed. The check is part of
+the tagged commit, so a tag on a commit off `main` can bring a `release.yml` without it; only who
+may create tags stands in its way there (SECURITY.md).
