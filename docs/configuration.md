@@ -183,7 +183,7 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
 | `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error. The secret of a key that is not in `senders` is ignored, with a warning |
-| `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
+| `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `code_locked`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
@@ -205,7 +205,12 @@ authenticator app (TOTP, RFC 6238: SHA-1, 30 s), as in `arm now 492039`; the cod
 and after, each code once (`code_missing`, `code_invalid`, `code_reused` otherwise,
 [mqtt-api.md](mqtt-api.md#commands-command)). A code authenticates the text whatever reached the
 gateway: a host that poses as a radio over TCP, or a node that shares an allowed sender's key
-prefix, cannot command without the secret. Senders without a secret keep the rules above. To
+prefix, cannot command without the secret. Senders without a secret keep the rules above.
+After 5 wrong codes of a sender within an hour, a command without a code included, the gateway
+refuses that sender's commands without a look at the code (`code_locked`) until the first of
+them is an hour old, and its log warns: someone may be guessing the codes. A restart does not
+end it. So a guess wins with at most 3 in a million, and 5 guesses an hour are all there are
+([design §7.4](design.md#74-residual-risks)). To
 give one a secret (or a new one, which ends the old):
 
 ```sh

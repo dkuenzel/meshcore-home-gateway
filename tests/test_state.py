@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway.core.commands import CODE_FAILURE_LIMIT, CODE_FAILURE_WINDOW_S
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 from meshcore_home_gateway.state import (
@@ -181,10 +182,35 @@ def test_ledger_remembers_the_time_step_of_the_newest_code(tmp_path: Path) -> No
     assert dict(CommandLedger(JsonStateFile(path)).code_steps) == {"aa" * 32: 7}
 
 
+def test_ledger_counts_wrong_codes_per_sender_across_a_restart(tmp_path: Path) -> None:
+    """#79: the times of a sender's recent wrong codes, so that a restart does not give it new
+    guesses; it says when a sender reaches the limit. Older ones and more than the limit are
+    not kept: the file stays small however many come."""
+    path = tmp_path / "state.json"
+    ledger = CommandLedger(JsonStateFile(path))
+    now = 1_800_000_000.0
+    other = "bb" * 32
+    assert ledger.code_failure(other, now - CODE_FAILURE_WINDOW_S) is False  # expires first
+    reached = [ledger.code_failure("aa" * 32, now + n) for n in range(CODE_FAILURE_LIMIT + 1)]
+    assert reached == [False] * (CODE_FAILURE_LIMIT - 1) + [True, False]
+    assert dict(ledger.code_failures) == {
+        "aa" * 32: tuple(int(now) + n for n in range(1, CODE_FAILURE_LIMIT + 1))
+    }
+    reloaded = CommandLedger(JsonStateFile(path))
+    assert dict(reloaded.code_failures) == dict(ledger.code_failures)
+    reloaded.record("aa" * 32, 100, 7)  # an accepted command keeps them: they expire
+    assert dict(CommandLedger(JsonStateFile(path)).code_failures) == dict(ledger.code_failures)
+
+
 def test_ledger_ignores_malformed_content(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text('{"command_timestamps": {"x": "not a number"}}', encoding="utf-8")
     assert CommandLedger(JsonStateFile(path)).last("x") is None
+    path.write_text(
+        '{"command_code_failures": {"a": [1, "x", true, 2.5], "b": 3, "c": [null]}}',
+        encoding="utf-8",
+    )
+    assert dict(CommandLedger(JsonStateFile(path)).code_failures) == {"a": (1, 2)}
 
 
 def test_state_file_that_is_not_utf8_is_kept_aside(tmp_path: Path) -> None:

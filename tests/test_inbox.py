@@ -13,7 +13,12 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import inbox as inbox_module
-from meshcore_home_gateway.core.commands import CODE_STEP_S, code_at
+from meshcore_home_gateway.core.commands import (
+    CODE_FAILURE_LIMIT,
+    CODE_FAILURE_WINDOW_S,
+    CODE_STEP_S,
+    code_at,
+)
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.state import CommandLedger, JsonStateFile
 from meshcore_home_gateway.wiring import gateway
@@ -506,6 +511,58 @@ def test_a_sender_with_a_code_secret_commands_only_with_a_fresh_code(tmp_path: P
     scenario(main)
     stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
     assert stored["command_code_steps"] == {sender: int(NOW // CODE_STEP_S)}
+
+
+def test_wrong_codes_lock_the_sender_out_for_a_while_also_across_a_restart(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#79, RFC 4226 section 7.3: each guess of a code wins with 3 in 10^6, and a host posing
+    as the radio feeds thousands a second. After CODE_FAILURE_LIMIT wrong codes within
+    CODE_FAILURE_WINDOW_S (a command without one counts too) the sender's commands are refused
+    from the cached table, the right code's too, and the log says so once; the count is in the
+    state file, so a restart does not end it."""
+    caplog.set_level(logging.WARNING)
+    secret = b"12345678901234567890"
+    config = make_config()
+    sender = ALICE.public_key.hex()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, secrets=((sender, secret),))
+    )
+    step = int(NOW // CODE_STEP_S)
+    good = {code_at(secret, step + d) for d in (-1, 0, 1)}
+    wrong = [c for c in (f"{n:06d}" for n in range(20)) if c not in good]
+    alice = ALICE.public_key[:6]
+    tries = CODE_FAILURE_LIMIT + 2
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE])
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            reads = radio.commands().count(Command.GET_CONTACTS)
+            for n in range(tries):
+                text = f"arm {wrong[n]}" if n % 2 else "arm now"
+                radio.queue_direct_message(alice, text, NOW - 100 + n)
+            right = f"arm {code_at(secret, step)}"
+            radio.queue_direct_message(alice, right, NOW - 50)
+            await bus.wait_for("/received", lambda r: r["text"] == right)
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            wrong_ones = ["code_missing", "code_invalid"] * CODE_FAILURE_LIMIT
+            assert reasons == wrong_ones[:CODE_FAILURE_LIMIT] + ["code_locked"] * 3
+            assert not bus.payloads("/command")
+            assert radio.commands().count(Command.GET_CONTACTS) == reads  # the cache's verdict
+        assert caplog.text.count("wrong command codes") == 1
+        restarted = EmulatedRadio(contacts=[ALICE])
+        async with running(config, restarted, tmp_path) as (_, bus, _notes):
+            restarted.queue_direct_message(alice, f"status {code_at(secret, step)}", NOW - 40)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "code_locked"
+        later = NOW + CODE_FAILURE_WINDOW_S
+        again = EmulatedRadio(contacts=[ALICE])
+        async with running(config, again, tmp_path, wall_clock=lambda: later) as (_, bus, _n):
+            right = code_at(secret, int(later // CODE_STEP_S))
+            again.queue_direct_message(alice, f"status {right}", int(later) - 5)
+            await bus.wait_for("/command", lambda c: c["event_type"] == "status")
+
+    scenario(main)
 
 
 def test_commands_are_answered_when_asked(tmp_path: Path) -> None:

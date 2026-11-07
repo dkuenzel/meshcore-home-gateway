@@ -79,6 +79,13 @@ format, the command line and Home Assistant discovery are public interfaces
 - The generated dashboard needs Home Assistant 2026.10 or newer: it shows cards by template
   conditions, which the frontend evaluates since 2026.10. The gateway and its entities keep
   2026.8 ([home-assistant.md](docs/home-assistant.md#requirements)).
+- A command sender with a code secret gets at most 5 wrong codes an hour; a command without a
+  code counts too. Then the gateway refuses its commands without a look at the code, with the
+  new reason `code_locked`, until the first of them is an hour old, and its log warns once;
+  the times are in `state.json`, so a restart does not end it. Before, nothing counted wrong
+  codes: a host posing as the radio over TCP found a code within a minute, a stolen handheld
+  over the air in about two weeks; now a guesser wins with about 1 in 2,800 a day
+  ([design §7.4](docs/design.md#74-residual-risks)) (#79).
 
 ### Fixed
 

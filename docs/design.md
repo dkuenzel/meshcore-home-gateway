@@ -815,6 +815,10 @@ the apps compute it. After the checks above, the last word must be the code of t
 clock's step or of the step before or after (`code_missing`, `code_invalid`), of a step newer
 than the sender's last accepted code (`code_reused`); `args` leaves it out. The step is stored
 with the timestamp, before the event goes out, so a code serves once, also across a restart.
+After 5 wrong codes of a sender within an hour (`code_missing` and `code_invalid`), its commands
+are refused without a look at the code (`code_locked`, RFC 4226 section 7.3) until the first of
+them is an hour old, and the log warns once; their times are in the state file, so a restart
+does not end it (§7.4).
 The code authenticates the text, not the frame: it comes from the secret, which neither the
 radio, the link nor the mesh carries. The secret is 160 random bits from
 `meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
@@ -852,6 +856,15 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2). Without its code secret a look-alike that got past those checks
   cannot command a sender who has one.
+* A code is one of a million, and three time steps pass, so a guess wins with at most 3 in a
+  million. Whoever has the bridge judge commands of an allowed sender without the secret (a host
+  posing as the radio over TCP, at link speed; a stolen handheld, one every few seconds over
+  the air) would otherwise find one within a minute, or in about two weeks. Held to 5 wrong
+  codes per sender an hour (§7.3), such a guesser wins with about 1 in 2,800 a day, and with
+  about 12 % in a year of guessing without a pause; each hour of it logs a warning, and the `received`
+  events show `code_locked`. The same limit lets the guesser keep the sender's commands refused
+  for as long as it guesses: remove a sender whose codes someone guesses
+  ([configuration.md](configuration.md#commands)).
 * A code authenticates the text, not its sender's radio, and it lives up to 90 seconds: whoever
   reads a code before the bridge accepted it (a host posing as the radio over TCP sees the text;
   so does a reader of the `received` event of a command rejected for another reason) can use it

@@ -5,6 +5,8 @@ import dataclasses
 import pytest
 
 from meshcore_home_gateway.core.commands import (
+    CODE_FAILURE_LIMIT,
+    CODE_FAILURE_WINDOW_S,
     CODE_STEP_S,
     CommandDecision,
     CommandRules,
@@ -90,6 +92,7 @@ def test_only_the_rejections_of_an_identified_sender_are_answered(rejection: Rej
         "code_missing",
         "code_invalid",
         "code_reused",
+        "code_locked",
         "state_unwritable",
         "broker_unavailable",
     }
@@ -266,9 +269,16 @@ def code(at: float = NOW, secret: bytes = SECRET) -> str:
 
 
 def coded(
-    text: str, *, now: float = NOW, last: dict[str, int] | None = None, key: str = ALICE
+    text: str,
+    *,
+    now: float = NOW,
+    last: dict[str, int] | None = None,
+    key: str = ALICE,
+    failures: dict[str, list[float]] | None = None,
 ) -> CommandDecision | None:
-    return evaluate_command(dm(text, key=key), CODED, CODED_BOOK, {}, now, last_codes=last)
+    return evaluate_command(
+        dm(text, key=key), CODED, CODED_BOOK, {}, now, last_codes=last, code_failures=failures
+    )
 
 
 @pytest.mark.parametrize(
@@ -364,3 +374,39 @@ def test_the_rules_never_show_a_secret() -> None:
     assert "1234567890" not in repr(CODED)
     assert CODED.secret(ALICE) == SECRET
     assert CODED.secret(CAROL) is None
+
+
+def test_a_sender_with_too_many_wrong_codes_is_locked_out_for_a_while() -> None:
+    """#79, RFC 4226 section 7.3: a code is one of 10^6 and three time steps pass, so each guess
+    wins with 3 in 10^6. After CODE_FAILURE_LIMIT wrong codes within CODE_FAILURE_WINDOW_S a
+    sender's codes are not even checked, the right one neither: at most that many guesses an
+    hour. The other checks come first, and other senders keep their own count."""
+    recent = [NOW - CODE_FAILURE_WINDOW_S + 1 + n for n in range(CODE_FAILURE_LIMIT)]
+    locked = coded(f"arm {code()}", failures={ALICE: recent})
+    assert locked is not None
+    assert (locked.command, locked.rejection, locked.sender_key) == (
+        None,
+        Rejection.CODE_LOCKED,
+        ALICE,
+    )
+    without_code = coded("arm now", failures={ALICE: recent})
+    assert without_code is not None
+    assert without_code.rejection is Rejection.CODE_LOCKED
+    expired = [NOW - CODE_FAILURE_WINDOW_S, *recent[1:]]  # the oldest is an hour old
+    for fewer in (recent[1:], expired):
+        decision = coded(f"arm {code()}", failures={ALICE: fewer})
+        assert decision is not None
+        assert decision.command is not None
+    replayed = evaluate_command(
+        dm(f"arm {code()}"),
+        CODED,
+        CODED_BOOK,
+        {ALICE: int(NOW)},
+        NOW,
+        code_failures={ALICE: recent},
+    )
+    assert replayed is not None
+    assert replayed.rejection is Rejection.REPLAY
+    other = coded(f"arm now {code()}", key=CAROL, failures={ALICE: recent})
+    assert other is not None
+    assert other.command is not None

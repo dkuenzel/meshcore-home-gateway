@@ -1,11 +1,12 @@
 """Small persistent state in one JSON file, held in memory and written atomically.
 
-It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
-Home Assistant components of the last discovery document and the contact devices announced
-(docs/home-assistant.md), the contacts whose retained documents were published, the documents of
-the companions whose answers are current (ADR 0024), the last checked advert of each companion
-(ADR 0018), the radio profile's memory (ADR 0020) and the telemetry schedule (ADR 0018). The
-contacts the household excluded from telemetry have a file of their own (TelemetryExclusions).
+It holds the newest accepted command timestamp per sender (replay protection, ADR 0009) and the
+times of its recent wrong codes, the Home Assistant components of the last discovery document
+and the contact devices announced (docs/home-assistant.md), the contacts whose retained
+documents were published, the documents of the companions whose answers are current
+(ADR 0024), the last checked advert of each companion (ADR 0018), the radio profile's memory
+(ADR 0020) and the telemetry schedule (ADR 0018). The contacts the household excluded from
+telemetry have a file of their own (TelemetryExclusions).
 """
 
 from __future__ import annotations
@@ -24,6 +25,11 @@ from types import MappingProxyType
 from typing import Any, TypeGuard
 
 from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core.commands import (
+    CODE_FAILURE_LIMIT,
+    codes_locked,
+    recent_code_failures,
+)
 from meshcore_home_gateway.core.contacts import is_key
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.profile import Applied, Attempt, Value
@@ -154,16 +160,19 @@ class JsonStateFile:
 
 class CommandLedger:
     """Newest accepted sender timestamp per sender key, and the time step of the newest accepted
-    code of a sender with a code secret; both only ever move forward."""
+    code of a sender with a code secret; both only ever move forward. Also the times of each
+    sender's recent wrong codes (#79), so that a restart gives no new guesses."""
 
     _KEY = "command_timestamps"
     _CODES = "command_code_steps"
+    _FAILURES = "command_code_failures"
 
     def __init__(self, store: JsonStateFile) -> None:
         self._store = store
         data = store.load()
         self._last = _int_map(data.get(self._KEY))
         self._steps = _int_map(data.get(self._CODES))
+        self._failures = _times_map(data.get(self._FAILURES))
 
     def last(self, sender_key: str) -> int | None:
         return self._last.get(sender_key)
@@ -180,6 +189,26 @@ class CommandLedger:
     @property
     def code_steps(self) -> Mapping[str, int]:
         return MappingProxyType(self._steps)
+
+    @property
+    def code_failures(self) -> Mapping[str, tuple[int, ...]]:
+        """The wall-clock times of each sender's recent wrong codes, oldest first."""
+        return MappingProxyType(self._failures)
+
+    def code_failure(self, sender_key: str, now: float) -> bool:
+        """A wrong code of the sender at wall-clock time `now`; True when it reaches the limit,
+        which locks the sender's codes (core.commands.codes_locked). Only the recent ones are
+        kept, at most the limit per sender. Written at once; a file that cannot be written
+        keeps it in memory, with a warning (JsonStateFile.flush)."""
+        before = self._failures.get(sender_key, ())
+        failures = {}
+        for key, times in {**self._failures, sender_key: (*before, int(now))}.items():
+            if recent := recent_code_failures(times, now)[-CODE_FAILURE_LIMIT:]:
+                failures[key] = tuple(int(t) for t in recent)
+        self._failures = failures
+        self._store.put(self._FAILURES, {key: list(times) for key, times in failures.items()})
+        self._store.flush()
+        return not codes_locked(before, now) and codes_locked(failures[sender_key], now)
 
     def record(self, sender_key: str, timestamp: int, code_step: int | None = None) -> None:
         """Store the timestamp (and the code's time step) durably; memory follows only after a
@@ -1073,6 +1102,18 @@ def _int_map(raw: object) -> dict[str, int]:
         for key, value in raw.items()
         if isinstance(value, int) and not isinstance(value, bool)
     }
+
+
+def _times_map(raw: object) -> dict[str, tuple[int, ...]]:
+    """Lists of whole seconds by key; what is not a finite number is left out."""
+    if not isinstance(raw, dict):
+        return {}
+    times = {
+        key: tuple(int(t) for t in value if _finite(t))
+        for key, value in raw.items()
+        if isinstance(value, list)
+    }
+    return {key: value for key, value in times.items() if value}
 
 
 def _string_map(raw: object) -> dict[str, str]:

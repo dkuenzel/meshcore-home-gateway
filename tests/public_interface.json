@@ -2851,6 +2851,7 @@
    "received:command.reason": [
     "broker_unavailable",
     "code_invalid",
+    "code_locked",
     "code_missing",
     "code_reused",
     "from_the_future",
