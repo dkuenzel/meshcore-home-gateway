@@ -774,6 +774,34 @@ def test_a_flooding_sender_or_channel_is_not_published_beyond_its_rate(
     scenario(main)
 
 
+def test_an_accepted_command_goes_out_after_its_sender_used_up_the_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC-013: the rate of received messages bounds what a sender makes the gateway publish,
+    never an accepted command. Its timestamp is in the ledger before it goes out, so one left out
+    would be lost for good: the sender would only learn of it as a replay."""
+    monkeypatch.setattr(inbox_module, "RECEIVED_PER_SENDER_PER_S", 1e-6)  # no refill meanwhile
+    radio = EmulatedRadio(contacts=[ALICE])
+    burst = int(inbox_module.RECEIVED_PER_SENDER_BURST)
+    alice = ALICE.public_key[:6]
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(burst + 3):
+                radio.queue_direct_message(alice, f"hello {n}", NOW - 100 + n)
+            radio.queue_direct_message(alice, "arm now", NOW - 50)  # the burst is used up
+            command = await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
+            assert command["args"] == "now"
+            received = bus.payloads("radio1/received")
+            assert [e["text"] for e in received] == [
+                *(f"hello {n}" for n in range(burst)),
+                "arm now",
+            ]
+            assert received[-1]["command"] == {"word": "arm", "accepted": True, "reason": None}
+
+    scenario(main)
+
+
 def test_received_texts_are_published_cleaned_only_when_asked(tmp_path: Path) -> None:
     """SEC-017: texts from the mesh are data and stay as they came; `clean_received` drops
     control and direction characters, which a terminal or a file could take for instructions."""
