@@ -12,7 +12,7 @@ from meshcore_home_gateway.config import parse_config
 from meshcore_home_gateway.config_checks import (
     alias_pairs,
     broker_warnings,
-    ignored_secrets,
+    ignored_codes,
     start_warnings,
 )
 from tests.bridge_harness import (
@@ -80,14 +80,14 @@ def test_target_aliases_that_differ_only_in_dash_and_underscore_are_warned_about
 def test_the_secrets_of_keys_that_are_no_senders_are_warned_about() -> None:
     """#80: each secret the gateway ignores is named once, with the command that removes it."""
     config = make_config()
-    assert ignored_secrets(config) == []
+    assert ignored_codes(config) == []
     keys = ("b2" * 32, "c3" * 32)
     secrets = tuple((sender, b"12345678901234567890") for sender in config.commands.senders)
     config = dataclasses.replace(
         config,
-        commands=dataclasses.replace(config.commands, secrets=secrets, ignored_secrets=keys),
+        commands=dataclasses.replace(config.commands, secrets=secrets, ignored_code_keys=keys),
     )
-    warnings = [str(w) for w in ignored_secrets(config)]
+    warnings = [str(w) for w in ignored_codes(config)]
     assert warnings == [
         f"commands.codes_file: {key} has a code secret but is not in commands.senders: the "
         f"secret is ignored; 'meshcore-home-gateway commands revoke {key}' removes it"
@@ -111,12 +111,12 @@ def test_a_sender_without_a_secret_beside_an_ignored_secret_is_warned_about() ->
         senders=frozenset({sender, coded}),
         secrets=((coded, b"12345678901234567890"),),
     )
-    assert ignored_secrets(dataclasses.replace(base, commands=commands)) == []
+    assert ignored_codes(dataclasses.replace(base, commands=commands)) == []
     old = "b2" * 32
     config = dataclasses.replace(
-        base, commands=dataclasses.replace(commands, ignored_secrets=(old,))
+        base, commands=dataclasses.replace(commands, ignored_code_keys=(old,))
     )
-    warnings = [str(w) for w in ignored_secrets(config)]
+    warnings = [str(w) for w in ignored_codes(config)]
     named = (
         f"commands.senders: {sender} has no code secret while one is ignored: its commands "
         f"are refused (code_missing) until 'meshcore-home-gateway commands enrol {sender}' "

@@ -213,7 +213,7 @@ def test_revoke_removes_a_secret_and_keeps_the_others_and_the_mode(
     assert "without a code" not in err  # Carol, the sender left, has her secret
     assert ALICE not in codes.read_text(encoding="utf-8")
     commands = load_config(config).commands
-    assert (commands.secrets, commands.ignored_secrets) == (((CAROL, carol),), ())
+    assert (commands.secrets, commands.ignored_code_keys) == (((CAROL, carol),), ())
     assert stat.S_IMODE(os.stat(codes).st_mode) == 0o600
     assert sorted(p.name for p in tmp_path.iterdir()) == ["command-codes", "config.toml"]
 

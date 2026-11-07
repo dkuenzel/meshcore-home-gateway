@@ -94,7 +94,7 @@ class CommandRules:
     reply: str = "none"  # REPLIES: answer accepted commands, and also safe rejections
     # keys with a secret in codes_file that are not senders: ignored, and the start says so;
     # while there is one, senders without a secret are refused (#80)
-    ignored_secrets: tuple[str, ...] = ()
+    ignored_code_keys: tuple[str, ...] = ()
 
     @classmethod
     def create(
@@ -200,7 +200,7 @@ def evaluate_command(
             last_step = (last_codes or {}).get(sender)
             sent = message.sender_timestamp
             args, step, rejection, late = _check_code(args, secret, last_step, now, sent)
-    elif rejection is None and sender is not None and rules.ignored_secrets:
+    elif rejection is None and sender is not None and rules.ignored_code_keys:
         rejection = Rejection.CODE_MISSING  # until revoked or the sender enrolled (#80)
     if sender is None or rejection is not None:
         return CommandDecision(word, rejection=rejection, sender_key=sender, late=late)

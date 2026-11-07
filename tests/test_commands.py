@@ -369,7 +369,7 @@ def test_a_code_serves_once() -> None:
 
 def test_senders_without_a_secret_keep_the_rules() -> None:
     """While no secret is ignored (#80), a sender without one commands without a code."""
-    assert CODED.ignored_secrets == ()
+    assert CODED.ignored_code_keys == ()
     decision = coded(f"arm now {code()}", key=CAROL)
     assert decision is not None
     assert decision.command is not None
@@ -377,7 +377,7 @@ def test_senders_without_a_secret_keep_the_rules() -> None:
 
 
 FORMER = "d4" * 32  # a key with a secret in the codes file that is no sender (any more)
-IGNORING = dataclasses.replace(CODED, ignored_secrets=(FORMER,))
+IGNORING = dataclasses.replace(CODED, ignored_code_keys=(FORMER,))
 
 
 def test_while_a_secret_is_ignored_a_sender_without_one_is_refused() -> None:

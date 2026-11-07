@@ -615,7 +615,7 @@ def ignoring(enrolled: bool = False, revoked: bool = False) -> Config:
         base.commands,
         senders=frozenset({alice, bob}),
         secrets=secrets,
-        ignored_secrets=() if revoked else (FORMER,),
+        ignored_code_keys=() if revoked else (FORMER,),
     )
     return dataclasses.replace(base, commands=commands)
 

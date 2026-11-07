@@ -232,12 +232,12 @@ def load_config(path: Path) -> Config:
         password = read_password(Path(config.mqtt.password_file))
         config = replace(config, mqtt=replace(config.mqtt, password=password))
     if config.commands.codes_file is not None:
-        secrets = read_code_secrets(Path(config.commands.codes_file))
+        codes = read_code_secrets(Path(config.commands.codes_file))
         senders = config.commands.senders
         commands = replace(
             config.commands,
-            secrets=tuple((key, secret) for key, secret in secrets if key in senders),
-            ignored_secrets=tuple(key for key, _ in secrets if key not in senders),
+            secrets=tuple((key, secret) for key, secret in codes if key in senders),
+            ignored_code_keys=tuple(key for key, _ in codes if key not in senders),
         )
         config = replace(config, commands=commands)
     return config

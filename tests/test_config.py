@@ -787,7 +787,7 @@ def test_the_secret_of_a_key_that_is_no_sender_is_ignored(tmp_path: Path) -> Non
     path = _coded_config(tmp_path, f'{KEY} = "{CODE_SECRET}"\n{other} = "{CODE_SECRET}"\n')
     commands = load_config(path).commands
     assert commands.secrets == ((KEY, base64.b32decode(CODE_SECRET)),)
-    assert commands.ignored_secrets == (other,)
+    assert commands.ignored_code_keys == (other,)
     (tmp_path / "command-codes").write_text(f'{other} = "not base32!"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="must be base32"):
         load_config(path)
