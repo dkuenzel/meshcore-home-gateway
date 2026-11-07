@@ -941,6 +941,71 @@ async def test_a_dashboard_shows_only_its_own_gateways_contacts(
     assert problems(caplog) == []
 
 
+# --- the chat pages' footers ------------------------------------------------------------------
+
+
+def drafts(owner: str, entity: str, *, via: str | None = None, key: str = "") -> dict[str, Any]:
+    """A discovery document that gives the device `owner` a draft field and its Send button with
+    the entity IDs the gateway gives them; `via` and `key`: a contact's device below the gateway."""
+    device: dict[str, Any] = {"ids": [owner]}
+    if via is not None:
+        device |= {"via_device": via, "sn": key}
+    return {
+        "dev": device,
+        "o": {"name": "contract test"},
+        "cmps": {
+            f"{entity}_text": {
+                "p": "text",
+                "unique_id": f"{owner}_{entity}",
+                "default_entity_id": f"text.{entity}",
+                "command_topic": f"test/{entity}",
+            },
+            f"{entity}_send": {
+                "p": "button",
+                "unique_id": f"{owner}_{entity}_send",
+                "default_entity_id": f"button.{entity}_send",
+                "command_topic": f"test/{entity}",
+            },
+        },
+    }
+
+
+async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """For a household user: the footer of a target's chat, of Alice's (whose field is the target
+    operator's, a field of the gateway) and of Bob's (his own device's field) hides while its
+    entities are missing and shows once they exist, each on the device the guard pins."""
+    config = make_config()
+    broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
+    contacts_of(config, tmp_path, broker).update(mesh)
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    viewer = await household_viewer(hass, hass_ws_client)
+    footers = {v["path"]: v["footer"]["card"] for v in loaded["views"] if "footer" in v}
+    assert set(footers) == {"chat-alerts", "chat-my-target", "contact-alice", "contact-bob"}
+    await gateway(hass, config)
+    await deliver(hass, config, broker, mesh)
+    assert not [path for path, footer in footers.items() if await viewer.visible(footer)]
+    own = discovery_payload(config, topics_of(config), RADIO)["dev"]["ids"][0]
+    for alias in ("alerts", "my_target", "operator"):
+        topic = f"homeassistant/device/{own}_{alias}/config"
+        await fire(hass, topic, drafts(own, f"{own}_write_{alias}"))
+    bob = f"{own}_contact_{BOB}"
+    await fire(
+        hass,
+        f"homeassistant/device/{bob}_drafts/config",
+        drafts(bob, "mesh_bob_write", via=own, key=BOB),
+    )
+    shown = [path for path, footer in footers.items() if await viewer.visible(footer)]
+    assert shown == list(footers), viewer.errors
+    assert problems(caplog) == []
+
+
 # --- the guide's script -------------------------------------------------------------------------
 
 
