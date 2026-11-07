@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, Protocol
 
@@ -74,6 +74,8 @@ from meshcore_home_gateway.views import (
     HistoryEntry,
     PendingEntry,
     RadioReadings,
+    TargetSetting,
+    config_document,
     contact_document,
     contact_event,
     contacts_document,
@@ -167,6 +169,7 @@ class Observer:
         self._current = current.documents if current is not None else {}
         self._protected = protected
         self._wall = wall_clock
+        self._started_at = wall_clock()  # since when the settings of `config` are in effect
         self._meter = AirtimeMeter()
         self._readings: RadioReadings | None = None
         self._tuning: codec.TuningParams | None = None
@@ -467,6 +470,15 @@ class Observer:
         their steps, and so after the history entry of one that became final."""
         self._on_their_way = entries
         self._publish(self._topics.pending, pending_document(entries))
+
+    def configuration(
+        self, targets: Sequence[TargetSetting], settings: Mapping[str, Mapping[str, Any]]
+    ) -> None:
+        """The `config` document: the settings in effect since the start (config_view). At the
+        start and at each radio connect, as the radio's name changes a channel text's room; the
+        broker's connects publish it with every document."""
+        document = config_document(self._started_at, targets, settings)
+        self._publish(self._topics.config, document, force=True)
 
     def publish_all(self) -> None:
         """Publish every document again, and clear the topics of contacts removed: the broker

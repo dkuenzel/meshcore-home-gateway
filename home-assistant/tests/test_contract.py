@@ -26,12 +26,14 @@ from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.json import json_bytes
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import slugify
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config, parse_config
+from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.core.commands import Command
 from meshcore_home_gateway.core.contacts import Contact
 from meshcore_home_gateway.core.model import (
@@ -54,8 +56,11 @@ from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.links import contact_link
 from meshcore_home_gateway.views import (
+    ATTRIBUTE_LIMIT_BYTES,
     HistoryEntry,
     PendingEntry,
+    config_document,
+    encode,
     history_document,
     pending_document,
     settings_document,
@@ -679,6 +684,50 @@ async def test_a_stuck_message_waits_over_a_minute_while_the_queue_reads_0(
         assert hass.states.get(f"sensor.{PREFIX}_queue").state == "0"
         assert hass.states.get(f"sensor.{PREFIX}_pending_messages").state == str(len(entries))
         assert waiting.async_render(parse_result=False).strip() == count, entries
+    assert problems(caplog) == []
+
+
+# --- the configuration ----------------------------------------------------------------------------
+
+
+async def test_the_configuration_shows_the_settings_since_the_start(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The `config` document as a diagnostic timestamp sensor: its state the time the gateway
+    started, the settings as attributes, the targets with their room as the radio's name leaves
+    it. The largest document the gateway writes is recorded whole: its attributes stay below the
+    recorder's 16 KiB."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS, RADIO))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    document = config_document(
+        1_800_000_000.0, target_settings(CONFIG, RADIO), shown_settings(CONFIG)
+    )
+    await fire(hass, TOPICS.config, document, retain=True)
+    sensor = f"sensor.{PREFIX}_configuration"
+    shown = hass.states.get(sensor)
+    assert (shown.state, shown.attributes["device_class"]) == (
+        "2027-01-15T08:00:00+00:00",
+        "timestamp",
+    )
+    entry = er.async_get(hass).async_get(sensor)
+    assert entry is not None
+    assert entry.entity_category is const.EntityCategory.DIAGNOSTIC
+    attributes = {key: shown.attributes[key] for key in document}
+    assert attributes == document
+    rooms = {t["alias"]: t["room"] for t in shown.attributes["targets"]["items"]}
+    draft = hass.states.get(f"text.{PREFIX}_write_alerts")
+    assert rooms["alerts"] == draft.attributes["max"]  # the room of the chat's draft
+
+    many = "".join(f"[targets.t{i:03d}{'-x' * 14}]\nchannel = {i % 8}\n" for i in range(200))
+    largest = make_config(TARGETS + many)
+    document = config_document(1.0, target_settings(largest, RADIO), shown_settings(largest))
+    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
+    await fire(hass, TOPICS.config, document)
+    shown = hass.states.get(sensor)
+    assert shown.attributes["targets"] == document["targets"]
+    # as the recorder measures them, which stores no attributes above 16 KiB
+    # (components/recorder/db_schema.py:586-598, MAX_STATE_ATTRS_BYTES)
+    assert len(json_bytes(dict(shown.attributes))) <= 16 * 1024
     assert problems(caplog) == []
 
 

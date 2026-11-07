@@ -622,21 +622,23 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     observer = bridge.observer
     alice, bob = _record(KEY, "Alice", NodeType.CHAT), _record(KEY_B, "Bob", NodeType.CHAT)
     observer.radio_connected(350, codec.TuningParams(0, 9000))
+    bridge._configuration(None)  # the `config` document, as at the start and a radio connect
     before = dataclasses.replace(alice, last_advert=TA - 60, last_modified=TA - 60)
     observer.radio_event(ContactsRead({KEY: before}, T))  # her record before her newest advert
     # Alice's advert: its log, the radio's push directly after it, and the read that shows it
     observer.radio_event(PacketLogged(codec.RxLog(5.0, -90, ADVERT_RAW), T, 10, 1))
     observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY), False), T, 11, 1))
     observer.radio_event(ContactsRead({KEY: alice, KEY_B: bob}, T))  # added; position_in_advert
-    # a chat's draft and its Send, of a target and of a companion, on the chat's request topic:
-    # the text is echoed, the press queues it and clears the draft; a press on a blank draft is
-    # refused as empty (design §6.7)
+    # a chat's draft and its Send, of a target and of a companion, on the chat's request topic
+    # as Home Assistant has it from discovery: the text is echoed, the press queues it and clears
+    # the draft; a press on a blank draft is refused as empty (design §6.7)
+    target, companion = _draft_requests(config, topics)
     for request, payload in (
-        (topics.target_draft_request(ALIAS), b'{"text": "Dinner is ready"}'),
-        (topics.target_draft_request(ALIAS), b'{"send": true}'),
-        (topics.contact_draft_request(KEY_B), b'{"text": "Back soon"}'),
-        (topics.contact_draft_request(KEY_B), b'{"send": true}'),
-        (topics.target_draft_request(CHANNEL_ALIAS), b'{"send": true}'),
+        (target[ALIAS], b'{"text": "Dinner is ready"}'),
+        (target[ALIAS], b'{"send": true}'),
+        (companion, b'{"text": "Back soon"}'),
+        (companion, b'{"send": true}'),
+        (target[CHANNEL_ALIAS], b'{"send": true}'),
     ):
         client.on_message(
             client, None, SimpleNamespace(topic=request, payload=payload, retain=False)
@@ -732,6 +734,22 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     await connection.stop()
     await bus.stop()
     return client, homie_paho
+
+
+def _draft_requests(config: Config, topics: Topics) -> tuple[dict[str, str], str]:
+    """The request topics of the drafts as discovery gives them to Home Assistant: per target
+    alias its text's and its button's (one topic), and that of the companion KEY_B's."""
+    gateway = discovery_payload(config, topics)["cmps"]
+    target = {}
+    for alias in (t.alias for t in config.targets):
+        text, button = gateway[f"write_{alias}"], gateway[f"write_{alias}_send"]
+        if text["command_topic"] != button["command_topic"]:
+            raise AssertionError(f"{alias}: the draft and its Send on two topics")
+        target[alias] = text["command_topic"]
+    bob = contact_payload(config, topics, _tracked(NodeType.CHAT, KEY_B), SLUG)["cmps"]
+    if bob["write"]["command_topic"] != bob["write_send"]["command_topic"]:
+        raise AssertionError("a companion's draft and its Send on two topics")
+    return target, bob["write"]["command_topic"]
 
 
 def _homie_send(key: str) -> str:
@@ -1715,11 +1733,11 @@ def _key_part(slug: str, key: str) -> str:
     return slug
 
 
-def _tracked(node_type: int) -> Tracked:
+def _tracked(node_type: int, key: str = KEY) -> Tracked:
     """A contact with all that it can have: a component that exists only with data is there."""
     position = Position(1.0, 2.0)
     node = Node(
-        KEY,
+        key,
         "Alice",
         node_type,
         flags=sum(ContactFlag),

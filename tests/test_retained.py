@@ -74,6 +74,7 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         TOPICS.nodes,
         TOPICS.history,
         TOPICS.pending,
+        TOPICS.config,
         TOPICS.settings,
         TOPICS.contact("not-a-key"),
     ):
@@ -94,6 +95,7 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         assert not retained.covers(topic), topic
     assert retained.filters == (
         "meshcore/radio1/availability",
+        "meshcore/radio1/config",
         "meshcore/radio1/contacts",
         "meshcore/radio1/history",
         "meshcore/radio1/nodes",
@@ -129,6 +131,16 @@ def test_another_clients_write_is_undone_with_a_warning(caplog: pytest.LogCaptur
     assert "docs/mqtt-api.md, Securing the broker" in caplog.text
     retained.received(CONTACT, b'{"latitude": 1}', retained=False)  # the restore comes back
     assert len(bus.published) == 1
+
+
+def test_a_forged_configuration_is_undone() -> None:
+    """Another client's `config` would otherwise show every user of Home Assistant settings the
+    gateway does not have, such as a target that is not hidden."""
+    retained, bus = make()
+    retained.sent(TOPICS.config, b'{"targets": {"total": 0}}', published=True)
+    retained.received(TOPICS.config, b'{"targets": {"total": 0}}', retained=False)
+    retained.received(TOPICS.config, b'{"targets": {"total": 9}}', retained=False)
+    assert bus.published == [(TOPICS.config, b'{"targets": {"total": 0}}')]
 
 
 def test_a_forged_list_of_messages_on_their_way_is_undone() -> None:

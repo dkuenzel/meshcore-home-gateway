@@ -47,6 +47,16 @@ format, the command line and Home Assistant discovery are public interfaces
   `mosquitto_pub -r -n -t meshcore/radio1/homeassistant/draft/target/family`
   ([mqtt-api.md](docs/mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat),
   [home-assistant.md](docs/home-assistant.md#writing-and-sending)).
+- The retained document `config` and the sensor *Configuration* in Home Assistant: the settings
+  in effect since the gateway started, read only, so that the household sees what the
+  administrator set. Each target with its kind, prefix, suffix, whether it is an alert or hidden
+  target, and the room of a text to it; the sections `messages`, `contacts`, `telemetry`,
+  `homeassistant`, `radio`, `airtime`, `history` and `commands` by an allowlist, which leaves out
+  every host, port, device path, user name, password, client ID, key, the codes and the command
+  words. It goes out at the start and at every connect to the radio and to the broker. After a
+  downgrade to 2.0 the broker keeps the last `config`; an empty retained message clears it, such
+  as `mosquitto_pub -r -n -t meshcore/radio1/config`
+  ([mqtt-api.md](docs/mqtt-api.md#configuration-config)).
 
 ### Changed
 

@@ -63,6 +63,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `event.meshcore_home_gateway_radio1_delivery` | event: `queued` … `rejected` | delivery steps of outgoing messages |
 | `sensor.meshcore_home_gateway_radio1_message_history` | timestamp | *Message history*: the time of the newest message in or out, `unknown` while there is none; the `history` document as attributes `messages` (the latest 50 at most, newest first, with their keys as in [mqtt-api.md](mqtt-api.md#history-history)), `total` and `truncated`. It stays available while the gateway is offline, so the messages stay readable |
 | `sensor.meshcore_home_gateway_radio1_pending_messages` | count | *Messages on their way*: the messages the gateway accepted and has not delivered or given up yet, the one being sent included; the `pending` document as attributes `messages` (oldest first, with `step` `queued` or `sent` and their keys as in [mqtt-api.md](mqtt-api.md#messages-on-their-way-pending)), `total` and `truncated`. A message `queued` for more than a minute waits for the radio or for airtime. It stays available while the gateway is offline |
+| `sensor.meshcore_home_gateway_radio1_configuration` | timestamp, diagnostic | *Configuration*: when the gateway started; the settings in effect as attributes (`targets` with each one's `room`, `messages`, `contacts`, `telemetry`, `homeassistant`, `radio`, `airtime`, `history`, `commands`), as in [mqtt-api.md](mqtt-api.md#configuration-config): never a host, password, key or command word. Read only: Home Assistant cannot change them |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
 | `text.meshcore_home_gateway_radio1_write_<alias>` | text, one per target not in `hidden_targets` | *Write to …*: the draft of a message to that target, which the gateway keeps until it is sent ([below](#writing-and-sending)); `max` is the room of a text to the target in bytes |
@@ -1173,7 +1174,9 @@ Assistant stores them in its history database, and the last event of each entity
 `.storage/core.restore_state` (restored after a restart). *Message history* holds the latest
 messages in and out as attributes, so the recorder stores them again with every message, and
 *Messages on their way* the texts being sent with each of their steps. Every draft a user stores
-or the gateway empties is a state of its text entity. To keep them out of the history, exclude
+or the gateway empties is a state of its text entity. *Configuration* shows every user the
+settings, the names, prefixes and suffixes of the hidden targets included; the recorder stores it
+at each start and radio connect. To keep them out of the history, exclude
 these entities from the recorder, those of the contacts and the drafts with patterns:
 
 ```yaml

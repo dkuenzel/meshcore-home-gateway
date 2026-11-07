@@ -33,6 +33,7 @@ and no closed lists of values: this page stays normative.
 | `history` | gateway → | yes | JSON: the latest messages in and out |
 | `pending` | gateway → | yes | JSON: the messages on their way, accepted and not final yet |
 | `settings` | gateway → | yes | JSON: the managed radio profile at the last connect |
+| `config` | gateway → | yes | JSON: the settings of the configuration in effect, by an allowlist ([configuration](#configuration-config)) |
 | `contact` | gateway → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
 | `telemetry` | gateway → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
 | `node` | gateway → | no | JSON, `event_type` = `new`: a node heard for the first time |
@@ -912,6 +913,58 @@ configuration asks for a new value; `drift`: the radio was changed), `live` (aft
 {"event_type": "written", "setting": "manual_add", "reason": "drift", "live": true,
  "desired": true}
 ```
+
+## Configuration: `config`
+
+The settings of the configuration file that are in effect, so that a front end can say why the
+gateway does what it does: published at the start, at every connect to the radio (a channel
+text's room depends on the radio's name) and to the broker. Every reader of the gateway's topics
+reads it, Home Assistant's users included, so it holds an allowlist: never a host, port, device
+path, user name, password or password file, client ID, key file, the codes file or a code, a
+command word, or a key (of a contact target only the first 8 hex digits). Each section is named as
+in the configuration ([configuration.md](configuration.md)); a value is the one in effect, the
+default where the file sets none.
+
+```json
+{"started_at": "2026-10-18T09:00:00+00:00",
+ "targets": {"total": 2, "truncated": false,
+             "items": [{"alias": "family", "kind": "channel", "channel_index": 1,
+                        "key_start": null, "prefix": "Home: ", "suffix": "", "alert": false,
+                        "hidden": false, "room": 145},
+                       {"alias": "alice", "kind": "contact", "channel_index": null,
+                        "key_start": "a1b2c3d4", "prefix": "", "suffix": "", "alert": true,
+                        "hidden": false, "room": 160}]},
+ "messages": {"publish_channels": "targets", "ignore_channels": [], "confirm_nonce": false,
+              "clean_received": false, "truncate": true, "ascii_only": false,
+              "dedup_window_s": 300.0, "queue_size": 20, "queue_ttl_s": 600.0,
+              "max_attempts": 3},
+ "contacts": {"manage": true, "heard_nodes": "keys"},
+ "telemetry": {"enabled": true, "ask": "household", "ask_types": ["chat"]},
+ "homeassistant": {"controls": true, "hidden_targets": 0, "contact_entity_prefix": "mesh",
+                   "language": "en", "contact_devices": 50},
+ "radio": {"transport": "serial", "tcp_unauthenticated": false, "set_clock": true,
+           "profile": {"manage": "auto"}},
+ "airtime": {"budget_s_per_hour": 36.0, "burst_s": 10.0},
+ "history": {"enabled": true, "messages_days": 30.0, "positions_days": 30.0,
+             "readings_days": 30.0},
+ "commands": {"senders": 1, "codes": false, "reply": "none"}}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `started_at` | when the gateway started with these settings: it reads the file only at its start |
+| `targets` | the targets in the order of the file; the whole document stays within 15 KiB, so `truncated` is `true` when the last were left out, and `total` counts all |
+| `targets.items[].kind`, `channel_index`, `key_start` | `channel` with its index, or `contact` with the first 8 hex digits of its key |
+| `targets.items[].prefix`, `suffix` | as `[targets.<alias>]` sets them; `""` for none |
+| `targets.items[].alert` | in `[messages] alert_targets`: sent before the other messages |
+| `targets.items[].hidden` | in `[homeassistant] hidden_targets`: no entities in Home Assistant, only automations write to it |
+| `targets.items[].room` | the bytes a text to it has beside the prefix and suffix, as the gateway sends it: the `max` of its draft in Home Assistant; for a channel before the radio's name is known, the room of the shortest name |
+| `messages`, `contacts`, `telemetry`, `airtime`, `history` | the settings of these sections, lists sorted (`messages.flood_after` and `alert_targets` aside: the latter is each target's `alert`) |
+| `homeassistant` | `controls`, `contact_entity_prefix`, `language`, `contact_devices`; `hidden_targets` is how many targets are hidden |
+| `radio` | `transport` (`serial` is USB), `tcp_unauthenticated`, `set_clock`, and `profile.manage` (`auto`, `observe` or `always`) |
+| `commands` | `senders`: how many senders may send commands; `codes`: whether their commands need codes (`codes_file` is set); `reply` |
+
+Settings that are not listed here are left out on purpose; a later version may add keys.
 
 ## Radio diagnostics: `rx`
 

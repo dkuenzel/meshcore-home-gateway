@@ -72,6 +72,7 @@ class RetainedTopics:
                 topics.history,
                 topics.pending,
                 topics.settings,
+                topics.config,
             }
         )
         self._contact_prefix = topics.contacts + "/"

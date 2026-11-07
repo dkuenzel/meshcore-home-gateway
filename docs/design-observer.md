@@ -11,8 +11,8 @@ statistics, the packet log), every received message and every final delivery
 core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
-`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, and the events `contact`, `node`
-and `telemetry`.
+`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, `config`, and the events
+`contact`, `node` and `telemetry`.
 
 ```mermaid
 flowchart LR
@@ -84,6 +84,12 @@ flowchart LR
   `queued_at`, `suspect` and `reason` after a look at its columns, in version 2 as the table
   `reading` was: 2.0 names its columns in every statement, so a downgrade leaves them empty and
   keeps the history.
+* **The settings in effect** go to the `config` document: `config_view` takes them from the
+  configuration by an allowlist, and the bridge hands them over at the start and again at each
+  radio connect, as a channel text's room depends on the radio's name. The targets are a list in
+  ADR 0015's form, cut from the end so that the whole document stays within 15 KiB (the
+  configuration allows any number of targets). `started_at` is when the observer was made, at the
+  service's start, which is when the configuration was read.
 * **Messages on their way** go to the `pending` document (oldest first, the whole document within
   8 KiB): the outbox keeps the messages it accepted until their final event, the one it delivers
   included, which the queue's count in `state` leaves out (#112). An entry follows its delivery

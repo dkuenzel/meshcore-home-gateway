@@ -178,6 +178,7 @@ flowchart TB
 | `status` | The state document with its health section, and systemd's status line. |
 | `radio_link` | The radio as the parts see it: the session while connected, what the radio said it is, whether another client took the TCP link. |
 | `config_checks` | What a configuration implies: the contacts it protects, the warnings that the start logs and `check-config` shows. |
+| `config_view` | The configuration as the `config` document shows it: an allowlist of the settings in effect, never a secret, a host or a key. |
 | `wiring` | Puts the service together: the adapters, the parts, and who hears of what (the list in its docstring; ARC-009). |
 | `observer` | Feeds the mesh view and the history from the radio's reports, messages, telemetry answers and deliveries; publishes the documents. |
 | `telemetry_poller` | Asks the companions for telemetry, one at a time, after the messages; takes an answer only for the contact asked (§6.11). |
@@ -518,6 +519,7 @@ there).
 | `command` | out | no | JSON with `event_type` = command word |
 | `rx` | out | no | JSON per received packet: SNR, RSSI, raw bytes (optional) |
 | `stats`, `contacts`, `contacts/<key>`, `nodes`, `history`, `pending` | out | yes | JSON documents of the observer (§6.6) |
+| `config` | out | yes | JSON: the settings in effect, by an allowlist (module `config_view`), at the start and at each radio connect |
 | `contact`, `node` | out | no | JSON: a contact added or removed, the result of a contact request (also excluded from telemetry or included again); a node heard for the first time |
 | `contacts/<key>/telemetry` | in | must not be | `on`, `off` or JSON: include a companion in telemetry, or exclude it (§6.11) |
 | `telemetry` | out | no | JSON: a companion answers again, or stopped answering (§6.11) |
@@ -562,7 +564,8 @@ core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
 `contacts` and `contacts/<key>`, `nodes`, `history`, `pending` (the outbox's messages on their
-way), and the events `contact`, `node` and `telemetry`.
+way), `config` (the settings in effect, which the bridge hands it at the start and at each radio
+connect), and the events `contact`, `node` and `telemetry`.
 
 The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 

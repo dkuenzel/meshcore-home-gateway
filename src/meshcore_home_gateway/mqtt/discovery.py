@@ -323,6 +323,20 @@ def discovery_payload(
             json_attributes_topic=topics.pending,
             availability=[{"topic": topics.pending, "value_template": "{{ 'online' }}"}],
         ),
+        # the `config` document: the settings in effect as attributes, since the start, which is
+        # its state; the gateway's availability, as another start may bring other settings
+        "configuration": component(
+            "configuration",
+            "sensor",
+            # Translators: sensor (timestamp) of the gateway: the settings of its configuration
+            # file that are in effect, as attributes; its state is the time it started with them
+            ha_name("Configuration"),
+            device_class="timestamp",
+            entity_category="diagnostic",
+            state_topic=topics.config,
+            value_template="{{ value_json.started_at }}",
+            json_attributes_topic=topics.config,
+        ),
         # also with telemetry off: a disabled component that goes takes the whole device away
         "telemetry_status": component(
             "telemetry_status",

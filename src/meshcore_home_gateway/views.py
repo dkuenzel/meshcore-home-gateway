@@ -8,7 +8,7 @@ Lists are bounded by their serialised size and carry `total` and `truncated`.
 from __future__ import annotations
 
 import json
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -632,3 +632,57 @@ def pending_document(entries: Collection[PendingEntry]) -> dict[str, Any]:
         (pending_entry(e) for e in entries), PENDING_LIMIT_BYTES - len(encode(head))
     )
     return {"total": total, "truncated": len(kept) < total, "messages": kept}
+
+
+# --- the configuration --------------------------------------------------------------------------
+
+KEY_START_DIGITS = 8  # of a contact target's key, as the documents show it: never the whole key
+
+
+@dataclass(frozen=True, slots=True)
+class TargetSetting:
+    """A target of the configuration, as `config` shows it."""
+
+    alias: str
+    kind: str  # "channel" or "contact"
+    channel_index: int | None
+    key: str | None  # a contact target's full key, of which `config` shows the start only
+    prefix: str
+    suffix: str
+    alert: bool  # `[messages] alert_targets`: sent before the other messages
+    hidden: bool  # `[homeassistant] hidden_targets`: no entities in Home Assistant
+    room: int  # bytes a text has beside the prefix and suffix: the `max` of the chat's draft
+
+
+def target_setting(target: TargetSetting) -> dict[str, Any]:
+    return {
+        "alias": target.alias,
+        "kind": target.kind,
+        "channel_index": target.channel_index,
+        "key_start": target.key[:KEY_START_DIGITS] if target.key else None,
+        "prefix": target.prefix,
+        "suffix": target.suffix,
+        "alert": target.alert,
+        "hidden": target.hidden,
+        "room": target.room,
+    }
+
+
+def config_document(
+    started_at: float,
+    targets: Sequence[TargetSetting],
+    settings: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """`config`: the settings in effect since the gateway started (`started_at`), by section as
+    the configuration names them (`settings`, an allowlist: config_view.shown_settings), and the
+    targets in their order. The configuration allows any number of targets: a cut leaves out the
+    last, so that the whole document stays within ATTRIBUTE_LIMIT_BYTES, its head counted."""
+    head = {
+        "started_at": iso(started_at),
+        "targets": {"total": len(targets), "truncated": True, "items": []},
+        **settings,
+    }
+    kept, total = bounded(
+        (target_setting(t) for t in targets), ATTRIBUTE_LIMIT_BYTES - len(encode(head))
+    )
+    return {**head, "targets": {"total": total, "truncated": len(kept) < total, "items": kept}}

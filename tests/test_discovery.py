@@ -9,6 +9,7 @@ import pytest
 
 from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.config import DEFAULT_DEVICE_NAME, Config, parse_config
+from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
@@ -37,6 +38,7 @@ from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.views import (
     HistoryEntry,
+    config_document,
     contacts_document,
     history_document,
     nodes_document,
@@ -200,6 +202,7 @@ def test_entities_and_their_sources() -> None:
         "degraded",
         "message_history",
         "pending_messages",
+        "configuration",
     }
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -229,6 +232,7 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.settings: settings_document(ProfileReport("auto", 14, True, False, {}, {}), 0.0),
         TOPICS.history: history_document([]),
         TOPICS.pending: pending_document([]),
+        TOPICS.config: config_document(0.0, target_settings(CONFIG, None), shown_settings(CONFIG)),
     }
     for topic, document in documents.items():
         assert _template_keys(cmps, topic) <= set(document), topic
@@ -282,6 +286,26 @@ def test_the_messages_on_their_way_are_a_count_that_outlives_the_gateway() -> No
     }
     off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
     assert discovery_payload(off, TOPICS)["cmps"]["pending_messages"] == sensor  # no control
+
+
+def test_the_configuration_is_a_diagnostic_timestamp_of_the_start() -> None:
+    """The `config` document as a sensor: its state the time the gateway started with the
+    settings, the settings its attributes. The gateway's availability: while it is offline its
+    settings may be others by the next start. No control: also with `controls = false`."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["configuration"]
+    assert sensor == {
+        "p": "sensor",
+        "unique_id": "meshcore_home_gateway_radio-1_configuration",
+        "default_entity_id": "sensor.meshcore_home_gateway_radio-1_configuration",
+        "name": "Configuration",
+        "device_class": "timestamp",
+        "entity_category": "diagnostic",
+        "state_topic": "meshcore/radio-1/config",
+        "value_template": "{{ value_json.started_at }}",
+        "json_attributes_topic": "meshcore/radio-1/config",
+    }
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    assert discovery_payload(off, TOPICS)["cmps"]["configuration"] == sensor
 
 
 def test_the_profile_sensor_names_every_status_the_document_has() -> None:

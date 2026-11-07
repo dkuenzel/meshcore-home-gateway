@@ -26,7 +26,7 @@ from meshcore_home_gateway.cli import probe as cli_probe
 from meshcore_home_gateway.core import adverts, lpp, telemetry
 from meshcore_home_gateway.core.mesh import Heard, Node, Signal, type_name
 from meshcore_home_gateway.core.profile import ProfileReport
-from meshcore_home_gateway.mqtt import contact_devices
+from meshcore_home_gateway.mqtt import contact_devices, discovery, manage_entities
 from meshcore_home_gateway.mqtt.contact_devices import contact_device_id
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import AUTO_ADD_TYPES
@@ -96,6 +96,42 @@ def test_every_topic_of_the_layout_is_in_the_snapshot(current: dict[str, Any]) -
         and not _covered(topic, mqtt["subscribe"])
     ]
     assert not missing
+
+
+def test_every_command_topic_of_discovery_keeps_the_configured_names(
+    current: dict[str, Any],
+) -> None:
+    """Home Assistant writes to the topics the discovery documents name, which no published
+    topic shows: each one, a draft's request topic of a target with a '-' in its alias and of a
+    companion among them, comes out with placeholders only and is one the gateway subscribes
+    to."""
+    config, topics = interface.maximal(), Topics(interface.BASE, interface.NODE)
+    companion = dataclasses.replace(
+        config, targets=tuple(t for t in config.targets if t.public_key != interface.KEY)
+    )
+    documents = (
+        discovery.discovery_payload(config, topics),
+        manage_entities.manage_payload(config, topics, []),
+        contact_devices.contact_payload(
+            companion, topics, interface._tracked(NodeType.CHAT), interface.SLUG
+        ),
+    )
+    commands = sorted(
+        {
+            interface.placeholders(component["command_topic"])
+            for document in documents
+            for component in document["cmps"].values()
+            if "command_topic" in component
+        }
+    )
+    interface.refuse_leftovers(commands)
+    assert [t for t in commands if not _covered(t, list(current["mqtt"]["subscribe"]))] == []
+    assert {
+        "<base_topic>/<node_id>/homeassistant/draft/target/<alias>/request",
+        "<base_topic>/<node_id>/homeassistant/draft/contact/<key>/request",
+        "<base_topic>/<node_id>/send/<alias>",
+    } <= set(commands)
+    assert "-" in interface.ALIAS
 
 
 def test_placeholders_never_meet_real_names() -> None:

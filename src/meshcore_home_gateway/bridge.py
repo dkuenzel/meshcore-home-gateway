@@ -10,7 +10,8 @@ loop until the stop; wiring.py builds it with its parts and connects them.
   inbox (inbox.py: deduplicated; command policy with a fresh contact table and a memory of
   look-alikes);
 * status (here, the document in status.py): retained state document, systemd watchdog and status;
-  an exclusion from telemetry that could not be stored is written again;
+  an exclusion from telemetry that could not be stored is written again; the `config` document
+  at the start and at each radio connect (config_view.py);
 * announcements to Home Assistant (announcer.py), contact requests (contact_manager.py);
 * telemetry, if enabled: asks the radio's companions one at a time, after the messages
   (telemetry_poller.py, ADR 0018); it gives the observer each companion's state and hears of
@@ -30,6 +31,7 @@ from collections.abc import Callable
 from meshcore_home_gateway.announcer import Announcer
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.config_checks import start_warnings
+from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.inbox import Inbox, target_channels
@@ -121,6 +123,7 @@ class Bridge:
         if self.config.messages.publish_channels == "targets":
             channels = ", ".join(map(str, sorted(target_channels(self.config)))) or "none"
             log.info("channel messages published only from the channels of targets: %s", channels)
+        observe(self._configuration, None)  # the broker's connect publishes it
         await self._bus.start()
         self.outbox.restore()
         self._notify("READY=1")
@@ -210,6 +213,7 @@ class Bridge:
         takes = self._contacts.takes_requests(info)
         observe(self.observer.set_manage, takes, self._contacts.refusal(info))
         observe(self.observer.radio_connected, info.device.max_contacts, session.tuning)
+        observe(self._configuration, info)  # a channel text's room follows the radio's name
         for report in self._profile.take_reports() if self._profile else []:
             observe(self.observer.profile_applied, report)
         self._check_radio(session)
@@ -231,6 +235,11 @@ class Bridge:
             observe(self.observer.set_manage, self.observer.manage, self._contacts.refusal(None))
             self.status.publish()
         return delay
+
+    def _configuration(self, info: RadioInfo | None) -> None:
+        """The `config` document, each target's room as the radio's name leaves it (None: not
+        connected yet)."""
+        self.observer.configuration(target_settings(self.config, info), shown_settings(self.config))
 
     def _may_restart(self) -> bool:
         """Whether the session may restart the radio now to set its clock back: no message is

@@ -29,8 +29,10 @@ from meshcore_home_gateway.views import (
     HistoryEntry,
     PendingEntry,
     RadioReadings,
+    TargetSetting,
     advert_carries_position,
     bounded,
+    config_document,
     contact_document,
     contact_event,
     contacts_document,
@@ -527,6 +529,61 @@ def test_a_pending_document_near_its_bound_stays_within_it_whole_or_cut() -> Non
         assert len(encode(document)) <= PENDING_LIMIT_BYTES, size
         whole.add(document["truncated"] is False)
     assert whole == {True, False}
+
+
+def _settings() -> dict[str, dict[str, Any]]:
+    """Sections as config_view gives them, with lists of their largest length."""
+    return {
+        "messages": {"ignore_channels": list(range(256)), "publish_channels": "targets"},
+        "homeassistant": {"contact_entity_prefix": "x" * 20, "hidden_targets": 1000},
+    }
+
+
+def test_a_config_document_near_its_bound_stays_within_it_whole_or_cut() -> None:
+    """Targets that fill the bound to the byte without the head: whole only if the head fits;
+    `total` counts every target, `truncated` is true exactly when the last were left out."""
+    whole = set()
+    for size in range(150, 260):
+        targets = [
+            TargetSetting(f"t{i:02d}", "contact", None, KEY, "p" * size, "", False, True, 150)
+            for i in range(40)
+        ]
+        document = config_document(T, targets, _settings())
+        assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, size
+        listed = document["targets"]
+        assert listed["total"] == 40
+        assert listed["truncated"] is (len(listed["items"]) < 40)
+        assert [t["alias"] for t in listed["items"]] == [t.alias for t in targets][
+            : len(listed["items"])
+        ]
+        whole.add(listed["truncated"] is False)
+    assert whole == {True, False}
+
+
+def test_a_target_shows_the_start_of_its_key_only() -> None:
+    target = TargetSetting("alice", "contact", None, KEY, "", "", True, False, 150)
+    shown = config_document(T, [target], {})
+    assert shown == {
+        "started_at": iso(T),
+        "targets": {
+            "total": 1,
+            "truncated": False,
+            "items": [
+                {
+                    "alias": "alice",
+                    "kind": "contact",
+                    "channel_index": None,
+                    "key_start": KEY[:8],
+                    "prefix": "",
+                    "suffix": "",
+                    "alert": True,
+                    "hidden": False,
+                    "room": 150,
+                }
+            ],
+        },
+    }
+    assert KEY[:9] not in encode(shown).decode()
 
 
 def test_flags_and_bounds_helpers() -> None:

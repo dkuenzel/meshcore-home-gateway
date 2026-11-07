@@ -23,6 +23,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Delivery | `event` (delivery states) | `delivery` |
 | Message history | `sensor` (timestamp), its own availability | `history` → the newest message's `at`; the document as attributes |
 | Messages on their way | `sensor`, its own availability | `pending` → `total`; the document as attributes |
+| Configuration | `sensor` (timestamp), diagnostic | `config` → `started_at`; the settings in effect as attributes, read only |
 | Command | `event` (configured words) | `command` |
 | Send to *alias* | `notify`, one per target | `send/<alias>` |
 | Write to *alias*, Send what is written to *alias* | `text`, `button`, one pair per target not in `hidden_targets`, QoS 0 | `homeassistant/draft/target/<alias>` → `text`; → `…/request` |

@@ -1674,6 +1674,12 @@
      ],
      "platform": "event"
     },
+    "configuration": {
+     "attributes": "<document config>",
+     "device_class": "timestamp",
+     "entity_id": "sensor.<device>_configuration",
+     "platform": "sensor"
+    },
     "contact": {
      "attributes": "<document contact>",
      "entity_id": "event.<device>_contact",
@@ -1991,6 +1997,64 @@
     "sender_key",
     "sender_name",
     "sent_at"
+   ],
+   "config": [
+    "airtime",
+    "airtime.budget_s_per_hour",
+    "airtime.burst_s",
+    "commands",
+    "commands.codes",
+    "commands.reply",
+    "commands.senders",
+    "contacts",
+    "contacts.heard_nodes",
+    "contacts.manage",
+    "history",
+    "history.enabled",
+    "history.messages_days",
+    "history.positions_days",
+    "history.readings_days",
+    "homeassistant",
+    "homeassistant.contact_devices",
+    "homeassistant.contact_entity_prefix",
+    "homeassistant.controls",
+    "homeassistant.hidden_targets",
+    "homeassistant.language",
+    "messages",
+    "messages.ascii_only",
+    "messages.clean_received",
+    "messages.confirm_nonce",
+    "messages.dedup_window_s",
+    "messages.ignore_channels",
+    "messages.max_attempts",
+    "messages.publish_channels",
+    "messages.queue_size",
+    "messages.queue_ttl_s",
+    "messages.truncate",
+    "radio",
+    "radio.profile",
+    "radio.profile.manage",
+    "radio.set_clock",
+    "radio.tcp_unauthenticated",
+    "radio.transport",
+    "started_at",
+    "targets",
+    "targets.items",
+    "targets.items[].alert",
+    "targets.items[].alias",
+    "targets.items[].channel_index",
+    "targets.items[].hidden",
+    "targets.items[].key_start",
+    "targets.items[].kind",
+    "targets.items[].prefix",
+    "targets.items[].room",
+    "targets.items[].suffix",
+    "targets.total",
+    "targets.truncated",
+    "telemetry",
+    "telemetry.ask",
+    "telemetry.ask_types",
+    "telemetry.enabled"
    ],
    "contact": [
     "event_type",
@@ -2356,6 +2420,11 @@
     "qos": 0,
     "retained": false
    },
+   "<base_topic>/<node_id>/config": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
    "<base_topic>/<node_id>/contact": {
     "payload": "json",
     "qos": 1,
@@ -2633,6 +2702,9 @@
     "qos": 1
    },
    "<base_topic>/<node_id>/availability": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/config": {
     "qos": 1
    },
    "<base_topic>/<node_id>/contacts": {

@@ -109,6 +109,167 @@
         }
       }
     },
+    "config": {
+      "address": "{base_topic}/{node_id}/config",
+      "messages": {
+        "config": {
+          "name": "config",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "airtime": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "budget_s_per_hour": {},
+                  "burst_s": {}
+                }
+              },
+              "commands": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "codes": {},
+                  "reply": {},
+                  "senders": {}
+                }
+              },
+              "contacts": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "heard_nodes": {},
+                  "manage": {}
+                }
+              },
+              "history": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "enabled": {},
+                  "messages_days": {},
+                  "positions_days": {},
+                  "readings_days": {}
+                }
+              },
+              "homeassistant": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "contact_devices": {},
+                  "contact_entity_prefix": {},
+                  "controls": {},
+                  "hidden_targets": {},
+                  "language": {}
+                }
+              },
+              "messages": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "ascii_only": {},
+                  "clean_received": {},
+                  "confirm_nonce": {},
+                  "dedup_window_s": {},
+                  "ignore_channels": {},
+                  "max_attempts": {},
+                  "publish_channels": {},
+                  "queue_size": {},
+                  "queue_ttl_s": {},
+                  "truncate": {}
+                }
+              },
+              "radio": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "profile": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "manage": {}
+                    }
+                  },
+                  "set_clock": {},
+                  "tcp_unauthenticated": {},
+                  "transport": {}
+                }
+              },
+              "started_at": {},
+              "targets": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "items": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "alert": {},
+                        "alias": {},
+                        "channel_index": {},
+                        "hidden": {},
+                        "key_start": {},
+                        "kind": {},
+                        "prefix": {},
+                        "room": {},
+                        "suffix": {}
+                      }
+                    }
+                  },
+                  "total": {},
+                  "truncated": {}
+                }
+              },
+              "telemetry": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "ask": {},
+                  "ask_types": {},
+                  "enabled": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
     "contact": {
       "address": "{base_topic}/{node_id}/contact",
       "messages": {
@@ -2151,6 +2312,24 @@
         }
       ]
     },
+    "receive_config": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/config"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/config/messages/config"
+        }
+      ]
+    },
     "receive_contacts": {
       "action": "receive",
       "channel": {
@@ -2544,6 +2723,24 @@
       "messages": [
         {
           "$ref": "#/channels/command/messages/command"
+        }
+      ]
+    },
+    "send_config": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/config"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/config/messages/config"
         }
       ]
     },

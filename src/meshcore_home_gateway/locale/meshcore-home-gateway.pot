@@ -2364,6 +2364,13 @@ msgctxt "home assistant"
 msgid "Companion position in adverts"
 msgstr ""
 
+#. sensor (timestamp) of the gateway: the settings of its configuration
+#. file that are in effect, as attributes; its state is the time it started with them
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Configuration"
+msgstr ""
+
 #. event entity of the gateway: a contact was added, removed, hidden,
 #. shown, refused, excluded or included
 #: src/meshcore_home_gateway/mqtt/discovery.py
