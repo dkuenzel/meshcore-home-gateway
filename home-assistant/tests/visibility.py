@@ -41,7 +41,13 @@ those tags):
   (`time`), `:279-288` / `:305-345` (`location`; 20261028.4 adds `away` and zone targets),
   `:290-294` / `:469-473` (`user`), `:296-364` / `:475-543` (`and`, `or`, `not`);
 * a conditional card or row evaluates its `conditions` the same way:
-  `src/panels/lovelace/components/hui-conditional-base.ts:68-74, 90-110`.
+  `src/panels/lovelace/components/hui-conditional-base.ts:68-74, 90-110`;
+* what is inside a hidden card, stack, section or conditional row is not rendered, and a section
+  hides when all its content hides: its cards (`hui-section.ts:292-296`), and since 20261028.4
+  also its badges and sections (`:379-384`); a Markdown card with `show_empty: false` hides
+  itself while its template renders nothing (`hui-markdown-card.ts:184-191` / `:232-239`), and
+  `hui-card.ts:249-251` passes that on. `Viewer.shown` walks that path (D-53 of the slice 9
+  design).
 
 Core's side: `homeassistant/components/websocket_api/commands.py:1118-1196` (2026.10.2) and
 `:1225-1303` (2026.11.0), the same handler: no administrator needed, a result, then one event
@@ -64,6 +70,7 @@ import homeassistant.components
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.auth.models import User
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import CLIENT_ID
 
@@ -418,6 +425,51 @@ class Viewer:
         if found.get("type") == "conditional":
             shown = shown and await self.met(found["conditions"], "")
         return shown
+
+    async def shown(self, view: dict[str, Any], node: dict[str, Any]) -> bool:
+        """Whether the frontend shows `node`, a section, card or row of `view` (its sections and
+        its footer's card): `node` and every section, card, stack and conditional row on the
+        path from the view to it visible(), none of them a card that hides itself, and no
+        section on it whose content all hides."""
+        path = self.path(view, node)
+        assert path is not None, f"{json.dumps(node)[:80]} is not in the view"
+        for each in path:
+            if not await self.visible(each) or self.empty(each):
+                return False
+            sections = view.get("sections") or []
+            if any(each is section for section in sections) and await self.all_hidden(each):
+                return False
+        return True
+
+    def path(self, above: Any, node: dict[str, Any]) -> list[dict[str, Any]] | None:
+        """The mappings from below `above` down to `node` (found by identity), node included."""
+        if above is node:
+            return [node]
+        values = above.values() if isinstance(above, dict) else above
+        for value in values if isinstance(above, dict | list) else ():
+            if isinstance(value, dict | list) and (below := self.path(value, node)) is not None:
+                return [value, *below] if isinstance(value, dict) else below
+        return None
+
+    async def all_hidden(self, section: dict[str, Any]) -> bool:
+        """The section rule: content, and every part of it hidden. 20260930.4 counts the cards,
+        20261028.4 also the badges and the sections."""
+        content = list(section.get("cards") or [])
+        if self.frontend != "20260930.4":
+            content += [*(section.get("badges") or []), *(section.get("sections") or [])]
+        for each in content:
+            if await self.visible(each) and not self.empty(each):
+                return False
+        return bool(content)
+
+    def empty(self, found: dict[str, Any]) -> bool:
+        """A Markdown card with `show_empty: false` whose template renders nothing, as the
+        frontend asks for it (strict, the variables `config` and `user`); core strips it."""
+        if found.get("type") != "markdown" or found.get("show_empty") is not False:
+            return False
+        variables = {"config": found, "user": self.user.name}
+        template = Template(str(found.get("content", "")), self.hass)
+        return str(template.async_render(variables, parse_result=False, strict=True)) == ""
 
     async def met(self, conditions: list[Any] | None, entity: str) -> bool:
         """The conditions' verdict once core has answered every subtree."""

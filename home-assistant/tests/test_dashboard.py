@@ -986,11 +986,11 @@ async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
     contacts_of(config, tmp_path, broker).update(mesh)
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     viewer = await household_viewer(hass, hass_ws_client)
-    footers = {v["path"]: v["footer"]["card"] for v in loaded["views"] if "footer" in v}
+    footers = {v["path"]: (v, v["footer"]["card"]) for v in loaded["views"] if "footer" in v}
     assert set(footers) == {"chat-alerts", "chat-my-target", "contact-alice", "contact-bob"}
     await gateway(hass, config)
     await deliver(hass, config, broker, mesh)
-    assert not [path for path, footer in footers.items() if await viewer.visible(footer)]
+    assert not [path for path, footer in footers.items() if await viewer.shown(*footer)]
     own = discovery_payload(config, topics_of(config), RADIO)["dev"]["ids"][0]
     for alias in ("alerts", "my_target", "operator"):
         topic = f"homeassistant/device/{own}_{alias}/config"
@@ -1001,7 +1001,7 @@ async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
         f"homeassistant/device/{bob}_drafts/config",
         drafts(bob, "mesh_bob_write", via=own, key=BOB),
     )
-    shown = [path for path, footer in footers.items() if await viewer.visible(footer)]
+    shown = [path for path, footer in footers.items() if await viewer.shown(*footer)]
     assert shown == list(footers), viewer.errors
     assert problems(caplog) == []
 
@@ -1023,7 +1023,7 @@ async def test_a_chat_pages_footer_hides_while_one_of_its_fields_cannot_be_used(
     contacts_of(config, tmp_path, broker).update(mesh)
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     viewer = await household_viewer(hass, hass_ws_client)
-    footers = {v["path"]: v["footer"]["card"] for v in loaded["views"] if "footer" in v}
+    footers = {v["path"]: (v, v["footer"]["card"]) for v in loaded["views"] if "footer" in v}
     await gateway(hass, config)
     await deliver(hass, config, broker, mesh)
     own = discovery_payload(config, topics_of(config), RADIO)["dev"]["ids"][0]
@@ -1046,7 +1046,7 @@ async def test_a_chat_pages_footer_hides_while_one_of_its_fields_cannot_be_used(
     assert hass.states.get(f"button.{own}_write_operator_send").state != "unavailable"
     assert hass.states.get("text.mesh_bob_write") is None
     assert er.async_get(hass).async_get("text.mesh_bob_write") is not None
-    shown = [path for path, footer in footers.items() if await viewer.visible(footer)]
+    shown = [path for path, footer in footers.items() if await viewer.shown(*footer)]
     assert shown == ["chat-alerts"], viewer.errors
     assert problems(caplog) == []
 

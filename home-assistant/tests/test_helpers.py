@@ -307,6 +307,102 @@ async def test_a_conditional_card_and_an_entry_that_is_no_mapping(
     assert problems(caplog) == []
 
 
+HIDDEN_STACK = {
+    "type": "vertical-stack",
+    "visibility": [DOOR_OFF],
+    "cards": [{"type": "markdown", "content": "inside"}],
+}
+GUARDED_ROW = {
+    "type": "conditional",
+    "conditions": [DOOR_OFF],
+    "row": {"type": "button", "entity": DOOR, "name": "Remove"},
+}
+EMPTY = {"type": "markdown", "show_empty": False, "content": "{%- if false %}x{% endif -%}"}
+
+
+def nested_view() -> dict[str, Any]:
+    """A view as the dashboard's pages are made: a stack whose guard is false (counter-case
+    c5), a conditional row whose guard is false inside an entities card, a section of cards
+    that all hide, a section kept by its heading, and a footer stack."""
+    return {
+        "path": "nested",
+        "type": "sections",
+        "sections": [
+            {
+                "type": "grid",
+                "cards": [
+                    HIDDEN_STACK,
+                    {"type": "entities", "entities": [GUARDED_ROW, {"entity": SHED}]},
+                ],
+            },
+            {
+                "type": "grid",
+                "cards": [
+                    {"type": "markdown", "content": "gone", "visibility": [DOOR_OFF]},
+                    EMPTY,
+                ],
+            },
+            {"type": "grid", "cards": [{"type": "heading", "heading": "Kept"}, EMPTY]},
+        ],
+        "footer": {
+            "card": {
+                "type": "vertical-stack",
+                "visibility": [DOOR_ON],
+                "cards": [EMPTY, {"type": "markdown", "content": "field"}],
+            }
+        },
+    }
+
+
+async def test_shown_requires_every_card_and_section_above(
+    hass: HomeAssistant, hass_ws_client: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """D-53: visible() decides one node; shown() the path from the view to it. A card inside a
+    stack whose visibility is false is not rendered (counter-case c5 of the harness check), nor
+    a row inside a conditional row whose conditions fail (hui-conditional-base.ts lines 68-74);
+    a footer's card is shown with its stack."""
+    viewer = await shed(hass, hass_ws_client)
+    view = nested_view()
+    stack = view["sections"][0]["cards"][0]
+    inside, row = stack["cards"][0], GUARDED_ROW["row"]
+    assert await viewer.visible(inside)  # visible() alone reads it as shown
+    assert not await viewer.shown(view, inside)
+    assert not await viewer.shown(view, stack)
+    assert await viewer.visible(row)
+    assert not await viewer.shown(view, row)
+    plain = view["sections"][0]["cards"][1]["entities"][1]
+    assert await viewer.shown(view, plain)
+    footer = view["footer"]["card"]
+    assert await viewer.shown(view, footer["cards"][1])
+    hass.states.async_set(DOOR, "off")
+    assert await viewer.shown(view, inside)
+    assert await viewer.shown(view, row)
+    assert not await viewer.shown(view, footer["cards"][1])
+    with pytest.raises(AssertionError, match="not in the view"):
+        await viewer.shown(view, {"type": "markdown", "content": "elsewhere"})
+    assert viewer.errors == []
+    assert problems(caplog) == []
+
+
+async def test_a_section_whose_cards_all_hide_is_not_shown(
+    hass: HomeAssistant, hass_ws_client: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """hui-section.ts lines 292-296 (20260930.4) and 379-384 (20261028.4): a section hides when
+    all its content hides, by its conditions or by a Markdown card with `show_empty: false` that
+    renders nothing (hui-markdown-card.ts lines 184-191); a heading keeps its section."""
+    viewer = await shed(hass, hass_ws_client)
+    view = nested_view()
+    gone, kept = view["sections"][1], view["sections"][2]
+    assert await viewer.visible(gone)
+    assert not await viewer.shown(view, gone)
+    assert await viewer.shown(view, kept)
+    assert not await viewer.shown(view, kept["cards"][1])  # renders nothing
+    hass.states.async_set(DOOR, "off")
+    assert await viewer.shown(view, gone)  # its first card shows now
+    assert not await viewer.shown(view, gone["cards"][1])
+    assert problems(caplog) == []
+
+
 async def test_an_empty_card_renders_to_nothing_at_all(hass: HomeAssistant) -> None:
     """Core strips the output, so blank lines are nothing; markup without text is something;
     a card without `show_empty: false` shows even nothing (hui-markdown-card.ts)."""
