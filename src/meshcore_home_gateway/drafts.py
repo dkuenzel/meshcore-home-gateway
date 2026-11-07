@@ -29,10 +29,11 @@ text stored just before it.
 * A lower `max` (a renamed radio, or its first connect, takes room from channel texts) cuts a
   longer draft, which goes out before the gateway's discovery: Home Assistant cannot take a state
   longer than `max`, and writes the state again as soon as it takes the discovery.
-* A clean stop clears every draft that is not empty, so no unsent text stays retained on the
-  broker while the gateway is away. A chat that is gone has its topic deleted once its device's
-  discovery is gone; the broker's copies of topics no chat owns are deleted at most CLEARS_PER_S
-  a second. The draft topics are not documents of `views`: they exist for Home Assistant only.
+* A clean stop clears every draft that is not empty or whose echo is held, so no unsent text
+  stays retained on the broker while the gateway is away. A chat that is gone has its topic
+  deleted once its device's discovery is gone; the broker's copies of topics no chat owns are
+  deleted at most CLEARS_PER_S a second. The draft topics are not documents of `views`: they
+  exist for Home Assistant only.
 """
 
 from __future__ import annotations
@@ -206,12 +207,14 @@ class Drafts:
 
     def stop(self) -> None:
         """A clean stop: every draft that is not empty is cleared, so that no unsent text stays
-        retained on the broker while the gateway is away. Requests that come later are ignored:
-        their drafts would stay."""
+        retained on the broker while the gateway is away; so is one whose echo is held, which
+        the broker has with the text before. Requests that come later are ignored: their drafts
+        would stay."""
         self._stopped = True
         for chat, draft in self._drafts.items():
+            held = draft.held
             draft.cancel()
-            if draft.text:
+            if draft.text or held:
                 draft.text = ""
                 self._publish(chat, "")
 

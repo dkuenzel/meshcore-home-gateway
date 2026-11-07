@@ -494,6 +494,19 @@ def test_a_clean_stop_clears_every_draft_that_is_not_empty(tmp_path: Path) -> No
     assert chats.held(FAMILY) == ""
 
 
+@in_loop
+def test_a_clean_stop_clears_a_draft_emptied_while_its_echo_was_held(tmp_path: Path) -> None:
+    """The broker still holds the text when its clear waits for the limiter's window: the stop
+    publishes the clear, or the unsent text stays retained while the gateway is away."""
+    chats = Chats(tmp_path)
+    chats.set(FAMILY, "Our door code is 4711")  # echoed at once, the window opens
+    chats.clock.advance(ECHO_WINDOW_S / 2)
+    chats.set(FAMILY, "")  # its echo is held for the window's end
+    chats.drafts.stop()
+    chats.clock.advance(1)
+    assert chats.states(FAMILY) == ["Our door code is 4711", ""]
+
+
 def test_the_gateway_starts_with_empty_drafts_and_clears_them_when_it_stops(
     tmp_path: Path,
 ) -> None:
