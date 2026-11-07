@@ -203,14 +203,19 @@ class AckWaiter:
 
     def __init__(self, monotonic: Callable[[], float]) -> None:
         self._now = monotonic
-        self._waiting: dict[bytes, asyncio.Future[int]] = {}
+        # a waiting message's codes -> what resolves its wait: the code answered, its round trip
+        self._waiting: dict[bytes, asyncio.Future[tuple[bytes, int]]] = {}
         self._recent: dict[bytes, tuple[float, int]] = {}
 
     def resolve(self, ack: bytes, round_trip_ms: int) -> None:
         future = self._waiting.pop(ack, None)
         if future is not None and not future.done():
-            future.set_result(round_trip_ms)
+            future.set_result((ack, round_trip_ms))
             return
+        self._keep(ack, round_trip_ms)
+
+    def _keep(self, ack: bytes, round_trip_ms: int) -> None:
+        """A late acknowledgement, for `take`."""
         # No count bound, and none needed (CODE-012): the radio pushes SEND_CONFIRMED only for a
         # code in its table of the 8 latest expected acknowledgements (docs/protocol.md,
         # MyMesh.cpp:424-434), all of them codes of this gateway's own attempts; the keys are
@@ -227,20 +232,32 @@ class AckWaiter:
         return None
 
     async def wait(self, codes: list[bytes], timeout_s: float) -> int | None:
+        """The round trip of an acknowledgement of one of `codes`, None after `timeout_s`. One
+        that comes in the turn of the loop that ends the wait is not lost (#93): the round trip
+        when the time ran out, and kept for `take` when the wait is cancelled (an alert ended
+        it)."""
         if (round_trip := self.take(codes)) is not None:
             return round_trip
-        future: asyncio.Future[int] = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[tuple[bytes, int]] = asyncio.get_running_loop().create_future()
         for code in codes:
             self._waiting[code] = future
         try:
             async with asyncio.timeout(timeout_s):  # not wait_for: see RadioLink.until
-                return await future
+                return (await future)[1]
         except TimeoutError:
-            return None
+            return future.result()[1] if _resolved(future) else None
+        except asyncio.CancelledError:
+            if _resolved(future):
+                self._keep(*future.result())
+            raise
         finally:
             for code in codes:
                 if self._waiting.get(code) is future:
                     del self._waiting[code]
+
+
+def _resolved(future: asyncio.Future[tuple[bytes, int]]) -> bool:
+    return future.done() and not future.cancelled()
 
 
 class Delivery:

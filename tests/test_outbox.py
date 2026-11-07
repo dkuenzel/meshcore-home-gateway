@@ -19,7 +19,7 @@ from meshcore_home_gateway import outbox as outbox_module
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.core.model import MessageKind, Target
 from meshcore_home_gateway.mqtt.payloads import received_payload
-from meshcore_home_gateway.outbox import Delivery, Outbox, Outgoing
+from meshcore_home_gateway.outbox import AckWaiter, Delivery, Outbox, Outgoing
 from meshcore_home_gateway.ports import SendRequest, Transport
 from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.radio import session as session_module
@@ -97,6 +97,39 @@ def test_get_waits_for_a_message() -> None:
         assert not waiting.done()
         outbox.put(message("a"))
         assert (await asyncio.wait_for(waiting, 1)).id == "a"
+
+    asyncio.run(main())
+
+
+CODE, EARLIER_CODE = b"\x01\x02\x03\x04", b"\x05\x06\x07\x08"
+
+
+def test_an_acknowledgement_that_comes_as_its_wait_is_cancelled_is_kept() -> None:
+    """#93: an alert ends the airtime wait of a message, in which an earlier attempt may still
+    be acknowledged. An acknowledgement that comes in the same turn of the loop, before the wait
+    resumes, is kept for the message's next attempt, which then sends nothing."""
+
+    async def main() -> None:
+        acks = AckWaiter(time.monotonic)
+        waiting = asyncio.ensure_future(acks.wait([EARLIER_CODE, CODE], 10))
+        await asyncio.sleep(0)  # it waits
+        acks.resolve(CODE, 100)  # the wait would resume at the next turn of the loop
+        waiting.cancel()  # the alert's turn came first
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        assert acks.take([EARLIER_CODE, CODE]) == 100
+
+    asyncio.run(main())
+
+
+def test_an_acknowledgement_that_comes_as_its_wait_times_out_counts() -> None:
+    """The same at the end of the wait's time: the acknowledgement came, so another attempt
+    would be one too many."""
+
+    async def main() -> None:
+        acks = AckWaiter(time.monotonic)
+        asyncio.get_running_loop().call_soon(acks.resolve, CODE, 100)
+        assert await acks.wait([CODE], 0) == 100  # its time ends in the same turn
 
     asyncio.run(main())
 

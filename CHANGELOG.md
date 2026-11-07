@@ -108,6 +108,9 @@ format, the command line and Home Assistant discovery are public interfaces
   a wait now ends when an alert comes; the message goes back to the queue, first among the
   others, and continues after the alert
   ([configuration.md](docs/configuration.md#messages)) (#93).
+- An acknowledgement that came in the moment its wait ended, by its time or by an alert, was
+  lost: the message sent one more attempt, and could end `failed` with `no_acknowledgement`
+  although it had arrived (#93).
 - After a command's write of `state.json` failed (a full disk), `state_file` stayed `unwritable`
   and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
   which can take hours on a quiet system. The gateway now writes the file again within a minute,
