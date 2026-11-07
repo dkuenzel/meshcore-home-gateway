@@ -156,3 +156,7 @@ command. The hardware checklist repeats the restart case.
   which would tell a stranger the words and that its key is not allowed. The answer goes through
   the queue and the airtime budget like any message; it is off by default.
 * Revisit if MeshCore adds signed commands or a challenge–response mechanism for companion clients.
+* Amended on 2026-11-07 (#105): a code does not bind the text. It shows that the sender's app made
+  it in its time window, whatever reached the gateway; whoever reads a command before the gateway
+  does, such as a host posing as the radio over TCP, can send another text with its code, once,
+  within about 90 seconds ([design §7.4](../design.md#74-residual-risks)).

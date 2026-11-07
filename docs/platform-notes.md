@@ -48,6 +48,7 @@ One line per fact, by section.
 * Debian's `dialout` group has the fixed GID 20.
 * Root on the host can open a serial port that another process locked with `TIOCEXCL`; root in an unprivileged container cannot.
 * With `StartLimitIntervalSec=0`, `RestartSteps=` and `RestartMaxDelaySec=`, systemd 257 restarts a failing service for ever, each automatic restart later than the one before; only a start by hand counts from the beginning again.
+* `time-sync.target` waits for a synchronised clock only where a service that waits for one is enabled and orders itself before the target: `systemd-time-wait-sync`, or chrony's `chrony-wait`.
 * journald keeps up to a tenth of the file system and drops a service's lines above 10,000 in 30 s.
 * `unattended-upgrades` in Debian 13 switches itself on when it is installed without dialogs, and installs the updates of the release and of the security archive, without a reboot.
 * `IPAddressDeny=` and `IPAddressAllow=` need a cgroup BPF program; where systemd cannot load one, it starts the service without the filter and says so only at debug level.
@@ -466,6 +467,19 @@ One line per fact, by section.
   container. *Here:* the unit (5 s, 5 min from the seventh restart), [deployment.md](deployment.md#4-operations),
   *Service*. *Check:* in the container, `systemctl show -p NRestarts,RestartUSecNext
   meshcore-home-gateway` (`RestartUSecNext`: `src/core/dbus-service.c:332`).
+* **`time-sync.target` waits for a synchronised clock only where a service that waits for one is
+  enabled and orders itself before the target: `systemd-time-wait-sync`, or chrony's
+  `chrony-wait`.** The target itself is ordered only after `time-set.target`; a unit with
+  `After=time-sync.target` that pulls nothing in starts as soon as the clock was set at all.
+  `systemd-time-wait-sync.service` is not enabled by default and skips containers. *Verified:*
+  systemd 255 (Ubuntu 24.04): `time-sync.target` has only `After=` and `Wants=time-set.target`;
+  `systemd-time-wait-sync.service` has `ConditionVirtualization=!container`,
+  `Before=time-sync.target`, `Wants=time-sync.target` and `WantedBy=sysinit.target`; systemd.special(7),
+  `time-sync.target`. Not checked on Debian 13's systemd 257 or with chrony. *Here:* the unit is
+  ordered `After=time-sync.target` and pulls nothing in; the radio's clock rests on the host's
+  and on the gateway's bounds of a plausible host clock ([design §6.1](design.md#61-radio-session),
+  #105). *Check:* `systemctl cat time-sync.target systemd-time-wait-sync.service` and
+  `systemctl is-enabled systemd-time-wait-sync`.
 * **journald keeps up to a tenth of the file system and drops a service's lines above 10,000 in
   30 s.** Without `SystemMaxUse=`, the journal may grow to 10 % of its file system, at least
   1 MiB and at most 4 GiB: 200 MB of the container's 2 GB disk. The rate limit

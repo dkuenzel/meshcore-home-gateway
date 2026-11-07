@@ -104,6 +104,17 @@ format, the command line and Home Assistant discovery are public interfaces
   It said only where the files go, and the archive holds them as `root` with mode 0600: in a new
   container the copy of the codes file of `--with-secrets` kept that, and the service stopped
   with a configuration error ([deployment.md](docs/deployment.md#4-operations), #98).
+- The security documents state three controls as strong as they are (#105). A command code shows
+  that the sender's app made it in that time window, but does not bind the text: whoever reads a
+  command before the gateway, such as a host posing as the radio over TCP, can send another text
+  with its code, once ([configuration.md](docs/configuration.md#commands)); the guide said it
+  authenticates the text. The broker password and the code secrets are files the service's group
+  reads; a systemd credential that root alone reads takes a drop-in, which the guide now gives
+  for the codes file too ([deployment.md](docs/deployment.md#4-operations)); the threat model
+  listed the credential as a control. And `time-sync.target`, which the unit is ordered after,
+  waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled,
+  neither by default nor in a container; the unit, the design, the guide and the entry of 2.0.0a1
+  said the service starts after the clock was synchronised.
 
 ### Security
 

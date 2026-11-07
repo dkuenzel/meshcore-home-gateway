@@ -13,7 +13,8 @@ A received message is a command only if all of these hold:
   unless disabled, within `max_age_s` of the bridge clock;
 * if the sender has a code secret (IMP-002), its last word is the sender's 6-digit code (RFC 6238)
   for the bridge clock, within a time step either way, of a step newer than its last accepted
-  code's: the code authenticates the text whatever reached the bridge, and serves once.
+  code's: the code shows that the sender's app made it in that window, whatever reached the
+  bridge, and serves once. It does not bind the text (design §7.4).
 
 The bridge publishes accepted commands as events; it never executes anything itself.
 """

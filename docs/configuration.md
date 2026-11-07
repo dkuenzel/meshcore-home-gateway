@@ -203,9 +203,12 @@ as the rate limit of received messages lets it through ([mqtt-api.md](mqtt-api.m
 authenticator app (TOTP, RFC 6238: SHA-1, 30 s), as in `arm now 492039`; the code is not part of
 `args`. The gateway accepts the code of the current 30 seconds of its clock and of those before
 and after, each code once (`code_missing`, `code_invalid`, `code_reused` otherwise,
-[mqtt-api.md](mqtt-api.md#commands-command)). A code authenticates the text whatever reached the
-gateway: a host that poses as a radio over TCP, or a node that shares an allowed sender's key
-prefix, cannot command without the secret. Senders without a secret keep the rules above. To
+[mqtt-api.md](mqtt-api.md#commands-command)). A code shows that the sender's authenticator app
+made it in that time window, whatever reached the gateway: a node that shares an allowed sender's
+key prefix, or a host that poses as a radio over TCP, cannot command without a current code. A
+code does not bind the text: whoever reads a command before the gateway does, such as that host,
+can send another text with its code, once, within about 90 seconds
+([design §7.4](design.md#74-residual-risks)). Senders without a secret keep the rules above. To
 give one a secret (or a new one, which ends the old):
 
 ```sh

@@ -125,3 +125,77 @@ def test_the_index_of_the_platform_notes_lists_every_fact() -> None:
     leads = [lead for _, section in tool.facts(text) for lead in section]
     assert len(leads) > 100
     assert all(f"\n* {lead}\n" in text for lead in leads)
+
+
+# --- the controls the security documents promise (#105) ---------------------------------------
+
+UNIT = ROOT / "deploy" / "systemd" / "meshcore-home-gateway.service"
+INSTALLER = ROOT / "deploy" / "proxmox" / "meshcore-home-gateway-lxc.sh"
+# what describes the gateway as it is: not the history (the changelog, the audit, the decision
+# records, whose text stays as it was and whose amendments correct it)
+CURRENT = [
+    path
+    for path in DOCUMENTS
+    if path.name != "CHANGELOG.md"
+    and not {"audit", "decisions"} & set(path.relative_to(ROOT).parts)
+]
+
+
+def _words(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_a_code_is_not_said_to_bind_the_text() -> None:
+    """#105: `core.commands._check_code` compares the last word with the codes of the time steps
+    and hands the rest back unchecked (`test_a_code_does_not_bind_the_text`). A code shows that
+    the sender's app made it in that window: whoever reads it first can send another text with
+    it, once. The guide said that a code "authenticates the text"."""
+    claim = re.compile(r"codes? (?:\w+ )?authenticates? (?:the text|commands)", re.IGNORECASE)
+    sources = [*CURRENT, ROOT / "src" / "meshcore_home_gateway" / "core" / "commands.py"]
+    said = [p.name for p in sources if claim.search(_words(p.read_text(encoding="utf-8")))]
+    assert said == []
+    adr = ROOT / "docs" / "decisions" / "0009-inbound-commands-from-allowlisted-contacts.md"
+    decided = _words(adr.read_text(encoding="utf-8"))
+    assert "which authenticates the text" in decided  # as decided; an amendment corrects it
+    assert "Amended on 2026-11-07 (#105): a code does not bind the text" in decided
+    guide = _words((ROOT / "docs" / "configuration.md").read_text(encoding="utf-8"))
+    codes = guide.partition("**Codes.**")[2].partition("```")[0]
+    assert "does not bind the text" in codes
+    assert "(design.md#74-residual-risks)" in codes
+
+
+def test_a_secret_is_said_to_be_a_credential_only_with_the_drop_in() -> None:
+    """#105: neither the unit nor the installer sets `LoadCredential=`, and the installer writes
+    the broker password 0640 `root:meshcore-home-gateway`, which the service user reads. The
+    threat model listed a credential that root alone reads as a control of T9 and B6."""
+    assert "LoadCredential" not in UNIT.read_text(encoding="utf-8")
+    assert "LoadCredential" not in INSTALLER.read_text(encoding="utf-8")
+    assert re.search(r"^PASSWORD_FILE=", INSTALLER.read_text(encoding="utf-8"), re.MULTILINE)
+    model = (ROOT / "docs" / "threat-model.md").read_text(encoding="utf-8")
+    [t9] = [line for line in model.splitlines() if line.startswith("| T9 |")]
+    b6 = _words(model.partition("### B6")[2].partition("\n### ")[0])
+    for text in (t9, b6):
+        assert "only with a drop-in" in text, text
+        assert "(deployment.md#4-operations)" in text, text
+
+
+def test_the_unit_is_not_said_to_wait_for_a_synchronised_clock() -> None:
+    """#105: `time-sync.target` is passive. It waits for a synchronised clock only where a
+    service like `systemd-time-wait-sync` or `chrony-wait` is enabled, neither is by default, and
+    `systemd-time-wait-sync` skips containers (platform notes). The unit is ordered after it and
+    pulls nothing in; its comment, the design and the guide said that it waits. Every paragraph,
+    table row and comment that names the target names the services too."""
+    unit = UNIT.read_text(encoding="utf-8")
+    assert re.search(r"^After=.*\btime-sync\.target\b", unit, flags=re.MULTILINE)
+    assert not re.search(r"^(?:Wants|Requires)=.*time", unit, flags=re.MULTILINE)
+    comment = re.search(r"((?:^#.*\n)+)After=.*time-sync", unit, flags=re.MULTILINE)
+    assert comment is not None
+    blocks = [_words(comment[1])]
+    for path in CURRENT:
+        text = CODE_BLOCK.sub("", path.read_text(encoding="utf-8"))
+        blocks += [_words(b) for b in re.split(r"\n\s*\n|\n(?=\|)", text)]
+    naming = [b for b in blocks if "time-sync.target" in b]
+    assert naming
+    for block in naming:
+        assert "systemd-time-wait-sync" in block, block
+        assert "chrony-wait" in block, block
