@@ -12,10 +12,12 @@ automation of the examples, and the removal of a control of an earlier version.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
+from ha_plugin import CLIENT_ID
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
@@ -23,8 +25,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import CLIENT_ID
 from test_contract import (
+    CLEARS_PER_ENTITY,
     CONFIG,
     PREFIX,
     RADIO,
@@ -242,6 +244,52 @@ async def test_deleting_the_gateway_device_clears_the_controls_topic_too(
     await hass.async_block_till_done()
     cleared = {(t, p, r) for t, p, _q, r in publishes(mqtt)}
     assert cleared == {(discovery_topic(CONFIG), None, True), (manage_topic(CONFIG), None, True)}
+    # since 2026.11 the controls' topic is cleared once for each control, and Home Assistant
+    # finds nothing left to clean up at the second copy
+    leftover = (
+        "WARNING homeassistant.components.mqtt.discovery: No device components to cleanup for "
+        f"manage_contacts, node_id '{PREFIX}'"
+    )
+    assert problems(caplog) == ([leftover] if CLEARS_PER_ENTITY else [])
+
+
+async def test_the_controls_setting_takes_effect_at_once_both_ways(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """HA-02 (#82): `[homeassistant] controls = false` makes the controls unavailable as soon as
+    Home Assistant has the new discovery, and `true` available again, without waiting for the
+    next message on the availability topic. Home Assistant keys availability by topic, so the
+    entry that is always offline has a topic of its own that nobody publishes."""
+    await with_controls(hass, [])
+    controls = (f"button.{PREFIX}_show_hidden", SELECT, TEXT)
+
+    def unavailable() -> list[bool]:
+        return [hass.states.get(e).state == "unavailable" for e in controls]
+
+    async def announce_with(config: Any) -> None:
+        await announce(hass, discovery_payload(config, TOPICS, RADIO))
+        await fire(hass, manage_topic(CONFIG), manage_payload(config, TOPICS, []))
+
+    assert unavailable() == [False, False, False]
+    await announce_with(
+        replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    )
+    assert unavailable() == [True, True, True]
+    await announce_with(CONFIG)
+    assert unavailable() == [False, False, False]
+    assert problems(caplog) == []
+
+
+async def test_the_contacts_sensor_says_why_requests_are_refused(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The attribute `manage_reason` of *Contacts*, as the guide names it (#99)."""
+    await with_controls(hass, [])
+    sensor = f"sensor.{PREFIX}_contacts"
+    assert hass.states.get(sensor).attributes["manage_reason"] is None
+    for reason in ("management_off", "no_radio", "untested_firmware"):
+        await fire(hass, TOPICS.contacts, contacts_document(Mesh(), manage_reason=reason))
+        assert hass.states.get(sensor).attributes["manage_reason"] == reason
     assert problems(caplog) == []
 
 

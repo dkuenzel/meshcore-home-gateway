@@ -1556,6 +1556,13 @@ msgstr ""
 msgid "target {alias}"
 msgstr ""
 
+#. aliases are two or more target aliases, such as "a-b, a_b"; _2 is the
+#. end of an entity ID
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "targets {aliases} differ only in '-' and '_': Home Assistant gives their entities the same IDs and numbers the later ones (_2); rename all but one"
+msgstr ""
+
 #. a contact's key, shortened, and its roles, such as "target gate".
 #: src/meshcore_home_gateway/config_checks.py
 #, python-brace-format
@@ -3916,6 +3923,12 @@ msgctxt "home assistant"
 msgid "Room server"
 msgstr ""
 
+#. button of a companion: sends the draft of "Write"
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Send what is written"
+msgstr ""
+
 #. the model of a contact's device in Home Assistant: the MeshCore node type
 #. (companion: a person's radio; room server: a node that keeps messages for a group)
 #: src/meshcore_home_gateway/mqtt/contact_devices.py
@@ -3954,6 +3967,13 @@ msgctxt "home assistant"
 msgid "Voltage"
 msgstr ""
 
+#. text entity of a companion: the draft of a message to it, kept by
+#. the gateway until it is sent. Home Assistant shows the contact's name first.
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Write"
+msgstr ""
+
 #. sensor (duration) of the gateway: the transmit time left in its
 #. hourly budget
 #: src/meshcore_home_gateway/mqtt/discovery.py
@@ -3980,6 +4000,13 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Companion position in adverts"
+msgstr ""
+
+#. sensor (timestamp) of the gateway: the settings of its configuration
+#. file that are in effect, as attributes; its state is the time it started with them
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Configuration"
 msgstr ""
 
 #. event entity of the gateway: a contact was added, removed, hidden,
@@ -4043,6 +4070,20 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "MeshCore radio"
+msgstr ""
+
+#. sensor (timestamp) of the gateway: the latest messages it received and
+#. sent; its state is the time of the newest one
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Message history"
+msgstr ""
+
+#. sensor of the gateway: how many messages it accepted and has not
+#. delivered or given up yet, the one being sent included
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Messages on their way"
 msgstr ""
 
 #. event entity of the gateway: its radio heard a node for the first
@@ -4155,6 +4196,13 @@ msgctxt "home assistant"
 msgid "Send to {alias}"
 msgstr ""
 
+#. button of the gateway: sends the draft of "Write to {alias}"
+#: src/meshcore_home_gateway/mqtt/discovery.py
+#, python-brace-format
+msgctxt "home assistant"
+msgid "Send what is written to {alias}"
+msgstr ""
+
 #. button of the gateway: brings back the contacts' devices the user
 #. deleted in Home Assistant
 #: src/meshcore_home_gateway/mqtt/discovery.py
@@ -4181,6 +4229,14 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Telemetry status"
+msgstr ""
+
+#. text entity of the gateway: the draft of a message to a target of
+#. the configuration, kept by the gateway until it is sent; {alias} as above
+#: src/meshcore_home_gateway/mqtt/discovery.py
+#, python-brace-format
+msgctxt "home assistant"
+msgid "Write to {alias}"
 msgstr ""
 
 #. text entity of the gateway: a node's public key or a contact link

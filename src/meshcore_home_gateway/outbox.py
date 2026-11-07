@@ -8,7 +8,8 @@ kept for the next start when the service stops (ARC-013).
 The delivery takes the send requests from the bus, refuses or queues each, and delivers one message
 at a time: an attempt when the radio is there and the airtime budget allows it, until it is
 confirmed, sent to a channel, or out of attempts or time. Every step goes out on the delivery
-topic and to the observer.
+topic and to the observer, and the messages accepted and not final yet, the one being delivered
+included, go to the observer as the `pending` document after each step (#112).
 """
 
 from __future__ import annotations
@@ -33,10 +34,10 @@ from meshcore_home_gateway.core.budget import HOUR_S, AirtimeBudget, Deduplicato
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact, is_key
 from meshcore_home_gateway.core.model import DeliveryEvent, DeliveryState, MessageKind, Target
 from meshcore_home_gateway.core.text import (
-    CONFIRM_NONCE_BYTES,
     TextPolicy,
     TextRejectedError,
     prepare_text,
+    text_limit,
     with_nonce,
     without_nonce,
 )
@@ -58,6 +59,7 @@ from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.radio_link import RadioLink
 from meshcore_home_gateway.state import AirtimeLevel, JsonStateFile, OutboxRecords, SavedMessage
 from meshcore_home_gateway.telemetry_poller import OutboxActivity
+from meshcore_home_gateway.views import PendingEntry
 
 log = logging.getLogger(__name__)
 log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
@@ -102,6 +104,13 @@ class Outgoing:
     timestamp: int | None = None  # of every attempt, from the first on: retries stay recognisable
     sent: int = 0  # attempts the radio has sent
     acks: Expected = field(default_factory=Expected)
+    # its key in the duplicate check and when it was accepted there, if it holds one: forgotten
+    # when it fails or expires, so that it can be sent again at once
+    dedup: tuple[tuple[str, str], float] | None = None
+    queued_at: float | None = None  # wall clock at its acceptance, kept over a stop (history)
+    # its latest delivery event while it is on its way, for `pending`: `queued` (again after a
+    # start), then `sent`; pausing it for an alert sends none and leaves it `sent`
+    step: DeliveryState = DeliveryState.QUEUED
 
 
 class Outbox:
@@ -248,6 +257,9 @@ class Delivery:
         self._flight = _Flight()
         # MQTT 5: the correlation data of a request, by its id, until its final event (ARC-014)
         self._correlations: dict[str, bytes] = {}
+        # the messages accepted and not final, by id, the oldest first: in the queue or in flight
+        self._pending: dict[str, Outgoing] = {}
+        self._pending_due = False  # `pending` goes out once this moment's steps are done
 
     def queued(self) -> int:
         return self._queue.qsize()
@@ -275,9 +287,11 @@ class Delivery:
         while True:
             self.accept(await self._bus.requests.get())
 
-    def accept(self, request: SendRequest, *, deduplicate: bool = True) -> None:
-        """`deduplicate=False`: the answer to a command, which the inbox judged once; the same
-        command sent again later deserves its answer again (EXT-009)."""
+    def accept(self, request: SendRequest, *, deduplicate: bool = True) -> DeliveryState:
+        """Queue the request or refuse it, at once; its state: `queued`, `rejected` or
+        `duplicate` (a draft's press keeps the draft unless it was queued). `deduplicate=False`:
+        the answer to a command, which the inbox judged once; the same command sent again later
+        deserves its answer again (EXT-009)."""
         event_id = secrets.token_hex(4)
         if request.correlation is not None:
             self._correlations[event_id] = request.correlation
@@ -288,28 +302,37 @@ class Delivery:
             alias = request.alias[:MAX_ECHOED_ALIAS]
             event = DeliveryEvent(event_id, alias, exc.state, reason=exc.reason)
             self._deliver_refusal(event)
-            return
-        state, reason = DeliveryState.QUEUED, None
-        key = (target.alias, text)
-        if deduplicate and self._dedup.is_duplicate(key, self._mono()):
+            return exc.state
+        state, reason, queued_at = DeliveryState.QUEUED, None, None
+        key, now = (target.alias, text), self._mono()
+        if deduplicate and self._dedup.is_duplicate(key, now):
             state = DeliveryState.DUPLICATE
         else:
             nonce = target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
             sent = with_nonce(text) if nonce else text  # duplicates are judged without it
             alert = target.alias in self.config.messages.alert_targets
+            dedup = (key, now) if deduplicate else None
+            queued_at = self._wall()  # for the history: `now` is monotonic
+            item = Outgoing(
+                event_id, target, sent, now, raw, alert=alert, dedup=dedup, queued_at=queued_at
+            )
             try:
-                self._queue.put(Outgoing(event_id, target, sent, self._mono(), raw, alert=alert))
+                self._queue.put(item)
+                self._pending[event_id] = item
                 self.activity.touch()
                 text = sent
             except asyncio.QueueFull:
                 if deduplicate:  # not taken, so a retry must not count as duplicate
                     self._dedup.forget(key)
-                state, reason = DeliveryState.REJECTED, "queue_full"
-        event = DeliveryEvent(event_id, target.alias, state, text=text, reason=reason)
+                state, reason, queued_at = DeliveryState.REJECTED, "queue_full", None
+        event = DeliveryEvent(
+            event_id, target.alias, state, text=text, reason=reason, queued_at=queued_at
+        )
         if state is DeliveryState.QUEUED:
             self._deliver_event(event)
         else:
             self._deliver_refusal(event)
+        return state
 
     def _deliver_refusal(self, event: DeliveryEvent) -> None:
         """The event of a request refused at once (rejected, duplicate), at a bounded rate: a
@@ -383,13 +406,13 @@ class Delivery:
     def _text_policy(self, target: Target, info: RadioInfo | None) -> TextPolicy:
         """Without the radio's name, a channel text gets the limit of the shortest one. A direct
         text leaves room for the random suffix of `confirm_nonce` (SEC-001)."""
-        limit = MAX_TEXT_BYTES
         messages = self.config.messages
-        if target.kind is MessageKind.CHANNEL:
-            name = len(info.name.encode()) if info else 0
-            limit = MAX_TEXT_BYTES - name - 2  # the firmware prepends "<name>: "
-        elif messages.confirm_nonce:
-            limit = MAX_TEXT_BYTES - CONFIRM_NONCE_BYTES
+        limit = text_limit(
+            MAX_TEXT_BYTES,
+            channel=target.kind is MessageKind.CHANNEL,
+            radio_name=info.name if info else None,
+            nonce=messages.confirm_nonce,
+        )
         return TextPolicy(limit, ascii_only=messages.ascii_only, truncate=messages.truncate)
 
     async def run(self) -> None:
@@ -410,8 +433,7 @@ class Delivery:
                 raise
             except Exception:
                 log.exception("delivery %s failed unexpectedly", item.id)
-                failed = self._event(item, DeliveryState.FAILED, reason="internal_error")
-                self._deliver_event(failed)
+                self._end(item, self._event(item, DeliveryState.FAILED, reason="internal_error"))
             finally:
                 flight.item = None
                 flight.idle.set()
@@ -427,12 +449,10 @@ class Delivery:
         back, with its progress, when an alert waits behind it (IMP-032) or the service stops
         (ARC-013).
         """
-        messages = self.config.messages
-        deadline = item.created + messages.queue_ttl_s
+        deadline = item.created + self.config.messages.queue_ttl_s
         if item.timestamp is None:  # one timestamp for all attempts: retries stay recognisable
             item.timestamp = int(self._wall())
-        direct = item.target.kind is MessageKind.CONTACT
-        attempts = messages.max_attempts if direct else 1
+        attempts = self._attempts(item.target)
         while item.sent < attempts:
             if item.sent and (
                 self._flight.stopping or (not item.alert and self._queue.alert_waiting)
@@ -442,7 +462,7 @@ class Delivery:
                 return
             session = await self._radio.until(deadline)
             if session is None:
-                self._deliver_event(self._out_of_time(item, item.sent))
+                self._end(item, self._out_of_time(item, item.sent))
                 return
             try:
                 outcome = await self._attempt(session, item, deadline=deadline)
@@ -457,12 +477,23 @@ class Delivery:
                 # passed, _radio_until returns None, and _attempt refuses to send after it
                 continue
             if outcome is not None:
-                self._deliver_event(outcome)
+                self._end(item, outcome)
                 return
         failed = self._event(
             item, DeliveryState.FAILED, attempt=item.sent, reason="no_acknowledgement"
         )
-        self._deliver_event(failed)
+        self._end(item, failed)
+
+    def _attempts(self, target: Target) -> int:
+        """A direct message is sent until it is acknowledged; a channel message once."""
+        return self.config.messages.max_attempts if target.kind is MessageKind.CONTACT else 1
+
+    def _end(self, item: Outgoing, event: DeliveryEvent) -> None:
+        """The last event of a message. One that failed or expired no longer counts as a
+        duplicate: "send it again" goes out at once. A confirmed one still does."""
+        if event.state in (DeliveryState.FAILED, DeliveryState.EXPIRED) and item.dedup:
+            self._dedup.forget(*item.dedup)
+        self._deliver_event(event)
 
     def _final(self, item: Outgoing, state: DeliveryState, reason: str, sent: int) -> DeliveryEvent:
         if state is DeliveryState.EXPIRED and sent:  # it left before: it was not acknowledged
@@ -590,9 +621,10 @@ class Delivery:
                 except TextRejectedError as exc:
                     raise _FinalError(DeliveryState.FAILED, exc.reason) from None
                 if final != item.text:  # deduplicate on the text that is sent
-                    self._dedup.rekey(
-                        (target.alias, item.text), (target.alias, final), self._mono()
-                    )
+                    key, now = (target.alias, final), self._mono()
+                    moved = self._dedup.rekey((target.alias, item.text), key, now)
+                    if item.dedup is not None:
+                        item.dedup = (key, now) if moved else None
                 item.text = final
                 size = len(item.text.encode())
             name_bytes = len(info.name.encode())
@@ -641,6 +673,7 @@ class Delivery:
             rtt_ms=rtt_ms,
             airtime_ms=None if airtime_s is None else round(airtime_s * 1000),
             suspect=suspect,
+            queued_at=item.queued_at,
         )
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
@@ -657,20 +690,54 @@ class Delivery:
             encode(delivery_payload(event)),
             correlation=self._correlation(event),
         )
-        observe(self._observer.delivery, event, self.target_of(event.target))
+        observe(self._observer.delivery, event, self.target_of(event.target))  # the history
+        if (item := self._pending.get(event.id)) is not None:  # a step of a message on its way
+            if _is_final(event.state, item.target):
+                del self._pending[event.id]
+            else:
+                item.step = event.state
+            self._pending_changed()
 
     def _correlation(self, event: DeliveryEvent) -> bytes | None:
         """The correlation data of the event's request; forgotten with its final event. A message
         kept across a restart has none: the data was the requester's, not the gateway's."""
         if event.id not in self._correlations:
             return None
-        target = self.target_of(event.target)
-        final = event.state not in (DeliveryState.QUEUED, DeliveryState.SENT) or (
-            event.state is DeliveryState.SENT
-            and target is not None
-            and target.kind is MessageKind.CHANNEL
-        )
+        final = _is_final(event.state, self.target_of(event.target))
         return self._correlations.pop(event.id) if final else self._correlations[event.id]
+
+    def _pending_changed(self) -> None:
+        """`pending` goes out when the steps of this moment are done: after the history entry of
+        a message that became final, so that no reader misses it between the two documents
+        (MQTT keeps the order only within a topic), and once for a burst of requests."""
+        if not self._pending_due:
+            self._pending_due = True
+            asyncio.get_running_loop().call_soon(self.publish_pending)
+
+    def publish_pending(self) -> None:
+        """The messages on their way, the oldest first, to the observer for `pending`."""
+        self._pending_due = False
+        entries = [self._pending_entry(item) for item in self._pending.values()]
+        observe(self._observer.pending, entries)
+
+    def _pending_entry(self, item: Outgoing) -> PendingEntry:
+        """As the history will name it: a message to `contacts/<key>/send` has no target (its
+        alias is the key), and the recipient is the contact's name, else the alias."""
+        target, key = item.target, item.target.public_key
+        contact = self._observer.mesh.contacts.get(key) if key else None
+        return PendingEntry(
+            item.id,
+            item.queued_at,
+            None if target.alias == key else target.alias,
+            target.kind.value,
+            key,
+            target.channel_index,
+            contact.node.name if contact else target.alias,
+            item.text,
+            item.step.value,
+            item.sent,
+            self._attempts(target),
+        )
 
     async def finish(self, loop: asyncio.Task[None]) -> None:
         """No attempt starts any more; one that waits for its acknowledgement gets it, for at
@@ -696,6 +763,7 @@ class Delivery:
                     now - item.created,
                     item.timestamp,
                     item.sent,
+                    item.queued_at,
                 )
                 for item in kept
             ],
@@ -721,6 +789,7 @@ class Delivery:
                     text=saved.text,
                     attempt=saved.sent,
                     reason="unknown_target",
+                    queued_at=saved.queued_at,
                 )
                 self._deliver_event(event)
                 continue
@@ -733,17 +802,23 @@ class Delivery:
                 alert=target.alias in config.alert_targets,
                 timestamp=saved.timestamp,
                 sent=saved.sent,
+                queued_at=saved.queued_at,
             )
             if age >= config.queue_ttl_s:  # it would have expired meanwhile
                 self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))
                 continue
             nonce = target.kind is MessageKind.CONTACT and config.confirm_nonce
-            self._dedup.is_duplicate(
-                (target.alias, without_nonce(item.text) if nonce else item.text), now
-            )
+            key = (target.alias, without_nonce(item.text) if nonce else item.text)
+            if not self._dedup.is_duplicate(key, now):
+                item.dedup = (key, now)
             self._queue.restore(item)
+            self._pending[item.id] = item
             queued += 1
             self._deliver_event(self._event(item, DeliveryState.QUEUED, attempt=item.sent))
+        # the oldest first, as accepted: the queue keeps alerts and a message put back in front
+        # (one of 2.0 has no acceptance time: it is older); published also when none is left
+        self._pending = dict(sorted(self._pending.items(), key=lambda i: i[1].queued_at or 0.0))
+        self._pending_changed()
         if messages:
             log.info(
                 "messages kept by the last stop: %d queued again, %d at an end",
@@ -778,6 +853,13 @@ class Delivery:
                     log.warning(
                         "target %s: contact missing on the radio or prefix ambiguous", target.alias
                     )
+
+
+def _is_final(state: DeliveryState, target: Target | None) -> bool:
+    """The last event of a request: a refusal, an end, or `sent` to a channel."""
+    if state is DeliveryState.SENT:
+        return target is not None and target.kind is MessageKind.CHANNEL
+    return state is not DeliveryState.QUEUED
 
 
 def _key(target: Target) -> str:

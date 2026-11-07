@@ -105,6 +105,8 @@ class DeliveryEvent:
     airtime_ms: int | None = None
     # confirmed: the acknowledgement came sooner than the message's path allows (SEC-001)
     suspect: bool | None = None
+    # the wall clock when the gateway accepted the message, for the history; not on the topic
+    queued_at: float | None = None
 
 
 _NAME_PREFIX_MAX = 32

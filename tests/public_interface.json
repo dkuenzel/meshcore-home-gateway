@@ -689,12 +689,17 @@
     "at",
     "channel_index",
     "contact_key",
+    "delivery_id",
     "direction",
     "hops",
     "kind",
     "name",
+    "queued_at",
+    "reason",
     "snr_db",
     "state",
+    "suspect",
+    "target",
     "text"
    ],
    "history export --format csv --table positions": [
@@ -729,12 +734,17 @@
     "at",
     "channel_index",
     "contact_key",
+    "delivery_id",
     "direction",
     "hops",
     "kind",
     "name",
+    "queued_at",
+    "reason",
     "snr_db",
     "state",
+    "suspect",
+    "target",
     "text"
    ],
    "history export --table positions": [
@@ -1606,6 +1616,20 @@
       "waiting"
      ],
      "platform": "sensor"
+    },
+    "write": {
+     "entity_id": "text.mesh_<slug>_write",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "text"
+    },
+    "write_send": {
+     "entity_id": "button.mesh_<slug>_write_send",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "button"
     }
    },
    "gateway": {
@@ -1650,6 +1674,12 @@
      ],
      "platform": "event"
     },
+    "configuration": {
+     "attributes": "<document config>",
+     "device_class": "timestamp",
+     "entity_id": "sensor.<device>_configuration",
+     "platform": "sensor"
+    },
     "contact": {
      "attributes": "<document contact>",
      "entity_id": "event.<device>_contact",
@@ -1668,6 +1698,7 @@
     },
     "contacts": {
      "attributes": [
+      "manage_reason",
       "max"
      ],
      "entity_id": "sensor.<device>_contacts",
@@ -1720,6 +1751,12 @@
      ],
      "platform": "event"
     },
+    "message_history": {
+     "attributes": "<document history>",
+     "device_class": "timestamp",
+     "entity_id": "sensor.<device>_message_history",
+     "platform": "sensor"
+    },
     "node": {
      "attributes": "<document node>",
      "entity_id": "event.<device>_node",
@@ -1749,6 +1786,11 @@
      "entity_id": "sensor.<device>_packets_sent",
      "platform": "sensor",
      "state_class": "total_increasing"
+    },
+    "pending_messages": {
+     "attributes": "<document pending>",
+     "entity_id": "sensor.<device>_pending_messages",
+     "platform": "sensor"
     },
     "profile": {
      "attributes": "<document settings>",
@@ -1900,6 +1942,14 @@
      "entity_id": "sensor.<device>_uptime",
      "platform": "sensor",
      "unit": "s"
+    },
+    "write_<alias>": {
+     "entity_id": "text.<device>_write_<alias>",
+     "platform": "text"
+    },
+    "write_<alias>_send": {
+     "entity_id": "button.<device>_write_<alias>_send",
+     "platform": "button"
     }
    },
    "manage_contacts": {
@@ -1947,6 +1997,64 @@
     "sender_key",
     "sender_name",
     "sent_at"
+   ],
+   "config": [
+    "airtime",
+    "airtime.budget_s_per_hour",
+    "airtime.burst_s",
+    "commands",
+    "commands.codes",
+    "commands.reply",
+    "commands.senders",
+    "contacts",
+    "contacts.heard_nodes",
+    "contacts.manage",
+    "history",
+    "history.enabled",
+    "history.messages_days",
+    "history.positions_days",
+    "history.readings_days",
+    "homeassistant",
+    "homeassistant.contact_devices",
+    "homeassistant.contact_entity_prefix",
+    "homeassistant.controls",
+    "homeassistant.hidden_targets",
+    "homeassistant.language",
+    "messages",
+    "messages.ascii_only",
+    "messages.clean_received",
+    "messages.confirm_nonce",
+    "messages.dedup_window_s",
+    "messages.ignore_channels",
+    "messages.max_attempts",
+    "messages.publish_channels",
+    "messages.queue_size",
+    "messages.queue_ttl_s",
+    "messages.truncate",
+    "radio",
+    "radio.profile",
+    "radio.profile.manage",
+    "radio.set_clock",
+    "radio.tcp_unauthenticated",
+    "radio.transport",
+    "started_at",
+    "targets",
+    "targets.items",
+    "targets.items[].alert",
+    "targets.items[].alias",
+    "targets.items[].channel_index",
+    "targets.items[].hidden",
+    "targets.items[].key_start",
+    "targets.items[].kind",
+    "targets.items[].prefix",
+    "targets.items[].room",
+    "targets.items[].suffix",
+    "targets.total",
+    "targets.truncated",
+    "telemetry",
+    "telemetry.ask",
+    "telemetry.ask_types",
+    "telemetry.enabled"
    ],
    "contact": [
     "event_type",
@@ -2070,13 +2178,24 @@
     "messages[].contact_key",
     "messages[].direction",
     "messages[].hops",
+    "messages[].id",
     "messages[].kind",
     "messages[].name",
+    "messages[].queued_at",
+    "messages[].reason",
     "messages[].snr_db",
     "messages[].state",
+    "messages[].suspect",
+    "messages[].target",
     "messages[].text",
     "total",
     "truncated"
+   ],
+   "homeassistant/draft/contact/<key>": [
+    "text"
+   ],
+   "homeassistant/draft/target/<alias>": [
+    "text"
    ],
    "node": [
     "event_type",
@@ -2109,6 +2228,22 @@
     "nodes[].rssi_dbm",
     "nodes[].snr_db",
     "nodes[].type",
+    "total",
+    "truncated"
+   ],
+   "pending": [
+    "messages",
+    "messages[].attempt",
+    "messages[].channel_index",
+    "messages[].contact_key",
+    "messages[].id",
+    "messages[].kind",
+    "messages[].max_attempts",
+    "messages[].name",
+    "messages[].queued_at",
+    "messages[].step",
+    "messages[].target",
+    "messages[].text",
     "total",
     "truncated"
    ],
@@ -2285,6 +2420,11 @@
     "qos": 0,
     "retained": false
    },
+   "<base_topic>/<node_id>/config": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
    "<base_topic>/<node_id>/contact": {
     "payload": "json",
     "qos": 1,
@@ -2316,12 +2456,28 @@
     "qos": 1,
     "retained": true
    },
+   "<base_topic>/<node_id>/homeassistant/draft/contact/<key>": {
+    "cleared": true,
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/homeassistant/draft/target/<alias>": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
    "<base_topic>/<node_id>/node": {
     "payload": "json",
     "qos": 1,
     "retained": false
    },
    "<base_topic>/<node_id>/nodes": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/pending": {
     "payload": "json",
     "qos": 1,
     "retained": true
@@ -2548,6 +2704,9 @@
    "<base_topic>/<node_id>/availability": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/config": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/contacts": {
     "qos": 1
    },
@@ -2569,10 +2728,19 @@
    "<base_topic>/<node_id>/homeassistant/add_node": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/homeassistant/draft/+/+": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/homeassistant/draft/+/+/request": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/homeassistant/show_hidden": {
     "qos": 1
    },
    "<base_topic>/<node_id>/nodes": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/pending": {
     "qos": 1
    },
    "<base_topic>/<node_id>/send/+": {
@@ -2656,6 +2824,10 @@
    ],
    "node:event_type": [
     "new"
+   ],
+   "pending:messages.step": [
+    "queued",
+    "sent"
    ],
    "received:command.reason": [
     "broker_unavailable",

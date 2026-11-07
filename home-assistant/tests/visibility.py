@@ -67,12 +67,12 @@ from pathlib import Path
 from typing import Any
 
 import homeassistant.components
+from ha_plugin import CLIENT_ID
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.auth.models import User
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import CLIENT_ID
 
 # the frontends whose sources this module follows; another one needs them read again
 FRONTENDS = frozenset({"20260930.4", "20261028.4"})

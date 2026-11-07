@@ -17,7 +17,7 @@ weakens a control updates the boundary's section here in the same pull request.
 | A1 | The command path into the home | An accepted `command` event runs whatever automation the household attached: locks, alarms, heating | the `command` topic, Home Assistant's automations |
 | A2 | The alert path out of the home | Alerts must arrive when the internet is down; a false `confirmed` is worse than a reported failure | the outbox, `delivery` events, the air |
 | A3 | Positions of the household's people | Presence automations act on them; they are personal data and they persist | retained `contacts/<key>`, Home Assistant's recorder, the history, `state.json` |
-| A4 | Message texts, and who writes to whom | The household's own messages, and the neighbourhood's on public channels | `received`, `history`, the history database |
+| A4 | Message texts, and who writes to whom | The household's own messages, and the neighbourhood's on public channels | `received`, `history`, the history database; unsent drafts of Home Assistant's chats on `homeassistant/draft/<kind>/<chat>` (retained) |
 | A5 | The radio's identity, its private key | Whoever holds it is the gateway to every contact and reads every direct message to it | the radio's flash |
 | A6 | The radio's contact table and settings | They decide what the radio decrypts, whom it answers, whether it shows a position, how much it sends | the radio's flash |
 | A7 | Airtime | The operator answers for the radio's transmissions; the channel is shared | the budgets, the radio's airtime factor |
@@ -36,8 +36,8 @@ weakens a control updates the boundary's section here in the same pull request.
 | T3 | A contact of the radio outside the household | Direct messages the radio decrypts, telemetry answers, adverts | Commands need the allowlist; telemetry asks only the household (`ask = "household"`, the default) ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)); rate limits per sender |
 | T4 | Whoever holds an allowed sender's handheld or key | Send accepted commands | Codes, a second factor on a phone; a small word list; automations that confirm |
 | T5 | A host on the radio's network (TCP) | Be the radio, or a second client of it: read and write everything, export the private key | USB is the default; TCP needs `tcp_unauthenticated = true`; a contested link is reported; codes ([design §7.4](design.md#74-residual-risks)) |
-| T6 | A broker client other than the gateway | Publish and read what the broker's ACL allows: forge events and documents, send messages, manage contacts | The ACL ([securing the broker](mqtt-api.md#securing-the-broker)); warnings and refusals for a broker without login or TLS; forged documents restored |
-| T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, add and remove contacts, switch telemetry, see positions and messages | `[homeassistant] controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
+| T6 | A broker client other than the gateway | Publish and read what the broker's ACL allows: forge events and documents, send messages, manage contacts, read the household's unsent drafts and send them | The ACL ([securing the broker](mqtt-api.md#securing-the-broker)); warnings and refusals for a broker without login or TLS; forged documents restored |
+| T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, also the draft another user left in a chat, add and remove contacts, switch telemetry, see positions and messages, and the settings in effect, the hidden targets' names and prefixes included (never a secret, host or key) | `[homeassistant] controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
 | T8 | Home Assistant's administrator or host | All of T7, automations, the recorder | Not an attacker of the gateway; a victim of what reaches Home Assistant |
 | T9 | A process in the container as the service user | The state directory, the radio's device, the login in memory | The systemd sandbox; the password as a credential root alone may read ([deployment](deployment.md#4-operations)) |
 | T10 | Root in the container, the Proxmox host | Everything | Not an attacker of the gateway |
@@ -108,7 +108,10 @@ shows until it is restored, and while the gateway is offline as long as the forg
 `[homie] enabled`, a second connection publishes the Homie device and takes texts on
 `homie/<device>/<key>/send/set` as on `contacts/<key>/send` ([mqtt-api](mqtt-api.md#homie-homiehomie_device));
 what another client writes on the device's topics is not restored, so only the ACL keeps its
-values true.
+values true. The drafts of Home Assistant's chats are retained until they are sent, emptied after
+15 minutes or cleared at a clean stop: a client that may read `<base>/<node>/#` reads them, and
+one that may write a draft's request topic sends it
+([drafts](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)).
 
 ### B4: the broker and Home Assistant
 

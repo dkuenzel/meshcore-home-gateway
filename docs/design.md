@@ -174,9 +174,11 @@ flowchart TB
 | `outbox` | The outgoing queue (alerts first, kept across a stop) and its delivery: validation, deduplication, attempts, acknowledgements, retries, a delivery event for each step (§6.2). |
 | `inbox` | Received messages: in order, without copies, commands judged (§6.4, §7.3), each published and handed on; a bounded rate per sender and per channel. |
 | `announcer` | Announcements to Home Assistant: the discovery document, the controls that add contacts, the contacts' devices; again after a birth message or a cleared device (§6.7). |
+| `drafts` | The drafts of Home Assistant's chats: one per chat in memory, published retained; a text or a press from Home Assistant, the press handed to the outbox at once (§6.7). |
 | `status` | The state document with its health section, and systemd's status line. |
 | `radio_link` | The radio as the parts see it: the session while connected, what the radio said it is, whether another client took the TCP link. |
 | `config_checks` | What a configuration implies: the contacts it protects, the warnings that the start logs and `check-config` shows. |
+| `config_view` | The configuration as the `config` document shows it: an allowlist of the settings in effect, never a secret, a host or a key. |
 | `wiring` | Puts the service together: the adapters, the parts, and who hears of what (the list in its docstring; ARC-009). |
 | `observer` | Feeds the mesh view and the history from the radio's reports, messages, telemetry answers and deliveries; publishes the documents. |
 | `telemetry_poller` | Asks the companions for telemetry, one at a time, after the messages; takes an answer only for the contact asked (§6.11). |
@@ -516,10 +518,13 @@ there).
 | `received` | out | no | JSON with `event_type` = `contact` or `channel` |
 | `command` | out | no | JSON with `event_type` = command word |
 | `rx` | out | no | JSON per received packet: SNR, RSSI, raw bytes (optional) |
-| `stats`, `contacts`, `contacts/<key>`, `nodes`, `history` | out | yes | JSON documents of the observer (§6.6) |
+| `stats`, `contacts`, `contacts/<key>`, `nodes`, `history`, `pending` | out | yes | JSON documents of the observer (§6.6) |
+| `config` | out | yes | JSON: the settings in effect, by an allowlist (module `config_view`), at the start and at each radio connect |
 | `contact`, `node` | out | no | JSON: a contact added or removed, the result of a contact request (also excluded from telemetry or included again); a node heard for the first time |
 | `contacts/<key>/telemetry` | in | must not be | `on`, `off` or JSON: include a companion in telemetry, or exclude it (§6.11) |
 | `telemetry` | out | no | JSON: a companion answers again, or stopped answering (§6.11) |
+| `homeassistant/draft/<kind>/<chat>` | out | yes | JSON `{"text": …}`: the draft of a chat in Home Assistant (§6.7) |
+| `homeassistant/draft/<kind>/<chat>/request` | in | must not be | JSON: a text for the draft, or `{"send": true}` (§6.7) |
 
 * QoS 1 throughout, except command events. MQTT 3.1.1 with a clean session (or, with
   `[mqtt] protocol = "5"`, MQTT 5 without a session expiry interval, which ends the session with
@@ -558,8 +563,9 @@ statistics, the packet log), every received message and every final delivery
 core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
-`contacts` and `contacts/<key>`, `nodes`, `history`, and the events `contact`, `node` and
-`telemetry`.
+`contacts` and `contacts/<key>`, `nodes`, `history`, `pending` (the outbox's messages on their
+way), `config` (the settings in effect, which the bridge hands it at the start and at each radio
+connect), and the events `contact`, `node` and `telemetry`.
 
 The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 
@@ -601,7 +607,7 @@ the file.
 | `meshcore-home-gateway doctor [--state-dir DIR]` | One line per check, `ok`, `warning` or `problem`: the configuration and its warnings, a radio over TCP, TLS, the broker login and whether the broker takes clients without a user name, the gateway online, its radio, a radio clock more than 60 s off, a contested link, untested firmware, the health section, then on this host the free space for the state, automatic security updates and a restart that updates wait for. Exit 1 when a check finds a problem. |
 | `meshcore-home-gateway backup FILE [--with-secrets] [--state-dir DIR]` | Write the configuration, `state.json`, `telemetry-excluded.json`, a copy of `history.sqlite3` made with SQLite's online backup and `MANIFEST.json` (version, time, paths, files, whether the password is in it) into a tar.gz that only its owner can read, while the service runs; never over an existing file. The broker password's line becomes a comment unless `--with-secrets`, which also takes the files `password_file` and `codes_file` name. Exit 1 when a file cannot be read or the archive written. |
 | `meshcore-home-gateway retire [--yes] [--state-dir DIR]` | With the service stopped: remove the gateway, its controls and every contact device (also one whose removal is pending) from Home Assistant, each bound to all components it had first; clear every retained document under the gateway's topics; leave its availability `offline`. Without `--yes`, count what it would do. Exit 1 while the gateway is online or when the broker refuses. |
-| `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Exit 1 without a history or with one of a newer version. |
+| `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Since 2.1 `messages` ends with `target`, `delivery_id`, `queued_at` (a time), `suspect` (`true` or `false`) and `reason`, the keys of the `history` document ([mqtt-api.md](mqtt-api.md#history-history)). Exit 1 without a history or with one of a newer version. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
 

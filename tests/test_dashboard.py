@@ -21,7 +21,7 @@ from meshcore_home_gateway.config import Config, load_config, parse_config
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.model import DeliveryState, Position
 from meshcore_home_gateway.dashboard import TemplateError
-from meshcore_home_gateway.mqtt.discovery import discovery_payload
+from meshcore_home_gateway.mqtt.discovery import discovery_payload, text_room
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.outbox import Delivery
 from meshcore_home_gateway.protocol.codes import NodeType
@@ -1255,6 +1255,19 @@ def test_the_room_is_the_gateways_limit_of_the_chat(tmp_path: Path) -> None:
     assert chats["contact-bob"].room == 160 - 10 - 6
     assert chats["contact-alice"].room == 150
     assert chats["chat-family"].room == 158
+
+
+def test_the_room_is_the_drafts_max_before_the_radio_is_known() -> None:
+    """The room a chat page names is the `max` the gateway announces for the chat's draft while
+    it does not know the radio's name (discovery.text_room): with `ascii_only`, a target's prefix
+    and suffix count as the ASCII they are sent as ("ö" as "oe", the en dash as "-")."""
+    affixes = 'prefix = "Home: "\n'
+    more = HOUSEHOLD.replace(affixes, 'prefix = "Größe: "\nsuffix = " \u2013 Grüße"\n')
+    gateway = config(more=more + "[messages]\nascii_only = true\n")
+    for target in [*gateway.targets, None]:
+        assert dashboard.room(gateway, target) == text_room(gateway, target, None)
+    bob = next(target for target in gateway.targets if target.alias == "bob")
+    assert dashboard.room(gateway, bob) == 160 - len("Groesse: ") - len(" - Gruesse")
 
 
 def test_the_controls_items_come_from_the_state(tmp_path: Path) -> None:

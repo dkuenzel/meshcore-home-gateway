@@ -1,7 +1,7 @@
 """`history export`: the local history (ADR 0016) as JSON lines or CSV (IMP-047), read only, while
 the service runs. Times are ISO 8601 in UTC; in CSV, the control characters of texts from the
 mesh become spaces, as in the command line's other lists, and a text that a spreadsheet would
-compute (=, +, -, @ first) begins with a '."""
+compute (=, +, -, @ first) begins with a '. A truth value is true or false, as in JSON."""
 
 from __future__ import annotations
 
@@ -41,6 +41,11 @@ TABLES: dict[str, tuple[str, tuple[tuple[str, bool], ...]]] = {
             ("state", False),
             ("hops", False),
             ("snr_db", False),
+            ("target", False),  # since 2.1
+            ("delivery_id", False),
+            ("queued_at", True),
+            ("suspect", False),
+            ("reason", False),
         ),
     ),
     "positions": (
@@ -59,6 +64,7 @@ TABLES: dict[str, tuple[str, tuple[tuple[str, bool], ...]]] = {
         (("contact_key", False), ("at", True), ("quantity", False), ("value", False)),
     ),
 }
+FLAGS = frozenset({"suspect"})  # stored as 1 or 0: exported as true or false
 
 
 def _history_export(args: argparse.Namespace) -> int:
@@ -103,7 +109,7 @@ def _rows(db: sqlite3.Connection, table: str, since: float | None) -> list[dict[
     cursor = db.execute(query, (since,) if since is not None else ())
     return [
         {
-            column: _iso(value) if time else value
+            column: _iso(value) if time else _flag(value) if column in FLAGS else value
             for (column, time), value in zip(columns, row, strict=True)
         }
         for row in cursor
@@ -126,10 +132,16 @@ def _cell(value: Any) -> Any:
     would take for a formula (=, +, -, @) behind a ' that shows it as text (CSV injection)."""
     if value is None:
         return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"  # as in JSON
     if not isinstance(value, str):
         return value
     text = _safe_text(value)
     return "'" + text if text.startswith(FORMULA_STARTS) else text
+
+
+def _flag(value: Any) -> bool | None:
+    return None if value is None else bool(value)
 
 
 def _iso(value: Any) -> str | None:

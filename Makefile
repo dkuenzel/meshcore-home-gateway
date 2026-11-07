@@ -17,9 +17,13 @@ COOLDOWN_DAYS ?= 14
 # `make lock UPGRADE=` writes the lock files again with the versions they pin
 UPGRADE ?= --upgrade
 AUDIT_VENV ?= .venv-audit
-# Home Assistant contract tests: their own environment, pinned in home-assistant/requirements.txt
+# Home Assistant contract tests: their own environment, pinned in home-assistant/requirements.txt.
+# HA_SERIES=2026.11 takes the series' own lock, home-assistant/requirements-2026.11.txt, into
+# .venv-homeassistant-2026.11 (docs/testing.md).
 HA_PYTHON ?= python3.14
-HA_VENV ?= .venv-homeassistant
+HA_SERIES ?=
+HA_LOCK := requirements$(if $(HA_SERIES),-$(HA_SERIES))
+HA_VENV ?= .venv-homeassistant$(if $(HA_SERIES),-$(HA_SERIES))
 # the branch a pull request goes into: `make release-plan` checks the version against it
 RELEASE_BASE ?= origin/main
 PYZ := meshcore-home-gateway.pyz
@@ -63,11 +67,12 @@ lock: ## Re-resolve the lock files in requirements/: the newest releases older t
 	done
 
 # home-assistant/overrides.txt raises versions the pinned Home Assistant asks for (SUP-005).
-ha-lock: ## Re-resolve home-assistant/requirements.txt, only releases older than COOLDOWN_DAYS
-	cd home-assistant && uv pip compile requirements.in --python-version 3.14.2 \
+# `make ha-lock HA_SERIES=2026.11` resolves requirements-2026.11.in the same way.
+ha-lock: ## Re-resolve home-assistant/requirements.txt (or HA_SERIES's), only releases older than COOLDOWN_DAYS
+	cd home-assistant && uv pip compile $(HA_LOCK).in --python-version 3.14.2 \
 	  --python-platform linux --no-strip-extras --generate-hashes --overrides overrides.txt \
 	  --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
-	  --output-file requirements.txt
+	  --output-file $(HA_LOCK).txt
 
 # Known vulnerabilities, from the Python Packaging Advisory Database (CI runs it; SUP-005). One in
 # the tool chains fails; one in the test environment of Home Assistant, whose versions its pinned
@@ -77,9 +82,9 @@ audit: ## Known vulnerabilities in the lock files (pip-audit; needs the network)
 	  $(AUDIT_VENV)/.locked
 	$(AUDIT_VENV)/bin/pip-audit --progress-spinner off --disable-pip --require-hashes --strict \
 	  -r requirements/dev.txt -r requirements/release.txt -r requirements/audit.txt
-	$(AUDIT_VENV)/bin/pip-audit --progress-spinner off --disable-pip --require-hashes --strict \
-	  -r home-assistant/requirements.txt \
-	  || echo "audit: warning: home-assistant/requirements.txt has the vulnerabilities above" >&2
+	$(foreach lock,$(sort $(wildcard home-assistant/requirements*.txt)),\
+	  $(AUDIT_VENV)/bin/pip-audit --progress-spinner off --disable-pip --require-hashes --strict \
+	  -r $(lock) || echo "audit: warning: $(lock) has the vulnerabilities above" >&2;)
 
 lint: venv ## ruff lint and format check, mypy --strict
 	$(BIN)/ruff check .
@@ -108,15 +113,27 @@ matrix: ## `make test` with every Python in PYTHONS (the CI matrix); a missing o
 	if [ -n "$$failed" ]; then echo "matrix: failed with$$failed"; fi; \
 	if [ -n "$$missing$$failed" ]; then exit 1; fi; echo "matrix: all passed"
 
-$(HA_VENV)/.installed: home-assistant/requirements.txt
+$(HA_VENV)/.installed: home-assistant/$(HA_LOCK).txt
 	$(HA_PYTHON) -m venv $(if $(wildcard $(HA_VENV)/pyvenv.cfg),--clear) $(HA_VENV)
 	$(HA_VENV)/bin/python -m pip install --quiet --require-hashes --no-deps \
-	  -r home-assistant/requirements.txt
+	  -r home-assistant/$(HA_LOCK).txt
 	touch $@
 
-ha-test: $(HA_VENV)/.installed ## Contract tests against the pinned Home Assistant (Python 3.14.2+)
-	$(HA_VENV)/bin/python -m pytest -c home-assistant/pytest.ini -p no:cacheprovider \
-	  home-assistant/tests
+# A series' lock exists once `make ha-lock HA_SERIES=…` admitted its releases: the cooldown is
+# not bypassed (CONTRIBUTING.md).
+home-assistant/requirements-%.txt:
+	@echo "ha-test: no lock $@ yet; make ha-lock HA_SERIES=$* writes it once its releases are $(COOLDOWN_DAYS) days old" >&2
+	@exit 1
+
+# Home Assistant's own test plugin (pytest-homeassistant, since 2026.11) keeps the test
+# configuration in home-assistant/tests/testing_config unless told otherwise: a temporary folder
+# here, so that no test writes into the checkout. The older plugin does not know the option.
+ha-test: $(HA_VENV)/.installed ## Contract tests against the pinned Home Assistant, or HA_SERIES's (Python 3.14.2+)
+	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && options=() && \
+	  if $(HA_VENV)/bin/python -c 'import pytest_homeassistant' 2>/dev/null; then \
+	    options=(-o "ha_test_config_dir=$$tmp"); fi && \
+	  $(HA_VENV)/bin/python -m pytest -c home-assistant/pytest.ini -p no:cacheprovider \
+	    "$${options[@]}" home-assistant/tests
 
 # The firmware tests are not part of `make check`: they need git access to the pinned sources (or a
 # local clone in MESHCORE_SOURCE and CAYENNELPP_SOURCE), a C++ compiler and OpenSSL's headers.

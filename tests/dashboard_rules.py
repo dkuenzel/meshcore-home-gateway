@@ -24,6 +24,7 @@ from meshcore_home_gateway import dashboard, i18n
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.model import DeliveryState
 from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL
+from meshcore_home_gateway.protocol.links import _INVISIBLE
 from meshcore_home_gateway.views import _TELEMETRY_MODES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,20 +74,9 @@ QUOTES: dict[str, tuple[str, ...]] = {
 KEY = "(↵)"
 KEY_NAME = "Return, then Send"
 # rule 19: what m() removes: C0 controls but tab, LF and CR; C1 controls; the invisible
-# characters the gateway drops before it parses a contact link; never U+200C and U+200D
-INVISIBLE = frozenset(
-    [
-        0x00AD,
-        0x061C,
-        0x200B,
-        0x200E,
-        0x200F,
-        0xFEFF,
-        *range(0x202A, 0x202F),
-        *range(0x2060, 0x2065),
-        *range(0x2066, 0x206A),
-    ]
-)
+# characters the gateway drops before it parses a contact link (protocol/links.py, its one
+# list); never U+200C and U+200D
+INVISIBLE = frozenset(_INVISIBLE)
 REMOVED = frozenset([*range(0x09), 0x0B, 0x0C, *range(0x0E, 0x20), *range(0x7F, 0xA0)]) | INVISIBLE
 # rule 17: Home Assistant's menus, which only a line for the administrator names
 MENUS = ("›", "Devices & services", "Developer tools")

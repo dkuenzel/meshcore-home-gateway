@@ -106,7 +106,7 @@ What each holds and for how long: [privacy.md](privacy.md); backing them up:
 | adding and removing contacts | `contact_manager.py`, `protocol/links.py` | [mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove) |
 | the radio's settings | `core/profile.py`, `radio/profile.py` | [ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | who hears of what | `wiring.py` (its docstring) | [design §5.1](design.md#51-ports-and-adapters) |
-| the configuration | `config.py`, `config_checks.py` | [configuration.md](configuration.md) |
+| the configuration | `config.py`, `config_checks.py`, `config_view.py` (what `config` shows) | [configuration.md](configuration.md) |
 | the command line | `cli/` | [design §6.9](design.md#69-command-line) |
 | translations | `i18n.py`, `catalog.py`, `locale/` | [design §6.12](design.md#612-translations) |
 | the installer and the unit | `deploy/` | [deployment.md](deployment.md) |

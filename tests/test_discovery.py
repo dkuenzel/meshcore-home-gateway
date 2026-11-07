@@ -9,6 +9,7 @@ import pytest
 
 from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.config import DEFAULT_DEVICE_NAME, Config, parse_config
+from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
@@ -36,8 +37,12 @@ from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.views import (
+    HistoryEntry,
+    config_document,
     contacts_document,
+    history_document,
     nodes_document,
+    pending_document,
     settings_document,
     stats_document,
 )
@@ -146,7 +151,7 @@ def test_document_has_the_mandatory_parts() -> None:
     assert doc["availability"] == [{"topic": "meshcore/radio-1/availability"}]
     assert doc["qos"] == 1
     for key, component in doc["cmps"].items():
-        assert component["p"] in {"binary_sensor", "sensor", "event", "notify", "button"}, key
+        assert component["p"] in {"binary_sensor", "sensor", "event", "notify", "button", "text"}
         assert component["unique_id"] == f"meshcore_home_gateway_radio-1_{key}"
         # Home Assistant turns the '-' into '_' in the entity ID (home-assistant/tests)
         assert (
@@ -168,6 +173,10 @@ def test_entities_and_their_sources() -> None:
         "command",
         "send_alerts",
         "send_alice",
+        "write_alerts",
+        "write_alerts_send",
+        "write_alice",
+        "write_alice_send",
         "noise_floor",
         "radio_airtime",
         "uptime",
@@ -191,6 +200,9 @@ def test_entities_and_their_sources() -> None:
         "radio_clock_offset",
         "radio_link_contested",
         "degraded",
+        "message_history",
+        "pending_messages",
+        "configuration",
     }
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -218,12 +230,82 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.contacts: contacts_document(mesh),
         TOPICS.nodes: nodes_document(mesh),
         TOPICS.settings: settings_document(ProfileReport("auto", 14, True, False, {}, {}), 0.0),
+        TOPICS.history: history_document([]),
+        TOPICS.pending: pending_document([]),
+        TOPICS.config: config_document(0.0, target_settings(CONFIG, None), shown_settings(CONFIG)),
     }
     for topic, document in documents.items():
         assert _template_keys(cmps, topic) <= set(document), topic
     assert _template_keys(cmps, TOPICS.contacts) >= {"total", "remote_cli_total"}
     for counter in ("packets_received", "packets_sent", "receive_errors", "uptime"):
         assert cmps[counter]["enabled_by_default"] is False
+
+
+HISTORY_STATE = (  # the newest message's time; none in an empty history: unknown
+    "{{ value_json.messages[0].at if value_json.messages else None }}"
+)
+
+
+def test_the_message_history_is_a_timestamp_sensor_that_outlives_the_gateway() -> None:
+    """The `history` document as a sensor: its state the newest message's time, the document its
+    attributes. Its own availability, on its own topic, keeps it available while the gateway is
+    offline, so that the messages stay readable."""
+    history = discovery_payload(CONFIG, TOPICS)["cmps"]["message_history"]
+    assert history == {
+        "p": "sensor",
+        "unique_id": "meshcore_home_gateway_radio-1_message_history",
+        "default_entity_id": "sensor.meshcore_home_gateway_radio-1_message_history",
+        "name": "Message history",
+        "device_class": "timestamp",
+        "state_topic": "meshcore/radio-1/history",
+        "value_template": HISTORY_STATE,
+        "json_attributes_topic": "meshcore/radio-1/history",
+        "availability": [{"topic": "meshcore/radio-1/history", "value_template": "{{ 'online' }}"}],
+    }
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    assert discovery_payload(off, TOPICS)["cmps"]["message_history"] == history  # no control
+    newest = history_document([HistoryEntry(1_800_000_000.0, "in", "channel", "Hi")])
+    assert newest["messages"][0]["at"] == "2027-01-15T08:00:00+00:00"  # what the template reads
+
+
+def test_the_messages_on_their_way_are_a_count_that_outlives_the_gateway() -> None:
+    """The `pending` document as a sensor (#112): its state the number of messages accepted and
+    not final, the one being sent included; the document its attributes. Its own availability
+    keeps it readable while the gateway is offline, as the history's."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["pending_messages"]
+    assert sensor == {
+        "p": "sensor",
+        "unique_id": "meshcore_home_gateway_radio-1_pending_messages",
+        "default_entity_id": "sensor.meshcore_home_gateway_radio-1_pending_messages",
+        "name": "Messages on their way",
+        "icon": "mdi:tray-arrow-up",
+        "state_topic": "meshcore/radio-1/pending",
+        "value_template": "{{ value_json.total }}",
+        "json_attributes_topic": "meshcore/radio-1/pending",
+        "availability": [{"topic": "meshcore/radio-1/pending", "value_template": "{{ 'online' }}"}],
+    }
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    assert discovery_payload(off, TOPICS)["cmps"]["pending_messages"] == sensor  # no control
+
+
+def test_the_configuration_is_a_diagnostic_timestamp_of_the_start() -> None:
+    """The `config` document as a sensor: its state the time the gateway started with the
+    settings, the settings its attributes. The gateway's availability: while it is offline its
+    settings may be others by the next start. No control: also with `controls = false`."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["configuration"]
+    assert sensor == {
+        "p": "sensor",
+        "unique_id": "meshcore_home_gateway_radio-1_configuration",
+        "default_entity_id": "sensor.meshcore_home_gateway_radio-1_configuration",
+        "name": "Configuration",
+        "device_class": "timestamp",
+        "entity_category": "diagnostic",
+        "state_topic": "meshcore/radio-1/config",
+        "value_template": "{{ value_json.started_at }}",
+        "json_attributes_topic": "meshcore/radio-1/config",
+    }
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    assert discovery_payload(off, TOPICS)["cmps"]["configuration"] == sensor
 
 
 def test_the_profile_sensor_names_every_status_the_document_has() -> None:
@@ -250,8 +332,8 @@ def test_with_controls_off_the_show_hidden_button_is_unavailable() -> None:
     assert button["availability_mode"] == "all"
     assert button["availability"] == [
         {"topic": TOPICS.availability},
-        {"topic": TOPICS.availability, "value_template": "{{ 'offline' }}"},
-    ]
+        {"topic": f"{TOPICS.root}/homeassistant/off", "value_template": "{{ 'offline' }}"},
+    ]  # a topic nobody publishes: Home Assistant keys availability by topic (HA-02)
 
 
 def test_a_hidden_target_has_no_notify_entity() -> None:
@@ -300,6 +382,10 @@ def test_the_device_shows_the_radio_once_it_is_known() -> None:
     assert known["dev"]["sn"] == "c3" * 32
     assert known["o"]["sw"] == __version__
     assert known["o"]["url"].startswith("https://github.com/")
+    # the radio's name takes room from channel texts: only the channel draft's `max` follows it
+    unknown_max = unknown["cmps"]["write_alerts"].pop("max")
+    known_max = known["cmps"]["write_alerts"].pop("max")
+    assert (unknown_max, known_max) == (158, 160 - len("Gateway") - 2)
     assert known["cmps"] == unknown["cmps"]
 
 
@@ -337,6 +423,17 @@ def test_a_degraded_gateway_is_a_problem() -> None:
         "disk_free_mb",
     ):
         assert f"'{key}': h.get('{key}')" in sensor["json_attributes_template"]
+
+
+def test_the_contacts_sensor_says_why_requests_are_refused() -> None:
+    """The guide and the changelog of 2.0.0 name `manage_reason` as an attribute of *Contacts*
+    (#99): why add and remove requests are refused now, `null` while they are taken. An index of
+    an earlier version lacks it: `.get` logs nothing in Home Assistant."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["contacts"]
+    assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.contacts
+    assert sensor["json_attributes_template"] == (
+        "{{ {'max': value_json.max, 'manage_reason': value_json.get('manage_reason')} | tojson }}"
+    )
 
 
 def test_a_look_alike_node_is_a_problem() -> None:
@@ -612,3 +709,98 @@ def test_data_in_names_stays_data(monkeypatch: pytest.MonkeyPatch) -> None:
     english = _maximal("en")
     assert discovery_payload(english, TOPICS)["dev"]["name"] == DEFAULT_DEVICE_NAME
     assert device_name(english, i18n.ENGLISH.ha_name) == DEFAULT_DEVICE_NAME
+
+
+# --- the chats' drafts and their Send buttons (drafts.py, docs/mqtt-api.md) ---------------------
+
+DRAFT_TEXT = "{{ value_json.text if value_json is defined and value_json.text is string else '' }}"
+
+
+def _targets(text: str, **homeassistant: Any) -> Config:
+    config = parse_config(
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\nhost = "192.0.2.10"\n'
+        '[mqtt]\nhost = "broker.example.org"\nnode_id = "radio1"\ninsecure = true\n' + text
+    )
+    return replace(config, homeassistant=replace(config.homeassistant, **homeassistant))
+
+
+def test_each_visible_target_has_a_draft_and_a_send_button_on_one_request_topic() -> None:
+    """Both publish on the chat's request topic at QoS 0, over the device's shared QoS 1: the
+    broker keeps the order of the text and the press, and a press made while Home Assistant's
+    link to the broker is down is not sent after the reconnect (paho keeps QoS 1 for it)."""
+    cmps = discovery_payload(CONFIG, TOPICS)["cmps"]
+    request = "meshcore/radio-1/homeassistant/draft/target/alerts/request"
+    assert cmps["write_alerts"] == {
+        "p": "text",
+        "unique_id": "meshcore_home_gateway_radio-1_write_alerts",
+        "default_entity_id": "text.meshcore_home_gateway_radio-1_write_alerts",
+        "name": "Write to alerts",
+        "command_topic": request,
+        "command_template": '{{ {"text": value} | tojson }}',
+        "state_topic": "meshcore/radio-1/homeassistant/draft/target/alerts",
+        "value_template": DRAFT_TEXT,
+        "mode": "text",
+        "max": 158,
+        "icon": "mdi:message-draw",
+        "qos": 0,
+    }
+    assert cmps["write_alerts_send"] == {
+        "p": "button",
+        "unique_id": "meshcore_home_gateway_radio-1_write_alerts_send",
+        "default_entity_id": "button.meshcore_home_gateway_radio-1_write_alerts_send",
+        "name": "Send what is written to alerts",
+        "command_topic": request,
+        "payload_press": '{"send": true}',
+        "icon": "mdi:send",
+        "qos": 0,
+    }
+    assert discovery_payload(CONFIG, TOPICS)["qos"] == 1  # the shared one, for the others
+    alice = cmps["write_alice"]
+    assert alice["command_topic"] == cmps["write_alice_send"]["command_topic"]
+    assert alice["command_topic"] == "meshcore/radio-1/homeassistant/draft/target/alice/request"
+
+
+def test_the_drafts_max_is_the_room_of_the_targets_texts() -> None:
+    """In bytes: the radio's 160, less a channel's radio name and ": " (the shortest name while
+    it is not known), a direct message's nonce, and the target's prefix and suffix."""
+    affixed = _targets(
+        '[targets.family]\nchannel = 1\nprefix = "Home: "\n'
+        '[targets.alice]\ncontact = "' + KEY + '"\nsuffix = " (home)"\n'
+    )
+    nonce = _targets(
+        '[targets.alice]\ncontact = "' + KEY + '"\n[messages]\nconfirm_nonce = true\n'
+        "ascii_only = true\n"
+        '[targets.carol]\ncontact = "' + "c4" * 32 + '"\nprefix = "° "\n'
+    )
+    cases = [
+        (CONFIG, None, "alerts", 158),  # a channel, the radio's name unknown
+        (CONFIG, RADIO, "alerts", 160 - len("Gateway") - 2),
+        (CONFIG, RADIO, "alice", 160),  # a direct message
+        (affixed, RADIO, "family", 160 - 9 - 6),
+        (affixed, None, "alice", 160 - 7),
+        (nonce, RADIO, "alice", 150),
+        (nonce, RADIO, "carol", 150 - len("deg ")),  # transliterated, as it is sent
+    ]
+    for config, radio, alias, room in cases:
+        cmps = discovery_payload(config, TOPICS, radio)["cmps"]
+        assert cmps[f"write_{alias}"]["max"] == room, (alias, room)
+
+
+def test_a_hidden_target_has_no_draft() -> None:
+    hidden = replace(
+        CONFIG,
+        homeassistant=replace(CONFIG.homeassistant, hidden_targets=frozenset({"alerts", "alice"})),
+    )
+    cmps = discovery_payload(hidden, TOPICS)["cmps"]
+    assert not [key for key in cmps if key.startswith("write_")]
+
+
+def test_controls_off_leaves_the_drafts_available() -> None:
+    """Sending is no control: every user can send with the notify entities anyway."""
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    for key in ("write_alerts", "write_alerts_send", "write_alice", "write_alice_send"):
+        assert (
+            discovery_payload(off, TOPICS)["cmps"][key]
+            == discovery_payload(CONFIG, TOPICS)["cmps"][key]
+        )
+        assert "availability" not in discovery_payload(off, TOPICS)["cmps"][key]

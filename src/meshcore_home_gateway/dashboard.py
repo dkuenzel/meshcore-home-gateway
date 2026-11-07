@@ -43,8 +43,7 @@ from typing import TYPE_CHECKING, Final
 
 from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.core.model import MessageKind, Target
-from meshcore_home_gateway.core.text import CONFIRM_NONCE_BYTES
-from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL
+from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL, text_room
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
 from meshcore_home_gateway.state import ContactDeviceRecords, DeviceRecord, JsonStateFile
 
@@ -273,18 +272,10 @@ def chats(config: Config, records: ContactDeviceRecords) -> Chats:
 
 
 def room(config: Config, target: Target | None) -> int:
-    """The bytes a text to the target, or to a person (None), may have: the gateway's limit
-    (Delivery._text_policy in outbox.py) without the radio's name, which only the radio knows,
-    less the target's prefix and suffix."""
-    if target is not None and target.kind is MessageKind.CHANNEL:
-        limit = MAX_TEXT_BYTES - 2  # the firmware prepends "<name>: "
-    elif config.messages.confirm_nonce:
-        limit = MAX_TEXT_BYTES - CONFIRM_NONCE_BYTES
-    else:
-        limit = MAX_TEXT_BYTES
-    if target is not None:
-        limit -= len(target.prefix.encode("utf-8")) + len(target.suffix.encode("utf-8"))
-    return limit
+    """The bytes a text to the target, or to a person (None), may have beside the target's prefix
+    and suffix: the `max` of the chat's draft before the gateway knows the radio's name, which
+    only the radio knows (discovery.text_room)."""
+    return text_room(config, target, None)
 
 
 def _person(

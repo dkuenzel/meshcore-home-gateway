@@ -10,8 +10,11 @@ from meshcore_home_gateway.core.text import (
     TextRejectedError,
     clean_received,
     contact_name,
+    cut_chars,
     cut_utf8,
     prepare_text,
+    room_bytes,
+    text_limit,
     with_nonce,
     without_nonce,
 )
@@ -239,3 +242,50 @@ def test_a_contact_name_fits_the_radio_between_whole_characters(name: str, expec
 def test_cut_utf8_keeps_whole_characters() -> None:
     assert cut_utf8("aä", 2) == "a"
     assert cut_utf8("abc", 10) == "abc"
+
+
+# --- the room of a text and the cut by characters (the drafts' `max`, design §6.7) ---------------
+
+
+def test_the_limit_of_a_channel_text_leaves_the_radios_name_out() -> None:
+    """The firmware puts "<name>: " before a channel text; without the name, the room of the
+    shortest one, as the outbox limits such a text once more when it sends it."""
+    assert text_limit(160, channel=True, radio_name="Gateway", nonce=True) == 160 - 7 - 2
+    assert text_limit(160, channel=True, radio_name="Gäteway", nonce=False) == 160 - 8 - 2
+    assert text_limit(160, channel=True, radio_name=None, nonce=False) == 158
+
+
+def test_the_limit_of_a_direct_text_leaves_room_for_the_nonce() -> None:
+    assert text_limit(160, channel=False, radio_name="Gateway", nonce=False) == 160
+    assert text_limit(160, channel=False, radio_name="Gateway", nonce=True) == 160 - 10
+
+
+def test_the_room_beside_a_prefix_and_suffix_is_what_prepare_text_fills() -> None:
+    policy = TextPolicy(max_bytes=40)
+    room = room_bytes(policy, prefix="Hof: ", suffix=" (gw)")
+    assert room == 40 - 5 - 5
+    fits = prepare_text("x" * room, policy, prefix="Hof: ", suffix=" (gw)")
+    assert fits == "Hof: " + "x" * room + " (gw)"  # not cut
+    cut = prepare_text("x" * (room + 1), policy, prefix="Hof: ", suffix=" (gw)")
+    assert cut.endswith("... (gw)")
+    # transliterated affixes take their ASCII room: "°" is "deg"
+    ascii_policy = TextPolicy(max_bytes=40, ascii_only=True)
+    assert room_bytes(ascii_policy, prefix="° ") == 40 - 4
+    assert room_bytes(policy, prefix="° ") == 40 - 3
+
+
+@pytest.mark.parametrize(
+    ("text", "chars", "expected"),
+    [
+        ("Hello", 10, "Hello"),
+        ("Hello", 4, "Hell"),
+        ("éte", 1, ""),  # an e with its accent stays whole
+        ("éte", 2, "é"),
+        ("👍🏽 ok", 1, ""),  # an emoji with its skin tone stays whole
+        ("ab👍🏽", 3, "ab"),
+        ("", 5, ""),
+    ],
+)
+def test_cut_chars_keeps_whole_characters(text: str, chars: int, expected: str) -> None:
+    assert cut_chars(text, chars) == expected
+    assert len(cut_chars(text, chars)) <= chars

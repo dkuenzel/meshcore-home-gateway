@@ -17,12 +17,22 @@ from typing import Any
 
 import pytest
 import yaml
+from ha_plugin import async_fire_mqtt_message
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import async_fire_mqtt_message
-from test_contract import CONFIG, GUIDE, PREFIX, RADIO, TOPICS, announce, fire, problems
+from test_contract import (
+    CLEARS_PER_ENTITY,
+    CONFIG,
+    GUIDE,
+    PREFIX,
+    RADIO,
+    TOPICS,
+    announce,
+    fire,
+    problems,
+)
 
 from meshcore_home_gateway.core.mesh import Heard, Mesh, Node, Signal
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Position
@@ -151,6 +161,9 @@ ALICE_ANSWER_IDS = {  # with her answers (tests/test_telemetry.py): GPS and a BM
     "sensor.mesh_alice_ch2_barometric_pressure",
     "sensor.mesh_alice_ch2_altitude",
 }
+# a companion that is no contact target can be written to from Home Assistant (in CONFIG Alice's
+# key is the target `operator`'s, whose chat is the target's)
+ALICE_WRITE_IDS = {"text.mesh_alice_write", "button.mesh_alice_write_send"}
 HILL_IDS = {
     "device_tracker.mesh_hilltop",
     "sensor.mesh_hilltop_last_heard",
@@ -186,7 +199,32 @@ async def test_every_contact_gets_a_device_below_the_gateway(
     assert friendly(hass, "sensor.mesh_alice_last_heard") == "Alice Last heard"
     assert friendly(hass, "device_tracker.mesh_hilltop") == "Hilltop Position"
     documented = set(re.findall(r"\b[a-z_]+\.mesh_alice\w*", GUIDE.read_text(encoding="utf-8")))
-    assert documented <= ALICE_IDS | ALICE_ANSWER_IDS
+    assert documented <= ALICE_IDS | ALICE_ANSWER_IDS | ALICE_WRITE_IDS
+    assert problems(caplog) == []
+
+
+async def test_a_companion_that_is_no_contact_target_has_a_draft(
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Its *Write* and *Send what is written*; a contact target's companion has none, its chat
+    is the target's (above)."""
+    from test_contract import make_config  # noqa: PLC0415
+
+    no_target = make_config("[targets.alerts]\nchannel = 1\n")
+    await announce(hass, discovery_payload(no_target, TOPICS, RADIO))
+    await online(hass)
+    devices = ContactDevices(
+        no_target, TOPICS, broker, ContactDeviceRecords(store), wall_clock=lambda: NOW
+    )
+    devices.update(mesh_of(ALICE_NODE))
+    await broker.deliver(hass)
+    assert set(contact_entities(hass, ALICE)) == ALICE_IDS | ALICE_WRITE_IDS
+    assert friendly(hass, "text.mesh_alice_write") == "Alice Write"
+    assert friendly(hass, "button.mesh_alice_write_send") == "Alice Send what is written"
     assert problems(caplog) == []
 
 
@@ -410,9 +448,19 @@ async def test_a_device_the_user_deletes_stays_hidden_until_shown(
     assert (await client.receive_json())["success"]
     await hass.async_block_till_done()
     published = [c.args[:4] for c in mqtt.async_publish.call_args_list]
-    assert published == [(contact_discovery_topic(CONFIG, ALICE), None, 0, True)]
-    # the broker hands it to the gateway's subscription, with the retain flag cleared (live)
-    devices.discovery_message(published[0][0], b"", retained=False)
+    copies = len(ALICE_IDS) if CLEARS_PER_ENTITY else 1  # since 2026.11 one for each entity
+    assert published == [(contact_discovery_topic(CONFIG, ALICE), None, 0, True)] * copies
+    # since 2026.11 Home Assistant finds nothing left to clean up at a copy of its own
+    leftover = (
+        "WARNING homeassistant.components.mqtt.discovery: No device components to cleanup for "
+        f"contact_{ALICE}, node_id '{PREFIX}'"
+    )
+    assert problems(caplog) == ([leftover] if CLEARS_PER_ENTITY else [])
+    caplog.clear()
+    # the broker hands each to the gateway's subscription, with the retain flag cleared (live):
+    # they are one deletion (#115)
+    for topic, _payload, _qos, _retain in published:
+        devices.discovery_message(topic, b"", retained=False)
     (event_topic, event), *others = broker.sent
     assert (event_topic, json.loads(event)["event_type"]) == (TOPICS.contact_event, "hidden")
     assert others == []
@@ -501,7 +549,8 @@ async def test_an_entity_the_user_disabled_never_hides_the_contact(
     store: JsonStateFile,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Home Assistant clears a device's topic itself when it removes a disabled entity. The
+    """Before 2026.11, Home Assistant clears a device's topic itself when it removes a disabled
+    entity (since then a cleared topic removes the disabled entities too: CLEARS_PER_ENTITY). The
     gateway never removes a single component, and the copy of a removal it sees is no deletion."""
     await with_gateway(hass)
     devices = gateway_devices(broker, store)
@@ -524,14 +573,20 @@ async def test_an_entity_the_user_disabled_never_hides_the_contact(
     assert problems(caplog) == []
     devices.update(mesh_of(HILL_NODE, mesh=mesh))  # Alice leaves the table
     await broker.deliver(hass)
-    for topic, _payload, _qos, _retain in home_assistant_publishes(mqtt):
+    cleared = home_assistant_publishes(mqtt)
+    disabled = 0 if CLEARS_PER_ENTITY else 2  # one for each disabled entity before 2026.11
+    assert cleared == [(contact_discovery_topic(CONFIG, ALICE), None, 0, True)] * disabled
+    for topic, _payload, _qos, _retain in cleared:
         devices.discovery_message(topic, b"", retained=False)  # the broker hands it on, live
     assert ContactDeviceRecords(store).hidden == set()
     assert broker.sent == []  # no "hidden" event
     assert contact_entities(hass, ALICE) == {}
-    assert warnings_of(caplog) == {
-        "WARNING homeassistant.components.mqtt.discovery: No device components to cleanup",
-    }  # its own empty message, which the broker hands back to it too
+    # before 2026.11: its own empty messages, which the broker hands back to it too
+    assert warnings_of(caplog) == (
+        set()
+        if CLEARS_PER_ENTITY
+        else {"WARNING homeassistant.components.mqtt.discovery: No device components to cleanup"}
+    )
 
 
 # --- the gateway's own entities for the observer's documents -------------------------------------

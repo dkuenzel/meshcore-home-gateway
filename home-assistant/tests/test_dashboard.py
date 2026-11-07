@@ -27,6 +27,7 @@ from typing import Any
 import markupsafe
 import pytest
 from freezegun.api import FrozenDateTimeFactory
+from ha_plugin import CLIENT_ID
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -35,7 +36,6 @@ from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
-from pytest_homeassistant_custom_component.common import CLIENT_ID
 from test_contract import (
     PREFIX,
     RADIO,
@@ -313,7 +313,7 @@ def documented(
     (docs/mqtt-api.md, History and Messages on their way): the document as its attributes, the
     newest message's time or the count as its state. The cards' rules are tested on this state;
     test_the_dashboard_reads_the_sensors_of_a_gateway_of_2_1 checks that discovery makes the
-    sensors, which is the gateway's work (stage 2)."""
+    sensors, which is the gateway's work."""
     document = {"total": len(messages), "truncated": False, "messages": messages} | more
     if entity == HISTORY:
         state = messages[0]["at"] if messages else "unknown"
@@ -581,9 +581,8 @@ async def test_the_dashboard_names_only_entities_that_exist(
 ) -> None:
     """The gateway's entities, its controls, the trackers, the contacts' switches and buttons;
     the same in English and in xx, with the household discovered in `language`; not the guide's
-    script (D-22). Not here: the gateway's sensors of 2.1
-    (test_the_dashboard_reads_the_sensors_of_a_gateway_of_2_1) and the chat pages' fields and
-    Send buttons, which only their guards name (the footers' tests)."""
+    script (D-22). The gateway's sensors of 2.1 and the chat pages' fields and Send buttons, which
+    only their guards name, as the gateway of 2.1 announces them (G4): `-` in an alias as `_`."""
     offer("xx", monkeypatch, XX)
     config = in_language(make_config(), language)
     broker, mesh = Broker(), household(ALICE_NODE, HILL_NODE)
@@ -612,7 +611,7 @@ async def test_the_dashboard_names_only_entities_that_exist(
         f"text.{PREFIX}_write_{alias}" for alias in ("alerts", "my_target", "operator")
     } | {f"button.{PREFIX}_write_{alias}_send" for alias in ("alerts", "my_target", "operator")}
     registered = {e.entity_id for e in er.async_get(hass).entities.values()}
-    assert names - set(OF_2_1) - fields <= registered
+    assert names <= registered
     assert problems(caplog) == []
 
 
@@ -625,8 +624,7 @@ async def test_the_dashboard_reads_the_sensors_of_a_gateway_of_2_1(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The messages, the messages on their way and the configuration: sensors that the gateway
-    announces since 2.1, each named by the dashboard and in the registry once it is announced.
-    Red until the gateway of 2.1 announces them (its stage 2)."""
+    announces since 2.1, each named by the dashboard and in the registry once it is announced."""
     config = make_config()
     names = referenced(await made(hass, hass_ws_client, config, tmp_path))
     assert set(OF_2_1) <= names

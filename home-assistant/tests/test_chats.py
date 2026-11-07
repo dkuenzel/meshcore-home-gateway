@@ -5,7 +5,7 @@ messages on Chats, and Latest chats on Overview (docs/home-assistant.md, Dashboa
 The household and the helpers are those of test_dashboard.py. The cards read the gateway's message
 history and its messages on their way, sensors of version 2.1 (G1, G3): most tests here set their
 states as the gateway announces them (documented()), so they test the cards' rules on their own;
-the tests marked "stage 2" feed the documents through the gateway's own discovery and need it.
+the last tests feed the documents and the drafts through the gateway's own discovery.
 """
 
 from __future__ import annotations
@@ -17,19 +17,30 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from ha_plugin import CLIENT_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-from test_contract import PREFIX, RADIO, fire, make_config, problems, state_document
+from test_contract import (
+    CLEARS_PER_ENTITY,
+    PREFIX,
+    RADIO,
+    TARGETS,
+    fire,
+    make_config,
+    problems,
+    state_document,
+)
 from visibility import household_viewer
 
 from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.core.mesh import Node
 from meshcore_home_gateway.core.model import DeliveryEvent, DeliveryState
 from meshcore_home_gateway.mqtt.discovery import discovery_payload
 from meshcore_home_gateway.mqtt.payloads import delivery_payload
-from meshcore_home_gateway.views import iso
+from meshcore_home_gateway.views import config_document, iso
 from test_contact_devices import ALICE, ALICE_NODE, COMPANION, Broker
 from test_dashboard import (
     BOB,
@@ -654,6 +665,15 @@ async def test_a_chats_head_says_who_and_how_to_write(
         (device,) = [d for d in registry.devices if d.serial_number == key]
         registry.async_remove_device(device.id)
     await hass.async_block_till_done()
+    # since 2026.11 Home Assistant clears a deleted device's topic once for each of its entities
+    # and finds nothing left to clean up at a copy of its own (#115)
+    leftovers = [
+        "WARNING homeassistant.components.mqtt.discovery: No device components to cleanup for "
+        f"contact_{key}, node_id '{PREFIX}'"
+        for key in (BOB, ALICE)
+    ]
+    assert problems(caplog) == (leftovers if CLEARS_PER_ENTITY else [])
+    caplog.clear()
     said = render(hass, bob)
     assert "<b>Bob is no longer a contact of this radio, or was hidden.</b>" in said
     assert "<summary>Why you cannot write here</summary>" in said
@@ -907,7 +927,7 @@ async def test_long_words_break_every_20_letters_and_never_inside_an_entity(
     assert problems(caplog) == []
 
 
-# --- the sensors from the gateway's own discovery (stage 2) ----------------------------------
+# --- the sensors and drafts from the gateway's own discovery ----------------------------------
 
 
 async def test_the_thread_reads_the_history_the_gateway_announces(
@@ -919,8 +939,7 @@ async def test_the_thread_reads_the_history_the_gateway_announces(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The history document on the gateway's history topic, through its own discovery (G1),
-    reaches a chat's thread; the messages on their way likewise (G3). Red until the gateway
-    announces the two sensors (stage 2)."""
+    reaches a chat's thread; the messages on their way likewise (G3)."""
     config = make_config()
     loaded = await chats_of(hass, hass_ws_client, tmp_path, config)
     assert hass.states.get(HISTORY) is not None, "no history sensor: the gateway's G1"
@@ -934,6 +953,42 @@ async def test_the_thread_reads_the_history_the_gateway_announces(
     assert problems(caplog) == []
 
 
+async def test_a_chat_page_reads_the_configuration_the_gateway_announces(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The configuration document on the gateway's config topic, through its own discovery
+    (G6), reaches the chat pages: the room of a channel's text, which only the gateway knows
+    once the radio told it its name, whether a long text is cut, the window of the same text,
+    and a target's text before messages and its priority."""
+    targets = TARGETS.replace("[targets.operator]\n", '[targets.operator]\nprefix = "[Home] "\n')
+    assert targets != TARGETS
+    more = '[messages]\nalert_targets = ["operator"]\ntruncate = false\ndedup_window_s = 600\n'
+    config = make_config(targets + more)
+    loaded = await chats_of(hass, hass_ws_client, tmp_path, config)
+    assert hass.states.get(CONFIGURATION) is not None, "no configuration sensor: the gateway's G6"
+    alerts = card(cards(loaded, "alerts"), "How to write")
+    assert "About 158 letters; a longer text is cut" in render(hass, alerts)  # the page's own
+    settings = target_settings(config, RADIO)
+    document = config_document(time.time(), settings, shown_settings(config))
+    await fire(hass, topics_of(config).config, document, retain=True)
+    room = 160 - len(f"{RADIO.name}: ")  # the firmware puts the radio's name before a channel text
+    assert [s.room for s in settings if s.alias == "alerts"] == [room]
+    said = render(hass, alerts)
+    assert f"About {room} letters; a longer text is not sent and stays in the field" in said
+    assert "within 10 minutes is not sent again" in said
+    channel = render(hass, card(cards(loaded, "alerts"), "Change on Contacts"))
+    assert channel.startswith(f"<div>About {room} letters per message.</div>")
+    about = render(hass, card(cards(loaded, "alice"), "Change on Contacts"))  # through operator
+    assert "<div>Text before messages: [Home] </div>" in about
+    assert "<div>Sent before other messages.</div>" in about
+    assert problems(caplog) == []
+
+
 async def test_a_household_user_writes_and_sends_through_the_gateways_drafts(
     hass: HomeAssistant,
     mqtt: Any,
@@ -944,10 +999,8 @@ async def test_a_household_user_writes_and_sends_through_the_gateways_drafts(
 ) -> None:
     """Contract item 3: a household user's text.set_value publishes {"text": …} and button.press
     {"send": true} on the chat's request topic at QoS 0, for a target and for a person; the
-    gateway's echo is the field's state, and the footer shows. Red until the gateway announces
-    the drafts (stage 2's G4)."""
+    gateway's echo is the field's state, and the footer shows (G4)."""
     from homeassistant.auth.const import GROUP_ID_USER  # noqa: PLC0415
-    from pytest_homeassistant_custom_component.common import CLIENT_ID  # noqa: PLC0415
 
     config = make_config()
     loaded = await chats_of(hass, hass_ws_client, tmp_path, config)

@@ -157,7 +157,8 @@ def test_with_controls_off_the_controls_are_unavailable() -> None:
     off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
     availability = manage_payload(off, TOPICS, [])["availability"]
     assert availability[:3] == manage_payload(CONFIG, TOPICS, [])["availability"]
-    assert availability[3:] == [{"topic": TOPICS.availability, "value_template": "{{ 'offline' }}"}]
+    never = {"topic": "meshcore/radio1/homeassistant/off", "value_template": "{{ 'offline' }}"}
+    assert availability[3:] == [never]  # a topic nobody publishes (HA-02)
 
 
 @pytest.mark.parametrize(

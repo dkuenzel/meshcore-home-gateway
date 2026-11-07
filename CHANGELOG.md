@@ -10,6 +10,64 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Added
 
+- The attribute `manage_reason` of *Contacts* in Home Assistant, which the guide and the
+  changelog of 2.0.0 already named: why requests to add or remove contacts are refused now,
+  `null` while they are taken (#99).
+
+- A warning at the start and in `check-config` for targets whose aliases differ only in `-` and
+  `_`, such as `a-b` and `a_b`: Home Assistant makes the same entity IDs of them and numbers the
+  later ones (`_2`). Their chat pages in the dashboard have no message field and say why, and
+  `meshcore-home-gateway dashboard` names the pair.
+
+- The entries of the `history` document name the target a message came through or went to
+  (`target`), and a sent message's also the id of its delivery events (`id`), when the gateway
+  accepted it (`queued_at`, also across a stop), whether its acknowledgement was `suspect`, and
+  why it failed or expired (`reason`); each key is always there, `null` where it does not apply.
+  The history database keeps them in new columns, which 2.0 leaves empty after a downgrade, and
+  `history export` adds them at the end of `messages` (`delivery_id` for the id)
+  ([mqtt-api.md](docs/mqtt-api.md#history-history)).
+
+- The sensor *Message history* in Home Assistant: the time of the newest message, and the latest
+  messages in and out as attributes. It stays available while the gateway is offline. The
+  recorder stores the messages with every change unless it excludes the sensor
+  ([home-assistant.md](docs/home-assistant.md#privacy)).
+
+- The retained document `pending` and the sensor *Messages on their way* in Home Assistant: the
+  messages the gateway accepted and has not delivered or given up yet, the one being sent
+  included, which *Queue* never counts (#112). Each names its step (`queued` or `sent`), its
+  attempts and when it was accepted: one `queued` for more than a minute waits for the radio or
+  for airtime. The sensor stays available while the gateway is offline. After a downgrade to 2.0
+  the broker keeps the last `pending`; an empty retained message clears it, such as
+  `mosquitto_pub -r -n -t meshcore/radio1/pending`
+  ([mqtt-api.md](docs/mqtt-api.md#messages-on-their-way-pending)).
+
+- Writing from Home Assistant, then sending: a draft text and a *Send* button for each target not
+  in `hidden_targets` (*Write to …*, *Send what is written to …* on the gateway's device) and for
+  each companion that is no contact target (*Write*, *Send what is written* on its device). The
+  gateway keeps one draft per chat, retained on `homeassistant/draft/<kind>/<chat>`, and takes
+  both requests on `…/request` in the order they come, so *Send* sends the text stored just
+  before it, through the same checks, queue and events as a send request. A queued message
+  empties the draft; a refused one stays, to be changed. A draft unchanged for 15 minutes, and
+  every draft at a clean stop, is emptied. After a downgrade to 2.0 the broker keeps the last
+  drafts; an empty retained message on each clears it, such as
+  `mosquitto_pub -r -n -t meshcore/radio1/homeassistant/draft/target/family`
+  ([mqtt-api.md](docs/mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat),
+  [home-assistant.md](docs/home-assistant.md#writing-and-sending)). With a broker ACL, Home
+  Assistant's user needs `topic write meshcore/radio1/homeassistant/draft/+/+/request`, which the
+  example ACL of earlier versions lacks: without it *Send* does nothing
+  ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)).
+
+- The retained document `config` and the sensor *Configuration* in Home Assistant: the settings
+  in effect since the gateway started, read only, so that the household sees what the
+  administrator set. Each target with its kind, prefix, suffix, whether it is an alert or hidden
+  target, and the room of a text to it; the sections `messages`, `contacts`, `telemetry`,
+  `homeassistant`, `radio`, `airtime`, `history` and `commands` by an allowlist, which leaves out
+  every host, port, device path, user name, password, client ID, key, the codes and the command
+  words. It goes out at the start and at every connect to the radio and to the broker. After a
+  downgrade to 2.0 the broker keeps the last `config`; an empty retained message clears it, such
+  as `mosquitto_pub -r -n -t meshcore/radio1/config`
+  ([mqtt-api.md](docs/mqtt-api.md#configuration-config)).
+
 - The dashboard has a page for each chat: one per channel target, one per contact target
   without a device, and one per contact with a device that takes texts, at most 30 besides the
   contact targets'. A chat that has a message field shows it at the bottom of its page, with a
@@ -17,9 +75,7 @@ format, the command line and Home Assistant discovery are public interfaces
   `meshcore-home-gateway dashboard` says on standard error how many chat pages the dashboard
   has, which contacts have none, and which chat pages, switches and buttons it left out because
   a name does not fit a page's address or an entity ID.
-- Two targets whose aliases differ only in `-` and `_` (such as `a-b` and `a_b`) get the same
-  entity IDs in Home Assistant. Their chat pages have no message field and say why, and
-  `meshcore-home-gateway dashboard` names the pair.
+
 - A chat's page shows the chat as a messenger does: received messages on the left, those sent
   from this home on the right with ✓ or ✓✓, a message not delivered, not sent or maybe forged in
   yellow with the reason in words, one on its way in italics, the newest open and the older ones
@@ -31,6 +87,7 @@ format, the command line and Home Assistant discovery are public interfaces
   device answers, the text the gateway adds before and after each message. A person removed from
   the radio or hidden keeps the page, which says how to get the contact back. These need the
   message history and the messages on their way of gateway 2.1.
+
 - *Chats* lists every chat page under *All chats* with its newest message, one not sent yet as
   on its way, and "new" for a message received in the last 15 minutes, the contacts and channels
   that have no page yet, and all messages together under *Latest messages*. *Overview* shows the
@@ -39,26 +96,56 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Changed
 
+- A message that ended `failed` or `expired` no longer counts as a duplicate: the same text to the
+  same target can be sent again at once. A `confirmed` one still does, for `dedup_window_s`
+  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+
+- `add_contact` and `contacts add` drop the invisible characters a copied key, contact link or
+  card may carry before they read it: the soft hyphen, the zero-width space, direction marks and
+  controls, the invisible operators and the byte order mark. The joiners stay, as part of a name
+  ([mqtt-api.md](docs/mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
+
+- Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery
+  topic once for each of its entities; the gateway takes the copies as one deletion (#115).
+
 - The dashboard shows three tabs, *Overview*, *Chats* (before: *Messages*) and *Contacts*, with
   their titles and without icons, so that they fit a phone. *Map*, *Gateway*, *Settings* and
   *Help* are pages without a tab: *Overview* links to them, and the *Contacts* heading has
   buttons for *Gateway*, *Settings* and *Help*. The back arrow of every page goes back to the
   page it was opened from. The radio's health moved from *Overview* to *Gateway*.
-- The generated dashboard needs Home Assistant 2026.10 or later, and
-  `meshcore-home-gateway dashboard` says so after every dashboard it writes. The gateway itself
-  still works with Home Assistant 2026.8 and later.
+
+- The generated dashboard needs Home Assistant 2026.10 or later: it shows cards by template
+  conditions, which the frontend evaluates since 2026.10. `meshcore-home-gateway dashboard` says
+  so after every dashboard it writes. The gateway and its entities still work with Home
+  Assistant 2026.8 and later ([home-assistant.md](docs/home-assistant.md#requirements)).
+
 - *Overview* says in its first line, in a colour, whether everything is fine, and names the
   first problem; a card for each problem says what to do, in place of the problem sensors' tiles
   and of the tiles of the radio link, airtime, queue and battery. The messages waiting over a
   minute count the message being sent too. The version card shows only for another major or
   minor version, and says which of the two to update.
+
 - The dashboard drops control and direction characters from every name and text, and breaks long
   words in messages so that they fit a phone.
 
 ### Removed
 
-- The dashboard's tile *Write a message* and its hint to add the script *Mesh message*: each chat
-  page has its own field. The guide keeps the script for automations.
+- The dashboard's tile *Write a message* and its hint to add the script *Mesh message*, which
+  Home Assistant 2026.10 and later never showed (#110): each chat page has its own field. The
+  guide keeps the script for automations.
+
+### Fixed
+
+- With `[homeassistant] controls = false`, the controls are unavailable in Home Assistant as soon
+  as it has the gateway's announcement, and available again at once when the setting is back to
+  `true`; before, the change waited for the next message on the gateway's availability topic
+  (#82).
+
+- The `history` document stays within 15 KiB as a whole; before, only its messages did, and the
+  document could be up to 43 bytes larger (#111).
+
+- The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
+  the one being sent, so a single message that waits reads 0 (#112).
 
 ## [2.0.0] - 2026-11-07
 

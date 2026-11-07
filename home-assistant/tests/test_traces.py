@@ -19,12 +19,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from ha_plugin import async_wait_recording_done
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.components.recorder.common import (
-    async_wait_recording_done,
-)
 from test_contract import TOPICS, fire, guide_block, problems
 
 from meshcore_home_gateway.core.mesh import AdvertCheck, Mesh

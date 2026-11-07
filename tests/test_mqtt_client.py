@@ -136,9 +136,11 @@ def test_connection_subscribes_and_announces_availability() -> None:
                     (f"meshcore/radio1/{name}", 1)
                     for name in (
                         "availability",
+                        "config",
                         "contacts",
                         "history",
                         "nodes",
+                        "pending",
                         "settings",
                         "state",
                         "stats",
@@ -455,12 +457,14 @@ def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
         await bus.start()
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         subscriptions = dict(fake.calls)["subscribe"][0]
-        assert subscriptions[-4:] == [
+        assert subscriptions[-5:] == [
             (own, 1),
             (watch, 1),
             ("meshcore/radio1/homeassistant/show_hidden", 1),
             ("meshcore/radio1/homeassistant/add_node", 1),
+            ("meshcore/radio1/homeassistant/draft/+/+/request", 1),  # the chats' drafts
         ]
+        assert ("meshcore/radio1/homeassistant/draft/+/+", 1) in subscriptions  # read back
 
         def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
             fake.on_message(
@@ -500,6 +504,7 @@ def test_without_contact_devices_their_topics_are_not_watched() -> None:
         assert "meshcore/radio1/homeassistant/show_hidden" not in topics
         assert "meshcore/radio1/homeassistant/add_node" not in topics
         assert not any(topic.startswith("homeassistant/device") for topic in topics)
+        assert not any("/homeassistant/draft/" in topic for topic in topics)  # no chats either
 
     asyncio.run(scenario())
 
@@ -542,11 +547,12 @@ def test_a_refused_subscription_is_named(caplog: pytest.LogCaptureFixture) -> No
         await bus.start()
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         granted, refused = (ReasonCode(PacketTypes.SUBACK, identifier=c) for c in (1, 0x80))
-        fake.on_subscribe(fake, None, 6, [refused] * 14, None)  # another subscription's answer
+        fake.on_subscribe(fake, None, 6, [refused] * 15, None)  # another subscription's answer
         assert "refused the subscription" not in caplog.text
-        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 8 + [granted], None)
+        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 10 + [granted], None)
         assert (
-            "refused the subscription to meshcore/radio1/availability, meshcore/radio1/contacts,"
+            "refused the subscription to meshcore/radio1/availability, meshcore/radio1/config, "
+            "meshcore/radio1/contacts,"
         ) in caplog.text
         assert "meshcore/radio1/contacts/+ (the gateway's user needs read access" in caplog.text
         assert "homeassistant/status" not in caplog.text
@@ -696,6 +702,26 @@ def test_stop_announces_offline_and_disconnects() -> None:
         await bus.stop()
         assert fake.published[-1] == ("meshcore/radio1/availability", b"offline", 1, True)
         assert names(fake)[-2:] == ["disconnect", "loop_stop"]
+
+    asyncio.run(scenario())
+
+
+def test_what_a_stop_must_publish_goes_out_before_offline() -> None:
+    """A clean stop clears the chats' drafts (drafts.py) while the connection is still up, in
+    the order of QoS 1 before `offline`."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0.05)
+        draft = "meshcore/radio1/homeassistant/draft/target/family"
+        bus.on_stopping.append(lambda: bus.publish(draft, b'{"text":""}', retain=True))
+        await bus.stop()
+        assert fake.published[-2:] == [
+            (draft, b'{"text":""}', 1, True),
+            ("meshcore/radio1/availability", b"offline", 1, True),
+        ]
 
     asyncio.run(scenario())
 

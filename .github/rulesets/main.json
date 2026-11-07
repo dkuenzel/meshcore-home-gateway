@@ -61,6 +61,10 @@
             "integration_id": 15368
           },
           {
+            "context": "Home Assistant contract (2026.11)",
+            "integration_id": 15368
+          },
+          {
             "context": "real firmware on a simulated air",
             "integration_id": 15368
           },

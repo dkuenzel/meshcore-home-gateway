@@ -17,6 +17,7 @@ CONTACT_NAME_BYTES = 31  # a name in the radio's contact table, without its NUL
 # hex digits of the random suffix of a direct message: 32 bits, as many as the code (SEC-001)
 CONFIRM_NONCE_DIGITS = 8
 CONFIRM_NONCE_BYTES = len(" #") + CONFIRM_NONCE_DIGITS
+CHANNEL_NAME_SEPARATOR_BYTES = len(": ")  # after the radio's name, before a channel text
 _NONCE = re.compile(rf" #[0-9a-f]{{{CONFIRM_NONCE_DIGITS}}}\Z")
 
 # Characters with a conventional ASCII spelling. Everything else goes through Unicode
@@ -91,7 +92,7 @@ def prepare_text(text: str, policy: TextPolicy, *, prefix: str = "", suffix: str
         prefix, suffix = _to_ascii(prefix), _to_ascii(suffix)
     if not any(unicodedata.category(ch) != "Cf" and not ch.isspace() for ch in cleaned):
         raise TextRejectedError("empty", "text is empty after cleaning")
-    room = policy.max_bytes - len(prefix.encode("utf-8")) - len(suffix.encode("utf-8"))
+    room = _room(policy.max_bytes, prefix, suffix)
     encoded = cleaned.encode("utf-8")
     if len(encoded) <= room:
         return f"{prefix}{cleaned}{suffix}"
@@ -102,6 +103,37 @@ def prepare_text(text: str, policy: TextPolicy, *, prefix: str = "", suffix: str
             f"limit {policy.max_bytes}",
         )
     return f"{prefix}{cut_utf8(cleaned, room - len(ELLIPSIS)).rstrip()}{ELLIPSIS}{suffix}"
+
+
+def text_limit(max_bytes: int, *, channel: bool, radio_name: str | None, nonce: bool) -> int:
+    """The bytes a text may take of the radio's `max_bytes`: a channel text leaves room for the
+    radio's name and ": ", which the firmware puts before it (without the name, the room of the
+    shortest one: such a text is limited again when it is sent); a direct text, with `nonce`, for
+    the random suffix of `confirm_nonce` (SEC-001)."""
+    if channel:
+        return max_bytes - len((radio_name or "").encode("utf-8")) - CHANNEL_NAME_SEPARATOR_BYTES
+    return max_bytes - CONFIRM_NONCE_BYTES if nonce else max_bytes
+
+
+def room_bytes(policy: TextPolicy, *, prefix: str = "", suffix: str = "") -> int:
+    """The bytes left to a text beside a target's prefix and suffix, as `prepare_text` counts
+    them: transliterated where the policy asks for ASCII."""
+    if policy.ascii_only:
+        prefix, suffix = _to_ascii(prefix), _to_ascii(suffix)
+    return _room(policy.max_bytes, prefix, suffix)
+
+
+def _room(max_bytes: int, prefix: str, suffix: str) -> int:
+    return max_bytes - len(prefix.encode("utf-8")) - len(suffix.encode("utf-8"))
+
+
+def cut_chars(text: str, max_chars: int) -> str:
+    """The longest start of `text` of at most `max_chars` characters (code points, as Home
+    Assistant counts a text's length) that ends between two whole characters, as `cut_utf8`."""
+    end = min(len(text), max(0, max_chars))
+    while 0 < end < len(text) and _joined(text, end):
+        end -= 1
+    return text[:end]
 
 
 def with_nonce(text: str) -> str:

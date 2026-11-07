@@ -31,13 +31,17 @@ and no closed lists of values: this page stays normative.
 | `contacts/<key>/received` | gateway → | no | the `received` events of messages from that contact |
 | `nodes` | gateway → | yes | JSON: nodes heard but not added |
 | `history` | gateway → | yes | JSON: the latest messages in and out |
+| `pending` | gateway → | yes | JSON: the messages on their way, accepted and not final yet |
 | `settings` | gateway → | yes | JSON: the managed radio profile at the last connect |
+| `config` | gateway → | yes | JSON: the settings of the configuration in effect, by an allowlist ([configuration](#configuration-config)) |
 | `contact` | gateway → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
 | `telemetry` | gateway → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
 | `node` | gateway → | no | JSON, `event_type` = `new`: a node heard for the first time |
 | `setting` | gateway → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
 | `homeassistant/show_hidden` | → gateway | must not be | any payload: show the contacts deleted in Home Assistant again |
 | `homeassistant/add_node` | → gateway | must not be | the label of a heard node, as Home Assistant's select offers it: add it to the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
+| `homeassistant/draft/<kind>/<chat>` | gateway → | yes | JSON `{"text": "…"}`: the draft of a chat in Home Assistant, `<kind>` `target` (`<chat>` its alias) or `contact` (its key); cleared (empty retained message) when the chat goes ([drafts](#drafts-of-home-assistants-chats-homeassistantdraftkindchat)) |
+| `homeassistant/draft/<kind>/<chat>/request` | → gateway | must not be | JSON `{"text": "…"}`: keep the text as the chat's draft, or `{"send": true}`: send the draft; QoS 0 from Home Assistant ([drafts](#drafts-of-home-assistants-chats-homeassistantdraftkindchat)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/config` | both | no | Home Assistant discovery; `<node_id>` as configured, `-` included; the gateway reads it to notice when Home Assistant clears it ([home-assistant.md](home-assistant.md#how-discovery-behaves)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/manage_contacts/config` | both | no | discovery of the controls that add contacts, on the gateway's device ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/contact_<key>/config` | both | no | discovery of each contact's device ([home-assistant.md](home-assistant.md#contacts)); the gateway reads it to notice a device deleted in Home Assistant |
@@ -121,7 +125,7 @@ the send topics gets no event for the excess, which the log counts (at most once
 | `confirmed` | the radio received the acknowledgement of an attempt, which proves less than it sounds ([below](#what-confirmed-proves)); `rtt_ms` is its round trip as the radio measured it, `suspect` `true` when that was shorter than the message's path allows (`null` in other events) | – |
 | `failed` | given up | `no_acknowledgement` (sent, but not acknowledged in time), `unknown_contact`, `unknown_target` (kept by a stop, its target no longer configured), `ambiguous_target`, `channel_not_configured`, `too_long`, `exceeds_airtime_burst`, `internal_error` (a bug; see the log), the radio's refusals: `disabled` or an error name such as `not_found`, `table_full`, `error_<code>` |
 | `expired` | never sent within `queue_ttl_s` | `no_radio`, `queue_ttl` (waited behind other messages), `airtime_budget` |
-| `duplicate` | same target and text within `dedup_window_s` | – |
+| `duplicate` | same target and text within `dedup_window_s`, unless that message ended `failed` or `expired`: one that never arrived can be sent again at once | – |
 | `rejected` | not accepted | `unknown_target`, `unknown_contact`, `not_a_companion`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full` |
 
 `id` is a random identifier per request. In final events, `attempt` is the number of
@@ -274,6 +278,10 @@ reason, and every 60 s.
             "errors_1h": 0, "loop_lag_max_s": 0.004, "events_dropped_1h": 0,
             "disk_free_mb": 5120}}
 ```
+
+`queue` counts the messages waiting behind the one being sent, not that one: 0 while a single
+message waits for the radio, for airtime or for its acknowledgement. [`pending`](#messages-on-their-way-pending)
+lists them all (#112).
 
 `radio_clock_offset_s` is how far the radio's clock is ahead of the host's, in seconds (negative:
 behind), as last read: at connect and with every heartbeat (60 s); `null` while the radio is not
@@ -528,24 +536,135 @@ and `look_alike_total` still name the look-alikes ([configuration](configuration
 
 ## History: `history`
 
-The latest messages in and out (up to 50, at most 15 KiB), newest first. They are kept in the
-gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
+The latest messages in and out (up to 50), newest first. The whole document stays within 15 KiB
+(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). They are
+kept in the gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
 [configuration](configuration.md)).
 
 ```json
 {"total": 2, "truncated": false,
  "messages": [{"at": "2026-10-18T09:01:00+00:00", "direction": "out", "kind": "contact",
                "contact_key": "a1b2…", "channel_index": null, "name": "Alice",
-               "text": "Back soon", "state": "confirmed", "hops": null, "snr_db": null},
+               "text": "Back soon", "state": "confirmed", "hops": null, "snr_db": null,
+               "target": "alice", "id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00",
+               "suspect": false, "reason": null},
               {"at": "2026-10-18T09:00:02+00:00", "direction": "in", "kind": "channel",
                "contact_key": null, "channel_index": 0, "name": "Carol", "text": "On my way",
-               "state": null, "hops": 1, "snr_db": 6.25}]}
+               "state": null, "hops": 1, "snr_db": 6.25,
+               "target": "family", "id": null, "queued_at": null, "suspect": null,
+               "reason": null}]}
 ```
 
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message
 (`confirmed`, `failed`, `expired`, or `sent` for a channel). Requests refused at once
 (`rejected`, `duplicate`) are not in the history.
+
+Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
+message from an earlier version):
+
+| Key | Meaning |
+| --- | --- |
+| `target` | incoming: the target it came through, as `received` names it: the first target of its channel, or the contact target of its sender; `null` for a sender that is no target. Outgoing: the target it went to; `null` for a message sent through `contacts/<key>/send`, whose key is `contact_key` |
+| `id` | outgoing: the `id` of its delivery events |
+| `queued_at` | outgoing: when the gateway accepted the request, also for a message kept across a stop; `at` is when it became final |
+| `suspect` | outgoing, `confirmed`: the acknowledgement came sooner than the path allows, as in its delivery event ([what `confirmed` proves](#what-confirmed-proves)) |
+| `reason` | outgoing, `failed` or `expired`: why, as in its delivery event |
+
+## Messages on their way: `pending`
+
+The messages the gateway accepted that are not final yet, the oldest first: those in the queue
+and the one being sent, which the `queue` of [`state`](#state-state) does not count (#112). So
+there are at most `queue_size` + 1, more after a restart with a smaller `queue_size`. The
+document goes out after the delivery steps of a moment, at every connect to the broker and after
+the start, when the messages a stop kept are queued again. When a message becomes final,
+`history` with it goes out before `pending` without it: a reader of both sees it in both for a
+moment, never in neither, unless the broker delivers the two out of order (MQTT keeps the order
+only within a topic). The whole document stays within 8 KiB: `total` counts every message,
+`truncated` is `true` when the newest were left out.
+
+```json
+{"total": 2, "truncated": false,
+ "messages": [{"id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00", "target": "alice",
+               "kind": "contact", "contact_key": "a1b2…", "channel_index": null,
+               "name": "Alice", "text": "Back soon #0f1e2d3c", "step": "sent", "attempt": 1,
+               "max_attempts": 3},
+              {"id": "9f8e7d6c", "queued_at": "2026-10-18T09:01:10+00:00", "target": "family",
+               "kind": "channel", "contact_key": null, "channel_index": 1, "name": "family",
+               "text": "Dinner is ready", "step": "queued", "attempt": 0,
+               "max_attempts": 1}]}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `id` | the `id` of its delivery events, and of its entry in `history` once it is final |
+| `queued_at` | when the gateway accepted the request, also for a message kept across a stop; `null` for one that 2.0 kept |
+| `target` | the target it goes to; `null` for a message sent through `contacts/<key>/send`, whose key is `contact_key` |
+| `kind`, `contact_key`, `channel_index`, `name` | as in `history`: `name` is the contact's name, else the target's alias |
+| `text` | as it is sent, with the target's prefix and suffix and the code of `confirm_nonce` |
+| `step` | its latest delivery event: `queued` (not sent yet; again after a restart that kept it) or `sent` (an attempt went out; it waits for the acknowledgement or its next attempt, also while an alert goes first) |
+| `attempt`, `max_attempts` | the transmissions so far, and how many it may take: `max_attempts` for a direct message, 1 for a channel |
+
+A message waits for the radio and for airtime only while it is `queued`: one that has been
+`queued` for more than a minute is stuck behind the radio or the airtime budget. A `sent` one
+may wait up to a minute for each acknowledgement.
+
+## Drafts of Home Assistant's chats: `homeassistant/draft/<kind>/<chat>`
+
+Since 2.1 the gateway holds a draft for each chat of Home Assistant's dashboard: write first, then
+send ([home-assistant.md](home-assistant.md#entities)). A chat is a target that is not in
+`hidden_targets` (`<kind>` `target`, `<chat>` its alias) or a companion whose device has the draft
+(`contact`, its key). A contact target's key has no chat of its own, hidden or not: its chat is
+the target's, with the target's prefix, suffix and priority.
+
+The draft is retained on `homeassistant/draft/<kind>/<chat>` as `{"text": "…"}`: one key, always a
+string, `""` when there is none. The gateway holds it in memory only:
+
+* After a start every draft is empty. A draft is published again, as held, at every connect to
+  the broker and after Home Assistant's birth message.
+* A draft unchanged for 15 minutes is emptied.
+* A clean stop publishes `{"text": ""}` for every draft that is not empty, so that no unsent text
+  stays retained on the broker, or in its persistence file, while the gateway is away.
+* A chat that goes (a contact removed from the radio, its device deleted in Home Assistant) has
+  its topic cleared with an empty retained message, after its device is gone.
+* At a connect the gateway clears a retained draft of no chat it has, at most one a second, and it
+  undoes what another client writes on a draft topic, as on its documents
+  ([securing the broker](#securing-the-broker)).
+
+Requests go to `homeassistant/draft/<kind>/<chat>/request`:
+
+| Payload | What the gateway does |
+| --- | --- |
+| `{"text": "…"}` | The text becomes the draft and is published back: at once, then at most once every 0.2 seconds per chat, the last text of a burst after the pause. |
+| `{"send": true}` | The draft is sent as a request on `send/<alias>` or `contacts/<key>/send` would be, with the same checks, queue, history and `delivery` events. When it is `queued`, the draft is emptied at once. When it is `rejected` or a `duplicate`, the draft stays, to be changed. |
+
+Home Assistant publishes both at QoS 0 on that one topic, so the broker keeps their order, and a
+*Send* pressed while Home Assistant's link to the broker is down is lost rather than sent after
+the reconnect. The gateway handles them in that order, with no wait: a press sends the text stored
+just before it.
+
+* A press on an empty or blank draft ends `rejected` with reason `empty`, as an empty text on
+  `send/<alias>` does. Only a press within 2 seconds after a queued press of the same chat, the
+  second tap of a double tap, ends without an event: the first press's events are its outcome.
+* A request that is not exactly one of the two forms, that is not UTF-8 or larger than 1984 bytes
+  (room for `max` characters written as escapes, as Home Assistant's `tojson` does), or whose text
+  is longer than the chat's `max` is ignored, and the draft is published again.
+* A retained request is a left-over and is ignored without an event. So is a request for a chat
+  the gateway does not have: a hidden target, or a contact target's key.
+
+`max` is the room of a text to the chat in bytes, as Home Assistant's text entity announces it:
+160 bytes, less the target's prefix and suffix, less 10 for a direct message with
+`confirm_nonce`, and less the radio's name and `: ` for a channel (158 while the radio's name is
+not known). Home Assistant counts characters, its text field UTF-16 units and the radio bytes, so a
+text with accents or emoji can be within `max` and still too long: `[messages] truncate` then cuts
+it or refuses it, as for every request. When the radio's name lowers a chat's `max` below its
+draft, the gateway cuts the draft to the new `max` and publishes it before the new discovery:
+Home Assistant takes it under the old, larger `max`, and could not take a longer state with the
+new one.
+
+The drafts are Home Assistant's controls, as `homeassistant/show_hidden` is, not documents of
+every front end ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): a stored
+text ends in no event, its outcome is the draft published back.
 
 ## Contact and node events: `contact`, `node`
 
@@ -594,6 +713,10 @@ gateway is offline is lost (clean session), and a stop drops those still queued.
   codes): exactly one `public_key`, at most one `name` and one `type` (1 companion, 2 repeater,
   3 room server, 4 sensor; without one a companion);
 * a contact card: `meshcore://` and the hex of an advert packet, as the app exports a contact.
+
+Invisible characters that a copy carries are dropped first: the soft hyphen, the zero-width space
+(the dashboard breaks long words with it), direction marks and controls, the invisible operators
+and the byte order mark. The joiners U+200C and U+200D stay, as part of a name.
 
 `homeassistant/add_node` takes the label of a heard node, `<first 12 key digits>…<last 8> <name>`
 (room servers and sensors with ` (room)` or ` (sensor)` added, and ` (name taken)` for a
@@ -791,6 +914,58 @@ configuration asks for a new value; `drift`: the radio was changed), `live` (aft
  "desired": true}
 ```
 
+## Configuration: `config`
+
+The settings of the configuration file that are in effect, so that a front end can say why the
+gateway does what it does: published at the start, at every connect to the radio (a channel
+text's room depends on the radio's name) and to the broker. Every reader of the gateway's topics
+reads it, Home Assistant's users included, so it holds an allowlist: never a host, port, device
+path, user name, password or password file, client ID, key file, the codes file or a code, a
+command word, or a key (of a contact target only the first 8 hex digits). Each section is named as
+in the configuration ([configuration.md](configuration.md)); a value is the one in effect, the
+default where the file sets none.
+
+```json
+{"started_at": "2026-10-18T09:00:00+00:00",
+ "targets": {"total": 2, "truncated": false,
+             "items": [{"alias": "family", "kind": "channel", "channel_index": 1,
+                        "key_start": null, "prefix": "Home: ", "suffix": "", "alert": false,
+                        "hidden": false, "room": 145},
+                       {"alias": "alice", "kind": "contact", "channel_index": null,
+                        "key_start": "a1b2c3d4", "prefix": "", "suffix": "", "alert": true,
+                        "hidden": false, "room": 160}]},
+ "messages": {"publish_channels": "targets", "ignore_channels": [], "confirm_nonce": false,
+              "clean_received": false, "truncate": true, "ascii_only": false,
+              "dedup_window_s": 300.0, "queue_size": 20, "queue_ttl_s": 600.0,
+              "max_attempts": 3},
+ "contacts": {"manage": true, "heard_nodes": "keys"},
+ "telemetry": {"enabled": true, "ask": "household", "ask_types": ["chat"]},
+ "homeassistant": {"controls": true, "hidden_targets": 0, "contact_entity_prefix": "mesh",
+                   "language": "en", "contact_devices": 50},
+ "radio": {"transport": "serial", "tcp_unauthenticated": false, "set_clock": true,
+           "profile": {"manage": "auto"}},
+ "airtime": {"budget_s_per_hour": 36.0, "burst_s": 10.0},
+ "history": {"enabled": true, "messages_days": 30.0, "positions_days": 30.0,
+             "readings_days": 30.0},
+ "commands": {"senders": 1, "codes": false, "reply": "none"}}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `started_at` | when the gateway started with these settings: it reads the file only at its start |
+| `targets` | the targets in the order of the file; the whole document stays within 15 KiB, so `truncated` is `true` when the last were left out, and `total` counts all |
+| `targets.items[].kind`, `channel_index`, `key_start` | `channel` with its index, or `contact` with the first 8 hex digits of its key |
+| `targets.items[].prefix`, `suffix` | as `[targets.<alias>]` sets them; `""` for none |
+| `targets.items[].alert` | in `[messages] alert_targets`: sent before the other messages |
+| `targets.items[].hidden` | in `[homeassistant] hidden_targets`: no entities in Home Assistant, only automations write to it |
+| `targets.items[].room` | the bytes a text to it has beside the prefix and suffix, as the gateway sends it: the `max` of its draft in Home Assistant; for a channel before the radio's name is known, the room of the shortest name |
+| `messages`, `contacts`, `telemetry`, `airtime`, `history` | the settings of these sections, lists sorted (`messages.flood_after` and `alert_targets` aside: the latter is each target's `alert`) |
+| `homeassistant` | `controls`, `contact_entity_prefix`, `language`, `contact_devices`; `hidden_targets` is how many targets are hidden |
+| `radio` | `transport` (`serial` is USB), `tcp_unauthenticated`, `set_clock`, and `profile.manage` (`auto`, `observe` or `always`) |
+| `commands` | `senders`: how many senders may send commands; `codes`: whether their commands need codes (`codes_file` is set); `reply` |
+
+Settings that are not listed here are left out on purpose; a later version may add keys.
+
 ## Radio diagnostics: `rx`
 
 With `diagnostics.publish_rx_log = true`, one event per packet the radio receives, before it
@@ -912,6 +1087,7 @@ topic write meshcore/radio1/contacts/+/remove
 topic write meshcore/radio1/contacts/+/telemetry
 topic write meshcore/radio1/homeassistant/show_hidden
 topic write meshcore/radio1/homeassistant/add_node
+topic write meshcore/radio1/homeassistant/draft/+/+/request
 
 user alarm-script
 topic write meshcore/radio1/send/alerts
@@ -926,6 +1102,9 @@ the gateway may write the event topics (`received`, `command`, `delivery`, `cont
 `telemetry`) and
 the documents, because automations and dashboards trust them. When commands are configured, the ACL is not optional: any client that can write
 `command` can trigger the automations.
+Home Assistant writes only the requests of the chats' drafts, never the drafts themselves. A
+client that may read `meshcore/radio1/#` reads every unsent draft, and one that may write a
+draft's request topic can send it.
 
 Without an ACL every client of the broker can do what the gateway does: publish `command`
 events, write a contact's document with any position, send to every target and read every
@@ -934,7 +1113,7 @@ writes below its topics.
 
 The documents carry no origin, no time of publication by the gateway and no signature: Home
 Assistant and every other consumer trust them because only the gateway may write them. The
-gateway subscribes to its retained topics (`availability`, `state` and the documents) and undoes
+gateway subscribes to its retained topics (`availability`, `state`, the documents and the drafts) and undoes
 what another client writes there: it publishes its own payload again, or an empty one where it
 has published nothing in this run, at once and then at most every 10 seconds per topic, and the
 log names the topic (once a minute). Its own messages come back too and are dropped. A forged
