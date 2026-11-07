@@ -46,7 +46,10 @@ format, the command line and Home Assistant discovery are public interfaces
   drafts; an empty retained message on each clears it, such as
   `mosquitto_pub -r -n -t meshcore/radio1/homeassistant/draft/target/family`
   ([mqtt-api.md](docs/mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat),
-  [home-assistant.md](docs/home-assistant.md#writing-and-sending)).
+  [home-assistant.md](docs/home-assistant.md#writing-and-sending)). With a broker ACL, Home
+  Assistant's user needs `topic write meshcore/radio1/homeassistant/draft/+/+/request`, which the
+  example ACL of earlier versions lacks: without it *Send* does nothing
+  ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)).
 - The retained document `config` and the sensor *Configuration* in Home Assistant: the settings
   in effect since the gateway started, read only, so that the household sees what the
   administrator set. Each target with its kind, prefix, suffix, whether it is an alert or hidden
@@ -69,6 +72,9 @@ format, the command line and Home Assistant discovery are public interfaces
   ([mqtt-api.md](docs/mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
 - Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery
   topic once for each of its entities; the gateway takes the copies as one deletion (#115).
+- The generated dashboard needs Home Assistant 2026.10 or newer: it shows cards by template
+  conditions, which the frontend evaluates since 2026.10. The gateway and its entities keep
+  2026.8 ([home-assistant.md](docs/home-assistant.md#requirements)).
 
 ### Fixed
 

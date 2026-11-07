@@ -300,7 +300,9 @@ dashboards and statistics refer to:
 
 **Platforms.** A major version keeps its floors: Python 3.11 with paho-mqtt 2.x (Debian 13 for
 the installer), Home Assistant 2026.8, and MeshCore companion firmware 1.18.0 (protocol version
-3). Raising a floor is breaking; supporting more is not. A firmware version tested in addition is
+3). Raising a floor is breaking; supporting more is not. The generated dashboard follows the
+frontend features it uses and states its own floor: it needs Home Assistant 2026.10, whose
+frontend evaluates its template conditions, while the gateway and its entities keep 2026.8. A firmware version tested in addition is
 an addition; dropping a tested one is breaking. The snapshot below records the tested firmware
 versions (`TESTED_FIRMWARE`); the floors stay with review.
 

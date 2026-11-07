@@ -17,11 +17,15 @@ Public interface: see [compatibility](development.md#compatibility).
   the discovery prefix and `status_topic` equal to the birth message topic in the MQTT options of
   Home Assistant (defaults `homeassistant` and `homeassistant/status`).
 * With a topic ACL on the broker, Home Assistant's user needs `readwrite` on `homeassistant/#`
-  ([mqtt-api.md](mqtt-api.md#securing-the-broker)), and for the switch *Telemetry*
-  `topic write <base_topic>/<node_id>/contacts/+/telemetry`, which the example ACL of earlier
-  versions lacks: without it the switch does nothing, and only the broker's debug log shows why
-  (`log_type debug` or `all`; in the Mosquitto add-on, `debug` in its option `log_type`, not
-  `debug: true`, which also logs passwords).
+  ([mqtt-api.md](mqtt-api.md#securing-the-broker)), for the switch *Telemetry*
+  `topic write <base_topic>/<node_id>/contacts/+/telemetry`, and for writing and sending from
+  Home Assistant `topic write <base_topic>/<node_id>/homeassistant/draft/+/+/request`, which the
+  example ACL of earlier versions lacks: without them the switch and *Send* do nothing, and only
+  the broker's debug log shows why (`log_type debug` or `all`; in the Mosquitto add-on, `debug`
+  in its option `log_type`, not `debug: true`, which also logs passwords).
+* The generated dashboard ([below](#dashboard)) needs Home Assistant 2026.10 or newer: it shows
+  cards by template conditions, which the frontend evaluates since 2026.10. The gateway and its
+  entities keep 2026.8.
 
 Why 2026.8: device-based discovery exists since 2024.11, the entity IDs below (from
 `default_entity_id`) since 2025.10, QoS 1 for every entity from the device level since 2026.5.2,
@@ -95,7 +99,8 @@ devices, but the entity IDs of the one announced second end in `_2`; pick node I
 more than that. Node IDs and aliases that Home Assistant would shorten further (a trailing `-` or
 `_`, two of them in a row) are refused by the configuration check.
 
-All entities share the gateway's availability topic and turn `unavailable` when it is offline;
+All entities share the gateway's availability topic and turn `unavailable` when it is offline,
+except *Message history* and *Messages on their way*, which stay readable;
 the controls that change the radio's contacts also while the radio is not connected or contact
 management is off (also on untested firmware). The state values come from retained documents, so they are back right after a
 restart of either side.
@@ -1127,8 +1132,9 @@ switch telemetry for a companion. Dashboards per user hide cards, not the entiti
   administrator uses `meshcore-home-gateway contacts` in the container, or MQTT
   ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)); the broker's
   ACL decides which clients may write those topics.
-* `[homeassistant] hidden_targets` leaves out the notify entity of a target that only automations
-  should use, such as an alarm channel: they send with `mqtt.publish` to `send/<alias>`
+* `[homeassistant] hidden_targets` leaves out the notify entity and the draft (*Write to …*,
+  *Send what is written to …*) of a target that only automations should use, such as an alarm
+  channel: they send with `mqtt.publish` to `send/<alias>`
   ([configuration.md](configuration.md#homeassistant)).
 * The notify entities of the contacts send as the household's radio, for every user.
 * Home Assistant's permission policies can restrict a group of users to reading entities, or to
