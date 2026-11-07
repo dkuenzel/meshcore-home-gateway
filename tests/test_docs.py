@@ -316,6 +316,19 @@ def test_the_roll_back_to_2_0_clears_every_retained_topic_that_2_1_added() -> No
     assert "meshcore-home-gateway dashboard" in note
 
 
+def test_the_guide_quotes_the_home_assistant_the_dashboard_needs() -> None:
+    """`meshcore-home-gateway dashboard` ends with the Home Assistant release the dashboard needs,
+    newer than the gateway's own floor; the guide's Requirements and its paragraph on making the
+    dashboard name the same release, and the line as the command prints it."""
+    from meshcore_home_gateway.dashboard import HOME_ASSISTANT
+
+    guide = _words((ROOT / "docs" / "home-assistant.md").read_text(encoding="utf-8"))
+    requirements = guide.partition("## Requirements")[2].partition("## ")[0]
+    assert f"needs Home Assistant {HOME_ASSISTANT} or newer" in requirements
+    make = guide.partition("**Make it**")[2].partition("**Add it**")[0]
+    assert f'"This dashboard needs Home Assistant {HOME_ASSISTANT} or later."' in make
+
+
 def test_the_update_note_says_whom_telemetry_asks() -> None:
     """#106: the note on 2.0.0's privacy defaults said that telemetry asks only the companions
     the household includes; `ask = "household"` also asks the contact targets and the command

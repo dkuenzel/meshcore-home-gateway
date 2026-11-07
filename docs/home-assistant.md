@@ -795,7 +795,8 @@ pct exec <id> -- /usr/local/bin/meshcore-home-gateway dashboard > mesh.yaml
 ```
 
 It says on standard error how many contacts the map lists, such as "The map lists 1 contact with
-a position."
+a position.", how many chat pages it has and how many contacts have none, and last "This dashboard
+needs Home Assistant 2026.10 or later."
 
 **Add it** in one of two ways:
 
