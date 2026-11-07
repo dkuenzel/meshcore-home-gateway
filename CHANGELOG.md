@@ -391,6 +391,9 @@ format, the command line and Home Assistant discovery are public interfaces
   rulesets let a repository role bypass them at any time, which the maintainer's login has, and
   the agent works through that login. It can push to `main` directly and move or delete a tag
   until its release is published (#102).
+- The dashboard's *Overview* names a radio link another program took over as a problem, in
+  red, with what to do. Before, it said "Gateway ready." while such a program could control the
+  radio and read its private key, and no card showed the sensor *Radio link taken over* (#83).
 
 ## [2.0.0] - 2026-11-07
 
