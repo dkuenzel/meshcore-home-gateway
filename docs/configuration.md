@@ -139,6 +139,8 @@ The prefix and suffix count toward the radio's limit and stay whole when a text 
 (`truncate`); `ascii_only` transliterates them with the text. A request whose text is empty stays
 rejected (`empty`). The delivery events and the history carry the text as sent, and duplicates
 are judged on it. A message to `contacts/<key>/send` gets neither: that recipient is no target.
+With [`confirm_nonce`](#messages), only the final delivery event and the history carry the random
+suffix of a direct message too, and duplicates are judged on the text without it.
 
 ## `[messages]`
 
