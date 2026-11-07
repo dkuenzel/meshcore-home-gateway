@@ -17,7 +17,7 @@ import json
 import logging
 import sqlite3
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +86,15 @@ _ADDED = (
         "at REAL NOT NULL, quantity TEXT NOT NULL, value REAL NOT NULL)"
     ),
     "CREATE INDEX IF NOT EXISTS reading_contact_at ON reading (contact_key, at)",
+)
+# columns added the same way, after a look at the table: older versions name their columns in
+# every statement, so they leave these empty. `delivery_id`: the message table has an `id`.
+_ADDED_COLUMNS = (
+    ("message", "target", "TEXT"),
+    ("message", "delivery_id", "TEXT"),
+    ("message", "queued_at", "REAL"),
+    ("message", "suspect", "INTEGER"),
+    ("message", "reason", "TEXT"),
 )
 
 
@@ -180,7 +189,8 @@ class History:
     def add_message(self, entry: HistoryEntry) -> None:
         self._write(
             "INSERT INTO message (at, direction, kind, contact_key, channel_index, name, text, "
-            "state, hops, snr_db) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "state, hops, snr_db, target, delivery_id, queued_at, suspect, reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entry.at,
                 entry.direction,
@@ -192,6 +202,11 @@ class History:
                 entry.state,
                 entry.hops,
                 entry.snr_db,
+                entry.target,
+                entry.id,
+                entry.queued_at,
+                entry.suspect,
+                entry.reason,
             ),
         )
 
@@ -372,10 +387,12 @@ class History:
     def recent_messages(self, limit: int) -> list[HistoryEntry]:
         rows = self._read(
             "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, "
-            "snr_db FROM message ORDER BY at DESC, id DESC LIMIT ?",
+            "snr_db, target, delivery_id, queued_at, suspect, reason FROM message "
+            "ORDER BY at DESC, id DESC LIMIT ?",
             (limit,),
         )
-        return [HistoryEntry(*row) for row in rows]
+        entries = [HistoryEntry(*row) for row in rows]  # SQLite keeps a truth value as 1 or 0
+        return [e if e.suspect is None else replace(e, suspect=bool(e.suspect)) for e in entries]
 
     def last_fixes(self) -> dict[str, Fix]:
         """The newest position of every contact that has one."""
@@ -487,6 +504,10 @@ def _prepare(db: sqlite3.Connection) -> None:
     with _transaction(db):
         for statement in _ADDED:
             db.execute(statement)
+        for table, column, kind in _ADDED_COLUMNS:
+            known = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+            if column not in known:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 @contextlib.contextmanager

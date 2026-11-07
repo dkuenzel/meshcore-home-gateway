@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -709,9 +710,9 @@ def test_the_airtime_level_is_written_at_once_with_the_longest_message(tmp_path:
 
 
 KEPT = [
-    SavedMessage("7f3a91c2", "alerts", "Gate open", None, 12.5, None, 0),
+    SavedMessage("7f3a91c2", "alerts", "Gate open", None, 12.5, None, 0, 1_799_999_987.5),
     SavedMessage("0b1c2d3e", "aa" * 32, "Hello #00ff00ff", None, 3.0, 1_800_000_000, 2),
-    SavedMessage("11223344", "alerts", "Pump", "Pump", 0.0, None, 0),
+    SavedMessage("11223344", "alerts", "Pump", "Pump", 0.0, None, 0, 1_800_000_003.25),
 ]
 
 
@@ -732,6 +733,34 @@ def test_the_messages_of_a_stop_are_taken_once(tmp_path: Path) -> None:
     OutboxRecords(store).save(KEPT[:1], 2_000.0)
     assert store.flush()
     assert OutboxRecords(JsonStateFile(path)).take(1_000.0) == (KEPT[:1], None)  # clock back
+
+
+def test_a_kept_message_keeps_when_it_was_accepted(tmp_path: Path) -> None:
+    """The wall clock at its acceptance, for the history (design §6.6): written with the stop,
+    and `null` for a message kept by 2.0, which has none, or with a value that is no time. 2.0
+    reads only its own keys, so a downgrade takes the messages as before."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    OutboxRecords(store).save(KEPT, 1_000.0)
+    assert store.flush()
+    written = JsonStateFile(path).load()["outbox"]["messages"]
+    assert [m["queued_at"] for m in written] == [1_799_999_987.5, None, 1_800_000_003.25]
+    entries: list[dict[str, Any]] = [
+        {"id": "a", "target": "alerts", "text": "x", "age_s": 1.0},  # 2.0's
+        {"id": "b", "target": "alerts", "text": "x", "age_s": 1.0, "queued_at": "now"},
+        {"id": "c", "target": "alerts", "text": "x", "age_s": 1.0, "queued_at": 1e999},
+        {"id": "d", "target": "alerts", "text": "x", "age_s": 1.0, "queued_at": True},
+        {"id": "e", "target": "alerts", "text": "x", "age_s": 1.0, "queued_at": 1_800_000_000},
+    ]
+    JsonStateFile(path).save({"outbox": {"saved_at": 0.0, "messages": entries}})
+    messages, _ = OutboxRecords(JsonStateFile(path)).take(1.0)
+    assert [(m.id, m.queued_at) for m in messages] == [
+        ("a", None),
+        ("b", None),
+        ("c", None),
+        ("d", None),
+        ("e", 1_800_000_000.0),
+    ]
 
 
 @pytest.mark.parametrize(

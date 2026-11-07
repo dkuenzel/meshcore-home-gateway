@@ -230,7 +230,7 @@ class Inbox:
         self._bus.publish(self._topics.received, encode(payload))
         if sender is not None and message.kind is MessageKind.CONTACT:
             self._bus.publish(self._topics.contact_received(sender.public_key), encode(payload))
-        observe(self._observer.message, message, sender)
+        observe(self._observer.message, message, sender, target)
         if (
             self._telemetry is not None
             and sender is not None

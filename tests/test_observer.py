@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import struct
 import threading
 from collections.abc import Callable
@@ -49,6 +50,7 @@ from tests.bridge_harness import (
     BOB,
     NOW,
     FakeBus,
+    Unreachable,
     fast_timers,  # noqa: F401 - autouse: an advert's read in 50 ms
     make_config,
     new_run,
@@ -272,6 +274,172 @@ def test_the_history_survives_a_restart(tmp_path: Path) -> None:
     assert list(stored.last_fixes()) == [CAROL.public_key.hex()]  # stored once, not per run
     assert len(stored.trace(CAROL.public_key.hex(), 0)) == 1
     stored.close()
+
+
+class Stepping(EmulatedRadio):
+    """Moves the gateway's wall clock 30 s on when it takes a direct text: the final event of a
+    message comes later than its request."""
+
+    wall: Clock | None = None
+
+    def _send_text(self, p: bytes) -> None:
+        if self.wall is not None:
+            self.wall.now += 30
+        super()._send_text(p)
+
+
+def test_a_sent_message_names_its_target_its_id_and_when_it_was_accepted(
+    tmp_path: Path,
+) -> None:
+    """`queued_at` is the wall clock at the acceptance, not the time of the final event (`at`)
+    and not the monotonic clock the queue counts with; `id` is its delivery events'."""
+    wall = Clock(NOW)
+    radio = Stepping(contacts=[ALICE, BOB])
+    radio.wall = wall
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, wall_clock=wall) as (_, bus, _n):
+            bus.send("bob", "Back soon")
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            assert history["messages"] == [
+                {
+                    "at": iso(NOW + 30),
+                    "direction": "out",
+                    "kind": "contact",
+                    "contact_key": BOB.public_key.hex(),
+                    "channel_index": None,
+                    "name": "Bob",
+                    "text": "Back soon",
+                    "state": "confirmed",
+                    "hops": None,
+                    "snr_db": None,
+                    "target": "bob",
+                    "id": done["id"],
+                    "queued_at": iso(NOW),
+                    "suspect": False,
+                    "reason": None,
+                }
+            ]
+
+    scenario(main)
+
+
+def test_failed_and_channel_messages_carry_their_reason_and_no_suspicion(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("alerts", "Gate open")
+            bus.send("bob", "Pump stopped")
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 2)
+            failed, sent = history["messages"]
+            assert (failed["state"], failed["reason"], failed["suspect"]) == (
+                "failed",
+                "no_acknowledgement",
+                None,
+            )
+            assert (failed["target"], failed["queued_at"]) == ("bob", iso(NOW))
+            assert (sent["state"], sent["reason"], sent["suspect"]) == ("sent", None, None)
+            assert (sent["target"], sent["channel_index"], sent["kind"]) == ("alerts", 0, "channel")
+            ids = {d["target"]: d["id"] for d in bus.payloads("/delivery")}
+            assert (failed["id"], sent["id"]) == (ids["bob"], ids["alerts"])
+
+    scenario(main)
+
+
+DAVE = EmulatedContact(bytes.fromhex("d4" * 32), "Dave")  # a companion that is no target
+
+
+def test_a_received_message_names_the_target_it_came_through(tmp_path: Path) -> None:
+    """The first target of the channel, or the contact target of the sender (as `received`
+    names it); none for a sender that is no target. The keys of sent messages are null."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB, DAVE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_channel_message(0, "Carol: on my way", int(NOW) - 5)
+            radio.queue_direct_message(ALICE.public_key[:6], "hi there", int(NOW) - 4)
+            radio.queue_direct_message(DAVE.public_key[:6], "hello", int(NOW) - 3)
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 3)
+            targets = {m["text"]: m["target"] for m in history["messages"]}
+            assert targets == {"on my way": "alerts", "hi there": "alice", "hello": None}
+            for entry in history["messages"]:
+                assert [entry[k] for k in ("id", "queued_at", "suspect", "reason")] == [None] * 4
+
+    scenario(main)
+
+
+@pytest.mark.parametrize(("round_trip_ms", "suspect"), [(1500, False), (400, True)])
+def test_a_message_to_a_contact_s_key_keeps_its_keys_across_a_restart(
+    tmp_path: Path, round_trip_ms: int, suspect: bool
+) -> None:
+    """Sent through `contacts/<key>/send`: no target, the key is `contact_key`. Bob is two
+    repeaters away: an acknowledgement in 400 ms is `suspect` (SEC-001), and stays so in the
+    history after a restart."""
+    path = tmp_path / "history.sqlite3"
+    histories: list[History] = []
+    sent: dict[str, Any] = {}
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def first() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB], ack_round_trip_ms=round_trip_ms)
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            await bus.wait_for("radio1/contacts", lambda d: d["total"] == 2)
+            bus.send(BOB.public_key.hex(), "Hello you", contact=True)
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            sent.update(history["messages"][0])
+
+    async def second() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            assert history["messages"] == [sent]
+
+    try:
+        scenario(first)
+        assert (sent["target"], sent["contact_key"]) == (None, BOB.public_key.hex())
+        assert (sent["suspect"], sent["state"]) == (suspect, "confirmed")
+        assert sent["queued_at"] == iso(NOW)
+        assert re.fullmatch("[0-9a-f]{8}", sent["id"])
+        scenario(second)
+    finally:
+        for history in histories:
+            history.close()
+
+
+def test_a_message_kept_over_a_stop_keeps_when_it_was_accepted(tmp_path: Path) -> None:
+    """Accepted while the radio was away, sent after the next start: `queued_at` is the first
+    run's clock, `at` the second's."""
+    accepted, delivered = NOW, NOW + 3600
+
+    async def stopped() -> None:
+        config = make_config()
+        clock = Clock(accepted)
+        async with running(config, EmulatedRadio(), tmp_path, Unreachable, wall_clock=clock) as (
+            _,
+            bus,
+            _n,
+        ):
+            bus.send("bob", "Pump stopped")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+
+    async def started() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        clock = Clock(delivered)
+        async with running(make_config(), radio, tmp_path, wall_clock=clock) as (_, bus, _n):
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            (entry,) = history["messages"]
+            assert (entry["at"], entry["queued_at"]) == (iso(delivered), iso(accepted))
+            assert entry["target"] == "bob"
+
+    scenario(stopped)
+    scenario(started)
 
 
 def test_a_failing_observer_does_not_stop_messages(

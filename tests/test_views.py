@@ -34,6 +34,7 @@ from meshcore_home_gateway.views import (
     encode,
     flag_names,
     history_document,
+    history_entry,
     iso,
     name_taken_nodes,
     nodes_document,
@@ -211,7 +212,7 @@ def test_heard_nodes_newest_first_without_positions_and_bounded() -> None:
         node = Node(f"{i:064x}", HOSTILE * 3, 2, position=Position(1, 1))
         mesh.node_heard(node, Heard(T + i, "advert", Signal(i % 4, 1.0, -100)))
     document = nodes_document(mesh)
-    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES + 64
+    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
     assert document["total"] == 60
     assert document["truncated"] is True
     newest = document["nodes"][0]
@@ -248,11 +249,160 @@ def test_history_newest_first_and_bounded_with_hostile_texts() -> None:
         for i in range(50)
     ]
     document = history_document(entries)
-    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES + 64
+    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
     assert document["total"] == 50
     assert document["truncated"] is True
     assert document["messages"][0]["at"] == iso(T + 49)
     assert json.loads(encode(document))["messages"][0]["text"] == HOSTILE * 20  # data, unchanged
+
+
+HISTORY_KEYS = [  # the keys of 2.0, then those of 2.1 at the end
+    "at",
+    "direction",
+    "kind",
+    "contact_key",
+    "channel_index",
+    "name",
+    "text",
+    "state",
+    "hops",
+    "snr_db",
+    "target",
+    "id",
+    "queued_at",
+    "suspect",
+    "reason",
+]
+
+
+def test_a_history_entry_has_every_key_with_null_where_unknown() -> None:
+    """ADR 0015: every key always present. A received entry names the target it came through;
+    a sent one also its delivery id, when it was accepted, whether its acknowledgement was
+    suspect and why it failed."""
+    received = HistoryEntry(
+        T, "in", "channel", "On my way", None, 1, "Carol", None, 1, 6.25, target="family"
+    )
+    assert list(history_entry(received)) == HISTORY_KEYS
+    assert history_entry(received) == {
+        "at": iso(T),
+        "direction": "in",
+        "kind": "channel",
+        "contact_key": None,
+        "channel_index": 1,
+        "name": "Carol",
+        "text": "On my way",
+        "state": None,
+        "hops": 1,
+        "snr_db": 6.25,
+        "target": "family",
+        "id": None,
+        "queued_at": None,
+        "suspect": None,
+        "reason": None,
+    }
+    sent = HistoryEntry(
+        T + 30,
+        "out",
+        "contact",
+        "Back soon",
+        contact_key=KEY,
+        name="Alice",
+        state="confirmed",
+        target=None,  # sent through contacts/<key>/send: contact_key holds the key
+        id="1a2b3c4d",
+        queued_at=T + 2.75,
+        suspect=True,
+    )
+    assert history_entry(sent) | {"at": None} == dict.fromkeys(HISTORY_KEYS) | {
+        "direction": "out",
+        "kind": "contact",
+        "contact_key": KEY,
+        "name": "Alice",
+        "text": "Back soon",
+        "state": "confirmed",
+        "id": "1a2b3c4d",
+        "queued_at": "2027-01-15T08:00:02+00:00",  # as `at`: UTC, whole seconds
+        "suspect": True,
+    }
+    failed = HistoryEntry(
+        T,
+        "out",
+        "channel",
+        "x",
+        channel_index=0,
+        state="failed",
+        target="alerts",
+        id="9f8e7d6c",
+        reason="channel_not_configured",
+    )
+    assert history_entry(failed)["reason"] == "channel_not_configured"
+    assert history_entry(failed)["suspect"] is None
+    assert history_document([])["messages"] == []
+
+
+def _worst_entries(text_bytes: int, *, received: bool) -> list[HistoryEntry]:
+    """The worst cases for the bound: a received direct message from a 31-byte name of control
+    characters with a text of control characters (6 bytes each in JSON), or a sent one with
+    every key filled, the longest reason and a text of quotes and backslashes (2 bytes each)."""
+    if received:
+        text, name = "\x01" * text_bytes, "\x02" * 31
+        return [
+            HistoryEntry(
+                T + i,
+                "in",
+                "contact",
+                text,
+                KEY,
+                name=name,
+                hops=63,
+                snr_db=-12.25,
+                target="a" * 32,
+            )
+            for i in range(50)
+        ]
+    text = ('"\\' * text_bytes)[:text_bytes]
+    return [
+        HistoryEntry(
+            T + i,
+            "out",
+            "contact",
+            text,
+            KEY,
+            name="n" * 32,
+            state="failed",
+            target="t" * 32,
+            id=f"{i:08x}",
+            queued_at=T + i - 600,
+            suspect=None,
+            reason="exceeds_airtime_burst",
+        )
+        for i in range(50)
+    ]
+
+
+@pytest.mark.parametrize("received", [True, False], ids=["received", "sent"])
+def test_the_whole_history_document_stays_within_its_bound(received: bool) -> None:
+    """#111: the bound counts the whole document, its head too, as `nodes_document` does: from
+    texts that fill it short of a whole entry to texts that leave it with room for one."""
+    for text_bytes in range(0, 161, 3):
+        document = history_document(_worst_entries(text_bytes, received=received))
+        assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, text_bytes
+        assert document["total"] == 50
+        kept = document["messages"]
+        assert document["truncated"] is (len(kept) < 50)
+        assert [m["at"] for m in kept] == [iso(T + 49 - i) for i in range(len(kept))]
+
+
+def test_a_history_near_its_bound_stays_within_it_whole_or_cut() -> None:
+    """Entries that fill the bound to the byte without the head: the document keeps them all
+    only if the head fits too (2.0 went 43 bytes over then, and 42 when cut)."""
+    whole = set()
+    for size in range(40, 160):
+        entries = [HistoryEntry(T + i, "in", "channel", "x" * size) for i in range(50)]
+        document = history_document(entries)
+        assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, size
+        whole.add(document["truncated"] is False)
+    assert whole == {True, False}
 
 
 def test_flags_and_bounds_helpers() -> None:

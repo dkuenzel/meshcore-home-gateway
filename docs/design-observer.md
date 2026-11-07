@@ -73,6 +73,17 @@ flowchart LR
   while it carries. The last check of each companion is kept in the state file (`advert_checks`,
   no position); a logged position is held at most about three minutes (its log up to 40 s before
   the push, which is held up to 70 s, until the next minute tick) and never stored or published.
+* **Messages** in and out go to the `history` document (the latest 50, newest first, the whole
+  document within 15 KiB, #111) and to the history's table `message`. Since 2.1 each entry also
+  names the target it came through or went to (the inbox's, as `received` names it; none for
+  `contacts/<key>/send`, whose key is `contact_key`), and a sent one the id of its delivery
+  events, when the gateway accepted it, `suspect` and the reason it failed or expired. The
+  acceptance time is the wall clock (the queue counts with the monotonic one): the delivery
+  carries it in its events, not on the `delivery` topic, and a message kept across a stop keeps it
+  in the state file. The table gets the columns `target`, `delivery_id` (it has an `id`),
+  `queued_at`, `suspect` and `reason` after a look at its columns, in version 2 as the table
+  `reading` was: 2.0 names its columns in every statement, so a downgrade leaves them empty and
+  keeps the history.
 * **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
   `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
   history's table `reading`, one row per value, in one transaction. The table was added to the

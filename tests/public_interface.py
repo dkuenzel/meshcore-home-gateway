@@ -668,6 +668,13 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
         )
     )
     bridge.outbox._deliver_event(DeliveryEvent("id", ALIAS, DeliveryState.CONFIRMED, text="Hello"))
+    # the history's keys of a sent message filled: a suspect acknowledgement, a failure's reason
+    for final, extra in (
+        (DeliveryState.CONFIRMED, {"suspect": True}),
+        (DeliveryState.FAILED, {"reason": "no_acknowledgement"}),
+    ):
+        event = DeliveryEvent("id", ALIAS, final, text="Hi", attempt=3, queued_at=T - 5, **extra)
+        bridge.outbox._deliver_event(event)
     bridge.announcer.announce()  # discovery, the controls, the contacts' devices; state
     bridge.radio.ready.set()
     bridge.status.publish()  # the radio connected

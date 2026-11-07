@@ -528,24 +528,40 @@ and `look_alike_total` still name the look-alikes ([configuration](configuration
 
 ## History: `history`
 
-The latest messages in and out (up to 50, at most 15 KiB), newest first. They are kept in the
-gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
+The latest messages in and out (up to 50), newest first. The whole document stays within 15 KiB
+(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). They are
+kept in the gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
 [configuration](configuration.md)).
 
 ```json
 {"total": 2, "truncated": false,
  "messages": [{"at": "2026-10-18T09:01:00+00:00", "direction": "out", "kind": "contact",
                "contact_key": "a1b2…", "channel_index": null, "name": "Alice",
-               "text": "Back soon", "state": "confirmed", "hops": null, "snr_db": null},
+               "text": "Back soon", "state": "confirmed", "hops": null, "snr_db": null,
+               "target": "alice", "id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00",
+               "suspect": false, "reason": null},
               {"at": "2026-10-18T09:00:02+00:00", "direction": "in", "kind": "channel",
                "contact_key": null, "channel_index": 0, "name": "Carol", "text": "On my way",
-               "state": null, "hops": 1, "snr_db": 6.25}]}
+               "state": null, "hops": 1, "snr_db": 6.25,
+               "target": "family", "id": null, "queued_at": null, "suspect": null,
+               "reason": null}]}
 ```
 
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message
 (`confirmed`, `failed`, `expired`, or `sent` for a channel). Requests refused at once
 (`rejected`, `duplicate`) are not in the history.
+
+Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
+message from an earlier version):
+
+| Key | Meaning |
+| --- | --- |
+| `target` | incoming: the target it came through, as `received` names it: the first target of its channel, or the contact target of its sender; `null` for a sender that is no target. Outgoing: the target it went to; `null` for a message sent through `contacts/<key>/send`, whose key is `contact_key` |
+| `id` | outgoing: the `id` of its delivery events |
+| `queued_at` | outgoing: when the gateway accepted the request, also for a message kept across a stop; `at` is when it became final |
+| `suspect` | outgoing, `confirmed`: the acknowledgement came sooner than the path allows, as in its delivery event ([what `confirmed` proves](#what-confirmed-proves)) |
+| `reason` | outgoing, `failed` or `expired`: why, as in its delivery event |
 
 ## Contact and node events: `contact`, `node`
 

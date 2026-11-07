@@ -105,6 +105,7 @@ class Outgoing:
     # its key in the duplicate check and when it was accepted there, if it holds one: forgotten
     # when it fails or expires, so that it can be sent again at once
     dedup: tuple[tuple[str, str], float] | None = None
+    queued_at: float | None = None  # wall clock at its acceptance, kept over a stop (history)
 
 
 class Outbox:
@@ -292,7 +293,7 @@ class Delivery:
             event = DeliveryEvent(event_id, alias, exc.state, reason=exc.reason)
             self._deliver_refusal(event)
             return
-        state, reason = DeliveryState.QUEUED, None
+        state, reason, queued_at = DeliveryState.QUEUED, None, None
         key, now = (target.alias, text), self._mono()
         if deduplicate and self._dedup.is_duplicate(key, now):
             state = DeliveryState.DUPLICATE
@@ -301,17 +302,21 @@ class Delivery:
             sent = with_nonce(text) if nonce else text  # duplicates are judged without it
             alert = target.alias in self.config.messages.alert_targets
             dedup = (key, now) if deduplicate else None
+            queued_at = self._wall()  # for the history: `now` is monotonic
+            item = Outgoing(
+                event_id, target, sent, now, raw, alert=alert, dedup=dedup, queued_at=queued_at
+            )
             try:
-                self._queue.put(
-                    Outgoing(event_id, target, sent, now, raw, alert=alert, dedup=dedup)
-                )
+                self._queue.put(item)
                 self.activity.touch()
                 text = sent
             except asyncio.QueueFull:
                 if deduplicate:  # not taken, so a retry must not count as duplicate
                     self._dedup.forget(key)
-                state, reason = DeliveryState.REJECTED, "queue_full"
-        event = DeliveryEvent(event_id, target.alias, state, text=text, reason=reason)
+                state, reason, queued_at = DeliveryState.REJECTED, "queue_full", None
+        event = DeliveryEvent(
+            event_id, target.alias, state, text=text, reason=reason, queued_at=queued_at
+        )
         if state is DeliveryState.QUEUED:
             self._deliver_event(event)
         else:
@@ -654,6 +659,7 @@ class Delivery:
             rtt_ms=rtt_ms,
             airtime_ms=None if airtime_s is None else round(airtime_s * 1000),
             suspect=suspect,
+            queued_at=item.queued_at,
         )
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
@@ -709,6 +715,7 @@ class Delivery:
                     now - item.created,
                     item.timestamp,
                     item.sent,
+                    item.queued_at,
                 )
                 for item in kept
             ],
@@ -734,6 +741,7 @@ class Delivery:
                     text=saved.text,
                     attempt=saved.sent,
                     reason="unknown_target",
+                    queued_at=saved.queued_at,
                 )
                 self._deliver_event(event)
                 continue
@@ -746,6 +754,7 @@ class Delivery:
                 alert=target.alias in config.alert_targets,
                 timestamp=saved.timestamp,
                 sent=saved.sent,
+                queued_at=saved.queued_at,
             )
             if age >= config.queue_ttl_s:  # it would have expired meanwhile
                 self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))

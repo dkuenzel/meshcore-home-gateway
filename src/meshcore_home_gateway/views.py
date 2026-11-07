@@ -542,6 +542,12 @@ class HistoryEntry:
     state: str | None = None  # out: the final delivery state
     hops: int | None = None
     snr_db: float | None = None
+    # since 2.1, after the others: the history builds entries from its rows in this order
+    target: str | None = None  # the configured alias it came through or went to
+    id: str | None = None  # out: the id of its delivery events
+    queued_at: float | None = None  # out: when the gateway accepted it (wall clock)
+    suspect: bool | None = None  # out, confirmed: its acknowledgement may be forged (SEC-001)
+    reason: str | None = None  # out: why it failed or expired
 
 
 def history_entry(entry: HistoryEntry) -> dict[str, Any]:
@@ -556,12 +562,21 @@ def history_entry(entry: HistoryEntry) -> dict[str, Any]:
         "state": entry.state,
         "hops": entry.hops,
         "snr_db": entry.snr_db,
+        "target": entry.target,
+        "id": entry.id,
+        "queued_at": iso(entry.queued_at),
+        "suspect": entry.suspect,
+        "reason": entry.reason,
     }
 
 
 def history_document(entries: Iterable[HistoryEntry]) -> dict[str, Any]:
     """`history`: the latest messages in and out, newest first; of two at the same time, the one
-    given later first."""
+    given later first. The bound counts the whole document, its head too (#111)."""
     ordered = sorted(entries, key=lambda e: e.at)[::-1]  # not reverse=True: ties keep order
-    kept, total = bounded((history_entry(e) for e in ordered), ATTRIBUTE_LIMIT_BYTES)
+    # "false" is a byte longer than "true", and bounded() counts a comma more than the list has
+    head = {"total": len(ordered), "truncated": True, "messages": []}
+    kept, total = bounded(
+        (history_entry(e) for e in ordered), ATTRIBUTE_LIMIT_BYTES - len(encode(head))
+    )
     return {"total": total, "truncated": len(kept) < total, "messages": kept}

@@ -16,6 +16,13 @@ format, the command line and Home Assistant discovery are public interfaces
 - A warning at the start and in `check-config` for targets whose aliases differ only in `-` and
   `_`, such as `a-b` and `a_b`: Home Assistant makes the same entity IDs of them and numbers the
   later ones (`_2`).
+- The entries of the `history` document name the target a message came through or went to
+  (`target`), and a sent message's also the id of its delivery events (`id`), when the gateway
+  accepted it (`queued_at`, also across a stop), whether its acknowledgement was `suspect`, and
+  why it failed or expired (`reason`); each key is always there, `null` where it does not apply.
+  The history database keeps them in new columns, which 2.0 leaves empty after a downgrade, and
+  `history export` adds them at the end of `messages` (`delivery_id` for the id)
+  ([mqtt-api.md](docs/mqtt-api.md#history-history)).
 
 ### Changed
 
@@ -37,6 +44,8 @@ format, the command line and Home Assistant discovery are public interfaces
   (#82).
 - The generated dashboard shows the hint to add the script *Mesh message* while the script is
   missing; since Home Assistant 2026.10 it never showed (#110).
+- The `history` document stays within 15 KiB as a whole; before, only its messages did, and the
+  document could be up to 43 bytes larger (#111).
 
 ## [2.0.0] - 2026-11-07
 

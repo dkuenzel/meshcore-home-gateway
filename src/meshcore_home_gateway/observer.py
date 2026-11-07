@@ -400,8 +400,11 @@ class Observer:
         readings of its statistics."""
         return self._meter.used_s()
 
-    def message(self, message: InboundMessage, sender: Contact | None) -> None:
-        """A received message, after the bridge published it."""
+    def message(
+        self, message: InboundMessage, sender: Contact | None, target: str | None = None
+    ) -> None:
+        """A received message, after the bridge published it; `target`: the alias it came
+        through, as the `received` event names it."""
         signal = Signal(message.hops, message.snr_db)
         text, name = message.text, sender.name if sender else None
         if message.kind is MessageKind.CHANNEL:
@@ -424,11 +427,14 @@ class Observer:
                 name=name,
                 hops=message.hops,
                 snr_db=message.snr_db,
+                target=target,
             )
         )
 
     def delivery(self, event: DeliveryEvent, target: Target | None) -> None:
-        """A delivery event; final ones of messages that may have left go into the history."""
+        """A delivery event; final ones of messages that may have left go into the history. A
+        message to `contacts/<key>/send` has no target there: its alias is the key, which
+        `contact_key` holds (aliases have at most 32 characters)."""
         channel = target is not None and target.kind is MessageKind.CHANNEL
         final = event.state in _KEPT or (channel and event.state is DeliveryState.SENT)
         if not final or event.text is None or target is None:
@@ -445,6 +451,11 @@ class Observer:
                 channel_index=target.channel_index,
                 name=contact.node.name if contact else target.alias,
                 state=event.state.value,
+                target=None if target.alias == key else target.alias,
+                id=event.id,
+                queued_at=event.queued_at,
+                suspect=event.suspect,
+                reason=event.reason,
             )
         )
 
