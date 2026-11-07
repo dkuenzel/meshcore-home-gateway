@@ -325,7 +325,7 @@ Assistant shows as the problem sensor *Gateway degraded* ([what to do](deploymen
 | Key | Meaning | Degraded when |
 | --- | --- | --- |
 | `history` | `ok`, `off` (`[history] enabled = false`), `broken`: it could not be opened or a write failed, and it is off until the next start | `broken` |
-| `state_file` | `ok`, or `unwritable`: the last write of `state.json` failed (a full or read-only disk) | not `ok` |
+| `state_file` | `ok`, or `unwritable`: the last write of `state.json` failed (a full or read-only disk); the gateway tries again within a minute, also when nothing else changed, and it is `ok` again once a write succeeds | not `ok` |
 | `exclusions` | `ok`, `unsaved`: an exclusion from telemetry waits to be written to `telemetry-excluded.json`, or `unreadable`: that file cannot be parsed and telemetry is paused | not `ok` |
 | `errors_1h` | bugs that a part caught and logged with their traceback in the last hour; the journal shows each place at most once a minute, with how many came since | above 0 |
 | `loop_lag_max_s` | the longest the gateway's event loop was held up in the last hour: a host that gives it no CPU or a slow disk (a backup, swapping); `null` in the first second | 1 s or more |

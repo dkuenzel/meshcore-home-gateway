@@ -75,9 +75,11 @@ class JsonStateFile:
         self._data, self._changed = data, False
 
     def flush(self) -> bool:
-        """Write the changes put() since the last write. Never raises an OSError: False while
-        the file cannot be written, with a warning once, and an info line once it is again."""
-        if not self._changed or self._data is None:
+        """Write the changes put() since the last write, and the document again after a write
+        that failed, a save() too: `failed` stays only while the file cannot be written (#94).
+        Never raises an OSError: False while it cannot be, with a warning once, and an info line
+        once it is again."""
+        if not (self._changed or self.failed) or self._data is None:
             return True
         try:
             self._write(self._data)

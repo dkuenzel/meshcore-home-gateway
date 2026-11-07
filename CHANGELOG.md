@@ -92,6 +92,10 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+- After a command's write of `state.json` failed (a full disk), `state_file` stayed `unwritable`
+  and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
+  which can take hours on a quiet system. The gateway now writes the file again within a minute,
+  also with nothing else changed, and clears both once the write succeeds (#94).
 
 ## [2.0.0] - 2026-11-07
 
