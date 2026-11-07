@@ -12,6 +12,7 @@ automation of the examples, and the removal of a control of an earlier version.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +251,33 @@ async def test_deleting_the_gateway_device_clears_the_controls_topic_too(
         f"manage_contacts, node_id '{PREFIX}'"
     )
     assert problems(caplog) == ([leftover] if CLEARS_PER_ENTITY else [])
+
+
+async def test_the_controls_setting_takes_effect_at_once_both_ways(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """HA-02 (#82): `[homeassistant] controls = false` makes the controls unavailable as soon as
+    Home Assistant has the new discovery, and `true` available again, without waiting for the
+    next message on the availability topic. Home Assistant keys availability by topic, so the
+    entry that is always offline has a topic of its own that nobody publishes."""
+    await with_controls(hass, [])
+    controls = (f"button.{PREFIX}_show_hidden", SELECT, TEXT)
+
+    def unavailable() -> list[bool]:
+        return [hass.states.get(e).state == "unavailable" for e in controls]
+
+    async def announce_with(config: Any) -> None:
+        await announce(hass, discovery_payload(config, TOPICS, RADIO))
+        await fire(hass, manage_topic(CONFIG), manage_payload(config, TOPICS, []))
+
+    assert unavailable() == [False, False, False]
+    await announce_with(
+        replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    )
+    assert unavailable() == [True, True, True]
+    await announce_with(CONFIG)
+    assert unavailable() == [False, False, False]
+    assert problems(caplog) == []
 
 
 # --- removing ----------------------------------------------------------------------------------

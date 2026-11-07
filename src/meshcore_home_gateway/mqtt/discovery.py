@@ -82,10 +82,12 @@ def controls_off(config: Config, topics: Topics) -> list[dict[str, str]]:
     controls that change the radio's contacts or the telemetry: Home Assistant shows them
     unavailable and leaves them out of service calls, while MQTT and the command line keep
     working (SEC-008). Unavailable rather than removed: a disabled entity that goes takes its
-    whole device away."""
+    whole device away. Home Assistant keys availability by topic, so the entry has a topic of
+    its own, which nobody publishes: on the gateway's availability topic it took effect only with
+    the next message there (HA-02). A message another client writes there still reads offline."""
     if config.homeassistant.controls:
         return []
-    return [{"topic": topics.availability, "value_template": "{{ 'offline' }}"}]
+    return [{"topic": f"{topics.root}/homeassistant/off", "value_template": "{{ 'offline' }}"}]
 
 
 def discovery_payload(

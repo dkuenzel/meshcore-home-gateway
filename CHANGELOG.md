@@ -15,6 +15,10 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Fixed
 
+- With `[homeassistant] controls = false`, the controls are unavailable in Home Assistant as soon
+  as it has the gateway's announcement, and available again at once when the setting is back to
+  `true`; before, the change waited for the next message on the gateway's availability topic
+  (#82).
 - The generated dashboard shows the hint to add the script *Mesh message* while the script is
   missing; since Home Assistant 2026.10 it never showed (#110).
 

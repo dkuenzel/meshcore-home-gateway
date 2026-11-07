@@ -250,8 +250,8 @@ def test_with_controls_off_the_show_hidden_button_is_unavailable() -> None:
     assert button["availability_mode"] == "all"
     assert button["availability"] == [
         {"topic": TOPICS.availability},
-        {"topic": TOPICS.availability, "value_template": "{{ 'offline' }}"},
-    ]
+        {"topic": f"{TOPICS.root}/homeassistant/off", "value_template": "{{ 'offline' }}"},
+    ]  # a topic nobody publishes: Home Assistant keys availability by topic (HA-02)
 
 
 def test_a_hidden_target_has_no_notify_entity() -> None:

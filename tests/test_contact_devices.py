@@ -245,7 +245,10 @@ def test_with_controls_off_remove_and_telemetry_are_unavailable() -> None:
     ha = replace(CONFIG.homeassistant, controls=False, contact_entity_prefix="mesh_2")
     config = replace(CONFIG, homeassistant=ha)
     cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
-    offline = {"topic": "meshcore/radio1/availability", "value_template": "{{ 'offline' }}"}
+    offline = {
+        "topic": "meshcore/radio1/homeassistant/off",  # never published (HA-02)
+        "value_template": "{{ 'offline' }}",
+    }
     assert cmps["remove"]["availability"][-1] == offline
     assert len(cmps["remove"]["availability"]) == 4
     switch = cmps["telemetry"]
