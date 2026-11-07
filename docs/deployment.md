@@ -482,10 +482,14 @@ updates wait for.
   `root:meshcore-home-gateway` 0640, so that the service's group reads them, and the state is the
   service's own. The secrets go where `MANIFEST.json` says they came from (`password_file`,
   `codes_file`), here the usual paths; leave out the line of a file the archive does not hold
-  (`files` in `MANIFEST.json`):
+  (`files` in `MANIFEST.json`). The history uses SQLite's write-ahead log: a stop that was cut
+  short (the stop timeout, the watchdog, a crash) leaves `history.sqlite3-wal` and
+  `history.sqlite3-shm` beside it. Remove both before the restore, or SQLite applies the old log
+  to the restored history at the next start, and the history is the old one:
 
   ```sh
   systemctl stop meshcore-home-gateway
+  rm -f /var/lib/meshcore-home-gateway/history.sqlite3-wal /var/lib/meshcore-home-gateway/history.sqlite3-shm
   mkdir -m 0700 /root/restore && tar -xzf FILE -C /root/restore && cd /root/restore
   install -m 0640 -o root -g meshcore-home-gateway config.toml /etc/meshcore-home-gateway/config.toml
   install -m 0640 -o root -g meshcore-home-gateway password /etc/meshcore-home-gateway/mqtt-password
@@ -506,7 +510,9 @@ updates wait for.
   the household's companions and message texts, and the history also other people's names, keys
   and channel texts
   ([what the gateway keeps](privacy.md)). Restore the three state files together and with the
-  service stopped: the service holds `state.json` in memory and writes it whole while it runs,
+  service stopped, and remove the old history's `-wal` and `-shm` first, as above; a Proxmox
+  backup brings back the whole container, the log with its history. The service holds
+  `state.json` in memory and writes it whole while it runs,
   over a copy restored meanwhile; an older `state.json` beside
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
   older `telemetry-excluded.json` asks companions excluded since.

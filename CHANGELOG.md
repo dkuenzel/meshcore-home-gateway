@@ -103,7 +103,9 @@ format, the command line and Home Assistant discovery are public interfaces
   configuration and the secrets `root:meshcore-home-gateway` 0640, the state the service's own.
   It said only where the files go, and the archive holds them as `root` with mode 0600: in a new
   container the copy of the codes file of `--with-secrets` kept that, and the service stopped
-  with a configuration error ([deployment.md](docs/deployment.md#4-operations), #98).
+  with a configuration error ([deployment.md](docs/deployment.md#4-operations), #98). It also
+  removes the history's write-ahead log, which a stop cut short leaves behind: SQLite applied it
+  to the restored history at the next start, which then held the old messages again.
 - The security documents state three controls as strong as they are (#105). A command code shows
   that the sender's app made it in that time window, but does not bind the text: whoever reads a
   command before the gateway, such as a host posing as the radio over TCP, can send another text

@@ -13,6 +13,8 @@ import re
 import shlex
 import sqlite3
 import stat
+import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -373,14 +375,18 @@ def test_backup_keeps_the_secrets_only_when_asked(tmp_path: Path) -> None:
 REPOSITORY = Path(__file__).resolve().parent.parent
 
 
-def _restore() -> list[list[str]]:
-    """The `install` commands of the restore in docs/deployment.md, each as its arguments."""
+def _restore_commands() -> list[list[str]]:
+    """The commands of the restore in docs/deployment.md, each as its arguments."""
     guide = (REPOSITORY / "docs" / "deployment.md").read_text(encoding="utf-8")
     after = guide.partition("To restore")[2]
     block = re.search(r"```sh\n(.*?)```", after, flags=re.DOTALL)
     assert block is not None, "no commands after 'To restore' in docs/deployment.md"
-    lines = [line.strip() for line in block[1].splitlines()]
-    return [shlex.split(line) for line in lines if line.startswith("install ")]
+    return [shlex.split(line) for line in block[1].splitlines() if line.strip()]
+
+
+def _restore() -> list[list[str]]:
+    """The `install` commands of the restore in docs/deployment.md, each as its arguments."""
+    return [command for command in _restore_commands() if command[0] == "install"]
 
 
 UNIT = REPOSITORY / "deploy" / "systemd" / "meshcore-home-gateway.service"
@@ -428,6 +434,60 @@ def test_the_guides_restore_gives_each_file_its_owner_group_and_mode(tmp_path: P
     assert restored == expected
     members = set(_members(archive)) - {"MANIFEST.json"}
     assert {m if not m.startswith("state/") else "state/*" for m in members} == set(expected)
+
+
+KILLED = """
+import os, sys
+from pathlib import Path
+from meshcore_home_gateway.history import History
+from meshcore_home_gateway.views import HistoryEntry
+history = History.open(Path(sys.argv[1]))
+for n in range(50):
+    history.add_message(HistoryEntry(1.8e9 + n, "in", "contact", f"later {n}", name="Bob"))
+os._exit(0)  # killed before it closed the history: its write-ahead log stays
+"""
+
+
+def test_the_guides_restore_removes_the_write_ahead_log_of_the_history_it_replaces(
+    tmp_path: Path,
+) -> None:
+    """#98 review: the history uses SQLite's write-ahead log. A stop that was cut short (the
+    stop timeout, the watchdog, a crash loop: a typical moment to restore) leaves
+    `history.sqlite3-wal` and `-shm` beside the history. The restore replaced only
+    `history.sqlite3`, and at the next start SQLite applied the old log to it: the integrity
+    check said ok, but the history was the old one. The guide removes both after the stop and
+    before it puts the state back."""
+    archive = tmp_path / "b.tgz"
+    argv = ["--config", str(config_file(tmp_path)), "--state-dir", str(_state_dir(tmp_path))]
+    assert main(["backup", str(archive), *argv]) == EX_OK
+    state = f"/var/lib/{_unit('StateDirectory')}/"
+    live = tmp_path / "var-lib"
+    live.mkdir()
+    env = {**os.environ, "PYTHONPATH": str(REPOSITORY / "src")}
+    killed = [sys.executable, "-c", KILLED, str(live / "history.sqlite3")]
+    subprocess.run(killed, env=env, check=True)  # noqa: S603 - our own code, in tmp_path
+    assert (live / "history.sqlite3-wal").stat().st_size > 0  # what the stop left
+    commands = _restore_commands()
+    stop = commands.index(["systemctl", "stop", "meshcore-home-gateway"])
+    [put] = [i for i, c in enumerate(commands) if c[0] == "install" and c[-1] == state]
+    removals = [c for c in commands[stop:put] if c[0] == "rm"]
+    assert removals, "the guide removes nothing between the stop and the restore of the state"
+    for command in removals:
+        moved = [a.replace(state, f"{live}/") if a.startswith(state) else a for a in command]
+        assert moved != command, command  # it removes in the state directory
+        subprocess.run(moved, check=True)  # noqa: S603 - the guide's own command, in tmp_path
+    with tarfile.open(archive) as backup:  # what the guide's install puts there
+        for member in backup.getmembers():
+            if member.name.startswith("state/"):
+                extracted = backup.extractfile(member)
+                assert extracted is not None
+                (live / member.name.removeprefix("state/")).write_bytes(extracted.read())
+    history = History.open(live / "history.sqlite3")
+    assert history is not None
+    try:
+        assert [(m.name, m.text) for m in history.recent_messages(100)] == [("Alice", "hi")]
+    finally:
+        history.close()
 
 
 def test_backup_refuses_a_password_it_cannot_leave_out(
