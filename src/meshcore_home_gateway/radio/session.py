@@ -606,7 +606,11 @@ class CompanionSession:
                 f"a restart starts it at its newest contact time, {_iso(newest)}; "
                 "checked again every minute"
             )
-        stuck = self._clock_refused(now, newest + 1 - RESTART_RECONNECT_S)
+        # the time the restart sets, judged now and for a connect up to an hour later; not an
+        # hour earlier time, which may be before this release, where no limit holds
+        stuck = self._clock_refused(now, newest + 1) or self._clock_refused(
+            now + RESTART_RECONNECT_S, newest + 1
+        )
         if stuck is not None:
             return (
                 f"a restart would leave it at its newest contact time, {_iso(newest)}, and the "

@@ -364,6 +364,11 @@ DAY_S = 86_400
         (START_TIME + 100, 40 * DAY_S, 60, None),
         (START_TIME + 100, 40 * DAY_S, 0, None),  # no limit
         (RELEASED_AFTER - DAY_S, 1000, 30, "before this release: it is wrong"),
+        # wrong now, though a connect an hour later would find it after the release
+        (RELEASED_AFTER - 600, 1000, 30, "before this release: it is wrong"),
+        # the newest contact time is in the hour after the release: the time a restart sets is
+        # after it, the limit holds
+        (RELEASED_AFTER + 1800 + 40 * DAY_S, 40 * DAY_S, 30, "more than set_clock_max_days = 30"),
     ],
     ids=[
         "unchanged-40-days",
@@ -372,6 +377,8 @@ DAY_S = 86_400
         "unchanged-40-days-60-allowed",
         "unchanged-40-days-no-limit",
         "host-before-the-release",
+        "host-in-the-hour-before-the-release",
+        "unchanged-40-days-since-the-hour-after-the-release",
     ],
 )
 def test_the_radio_is_restarted_only_when_the_next_connect_can_move_its_clock_forward(
