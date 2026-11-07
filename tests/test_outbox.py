@@ -780,6 +780,40 @@ def test_an_alert_goes_before_a_message_that_waits_for_the_radio(tmp_path: Path)
     assert sends(radio) == [Command.SEND_CHANNEL_TXT_MSG, Command.SEND_TXT_MSG]
 
 
+def test_a_message_an_alert_overtook_goes_on_before_the_messages_behind_it(tmp_path: Path) -> None:
+    """#93: the message that waited for the radio when the alert came goes back to the queue
+    first among its kind (configuration.md, ADR 0028), not behind Alice's, which came later."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    config = make_config(messages='alert_targets = ["alerts"]')
+    present = [False]
+
+    def transport() -> Transport:
+        return radio if present[0] else Unreachable()
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path, transport) as (_, bus, _n):
+            bus.send("bob", "Pump status: fine")
+            await asyncio.sleep(0.2)  # Bob's message waits for the radio
+            bus.send("alice", "Back soon")
+            bus.send("alerts", "Smoke in the barn")
+            await bus.wait_for("/delivery", lambda d: d["target"] == "alerts")
+            present[0] = True
+            await bus.wait_for(
+                "/delivery",
+                lambda d: d["target"] == "alice" and d["event_type"] == "confirmed",
+                within_s=8,
+            )
+
+    scenario(main)
+    assert [text for _, text, _ in radio.channel_texts] == ["Smoke in the barn"]
+    assert [t.text for t in radio.texts] == ["Pump status: fine", "Back soon"]
+    assert sends(radio) == [
+        Command.SEND_CHANNEL_TXT_MSG,
+        Command.SEND_TXT_MSG,
+        Command.SEND_TXT_MSG,
+    ]
+
+
 def test_an_alert_that_waits_for_the_radio_keeps_its_place_before_a_later_alert(
     tmp_path: Path,
 ) -> None:
