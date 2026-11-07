@@ -76,8 +76,9 @@ broker. The code keeps them data everywhere they go, and new code follows the sa
 * **Logs:** names, labels and texts with `%r`, so that they cannot forge a line or steer a
   terminal; message texts only at debug level.
 * **Terminals:** the command line prints them through `_safe_text` or `_json_text`.
-* **Home Assistant:** Markdown cards print every value through the macro `m()` (Translations,
-  below); nothing from the mesh becomes an entity ID, a unique ID or an event type.
+* **Home Assistant:** Markdown cards print every value through the macro `m()`, a message's
+  text through `mt()` (Translations, below); nothing from the mesh becomes an entity ID, a unique
+  ID or an event type.
 * **MQTT:** JSON only; texts are passed on as received (`docs/mqtt-api.md`: consumers treat them
   as plain data, never as markup), or with `[messages] clean_received` without control and
   direction characters, as outgoing texts are; commands are judged on the text as received.
@@ -128,7 +129,8 @@ The rules:
   prefix (`meshcore-home-gateway: `) stays outside every text. Commands, paths and option names a
   user copies are fields where the line allows it.
 * A `# Translators:` comment directly above the call or its statement goes into the catalog: say
-  where the text is shown and what a field holds. In a card of the dashboard's template it is
+  where the text is shown and what a field holds. Every text of the dashboard with a field has
+  one. In a card of the dashboard's template it is
   `{#- Translators: … -#}` on the line above the text (a `#` line there is card content); never in
   a GitHub-alert line, which it would join to the next.
 * Never translate a log call, machine output (`--json`, `--list`, the results with `--wait`,
@@ -145,22 +147,100 @@ The rules:
   pseudo-language `xx`, which marks every text (`‹…›`); `wide()`, `hostile()` and `percents()`
   give catalogs that would break a careless caller.
 
-**The dashboard's template** (`src/meshcore_home_gateway/dashboard.yaml`) follows rules that
-`tests/test_dashboard.py` checks on the shipped file:
+**The dashboard's template** (`src/meshcore_home_gateway/dashboard.yaml`) is YAML with a few
+lines of its own, which `dashboard.py` reads:
+
+* `# @each chats` … `# @end` repeats its lines once per chat page, `switches` and `removes` once
+  per contact's switch or remove button. Inside, `@chats.title@` and the like are the item's
+  fields. Each value matches a pattern first (`dashboard.FIELDS`): none is text from the mesh. A
+  chat page, switch or button whose values do not match is left out, and the command says so.
+  A directive may also stand inside a card's content, indented as its lines: there it repeats
+  lines of the content, such as the keys of the contacts a list holds.
+* `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
+  `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
+* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@contact@` and `@guide@` (the guide of
+  this version, for a link to one of its sections) are filled in;
+  `["@trackers@"]` and `["@chats@"]` become JSON lists, `["@models@"]` the pairs of each model of
+  a contact's device, as the gateway names it in the dashboard's language, and its node type. A chat page in `["@chats@"]` says with
+  `write` only whether it has a field: the entity IDs of its field and its *Send* button stand
+  only in the guard of its footer (rule 3 below).
+
+`tests/test_dashboard.py` checks these rules on the shipped file:
 
 1. A marker is a whole YAML value or sits in a literal block (`content: |-`), never inside
-   `{{ }}`, `{% %}` or a flow value. A field in a marker is `node`, `version`, or a Jinja variable
-   the card sets before it.
-2. Every Markdown card that prints a value starts its content with the macro
-   `{%- macro m(x) -%}{{ (x or '') | string | replace('\r', ' ') | replace('\n', ' ') | e }}{%- endmacro -%}`
-   and prints every value read from Home Assistant (states, attributes, the registry) through it,
-   or through a mapping macro of the card that ends in `m(v)`, on a line that starts with `<div>`,
-   `<table>` or `<ha-qr-code`. `| e` appears nowhere else. GitHub-alert lines print only our texts
-   and integers.
+   `{{ }}`, `{% %}` or a flow value. A field in a marker is `node`, `version`, `name` (the title
+   of the item, only inside an `@each`), or a Jinja variable the card sets before it. A whole
+   value takes `name` only.
+2. Every Markdown card that prints a value starts its content with the macro `m()` (after the
+   line that names a problem card's class, rule 9 below):
+   `{%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}`.
+   It prints every value read from Home Assistant (states, attributes, the registry) through it,
+   through `mt()`, or through a macro of the card, on a line that is one `<div>`, `<table>`,
+   `<details>` or `<ha-qr-code` element, or a row of `<table role="presentation" width="100%">`
+   elements. A macro prints only through `m()`, `mt()` and the macros above it, and a field is set
+   from one of them or is a whole number. A mapping ends in `m(v)`, in `<code>` where the value is
+   a code. `| e` appears nowhere else. GitHub-alert lines print only our texts and integers.
 3. The mapping macros (`said`, `telemetry`, `what`) have one branch per value of the gateway's
    list (`DeliveryState`, `telemetry.STATES`, the `contact` events' types).
 4. `on`, `off` and versions are quoted (YAML 1.1 reads `on` as true).
 5. `_("` and `@word@` appear only as markers and placeholders.
+
+The dashboard of 2.1 follows the numbered rules below as well. `tests/dashboard_rules.py` checks
+them on the dashboard made for a household with one chat of every kind, and each finding names
+its rule; the shipped template breaks none of them.
+
+1. A value goes onto one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element per line, or
+   onto a line of `<table role="presentation" width="100%">` elements.
+2. A mapping macro (`said`, `mark`, `why`, `what`, `telemetry`, `status`, `profile`, `part`,
+   `place`, `problem`, `mon`, `kind`, `audience`, `node`) gives each branch a text, an unknown
+   value through `m()`, and has a branch for each value of the gateway's list where there is one.
+3. A condition holds no marker and no `m()`, and never `has_value()`. The entity ID of a contact
+   appears only inside a card or row whose template condition tests, for that entity, that it
+   exists, that it is not `unavailable`, its device's `via_device_id` and `serial_number`; for a
+   field of the gateway's own, that its device is the gateway. A footer's condition names both
+   its entities, each tested on its own, and its button is on its field's device.
+4. No `condition: state`, except with an `attribute` on the radio's entity; no `state_not`.
+5. No remove button as an entity row; a remove asks first, and its question names `{name}`.
+6. A link goes to `./` and a page of the same dashboard, or to an anchor of the guide of this
+   version (`v@version@`). A link to `./{{ x.path }}` or `./{{ m(x.path) }}` stands only in a
+   card that loops over `["@chats@"]` with `for x in`.
+7. No marker inside an HTML attribute.
+8. Every card but a heading has a `<details>` last; a tile, entities, map or history-graph card
+   may have it in a `text_only` card that follows it; every page ends with such a card; what a mapping macro says is explained there or on *Help*
+   (but the names of the months); *Help* names every page and every control.
+9. The status line and the problem cards list the same problems in the same order: the branches
+   of the status line's `problem()`, and the problem a card names on its first line,
+   `{#- problem: <class> -#}`.
+10. The counts in the tests follow the template.
+11. No GitHub alert (`> [!`): a coloured box is a `<div><ha-alert>` line.
+12. The tabs are `overview`, `messages` and `contacts`, without icons. *Overview* links to
+    *Map*, *Gateway*, *Settings* and *Help* outside every `<details>`, and a heading of
+    *Contacts* has buttons to *Gateway*, *Settings* and *Help*.
+13. A card that prints a message's text prints it through `mt()`; `m()` and `mt()` read the same
+    in every card.
+14. The three tabs' titles have at most 22 letters together in every language shipped, or the
+    tabs do not fit a phone.
+15. No condition has `enabled`, no number in a condition is a string.
+16. A text or a name that quotes a label of the dashboard, a name that names a button's label
+    (*Return, then Send*), and a text that names a label of `NAMED` by its words, quote marks or
+    not (D-63: *Send*, *Contacts*, *Gateway*, *Settings*, *Ask for position and battery*, the
+    controls and headings of *Contacts*), is listed in `QUOTES` with the labels it names, or in
+    `PLAIN` where the words mean no label; and every language says each label as it translates
+    it. A text that asks for the keyboard's key says
+    the key before ↵ in a word of the name beside *Send*.
+17. No text names a section of the guide; it links to its anchor instead. Only a line that
+    starts with "For your administrator:" names Home Assistant's menus.
+18. A chat page's footer is a `vertical-stack` of the refused line (a Markdown card that hides
+    while empty, rule 21), one text row whose three actions are `none`, and a tile with a
+    `button` feature.
+19. `m()` removes the C0 and C1 controls but tab, LF and CR, and the invisible characters the
+    gateway drops before it reads a contact link; never U+200C and U+200D.
+20. No page has a `back_path`: the back arrow goes back to the page it came from.
+21. No card of the made dashboard hides itself. The template marks a Markdown card that may be
+    empty with `show_empty: false`, and the generator turns that into a visibility condition of
+    the card's own content: Home Assistant's card wrapper takes a card that hides itself out of
+    the page, and it does not come back until the page is loaded again; a card hidden by its
+    conditions comes back once they hold.
 
 A translation of a dashboard text is used only when `dashboard.unsafe()` finds nothing in it (no
 Jinja, HTML, Markdown link or address, no line break); the catalog check applies the same test.

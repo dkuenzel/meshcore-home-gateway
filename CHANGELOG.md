@@ -15,7 +15,8 @@ format, the command line and Home Assistant discovery are public interfaces
   `null` while they are taken (#99).
 - A warning at the start and in `check-config` for targets whose aliases differ only in `-` and
   `_`, such as `a-b` and `a_b`: Home Assistant makes the same entity IDs of them and numbers the
-  later ones (`_2`).
+  later ones (`_2`). Their chat pages in the dashboard have no message field and say why, and
+  `meshcore-home-gateway dashboard` names the pair.
 - The entries of the `history` document name the target a message came through or went to
   (`target`), and a sent message's also the id of its delivery events (`id`), when the gateway
   accepted it (`queued_at`, also across a stop), whether its acknowledgement was `suspect`, and
@@ -64,6 +65,54 @@ format, the command line and Home Assistant discovery are public interfaces
   in `[commands] senders` from the codes file. It refuses a key that is still a sender, which
   would then command without a code; `enrol` gives such a sender a new secret
   ([configuration.md](docs/configuration.md#commands)) (#80).
+- The dashboard has a page for each chat: one per channel target, one per contact target
+  without a device, and one per contact with a device that takes texts, at most 30 besides the
+  contact targets'. A chat that has a message field shows it at the bottom of its page, with a
+  *Send* button. The page of a contact target with a device is that contact's.
+  `meshcore-home-gateway dashboard` says on standard error how many chat pages the dashboard
+  has, which contacts have none, and which chat pages, switches and buttons it left out because
+  a name does not fit a page's address or an entity ID.
+- A chat's page shows the chat as a messenger does: received messages on the left, those sent
+  from this home on the right with ✓ or ✓✓, a message not delivered, not sent or maybe forged in
+  yellow with the reason in words, one on its way in italics, the newest open and the older ones
+  folded, the delivery code of `confirm_nonce` hidden while the gateway adds one (in the history
+  only, #87). At its top it says how to write (type,
+  Return, then *Send*), above its field why a *Send* was refused, also when the field held no
+  text; under the thread, why writing is not possible when it is not (the field or its *Send*
+  button disabled, unavailable or under another ID, for the administrator), and about the person
+  or the chat: where the person is, the battery, asking for position and battery with how the
+  device answers, the text the gateway adds before and after each message. A person removed from
+  the radio or hidden keeps the page, which says how to get the contact back. These need the
+  message history and the messages on their way of gateway 2.1.
+- *Chats* lists every chat page under *All chats* with its newest message, one not sent yet as
+  on its way, and "new" for a message received in the last 15 minutes, the contacts and channels
+  that have no page yet, and all messages together under *Latest messages*. *Overview* shows the
+  three latest chats and where everyone is. *Help* explains the problems and why a message was
+  not sent, and opens from each tab's *What this view is for* and from each chat's help.
+- *Contacts* on the dashboard, written again for the household: buttons to *Gateway*,
+  *Settings* and *Help*; *People and devices*, this gateway's contacts by their devices, each with its type (person, repeater, room or sensor), its
+  battery and *Asking*, how its device answers asking for position and battery, and a link to its
+  chat page; *Sensors*, the readings of the contacts that report some; *Ask for position and
+  battery*, a switch for each person; *Add or remove* with the result of the last request under
+  the fields, the QR code under *Let someone add this home*, a *Remove* for each contact that
+  asks first, naming the contact, and *Hidden contacts* with *Show again*; *Nodes heard nearby*,
+  the nodes you can add. A line above the controls says why they cannot act when they cannot:
+  the gateway offline or the radio disconnected (in red, as on *Overview*), `controls = false`,
+  contact management off, the radio not reported yet, or firmware the gateway is not tested with
+  (#99); above the switches also asking turned off in the settings. A list whose rows all hide
+  shows no empty frame. Cards that find the contacts' devices in Home Assistant's registry, on
+  every page, render again each minute, so a new contact or tracker shows within a minute.
+- *Gateway* on the dashboard: *Health*, each part of the gateway with its state, those that need
+  a look named first, the messages on their way counted as the first line of *Overview* counts
+  them, and the airtime left of the hour's budget; *Radio*; *Radio settings*, with who may ask
+  the radio for its battery, position and readings as the radio acts on it; *Latest of each
+  kind*, the newest event of each kind, and a command the gateway refused, with the reason in
+  words (`code_locked` too), until the next message arrives. *Settings*: what the administrator
+  set, read only, from the sensor *Configuration*, each setting with its section and key, and
+  the versions. While the gateway is offline, these cards say so instead of values that would
+  read as never reported. *Help* names every page, button and switch, and says what the
+  dashboard cannot do, the kinds of messages and what each word of the cards means
+  ([home-assistant.md](docs/home-assistant.md#dashboard)).
 
 ### Changed
 
@@ -76,9 +125,6 @@ format, the command line and Home Assistant discovery are public interfaces
   ([mqtt-api.md](docs/mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
 - Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery
   topic once for each of its entities; the gateway takes the copies as one deletion (#115).
-- The generated dashboard needs Home Assistant 2026.10 or newer: it shows cards by template
-  conditions, which the frontend evaluates since 2026.10. The gateway and its entities keep
-  2026.8 ([home-assistant.md](docs/home-assistant.md#requirements)).
 - A command sender with a code secret gets at most 5 wrong codes an hour; a command without a
   code counts too, but not a command that came late (it waited in the radio or the mesh) with
   the sender's code of the time it was sent. Then the gateway refuses its commands without a
@@ -94,6 +140,37 @@ format, the command line and Home Assistant discovery are public interfaces
   start has the setting changed. Before, every event carried it from `queued` on, so a client
   that may read the gateway's topics, with a board in range, could compute the acknowledgement's
   code and forge `confirmed` ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#87).
+- The dashboard shows three tabs, *Overview*, *Chats* (before: *Messages*) and *Contacts*, with
+  their titles and without icons, so that they fit a phone. *Map*, *Gateway*, *Settings* and
+  *Help* are pages without a tab: *Overview* links to them, and the *Contacts* heading has
+  buttons for *Gateway*, *Settings* and *Help*. The back arrow of every page goes back to the
+  page it was opened from. The radio's health moved from *Overview* to *Gateway*.
+- The generated dashboard needs Home Assistant 2026.10 or later: it shows cards by template
+  conditions, which the frontend evaluates since 2026.10. `meshcore-home-gateway dashboard` says
+  so after every dashboard it writes. The gateway and its entities still work with Home
+  Assistant 2026.8 and later ([home-assistant.md](docs/home-assistant.md#requirements)).
+- *Overview* says in its first line, in a colour, whether everything is fine, and names the
+  first problem; a card for each problem says what to do, in place of the problem sensors' tiles
+  and of the tiles of the radio link, airtime, queue and battery. The messages waiting over a
+  minute count the message being sent too. The version card shows only for another major or
+  minor version, and says which of the two to update.
+- The dashboard drops control and direction characters from every name and text, and breaks long
+  words in messages so that they fit a phone.
+- The dashboard says how a contact's device answers asking for position and battery in the
+  words of a chat's page: "not asked (switch off)" for a companion nobody turned on, which 2.0
+  called "excluded"; it shows times as a history does, such as "10:31" or "yesterday 10:31",
+  not "5 min ago". The field to add a contact is *Add by key or contact link*; the line below it
+  says to tap Return. *Gateway* has no tile of the airtime left: its *Health* row shows it with
+  the budget. Make the dashboard again to get these.
+
+### Removed
+
+- The dashboard's tile *Write a message* and its hint to add the script *Mesh message*, which
+  Home Assistant 2026.10 and later never showed (#110): each chat page has its own field. The
+  guide keeps the script for automations.
+- The dashboard's card *Telemetry and removal*, a fixed list of the contacts' switches and
+  remove buttons, which pressed a button without asking first; each contact's switch and
+  *Remove* now stand in *Ask for position and battery* and *Add or remove*.
 
 ### Fixed
 
@@ -101,8 +178,6 @@ format, the command line and Home Assistant discovery are public interfaces
   as it has the gateway's announcement, and available again at once when the setting is back to
   `true`; before, the change waited for the next message on the gateway's availability topic
   (#82).
-- The generated dashboard shows the hint to add the script *Mesh message* while the script is
-  missing; since Home Assistant 2026.10 it never showed (#110).
 - The `history` document stays within 15 KiB as a whole; before, only its messages did, and the
   document could be up to 43 bytes larger (#111).
 - The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
@@ -174,7 +249,7 @@ format, the command line and Home Assistant discovery are public interfaces
   where `[telemetry] ask_types` gives sensors both, and said that contact entity IDs start with
   `mesh_`, where `contact_entity_prefix` chooses the start
   ([home-assistant.md](docs/home-assistant.md#contacts)); and the design's note on the
-  dashboard's template named neither `@contact@`, `["@controls@"]` nor its second conditional.
+  dashboard's template did not name all that `dashboard.py` fills in and keeps.
 - The triage log of the review of 2026-11 states where the work is: its state was that of
   2026-11-04, with pull requests up to #64, and its 162 fixed items counted six that defer a
   part. It now lists the 10 deferred items, the 6 deferred parts and the 3 drafts for MeshCore
@@ -289,6 +364,17 @@ format, the command line and Home Assistant discovery are public interfaces
   installer shows the self-test's report also when it passed, with these warnings. 2.0 refuses
   such a secret again (exit 78): before a downgrade to 2.0, remove it with `commands revoke`
   (#80).
+- The dashboard's cards that show only while they have something to say (the problems on
+  *Overview*, the line under a chat's field that says a message was not sent, the map's hints)
+  now appear on a page that is open. Home Assistant took such a card out of the page once it was
+  empty, so it stayed away until the page was loaded again; it now shows by a condition of its
+  own content.
+- The dashboard's switches and remove buttons of the contacts show only while their entity is
+  that of this gateway's contact with the key the dashboard was made for: a second gateway's
+  dashboard operated the first gateway's contacts of the same name (#81), a removed contact's
+  rows turned into warnings that the entity was not found (#100), and a contact prefix set later
+  emptied the contacts table (#81). A yellow line names the entity ID such a contact has, for the
+  administrator.
 
 ### Security
 
@@ -305,6 +391,9 @@ format, the command line and Home Assistant discovery are public interfaces
   rulesets let a repository role bypass them at any time, which the maintainer's login has, and
   the agent works through that login. It can push to `main` directly and move or delete a tag
   until its release is published (#102).
+- The dashboard's *Overview* names a radio link another program took over as a problem, in
+  red, with what to do. Before, it said "Gateway ready." while such a program could control the
+  radio and read its private key, and no card showed the sensor *Radio link taken over* (#83).
 
 ## [2.0.0] - 2026-11-07
 

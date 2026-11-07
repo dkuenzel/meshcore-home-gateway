@@ -23,7 +23,9 @@ Run, with the user's password in the environment variable HA_PASSWORD (or in a f
 
 It writes <out>/<view>-<width>x<height>-<scheme>.png (with "@2x" before ".png" at --scale 2)
 and <out>/console.json, the console errors by page. It prints one line per screenshot and exits
-with 1 when a page reported an error. A view that the dashboard does not have counts as an error
+with 1 when a page reported an error. An error that matches a pattern of --allow-error stays in
+console.json and fails no page: offline, the map's tile proxy answers 502 on every map page,
+`--allow-error '502 \\(Bad Gateway\\)'`. A view that the dashboard does not have counts as an error
 too: Home Assistant would show the first view in its place. A failed login ends the run at once.
 A width under 600 pixels is shown as a phone: a mobile
 viewport with touch. The colour scheme is the browser's (prefers-color-scheme), which Home
@@ -36,6 +38,7 @@ import argparse
 import importlib
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,6 +94,18 @@ def schemes(text: str) -> list[str]:
     return found
 
 
+def pattern(text: str) -> re.Pattern[str]:
+    try:
+        return re.compile(text)
+    except re.error as exc:
+        raise argparse.ArgumentTypeError(f"not a regular expression: {text!r}: {exc}") from None
+
+
+def failing(errors: list[str], allowed: list[re.Pattern[str]]) -> list[str]:
+    """The errors that fail a page: those no pattern of --allow-error matches."""
+    return [error for error in errors if not any(p.search(error) for p in allowed)]
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="browser_check.py",
@@ -116,6 +131,14 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--scale", type=float, default=1.0, help="device pixels per CSS pixel")
     p.add_argument("--full-page", action="store_true", help="the whole page, not the viewport")
+    p.add_argument(
+        "--allow-error",
+        type=pattern,
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="a console error that matches this regular expression fails no page (repeatable)",
+    )
     p.add_argument(
         "--settle",
         type=float,
@@ -196,7 +219,11 @@ def shoot(
         name = f"{view.replace('/', '_')}-{size}-{scheme}{suffix}.png"
         page.screenshot(path=str(args.out / name), full_page=args.full_page)
         found[f"{view} {size} {scheme}"] = list(errors)
-        print(f"{name}: {len(errors)} console error(s)")
+        allowed = len(errors) - len(failing(errors, args.allow_error))
+        print(
+            f"{name}: {len(errors) - allowed} console error(s)"
+            + (f", {allowed} allowed" if allowed else "")
+        )
     context.close()
     return found
 
@@ -222,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     (args.out / "console.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
-    failed = sorted(page for page, errors in report.items() if errors)
+    failed = sorted(page for page, errors in report.items() if failing(errors, args.allow_error))
     for page in failed:
         print(f"console errors on {page}: {report[page]}", file=sys.stderr)
     return 1 if failed else 0

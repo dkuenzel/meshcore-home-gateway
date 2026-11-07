@@ -684,27 +684,94 @@ script, and the examples below, exactly as written here (`make ha-test`,
 ## Dashboard
 
 `meshcore-home-gateway dashboard` writes a dashboard for the gateway it runs beside, as YAML for
-Home Assistant. It has four views:
+Home Assistant. It has three tabs, *Overview*, *Chats* and *Contacts*, and pages without a tab:
+one for each chat, *Map*, *Gateway*, *Settings* and *Help*. Every card has a fold that explains
+it, every page but a chat's and *Help* ends in *What this view is for*, which links to *Help*, and
+*Help* names every page, button and switch and ends in what the administrator does.
 
-* *Overview*: the gateway's status in one line (not found, offline, radio disconnected, no value
-  yet, a problem, messages waiting, ready), a warning while the gateway runs another version than
-  the one the dashboard was made for, the radio link, airtime, queue and battery, each problem
-  sensor while it is on, and the radio's health: noise floor, transmit time, telemetry status,
-  radio profile and a day of airtime.
-* *Messages*: the form to write a message (the script below), the last message received and the
-  last delivery step, with its reason as a text (a reason without one, such as a refusal of the
-  radio, as its code).
-* *Contacts*: the contacts on the radio with their type, when they were heard and their telemetry
-  state, newest first; *Telemetry and removal*, each contact's switch *Telemetry* and button
-  *Remove from radio*; *Add heard node* and *Add contact (key or link)*; the last contact event,
-  also a refused or failed request with its reason; the nodes heard; and the QR code of the
-  gateway ([above](#adding-and-removing-contacts)).
+* *Overview* answers whether everything is fine. Its first line says it in a colour: red for
+  act now (the gateway not found or offline, the radio disconnected or taken over by another
+  program), blue for no report yet or messages that have waited over a minute, yellow when
+  something needs a look, naming the first problem, and green for *All fine*. Below it, the links
+  to *Gateway*, *Settings* and *Help*, then a card for each problem while it exists, each with
+  what to do: another program took the radio's link (red), a fault in the gateway, a node
+  nearby that imitates a contact (named after that contact), a contact with remote access to the
+  radio, a position broadcast to everyone, the radio's settings changed or not set, asking for
+  position and battery paused, the radio's clock far off, a full contact table, and a gateway of
+  another major or minor version than the dashboard's (which of the two to update).
+  *Latest chats* shows the three chats with the newest messages, each a link to its page, "new"
+  for a message received in the last 15 minutes, and a message not sent yet as on its way.
+  *Where everyone is* lists the contacts with a position, in words, and links to the map.
+* *Chats*: *All chats*, every chat page with its kind and newest message, those only automations
+  write to last, then the contacts with a device that have no chat page yet and the channels
+  heard that have none; and *Latest messages*, all messages together as a thread.
+* A chat's page shows the chat's messages: received on the left, sent from this home on the
+  right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
+  a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
+  its way in italics. The newest six stay open, fewer when they are long, the older ones in a
+  fold. The delivery code that `[messages] confirm_nonce` adds to every direct message is
+  hidden: the gateway publishes it only in the final delivery event and the history (#87), so
+  the cards cut ` #` and 8 hex digits from the history's sent direct messages while
+  *Configuration* says the setting is on; with it off, a text of the household's that ends that
+  way shows whole. The cards follow the setting of now, the gateway that of the time a message
+  was sent: after a change, the messages sent before it, also one kept on its way across the
+  restart that changed it, show the other way until they leave the history. While the gateway
+  is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
+  The thread's help links to *Help*, which explains each reason. Under the thread, why writing is
+  not possible when it is not, and *About*: where the person is, the battery, asking for
+  position and battery with how the device answers, or the chat's text before and after
+  messages. The page ends in the field
+  to write in and its *Send* button (writing, below). A person whose device is gone, removed from
+  the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
+  how to get the contact back.
+* *Contacts*: buttons to *Gateway*, *Settings* and *Help* at the top; *People and devices*,
+  this gateway's contacts by their devices, heard newest
+  first, each with its type (person, repeater, room or sensor), its battery and the column
+  *Asking*: whether the gateway asks its device for its position and battery and how it answers,
+  in the words of a chat's page;
+  *Sensors*, the readings of the contacts that report some; *Ask for position and battery*, a
+  switch for each person, and for each sensor asked for readings (`[telemetry] ask_types`);
+  *Add or remove*: *Add at once: pick a node heard nearby* and *Add by key or contact link*
+  (paste it, then tap Return), the result of the last request below them,
+  the QR code of the gateway under *Let someone add this home*
+  ([above](#adding-and-removing-contacts)), a *Remove* for each contact, which asks first, and
+  *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the
+  controls cannot act, a line above them says why: the gateway offline or the radio disconnected
+  (in red, as on *Overview*), `controls = false`, contact management off, the radio not reported
+  yet, or firmware the gateway is not tested with; above the switches also asking turned off in
+  the settings, while the switches still keep who would be asked. A list whose rows all hide
+  shows no empty frame.
 * *Map*: the contacts with a position and their traces of the last 24 hours
-  ([Traces on the map](#traces-on-the-map)).
+  ([Traces on the map](#traces-on-the-map)), and below it *Where everyone is*, in words.
+* *Gateway*: *Health*, each part of the gateway with its state, those that need a look named
+  first, the messages on their way and those waiting over a minute, counted as the first line of
+  *Overview* counts them, and the airtime left of the hour's budget; *Radio*, its name, model,
+  firmware and radio settings, how the gateway reaches it, its background noise and battery and
+  a day of airtime; *Radio settings*, what the managed profile wants and what the radio has,
+  with who may ask the radio for its battery, position and readings as the radio acts on it;
+  *Latest of each kind*, the newest contact, telemetry, setting, node and command event; a
+  command the gateway refused after the newest accepted one shows in its place, with the reason
+  in words, such as *too many wrong codes* for `code_locked`, but only until the next message
+  arrives, of any kind, a channel message too: Home Assistant has the refusal only as the
+  attribute `command` of the newest message (`event.meshcore_home_gateway_radio1_message`).
+  The gateway's log warns of a sender refused for too many wrong codes. While
+  the gateway is offline, these cards say so instead of values: Home Assistant keeps no
+  attributes of an unavailable entity, so they would read as never reported.
+* *Settings*: what your administrator set, read only, from the gateway's *Configuration*:
+  chats and messages, privacy, contacts and Home Assistant, the radio and airtime, each setting
+  with its section and key of the configuration file, such as `[messages]` `truncate`; and the
+  versions of the dashboard, the gateway and the
+  radio. A gateway before 2.1 reports no settings, and the page says so and shows only what it
+  can tell; offline, it says that instead.
+* *Help*: what the gateway does, the pages, every button and switch, the kinds of messages, what
+  the dashboard cannot do, what each word of the cards means, who sees what, and what the
+  administrator does.
 
 It uses only the gateway's entities and the cards of Home Assistant, no custom card. Its texts
 follow `homeassistant.language`; entity IDs, reason codes and names from the mesh stay as they
-are. Every name and text from the mesh shows as text: no name or message can add a link or load
+are. A card that finds the contacts' devices in Home Assistant's registry, which tells no card
+of a change, renders again each minute: a contact that gets its device, or a tracker, shows
+within a minute. Every name and text from the mesh shows as text: no name or message can add a link or load
 an image ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 
 **Make it** in the gateway's container, as root (it reads the service's state, read only, for the
@@ -746,11 +813,21 @@ lovelace:
 The dashboard's path (`mesh-radio1`) needs a hyphen. Home Assistant reads a replaced file at the
 next page load.
 
-**The form.** The tile *Write a message* opens the form of the script *Mesh message*, which is
-added once and serves every gateway: *Settings → Automations & scenes → Scripts → Create script*,
-⋮ → *Edit in YAML*, paste the block and *Save*. Keep its name: its ID comes from it
-(`script.mesh_message`), and the dashboard shows a hint instead of the tile while that script is
-missing.
+**Writing.** A chat's page ends in a field *Write to …* and a tile *Return, then Send*: type,
+tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at the gateway; only
+*Send* sends it, once. The field is shared by everyone in the home who uses Home Assistant, and
+a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why above the
+field, also when the field held no text. The field and the button are entities of a gateway of
+version 2.1; with an earlier gateway, the page says so instead. A channel that only automations
+write to (`homeassistant.hidden_targets`) has no field. While the field or the button is disabled
+or unavailable in Home Assistant, or has another entity ID than the page expects, the page says
+which for the administrator.
+
+**The script for automations.** The dashboard does not use the script *Mesh message*; it stays
+for automations and the developer tools, as a form that sends to a target or a contact. Add it
+once, for every gateway: *Settings → Automations & scenes → Scripts → Create script*, ⋮ → *Edit
+in YAML*, paste the block and *Save*. Keep its name: its ID comes from it
+(`script.mesh_message`).
 
 ```yaml
 alias: Mesh message
@@ -785,10 +862,13 @@ stays a text: written as `message: "{{ message }}"`, Home Assistant would read `
 `1.10` as numbers (sending `493023125000` and `1.1`), strip spaces around a text, and refuse
 `None`.
 
-**Make it again** after an update of the gateway (the overview then shows a warning with both
-versions), when the map's hint names a contact (one that got a position after the dashboard
-was made), and after the radio got a contact that should have its switch and button there. The
-contacts table, the last contact event and the nodes heard follow by themselves.
+**Make it again** after an update of the gateway to another major or minor version (*Overview*
+then shows a card with both versions), after a target was added or a contact got a device that
+takes texts (each needs its chat page; *All chats* names the contacts without one), when the map's
+hint names a contact (one that got a position after the dashboard was made), and after the radio
+got a contact that should have its switch and button there. The
+contacts table, the sensors, the result of the last request, the nodes heard, *Gateway* and
+*Settings* follow by themselves.
 The dashboard names the entity IDs the gateway gives: a gateway entity whose ID was renamed shows
 as missing, and a contact whose IDs were renamed drops out of the table and off the map, also in
 a dashboard made again. A dashboard pasted again loses the edits made to it: to change it, copy
@@ -797,15 +877,22 @@ it under another name.
 With two gateways on one broker whose contacts share a name, Home Assistant gives the second
 gateway's contact entity IDs ending in `_2`, while the second gateway's dashboard lists the first
 one's tracker of that name. For the same contact (the same key) that is the same node, and the
-map is right. For two nodes of one name, the map shows the other gateway's node, and its hint
-keeps naming the contact: put the tracker's ID ending in `_2` (as *Settings → Entities* shows it)
-into the map card, which the next paste undoes.
+map is right. For two nodes of one name, the map shows the other gateway's node, and its hints say
+so in yellow and keep naming the contact: put the tracker's ID ending in `_2` (as *Settings →
+Entities* shows it) into the map card, which the next paste undoes.
 
-*Telemetry and removal* gives every user of the dashboard what Home Assistant already gives
-every user: a contact's *Remove from radio* button and *Telemetry* switch, which the device page
-shows to administrators only, are open to any user through the entity search (press `e`) and the
-actions. A press removes the contact at once, as on the device page; Home Assistant asks no
-question first.
+*Ask for position and battery* and *Remove* give every user of the dashboard what Home Assistant
+already gives every user: a contact's *Telemetry* switch and *Remove from radio* button, which
+the device page shows to administrators only, are open to any user through the entity search
+(press `e`) and the actions. *Remove* on the dashboard asks first, naming the contact; the button
+of the device page and the entity search do not.
+
+Each switch and *Remove* of *Contacts* shows only while its entity ID is that of this gateway's
+contact with the key the dashboard was made for, so a renamed, removed or reused ID never
+operates another contact. When a contact of this gateway has its control under another ID (a
+second gateway whose contact of the same name got the ID first, or a contact prefix set after
+the dashboard was made), a yellow line names that ID, for the administrator; a contact that got
+its device after the dashboard was made is listed as *Not listed here yet*.
 
 The dashboard shows messages, names and the contacts' positions to every user of Home Assistant,
 as the entities do. The file holds the names of the contacts on the map: do not post it.

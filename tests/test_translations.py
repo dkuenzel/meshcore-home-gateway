@@ -78,7 +78,7 @@ def test_the_template_holds_the_dashboards_texts() -> None:
     catalog per language)."""
     _, entries = tool.read_po(PROJECT.template.read_text(encoding="utf-8"))
     texts = {entry.msgid: entry for entry in entries if entry.msgctxt == "dashboard"}
-    assert {"Mesh", "Overview", "{n} min ago", "request refused"} <= set(texts)
+    assert {"Mesh", "Overview", "{mins} min", "request refused"} <= set(texts)
     assert {entry.references for entry in texts.values()} == {
         ("src/meshcore_home_gateway/dashboard.yaml",)
     }
@@ -94,6 +94,11 @@ SECURITY_WORDS = re.compile(
 )
 NOT_SECURITY_TEXTS = frozenset(
     {
+        # the dashboard's page for whoever looks after the gateway
+        (
+            "For whoever looks after the gateway: each part with its state, the radio and its "
+            "settings, and the newest events."
+        ),
         # help and errors that name a setting or explain a check
         "also log in to the broker with the configured user name and password",
         (

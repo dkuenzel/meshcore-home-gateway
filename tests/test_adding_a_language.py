@@ -22,6 +22,7 @@ from types import ModuleType
 import pytest
 
 from meshcore_home_gateway.catalog import read_po
+from tests.dashboard_rules import QUOTES
 
 ROOT = Path(__file__).resolve().parent.parent
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -104,14 +105,30 @@ def marked(text: str) -> str:
     return f"‹{body}›{newline}"
 
 
+# the dashboard's three tabs, whose titles have at most 22 letters together in every language
+# (docs/development.md, the dashboard's template, rule 14): marked, they would have 27
+TABS = frozenset({"Overview", "Chats", "Contacts"})
+
+
 def translated(template: str) -> str:
     """Steps 1 and 2: the template as a catalog of the language, every text translated, the
-    plural rule in its header."""
+    plural rule in its header; the tabs' titles as in English, which fit; a dashboard text that
+    says a label of the dashboard says it as translated (rule 16, QUOTES)."""
     header, entries = read_po(template)
     complete = []
     for entry in entries:
         english = [entry.msgid, entry.msgid_plural] if entry.msgid_plural else [entry.msgid]
-        complete.append(dataclasses.replace(entry, msgstr=tuple(map(marked, english))))
+        dashboard = entry.msgctxt == "dashboard"
+        if dashboard and entry.msgid in TABS:
+            msgstr = tuple(english)
+        elif dashboard and (labels := QUOTES.get(entry.msgid)) is not None:
+            said = entry.msgid
+            for label in labels:
+                said = said.replace(label, marked(label))
+            msgstr = (marked(said),)
+        else:
+            msgstr = tuple(map(marked, english))
+        complete.append(dataclasses.replace(entry, msgstr=msgstr))
     return str(tool.write_po({**header, "Plural-Forms": GERMANIC}, complete))
 
 
