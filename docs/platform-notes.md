@@ -11,8 +11,8 @@ Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext
 [GitHub](#github), [whiptail](#whiptail),
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
 [paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
-dashboards](#home-assistant-dashboards), [MeshCore companion
-firmware](#meshcore-companion-firmware).
+dashboards](#home-assistant-dashboards), [openHAB Homie binding](#openhab-homie-binding),
+[MeshCore companion firmware](#meshcore-companion-firmware).
 
 <!-- index of the facts -->
 ## Index of the facts
@@ -190,6 +190,10 @@ One line per fact, by section.
 * A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and its more-info dialog shows a form for its `fields`.
 * A script's `data` written as a mapping of templates reads each value as Python would: `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text without the spaces around it, and refuses `None`. One template for the whole mapping, `data: "{{ {'message': message} }}"`, keeps the text as it was.
 * Every user can open any entity from the entity search (`e`) and use its controls: a button's dialog has *Press*, a switch's dialog its toggle; only the device and command searches, and the *Settings* panel with the device pages, are for administrators.
+
+**[openHAB Homie binding](#openhab-homie-binding)**
+
+* openHAB brings up a Homie device only once `$homie`, `$name`, `$state` and `$nodes` have come, and a node only once its `$name` and `$properties` have; an empty message counts as none.
 
 **[MeshCore companion firmware](#meshcore-companion-firmware)**
 
@@ -1715,6 +1719,27 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   *Here:* the guide says that the device page keeps no user from removing a contact or from its
   *Telemetry* switch. *Check:* `make ha-test`, and `sed -n 104,138p src/state/quick-bar-mixin.ts`
   at `20260930.2`.
+
+## openHAB Homie binding
+
+Read in the source of openHAB's add-ons at tag `5.0.1`, in
+`bundles/org.openhab.binding.mqtt.homie/src/main/java/org/openhab/binding/mqtt/homie/internal/`
+and `bundles/org.openhab.binding.mqtt.generic/src/main/java/org/openhab/binding/mqtt/generic/`.
+Not run here: the releases check no openHAB
+([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)).
+
+* **openHAB brings up a Homie device only once `$homie`, `$name`, `$state` and `$nodes` have
+  come, and a node only once its `$name` and `$properties` have; an empty message counts as
+  none.** The binding gives up on a missing one with `Did not receive mandatory topic value`, and
+  it skips a message without payload. An empty retained message stores nothing, so `$nodes` must
+  never be empty. It does not read `$extensions`. *Verified:* read only, not run:
+  `homie300/DeviceAttributes.java:40-43` and `homie300/NodeAttributes.java:30-31`
+  (`@MandatoryField`), `mapping/SubscribeFieldToMQTTtopic.java:135-138` ("NULL payload") and
+  `:172-174`. *Here:* the Homie device's first node is the gateway's own, `gateway`, also without
+  contacts (`_announce()` in [`mqtt/homie.py`](../src/meshcore_home_gateway/mqtt/homie.py),
+  `test_the_gateway_is_a_node_so_that_nodes_is_never_empty`). *Check:* with
+  `[homie] contacts = 0`, `mosquitto_sub -t 'homie/meshcore-radio1/$nodes' -C 1` prints
+  `gateway`, and openHAB's inbox lists the device.
 
 ## MeshCore companion firmware
 

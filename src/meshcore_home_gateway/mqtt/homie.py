@@ -5,16 +5,18 @@ It is fed by the documents that the other front ends read: `state` and `contacts
 Homie wants the device's `$state` as the last will of its connection, `lost` (Homie 4.0.0, section
 2.4), and a connection has one will, which carries `availability` on the gateway's: the adapter
 has a connection of its own (mqtt/homie_client.py). Every message is retained with QoS 1, the
-echo of `send` aside. The nodes are the contacts that come first as for Home Assistant's
-devices, at most `[homie] contacts`, and a contact keeps its node while it stays in the table; a
-change of the nodes goes out between `$state` `init` and `ready`, so that a controller reads the
-device again. A node's property without a value (`null` in the document) is cleared: an empty
-retained message removes the value from the broker.
+echo of `send` aside. The first node is the gateway, with the radio's state: `$nodes` is never
+empty, which openHAB requires and an empty retained message cannot carry (#97). The other nodes
+are the contacts that come first as for Home Assistant's devices, at most `[homie] contacts`,
+and a contact keeps its node while it stays in the table; a change of the nodes goes out between
+`$state` `init` and `ready`, so that a controller reads the device again. A node's property
+without a value (`null` in the document) is cleared: an empty retained message removes the
+value from the broker.
 
 The connection comes up before the radio's contacts, whose documents then arrive one by one: a
-start keeps the device `init` until the radio's first contact table has come (at most HOLD_S),
-and a change of the nodes waits SETTLE_S for those that follow it, so that a controller reads
-the device once per table read, not once per contact (#97).
+start keeps the device `init` until SETTLE_S after the radio's first contact table (at most
+HOLD_S + SETTLE_S), and a change of the nodes waits SETTLE_S for those that follow it, so that a
+controller reads the device once per table read, not once per contact (#97).
 """
 
 from __future__ import annotations
@@ -31,12 +33,13 @@ from meshcore_home_gateway.ports import SendRequest
 
 log = logging.getLogger(__name__)
 
-HOLD_S = 60.0  # a start announces the device at the latest this long after its connection
+HOLD_S = 60.0  # a start waits this long at most for the radio's first contact table
 SETTLE_S = 5.0  # a change of the nodes waits this long for those that follow it
 HOMIE = "4.0.0"
 ROOT = "homie"
 IMPLEMENTATION = "meshcore-home-gateway"
 TEXTS = "chat"  # the type of the contacts that take texts, the companions: their nodes `send`
+GATEWAY = "gateway"  # the gateway's own node; a contact's ID is its key, 64 hex digits
 
 
 def device_id(node_id: str) -> str:
@@ -74,6 +77,7 @@ PROPERTIES: dict[str, Property] = {
     "telemetry-state": Property("Telemetry", "enum", format=",".join(STATES)),
     "send": Property("Send", "string", settable=True, retained=False),
 }
+RADIO = Property("Radio", "enum", format="connected,disconnected")  # the gateway node's
 
 
 def values(document: Mapping[str, Any]) -> dict[str, bytes | None]:
@@ -134,6 +138,7 @@ class HomieDevice:
             if radio != self._radio:
                 self._radio = radio
                 if self._announced:
+                    self._put(f"{GATEWAY}/radio", self._radio_value())
                     self._put("$state", self._state())
             return
         key = self._contact(topic)
@@ -207,6 +212,9 @@ class HomieDevice:
         """`alert` while the radio is not connected: the device's values do not change then."""
         return b"ready" if self._radio else b"alert"
 
+    def _radio_value(self) -> bytes:
+        return b"connected" if self._radio else b"disconnected"
+
     def _chosen(self) -> list[str]:
         """The nodes: those that have one keep it; then protected contacts, favourites,
         companions, the most recently heard (contact_devices.priority, from the documents)."""
@@ -253,7 +261,8 @@ class HomieDevice:
         self._put("$name", self._name.encode())
         self._put("$extensions", b"")
         self._put("$implementation", IMPLEMENTATION.encode())
-        self._put("$nodes", ",".join(self._nodes).encode())
+        self._put("$nodes", ",".join([GATEWAY, *self._nodes]).encode())
+        self._gateway()
         for key in self._nodes:
             self._node(key)
         for topic in sorted(self._before - self._retained.keys()):
@@ -269,7 +278,7 @@ class HomieDevice:
         gone = [k for k in self._nodes if k not in nodes]
         self._nodes = nodes
         self._put("$state", b"init")
-        self._put("$nodes", ",".join(nodes).encode())
+        self._put("$nodes", ",".join([GATEWAY, *nodes]).encode())
         for each in gone:
             self._clear(each)
         for each in nodes:
@@ -279,6 +288,14 @@ class HomieDevice:
     def _properties(self, key: str) -> list[str]:
         texts = self._documents[key].get("type") == TEXTS
         return [p for p in PROPERTIES if texts or p != "send"]
+
+    def _gateway(self) -> None:
+        self._put(f"{GATEWAY}/$name", b"Gateway")
+        self._put(f"{GATEWAY}/$type", b"gateway")
+        self._put(f"{GATEWAY}/$properties", b"radio")
+        for attribute, text in RADIO.attributes().items():
+            self._put(f"{GATEWAY}/radio/{attribute}", text.encode())
+        self._put(f"{GATEWAY}/radio", self._radio_value())
 
     def _node(self, key: str) -> None:
         document, names = self._documents[key], self._properties(key)

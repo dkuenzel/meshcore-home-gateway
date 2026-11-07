@@ -150,3 +150,5 @@ providers pure.
   not updated together; and a second connection to the broker, because Homie wants the device's
   `$state` as the last will and a connection has one. The documents stay what every other front
   end reads.
+* Amended on 2026-11-07 (#97): the Homie device has one node more, `gateway`, with the radio's
+  state in 7 retained topics, so that `$nodes` is never empty, which openHAB requires.

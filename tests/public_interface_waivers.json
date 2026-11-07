@@ -1,0 +1,5 @@
+{
+  "2.0.0": {
+    "mqtt > publish > homie/<homie_device>/$nodes > cleared: true -> null": "a fix that adds what was missing: $nodes was cleared while the device had no node, which Homie 4.0.0 and openHAB require; now the gateway is always a node (#97)"
+  }
+}

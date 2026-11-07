@@ -2555,7 +2555,6 @@
     "retained": true
    },
    "homie/<homie_device>/$nodes": {
-    "cleared": true,
     "payload": "text",
     "qos": 1,
     "retained": true
@@ -2692,6 +2691,41 @@
    },
    "homie/<homie_device>/<key>/telemetry-state/$name": {
     "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/$name": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/$properties": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/$type": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio/$datatype": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio/$format": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio/$name": {
     "payload": "text",
     "qos": 1,
     "retained": true

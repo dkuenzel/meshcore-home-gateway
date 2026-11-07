@@ -997,8 +997,10 @@ retained with QoS 1, the echo of `send` aside.
 
 | Topic below `homie/<homie_device>` | Direction | Retained | Payload |
 | --- | --- | --- | --- |
-| `$homie`, `$name`, `$extensions`, `$implementation`, `$nodes` | gateway → | yes | `4.0.0`; the name of the gateway's device in Home Assistant; empty (below); `meshcore-home-gateway`; the nodes' IDs, separated by `,` (empty without nodes) |
-| `$state` | gateway → | yes | `init` while the device is announced, and after a start until the radio's first contact table has come; `ready`; `alert` while the radio is not connected; `disconnected` after a clean stop; `lost` as the last will |
+| `$homie`, `$name`, `$extensions`, `$implementation`, `$nodes` | gateway → | yes | `4.0.0`; the name of the gateway's device in Home Assistant; empty (below); `meshcore-home-gateway`; the nodes' IDs, separated by `,`: `gateway` first, then the contacts' keys |
+| `$state` | gateway → | yes | `init` while the device is announced, and after a start until 5 s after the radio's first contact table; `ready`; `alert` while the radio is not connected; `disconnected` after a clean stop; `lost` as the last will |
+| `gateway/$name`, `gateway/$type`, `gateway/$properties` | gateway → | yes | `Gateway`, `gateway`, `radio`: the gateway's own node |
+| `gateway/radio`, `gateway/radio/$<attribute>` | gateway → | yes | `connected` or `disconnected`, as `radio` in [`state`](#state-state); `$datatype` `enum`, `$format` `connected,disconnected` |
 | `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document), its properties |
 | `<key>/<property>`, `<key>/<property>/$<attribute>` | gateway → | yes | the property's value (below) and its Homie attributes |
 | `<key>/send` | gateway → | no | the echo of a text taken on `send/set` |
@@ -1007,26 +1009,29 @@ retained with QoS 1, the echo of `send` aside.
 | --- | --- | --- | --- |
 | `homie/<homie_device>/<key>/send/set` | → gateway | must not be | UTF-8 text for that companion, as on `contacts/<key>/send` |
 
-A node is a contact, its ID the contact's full key. The nodes are the contacts that come first as
-for their devices in Home Assistant (protected contacts, favourites, companions, then the most
-recently heard), at most `[homie] contacts`; a contact keeps its node while it stays in the
-table. A change of the nodes goes out between `$state` `init` and `ready`, so that a controller
-reads the device again, and the topics of a node that is gone are cleared. Those of a node whose
-contact left while the gateway was stopped stay on the broker, no longer listed in `$nodes`.
+The first node is the gateway's own, `gateway`, with the radio's state. The others are contacts,
+each with the contact's full key as its ID: those that come first as for their devices in Home
+Assistant (protected contacts, favourites, companions, then the most recently heard), at most
+`[homie] contacts`; a contact keeps its node while it stays in the table. A change of the nodes
+goes out between `$state` `init` and `ready`, so that a controller reads the device again, and
+the topics of a node that is gone are cleared. Those of a node whose contact left while the
+gateway was stopped stay on the broker, no longer listed in `$nodes`.
 
 The connection comes up before the radio's contacts, which arrive one by one. A start keeps the
-device `init` until the radio's first contact table has come, at most 60 s, and then announces
+device `init` until 5 s after the radio's first contact table, at most 65 s, and then announces
 it once, with its nodes; a reconnect later announces it at once. A change of the nodes waits 5 s
 for those that follow it: a table read changes them once, not once per contact. The values of a
 node go out as they change.
 
-`$extensions` is empty, and so is `$nodes` while the device has no node. Homie 4.0.0 asks for
-these attributes "even if it is just an empty string", but an empty retained message removes
-the topic's retained message (MQTT 3.1.1, section 3.3.1.3). So only the controllers subscribed
-at that moment get it; one that subscribes later gets no `$extensions`, and no `$nodes` while
-there is no node. Read a missing one as empty. Homie 4.0.0 has no other form of an empty value;
-5.0.0 writes an empty string value as a single byte 0, which a Homie 4 controller would read as
-a value.
+`$nodes` is never empty: the gateway's node is there also without contacts and with
+`[homie] contacts = 0`. openHAB takes `$nodes` and a node's `$properties` as mandatory and skips
+an empty message, so a device without nodes would never come up there
+([platform notes](platform-notes.md#openhab-homie-binding)). `$extensions` is empty.
+Homie 4.0.0 asks for it "even if it is just an empty string", but an empty retained message
+removes the topic's retained message (MQTT 3.1.1, section 3.3.1.3). So only the controllers
+subscribed at that moment get it; one that subscribes later gets none. Read a missing one as
+empty; openHAB does not read it. Homie 4.0.0 has no other form of an empty value; 5.0.0 writes an
+empty string value as a single byte 0, which a Homie 4 controller would read as a value.
 
 The device stays on the broker after `[homie]` is switched off, with its nodes' names and
 positions: nothing clears it then. Clear it by hand, for example with

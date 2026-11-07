@@ -34,6 +34,7 @@ from tests.radio_emulator import EmulatedRadio
 
 TOPICS = Topics("meshcore", "radio1")
 BASE = "homie/meshcore-radio1"
+GATEWAY = f"{BASE}/gateway"
 ALICE, BOB, CAROL = "a1" * 32, "b2" * 32, "c3" * 32
 HOMIE_ID = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
 
@@ -128,6 +129,24 @@ def started(recorder: Recorder) -> None:
     recorder.timers.fire()
 
 
+def nodes(*keys: str) -> bytes:
+    """`$nodes`: the gateway's node first, then the contacts'."""
+    return ",".join(["gateway", *keys]).encode()
+
+
+def gateway_node(radio: bytes = b"disconnected") -> list[tuple[str, bytes, bool]]:
+    """The messages of the gateway's node, as an announcement publishes them."""
+    return [
+        (f"{GATEWAY}/$name", b"Gateway", True),
+        (f"{GATEWAY}/$type", b"gateway", True),
+        (f"{GATEWAY}/$properties", b"radio", True),
+        (f"{GATEWAY}/radio/$name", b"Radio", True),
+        (f"{GATEWAY}/radio/$datatype", b"enum", True),
+        (f"{GATEWAY}/radio/$format", b"connected,disconnected", True),
+        (f"{GATEWAY}/radio", radio, True),
+    ]
+
+
 def states(published: list[tuple[str, bytes, bool]]) -> list[bytes]:
     return [payload for topic, payload, _ in published if topic == f"{BASE}/$state"]
 
@@ -157,15 +176,22 @@ def test_the_device_announces_itself_and_its_state_follows_the_radio() -> None:
         (f"{BASE}/$name", b"MeshCore radio", True),
         (f"{BASE}/$extensions", b"", True),
         (f"{BASE}/$implementation", b"meshcore-home-gateway", True),
-        (f"{BASE}/$nodes", b"", True),
+        (f"{BASE}/$nodes", nodes(), True),
+        *gateway_node(),
         (f"{BASE}/$state", b"alert", True),
     ]
     radio(recorder.device, "connected")
-    assert recorder.take() == [(f"{BASE}/$state", b"ready", True)]
+    assert recorder.take() == [
+        (f"{GATEWAY}/radio", b"connected", True),
+        (f"{BASE}/$state", b"ready", True),
+    ]
     radio(recorder.device, "connected")  # unchanged: nothing
     assert recorder.take() == []
     radio(recorder.device, "disconnected")
-    assert recorder.take() == [(f"{BASE}/$state", b"alert", True)]
+    assert recorder.take() == [
+        (f"{GATEWAY}/radio", b"disconnected", True),
+        (f"{BASE}/$state", b"alert", True),
+    ]
 
 
 def test_a_companion_is_a_node_with_its_values_and_a_settable_send() -> None:
@@ -175,12 +201,12 @@ def test_a_companion_is_a_node_with_its_values_and_a_settable_send() -> None:
     contact(recorder.device, ALICE, "Alice")
     recorder.device.connected()  # after the first table: at once
     node = f"{BASE}/{ALICE}"
-    assert recorder.latest() == {
+    assert recorder.latest() == {t: p for t, p, _ in gateway_node(b"connected")} | {
         f"{BASE}/$state": b"ready",
         f"{BASE}/$homie": b"4.0.0",
         f"{BASE}/$name": b"MeshCore radio",
         f"{BASE}/$implementation": b"meshcore-home-gateway",
-        f"{BASE}/$nodes": ALICE.encode(),
+        f"{BASE}/$nodes": nodes(ALICE),
         f"{node}/$name": b"Alice",
         f"{node}/$type": b"chat",
         f"{node}/$properties": b"battery,position,last-heard,telemetry-state,send",
@@ -235,16 +261,16 @@ def test_a_change_of_the_nodes_goes_out_between_init_and_ready() -> None:
     recorder.timers.fire()
     published = recorder.take()
     assert published[0] == (f"{BASE}/$state", b"init", True)
-    assert published[1] == (f"{BASE}/$nodes", ALICE.encode(), True)
+    assert published[1] == (f"{BASE}/$nodes", nodes(ALICE), True)
     assert published[-1] == (f"{BASE}/$state", b"ready", True)
     contact(recorder.device, BOB, "Bob")
     recorder.timers.fire()
-    assert (f"{BASE}/$nodes", f"{ALICE},{BOB}".encode(), True) in recorder.take()
+    assert (f"{BASE}/$nodes", nodes(ALICE, BOB), True) in recorder.take()
     recorder.device.document(TOPICS.contact(ALICE), None)
     recorder.timers.fire()
     published = recorder.take()
     assert published[0] == (f"{BASE}/$state", b"init", True)
-    assert published[1] == (f"{BASE}/$nodes", BOB.encode(), True)
+    assert published[1] == (f"{BASE}/$nodes", nodes(BOB), True)
     assert published[-1] == (f"{BASE}/$state", b"ready", True)
     cleared = {t for t, p, _ in published if t.startswith(f"{BASE}/{ALICE}/")}
     assert len(cleared) == 21  # $name, $type, $properties, 14 attributes, 4 values
@@ -269,10 +295,10 @@ def test_a_start_announces_the_device_once_with_its_nodes() -> None:
     assert recorder.published == [(f"{BASE}/$state", b"init", True)]
     recorder.timers.fire()
     assert states(recorder.published) == [b"init", b"ready"]
-    nodes = [p for t, p, _ in recorder.published if t == f"{BASE}/$nodes"]
-    assert nodes == [",".join(FIVE).encode()]
+    announced = [p for t, p, _ in recorder.published if t == f"{BASE}/$nodes"]
+    assert announced == [nodes(*FIVE)]
     topics = [t for t, _, _ in recorder.published if t != f"{BASE}/$state"]
-    assert len(topics) == len(set(topics)) == 5 + 5 * 21  # attributes, nodes
+    assert len(topics) == len(set(topics)) == 5 + 7 + 5 * 21  # attributes, gateway, contacts
 
 
 def test_changes_of_the_nodes_go_out_together_after_a_while() -> None:
@@ -296,7 +322,7 @@ def test_changes_of_the_nodes_go_out_together_after_a_while() -> None:
     recorder.timers.fire()
     published = recorder.take()
     assert states(published) == [b"init", b"ready"]
-    assert [p for t, p, _ in published if t == f"{BASE}/$nodes"] == [f"{ALICE},{BOB}".encode()]
+    assert [p for t, p, _ in published if t == f"{BASE}/$nodes"] == [nodes(ALICE, BOB)]
     assert not any(t.startswith(f"{BASE}/{CAROL}") for t, _, _ in published)
     recorder.timers.fire()
     assert recorder.take() == []  # nothing changed since
@@ -316,7 +342,7 @@ def test_without_a_contact_table_the_device_goes_out_after_hold_s() -> None:
     assert states(recorder.take()) == [b"init", b"init"]
     assert recorder.timers.delays() == [HOLD_S]
     recorder.timers.fire()
-    assert recorder.latest()[f"{BASE}/$nodes"] == ALICE.encode()
+    assert recorder.latest()[f"{BASE}/$nodes"] == nodes(ALICE)
     assert recorder.latest()[f"{BASE}/$state"] == b"alert"
     recorder.take()
     device.contacts_read()
@@ -324,7 +350,7 @@ def test_without_a_contact_table_the_device_goes_out_after_hold_s() -> None:
     recorder.timers.fire()
     published = recorder.take()
     assert states(published) == [b"init", b"alert"]
-    assert (f"{BASE}/$nodes", f"{ALICE},{BOB}".encode(), True) in published
+    assert (f"{BASE}/$nodes", nodes(ALICE, BOB), True) in published
 
     away = Recorder()  # the wait ends while the connection is away: at the next one, at once
     away.device.connected()
@@ -367,13 +393,13 @@ def test_at_most_the_limit_chosen_as_for_home_assistant_and_kept() -> None:
     contact(device, BOB, "Bob", heard_at="2026-11-04T10:00:00+00:00")
     contact(device, CAROL, "Carol", type="repeater", heard_at="2026-11-04T11:00:00+00:00")
     device.connected()
-    assert recorder.latest()[f"{BASE}/$nodes"] == f"{BOB},{ALICE}".encode()
+    assert recorder.latest()[f"{BASE}/$nodes"] == nodes(BOB, ALICE)
     contact(device, CAROL, "Carol", type="repeater", protected=True)
     recorder.timers.fire()
-    assert recorder.latest()[f"{BASE}/$nodes"] == f"{BOB},{ALICE}".encode()
+    assert recorder.latest()[f"{BASE}/$nodes"] == nodes(BOB, ALICE)
     device.document(TOPICS.contact(ALICE), None)
     recorder.timers.fire()
-    assert recorder.latest()[f"{BASE}/$nodes"] == f"{BOB},{CAROL}".encode()
+    assert recorder.latest()[f"{BASE}/$nodes"] == nodes(BOB, CAROL)
 
     fresh = Recorder(limit=3)
     fresh.device.contacts_read()
@@ -381,7 +407,7 @@ def test_at_most_the_limit_chosen_as_for_home_assistant_and_kept() -> None:
     contact(fresh.device, BOB, "Bob")
     contact(fresh.device, CAROL, "Carol", type="sensor", protected=True, heard_at=None)
     fresh.device.connected()
-    assert fresh.latest()[f"{BASE}/$nodes"] == f"{CAROL},{ALICE},{BOB}".encode()
+    assert fresh.latest()[f"{BASE}/$nodes"] == nodes(CAROL, ALICE, BOB)
 
 
 def test_a_reconnect_publishes_everything_and_clears_what_went_meanwhile() -> None:
@@ -397,10 +423,58 @@ def test_a_reconnect_publishes_everything_and_clears_what_went_meanwhile() -> No
     device.connected()  # after the first table: at once, without waiting
     published = recorder.take()
     assert (f"{BASE}/$homie", b"4.0.0", True) in published  # again, for a broker that lost it
-    assert (f"{BASE}/$nodes", BOB.encode(), True) in published
+    assert (f"{BASE}/$nodes", nodes(BOB), True) in published
     assert (f"{BASE}/{ALICE}/battery", b"", True) in published
     assert published[-1] == (f"{BASE}/$state", b"alert", True)
     assert not any(t.startswith(f"{BASE}/{ALICE}") for t in recorder.latest())
+
+
+def test_the_gateway_is_a_node_so_that_nodes_is_never_empty() -> None:
+    """openHAB's Homie binding takes `$nodes` and a node's `$properties` as mandatory and skips an
+    empty message, and an empty retained message is none at all: a device without nodes never
+    comes up there (#97). The gateway is a node of its own, with the radio's state, also with
+    `[homie] contacts = 0`; it takes no texts."""
+    recorder = Recorder(limit=0)
+    started(recorder)
+    contact(recorder.device, ALICE, "Alice")
+    recorder.timers.fire()
+    held = recorder.latest()
+    assert held[f"{BASE}/$nodes"] == nodes()
+    assert {t: p for t, p in held.items() if t.startswith(GATEWAY + "/")} == {
+        f"{GATEWAY}/$name": b"Gateway",
+        f"{GATEWAY}/$type": b"gateway",
+        f"{GATEWAY}/$properties": b"radio",
+        f"{GATEWAY}/radio/$name": b"Radio",
+        f"{GATEWAY}/radio/$datatype": b"enum",
+        f"{GATEWAY}/radio/$format": b"connected,disconnected",
+        f"{GATEWAY}/radio": b"disconnected",
+    }
+    assert all(HOMIE_ID.fullmatch(level) for level in GATEWAY.split("/")[1:])
+    recorder.take()
+    radio(recorder.device, "connected")
+    assert recorder.take() == [
+        (f"{GATEWAY}/radio", b"connected", True),
+        (f"{BASE}/$state", b"ready", True),
+    ]
+    recorder.device.message(f"{GATEWAY}/send/set", b"no", False)
+    assert recorder.sent == []
+    assert recorder.take() == []
+
+
+def test_a_table_just_before_hold_s_ends_announces_the_device_settle_s_later() -> None:
+    """The first contact table ends the wait of a start and starts the one for its documents:
+    the device stays `init` until SETTLE_S after the table, at the latest 65 s after the
+    connection, as mqtt-api.md says."""
+    recorder = Recorder()
+    recorder.device.connected()
+    assert recorder.timers.delays() == [HOLD_S]
+    recorder.device.contacts_read()  # just before HOLD_S ends
+    contact(recorder.device, ALICE, "Alice")
+    assert recorder.timers.delays() == [SETTLE_S]
+    assert recorder.latest()[f"{BASE}/$state"] == b"init"
+    recorder.timers.fire()
+    assert recorder.latest()[f"{BASE}/$state"] == b"alert"
+    assert HOLD_S + SETTLE_S == 65.0
 
 
 def test_send_set_hands_the_text_over_as_contacts_send_and_echoes_it() -> None:
@@ -581,7 +655,7 @@ def test_the_wiring_feeds_the_device_the_documents(tmp_path: Path) -> None:
     assert recorder.timers.delays() == []
     bridge.observer.radio_event(ContactsRead({ALICE: alice}, 201.0))  # Bob left the table
     recorder.timers.fire()
-    assert recorder.latest()[f"{BASE}/$nodes"] == ALICE.encode()
+    assert recorder.latest()[f"{BASE}/$nodes"] == nodes(ALICE)
     assert not any(t.startswith(f"{BASE}/{BOB}") for t in recorder.latest())
     bridge.radio.ready.set()
     bridge.status.publish()
@@ -657,8 +731,14 @@ def test_with_broker_a_late_subscriber_sees_the_device_as_announced(
             await asyncio.sleep(0.1)
             held = await asyncio.to_thread(retained_under, broker, BASE)
             assert held == {f"{BASE}/$state": b"init"}
+            device.contacts_read()  # a radio without contacts
+            await wait_for(lambda held: held.get(f"{BASE}/$state") == b"ready")
+            held = await asyncio.to_thread(retained_under, broker, BASE)  # a controller later
+            assert held[f"{BASE}/$nodes"] == b"gateway"  # never empty: openHAB requires it
+            assert held[f"{BASE}/gateway/$properties"] == b"radio"
             device.contacts_read()
             contact(device, ALICE, "Alice")
+            await wait_for(lambda held: held.get(f"{BASE}/$nodes") == f"gateway,{ALICE}".encode())
             await wait_for(lambda held: held.get(f"{BASE}/$state") == b"ready")
             held = await asyncio.to_thread(retained_under, broker, BASE)  # a controller later
             attributes = {t: p for t, p in held.items() if t.count("/") == 2}
@@ -666,7 +746,7 @@ def test_with_broker_a_late_subscriber_sees_the_device_as_announced(
                 f"{BASE}/$homie": b"4.0.0",
                 f"{BASE}/$name": b"MeshCore radio",
                 f"{BASE}/$implementation": b"meshcore-home-gateway",
-                f"{BASE}/$nodes": ALICE.encode(),
+                f"{BASE}/$nodes": f"gateway,{ALICE}".encode(),
                 f"{BASE}/$state": b"ready",
             }
             assert held[f"{BASE}/{ALICE}/position"] == b"47.5,8.25"
