@@ -101,6 +101,12 @@ format, the command line and Home Assistant discovery are public interfaces
   its attempts, and written again at each change in the stop. The guide for other Linux systems
   has an update step, which installs the release's unit
   ([deployment.md](docs/deployment.md#3-other-linux-systems)) (#92).
+- An alert waited behind a message that the gateway had taken out of the queue and that waited
+  for the radio or for airtime before its first attempt: until that message had used the airtime
+  and its acknowledgement had come, with the default budget more than a minute and a half. Such
+  a wait now ends when an alert comes; the message goes back to the queue, first among the
+  others, and continues after the alert
+  ([configuration.md](docs/configuration.md#messages)) (#93).
 - After a command's write of `state.json` failed (a full disk), `state_file` stayed `unwritable`
   and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
   which can take hours on a quiet system. The gateway now writes the file again within a minute,

@@ -418,7 +418,9 @@ sequenceDiagram
    request rejected because the queue is full does not count, so its retry is accepted.
 5. **Queue.** Bounded (`queue_size`); a full queue rejects. Each entry carries its arrival time and
    a time to live of `queue_ttl_s`. The messages to `[messages] alert_targets` leave before the
-   others (IMP-032); each kind leaves in arrival order. At a stop the queue goes to the state
+   others (IMP-032): an alert that comes while another message waits for the radio or for
+   airtime, also before its first attempt, or between two of its attempts, goes first, and that
+   message continues after it with its progress (#93); each kind leaves in arrival order. At a stop the queue goes to the state
    file (`outbox`, with each message's time waited, radio timestamp and attempts sent), from the
    stop's start to its last step (§5.2); the next
    start queues those with time left again and publishes `queued` again with their `id`, ends

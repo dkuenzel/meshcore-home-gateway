@@ -624,6 +624,141 @@ def test_an_alert_goes_before_the_queue_and_between_the_attempts_of_a_message(
     ]
 
 
+def sends(radio: EmulatedRadio) -> list[int]:
+    """The radio's send commands, in order: SEND_TXT_MSG direct, SEND_CHANNEL_TXT_MSG channel."""
+    texts = (Command.SEND_TXT_MSG, Command.SEND_CHANNEL_TXT_MSG)
+    return [c for c in radio.commands() if c in texts]
+
+
+def test_an_alert_goes_before_a_message_that_waits_for_airtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """IMP-032, #93: Bob's message, taken out of the queue, waits half a minute for airtime with
+    no attempt sent when the alert comes. The alert must not wait for that airtime: Bob's message
+    goes back to the queue, first among its kind, and the alert goes out at once with the
+    airtime there is."""
+    monkeypatch.setattr(outbox_module, "direct_attempt_airtime_s", lambda *_: 30.0)
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    config = make_config(
+        messages='alert_targets = ["alerts"]', airtime="budget_s_per_hour = 3600\nburst_s = 60"
+    )
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (bridge, bus, _n):
+            bridge.outbox.budget._tokens = 2.0  # enough for the alert, not for Bob's message
+            bus.send("bob", "Pump status: fine")
+            await asyncio.sleep(0.2)  # Bob's message waits for airtime
+            bus.send("alerts", "Smoke in the barn")
+            await bus.wait_for(
+                "/delivery", lambda d: d["target"] == "alerts" and d["event_type"] == "sent"
+            )
+            events = [(d["target"], d["event_type"]) for d in bus.payloads("/delivery")]
+            assert events == [("bob", "queued"), ("alerts", "queued"), ("alerts", "sent")]
+            assert sends(radio) == [Command.SEND_CHANNEL_TXT_MSG]
+
+    scenario(main)
+
+
+def test_an_alert_goes_before_a_message_that_waits_for_the_radio(tmp_path: Path) -> None:
+    """IMP-032, #93: the radio is away while Bob's message waits for it with no attempt sent,
+    and an alert comes: once the radio is back, the alert goes first."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    config = make_config(messages='alert_targets = ["alerts"]')
+    present = [False]
+
+    def transport() -> Transport:
+        return radio if present[0] else Unreachable()
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path, transport) as (_, bus, _n):
+            bus.send("bob", "Pump status: fine")
+            await asyncio.sleep(0.2)  # Bob's message waits for the radio
+            bus.send("alerts", "Smoke in the barn")
+            await bus.wait_for("/delivery", lambda d: d["target"] == "alerts")
+            present[0] = True
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed", within_s=8)
+            events = [(d["target"], d["event_type"]) for d in bus.payloads("/delivery")]
+            assert events == [
+                ("bob", "queued"),
+                ("alerts", "queued"),
+                ("alerts", "sent"),
+                ("bob", "sent"),
+                ("bob", "confirmed"),
+            ]
+
+    scenario(main)
+    assert sends(radio) == [Command.SEND_CHANNEL_TXT_MSG, Command.SEND_TXT_MSG]
+
+
+def test_an_alert_that_waits_for_the_radio_keeps_its_place_before_a_later_alert(
+    tmp_path: Path,
+) -> None:
+    """Alerts leave in the order they came: one that waits for the radio is not put back for
+    the next."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    config = make_config(messages='alert_targets = ["alerts", "alice"]')
+    present = [False]
+
+    def transport() -> Transport:
+        return radio if present[0] else Unreachable()
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path, transport) as (_, bus, _n):
+            bus.send("alerts", "Smoke in the barn")
+            await asyncio.sleep(0.2)  # the first alert waits for the radio
+            bus.send("alice", "Smoke, see the barn")
+            await bus.wait_for("/delivery", lambda d: d["target"] == "alice")
+            present[0] = True
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+
+    scenario(main)
+    assert sends(radio) == [Command.SEND_CHANNEL_TXT_MSG, Command.SEND_TXT_MSG]
+
+
+class SlowTable(EmulatedRadio):
+    """Answers a read of its contact table after 0.3 s, once `slow` is set."""
+
+    slow = False
+
+    def _handle(self, p: bytes) -> None:
+        if self.slow and p[0] == Command.GET_CONTACTS:
+            asyncio.get_running_loop().call_later(0.3, super()._handle, p)
+            return
+        super()._handle(p)
+
+
+def test_an_alert_goes_before_a_message_whose_target_is_read_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """IMP-032, #93: the radio reported a change of its contacts, so Bob's message waits for the
+    table read before its first attempt, and the alert comes meanwhile: it goes first."""
+    monkeypatch.setattr(session_module, "CONTACTS_REFRESH_DELAY_S", 2.0)  # the production delay
+    radio = SlowTable(contacts=[ALICE, BOB], manual_add=False)
+    config = make_config(messages='alert_targets = ["alerts"]')
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _n):
+            radio.contacts.append(NEIGHBOUR)
+            radio.emit(bytes([Push.ADVERT]) + NEIGHBOUR.public_key)
+            await asyncio.sleep(0.05)  # the push has been handled: the table is outdated
+            radio.slow = True
+            bus.send("bob", "Pump status: fine")
+            await asyncio.sleep(0.1)  # Bob's message waits for the table
+            bus.send("alerts", "Smoke in the barn")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            events = [(d["target"], d["event_type"]) for d in bus.payloads("/delivery")]
+            assert events == [
+                ("bob", "queued"),
+                ("alerts", "queued"),
+                ("alerts", "sent"),
+                ("bob", "sent"),
+                ("bob", "confirmed"),
+            ]
+
+    scenario(main)
+    assert sends(radio) == [Command.SEND_CHANNEL_TXT_MSG, Command.SEND_TXT_MSG]
+
+
 def test_the_budget_level_survives_a_restart_and_a_long_message_still_goes_out(
     tmp_path: Path,
 ) -> None:

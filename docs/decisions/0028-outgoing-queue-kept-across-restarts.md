@@ -121,3 +121,8 @@ level), `tests/test_outbox.py` (the order), `tests/test_state.py` (the records).
   last time as the stop's last step, after those messages and with the requests still waiting
   to be taken. A request after that is rejected with reason `stopping`. A crash still drops the
   queue.
+* Amended on 2026-11-07 (review of 2.0.0, #93): an alert went only between two attempts of
+  another message. One taken out of the queue that waited for the radio or for airtime before
+  its first attempt held the alert up until it had used the airtime and its acknowledgement had
+  come. Such a wait now ends when an alert comes, and the message goes back to the queue, first
+  among its kind; so does one that waits for airtime before its next attempt.

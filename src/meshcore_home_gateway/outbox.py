@@ -1,11 +1,12 @@
 """The outbox (design §6.2, ADR 0028, ARC-009): the queue of outgoing messages, and their delivery.
 
 Messages wait in the queue for the radio and for airtime, alerts before the others (IMP-032), each
-kind in the order it came. A message taken out keeps its progress (its radio timestamp, the
-attempts sent, their acknowledgement codes), so that it can be put back: paused for an alert, or
-kept for the next start when the service stops (ARC-013). From the stop's start on, the state
-file holds every message on its way, written again at each change, so that a stop cut short
-loses none (#92).
+kind in the order it came: an alert that comes while another message waits for the radio or for
+airtime, also before its first attempt, goes first (#93). A message taken out keeps its progress
+(its radio timestamp, the attempts sent, their acknowledgement codes), so that it can be put
+back: paused for an alert, or kept for the next start when the service stops (ARC-013). From the
+stop's start on, the state file holds every message on its way, written again at each change,
+so that a stop cut short loses none (#92).
 
 The delivery takes the send requests from the bus, refuses or queues each, and delivers one message
 at a time: an attempt when the radio is there and the airtime budget allows it, until it is
@@ -22,8 +23,9 @@ import heapq
 import itertools
 import logging
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from typing import Any, TypeVar
 
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.airtime import (
@@ -65,6 +67,8 @@ from meshcore_home_gateway.views import PendingEntry
 
 log = logging.getLogger(__name__)
 log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
+
+T = TypeVar("T")
 
 MAX_REQUEST_BYTES = 1024
 # on stop, the acknowledgement of the message in flight is awaited this long, the longest wait of
@@ -125,6 +129,7 @@ class Outbox:
         self._order = itertools.count()
         self._front = itertools.count(-1, -1)
         self._ready = asyncio.Event()
+        self._alert = asyncio.Event()  # set when an alert was put
 
     def qsize(self) -> int:
         return len(self._heap)
@@ -132,6 +137,12 @@ class Outbox:
     @property
     def alert_waiting(self) -> bool:
         return bool(self._heap) and self._heap[0][0] == 0
+
+    async def alert_comes(self) -> None:
+        """Returns once an alert waits."""
+        while not self.alert_waiting:
+            self._alert.clear()
+            await self._alert.wait()
 
     def put(self, item: Outgoing) -> None:
         """Raises asyncio.QueueFull when the queue holds `size` messages."""
@@ -159,6 +170,13 @@ class Outbox:
     def _push(self, item: Outgoing, order: int) -> None:
         heapq.heappush(self._heap, (0 if item.alert else 1, order, item))
         self._ready.set()
+        if item.alert:
+            self._alert.set()
+
+
+class _OvertakenError(Exception):
+    """An alert came while a message that is none waited for the radio or for airtime: that
+    message goes back to the queue, with its progress (IMP-032, #93)."""
 
 
 class _FinalError(Exception):
@@ -451,27 +469,30 @@ class Delivery:
         `expired` means the message never left: once an attempt reached the radio, running out
         of time or airtime ends it as `failed` (no acknowledgement). An attempt interrupted by a
         radio error is repeated, with the same number, when the radio is back. `attempt` in a
-        final event counts the transmissions so far. Between two attempts the message is put
-        back, with its progress, when an alert waits behind it (IMP-032) or the service stops
-        (ARC-013).
+        final event counts the transmissions so far. The message is put back, with its progress,
+        when an alert waits behind it, between two attempts and while it waits for the radio or
+        for airtime, also before its first (IMP-032, #93), and between two attempts when the
+        service stops (ARC-013).
         """
         deadline = item.created + self.config.messages.queue_ttl_s
         if item.timestamp is None:  # one timestamp for all attempts: retries stay recognisable
             item.timestamp = int(self._wall())
         attempts = self._attempts(item.target)
         while item.sent < attempts:
-            if item.sent and (
-                self._flight.stopping or (not item.alert and self._queue.alert_waiting)
-            ):
+            if item.sent and (self._flight.stopping or self._overtaken(item)):
                 log.info("delivery %s: paused after attempt %d", item.id, item.sent)
                 self._queue.put_back(item)
                 return
-            session = await self._radio.until(deadline)
-            if session is None:
-                self._end(item, self._out_of_time(item, item.sent))
-                return
             try:
+                session = await self._unless_alert(item, self._radio.until(deadline))
+                if session is None:
+                    self._end(item, self._out_of_time(item, item.sent))
+                    return
                 outcome = await self._attempt(session, item, deadline=deadline)
+            except _OvertakenError:
+                log.info("delivery %s: an alert goes first (%d attempts sent)", item.id, item.sent)
+                self._queue.put_back(item)
+                return
             except _FinalError as exc:
                 outcome = self._final(item, exc.state, exc.reason, item.sent)
             except CommandFailedError as exc:
@@ -489,6 +510,28 @@ class Delivery:
             item, DeliveryState.FAILED, attempt=item.sent, reason="no_acknowledgement"
         )
         self._end(item, failed)
+
+    def _overtaken(self, item: Outgoing) -> bool:
+        """An alert waits behind this message, which is none."""
+        return not item.alert and self._queue.alert_waiting
+
+    async def _unless_alert(self, item: Outgoing, waiting: Coroutine[Any, Any, T]) -> T:
+        """What `waiting` returns; for a message that is no alert, ended early by an alert that
+        comes meanwhile (_OvertakenError): it waits for the radio or for airtime, which the
+        alert should have first (#93)."""
+        if item.alert:
+            return await waiting
+        task = asyncio.ensure_future(waiting)
+        alert = asyncio.ensure_future(self._queue.alert_comes())
+        try:
+            await asyncio.wait((task, alert), return_when=asyncio.FIRST_COMPLETED)
+        finally:  # also when the stop cancels the delivery
+            for each in (task, alert):
+                each.cancel()
+            await asyncio.wait((task, alert))
+        if task.cancelled():  # the alert came first
+            raise _OvertakenError
+        return task.result()
 
     def _attempts(self, target: Target) -> int:
         """A direct message is sent until it is acknowledged; a channel message once."""
@@ -545,18 +588,20 @@ class Delivery:
         if self._mono() + wait > deadline:
             raise _FinalError(DeliveryState.EXPIRED, "airtime_budget")
         round_trip = None
-        if wait > 0:
+        if wait > 0:  # an alert that comes meanwhile goes first (#93)
             log.info("delivery %s waits %.1f s for airtime", item.id, wait)
             if acks.codes:  # an earlier attempt may still be acknowledged meanwhile
-                round_trip = await self.acks.wait(acks.codes, wait)
+                round_trip = await self._unless_alert(item, self.acks.wait(acks.codes, wait))
             else:
-                await asyncio.sleep(wait)
+                await self._unless_alert(item, asyncio.sleep(wait))
         if acks.codes and round_trip is None:
             round_trip = self.acks.take(acks.codes)
         if round_trip is not None:  # an earlier attempt arrived after all: send nothing more
             return self._confirmed(item, round_trip)
         if wait > 0 and await self._read_changed_contacts(session, target):
             self._resolve(session, target)  # a look-alike may have come while waiting
+        if self._overtaken(item):  # an alert came as the wait ended, or while the table was read
+            raise _OvertakenError
         if reset_path is not None:
             await session.reset_path(reset_path)  # only now: this attempt will be sent and flood
         self.budget.consume(airtime, self._mono())
