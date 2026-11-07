@@ -22,6 +22,17 @@ ADD_PATH = "contact/add"
 _KEY = re.compile(r"[0-9a-fA-F]{64}")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2})+")
 _ONCE = ("public_key", "name", "type")
+# Invisible characters a copy may carry: the soft hyphen, the Arabic letter mark, the zero-width
+# space (the dashboard's breaks in long words), the direction marks, embeddings, overrides and
+# isolates, the invisible operators and the byte order mark. No key, link or card holds one. The
+# joiners (U+200C, U+200D) stay: they belong to a name.
+_INVISIBLE = str.maketrans(
+    "",
+    "",
+    "\u00ad\u061c\u200b\u200e\u200f"
+    + "".join(map(chr, [*range(0x202A, 0x202F), *range(0x2060, 0x2065), *range(0x2066, 0x206A)]))
+    + "\ufeff",
+)
 
 
 class LinkError(TextError):
@@ -42,8 +53,9 @@ class LinkContact:
 
 
 def parse_contact_text(text: str) -> LinkContact:
-    """A key, contact link or contact card; LinkError with the reason otherwise."""
-    value = text.strip()
+    """A key, contact link or contact card; LinkError with the reason otherwise. Invisible
+    characters are dropped first: a key copied from the dashboard carries its word breaks."""
+    value = text.translate(_INVISIBLE).strip()
     try:  # a lone surrogate (a JSON escape, a command line argument): no text
         value.encode("utf-8")
     except UnicodeEncodeError:

@@ -595,6 +595,10 @@ gateway is offline is lost (clean session), and a stop drops those still queued.
   3 room server, 4 sensor; without one a companion);
 * a contact card: `meshcore://` and the hex of an advert packet, as the app exports a contact.
 
+Invisible characters that a copy carries are dropped first: the soft hyphen, the zero-width space
+(the dashboard breaks long words with it), direction marks and controls, the invisible operators
+and the byte order mark. The joiners U+200C and U+200D stay, as part of a name.
+
 `homeassistant/add_node` takes the label of a heard node, `<first 12 key digits>…<last 8> <name>`
 (room servers and sensors with ` (room)` or ` (sensor)` added, and ` (name taken)` for a
 [taken name](#nodes-heard-nodes); with `heard_nodes = "keys"`
