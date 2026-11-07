@@ -2545,6 +2545,19 @@ def test_settings_show_what_the_administrator_set_and_change_nothing() -> None:
     )
 
 
+def test_the_clock_card_says_how_the_gateway_keeps_the_radios_clock() -> None:
+    """The card shows while the radio's clock stays 5 minutes off. The gateway moves it forward
+    whenever it is behind and sets it back, by restarting the radio, only when it is up to an
+    hour ahead, at most once a day, and since 2.0.0's review only when the next connect could
+    move it forward again (configuration.md, set_clock): "sets it at most once a day" said
+    otherwise."""
+    (card,) = [t for t in rules.texts(view_of("overview")) if "{#- problem: clock -#}" in t]
+    fold = card.partition("<details>")[2]
+    assert "The gateway sets it at most once a day." not in fold
+    for words in ("forward", "back", "at most once a day", "an hour", "computer's clock"):
+        assert words in fold, words
+
+
 def _configuration_keys() -> dict[str, set[str]]:
     """The keys of each section's table in docs/configuration.md, by the section's name."""
     found: dict[str, set[str]] = {}

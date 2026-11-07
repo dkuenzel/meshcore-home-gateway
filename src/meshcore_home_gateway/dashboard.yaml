@@ -270,7 +270,7 @@ views:
               {%- set d = span(mins) -%}
               {#- Translators: d is how far the clock is off, such as 12 min, 3 h or 4 days -#}
               <div><ha-alert alert-type="warning"><b>{% if offset > 0 %}_("The radio's clock is {d} ahead."){% else %}_("The radio's clock is {d} behind."){% endif %}</b> _("Tell your administrator to check the computer's clock first.")</ha-alert></div>
-              <details><summary>_("What this means")</summary><p>_("Other radios see this radio's time in its adverts; a clock far off can make them ignore it. The gateway sets it at most once a day.")</p></details>{%- endif -%}
+              <details><summary>_("What this means")</summary><p>_("Other radios see this radio's time in its adverts; a clock far off can make them ignore it. The gateway moves the clock forward when it is behind, if the computer's clock looks right, and sets it back by restarting the radio only when it is up to an hour ahead, at most once a day. A clock that stays this far off is beyond that.")</p></details>{%- endif -%}
           - type: markdown
             text_only: true
             show_empty: false
