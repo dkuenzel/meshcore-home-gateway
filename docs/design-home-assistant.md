@@ -165,11 +165,12 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   contact with a device. A hint names a tracker of this gateway whose contact's key no listed
   tracker has.
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
-  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@contact@` (how the contacts'
-  entity IDs begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers),
-  `@guide@` (the address of the guide of this version), `["@trackers@"]` (the map's trackers),
-  `["@chats@"]` (the chat pages, JSON objects that Jinja reads) and `["@models@"]` (each model
-  of a contact's device with its node type). Since 2.1, comment lines repeat lines for each item
+  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
+  `@major@` and `@minor@` (its first two numbers), `@guide@` (the address of the guide of this
+  version), `["@trackers@"]` (the map's trackers), `["@chats@"]` (the chat pages, JSON objects
+  that Jinja reads) and `["@models@"]` (each model of a contact's device with its node type).
+  2.0 also filled in how the contacts' entity IDs begin; the cards of 2.1 find the contacts by
+  their devices, and the lists' items carry the IDs. Since 2.1, comment lines repeat lines for each item
   of a list, `# @each <list>` … `# @end`, for `chats`, `switches` (the contacts' switches
   *Telemetry*) and `removes` (their buttons *Remove from radio*), with the item's fields as
   `@<list>.<field>@`, each value checked against its pattern first; and keep lines,

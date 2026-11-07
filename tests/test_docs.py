@@ -306,28 +306,32 @@ def test_the_release_check_r1_expects_what_the_installer_prints() -> None:
     assert "Self-test:    {selftest}" in installer
 
 
+# a placeholder of the dashboard's template, a JSON list's with its brackets and quotes
+PLACEHOLDER = r'\[?"?@\w+@"?\]?'
+
+
 def test_the_design_names_every_placeholder_of_the_dashboard_template() -> None:
     """#106: the design's bullet on the template named neither `@contact@`, `["@controls@"]`
-    nor the second conditional, which `dashboard.py` fills in and keeps. Since 2.1 the lists of
-    chats, switches and remove buttons repeat lines (`# @each`), and `["@controls@"]` is gone:
-    the bullet names what `dashboard.py` fills in now, and nothing it no longer does."""
+    nor the second conditional, which `dashboard.py` filled in and kept. Since 2.1 the lists of
+    chats, switches and remove buttons repeat lines (`# @each`), `["@controls@"]` is gone, and
+    so is `@contact@`, which no card of 2.1 uses: the cards find the contacts by their devices.
+    The bullet names what `dashboard.py` fills in now, and nothing it no longer does."""
     from meshcore_home_gateway.dashboard import LISTS
 
     module = (ROOT / "src" / "meshcore_home_gateway" / "dashboard.py").read_text(encoding="utf-8")
     described = module.partition('"""')[2].partition('"""')[0]
-    placeholders = set(re.findall(r'\[?"?@\w+@"?\]?', described))
+    placeholders = set(re.findall(PLACEHOLDER, described))
     flags = set(re.findall(r"# @if (\w+)", described))
     design = _words((ROOT / "docs" / "design-home-assistant.md").read_text(encoding="utf-8"))
     bullet = design.partition("* **The template** is")[2].partition(" * **")[0]
-    assert {"@contact@", '["@chats@"]', '["@models@"]'} <= placeholders
-    for placeholder in placeholders:
-        assert f"`{placeholder}`" in bullet, placeholder
+    assert {'["@chats@"]', '["@models@"]'} <= placeholders
+    assert set(re.findall(rf"`({PLACEHOLDER})`", bullet)) == placeholders
     for flag in flags | {"trackers"}:
         assert f"`# @if {flag}`" in bullet, flag
     assert "`# @each <list>`" in bullet
     for name in LISTS:
         assert f"`{name}`" in bullet, name
-    for gone in ('["@controls@"]', "# @if controls"):
+    for gone in ('["@controls@"]', "# @if controls", "@contact@"):
         assert gone not in described
         assert gone not in bullet, gone
 

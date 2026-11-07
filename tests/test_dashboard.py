@@ -217,6 +217,7 @@ def test_no_translation_makes_a_marker_or_a_placeholder() -> None:
         'title: _("Mesh"\n',
         'content: |-\n  _("open\n',
         "title: @gx@\n",
+        "title: @contact@\n",  # 2.1's template names no contact's entity ID by its prefix
     ],
 )
 def test_a_left_over_marker_or_placeholder_is_refused(template: str) -> None:
@@ -524,23 +525,17 @@ def test_latest_messages_keep_the_threads_rules_as_the_same_text() -> None:
     assert len(set(dropped)) == 1
 
 
-def test_the_contacts_cards_find_the_contacts_by_their_device_not_a_prefix() -> None:
+def test_the_contacts_cards_find_the_contacts_by_their_device_not_a_prefix(
+    tmp_path: Path,
+) -> None:
     """HA-06, D-31: the contacts table, the sensors and the lists of Contacts find this gateway's
     contacts by their devices below its own, never by an entity-ID prefix, so a prefix set later
-    keeps them: the dashboard is the same whatever `[homeassistant] contact_entity_prefix`."""
+    keeps them: the dashboard is the same whatever `[homeassistant] contact_entity_prefix`, and
+    the template has no placeholder for it."""
     template = (Path(dashboard.__file__).parent / dashboard.TEMPLATE).read_text(encoding="utf-8")
-
-    def made(prefix: str) -> str:
-        return dashboard.render(
-            template,
-            node_id="radio1",
-            version="1.0",
-            trackers=[],
-            text=lambda m, v: m,
-            contact_prefix=prefix,
-        )
-
-    assert made("mesh_2") == made("mesh")
+    other = config(more='[homeassistant]\ncontact_entity_prefix = "mesh_2"\n')
+    assert other.homeassistant.contact_entity_prefix == "mesh_2"
+    assert dashboard.dashboard(other, tmp_path) == dashboard.dashboard(config(), tmp_path)
     assert "@contact@" not in template
     contacts = rules.load(rules.rendered(shipped()))["views"][2]
     table = next(t for t in rules.texts(contacts) if "<th>Asking</th>" in t)
@@ -706,7 +701,6 @@ _INTEGER = re.compile(
 _YAML_11 = re.compile(r"(?i)y|n|yes|no|on|off|\d+(?:\.\d+)+\w*")
 _PLACEHOLDERS = {
     "@gw@",
-    "@contact@",
     "@node@",
     "@version@",
     "@major@",
@@ -1901,7 +1895,7 @@ BROKEN = [
         [
             "          - type: entities",
             "            entities:",
-            "              - button.@contact@_carol_remove",
+            "              - button.mesh_carol_remove",
         ],
         "rule 5: button.mesh_carol_remove",
     ),

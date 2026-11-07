@@ -158,8 +158,8 @@ lines of its own, which `dashboard.py` reads:
   lines of the content, such as the keys of the contacts a list holds.
 * `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
-* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@contact@` and `@guide@` (the guide of
-  this version, for a link to one of its sections) are filled in;
+* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@` and `@guide@` (the guide of this
+  version, for a link to one of its sections) are filled in;
   `["@trackers@"]` and `["@chats@"]` become JSON lists, `["@models@"]` the pairs of each model of
   a contact's device, as the gateway names it in the dashboard's language, and its node type. A chat page in `["@chats@"]` says with
   `write` only whether it has a field: the entity IDs of its field and its *Send* button stand
