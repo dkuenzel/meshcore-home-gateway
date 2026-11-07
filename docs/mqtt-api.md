@@ -185,11 +185,13 @@ kept in the history; the log counts them at most once a minute. An accepted comm
 published. The radio has acknowledged them all before the gateway sees them, which spends its
 own transmit time ([design §7.4](design.md#74-residual-risks)).
 
-Texts are published as they came: control and direction characters included, which a terminal,
-a file or a page must not take for instructions
+Texts and names are published as they came: control and direction characters included, which a
+terminal, a file or a page must not take for instructions
 ([development.md](development.md#text-from-the-mesh-and-the-bus)). `[messages] clean_received`
-drops them before publishing ([configuration.md](configuration.md#messages)); commands are
-judged on the text as it came.
+drops them from texts before publishing, and so from the name a channel message claims
+([configuration.md](configuration.md#messages)); commands are judged on the text as it came. A
+contact's name stays as its adverts gave it, also in `sender_name`, `history` and the device
+names in Home Assistant; the command line prints such characters escaped (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -549,7 +551,10 @@ and `look_alike_total` still name the look-alikes ([configuration](configuration
 ## History: `history`
 
 The latest messages in and out (up to 50), newest first. The whole document stays within 15 KiB
-(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). They are
+(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). The bound
+counts the bytes as published, in which a control character takes 6 (`\u0001`): a few long texts
+from senders whose names and texts are full of them leave about 10 messages in the document, long
+plain ones about 30. The database keeps each of them (`history export`, #114). They are
 kept in the gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
 [configuration](configuration.md)).
 

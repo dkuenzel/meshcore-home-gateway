@@ -120,6 +120,11 @@ format, the command line and Home Assistant discovery are public interfaces
   The messages that waited in the radio while the gateway was away share the time of the
   connect; of two with one `at`, the one listed first came later, and a reader that sorts by
   `at` keeps that with a stable sort ([mqtt-api.md](docs/mqtt-api.md#history-history)) (#113).
+- The guide says that contact names, like texts, are published as they came, control
+  characters included, also with `clean_received`, which cleans only texts and the name a
+  channel message claims; and that the 15 KiB of `history` hold fewer messages whose names and
+  texts are full of control characters, about 10, since JSON writes each in 6 bytes
+  ([mqtt-api.md](docs/mqtt-api.md#received-messages-received)) (#114).
 
 ## [2.0.0] - 2026-11-07
 
