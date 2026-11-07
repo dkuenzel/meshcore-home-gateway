@@ -393,7 +393,8 @@ def test_while_a_secret_is_ignored_a_sender_without_one_is_refused() -> None:
 
 def test_while_a_secret_is_ignored_a_sender_with_one_keeps_its_codes() -> None:
     """#80: the refusal is for senders without a secret: one with a secret commands with its
-    code and is refused without one or with a wrong one, as before."""
+    code and is refused without one or with a wrong one, as before; after its wrong codes, the
+    right one too (#79): an ignored secret lifts no lockout."""
     accepted = evaluate_command(dm(f"arm now {code()}"), IGNORING, CODED_BOOK, {}, NOW)
     assert accepted is not None
     assert accepted.command is not None
@@ -407,6 +408,12 @@ def test_while_a_secret_is_ignored_a_sender_with_one_keeps_its_codes() -> None:
         decision = evaluate_command(dm(text), IGNORING, CODED_BOOK, {}, NOW)
         assert decision is not None
         assert (decision.rejection, decision.sender_key) == (rejection, ALICE)
+    failures = {ALICE: [NOW] * CODE_FAILURE_LIMIT}
+    locked = evaluate_command(
+        dm(f"arm {right}"), IGNORING, CODED_BOOK, {}, NOW, code_failures=failures
+    )
+    assert locked is not None
+    assert (locked.rejection, locked.sender_key) == (Rejection.CODE_LOCKED, ALICE)
 
 
 def test_the_other_checks_come_before_the_code() -> None:

@@ -659,6 +659,38 @@ def test_while_a_code_secret_is_ignored_senders_without_one_cannot_command(
     assert not stored.get("command_code_failures")
 
 
+def test_while_a_code_secret_is_ignored_wrong_codes_still_lock_a_sender_with_one(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#79 and #80: the refusals of a sender without a secret are no wrong codes, but those of
+    a sender with one are, while a secret is ignored as at any time. After CODE_FAILURE_LIMIT
+    of them its right code is refused (code_locked), the log warns of guessing and the state
+    file keeps the count."""
+    caplog.set_level(logging.WARNING)
+    step = int(NOW // CODE_STEP_S)
+    good = {code_at(SECRET, step + d) for d in (-1, 0, 1)}
+    wrong = [c for c in (f"{n:06d}" for n in range(20)) if c not in good]
+    alice = ALICE.public_key[:6]
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(CODE_FAILURE_LIMIT):
+                radio.queue_direct_message(alice, f"arm {wrong[n]}", NOW - 100 + n)
+            right = f"arm {code_at(SECRET, step)}"
+            radio.queue_direct_message(alice, right, NOW - 50)
+            await bus.wait_for("/received", lambda r: r["text"] == right)
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_invalid"] * CODE_FAILURE_LIMIT + ["code_locked"]
+            assert not bus.payloads("/command")
+        assert caplog.text.count("wrong command codes") == 1
+
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert list(stored["command_code_failures"]) == [ALICE.public_key.hex()]
+    assert len(stored["command_code_failures"][ALICE.public_key.hex()]) == CODE_FAILURE_LIMIT
+
+
 def test_a_sender_enrolled_while_a_secret_is_ignored_commands_with_its_code(
     tmp_path: Path,
 ) -> None:
