@@ -844,10 +844,26 @@ INVISIBLE = [
     "ls\u2028ps\u2029x",
     "nul\u0000x",
 ]
-# what m() drops or turns into a space: no output may hold one (U+200B: only mt()'s breaks)
-DROPPED = re.compile(
-    "[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200e\u200f\u202a-\u202e\u2028\u2029\u2060-\u2064\u2066-\u2069\ufeff]"
+# what m() drops or turns into a space: no output may hold one (U+200B: only mt()'s breaks).
+# Built from the code points, the C0 and C1 controls but tab, LF and CR among them
+DROPPED_CODES = (
+    *range(0x09),
+    0x0B,
+    0x0C,
+    *range(0x0E, 0x20),
+    *range(0x7F, 0xA0),
+    0xAD,
+    0x061C,
+    0x200E,
+    0x200F,
+    *range(0x202A, 0x202F),
+    0x2028,
+    0x2029,
+    *range(0x2060, 0x2065),
+    *range(0x2066, 0x206A),
+    0xFEFF,
 )
+DROPPED = re.compile("[" + "".join(re.escape(chr(code)) for code in DROPPED_CODES) + "]")
 
 
 def entries(i: int, name: str, text: str) -> tuple[dict[str, Any], dict[str, Any]]:
