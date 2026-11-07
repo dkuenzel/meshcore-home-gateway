@@ -483,8 +483,8 @@ it passes. `releases/latest` and the installer's default never pick a pre-releas
 ([ADR 0022](decisions/0022-releases-tagged-by-ci-on-main.md)):
 
 1. For a release (not a pre-release): the release check with the release candidate. CI passed on
-   it; the maintainer updates his installation with the candidate's installer, its self-test
-   passes, and he uses Home Assistant as every day (checks R1–R5 of
+   it; the maintainer updates their installation with the candidate's installer, its self-test
+   passes, and they use Home Assistant as every day (checks R1–R5 of
    [testing.md](testing.md#release-check)); the pull request of the release names the Home
    Assistant version. The release ships the program of that candidate: only `__version__`
    may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`. So before the

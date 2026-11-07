@@ -389,8 +389,8 @@ A release is checked in three places, none of them a procedure by hand
    health and the container ([deployment.md](deployment.md#install)). The final message says
    `Self-test: passed`, or shows the problems; the report stands above it, with the warnings a
    passed self-test has. Nothing is undone.
-3. **The maintainer's use of the release candidate**: he updates his installation with the
-   candidate's installer and uses Home Assistant as every day.
+3. **The maintainer's use of the release candidate**: they update their installation with
+   the candidate's installer and use Home Assistant as every day.
 
    | # | Check | Expected |
    | --- | --- | --- |
@@ -400,7 +400,8 @@ A release is checked in three places, none of them a procedure by hand
    | R4 | A companion's switch *Telemetry* | it switches; battery and position follow within the companion's interval |
    | R5 | The map | the household's companions with a position |
 
-   The features he uses besides are checked by using them, and what he finds goes into issues.
+   The features they use besides are checked by using them, and what they find goes into
+   issues.
    The pull request of the release names the Home Assistant version in the table of
    [home-assistant.md](home-assistant.md#requirements).
 
