@@ -69,7 +69,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_pending_messages` | count | *Messages on their way*: the messages the gateway accepted and has not delivered or given up yet, the one being sent included; the `pending` document as attributes `messages` (oldest first, with `step` `queued` or `sent` and their keys as in [mqtt-api.md](mqtt-api.md#messages-on-their-way-pending)), `total` and `truncated`. A message `queued` for more than a minute waits for the radio or for airtime. It stays available while the gateway is offline |
 | `sensor.meshcore_home_gateway_radio1_configuration` | timestamp, diagnostic | *Configuration*: when the gateway started; the settings in effect as attributes (`targets` with each one's `room`, `messages`, `contacts`, `telemetry`, `homeassistant`, `radio`, `airtime`, `history`, `commands`), as in [mqtt-api.md](mqtt-api.md#configuration-config): never a host, password, key or command word. Read only: Home Assistant cannot change them |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
-| `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
+| `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_`, so two aliases that differ only there get the same IDs, the later ones ending in `_2` (the gateway warns, [configuration.md](configuration.md#targetsalias)) |
 | `text.meshcore_home_gateway_radio1_write_<alias>` | text, one per target not in `hidden_targets` | *Write to …*: the draft of a message to that target, which the gateway keeps until it is sent ([below](#writing-and-sending)); `max` is the room of a text to the target in bytes |
 | `button.meshcore_home_gateway_radio1_write_<alias>_send` | button, one per target not in `hidden_targets` | *Send what is written to …*: sends that draft |
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
@@ -819,9 +819,11 @@ tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at t
 a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why under the
 thread, also when the field held no text. The field and the button are entities of a gateway of
 version 2.1; with an earlier gateway, the page says so instead. A channel that only automations
-write to (`homeassistant.hidden_targets`) has no field. While the field or the button is disabled
-or unavailable in Home Assistant, or has another entity ID than the page expects, the page says
-which for the administrator.
+write to (`homeassistant.hidden_targets`) has no field, nor have two targets whose aliases differ
+only in `-` and `_`, whose fields Home Assistant cannot tell apart: their pages say so for the
+administrator ([configuration.md](configuration.md#targetsalias)). While the field or the button
+is disabled or unavailable in Home Assistant, or has another entity ID than the page expects, the
+page says which for the administrator.
 
 **The script for automations.** The dashboard does not use the script *Mesh message*; it stays
 for automations and the developer tools, as a form that sends to a target or a contact. Add it

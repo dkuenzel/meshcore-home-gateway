@@ -121,7 +121,11 @@ directory where `check-config` is started.
 Named destinations; publish to `send/<alias>`. Channels can be reached only through a target;
 companions in the radio's contact table also through `contacts/<key>/send`
 ([mqtt-api.md](mqtt-api.md#sending-sendalias)). The alias is 1–32 of
-`a-z 0-9 - _`, starting with a letter or digit. Set exactly one of:
+`a-z 0-9 - _`, starting with a letter or digit. Two aliases that differ only in `-` and `_`, such
+as `a-b` and `a_b`, are both valid, but Home Assistant makes the same entity IDs of them and
+numbers the later ones (`_2`), so nothing tells which is which: the gateway warns at the start and
+in `check-config`, the dashboard gives their chat pages no message field and says why, and
+`meshcore-home-gateway dashboard` names the pair. Rename all but one. Set exactly one of:
 
 | Key | Meaning |
 | --- | --- |
