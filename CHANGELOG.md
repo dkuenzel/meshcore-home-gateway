@@ -121,8 +121,9 @@ format, the command line and Home Assistant discovery are public interfaces
 - The guide says what `at` of a received message in `history` and `received_at` of `received`
   are: when the gateway took the message from the radio, whose frame holds no time of its own.
   The messages that waited in the radio while the gateway was away share the time of the
-  connect; of two with one `at`, the one listed first came later, and a reader that sorts by
-  `at` keeps that with a stable sort ([mqtt-api.md](docs/mqtt-api.md#history-history)) (#113).
+  connect; of two with one `at`, the one listed first came later. To list them oldest first,
+  reverse the list, then sort it by `at` with a stable sort
+  ([mqtt-api.md](docs/mqtt-api.md#history-history)) (#113).
 - The guide says that contact names, like texts, are published as they came, control
   characters included, also with `clean_received`, which cleans only texts and the name a
   channel message claims; and that the 15 KiB of `history` hold fewer messages whose names and

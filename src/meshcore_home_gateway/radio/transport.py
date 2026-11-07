@@ -20,7 +20,7 @@ CONNECT_TIMEOUT_S = 10.0
 
 class ClosedByRadioError(ConnectionError):
     """The radio ended the TCP connection: it serves one client and replaces the connection when
-    another one connects (SEC-003), or it restarted."""
+    another one connects (SEC-003). A restart does not end it first (core.link)."""
 
 
 class SerialTransport:

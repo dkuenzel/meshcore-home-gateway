@@ -192,7 +192,8 @@ terminal, a file or a page must not take for instructions
 drops them from texts before publishing, and so from the name a channel message claims
 ([configuration.md](configuration.md#messages)); commands are judged on the text as it came. A
 contact's name stays as its adverts gave it, also in `sender_name`, `history` and the device
-names in Home Assistant; the command line prints such characters escaped (#114).
+names in Home Assistant; the command line prints such characters escaped in JSON and as spaces
+in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -579,9 +580,9 @@ kept in the gateway's history database, so they survive a restart ([ADR 0016](de
 for an outgoing one when it became final. The radio does not say when it received a message
 ([protocol.md](protocol.md#3-responses)), so the messages that waited in the radio while
 the gateway was away share the time of the connect (#113). Of two with the same `at`, the one
-listed first came later: a reader that sorts by `at` keeps that order with a stable sort, or uses
-the list's. After the host's clock went back, a later message can have an earlier `at` and is
-listed below the earlier one.
+listed first came later: to list them oldest first, reverse the list, then sort it by `at` with a
+stable sort; or use the list's order. After the host's clock went back, a later message can have
+an earlier `at` and is listed below the earlier one.
 
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message
