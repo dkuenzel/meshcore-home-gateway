@@ -8,6 +8,7 @@ import logging
 import re
 import shutil
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,10 @@ from meshcore_home_gateway import inbox as inbox_module
 from meshcore_home_gateway import outbox as outbox_module
 from meshcore_home_gateway.core.airtime import LoRaParams, time_on_air_s
 from meshcore_home_gateway.core.model import MessageKind, Target
+from meshcore_home_gateway.mqtt import homie
+from meshcore_home_gateway.mqtt.homie import HomieDevice
 from meshcore_home_gateway.mqtt.payloads import received_payload
+from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.outbox import AckWaiter, Delivery, Outbox, Outgoing
 from meshcore_home_gateway.ports import SendRequest, Transport
 from meshcore_home_gateway.protocol.codec import expected_ack
@@ -475,6 +479,85 @@ def test_a_run_that_fails_queues_no_request_as_the_bus_stops(
     with pytest.raises(ExceptionGroup):
         scenario(main)
     assert buses[0].payloads("/delivery") == []
+
+
+class OfflineWaitBus(FakeBus):
+    """As MqttBus.stop: `on_stopping`, then `offline`, then the wait for the broker to confirm
+    it, while paho's thread still hands messages to the event loop (`during_wait`)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.during_wait: list[Callable[[], None]] = []
+
+    async def stop(self) -> None:
+        for callback in self.on_stopping:
+            callback()
+        self.publish("meshcore/radio1/availability", b"offline", True)
+        for callback in self.during_wait:
+            asyncio.get_running_loop().call_soon(callback)
+        await asyncio.sleep(0.1)  # the wait for `offline` to be confirmed
+        self.stopped = True
+
+
+def test_a_homie_text_in_the_stop_is_kept_or_rejected_and_none_is_taken_after_offline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A text on a Homie node's `send/set` takes the way of one on `contacts/<key>/send` in a
+    stop too (#92): until the stop's last step it is queued and kept for the next start, then it
+    ends `rejected` with reason `stopping`. The bus publishes `offline` long before the Homie
+    connection stops: a text that comes after it would be echoed and put where no task takes it,
+    lost without an event. It is neither taken nor echoed."""
+    monkeypatch.setattr(homie, "SETTLE_S", 0.01)
+    bus, echoes = OfflineWaitBus(), []
+    device = HomieDevice(
+        "radio1",
+        "MeshCore radio",
+        50,
+        Topics("meshcore", "radio1"),
+        publish=lambda topic, payload, _retain: echoes.append((topic, payload)),
+        send=bus.requests.put_nowait,  # as wiring.serve hands it over
+        call_later=lambda delay_s, callback: asyncio.get_running_loop().call_later(
+            delay_s, callback
+        ),
+    )
+    key = ALICE.public_key.hex()
+    base = f"homie/meshcore-radio1/{key}"
+
+    async def main() -> None:
+        device.connected()
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(make_config(), radio, tmp_path, bus=bus, homie=device) as (
+            bridge,
+            _bus,
+            _n,
+        ):
+            await until(lambda: (f"{base}/send/$settable", b"true") in echoes)  # announced
+            finish, keep = bridge.outbox.finish, bridge.outbox.keep
+
+            async def waiting(loop: asyncio.Task[None]) -> None:
+                device.message(f"{base}/send/set", b"During the stop", False)
+                await finish(loop)
+
+            def late() -> None:
+                keep()
+                device.message(f"{base}/send/set", b"After the last step", False)
+
+            monkeypatch.setattr(bridge.outbox, "finish", waiting)
+            monkeypatch.setattr(bridge.outbox, "keep", late)
+            bus.during_wait.append(
+                lambda: device.message(f"{base}/send/set", b"After offline", False)
+            )
+
+    scenario(main)
+    events = [(d["text"], d["event_type"], d["reason"]) for d in bus.payloads("/delivery")]
+    assert events == [("During the stop", "queued", None), (None, "rejected", "stopping")]
+    kept = JsonStateFile(tmp_path / "state.json").load()["outbox"]["messages"]
+    assert [m["text"] for m in kept] == ["During the stop"]
+    assert [p for t, p in echoes if t == f"{base}/send"] == [
+        b"During the stop",
+        b"After the last step",
+    ]
+    assert bus.requests.empty()
 
 
 def test_a_stop_cut_short_while_it_waits_for_an_acknowledgement_keeps_the_queue(

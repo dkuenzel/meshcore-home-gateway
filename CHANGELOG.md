@@ -133,8 +133,11 @@ format, the command line and Home Assistant discovery are public interfaces
   the device up (#97). Its empty `$extensions` reaches only the controllers subscribed at the
   time, as Homie 4.0.0 has no other form of an empty value; openHAB does not read it
   ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
-- A text on a Homie node's `send/set` that comes while the gateway stops is no longer taken and
-  echoed after `$state` `disconnected`: the gateway had stopped sending, so it never went out.
+- A text on a Homie node's `send/set` that came after the gateway published `offline` as it
+  stopped was still echoed, also after `$state` `disconnected`, and then lost without a delivery
+  event. It is no longer taken or echoed. One that comes earlier in the stop takes the way of one
+  on `contacts/<key>/send`: it is kept for the next start, or ends `rejected` with reason
+  `stopping` ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
 - After a restart of the broker the log no longer warns that another client wrote the gateway's
   documents. paho sends again what the broker had not acknowledged when it stopped, such as a
   state from before the radio was connected; the gateway takes those copies as its own, and

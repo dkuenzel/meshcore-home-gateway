@@ -16,7 +16,8 @@ are connected here (`gateway`). Who tells, when, and the listeners in the order 
 * the announcer's `publish_state`, an announcement went out: `status.publish`;
 * `bus.on_connected`, the broker connected: `announcer.connected`, `observer.publish_all`;
 * `bus.on_stopping`, the bus stops, before its `offline`: `outbox.bus_stopping`, which refuses
-  the requests that came after the stop's last step (`stopping`), then `drafts.stop` (below);
+  the requests that came after the stop's last step (`stopping`), then `drafts.stop` (below),
+  then `homie.stopping`, with `[homie] enabled`, which takes no text any more;
 * `bus.on_ha_online`, Home Assistant's birth message: `announcer.schedule`;
 * `bus.on_ha_device`, a message on one of the gateway's discovery topics:
   `announcer.device_message`;
@@ -391,6 +392,7 @@ def gateway(
         observer.on_contacts.append(lambda _: device.contacts_read())
         observer.on_document.append(device.document)
         status.on_document.append(device.document)
+        bus.on_stopping.append(device.stopping)  # its connection stops after the bus
 
     def session(
         transport: Transport, radio_events: asyncio.Queue[RadioEvent], set_clock: bool

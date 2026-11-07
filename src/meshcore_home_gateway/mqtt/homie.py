@@ -126,6 +126,7 @@ class HomieDevice:
         self._retained: dict[str, bytes] = {}  # topic -> payload published on this connection
         self._before: set[str] = set()  # topics published on earlier connections of this run
         self._online = False
+        self._stopping = False  # the gateway stops: no text is taken any more
         self._announced = False  # the device went out on this connection
         self._held = True  # until the radio's first contact table, at most HOLD_S
         self._hold: Cancellable | None = None
@@ -183,11 +184,18 @@ class HomieDevice:
             self._settle.cancel()
             self._settle = None
 
+    def stopping(self) -> None:
+        """The gateway's bus stops, before it publishes `offline`: from now on no task takes a
+        text, and the Homie connection stops only after the bus (#92)."""
+        self._stopping = True
+
     def message(self, topic: str, payload: bytes, retained: bool) -> None:
         """A message on `<node>/send/set`: a text for that companion, refused as on
         `contacts/<key>/send` (a retained one, one too long); the echo Homie asks for. None is
-        taken while the device is not online: a stop silences it first, once the bridge that
-        would send the text has stopped."""
+        taken once the gateway's bus stops, nor while the device is not online."""
+        if self._stopping:
+            log.info("Homie: the gateway stops; message dropped")
+            return
         if not self._online:
             log.info("Homie: not connected; message dropped")
             return

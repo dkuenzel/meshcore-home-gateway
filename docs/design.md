@@ -229,8 +229,9 @@ waiting for its table read is rejected, `sender_unverified`). Requests are taken
 answers to those commands too: the last step keeps the queue for the next start, with the
 requests still waiting to be taken; then the other tasks are cancelled. A request after it is
 rejected (`stopping`): a press of *Send* at once, and one from the broker when the bus stops,
-before it publishes `offline`; one that comes after `offline` gets no event. Messages still
-waiting in the radio are fetched at the next start.
+before it publishes `offline`; one that comes after `offline` gets no event, and the Homie
+adapter neither takes nor echoes one then. Messages still waiting in the radio are fetched at
+the next start.
 
 The state file (`state.json`, `state.py`) is one store for every part that keeps something
 across a restart (ARC-004): read once at the start, held in memory, and written whole and

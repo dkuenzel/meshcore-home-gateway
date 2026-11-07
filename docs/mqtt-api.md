@@ -1098,8 +1098,10 @@ in `_` and `-`, such as `radio_1` and `radio-1`, share a Homie device.
 A value that is unknown (`null` in the document) is cleared: an empty retained message removes it
 from the broker. A text on `<key>/send/set` takes the way of one on `contacts/<key>/send`, with
 its limits and its `delivery` events; the gateway echoes it on `<key>/send` as Homie asks, which
-tells only that it was taken. A retained one is refused as there. One that comes while the
-gateway stops is not taken, and not echoed.
+tells only that it was taken. A retained one is refused as there. A stop takes it as one there
+too ([delivery](#delivery-delivery)): it is kept for the next start, or ends `rejected` with
+reason `stopping` after the stop's last step. One that comes after the gateway publishes
+`offline` is neither taken nor echoed, and gets no event.
 
 The Homie topics are part of the public interface, as the topics above. A broker that serves
 them needs these lines for the gateway's user in addition to those of
