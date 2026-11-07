@@ -380,7 +380,7 @@ connection to the broker is a second one, with the settings of `[mqtt]`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `false` | publish the device `homie/meshcore-<node_id>` (`_` as `-`); the broker's ACL needs `homie/meshcore-<node_id>/#` for the gateway's user |
+| `enabled` | `false` | publish the device `homie/meshcore-<node_id>` (`_` as `-`); the broker's ACL needs `homie/meshcore-<node_id>/#` for the gateway's user. Switched off, the device stays on the broker until you clear it ([Homie](mqtt-api.md#homie-homiehomie_device)) |
 | `contacts` | `50` | contacts with a node, 0 to 1000, chosen as for their devices in Home Assistant (`homeassistant.contact_devices`) |
 
 ## Installer answers

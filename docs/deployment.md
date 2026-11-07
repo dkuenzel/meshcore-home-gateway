@@ -529,10 +529,11 @@ updates wait for.
 * **Retained documents** stay on the broker after the gateway is removed, and its devices in Home
   Assistant. `meshcore-home-gateway retire --yes`, with the service stopped and Home Assistant
   running, removes the devices (each bound first, so that Home Assistant also drops what earlier
-  versions announced), clears every retained document under the gateway's topics and leaves its
-  availability `offline`; without `--yes` it counts what it would do. By hand: for example,
-  `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
-  2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
+  versions announced), clears every retained document under the gateway's topics and every
+  retained message of its Homie device, also with `[homie]` off now, and leaves its availability
+  `offline`; without `--yes` it counts what it would do. By hand: for example,
+  `mosquitto_sub -t 'meshcore/radio1/#' -t 'homie/meshcore-radio1/#' --retained-only
+  --remove-retained -W 2` (Mosquitto 2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
 * **Logs contain no message texts** at the default level; set `log_level = "debug"` temporarily to
   see them.
 * **Metrics for Prometheus** come from an exporter beside the gateway, which has no listener of

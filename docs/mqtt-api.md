@@ -1014,6 +1014,13 @@ table. A change of the nodes goes out between `$state` `init` and `ready`, so th
 reads the device again, and the topics of a node that is gone are cleared. Those of a node whose
 contact left while the gateway was stopped stay on the broker, no longer listed in `$nodes`.
 
+The device stays on the broker after `[homie]` is switched off, with its nodes' names and
+positions: nothing clears it then. Clear it by hand, for example with
+`mosquitto_sub -t 'homie/meshcore-radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
+2.0). `meshcore-home-gateway retire` clears it before the gateway goes, also with `[homie]` off
+while the broker still lets the gateway's user read and write `homie/meshcore-radio1/#`
+([operations](deployment.md#4-operations)).
+
 | Property | Datatype | From the document | Notes |
 | --- | --- | --- | --- |
 | `battery` | `float`, unit `V` | `battery_v` | |

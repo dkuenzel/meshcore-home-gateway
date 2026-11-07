@@ -92,6 +92,10 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+- `retire` also clears the Homie device `homie/meshcore-<node_id>/…`, also with `[homie]` off
+  now; before, its contacts' names, battery, last heard and position stayed on the broker (#96).
+  Switching `[homie]` off leaves the device there: the privacy page lists it, and
+  [mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device) says how to clear it.
 
 ## [2.0.0] - 2026-11-07
 

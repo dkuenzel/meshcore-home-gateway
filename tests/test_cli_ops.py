@@ -29,6 +29,7 @@ from meshcore_home_gateway.views import HistoryEntry
 ROOT = "meshcore/radio1"
 KEY = "a1" * 32
 DEVICE = "homeassistant/device/meshcore_home_gateway_radio1"
+HOMIE = "homie/meshcore-radio1"
 HOSTILE = "Gate\x1b[2J\u202e"
 
 
@@ -50,6 +51,7 @@ class FakeBroker:
     retained: dict[str, bytes] = dataclasses.field(default_factory=dict)
     published: list[tuple[str, bytes, bool]] = dataclasses.field(default_factory=list)
     anonymous: bool = False  # it takes clients without a user name
+    refused: tuple[str, ...] = ()  # the subscriptions its ACL refuses
     clients: list[str] = dataclasses.field(default_factory=list)
     on_connect: Any = None
     on_subscribe: Any = None
@@ -63,6 +65,9 @@ class FakeBroker:
         self.on_connect(self, None, None, _Code("Not authorized" if refused else None), None)
 
     def subscribe(self, topic: str, qos: int = 0) -> None:
+        if topic in self.refused:
+            self.on_subscribe(self, None, 1, [_Code("Not authorized")], None)
+            return
         self.on_subscribe(self, None, 1, [_Code()], None)
         for name, body in list(self.retained.items()):
             if _matches(topic, name):
@@ -448,6 +453,7 @@ def test_retire_without_yes_only_counts(
     out = capsys.readouterr().out
     assert "Home Assistant: 4 devices to remove" in out
     assert f"broker: 2 retained documents to clear under {ROOT}/" in out
+    assert "Homie" not in out  # off, and nothing of it on the broker
     assert "add --yes" in out
     assert fake.published == []
 
@@ -477,6 +483,66 @@ def test_retire_removes_the_devices_and_clears_the_documents(
     assert fake.published[-1] == (f"{ROOT}/availability", b"offline", True)
     assert fake.retained == {f"{ROOT}/availability": b"offline", "meshcore/other/state": b"{}"}
     assert "retired" in capsys.readouterr().out
+
+
+def _homie_device(fake: FakeBroker) -> None:
+    """What a run with `[homie] enabled` left: the device, a node with a position."""
+    for path, payload in {
+        "$state": b"disconnected",
+        "$homie": b"4.0.0",
+        "$nodes": KEY.encode(),
+        f"{KEY}/$name": b"Alice",
+        f"{KEY}/position": b"47.5,8.25",
+    }.items():
+        fake.retained[f"{HOMIE}/{path}"] = payload
+
+
+@pytest.mark.parametrize("homie", ["", "[homie]\nenabled = true\n"])
+def test_retire_clears_the_homie_device_whether_homie_is_on_or_off_now(
+    tmp_path: Path, fake: FakeBroker, capsys: pytest.CaptureFixture[str], homie: str
+) -> None:
+    """A run with `[homie] enabled` left the device and its nodes' positions on the broker;
+    `retire` clears them also after Homie was switched off, `$state` first (the only order a
+    Homie version defines, 5.0.0), and leaves another gateway's device alone."""
+    publish(fake, {"availability": "offline", "state": state()})
+    _homie_device(fake)
+    fake.retained["homie/meshcore-other/$state"] = b"ready"
+    argv = ["retire", "--config", str(config_file(tmp_path, homie))]
+    state_dir = ["--state-dir", str(tmp_path / "state")]
+    assert main([*argv, *state_dir]) == EX_OK
+    out = capsys.readouterr().out
+    assert f"broker: 1 retained document to clear under {ROOT}/" in out
+    assert f"broker: 5 retained Homie messages to clear under {HOMIE}/" in out
+    assert fake.published == []
+    assert main([*argv, "--yes", *state_dir]) == EX_OK
+    homie_cleared = [(t, p, r) for t, p, r in fake.published if t.startswith(HOMIE + "/")]
+    assert homie_cleared[0] == (f"{HOMIE}/$state", b"", True)
+    left = ("$state", "$homie", "$nodes", f"{KEY}/$name", f"{KEY}/position")
+    assert sorted(homie_cleared) == sorted((f"{HOMIE}/{path}", b"", True) for path in left)
+    assert fake.retained == {
+        f"{ROOT}/availability": b"offline",
+        "homie/meshcore-other/$state": b"ready",
+    }
+
+
+def test_retire_without_a_grant_for_homie_retires_the_rest_while_homie_is_off(
+    tmp_path: Path, fake: FakeBroker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A broker that checks subscriptions against its ACL (Mosquitto's `acl_file` does not, its
+    other plugins may) refuses `homie/…` to a gateway that never had Homie: then there is nothing
+    of it to clear. With `[homie]` on, the refusal is an error, as for the gateway's topics."""
+    publish(fake, {"availability": "offline", "state": state()})
+    fake.refused = (f"{HOMIE}/#",)
+    state_dir = ["--state-dir", str(tmp_path / "state")]
+    argv = ["retire", "--yes", "--config", str(config_file(tmp_path)), *state_dir]
+    assert main(argv) == EX_OK
+    assert "Homie" not in capsys.readouterr().out
+    assert fake.retained == {f"{ROOT}/availability": b"offline"}
+    fake.published.clear()
+    on = config_file(tmp_path, "[homie]\nenabled = true\n")
+    assert main(["retire", "--yes", "--config", str(on), *state_dir]) == EX_FAILURE
+    assert f"refused the subscription to {HOMIE}/#" in capsys.readouterr().err
+    assert fake.published == []
 
 
 # --- history export ----------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 """`retire`: the gateway leaves the broker and Home Assistant before its container goes (IMP-016,
 OPS-022). Every device and component it announced to Home Assistant is removed, every retained
-document under its topics is cleared, and its availability says `offline`. It runs with the
-service stopped, while Home Assistant runs; without `--yes` it only says what it would do."""
+document under its topics and every retained message of its Homie device is cleared (also with
+`[homie]` off now: an earlier run may have had it on), and its availability says `offline`. It
+runs with the service stopped, while Home Assistant runs; without `--yes` it only says what it
+would do."""
 
 from __future__ import annotations
 
@@ -18,10 +20,14 @@ from meshcore_home_gateway.config import Config, load_config
 
 
 class _Sweep(broker.GatewaySession):
-    """The gateway's availability, and every retained document under its topics."""
+    """The gateway's availability, every retained document under its topics, and every retained
+    message of its Homie device."""
 
     def __init__(self, config: Config) -> None:
+        from meshcore_home_gateway.mqtt.homie import ROOT, device_id  # noqa: PLC0415
+
         self.found: dict[str, bytes] = {}
+        self.homie = f"{ROOT}/{device_id(config.mqtt.node_id)}"
         super().__init__(config, (), "retire")
 
     def _on_message(self, client: Any, userdata: Any, message: Any) -> None:
@@ -34,11 +40,24 @@ class _Sweep(broker.GatewaySession):
         return self.config.mqtt.topic_root
 
     def sweep(self) -> str | None:
-        """Collect the retained documents; an error text, or None."""
+        """Collect the retained messages; an error text, or None. With `[homie]` off, a broker
+        that refuses the device's topics to the gateway's user has nothing of it to clear: a
+        broker may check subscriptions against its ACL, and a gateway that never had Homie
+        needs no grant for them."""
         error = broker.subscribe(self.client, f"{self.root}/#")
+        if error is None:
+            homie = broker.subscribe(self.client, f"{self.homie}/#")
+            error = homie if self.config.homie.enabled else None
         if error is None:
             time.sleep(broker.RETAINED_WAIT_S)  # retained messages come on SUBACK
         return error
+
+    def homie_topics(self) -> list[str]:
+        """The Homie device's retained topics, `$state` first: the order in which Homie 5.0.0
+        removes a device (4.0.0 names none), so that a controller drops it before its parts."""
+        state = f"{self.homie}/$state"
+        found = sorted(t for t in self.found if t.startswith(self.homie + "/"))
+        return sorted(found, key=lambda topic: topic != state)
 
 
 def _retire(args: argparse.Namespace) -> int:
@@ -58,7 +77,9 @@ def _retire(args: argparse.Namespace) -> int:
             print(PREFIX + running, file=sys.stderr)
             return EX_FAILURE
         removals = home_assistant_removals(config, state_dir)
-        cleared = sorted(t for t in session.found if t != session.topics.availability)
+        documents = (t for t in session.found if t.startswith(session.root + "/"))
+        cleared = sorted(t for t in documents if t != session.topics.availability)
+        homie = session.homie_topics()
         print(
             trn(
                 "Home Assistant: {count} device to remove",
@@ -74,12 +95,22 @@ def _retire(args: argparse.Namespace) -> int:
                 root=session.root,
             )
         )
+        if homie:  # also with `[homie]` off now
+            print(
+                # Translators: {root} is the Homie device's topic, such as homie/meshcore-radio1
+                trn(
+                    "broker: {count} retained Homie message to clear under {root}/",
+                    "broker: {count} retained Homie messages to clear under {root}/",
+                    len(homie),
+                    root=session.homie,
+                )
+            )
         if not args.yes:
             print(tr("nothing done: add --yes to retire the gateway"))
             return EX_OK
         for topic, payload in removals:
             error = error or broker.publish(session.client, topic, payload)
-        for topic in cleared:
+        for topic in [*cleared, *homie]:
             error = error or broker.publish(session.client, topic, b"", retain=True)
         availability = session.topics.availability
         error = error or broker.publish(session.client, availability, b"offline", retain=True)
