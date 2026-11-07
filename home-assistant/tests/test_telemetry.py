@@ -20,12 +20,12 @@ from typing import Any
 
 import pytest
 from freezegun.api import FrozenDateTimeFactory
+from ha_plugin import async_fire_time_changed
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from test_contract import (
     GUIDE,
     PREFIX,

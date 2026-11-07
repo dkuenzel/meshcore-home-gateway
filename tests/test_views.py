@@ -24,19 +24,27 @@ from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.views import (
     ATTRIBUTE_LIMIT_BYTES,
     INDEX_LIMIT_BYTES,
+    PENDING_LIMIT_BYTES,
+    PENDING_STEPS,
     HistoryEntry,
+    PendingEntry,
     RadioReadings,
+    TargetSetting,
     advert_carries_position,
     bounded,
+    config_document,
     contact_document,
     contact_event,
     contacts_document,
     encode,
     flag_names,
     history_document,
+    history_entry,
     iso,
     name_taken_nodes,
     nodes_document,
+    pending_document,
+    pending_entry,
     restated,
     stats_document,
     telemetry_event,
@@ -211,7 +219,7 @@ def test_heard_nodes_newest_first_without_positions_and_bounded() -> None:
         node = Node(f"{i:064x}", HOSTILE * 3, 2, position=Position(1, 1))
         mesh.node_heard(node, Heard(T + i, "advert", Signal(i % 4, 1.0, -100)))
     document = nodes_document(mesh)
-    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES + 64
+    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
     assert document["total"] == 60
     assert document["truncated"] is True
     newest = document["nodes"][0]
@@ -248,11 +256,334 @@ def test_history_newest_first_and_bounded_with_hostile_texts() -> None:
         for i in range(50)
     ]
     document = history_document(entries)
-    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES + 64
+    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
     assert document["total"] == 50
     assert document["truncated"] is True
     assert document["messages"][0]["at"] == iso(T + 49)
     assert json.loads(encode(document))["messages"][0]["text"] == HOSTILE * 20  # data, unchanged
+
+
+HISTORY_KEYS = [  # the keys of 2.0, then those of 2.1 at the end
+    "at",
+    "direction",
+    "kind",
+    "contact_key",
+    "channel_index",
+    "name",
+    "text",
+    "state",
+    "hops",
+    "snr_db",
+    "target",
+    "id",
+    "queued_at",
+    "suspect",
+    "reason",
+]
+
+
+def test_a_history_entry_has_every_key_with_null_where_unknown() -> None:
+    """ADR 0015: every key always present. A received entry names the target it came through;
+    a sent one also its delivery id, when it was accepted, whether its acknowledgement was
+    suspect and why it failed."""
+    received = HistoryEntry(
+        T, "in", "channel", "On my way", None, 1, "Carol", None, 1, 6.25, target="family"
+    )
+    assert list(history_entry(received)) == HISTORY_KEYS
+    assert history_entry(received) == {
+        "at": iso(T),
+        "direction": "in",
+        "kind": "channel",
+        "contact_key": None,
+        "channel_index": 1,
+        "name": "Carol",
+        "text": "On my way",
+        "state": None,
+        "hops": 1,
+        "snr_db": 6.25,
+        "target": "family",
+        "id": None,
+        "queued_at": None,
+        "suspect": None,
+        "reason": None,
+    }
+    sent = HistoryEntry(
+        T + 30,
+        "out",
+        "contact",
+        "Back soon",
+        contact_key=KEY,
+        name="Alice",
+        state="confirmed",
+        target=None,  # sent through contacts/<key>/send: contact_key holds the key
+        id="1a2b3c4d",
+        queued_at=T + 2.75,
+        suspect=True,
+    )
+    assert history_entry(sent) | {"at": None} == dict.fromkeys(HISTORY_KEYS) | {
+        "direction": "out",
+        "kind": "contact",
+        "contact_key": KEY,
+        "name": "Alice",
+        "text": "Back soon",
+        "state": "confirmed",
+        "id": "1a2b3c4d",
+        "queued_at": "2027-01-15T08:00:02+00:00",  # as `at`: UTC, whole seconds
+        "suspect": True,
+    }
+    failed = HistoryEntry(
+        T,
+        "out",
+        "channel",
+        "x",
+        channel_index=0,
+        state="failed",
+        target="alerts",
+        id="9f8e7d6c",
+        reason="channel_not_configured",
+    )
+    assert history_entry(failed)["reason"] == "channel_not_configured"
+    assert history_entry(failed)["suspect"] is None
+    assert history_document([])["messages"] == []
+
+
+def _worst_entries(text_bytes: int, *, received: bool) -> list[HistoryEntry]:
+    """The worst cases for the bound: a received direct message from a 31-byte name of control
+    characters with a text of control characters (6 bytes each in JSON), or a sent one with
+    every key filled, the longest reason and a text of quotes and backslashes (2 bytes each)."""
+    if received:
+        text, name = "\x01" * text_bytes, "\x02" * 31
+        return [
+            HistoryEntry(
+                T + i,
+                "in",
+                "contact",
+                text,
+                KEY,
+                name=name,
+                hops=63,
+                snr_db=-12.25,
+                target="a" * 32,
+            )
+            for i in range(50)
+        ]
+    text = ('"\\' * text_bytes)[:text_bytes]
+    return [
+        HistoryEntry(
+            T + i,
+            "out",
+            "contact",
+            text,
+            KEY,
+            name="n" * 32,
+            state="failed",
+            target="t" * 32,
+            id=f"{i:08x}",
+            queued_at=T + i - 600,
+            suspect=None,
+            reason="exceeds_airtime_burst",
+        )
+        for i in range(50)
+    ]
+
+
+@pytest.mark.parametrize("received", [True, False], ids=["received", "sent"])
+def test_the_whole_history_document_stays_within_its_bound(received: bool) -> None:
+    """#111: the bound counts the whole document, its head too, as `nodes_document` does: from
+    texts that fill it short of a whole entry to texts that leave it with room for one."""
+    for text_bytes in range(0, 161, 3):
+        document = history_document(_worst_entries(text_bytes, received=received))
+        assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, text_bytes
+        assert document["total"] == 50
+        kept = document["messages"]
+        assert document["truncated"] is (len(kept) < 50)
+        assert [m["at"] for m in kept] == [iso(T + 49 - i) for i in range(len(kept))]
+
+
+def test_a_history_near_its_bound_stays_within_it_whole_or_cut() -> None:
+    """Entries that fill the bound to the byte without the head: the document keeps them all
+    only if the head fits too (2.0 went 43 bytes over then, and 42 when cut)."""
+    whole = set()
+    for size in range(40, 160):
+        entries = [HistoryEntry(T + i, "in", "channel", "x" * size) for i in range(50)]
+        document = history_document(entries)
+        assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, size
+        whole.add(document["truncated"] is False)
+    assert whole == {True, False}
+
+
+PENDING_KEYS = [
+    "id",
+    "queued_at",
+    "target",
+    "kind",
+    "contact_key",
+    "channel_index",
+    "name",
+    "text",
+    "step",
+    "attempt",
+    "max_attempts",
+]
+
+
+def test_a_pending_entry_has_every_key_with_null_where_unknown() -> None:
+    """A message accepted and not final yet (`pending`). A direct message sent through
+    `contacts/<key>/send` has no target (its key is `contact_key`); one kept by 2.0 has no
+    `queued_at`."""
+    direct = PendingEntry(
+        "1a2b3c4d",
+        T + 2.75,
+        None,
+        "contact",
+        KEY,
+        None,
+        "Alice",
+        "Back soon #0f1e2d3c",
+        "sent",
+        1,
+        3,
+    )
+    assert list(pending_entry(direct)) == PENDING_KEYS
+    assert pending_entry(direct) == {
+        "id": "1a2b3c4d",
+        "queued_at": "2027-01-15T08:00:02+00:00",
+        "target": None,
+        "kind": "contact",
+        "contact_key": KEY,
+        "channel_index": None,
+        "name": "Alice",
+        "text": "Back soon #0f1e2d3c",
+        "step": "sent",
+        "attempt": 1,
+        "max_attempts": 3,
+    }
+    channel = PendingEntry(
+        "9f8e7d6c", None, "family", "channel", None, 1, "family", "Hi", "queued", 0, 1
+    )
+    assert pending_entry(channel) | {"id": None} == dict.fromkeys(PENDING_KEYS) | {
+        "target": "family",
+        "kind": "channel",
+        "channel_index": 1,
+        "name": "family",
+        "text": "Hi",
+        "step": "queued",
+        "attempt": 0,
+        "max_attempts": 1,
+    }
+    assert PENDING_STEPS == ("queued", "sent")
+
+
+def test_the_pending_document_lists_the_messages_oldest_first() -> None:
+    """In the order the outbox gives them (accepted first, first), every key there when empty."""
+    assert pending_document([]) == {"total": 0, "truncated": False, "messages": []}
+    entries = [
+        PendingEntry(
+            f"{i:08x}", T + i, "alerts", "channel", None, 0, "alerts", f"m{i}", "queued", 0, 1
+        )
+        for i in range(3)
+    ]
+    document = pending_document(entries)
+    assert (document["total"], document["truncated"]) == (3, False)
+    assert [m["id"] for m in document["messages"]] == ["00000000", "00000001", "00000002"]
+
+
+def _worst_pending(text_bytes: int, count: int) -> list[PendingEntry]:
+    """Every key filled at its longest: a 32-character alias, a 31-byte name of control
+    characters (6 bytes each in JSON), a text of quotes and backslashes (2 bytes each)."""
+    text = ('"\\' * text_bytes)[:text_bytes]
+    return [
+        PendingEntry(
+            f"{i:08x}", T + i, "t" * 32, "contact", KEY, None, "\x02" * 31, text, "sent", 2, 3
+        )
+        for i in range(count)
+    ]
+
+
+def test_the_whole_pending_document_stays_within_8_kib() -> None:
+    """Bounded by bytes, as ADR 0015 asks of every list: `total` counts every message and
+    `truncated` is true exactly when some were left out; the oldest stay."""
+    cut = set()
+    for text_bytes in range(0, 161, 4):
+        for count in (1, 10, 21, 1001):  # the largest queue and the message in flight
+            document = pending_document(_worst_pending(text_bytes, count))
+            assert len(encode(document)) <= PENDING_LIMIT_BYTES, (text_bytes, count)
+            assert document["total"] == count
+            kept = document["messages"]
+            assert document["truncated"] is (len(kept) < count)
+            assert [m["id"] for m in kept] == [f"{i:08x}" for i in range(len(kept))]
+            cut.add(document["truncated"])
+    assert cut == {True, False}
+    assert PENDING_LIMIT_BYTES == 8 * 1024
+
+
+def test_a_pending_document_near_its_bound_stays_within_it_whole_or_cut() -> None:
+    """Entries that fill the bound to the byte without the head: whole only if the head fits."""
+    whole = set()
+    for size in range(100, 300):
+        entries = [
+            PendingEntry(f"{i:08x}", T, "a", "channel", None, 0, "a", "x" * size, "queued", 0, 1)
+            for i in range(20)
+        ]
+        document = pending_document(entries)
+        assert len(encode(document)) <= PENDING_LIMIT_BYTES, size
+        whole.add(document["truncated"] is False)
+    assert whole == {True, False}
+
+
+def _settings() -> dict[str, dict[str, Any]]:
+    """Sections as config_view gives them, with lists of their largest length."""
+    return {
+        "messages": {"ignore_channels": list(range(256)), "publish_channels": "targets"},
+        "homeassistant": {"contact_entity_prefix": "x" * 20, "hidden_targets": 1000},
+    }
+
+
+def test_a_config_document_near_its_bound_stays_within_it_whole_or_cut() -> None:
+    """Targets that fill the bound to the byte without the head: whole only if the head fits;
+    `total` counts every target, `truncated` is true exactly when the last were left out."""
+    whole = set()
+    for size in range(150, 260):
+        targets = [
+            TargetSetting(f"t{i:02d}", "contact", None, KEY, "p" * size, "", False, True, 150)
+            for i in range(40)
+        ]
+        document = config_document(T, targets, _settings())
+        assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, size
+        listed = document["targets"]
+        assert listed["total"] == 40
+        assert listed["truncated"] is (len(listed["items"]) < 40)
+        assert [t["alias"] for t in listed["items"]] == [t.alias for t in targets][
+            : len(listed["items"])
+        ]
+        whole.add(listed["truncated"] is False)
+    assert whole == {True, False}
+
+
+def test_a_target_shows_the_start_of_its_key_only() -> None:
+    target = TargetSetting("alice", "contact", None, KEY, "", "", True, False, 150)
+    shown = config_document(T, [target], {})
+    assert shown == {
+        "started_at": iso(T),
+        "targets": {
+            "total": 1,
+            "truncated": False,
+            "items": [
+                {
+                    "alias": "alice",
+                    "kind": "contact",
+                    "channel_index": None,
+                    "key_start": KEY[:8],
+                    "prefix": "",
+                    "suffix": "",
+                    "alert": True,
+                    "hidden": False,
+                    "room": 150,
+                }
+            ],
+        },
+    }
+    assert KEY[:9] not in encode(shown).decode()
 
 
 def test_flags_and_bounds_helpers() -> None:

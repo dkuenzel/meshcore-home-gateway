@@ -73,6 +73,8 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         CONTACT,
         TOPICS.nodes,
         TOPICS.history,
+        TOPICS.pending,
+        TOPICS.config,
         TOPICS.settings,
         TOPICS.contact("not-a-key"),
     ):
@@ -93,9 +95,11 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         assert not retained.covers(topic), topic
     assert retained.filters == (
         "meshcore/radio1/availability",
+        "meshcore/radio1/config",
         "meshcore/radio1/contacts",
         "meshcore/radio1/history",
         "meshcore/radio1/nodes",
+        "meshcore/radio1/pending",
         "meshcore/radio1/settings",
         "meshcore/radio1/state",
         "meshcore/radio1/stats",
@@ -127,6 +131,25 @@ def test_another_clients_write_is_undone_with_a_warning(caplog: pytest.LogCaptur
     assert "docs/mqtt-api.md, Securing the broker" in caplog.text
     retained.received(CONTACT, b'{"latitude": 1}', retained=False)  # the restore comes back
     assert len(bus.published) == 1
+
+
+def test_a_forged_configuration_is_undone() -> None:
+    """Another client's `config` would otherwise show every user of Home Assistant settings the
+    gateway does not have, such as a target that is not hidden."""
+    retained, bus = make()
+    retained.sent(TOPICS.config, b'{"targets": {"total": 0}}', published=True)
+    retained.received(TOPICS.config, b'{"targets": {"total": 0}}', retained=False)
+    retained.received(TOPICS.config, b'{"targets": {"total": 9}}', retained=False)
+    assert bus.published == [(TOPICS.config, b'{"targets": {"total": 0}}')]
+
+
+def test_a_forged_list_of_messages_on_their_way_is_undone() -> None:
+    """Another client's `pending` would otherwise show messages the gateway never accepted."""
+    retained, bus = make()
+    retained.sent(TOPICS.pending, b'{"total": 0}', published=True)
+    retained.received(TOPICS.pending, b'{"total": 0}', retained=False)
+    retained.received(TOPICS.pending, b'{"total": 1}', retained=False)
+    assert bus.published == [(TOPICS.pending, b'{"total": 0}')]
 
 
 def test_a_cleared_topic_is_restored() -> None:
@@ -242,3 +265,26 @@ def test_logging_names_the_topic_once_per_minute(caplog: pytest.LogCaptureFixtur
         retained.received(TOPICS.state, b"forged", retained=False)
         bus.advance(HEAL_INTERVAL_S)
     assert caplog.text.count("another client wrote") == 1
+
+
+def test_with_the_drafts_the_chats_draft_topics_are_covered() -> None:
+    """The drafts of Home Assistant's chats are the gateway's too: another client's write is
+    undone with the draft the gateway holds; their requests are no retained topic."""
+    bus = Bus()
+    retained = RetainedTopics(TOPICS, bus.publish, bus.call_later, lambda: bus.now, drafts=True)
+    draft = TOPICS.target_draft("family")
+    for topic in (draft, TOPICS.contact_draft(KEY), "meshcore/radio1/homeassistant/draft/x/y"):
+        assert retained.covers(topic), topic
+    for topic in (
+        TOPICS.target_draft_request("family"),
+        "meshcore/radio1/homeassistant/draft/target",
+        "meshcore/radio2/homeassistant/draft/target/family",
+    ):
+        assert not retained.covers(topic), topic
+    assert retained.filters[-1] == "meshcore/radio1/homeassistant/draft/+/+"
+    retained.sent(draft, b'{"text":"Half a sentence"}', published=True)
+    retained.received(draft, b'{"text":"Half a sentence"}', retained=False)
+    retained.received(draft, b'{"text":"Send money"}', retained=False)  # forged
+    assert bus.published == [(draft, b'{"text":"Half a sentence"}')]
+    plain, _ = make()
+    assert not plain.covers(draft)  # without Home Assistant's discovery there are no drafts

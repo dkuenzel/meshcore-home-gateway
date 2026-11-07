@@ -1,16 +1,16 @@
-"""Settings of the Home Assistant test plugin (pytest-homeassistant-custom-component)."""
+"""Settings of the Home Assistant test plugin (ha_plugin.py: the one the environment has)."""
 
 from collections.abc import Callable
 from typing import Any
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 # pytest-aiohttp has a fixture of the same name. Which plugin's wins depends on the order the
 # plugins load in, which differs between machines; only this one keeps the router open, so a
 # component that discovery sets up after a test's websocket client started can still register
 # its views (notify needs repairs, which registers one).
-from pytest_homeassistant_custom_component.plugins import aiohttp_client  # noqa: F401
+from ha_plugin import aiohttp_client  # noqa: F401
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture

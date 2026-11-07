@@ -19,6 +19,14 @@ are connected here (`gateway`). Who tells, when, and the listeners in the order 
   `announcer.device_message`;
 * `bus.on_ha_offline`, Home Assistant went offline: `devices.ha_offline`;
 * `bus.on_show_hidden`, a request to show the hidden contacts' devices: `devices.show_hidden`;
+* `bus.on_draft_request`, a text or a press of a chat in Home Assistant: `drafts.request`, which
+  hands a press to `outbox.accept` at once; `bus.on_draft_retained`, the broker's copy of a draft:
+  `drafts.retained_copy`; the drafts are published again after `bus.on_connected`, and cleared
+  at `bus.on_stopping`;
+* `devices.on_writable`, the companions whose device has a draft: `drafts.contacts`;
+* the announcer, before the gateway's discovery: `drafts.announcing`, which cuts a draft longer
+  than its new `max` and publishes it; after the discovery that follows Home Assistant's birth
+  messages, at most one per ANNOUNCE_MIN_INTERVAL_S however many come: `drafts.republish`;
 * `observer.on_document` and `status.on_document`, a document was published (or cleared):
   `homie.document`, with `[homie] enabled`;
 * a radio session's `on_contact_key`, the radio named a key: `inbox.contact_key`;
@@ -41,6 +49,7 @@ from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.config_checks import protected_keys, protected_names
 from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.telemetry import LaneFactory
+from meshcore_home_gateway.drafts import Drafts
 from meshcore_home_gateway.history import History, Retention
 from meshcore_home_gateway.inbox import Inbox
 from meshcore_home_gateway.mqtt.client import MqttBus
@@ -173,6 +182,47 @@ async def serve(config: Config, state_dir: Path, stop: asyncio.Event) -> None:
             history.close()
 
 
+def _drafts(
+    config: Config,
+    topics: Topics,
+    bus: Bus,
+    outbox: Delivery,
+    devices: ContactDevices | None,
+    *,
+    monotonic: Callable[[], float],
+) -> Drafts | None:
+    """The drafts of the chats in Home Assistant, with its discovery: those of the companions
+    as their devices were announced last."""
+    if not config.homeassistant.discovery:
+        return None
+    contacts = devices.writable() if devices is not None else frozenset[str]()
+    return Drafts(
+        config,
+        topics,
+        bus,
+        outbox.accept,
+        monotonic=monotonic,
+        call_later=_call_later,
+        contacts=contacts,
+    )
+
+
+def _hear_drafts(bus: Bus, drafts: Drafts, devices: ContactDevices | None) -> None:
+    """The drafts' part of the table above; after the announcer's, so that a connect publishes
+    the drafts after the discovery."""
+    bus.on_connected.append(lambda: observe(drafts.republish))
+    bus.on_draft_request.append(lambda *request: observe(drafts.request, *request))
+    bus.on_draft_retained.append(lambda *copy: observe(drafts.retained_copy, *copy))
+    bus.on_stopping.append(lambda: observe(drafts.stop))
+    if devices is not None:
+        devices.on_writable.append(drafts.contacts)
+
+
+def _call_later(delay_s: float, callback: Callable[[], None]) -> asyncio.TimerHandle:
+    """A timer of the running event loop (the drafts' echo limiter and expiry)."""
+    return asyncio.get_running_loop().call_later(delay_s, callback)
+
+
 def transport_for(config: Config) -> Transport:
     radio = config.radio
     if radio.transport == "serial":
@@ -274,6 +324,7 @@ def gateway(
         monotonic=monotonic,
         wall_clock=wall_clock,
     )
+    drafts = _drafts(config, topics, bus, outbox, devices, monotonic=monotonic)  # chats in HA
     status = Status(
         config,
         bus,
@@ -297,6 +348,7 @@ def gateway(
         components=components,
         manage=manage,
         devices=devices,
+        drafts=drafts,
         monotonic=monotonic,
         wall_clock=wall_clock,
     )
@@ -320,6 +372,8 @@ def gateway(
     bus.on_connected.append(lambda: observe(observer.publish_all))
     bus.on_ha_online.append(lambda: announcer.schedule(birth=True))
     bus.on_ha_device.append(announcer.device_message)
+    if drafts is not None:
+        _hear_drafts(bus, drafts, devices)
     if (shown := devices) is not None:
         bus.on_ha_offline.append(lambda: observe(shown.ha_offline))
         bus.on_show_hidden.append(lambda: observe(shown.show_hidden))

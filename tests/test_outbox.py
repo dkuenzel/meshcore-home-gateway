@@ -313,6 +313,63 @@ def test_a_stop_keeps_the_queue_and_the_next_start_sends_it(tmp_path: Path) -> N
     assert "outbox" not in JsonStateFile(path).load()
 
 
+def test_a_request_after_the_stop_kept_the_queue_is_rejected_and_one_before_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Requests are taken until the queue is kept (ADR 0028): one that comes while the stop
+    waits for an acknowledgement is kept with the queue; one that comes later, while the stop
+    handles the last received messages, would be queued after the save and lost without a
+    final event. It ends `rejected` with reason `stopping`."""
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 5.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 5.0)
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.3)
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    buses: list[FakeBus] = []
+
+    async def stopped() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _n):
+            buses.append(bus)
+            bus.send("bob", "Still there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            loop = asyncio.get_running_loop()
+            loop.call_later(0.1, bus.send, "alice", "During the wait")  # the stop waits
+            drain = bridge._finish_inbound
+
+            async def late(radio_task: asyncio.Task[None]) -> None:
+                bus.send("alerts", "Too late")  # the requests task still runs
+                await bus.wait_for("/delivery", lambda d: d["target"] == "alerts")
+                await drain(radio_task)
+
+            monkeypatch.setattr(bridge, "_finish_inbound", late)
+
+    async def started() -> None:
+        async with running(make_config(), EmulatedRadio(contacts=[ALICE, BOB]), tmp_path) as (
+            _,
+            bus,
+            _n,
+        ):
+            buses.append(bus)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            await asyncio.sleep(0.1)
+
+    scenario(stopped)
+    events = [(d["target"], d["event_type"], d["reason"]) for d in buses[0].payloads("/delivery")]
+    assert events == [
+        ("bob", "queued", None),
+        ("bob", "sent", None),
+        ("alice", "queued", None),
+        ("alerts", "rejected", "stopping"),
+    ]
+    kept = JsonStateFile(tmp_path / "state.json").load()["outbox"]["messages"]
+    assert [(m["target"], m["text"]) for m in kept] == [
+        ("bob", "Still there?"),
+        ("alice", "During the wait"),
+    ]
+    scenario(started)
+    sent = {d["text"] for d in buses[1].payloads("/delivery") if d["event_type"] == "sent"}
+    assert "Too late" not in sent
+
+
 def test_kept_messages_whose_time_ran_out_or_whose_target_left_end_at_the_start(
     tmp_path: Path,
 ) -> None:
@@ -526,26 +583,33 @@ def test_the_budget_level_survives_a_restart_and_a_long_message_still_goes_out(
 def test_confirm_nonce_makes_a_direct_text_unguessable(tmp_path: Path) -> None:
     """SEC-001: with `confirm_nonce` a direct text leaves with 8 random hex digits, the same on
     every attempt; every event carries the text as sent, duplicates are judged without them, and
-    a channel text gets none (it is not acknowledged)."""
+    a channel text gets none (it is not acknowledged). Once the message failed, the same text is
+    taken again."""
     radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
 
     async def main() -> None:
         config = make_config(messages="confirm_nonce = true")
         async with running(config, radio, tmp_path) as (_, bus, _notes):
             bus.send("bob", "Smoke in the kitchen")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            bus.send("bob", "Smoke in the kitchen")
+            duplicate = await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
+            assert duplicate["text"] == "Smoke in the kitchen"
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "failed")
             (sent,) = {t.text for t in radio.texts}
             assert re.fullmatch(r"Smoke in the kitchen #[0-9a-f]{8}", sent)
             assert [t.attempt for t in radio.texts] == [0, 1, 2]
-            assert {e["text"] for e in bus.payloads("/delivery")} == {sent}
-            bus.send("bob", "Smoke in the kitchen")
-            duplicate = await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
-            assert duplicate["text"] == "Smoke in the kitchen"
+            events = [e for e in bus.payloads("/delivery") if e["event_type"] != "duplicate"]
+            assert {e["text"] for e in events} == {sent}
             bus.send("alerts", "Smoke in the kitchen")
             await bus.wait_for(
                 "/delivery", lambda d: d["target"] == "alerts" and d["event_type"] == "sent"
             )
             assert radio.channel_texts == [(0, "Smoke in the kitchen", NOW)]
+            count = len(bus.payloads("/delivery"))
+            bus.send("bob", "Smoke in the kitchen")
+            again = await bus.wait_for("/delivery", lambda d: d["target"] == "bob", since=count)
+            assert again["event_type"] == "queued"
 
     scenario(main)
 
@@ -773,6 +837,88 @@ def test_duplicates_are_suppressed(tmp_path: Path) -> None:
             bus.send("alerts", "Smoke")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+
+    scenario(main)
+
+
+def test_a_message_that_failed_can_be_sent_again_at_once(tmp_path: Path) -> None:
+    """ "Send it again" after "not delivered" is no duplicate; a confirmed message
+    stays one within the window."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB], errors={Command.SEND_TXT_MSG: 3})
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("alice", "Dinner is ready")
+            failed = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
+            assert (failed["event_type"], failed["reason"]) == ("failed", "table_full")
+            count = len(bus.payloads("/delivery"))
+            bus.send("alice", "Dinner is ready")
+            again = await bus.wait_for("/delivery", lambda d: True, since=count)
+            assert again["event_type"] == "queued"
+
+    scenario(main)
+
+
+def test_a_message_that_expired_can_be_sent_again_at_once(tmp_path: Path) -> None:
+    config = make_config(messages="queue_ttl_s = 1")
+
+    async def main() -> None:
+        async with running(config, EmulatedRadio(), tmp_path, transport=Unreachable) as (
+            _,
+            bus,
+            _notes,
+        ):
+            bus.send("alerts", "Gate open")
+            expired = await bus.wait_for("/delivery", lambda d: d["event_type"] in FINAL)
+            assert (expired["event_type"], expired["reason"]) == ("expired", "no_radio")
+            count = len(bus.payloads("/delivery"))
+            bus.send("alerts", "Gate open")
+            again = await bus.wait_for("/delivery", lambda d: True, since=count)
+            assert again["event_type"] == "queued"
+
+    scenario(main)
+
+
+def test_a_message_that_expires_leaves_a_later_acceptance_of_its_text(tmp_path: Path) -> None:
+    """Once the window passed, the same text was accepted again for a second message; the
+    first one's end must not take the second one's place in the duplicate check."""
+    config = make_config(messages="queue_ttl_s = 1")
+    config = dataclasses.replace(
+        config, messages=dataclasses.replace(config.messages, dedup_window_s=0.6)
+    )
+
+    async def main() -> None:
+        async with running(config, EmulatedRadio(), tmp_path, transport=Unreachable) as (
+            _,
+            bus,
+            _notes,
+        ):
+            bus.send("alerts", "Gate open")
+            await asyncio.sleep(0.7)
+            bus.send("alerts", "Gate open")  # the window passed: a second message
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "expired")
+            events = bus.payloads("/delivery")
+            assert [e["event_type"] for e in events] == ["queued", "queued", "expired"]
+            bus.send("alerts", "Gate open")  # within the second message's window
+            third = await bus.wait_for("/delivery", lambda d: True, since=len(events))
+            assert third["event_type"] == "duplicate"
+
+    scenario(main)
+
+
+def test_a_confirmed_message_stays_a_duplicate(tmp_path: Path) -> None:
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(contacts=[ALICE]), tmp_path) as (
+            _,
+            bus,
+            _notes,
+        ):
+            bus.send("alice", "Dinner is ready")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            count = len(bus.payloads("/delivery"))
+            bus.send("alice", "Dinner is ready")
+            again = await bus.wait_for("/delivery", lambda d: True, since=count)
+            assert again["event_type"] == "duplicate"
 
     scenario(main)
 

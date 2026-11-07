@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.drafts import Drafts
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
@@ -60,18 +61,21 @@ class Announcer:
         components: AnnouncedComponents | None = None,
         manage: ManageEntities | None = None,
         devices: ContactDevices | None = None,
+        drafts: Drafts | None = None,
         monotonic: Callable[[], float],
         wall_clock: Callable[[], float],
     ) -> None:
         """`publish_state`: the state document follows every announcement; `components`: what
         earlier runs announced; `manage`: the controls that add contacts; `devices`: the
-        contacts' devices."""
+        contacts' devices; `drafts`: the chats' drafts, whose `max` the discovery announces and
+        which the announcement after a birth publishes again."""
         self.config = config
         self._topics, self._bus, self._radio = topics, bus, radio
         self._publish_state = publish_state
         self._components, self._manage, self._devices = components, manage, devices
+        self._drafts = drafts
         self._mono, self._wall = monotonic, wall_clock
-        self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
+        self._announced: tuple[str, ...] | None = None  # radio identity in the discovery
         self._removed: dict[str, str] | None = None  # earlier components, removed in this run
         self._state = _Announcing()
 
@@ -112,6 +116,8 @@ class Announcer:
                 if self._removed:
                     log.info("Home Assistant: removing %s", ", ".join(sorted(self._removed)))
             topic, info = discovery_topic(self.config), self._radio.info
+            if self._drafts is not None:  # a lower `max` cuts a longer draft, published first
+                observe(self._drafts.announcing, info)
             if self._removed:  # Home Assistant removes only what it discovered since its start
                 bind = discovery_payload(self.config, self._topics, info, self._removed, bind=True)
                 self._bus.publish(topic, encode(bind))
@@ -123,6 +129,8 @@ class Announcer:
             self._state.last = self._mono()
             if (devices := self._devices) is not None:
                 observe(lambda: devices.announce_all(birth=birth))
+            if birth and self._drafts is not None:  # as held, after the discovery (SEC-006)
+                observe(self._drafts.republish)
         self._publish_state()
 
     def schedule(self, *, birth: bool = False) -> None:
@@ -178,5 +186,9 @@ def ha_device_topics(config: Config) -> list[str]:
     return [discovery_topic(config), below or manage_topic(config)]
 
 
-def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
-    return (info.device.model, info.device.version, info.public_key) if info else None
+def _identity(info: RadioInfo | None) -> tuple[str, ...] | None:
+    """What the announcement depends on of the radio: the device page's model, firmware and key,
+    and the name, which takes room from every channel text."""
+    if info is None:
+        return None
+    return (info.device.model, info.device.version, info.public_key, info.name)

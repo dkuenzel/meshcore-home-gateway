@@ -47,7 +47,8 @@ docs/            design, decisions, protocol, API, operations
 tests/           pytest suites, emulated radio, broker fixture; tests/manual: checks run by hand;
                  tests/firmware: the real firmware on a simulated air (make firmware-test)
 tools/           build and release helpers: zipapp, release plan, public interface comparison,
-                 the pinned fetch of the firmware, the translation templates and checks (i18n.py)
+                 the pinned fetch of the firmware, the translation templates and checks (i18n.py),
+                 the browser check and its gateway on the emulated radio (docs/testing.md)
 .github/         CI workflow, Dependabot, issue forms, pull request template
 ```
 
@@ -195,6 +196,10 @@ pin.
 Home Assistant), with the versions that `home-assistant/overrides.txt` raises past known
 vulnerabilities; run it in Dependabot's pull requests for that environment too, so that the
 overrides hold (whether Dependabot applies them is not checked).
+`make ha-lock HA_SERIES=2026.11` writes the lock of the second series,
+`home-assistant/requirements-2026.11.txt`, from `requirements-2026.11.in` (Home Assistant's own
+plugin, `pytest-homeassistant`; [testing.md](testing.md#home-assistant-contract-tests)), under the
+same cooldown.
 After a Home Assistant update, run `make ha-test` and adjust "tested with" in
 `docs/home-assistant.md`. Review the diff like code.
 
@@ -296,7 +301,9 @@ dashboards and statistics refer to:
 
 **Platforms.** A major version keeps its floors: Python 3.11 with paho-mqtt 2.x (Debian 13 for
 the installer), Home Assistant 2026.8, and MeshCore companion firmware 1.18.0 (protocol version
-3). Raising a floor is breaking; supporting more is not. A firmware version tested in addition is
+3). Raising a floor is breaking; supporting more is not. The generated dashboard follows the
+frontend features it uses and states its own floor: it needs Home Assistant 2026.10, whose
+frontend evaluates its template conditions, while the gateway and its entities keep 2026.8. A firmware version tested in addition is
 an addition; dropping a tested one is breaking. The snapshot below records the tested firmware
 versions (`TESTED_FIRMWARE`); the floors stay with review.
 

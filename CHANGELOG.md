@@ -8,8 +8,90 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Added
+
+- The attribute `manage_reason` of *Contacts* in Home Assistant, which the guide and the
+  changelog of 2.0.0 already named: why requests to add or remove contacts are refused now,
+  `null` while they are taken (#99).
+- A warning at the start and in `check-config` for targets whose aliases differ only in `-` and
+  `_`, such as `a-b` and `a_b`: Home Assistant makes the same entity IDs of them and numbers the
+  later ones (`_2`).
+- The entries of the `history` document name the target a message came through or went to
+  (`target`), and a sent message's also the id of its delivery events (`id`), when the gateway
+  accepted it (`queued_at`, also across a stop), whether its acknowledgement was `suspect`, and
+  why it failed or expired (`reason`); each key is always there, `null` where it does not apply.
+  The history database keeps them in new columns, which 2.0 leaves empty after a downgrade, and
+  `history export` adds them at the end of `messages` (`delivery_id` for the id)
+  ([mqtt-api.md](docs/mqtt-api.md#history-history)).
+- The sensor *Message history* in Home Assistant: the time of the newest message, and the latest
+  messages in and out as attributes. It stays available while the gateway is offline. The
+  recorder stores the messages with every change unless it excludes the sensor
+  ([home-assistant.md](docs/home-assistant.md#privacy)).
+- The retained document `pending` and the sensor *Messages on their way* in Home Assistant: the
+  messages the gateway accepted and has not delivered or given up yet, the one being sent
+  included, which *Queue* never counts (#112). Each names its step (`queued` or `sent`), its
+  attempts and when it was accepted: one `queued` for more than a minute waits for the radio or
+  for airtime. The sensor stays available while the gateway is offline. After a downgrade to 2.0
+  the broker keeps the last `pending`; an empty retained message clears it, such as
+  `mosquitto_pub -r -n -t meshcore/radio1/pending`
+  ([mqtt-api.md](docs/mqtt-api.md#messages-on-their-way-pending)).
+- Writing from Home Assistant, then sending: a draft text and a *Send* button for each target not
+  in `hidden_targets` (*Write to …*, *Send what is written to …* on the gateway's device) and for
+  each companion that is no contact target (*Write*, *Send what is written* on its device). The
+  gateway keeps one draft per chat, retained on `homeassistant/draft/<kind>/<chat>`, and takes
+  both requests on `…/request` in the order they come, so *Send* sends the text stored just
+  before it, through the same checks, queue and events as a send request. A queued message
+  empties the draft; a refused one stays, to be changed. A draft unchanged for 15 minutes, and
+  every draft at a clean stop, is emptied. After a downgrade to 2.0 the broker keeps the last
+  drafts; an empty retained message on each clears it, such as
+  `mosquitto_pub -r -n -t meshcore/radio1/homeassistant/draft/target/family`
+  ([mqtt-api.md](docs/mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat),
+  [home-assistant.md](docs/home-assistant.md#writing-and-sending)). With a broker ACL, Home
+  Assistant's user needs `topic write meshcore/radio1/homeassistant/draft/+/+/request`, which the
+  example ACL of earlier versions lacks: without it *Send* does nothing
+  ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)).
+- The retained document `config` and the sensor *Configuration* in Home Assistant: the settings
+  in effect since the gateway started, read only, so that the household sees what the
+  administrator set. Each target with its kind, prefix, suffix, whether it is an alert or hidden
+  target, and the room of a text to it; the sections `messages`, `contacts`, `telemetry`,
+  `homeassistant`, `radio`, `airtime`, `history` and `commands` by an allowlist, which leaves out
+  every host, port, device path, user name, password, client ID, key, the codes and the command
+  words. It goes out at the start and at every connect to the radio and to the broker. After a
+  downgrade to 2.0 the broker keeps the last `config`; an empty retained message clears it, such
+  as `mosquitto_pub -r -n -t meshcore/radio1/config`
+  ([mqtt-api.md](docs/mqtt-api.md#configuration-config)).
+
+### Changed
+
+- A message that ended `failed` or `expired` no longer counts as a duplicate: the same text to the
+  same target can be sent again at once. A `confirmed` one still does, for `dedup_window_s`
+  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+- `add_contact` and `contacts add` drop the invisible characters a copied key, contact link or
+  card may carry before they read it: the soft hyphen, the zero-width space, direction marks and
+  controls, the invisible operators and the byte order mark. The joiners stay, as part of a name
+  ([mqtt-api.md](docs/mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
+- Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery
+  topic once for each of its entities; the gateway takes the copies as one deletion (#115).
+- The generated dashboard needs Home Assistant 2026.10 or newer: it shows cards by template
+  conditions, which the frontend evaluates since 2026.10. The gateway and its entities keep
+  2026.8 ([home-assistant.md](docs/home-assistant.md#requirements)).
+
 ### Fixed
 
+- With `[homeassistant] controls = false`, the controls are unavailable in Home Assistant as soon
+  as it has the gateway's announcement, and available again at once when the setting is back to
+  `true`; before, the change waited for the next message on the gateway's availability topic
+  (#82).
+- The generated dashboard shows the hint to add the script *Mesh message* while the script is
+  missing; since Home Assistant 2026.10 it never showed (#110).
+- The `history` document stays within 15 KiB as a whole; before, only its messages did, and the
+  document could be up to 43 bytes larger (#111).
+- The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
+  the one being sent, so a single message that waits reads 0 (#112).
+- A send request or the answer to a command that came while a stop handled the last received
+  messages was published `queued` and then lost: the stop had kept the queue already. It now ends
+  `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
+  stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
 - The update guide: from 1.x to 2.0, the setting that a radio over TCP (`[radio]
   tcp_unauthenticated`) or commands over a broker without credentials or TLS (`[mqtt] insecure`)
   need cannot come from `--reconfigure`, which asks with the installed version. The guide shows

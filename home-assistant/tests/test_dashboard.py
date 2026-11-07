@@ -27,6 +27,7 @@ from typing import Any
 import markupsafe
 import pytest
 from freezegun.api import FrozenDateTimeFactory
+from ha_plugin import CLIENT_ID
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -34,9 +35,9 @@ from homeassistant.helpers.service import async_get_cached_service_description
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import slugify
-from pytest_homeassistant_custom_component.common import CLIENT_ID
 from test_contract import RADIO, fire, guide_block, make_config, problems, state_document
 from test_languages import offer
+from visibility import household_viewer
 
 from meshcore_home_gateway import dashboard, i18n
 from meshcore_home_gateway.config import Config
@@ -305,12 +306,15 @@ def walk(node: Any) -> Iterator[dict[str, Any]]:
             yield from walk(value)
 
 
-def markdown(loaded: dict[str, Any]) -> list[dict[str, Any]]:
+def markdown(loaded: dict[str, Any] | list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [card for card in walk(loaded) if card["type"] == "markdown"]
 
 
-def card(loaded: dict[str, Any], needle: str | re.Pattern[str]) -> dict[str, Any]:
-    """The one Markdown card whose content or visibility holds `needle`."""
+def card(
+    loaded: dict[str, Any] | list[dict[str, Any]], needle: str | re.Pattern[str]
+) -> dict[str, Any]:
+    """The one Markdown card whose content or visibility holds `needle`, in a dashboard or in a
+    page's cards (cards())."""
 
     def holds(text: str) -> bool:
         return bool(needle.search(text)) if isinstance(needle, re.Pattern) else needle in text
@@ -319,12 +323,51 @@ def card(loaded: dict[str, Any], needle: str | re.Pattern[str]) -> dict[str, Any
     return found
 
 
+def page(loaded: dict[str, Any], needle: str) -> dict[str, Any]:
+    """The one view or subview that `needle` names: its path (`overview`, `chat-family`), the
+    alias or slug after a chat page's kind (`family`, `alice`), or, for a subview, a contact's
+    key that its guards pin."""
+
+    def names(view: dict[str, Any]) -> set[str]:
+        path = str(view.get("path", ""))
+        kind, _, rest = path.partition("-")
+        return {path, rest} if kind in ("chat", "contact") and rest else {path}
+
+    found = [v for v in loaded["views"] if needle in names(v)]
+    if not found and re.fullmatch(r"[0-9a-f]{64}", needle):
+        found = [v for v in loaded["views"] if v.get("subview") and f"'{needle}'" in json.dumps(v)]
+    assert len(found) == 1, (needle, [v.get("path") for v in found])
+    return found[0]
+
+
+def cards(loaded: dict[str, Any], needle: str) -> list[dict[str, Any]]:
+    """Every card of the page that `needle` names (page()), in the file's order: its sections'
+    cards, its own (a masonry or panel view), its header's and footer's card; nested cards and
+    rows with a type included, as walk() finds them. card(cards(...), needle) picks one."""
+    view = page(loaded, needle)
+    tops = [each for section in view.get("sections", []) for each in section.get("cards", [])]
+    tops += view.get("cards", [])
+    tops += [view[part]["card"] for part in ("header", "footer") if "card" in view.get(part, {})]
+    return list(walk(tops))
+
+
 def render(hass: HomeAssistant, found: dict[str, Any]) -> str:
     """As the frontend asks for it: strict (an error fails the test), `config` and `user`."""
     variables = {"config": found, "user": "Bob"}
     return str(
         Template(found["content"], hass).async_render(variables, parse_result=False, strict=True)
     )
+
+
+def shows_nothing(hass: HomeAssistant, found: dict[str, Any]) -> None:
+    """The card renders to exactly "": a Markdown card with `show_empty: false` hides only then
+    (hui-markdown-card.ts lines 184-187 at 20260930.4, 232-235 at 20261028.4). Core strips what a
+    template renders (helpers/template/__init__.py line 474 at 2026.10.2, 493 at 2026.11.0), so
+    spaces and line breaks are nothing already; an element without text, `&nbsp;` or a zero-width
+    space is not, and shows an empty box. Without `show_empty: false` even "" shows one."""
+    assert found.get("show_empty") is False, f"{found['content'][:60]!r} has no show_empty: false"
+    output = render(hass, found)
+    assert output == "", f"{found['content'][:60]!r} shows {output!r}"
 
 
 def rendered(hass: HomeAssistant, loaded: dict[str, Any]) -> dict[str, str]:
@@ -377,30 +420,6 @@ def alert(output: str) -> tuple[str, str]:
     match = re.fullmatch(r"> \[!(\w+)\]\n> \*\*(.*?)\*\* .*", output, re.DOTALL)
     assert match, output
     return match.group(1), match.group(2)
-
-
-def visible(hass: HomeAssistant, found: dict[str, Any]) -> bool:
-    """The card's visibility, as the frontend decides `state` conditions (validate-condition.ts
-    lines 161-207 at 20260930.2): a missing entity or attribute reads `unknown`, a value naming an
-    entity adds its state, and values compare as they are, so a YAML boolean matches no state."""
-    for condition in found.get("visibility", []):
-        assert condition["condition"] == "state", condition
-        state = hass.states.get(condition["entity"])
-        attribute = condition.get("attribute")
-        value = (
-            "unknown"
-            if state is None or (attribute and state.attributes.get(attribute) is None)
-            else str(state.attributes[attribute])
-            if attribute
-            else state.state
-        )
-        positive = condition.get("state") is not None
-        wanted = condition["state"] if positive else condition["state_not"]
-        values = [*wanted] if isinstance(wanted, list) else [wanted]
-        values += [s.state for v in values if isinstance(v, str) and (s := hass.states.get(v))]
-        if (value in values) != positive:
-            return False
-    return True
 
 
 def referenced(loaded: dict[str, Any]) -> set[str]:
@@ -730,11 +749,13 @@ async def test_cards_show_only_while_their_state_says_so(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The version card only while the gateway runs another version; the script's tile only
-    with the script, its hint only without; a problem's tile only while it is on."""
+    """For a household user: the version card only while the gateway runs another version; the
+    script's tile only with the script, its hint not then; a problem's tile only while it is
+    on."""
     config = make_config()
     loaded = await made(hass, hass_ws_client, config, tmp_path)
-    version, hint = card(loaded, VERSION), card(loaded, WRITE)
+    viewer = await household_viewer(hass, hass_ws_client)
+    version = card(loaded, VERSION)
     (tile,) = [c for c in walk(loaded) if c["type"] == "tile" and c["entity"] == WRITE]
     problem = {
         c["entity"]: c
@@ -742,20 +763,20 @@ async def test_cards_show_only_while_their_state_says_so(
         if c["type"] == "tile" and c["entity"].startswith("binary_sensor.") and "visibility" in c
     }
     assert len(problem) == 4  # look-alikes, a remote CLI, a position in adverts, degraded
-    assert not visible(hass, version)  # no gateway
-    assert (visible(hass, tile), visible(hass, hint)) == (False, True)
+    assert not await viewer.visible(version)  # no gateway
+    assert not await viewer.visible(tile)
     topics = await gateway(hass, config)
-    assert not visible(hass, version)
-    assert not any(visible(hass, c) for c in problem.values())
+    assert not await viewer.visible(version)
+    assert not [e for e, c in problem.items() if await viewer.visible(c)]
     await fire(hass, topics.state, state_document(known=True) | {"version": "9.9.9"})
-    assert visible(hass, version)
+    assert await viewer.visible(version)
     await fire(hass, topics.availability, "offline")  # its attributes go with it
-    assert not visible(hass, version)
+    assert not await viewer.visible(version)
     await fire(hass, topics.availability, "online")
     await fire(hass, topics.nodes, {"total": 1, "look_alike": [BOB], "look_alike_total": 1})
-    assert {e for e, c in problem.items() if visible(hass, c)} == {
+    assert [e for e, c in problem.items() if await viewer.visible(c)] == [
         "binary_sensor.meshcore_home_gateway_radio1_look_alike"
-    }
+    ]
     contacts = {
         "total": 1,
         "max": 350,
@@ -767,9 +788,33 @@ async def test_cards_show_only_while_their_state_says_so(
     await fire(hass, topics.contacts, contacts, retain=True)
     degraded = state_document(known=True) | {"health": {"degraded": True}}
     await fire(hass, topics.state, degraded)
-    assert all(visible(hass, c) for c in problem.values())
+    assert [e for e, c in problem.items() if await viewer.visible(c)] == list(problem)
     await guide_script(hass)
-    assert (visible(hass, tile), visible(hass, hint)) == (True, False)
+    assert (await viewer.visible(tile), await viewer.visible(card(loaded, WRITE))) == (True, False)
+    assert problems(caplog) == []
+
+
+async def test_the_script_hint_shows_while_the_script_is_missing(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """For a household user, the hint "add the script Mesh message" in place of the script's
+    tile until the script exists (HA-09). Red on the released template since Home Assistant
+    2026.10: core decides its `state_not` on a missing entity and answers an error, which hides
+    the card (visibility.py)."""
+    config = make_config()
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    viewer = await household_viewer(hass, hass_ws_client)
+    hint = card(loaded, WRITE)
+    (tile,) = [c for c in walk(loaded) if c["type"] == "tile" and c["entity"] == WRITE]
+    await gateway(hass, config)
+    assert (await viewer.visible(tile), await viewer.visible(hint)) == (False, True), viewer.errors
+    await guide_script(hass)
+    assert (await viewer.visible(tile), await viewer.visible(hint)) == (True, False)
     assert problems(caplog) == []
 
 
@@ -819,7 +864,7 @@ async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others
     assert shown_map["entities"] == sorted(shown_map["entities"])
     assert set(shown_map["entities"]) == trackers - {"device_tracker.mesh_alice_2"}
     assert (shown_map["hours_to_show"], shown_map["theme_mode"]) == (24, "auto")
-    assert render(hass, card(loaded[URL], HINT)) == ""
+    shows_nothing(hass, card(loaded[URL], HINT))
     assert not [c for c in walk(loaded["mesh-none"]) if c["type"] == "map"]
     note = said(
         config,
@@ -835,7 +880,7 @@ async def test_the_map_lists_the_trackers_of_the_state_file_and_names_the_others
     (second_map,) = [c for c in walk(loaded["mesh-radio-2"]) if c["type"] == "map"]
     assert second_map["entities"] == ["device_tracker.mesh_alice"]  # radio1's tracker of her
     assert "device_tracker.mesh_alice_2" in trackers  # radio-2's own
-    assert render(hass, card(loaded["mesh-radio-2"], HINT)) == ""
+    shows_nothing(hass, card(loaded["mesh-radio-2"], HINT))
     assert hass.states.get("sensor.mesh_alice_telemetry_state_2").state == "answering"
     answering = f"<td>{said(other, 'answering')}</td></tr>"
     assert answering in render(hass, card(loaded["mesh-radio-2"], TABLE))  # her IDs end in _2

@@ -109,6 +109,167 @@
         }
       }
     },
+    "config": {
+      "address": "{base_topic}/{node_id}/config",
+      "messages": {
+        "config": {
+          "name": "config",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "airtime": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "budget_s_per_hour": {},
+                  "burst_s": {}
+                }
+              },
+              "commands": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "codes": {},
+                  "reply": {},
+                  "senders": {}
+                }
+              },
+              "contacts": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "heard_nodes": {},
+                  "manage": {}
+                }
+              },
+              "history": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "enabled": {},
+                  "messages_days": {},
+                  "positions_days": {},
+                  "readings_days": {}
+                }
+              },
+              "homeassistant": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "contact_devices": {},
+                  "contact_entity_prefix": {},
+                  "controls": {},
+                  "hidden_targets": {},
+                  "language": {}
+                }
+              },
+              "messages": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "ascii_only": {},
+                  "clean_received": {},
+                  "confirm_nonce": {},
+                  "dedup_window_s": {},
+                  "ignore_channels": {},
+                  "max_attempts": {},
+                  "publish_channels": {},
+                  "queue_size": {},
+                  "queue_ttl_s": {},
+                  "truncate": {}
+                }
+              },
+              "radio": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "profile": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "manage": {}
+                    }
+                  },
+                  "set_clock": {},
+                  "tcp_unauthenticated": {},
+                  "transport": {}
+                }
+              },
+              "started_at": {},
+              "targets": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "items": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "alert": {},
+                        "alias": {},
+                        "channel_index": {},
+                        "hidden": {},
+                        "key_start": {},
+                        "kind": {},
+                        "prefix": {},
+                        "room": {},
+                        "suffix": {}
+                      }
+                    }
+                  },
+                  "total": {},
+                  "truncated": {}
+                }
+              },
+              "telemetry": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "ask": {},
+                  "ask_types": {},
+                  "enabled": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
     "contact": {
       "address": "{base_topic}/{node_id}/contact",
       "messages": {
@@ -573,10 +734,15 @@
                     "contact_key": {},
                     "direction": {},
                     "hops": {},
+                    "id": {},
                     "kind": {},
                     "name": {},
+                    "queued_at": {},
+                    "reason": {},
                     "snr_db": {},
                     "state": {},
+                    "suspect": {},
+                    "target": {},
                     "text": {}
                   }
                 }
@@ -616,6 +782,79 @@
         "node_id": {
           "description": "`[mqtt] node_id`",
           "default": "radio1"
+        }
+      }
+    },
+    "homeassistant_draft_kind_chat": {
+      "address": "{base_topic}/{node_id}/homeassistant/draft/{kind}/{chat}",
+      "messages": {
+        "homeassistant_draft_kind_chat": {
+          "name": "homeassistant_draft_kind_chat",
+          "contentType": "application/json",
+          "summary": "a document; an empty retained message deletes it when the chat goes",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "text": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "kind": {
+          "description": "the kind of a chat in Home Assistant: `target` or `contact`",
+          "examples": [
+            "target",
+            "contact"
+          ]
+        },
+        "chat": {
+          "description": "a chat in Home Assistant: a target's alias, or a contact's key",
+          "examples": [
+            "family"
+          ]
+        }
+      }
+    },
+    "homeassistant_draft_kind_chat_request": {
+      "address": "{base_topic}/{node_id}/homeassistant/draft/{kind}/{chat}/request",
+      "messages": {
+        "homeassistant_draft_kind_chat_request": {
+          "name": "homeassistant_draft_kind_chat_request",
+          "contentType": "application/json",
+          "summary": "JSON {\"text\": \"...\"}: keep the text as the chat's draft, or {\"send\": true}: send the draft; QoS 0 from Home Assistant; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        },
+        "kind": {
+          "description": "the kind of a chat in Home Assistant: `target` or `contact`",
+          "examples": [
+            "target",
+            "contact"
+          ]
+        },
+        "chat": {
+          "description": "a chat in Home Assistant: a target's alias, or a contact's key",
+          "examples": [
+            "family"
+          ]
         }
       }
     },
@@ -1410,6 +1649,60 @@
         }
       }
     },
+    "pending": {
+      "address": "{base_topic}/{node_id}/pending",
+      "messages": {
+        "pending": {
+          "name": "pending",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "messages": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "attempt": {},
+                    "channel_index": {},
+                    "contact_key": {},
+                    "id": {},
+                    "kind": {},
+                    "max_attempts": {},
+                    "name": {},
+                    "queued_at": {},
+                    "step": {
+                      "x-values": [
+                        "queued",
+                        "sent"
+                      ]
+                    },
+                    "target": {},
+                    "text": {}
+                  }
+                }
+              },
+              "total": {},
+              "truncated": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
     "received": {
       "address": "{base_topic}/{node_id}/received",
       "messages": {
@@ -2019,6 +2312,24 @@
         }
       ]
     },
+    "receive_config": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/config"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/config/messages/config"
+        }
+      ]
+    },
     "receive_contacts": {
       "action": "receive",
       "channel": {
@@ -2181,6 +2492,42 @@
         }
       ]
     },
+    "receive_homeassistant_draft_kind_chat": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/homeassistant_draft_kind_chat"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homeassistant_draft_kind_chat/messages/homeassistant_draft_kind_chat"
+        }
+      ]
+    },
+    "receive_homeassistant_draft_kind_chat_request": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/homeassistant_draft_kind_chat_request"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homeassistant_draft_kind_chat_request/messages/homeassistant_draft_kind_chat_request"
+        }
+      ]
+    },
     "receive_homeassistant_show_hidden": {
       "action": "receive",
       "channel": {
@@ -2232,6 +2579,24 @@
       "messages": [
         {
           "$ref": "#/channels/nodes/messages/nodes"
+        }
+      ]
+    },
+    "receive_pending": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/pending"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/pending/messages/pending"
         }
       ]
     },
@@ -2358,6 +2723,24 @@
       "messages": [
         {
           "$ref": "#/channels/command/messages/command"
+        }
+      ]
+    },
+    "send_config": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/config"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/config/messages/config"
         }
       ]
     },
@@ -2502,6 +2885,24 @@
       "messages": [
         {
           "$ref": "#/channels/history/messages/history"
+        }
+      ]
+    },
+    "send_homeassistant_draft_kind_chat": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homeassistant_draft_kind_chat"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homeassistant_draft_kind_chat/messages/homeassistant_draft_kind_chat"
         }
       ]
     },
@@ -3042,6 +3443,24 @@
       "messages": [
         {
           "$ref": "#/channels/nodes/messages/nodes"
+        }
+      ]
+    },
+    "send_pending": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/pending"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/pending/messages/pending"
         }
       ]
     },

@@ -318,8 +318,8 @@ def test_reason_codes_read_as_texts_and_an_unknown_one_stays_a_code() -> None:
     documented = {
         delivery: """no_acknowledgement unknown_contact unknown_target ambiguous_target
             not_a_companion channel_not_configured too_long too_large invalid_utf8 empty
-            retained queue_full queue_ttl no_radio airtime_budget exceeds_airtime_burst
-            internal_error""",
+            retained queue_full stopping queue_ttl no_radio airtime_budget
+            exceeds_airtime_burst internal_error""",
         contact: """invalid_request invalid_link unsupported_link unsupported_type unknown_node
             unknown_contact management_off own_key protected busy no_radio untested_firmware
             rate_limited already_contact look_alike table_full not_confirmed outcome_unknown

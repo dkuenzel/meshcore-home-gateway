@@ -282,6 +282,11 @@ class Bus(Protocol):
     on_ha_offline: list[Callable[[], None]]
     on_ha_device: list[Callable[[str, bytes, bool], None]]
     on_show_hidden: list[Callable[[], None]]
+    # a request on a chat's draft (kind, id, payload, retained), and the broker's retained copy
+    # of a draft (kind, id, payload), from Home Assistant's chats (drafts.py)
+    on_draft_request: list[Callable[[str, str, bytes, bool], None]]
+    on_draft_retained: list[Callable[[str, str, bytes], None]]
+    on_stopping: list[Callable[[], None]]  # the gateway stops: last publishes before the end
 
     async def start(self) -> None: ...
     async def stop(self) -> None: ...

@@ -53,6 +53,28 @@ jobs:
       - name: Discovery, payloads and the documented automations against Home Assistant
         run: make ha-test HA_PYTHON=python
 
+  # The same suite on Home Assistant 2026.11, with its own test plugin and lock (docs/testing.md).
+  # `make ha-lock HA_SERIES=2026.11` writes the lock once the cooldown admits the series; the
+  # suite runs from the commit that adds it, and until then the job only says so.
+  homeassistant-2026-11:
+    name: Home Assistant contract (2026.11)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Not tested yet
+        if: hashFiles('home-assistant/requirements-2026.11.txt') == ''
+        run: echo "::notice::no home-assistant/requirements-2026.11.txt yet (make ha-lock HA_SERIES=2026.11 after the cooldown)"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: hashFiles('home-assistant/requirements-2026.11.txt') != ''
+        with:
+          python-version: "3.14"
+      - name: Discovery, payloads and the documented automations against Home Assistant 2026.11
+        if: hashFiles('home-assistant/requirements-2026.11.txt') != ''
+        run: make ha-test HA_SERIES=2026.11 HA_PYTHON=python
+
   # docs/testing.md#tests-against-the-real-firmware: MeshCore's firmware at the pinned release,
   # fetched from GitHub by tag and checked against its commit, built natively; the gateway talks
   # to it through its serial transport on a pseudo terminal. The scenarios run in real time.
@@ -125,7 +147,7 @@ jobs:
   # Tags are not moved or deleted (the tag ruleset).
   release:
     name: tag and release
-    needs: [test, homeassistant, firmware, check, release-plan]
+    needs: [test, homeassistant, homeassistant-2026-11, firmware, check, release-plan]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

@@ -122,9 +122,8 @@ views:
                 state: ["on", "off"]
           - type: markdown
             visibility:
-              - condition: state
-                entity: script.mesh_message
-                state_not: ["on", "off"]
+              - condition: template
+                value_template: '{{ states["script.mesh_message"] is none }}'
             content: |-
               > [!NOTE]
               > _("To write messages here, add the script Mesh message once, as the guide shows (Home Assistant, Dashboard).")
@@ -180,6 +179,7 @@ views:
               {%- elif v == 'empty' -%}_("empty text")
               {%- elif v == 'retained' -%}_("published with the retain flag")
               {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'stopping' -%}_("the gateway was stopping")
               {%- elif v == 'queue_ttl' -%}_("waited too long")
               {%- elif v == 'no_radio' -%}_("no radio")
               {%- elif v == 'airtime_budget' -%}_("airtime used up")

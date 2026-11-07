@@ -25,7 +25,32 @@ def protected_names(config: Config) -> dict[str, str]:
 
 def start_warnings(config: Config) -> list[Text]:
     """What the service logs at its start and `check-config` shows."""
-    return protected_look_alikes(config) + broker_warnings(config) + log_level_warnings(config)
+    return (
+        protected_look_alikes(config)
+        + alias_pairs(config)
+        + broker_warnings(config)
+        + log_level_warnings(config)
+    )
+
+
+def alias_pairs(config: Config) -> list[Text]:
+    """Target aliases that differ only in '-' and '_' (`a-b`, `a_b`): both are valid, but Home
+    Assistant makes the same entity IDs of them, so the notify entity of the target announced
+    later gets `_2`, and nothing tells which is which. One warning per group."""
+    groups: dict[str, list[str]] = {}
+    for target in config.targets:
+        groups.setdefault(target.alias.replace("-", "_"), []).append(target.alias)
+    return [
+        # Translators: aliases are two or more target aliases, such as "a-b, a_b"; _2 is the
+        # end of an entity ID
+        Text(
+            "targets {aliases} differ only in '-' and '_': Home Assistant gives their entities "
+            "the same IDs and numbers the later ones (_2); rename all but one",
+            aliases=", ".join(sorted(group)),
+        )
+        for group in groups.values()
+        if len(group) > 1
+    ]
 
 
 def protected_look_alikes(config: Config) -> list[Text]:
