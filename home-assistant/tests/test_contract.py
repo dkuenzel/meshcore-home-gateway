@@ -53,7 +53,7 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.links import contact_link
-from meshcore_home_gateway.views import settings_document
+from meshcore_home_gateway.views import HistoryEntry, history_document, settings_document
 
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "home-assistant.md"
 SENDER = "a1" * 32
@@ -496,6 +496,81 @@ async def test_the_radio_profile_shows_its_status_and_settings(
         "written",
         "manual_add",
     )
+    assert problems(caplog) == []
+
+
+# --- the message history -----------------------------------------------------------------------
+
+
+async def test_the_message_history_shows_the_newest_message_and_outlives_the_gateway(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The `history` document as a timestamp sensor: unknown while it holds no message, with its
+    keys readable; then the newest message's time, the messages as attributes with every key.
+    Its own availability keeps it while the gateway is offline: the messages stay readable."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    sensor = f"sensor.{PREFIX}_message_history"
+    await fire(hass, TOPICS.history, history_document([]), retain=True)
+    empty = hass.states.get(sensor)
+    assert empty.state == "unknown"
+    assert [empty.attributes[k] for k in ("total", "truncated", "messages")] == [0, False, []]
+
+    entries = [
+        HistoryEntry(
+            1_800_000_000.0,
+            "in",
+            "channel",
+            "On my way",
+            channel_index=1,
+            name="Carol",
+            hops=1,
+            snr_db=6.25,
+            target="alerts",
+        ),
+        HistoryEntry(
+            1_800_000_060.0,
+            "out",
+            "contact",
+            "Back soon",
+            contact_key=SENDER,
+            name="Alice",
+            state="confirmed",
+            target="operator",
+            id="1a2b3c4d",
+            queued_at=1_800_000_058.0,
+            suspect=False,
+        ),
+    ]
+    document = history_document(entries)
+    await fire(hass, TOPICS.history, document)
+    history = hass.states.get(sensor)
+    assert (history.state, history.attributes["device_class"]) == (
+        "2027-01-15T08:01:00+00:00",
+        "timestamp",
+    )
+    assert history.attributes["messages"] == document["messages"]
+    assert history.attributes["messages"][0]["queued_at"] == "2027-01-15T08:00:58+00:00"
+
+    await fire(hass, TOPICS.availability, "offline")  # the last will, or a clean stop
+    assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    kept = hass.states.get(sensor)
+    assert (kept.state, kept.attributes["messages"]) == (history.state, document["messages"])
+    assert problems(caplog) == []
+
+
+async def test_the_message_history_comes_back_after_a_restart_of_home_assistant(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Home Assistant restarted while the gateway is offline: the broker's retained history is
+    all it gets, and the sensor shows it; the gateway's availability says offline."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "offline", retain=True)
+    entry = HistoryEntry(1_800_000_000.0, "in", "contact", "hi", SENDER, name="Alice")
+    await fire(hass, TOPICS.history, history_document([entry]), retain=True)
+    history = hass.states.get(f"sensor.{PREFIX}_message_history")
+    assert (history.state, history.attributes["total"]) == ("2027-01-15T08:00:00+00:00", 1)
+    assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
     assert problems(caplog) == []
 
 

@@ -21,6 +21,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Last packet RSSI, SNR | `sensor` (signal strength), disabled by default | `rx` (only with `publish_rx_log`) |
 | Message | `event` (`contact`, `channel`) | `received` |
 | Delivery | `event` (delivery states) | `delivery` |
+| Message history | `sensor` (timestamp), its own availability | `history` → the newest message's `at`; the document as attributes |
 | Command | `event` (configured words) | `command` |
 | Send to *alias* | `notify`, one per target | `send/<alias>` |
 | Contacts, Nodes heard | `sensor` | `contacts` → `total`, `nodes` → `total` |
@@ -40,7 +41,9 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Position in adverts | `binary_sensor` (problem) on each companion's device | `contacts/<key>` → `advert_carries_position` |
 | Battery, MCU temperature, a sensor per reading | `sensor` (their class and unit, state class `measurement`) on a companion's device, with its first answer that carries them | `contacts/<key>` → `battery_v`, `mcu_temperature_c`, `readings`; available while `telemetry_current` |
 
-All entities share the availability topic, so they become unavailable when the bridge is offline.
+All entities share the availability topic, so they become unavailable when the bridge is offline,
+except *Message history*: its availability is any message on its own topic `history`, which the
+gateway never clears, so the messages stay readable while the gateway is offline.
 The document names the radio's model, firmware and key once the radio is known and is sent again
 when they change; unknown fields are left out, because Home Assistant rejects a document with a
 null device field. Components of an earlier run that the configuration no longer has are

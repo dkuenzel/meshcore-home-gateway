@@ -1731,6 +1731,12 @@
      ],
      "platform": "event"
     },
+    "message_history": {
+     "attributes": "<document history>",
+     "device_class": "timestamp",
+     "entity_id": "sensor.<device>_message_history",
+     "platform": "sensor"
+    },
     "node": {
      "attributes": "<document node>",
      "entity_id": "event.<device>_node",

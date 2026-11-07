@@ -23,6 +23,10 @@ format, the command line and Home Assistant discovery are public interfaces
   The history database keeps them in new columns, which 2.0 leaves empty after a downgrade, and
   `history export` adds them at the end of `messages` (`delivery_id` for the id)
   ([mqtt-api.md](docs/mqtt-api.md#history-history)).
+- The sensor *Message history* in Home Assistant: the time of the newest message, and the latest
+  messages in and out as attributes. It stays available while the gateway is offline. The
+  recorder stores the messages with every change unless it excludes the sensor
+  ([home-assistant.md](docs/home-assistant.md#privacy)).
 
 ### Changed
 

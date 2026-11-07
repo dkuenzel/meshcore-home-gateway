@@ -61,6 +61,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `binary_sensor.meshcore_home_gateway_radio1_degraded` | problem, diagnostic | *Gateway degraded*: on while a part of the gateway is not as it should be (the history broken, the state file unwritable, an exclusion unsaved, a bug caught in the last hour, the host holding it up, the disk nearly full); the `health` section as attributes ([mqtt-api.md](mqtt-api.md#state-state), [what to do](deployment.md#5-troubleshooting)); unknown with a gateway of an earlier version |
 | `event.meshcore_home_gateway_radio1_message` | event: `contact`, `channel` | every received message |
 | `event.meshcore_home_gateway_radio1_delivery` | event: `queued` … `rejected` | delivery steps of outgoing messages |
+| `sensor.meshcore_home_gateway_radio1_message_history` | timestamp | *Message history*: the time of the newest message in or out, `unknown` while there is none; the `history` document as attributes `messages` (the latest 50 at most, newest first, with their keys as in [mqtt-api.md](mqtt-api.md#history-history)), `total` and `truncated`. It stays available while the gateway is offline, so the messages stay readable |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
@@ -355,7 +356,7 @@ advert no longer carries it.
 | a day without an answer | `no_answer` (asked less and less, up to every 6 hours), or `no_path` when the radio lost its path |
 | comes back | asked at least every 30 minutes (or its interval, if longer): `answering`, all available, event `answered` |
 | the radio unplugged | *Telemetry status* `paused` with `no_radio` at once; an hour after its last answer `away`, its tracker and sensors `unavailable`; no event |
-| the gateway restarts | every gateway entity `unavailable` for the seconds the restart takes; then the states come back from its state file and the readings from its history: nothing expires; if the radio does not come back, as for the radio unplugged |
+| the gateway restarts | every gateway entity but *Message history* `unavailable` for the seconds the restart takes; then the states come back from its state file and the readings from its history: nothing expires; if the radio does not come back, as for the radio unplugged |
 | *Telemetry* switched off | at once `excluded`, its telemetry sensors `unavailable`; event *Contact* `excluded` |
 | *Telemetry* switched on | `waiting`, asked at once (as the airtime lanes allow); values with its next answer; event *Contact* `included`, then `answered` |
 
@@ -1136,14 +1137,17 @@ long, is in [privacy.md](privacy.md).
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in
-`.storage/core.restore_state` (restored after a restart). To keep them out of the history,
-exclude the message entities from the recorder, those of the contacts with one pattern:
+`.storage/core.restore_state` (restored after a restart). *Message history* holds the latest
+messages in and out as attributes, so the recorder stores them again with every message. To keep
+them out of the history, exclude these entities from the recorder, those of the contacts with one
+pattern:
 
 ```yaml
 recorder:
   exclude:
     entities:
       - event.meshcore_home_gateway_radio1_message
+      - sensor.meshcore_home_gateway_radio1_message_history
     entity_globs:
       - event.mesh_*_message*
 ```

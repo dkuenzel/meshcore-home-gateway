@@ -2414,6 +2414,13 @@ msgctxt "home assistant"
 msgid "MeshCore radio"
 msgstr ""
 
+#. sensor (timestamp) of the gateway: the latest messages it received and
+#. sent; its state is the time of the newest one
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Message history"
+msgstr ""
+
 #. event entity of the gateway: its radio heard a node for the first
 #. time
 #: src/meshcore_home_gateway/mqtt/discovery.py

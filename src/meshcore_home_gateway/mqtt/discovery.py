@@ -241,6 +241,21 @@ def discovery_payload(
             state_topic=topics.delivery,
             event_types=[state.value for state in DeliveryState],
         ),
+        # the `history` document: the newest message's time (unknown while there is none), the
+        # messages as attributes. Available while the document is there: the gateway never
+        # clears it, so the messages stay readable while the gateway is offline.
+        "message_history": component(
+            "message_history",
+            "sensor",
+            # Translators: sensor (timestamp) of the gateway: the latest messages it received and
+            # sent; its state is the time of the newest one
+            ha_name("Message history"),
+            device_class="timestamp",
+            state_topic=topics.history,
+            value_template="{{ value_json.messages[0].at if value_json.messages else None }}",
+            json_attributes_topic=topics.history,
+            availability=[{"topic": topics.history, "value_template": "{{ 'online' }}"}],
+        ),
         # also with telemetry off: a disabled component that goes takes the whole device away
         "telemetry_status": component(
             "telemetry_status",

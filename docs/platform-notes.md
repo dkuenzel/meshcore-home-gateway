@@ -140,6 +140,7 @@ One line per fact, by section.
 * Automations on an event entity need the `event.received` trigger: a state trigger that skips `unknown` misses the entity's first event, and a trigger on the attribute `event_type` misses the second of two equal events.
 * The new entity triggers, such as `event.received`, reach through a device, area or floor target only the entities without an `entity_category`.
 * While an entity is unavailable, its state drops the state and extra attributes: an event entity's `event_type` and payload attributes are hidden until the gateway is online again.
+* A component of a device document with an `availability` of its own keeps it while the device's availability topic says `offline`; with its state topic as the availability topic and `value_template: "{{ 'online' }}"`, every message there, a retained one after a restart of Home Assistant too, makes it available.
 * Event attributes, message texts and sender keys included, are recorded, and the last event of each event entity is kept as restore data in `.storage/core.restore_state`.
 * The MQTT notify entity publishes only the `message` of `notify.send_message`, with the entity's QoS and without retain; `title` is dropped.
 * From 2026.10.0, `mqtt.publish` and `mqtt.dump` need an administrator when a user starts them; `notify.send_message` does not.
@@ -1245,6 +1246,18 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   needed; the Markdown card of [First steps](home-assistant.md#first-steps) shows "none yet"
   meanwhile. *Check:* receive a message, publish `offline` on the availability topic, and look at
   the entity in *Developer tools → States*.
+* **A component of a device document with an `availability` of its own keeps it while the
+  device's availability topic says `offline`; with its state topic as the availability topic and
+  `value_template: "{{ 'online' }}"`, every message there, a retained one after a restart of Home
+  Assistant too, makes it available.** The device's shared options (`availability`, `qos`,
+  `state_topic` and the others of `SHARED_OPTIONS`) reach only a component that does not set them.
+  *Verified:* 2026.10.2 and 2026.11.0,
+  `test_the_message_history_shows_the_newest_message_and_outlives_the_gateway` and
+  `test_the_message_history_comes_back_after_a_restart_of_home_assistant`; source
+  `components/mqtt/discovery.py` lines 335-357 at 2026.10.2 and 395-417 at 2026.11.0
+  (`_merge_common_device_options`), `components/mqtt/schemas.py` lines 64-76 at 2026.10.2
+  (`SHARED_OPTIONS`). *Here:* *Message history* reads the retained `history` document, which the
+  gateway never clears, so the messages stay readable while it is offline. *Check:* `make ha-test`.
 * **Event attributes, message texts and sender keys included, are recorded, and the last event of
   each event entity is kept as restore data in `.storage/core.restore_state`.** The event platform
   keeps only `event_types` out of the recorder. *Verified:* 2026.10.0, source

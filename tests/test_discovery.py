@@ -36,7 +36,9 @@ from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.views import (
+    HistoryEntry,
     contacts_document,
+    history_document,
     nodes_document,
     settings_document,
     stats_document,
@@ -191,6 +193,7 @@ def test_entities_and_their_sources() -> None:
         "radio_clock_offset",
         "radio_link_contested",
         "degraded",
+        "message_history",
     }
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -218,12 +221,40 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.contacts: contacts_document(mesh),
         TOPICS.nodes: nodes_document(mesh),
         TOPICS.settings: settings_document(ProfileReport("auto", 14, True, False, {}, {}), 0.0),
+        TOPICS.history: history_document([]),
     }
     for topic, document in documents.items():
         assert _template_keys(cmps, topic) <= set(document), topic
     assert _template_keys(cmps, TOPICS.contacts) >= {"total", "remote_cli_total"}
     for counter in ("packets_received", "packets_sent", "receive_errors", "uptime"):
         assert cmps[counter]["enabled_by_default"] is False
+
+
+HISTORY_STATE = (  # the newest message's time; none in an empty history: unknown
+    "{{ value_json.messages[0].at if value_json.messages else None }}"
+)
+
+
+def test_the_message_history_is_a_timestamp_sensor_that_outlives_the_gateway() -> None:
+    """The `history` document as a sensor: its state the newest message's time, the document its
+    attributes. Its own availability, on its own topic, keeps it available while the gateway is
+    offline, so that the messages stay readable."""
+    history = discovery_payload(CONFIG, TOPICS)["cmps"]["message_history"]
+    assert history == {
+        "p": "sensor",
+        "unique_id": "meshcore_home_gateway_radio-1_message_history",
+        "default_entity_id": "sensor.meshcore_home_gateway_radio-1_message_history",
+        "name": "Message history",
+        "device_class": "timestamp",
+        "state_topic": "meshcore/radio-1/history",
+        "value_template": HISTORY_STATE,
+        "json_attributes_topic": "meshcore/radio-1/history",
+        "availability": [{"topic": "meshcore/radio-1/history", "value_template": "{{ 'online' }}"}],
+    }
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    assert discovery_payload(off, TOPICS)["cmps"]["message_history"] == history  # no control
+    newest = history_document([HistoryEntry(1_800_000_000.0, "in", "channel", "Hi")])
+    assert newest["messages"][0]["at"] == "2027-01-15T08:00:00+00:00"  # what the template reads
 
 
 def test_the_profile_sensor_names_every_status_the_document_has() -> None:
