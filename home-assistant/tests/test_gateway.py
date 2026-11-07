@@ -415,7 +415,7 @@ async def test_settings_read_the_configuration_the_gateway_announces(
     assert row(said, "Command senders") == "1"
     assert row(said, "Command codes") == "off"
     assert "<code>[radio.profile]</code> <code>manage</code>" in said
-    assert "<code>[commands]</code> <code>codes</code>" in said
+    assert "<code>[commands]</code> <code>codes_file</code>" in said
     assert row(said, "This dashboard") == dashboard.__version__
     codes = document | {"commands": {"senders": 1, "codes": True, "reply": "none"}}
     await fire(

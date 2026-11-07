@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from meshcore_home_gateway import __version__, dashboard, i18n, outbox
+from meshcore_home_gateway import __version__, config_view, dashboard, i18n, outbox
 from meshcore_home_gateway.catalog import Entry, read_po
 from meshcore_home_gateway.config import Config, load_config, parse_config
 from meshcore_home_gateway.core import telemetry
@@ -2537,12 +2537,51 @@ def test_settings_show_what_the_administrator_set_and_change_nothing() -> None:
         ("contacts", "heard_nodes"),
         ("homeassistant", "controls"),
         ("radio.profile", "manage"),
-        ("commands", "codes"),
+        ("commands", "codes_file"),
     ):
         assert any(f"<code>[{section}]</code> <code>{key}</code>" in t for t in tables), key
     assert any(
         f"<td>This dashboard</td><td>{rules.VERSION}</td>" in t for t in rules.texts(settings)
     )
+
+
+def _configuration_keys() -> dict[str, set[str]]:
+    """The keys of each section's table in docs/configuration.md, by the section's name."""
+    found: dict[str, set[str]] = {}
+    section = None
+    for line in (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            match = re.fullmatch(r"## `\[([\w.]+)\]`", line)
+            section = match.group(1) if match else None
+        elif section and (key := re.match(r"\| `(\w+)` \|", line)):
+            found.setdefault(section, set()).add(key.group(1))
+    return found
+
+
+def test_settings_name_the_files_keys_and_read_what_the_document_still_has() -> None:
+    """Each key Settings names is one of its section in docs/configuration.md, where the
+    administrator finds it: `[commands] codes_file`, not the document's `codes`; and each
+    value it reads from *Configuration* is one the document still has (config_view)."""
+    document = config_view.shown_settings(config())
+    files = _configuration_keys()
+    settings = view_of("settings")
+    tables = [t for t in rules.texts(settings) if "<th>What it means</th>" in t]
+    named = re.findall(r"<code>\[([\w.]+)\]</code>((?: <code>\w+</code>)+)", "".join(tables))
+    assert len(named) >= 18
+    for section, keys in named:
+        for key in re.findall(r"<code>(\w+)</code>", keys):
+            assert key in files.get(section, set()), f"[{section}] {key}"
+    read = 0
+    for card in rules.texts(settings):
+        bound = dict(re.findall(r"set (\w+) = state_attr\(c, '(\w+)'\)", card))
+        for name, key in re.findall(r"\b(\w+)\.get\('(\w+)'\)", card):
+            if bound.get(name) in document:
+                assert key in document[bound[name]], f"{bound[name]}.{key}"
+                read += 1
+    assert read >= 25
+    assert "<code>[commands]</code> <code>codes_file</code>" in "".join(tables)
+    assert "a code that changes every 30 seconds" in "".join(tables)
+    assert "a command also needs a code" not in "".join(tables)  # not a sender without one
 
 
 # the longest word the last column of a Settings table takes at 360 px beside the other two (the

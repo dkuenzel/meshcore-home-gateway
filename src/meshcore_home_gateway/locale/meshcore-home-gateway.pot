@@ -3325,12 +3325,6 @@ msgctxt "dashboard"
 msgid "On the radio"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "On: a command also needs a code that changes every 30 seconds."
-msgstr ""
-
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3352,6 +3346,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On: the gateway asks that person's device now and then for its position and battery."
+msgstr ""
+
+#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "On: the senders your administrator gave a code secret end each command with a code that changes every 30 seconds."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
