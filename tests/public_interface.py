@@ -487,8 +487,14 @@ class _Topic:
 
 def mqtt(tmp: Path) -> dict[str, Any]:
     # the scenario's clock stands still: the `nodes` document goes out with every change, not
-    # at most every NODES_DOCUMENT_INTERVAL_S as in a run (SEC-011)
-    with mock.patch.object(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0):
+    # at most every NODES_DOCUMENT_INTERVAL_S as in a run (SEC-011); the Homie device goes out
+    # at the loop's next turn, before the radio's first contact table (without nodes) and after
+    # each change of its nodes, not HOLD_S and SETTLE_S later
+    with (
+        mock.patch.object(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0),
+        mock.patch.object(homie, "HOLD_S", 0.0),
+        mock.patch.object(homie, "SETTLE_S", 0.0),
+    ):
         client, homie_paho = asyncio.run(_published(tmp))
     seen: dict[str, _Topic] = {}
     for topic, payload, retained, qos in client.published + homie_paho.published:
@@ -604,7 +610,9 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     )
     await connection.start()
     homie_paho.on_connect(homie_paho, None, None, SimpleNamespace(is_failure=False), None)
-    await asyncio.sleep(0)
+    # the connection reaches the event loop, and the device's wait for the radio's contacts
+    # (HOLD_S, here 0) ends: the device without nodes
+    await asyncio.sleep(0.01)
     store = JsonStateFile(tmp / "state.json")
     records = ContactDeviceRecords(store)
     devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: T)

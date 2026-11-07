@@ -5,6 +5,7 @@ The parts tell one another through lists of callables, each one a seam for the t
 are connected here (`gateway`). Who tells, when, and the listeners in the order they are called:
 
 * `observer.on_contacts`, the radio's contact table was read: `devices.update`;
+  `homie.contacts_read`, with `[homie] enabled`;
 * `observer.on_nodes`, the nodes heard changed: `manage.nodes_changed`;
 * `observer.on_telemetry_exclusion`, a contact was excluded from telemetry or included again:
   `poller.exclusion_changed`; with telemetry off, the saved schedule forgets the contact;
@@ -377,9 +378,10 @@ def gateway(
     if (shown := devices) is not None:
         bus.on_ha_offline.append(lambda: observe(shown.ha_offline))
         bus.on_show_hidden.append(lambda: observe(shown.show_hidden))
-    if homie is not None:
-        observer.on_document.append(homie.document)
-        status.on_document.append(homie.document)
+    if (device := homie) is not None:
+        observer.on_contacts.append(lambda _: device.contacts_read())
+        observer.on_document.append(device.document)
+        status.on_document.append(device.document)
 
     def session(
         transport: Transport, radio_events: asyncio.Queue[RadioEvent], set_clock: bool

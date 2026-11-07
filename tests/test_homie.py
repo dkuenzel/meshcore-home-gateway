@@ -5,16 +5,22 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import paho.mqtt.client as paho
 import pytest
+from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway.config import MqttConfig
 from meshcore_home_gateway.core.telemetry import STATES
-from meshcore_home_gateway.mqtt import homie_client
-from meshcore_home_gateway.mqtt.homie import HomieDevice, device_id
+from meshcore_home_gateway.mqtt import homie, homie_client
+from meshcore_home_gateway.mqtt.homie import HOLD_S, SETTLE_S, HomieDevice, device_id
 from meshcore_home_gateway.mqtt.homie_client import HomieConnection
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.ports import ContactsRead, SendRequest
@@ -23,6 +29,7 @@ from meshcore_home_gateway.radio.session import default_session_factory
 from meshcore_home_gateway.state import CommandLedger, JsonStateFile
 from meshcore_home_gateway.wiring import gateway
 from tests.bridge_harness import FakeBus, make_config
+from tests.conftest import Broker
 from tests.radio_emulator import EmulatedRadio
 
 TOPICS = Topics("meshcore", "radio1")
@@ -47,10 +54,44 @@ def document(key: str, name: str, **fields: Any) -> dict[str, Any]:
     } | fields
 
 
+@dataclass
+class Timer:
+    delay_s: float
+    callback: Callable[[], None]
+    cancelled: bool = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class Timers:
+    """The event loop's timers, fired when the test says."""
+
+    def __init__(self) -> None:
+        self.pending: list[Timer] = []
+
+    def call_later(self, delay_s: float, callback: Callable[[], None]) -> Timer:
+        timer = Timer(delay_s, callback)
+        self.pending.append(timer)
+        return timer
+
+    def delays(self) -> list[float]:
+        return [t.delay_s for t in self.pending if not t.cancelled]
+
+    def fire(self, delay_s: float | None = None) -> None:
+        """Those due after `delay_s` (all: None), and those they start."""
+        while due := [t for t in self.pending if not t.cancelled and delay_s in (None, t.delay_s)]:
+            for timer in due:
+                self.pending.remove(timer)
+                if not timer.cancelled:
+                    timer.callback()
+
+
 class Recorder:
     def __init__(self, limit: int = 50) -> None:
         self.published: list[tuple[str, bytes, bool]] = []
         self.sent: list[SendRequest] = []
+        self.timers = Timers()
         self.device = HomieDevice(
             "radio1",
             "MeshCore radio",
@@ -58,6 +99,7 @@ class Recorder:
             TOPICS,
             publish=lambda t, p, r: self.published.append((t, p, r)),
             send=self.sent.append,
+            call_later=self.timers.call_later,
         )
 
     def latest(self) -> dict[str, bytes]:
@@ -78,6 +120,18 @@ def radio(device: HomieDevice, state: str) -> None:
     device.document(TOPICS.state, {"radio": state, "queue": 0})
 
 
+def started(recorder: Recorder) -> None:
+    """A start as the gateway runs it: the connection, then the radio's first contact table (here
+    without contacts), and the device announced after it."""
+    recorder.device.connected()
+    recorder.device.contacts_read()
+    recorder.timers.fire()
+
+
+def states(published: list[tuple[str, bytes, bool]]) -> list[bytes]:
+    return [payload for topic, payload, _ in published if topic == f"{BASE}/$state"]
+
+
 @pytest.mark.parametrize(
     ("node_id", "expected"),
     [("radio1", "meshcore-radio1"), ("home_2", "meshcore-home-2"), ("a-b_c", "meshcore-a-b-c")],
@@ -88,12 +142,17 @@ def test_the_device_id_is_a_homie_id_of_the_node_id(node_id: str, expected: str)
 
 
 def test_the_device_announces_itself_and_its_state_follows_the_radio() -> None:
-    """Homie 4.0.0: `init` first, every device attribute (`$extensions` empty), then the state:
-    `alert` while the radio is not connected, `ready` once it is. Everything retained."""
+    """Homie 4.0.0: `init` first, which a start keeps until the radio's first contact table has
+    come; then every device attribute (`$extensions` empty) and the state: `alert` while the
+    radio is not connected, `ready` once it is. Everything retained."""
     recorder = Recorder()
     recorder.device.connected()
+    assert recorder.take() == [(f"{BASE}/$state", b"init", True)]
+    recorder.device.contacts_read()  # a radio without contacts
+    assert recorder.take() == []
+    assert recorder.timers.delays() == [SETTLE_S]  # the table's documents come first
+    recorder.timers.fire()
     assert recorder.take() == [
-        (f"{BASE}/$state", b"init", True),
         (f"{BASE}/$homie", b"4.0.0", True),
         (f"{BASE}/$name", b"MeshCore radio", True),
         (f"{BASE}/$extensions", b"", True),
@@ -112,8 +171,9 @@ def test_the_device_announces_itself_and_its_state_follows_the_radio() -> None:
 def test_a_companion_is_a_node_with_its_values_and_a_settable_send() -> None:
     recorder = Recorder()
     radio(recorder.device, "connected")
+    recorder.device.contacts_read()
     contact(recorder.device, ALICE, "Alice")
-    recorder.device.connected()
+    recorder.device.connected()  # after the first table: at once
     node = f"{BASE}/{ALICE}"
     assert recorder.latest() == {
         f"{BASE}/$state": b"ready",
@@ -148,8 +208,9 @@ def test_a_companion_is_a_node_with_its_values_and_a_settable_send() -> None:
 
 def test_a_sensor_has_no_send_and_an_unknown_value_is_cleared() -> None:
     recorder = Recorder()
-    recorder.device.connected()
+    started(recorder)
     contact(recorder.device, BOB, "Bob", type="sensor", battery_v=None, latitude=None)
+    recorder.timers.fire()
     node = f"{BASE}/{BOB}"
     held = recorder.latest()
     assert held[f"{node}/$properties"] == b"battery,position,last-heard,telemetry-state"
@@ -168,16 +229,19 @@ def test_a_change_of_the_nodes_goes_out_between_init_and_ready() -> None:
     the state, and the topics of a node that is gone are cleared."""
     recorder = Recorder()
     radio(recorder.device, "connected")
-    recorder.device.connected()
+    started(recorder)
     recorder.take()
     contact(recorder.device, ALICE, "Alice")
+    recorder.timers.fire()
     published = recorder.take()
     assert published[0] == (f"{BASE}/$state", b"init", True)
     assert published[1] == (f"{BASE}/$nodes", ALICE.encode(), True)
     assert published[-1] == (f"{BASE}/$state", b"ready", True)
     contact(recorder.device, BOB, "Bob")
+    recorder.timers.fire()
     assert (f"{BASE}/$nodes", f"{ALICE},{BOB}".encode(), True) in recorder.take()
     recorder.device.document(TOPICS.contact(ALICE), None)
+    recorder.timers.fire()
     published = recorder.take()
     assert published[0] == (f"{BASE}/$state", b"init", True)
     assert published[1] == (f"{BASE}/$nodes", BOB.encode(), True)
@@ -188,12 +252,108 @@ def test_a_change_of_the_nodes_goes_out_between_init_and_ready() -> None:
     assert not any(t.startswith(f"{BASE}/{ALICE}") for t in recorder.latest())
 
 
+FIVE = [f"{n}{n}" * 32 for n in "12345"]
+
+
+def test_a_start_announces_the_device_once_with_its_nodes() -> None:
+    """The connection comes up before the radio's contacts (#97): the device stays `init` until
+    the first table has come, then goes out once, with all its nodes, each topic once, instead of
+    once more for every contact."""
+    recorder = Recorder()
+    device = recorder.device
+    device.connected()
+    radio(device, "connected")
+    device.contacts_read()
+    for n, key in enumerate(FIVE):
+        contact(device, key, f"Contact {n}")
+    assert recorder.published == [(f"{BASE}/$state", b"init", True)]
+    recorder.timers.fire()
+    assert states(recorder.published) == [b"init", b"ready"]
+    nodes = [p for t, p, _ in recorder.published if t == f"{BASE}/$nodes"]
+    assert nodes == [",".join(FIVE).encode()]
+    topics = [t for t, _, _ in recorder.published if t != f"{BASE}/$state"]
+    assert len(topics) == len(set(topics)) == 5 + 5 * 21  # attributes, nodes
+
+
+def test_changes_of_the_nodes_go_out_together_after_a_while() -> None:
+    """A table read changes the nodes once for all its contacts, and those that follow within
+    SETTLE_S join it: one more announcement. The values of the nodes there go out at once."""
+    recorder = Recorder()
+    device = recorder.device
+    radio(device, "connected")
+    started(recorder)
+    contact(device, ALICE, "Alice")
+    recorder.timers.fire()
+    recorder.take()
+    device.contacts_read()
+    contact(device, ALICE, "Alice", battery_v=4)
+    contact(device, BOB, "Bob")
+    contact(device, CAROL, "Carol")
+    assert recorder.take() == [(f"{BASE}/{ALICE}/battery", b"4.0", True)]
+    assert recorder.timers.delays() == [SETTLE_S]
+    device.document(TOPICS.contact(CAROL), None)  # gone again before the settle
+    assert recorder.timers.delays() == [SETTLE_S]
+    recorder.timers.fire()
+    published = recorder.take()
+    assert states(published) == [b"init", b"ready"]
+    assert [p for t, p, _ in published if t == f"{BASE}/$nodes"] == [f"{ALICE},{BOB}".encode()]
+    assert not any(t.startswith(f"{BASE}/{CAROL}") for t, _, _ in published)
+    recorder.timers.fire()
+    assert recorder.take() == []  # nothing changed since
+
+
+def test_without_a_contact_table_the_device_goes_out_after_hold_s() -> None:
+    """A radio that does not connect: the device is announced after HOLD_S as it is, `alert`,
+    with the documents it has (those of the last run that a start publishes again); a reconnect
+    meanwhile does not start the wait again. The first table then changes the nodes as any."""
+    recorder = Recorder()
+    device = recorder.device
+    device.connected()
+    radio(device, "disconnected")
+    contact(device, ALICE, "Alice")
+    device.disconnected()
+    device.connected()
+    assert states(recorder.take()) == [b"init", b"init"]
+    assert recorder.timers.delays() == [HOLD_S]
+    recorder.timers.fire()
+    assert recorder.latest()[f"{BASE}/$nodes"] == ALICE.encode()
+    assert recorder.latest()[f"{BASE}/$state"] == b"alert"
+    recorder.take()
+    device.contacts_read()
+    contact(device, BOB, "Bob")
+    recorder.timers.fire()
+    published = recorder.take()
+    assert states(published) == [b"init", b"alert"]
+    assert (f"{BASE}/$nodes", f"{ALICE},{BOB}".encode(), True) in published
+
+    away = Recorder()  # the wait ends while the connection is away: at the next one, at once
+    away.device.connected()
+    away.device.disconnected()
+    away.take()
+    away.timers.fire()
+    assert away.take() == []
+    away.device.connected()
+    assert states(away.take()) == [b"init", b"alert"]
+
+
+def test_a_node_whose_contact_left_takes_no_text_until_the_nodes_change() -> None:
+    recorder = Recorder()
+    device = recorder.device
+    started(recorder)
+    contact(device, ALICE, "Alice")
+    recorder.timers.fire()
+    device.document(TOPICS.contact(ALICE), None)
+    device.message(f"{BASE}/{ALICE}/send/set", b"hello", False)
+    assert recorder.sent == []
+
+
 def test_other_documents_are_not_nodes() -> None:
     recorder = Recorder()
-    recorder.device.connected()
+    started(recorder)
     recorder.take()
     for topic in (TOPICS.contacts, TOPICS.contact_received(ALICE), TOPICS.stats, TOPICS.nodes):
         recorder.device.document(topic, document(ALICE, "Alice"))
+    recorder.timers.fire()
     assert recorder.take() == []
 
 
@@ -202,17 +362,21 @@ def test_at_most_the_limit_chosen_as_for_home_assistant_and_kept() -> None:
     node stays while its contact does, also when one that would come first arrives."""
     recorder = Recorder(limit=2)
     device = recorder.device
+    device.contacts_read()
     contact(device, ALICE, "Alice", heard_at="2026-11-04T09:00:00+00:00")
     contact(device, BOB, "Bob", heard_at="2026-11-04T10:00:00+00:00")
     contact(device, CAROL, "Carol", type="repeater", heard_at="2026-11-04T11:00:00+00:00")
     device.connected()
     assert recorder.latest()[f"{BASE}/$nodes"] == f"{BOB},{ALICE}".encode()
     contact(device, CAROL, "Carol", type="repeater", protected=True)
+    recorder.timers.fire()
     assert recorder.latest()[f"{BASE}/$nodes"] == f"{BOB},{ALICE}".encode()
     device.document(TOPICS.contact(ALICE), None)
+    recorder.timers.fire()
     assert recorder.latest()[f"{BASE}/$nodes"] == f"{BOB},{CAROL}".encode()
 
     fresh = Recorder(limit=3)
+    fresh.device.contacts_read()
     contact(fresh.device, ALICE, "Alice", favourite=True, heard_at=None)
     contact(fresh.device, BOB, "Bob")
     contact(fresh.device, CAROL, "Carol", type="sensor", protected=True, heard_at=None)
@@ -223,13 +387,14 @@ def test_at_most_the_limit_chosen_as_for_home_assistant_and_kept() -> None:
 def test_a_reconnect_publishes_everything_and_clears_what_went_meanwhile() -> None:
     recorder = Recorder()
     device = recorder.device
-    device.connected()
+    started(recorder)
     contact(device, ALICE, "Alice")
     contact(device, BOB, "Bob")
+    recorder.timers.fire()
     device.disconnected()
     device.document(TOPICS.contact(ALICE), None)  # while the connection is away
     recorder.take()
-    device.connected()
+    device.connected()  # after the first table: at once, without waiting
     published = recorder.take()
     assert (f"{BASE}/$homie", b"4.0.0", True) in published  # again, for a broker that lost it
     assert (f"{BASE}/$nodes", BOB.encode(), True) in published
@@ -243,9 +408,10 @@ def test_send_set_hands_the_text_over_as_contacts_send_and_echoes_it() -> None:
     its delivery event tells why; the echo Homie asks for is not retained."""
     recorder = Recorder()
     device = recorder.device
-    device.connected()
+    started(recorder)
     contact(device, ALICE, "Alice")
     contact(device, BOB, "Bob", type="sensor")
+    recorder.timers.fire()
     recorder.take()
     device.message(f"{BASE}/{ALICE}/send/set", b"hello", False)
     assert recorder.sent == [SendRequest(ALICE, b"hello", False, contact=True)]
@@ -315,6 +481,7 @@ def test_the_connection_is_its_own_with_the_devices_last_will() -> None:
         )
         connection.publish("homie/x", b"1", True)  # not connected: dropped
         assert fake.published == []
+        connection.device.contacts_read()
         contact(connection.device, ALICE, "Alice")
         fake.on_connect(fake, None, None, SimpleNamespace(is_failure=False), None)
         await asyncio.sleep(0)
@@ -343,6 +510,33 @@ def test_the_connection_is_its_own_with_the_devices_last_will() -> None:
 
 def calls_of(fake: FakePaho, name: str) -> list[tuple[Any, ...]]:
     return [args for called, args in fake.calls if called == name]
+
+
+def test_a_stop_publishes_nothing_after_disconnected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A change of the nodes that waits for SETTLE_S when the service stops does not go out
+    after `$state` `disconnected`."""
+    monkeypatch.setattr(homie, "SETTLE_S", 0.01)
+    fake = FakePaho()
+
+    async def scenario() -> None:
+        connection = homie_client.homie_adapter(
+            MqttConfig(host="h", node_id="radio1"),
+            50,
+            "MeshCore radio",
+            TOPICS,
+            send=lambda _: None,
+            client_factory=lambda _: fake,
+        )
+        await connection.start()
+        connection.device.contacts_read()
+        fake.on_connect(fake, None, None, SimpleNamespace(is_failure=False), None)
+        await asyncio.sleep(0)
+        contact(connection.device, ALICE, "Alice")  # its node waits for SETTLE_S
+        await connection.stop()
+        await asyncio.sleep(0.05)
+        assert fake.published[-1] == (f"{BASE}/$state", b"disconnected", 1, True)
+
+    asyncio.run(scenario())
 
 
 def test_a_refused_connection_announces_nothing() -> None:
@@ -381,8 +575,12 @@ def test_the_wiring_feeds_the_device_the_documents(tmp_path: Path) -> None:
     alice = codec.ContactRecord(bytes.fromhex(ALICE), 1, 0, 2, "Alice", 100, 100)
     bob = codec.ContactRecord(bytes.fromhex(BOB), 1, 0, 2, "Bob", 100, 100)
     bridge.observer.radio_event(ContactsRead({ALICE: alice, BOB: bob}, 200.0))
+    assert recorder.timers.delays() == [SETTLE_S]  # the table read ended the hold
+    recorder.timers.fire(SETTLE_S)
     assert recorder.latest()[f"{BASE}/{ALICE}/$name"] == b"Alice"
+    assert recorder.timers.delays() == []
     bridge.observer.radio_event(ContactsRead({ALICE: alice}, 201.0))  # Bob left the table
+    recorder.timers.fire()
     assert recorder.latest()[f"{BASE}/$nodes"] == ALICE.encode()
     assert not any(t.startswith(f"{BASE}/{BOB}") for t in recorder.latest())
     bridge.radio.ready.set()
@@ -402,3 +600,77 @@ def test_the_adapter_is_built_with_the_gateways_name_and_limit() -> None:
     assert connection.device.base == BASE
     assert connection.device._limit == 7
     assert connection.device._name == "Radio"
+
+
+def retained_under(broker: Broker, base: str) -> dict[str, bytes]:
+    """What a controller that subscribes now gets: the messages under `base` the broker
+    retained (those it passes on as they come have the retain flag cleared)."""
+    found: dict[str, bytes] = {}
+    subscribed = threading.Event()
+
+    def message(_c: Any, _u: Any, message: Any) -> None:
+        if message.retain:
+            found[message.topic] = bytes(message.payload)
+
+    client = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    client.on_subscribe = lambda *_: subscribed.set()
+    client.on_message = message
+    client.connect(broker.host, broker.port)
+    client.loop_start()
+    try:
+        client.subscribe(f"{base}/#", qos=1)
+        assert subscribed.wait(5)
+        time.sleep(0.3)  # the broker sends the retained messages after the SUBACK
+    finally:
+        client.disconnect()  # first: loop_stop() alone waits for the network loop's timeout
+        client.loop_stop()
+    return found
+
+
+@pytest.mark.broker
+def test_with_broker_a_late_subscriber_sees_the_device_as_announced(
+    broker: Broker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Through Mosquitto: before the radio's first contact table a controller that subscribes
+    sees the device `init`, not `ready` without its nodes (#97); after it, every device attribute
+    but `$extensions`. That one is empty, and an empty retained message removes the topic's
+    retained message (MQTT 3.1.1, section 3.3.1.3): only the controllers subscribed at the time
+    get it. Homie 4.0.0 has no other form of an empty value (mqtt-api.md)."""
+    monkeypatch.setattr(homie, "SETTLE_S", 0.05)
+
+    async def wait_for(check: Callable[[dict[str, bytes]], bool]) -> dict[str, bytes]:
+        deadline = time.monotonic() + 5
+        while not check(held := await asyncio.to_thread(retained_under, broker, BASE)):
+            assert time.monotonic() < deadline, held
+        return held
+
+    async def scenario() -> None:
+        config = MqttConfig(host=broker.host, port=broker.port, node_id="radio1", keepalive_s=10)
+        connection = homie_client.homie_adapter(
+            config, 50, "MeshCore radio", TOPICS, send=lambda _: None
+        )
+        await connection.start()
+        try:
+            device = connection.device
+            await wait_for(lambda held: f"{BASE}/$state" in held)  # connected
+            radio(device, "connected")
+            await asyncio.sleep(0.1)
+            held = await asyncio.to_thread(retained_under, broker, BASE)
+            assert held == {f"{BASE}/$state": b"init"}
+            device.contacts_read()
+            contact(device, ALICE, "Alice")
+            await wait_for(lambda held: held.get(f"{BASE}/$state") == b"ready")
+            held = await asyncio.to_thread(retained_under, broker, BASE)  # a controller later
+            attributes = {t: p for t, p in held.items() if t.count("/") == 2}
+            assert attributes == {
+                f"{BASE}/$homie": b"4.0.0",
+                f"{BASE}/$name": b"MeshCore radio",
+                f"{BASE}/$implementation": b"meshcore-home-gateway",
+                f"{BASE}/$nodes": ALICE.encode(),
+                f"{BASE}/$state": b"ready",
+            }
+            assert held[f"{BASE}/{ALICE}/position"] == b"47.5,8.25"
+        finally:
+            await connection.stop()
+
+    asyncio.run(scenario())

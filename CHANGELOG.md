@@ -96,6 +96,13 @@ format, the command line and Home Assistant discovery are public interfaces
   now; before, its contacts' names, battery, last heard and position stayed on the broker (#96).
   Switching `[homie]` off leaves the device there: the privacy page lists it, and
   [mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device) says how to clear it.
+- A start announces the Homie device once, with its nodes. It stays `init` until the radio's
+  first contact table has come (at most 60 s), and a change of its nodes waits 5 s for those that
+  follow it. Before, it went out `ready` without nodes and then once more for every contact, up
+  to 50 times a start, each making a controller read it again (#97). Its empty `$extensions`, and
+  `$nodes` while it has no node, reach only the controllers subscribed at the time: an empty
+  retained message removes the retained one, and Homie 4.0.0 has no other form of an empty value
+  ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)).
 
 ## [2.0.0] - 2026-11-07
 
