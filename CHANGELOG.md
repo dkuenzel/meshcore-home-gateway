@@ -122,6 +122,43 @@ format, the command line and Home Assistant discovery are public interfaces
   due*, not by a revert of its version, which the release plan refuses; a run of `release.yml`
   that failed before it published is re-run on the same tag
   ([development.md](docs/development.md#release)).
+- With `set_clock`, the radio is no longer restarted for a clock 1 minute to 1 hour ahead when
+  no contact changed for longer than `set_clock_max_days`, or the host's clock is before the
+  release: the restart starts the clock at the newest contact time, and the next connect then
+  refused to move it forward, which left the radio weeks behind. The log says why it waits
+  ([deployment.md](docs/deployment.md#5-troubleshooting)) (#86).
+- *Radio link taken over* (`radio_link_contested`) is on also when the radio restarted after it
+  closed the gateway's TCP link: the firmware closes it only for another client, and that client
+  can restart the radio to hide that it read the key. Before, the restart read as a harmless one,
+  and the log names it now (`radio: the radio closed the TCP connection, then restarted`). The
+  gateway's own restart for the clock no longer counts as a link the radio closed. The guide
+  calls the sensor what it is, a best effort: `false` is no proof
+  ([mqtt-api.md](docs/mqtt-api.md#state-state)) (#88).
+- Names are compared without any of the characters drawn as nothing, not only without the
+  format characters: a node named `Bob` with a variation selector, a grapheme joiner, a Hangul
+  filler or a braille blank added gets the `name_taken` mark, ` (name taken)` in *Add heard
+  node* and, once added, its key's digits in its device name. A combining mark that shows, such
+  as an accent, still makes another name. A name of such characters alone, such as one Hangul
+  filler, is still a name: a blank one, the same as every other blank name; one of format
+  characters alone is none. One table of these characters serves the names and what
+  `add_contact` drops from a copied key or link
+  ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)) (#89).
+- The guide names a limit of `suspect`: its bound takes every hop at the radio's coding rate,
+  so where repeaters or the recipient send at a faster one (4/5 against the radio's 4/8), a
+  genuine acknowledgement of a long text can read `suspect`. Set the gateway's radio to the
+  fastest coding rate of its mesh
+  ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#90).
+- The guide says what `at` of a received message in `history` and `received_at` of `received`
+  are: when the gateway took the message from the radio, whose frame holds no time of its own.
+  The messages that waited in the radio while the gateway was away share the time of the
+  connect; of two with one `at`, the one listed first came later. To list them oldest first,
+  reverse the list, then sort it by `at` with a stable sort
+  ([mqtt-api.md](docs/mqtt-api.md#history-history)) (#113).
+- The guide says that contact names, like texts, are published as they came, control
+  characters included, also with `clean_received`, which cleans only texts and the name a
+  channel message claims; and that the 15 KiB of `history` hold fewer messages whose names and
+  texts are full of control characters, about 10, since JSON writes each in 6 bytes
+  ([mqtt-api.md](docs/mqtt-api.md#received-messages-received)) (#114).
 
 ## [2.0.0] - 2026-11-07
 

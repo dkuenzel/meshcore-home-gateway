@@ -323,13 +323,14 @@ sequenceDiagram
   `set_clock_max_days = 0` lifts both bounds. Ahead by more than a minute and at most an hour,
   the session restarts the radio: at start the firmware sets its clock to its newest contact time
   plus a second, also back, and the next connect sets it forward. It does so only when that time
-  is behind the host's, after taking the radio's messages, when no message is queued or being
-  delivered, and at most once a day (the bridge's `may_restart`); the check runs at connect and
-  at every heartbeat. Further ahead, a warning says so: nodes and repeaters ignore the radio's
-  adverts and logins until real time passes the times it sent before, which is fine for minutes
-  but not for days. Command age checks do not use the radio's clock: they compare the sender's
-  timestamp with the host's clock (§7.3). The unit starts after `time-sync.target` where a
-  service provides it.
+  is behind the host's and the bounds above let the next connect, within an hour, set it forward
+  from there (else the restart would leave it days behind, #86), after taking the radio's
+  messages, when no message is queued or being delivered, and at most once a day (the bridge's
+  `may_restart`); the check runs at connect and at every heartbeat. Further ahead, a warning
+  says so: nodes and repeaters ignore the radio's adverts and logins until real time passes the
+  times it sent before, which is fine for minutes but not for days. Command age checks do not
+  use the radio's clock: they compare the sender's timestamp with the host's clock (§7.3). The
+  unit starts after `time-sync.target` where a service provides it.
 * **Messages.** On `MSG_WAITING`, after connecting, and every 5 minutes as a safety net, the session
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
@@ -739,7 +740,7 @@ boundaries and what stands in the way of each; this section is its summary.
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
 | Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
-| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts) | Names are compared as a person reads them (NFKC, case folding, Cyrillic and Greek letters that look Latin, invisible format characters left out): such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007). |
+| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts) | Names are compared as a person reads them (NFKC, case folding, Cyrillic and Greek letters that look Latin, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name): such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007). |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted; a command refused because the broker was unreachable counts too) and within `max_age_s` of the bridge clock. Exact repeats are dropped for an hour, also those of a rejected command. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
@@ -747,7 +748,7 @@ boundaries and what stands in the way of each; this section is its summary.
 | Forged events on the bridge's topics by another broker client (a fake `command` event triggers automations as if an allowlisted sender had sent it) | Topic ACLs: only the bridge user may publish below `<base>/<node>/`, except `send/`. Required when commands are configured (mqtt-api.md, last section); the sender check protects only the radio side. The gateway cannot see the ACL; it warns at start and in `check-config` when it logs in without a user name, or without TLS to a broker beyond its host or link, and with commands configured either is a configuration error until `[mqtt] insecure = true` accepts it. `check-config --broker` logs in once more without credentials and warns when the broker takes that client. |
 | A forged, cleared or stale retained document by another broker client (a forged position in `contacts/<key>` steers a presence automation; an empty one makes the contact's entities unknown) | Topic ACLs, as above: the documents carry no origin, so their consumers trust them because only the gateway may write them ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md), amendment). The gateway subscribes to its retained topics and undoes what another client writes there: its own payload again, or an empty one where it has published nothing in this run, at once and then at most every 10 seconds per topic; the log names the topic once a minute, and says when the gateway cannot read its topics (a refused subscription, or its `online` not back within 10 seconds, as Mosquitto's `acl_file` grants every subscription). A forgery stands until then, and while the gateway is offline (§7.4). |
 | Another broker client takes the gateway's client id, or floods Home Assistant's status topic with birth messages | The default client id has a random part per start, so it cannot be read off the topics (a broker drops a client when another connects with its id). Announcements after birth messages and discovery clears are never postponed by a later one and come at most every 30 s; more than 5 births a minute are logged with the topic. |
-| Unauthenticated TCP companion interface | Prefer USB. Whoever reaches the radio's TCP port controls the radio: the release firmware hands its private key to any client and takes a new one (`ENABLE_PRIVATE_KEY_EXPORT` and `_IMPORT` in its common build flags), and as MeshCore's direct messages have no forward secrecy, the key decrypts every direct message of the radio, also earlier ones recorded from the air; a client can also send any packet, move the radio off the mesh's frequency, reset it, create temporary contacts the contact list never shows, and take messages before the bridge does ([protocol.md](protocol.md) §1). So a TCP radio needs `[radio] tcp_unauthenticated = true`, which the installer asks for with these facts; put the radio in a network that only the bridge's host reaches (a VLAN of its own, a second SSID with client isolation), and leave the two flags out of a firmware built for it. The radio serves one client and closes the link when another one connects: the bridge takes it back after a second, and a link the radio closed while its uptime went on is logged and shown as `radio_link_contested` in `state` for an hour (`core.link`). Nor does the bridge authenticate the radio: a host that takes the radio's address (ARP or DNS spoofing, or while the radio is off) can present an allowlisted key as a contact and forge accepted commands, and it receives the outgoing messages. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
+| Unauthenticated TCP companion interface | Prefer USB. Whoever reaches the radio's TCP port controls the radio: the release firmware hands its private key to any client and takes a new one (`ENABLE_PRIVATE_KEY_EXPORT` and `_IMPORT` in its common build flags), and as MeshCore's direct messages have no forward secrecy, the key decrypts every direct message of the radio, also earlier ones recorded from the air; a client can also send any packet, move the radio off the mesh's frequency, reset it, create temporary contacts the contact list never shows, and take messages before the bridge does ([protocol.md](protocol.md) §1). So a TCP radio needs `[radio] tcp_unauthenticated = true`, which the installer asks for with these facts; put the radio in a network that only the bridge's host reaches (a VLAN of its own, a second SSID with client isolation), and leave the two flags out of a firmware built for it. The radio serves one client and closes the link when another one connects: the bridge takes it back after a second, and a link the radio closed is logged and shown as `radio_link_contested` in `state` for an hour, also when the radio restarted since (`core.link`, #88). Nor does the bridge authenticate the radio: a host that takes the radio's address (ARP or DNS spoofing, or while the radio is off) can present an allowlisted key as a contact and forge accepted commands, and it receives the outgoing messages. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the broker password in a file of its own (`password_file`, which the installer writes), so the configuration, `config answers` and the installer's reconfiguration carry only its path; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
 | Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` with the release workflow and the tag check them (ADR 0013); the tag ruleset keeps tags from being moved or deleted, and CI tags only a commit whose checks passed (ADR 0022). |
@@ -866,11 +867,12 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   that address can forge commands from an allowlisted key. Commands should use USB, or a network
   that only the bridge and the radio can reach.
 * A client that reaches the radio's TCP port can read its private key in a moment, and nothing
-  on the radio shows it afterwards. The bridge sees only a link that the radio closed while it kept
-  running (after 49.7 days its uptime wraps, and a takeover then reads as a restart); a client that
-  connects while the bridge is away leaves no trace at all. Treat a key that may have been read as
-  lost (deployment.md, *Troubleshooting*): with no forward secrecy, a new key protects only what
-  comes after.
+  on the radio shows it afterwards. The bridge sees only a link that the radio closed, which the
+  firmware does only for another client, whether the radio kept running or restarted since (the
+  other client may have restarted it); a client that connects while the bridge is away leaves no
+  trace at all. `radio_link_contested` is a best effort, and `false` is no proof. Treat a key
+  that may have been read as lost (deployment.md, *Troubleshooting*): with no forward secrecy, a
+  new key protects only what comes after.
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
@@ -878,10 +880,12 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   can compute (§7.2). Without `confirm_nonce` a stranger in range can confirm a fixed alert text
   nobody received; with it, the odds are those of guessing 32 bits within the acknowledgement
   wait. `suspect` catches only a forger beside the gateway who answers at once over a path
-  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. The
-  history keeps such a message as `confirmed`; the event and the log tell. The fix belongs in the
-  firmware: an acknowledgement authenticated with the secret the two radios share, for the
-  maintainer to raise with the MeshCore project.
+  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. Its
+  bound takes every hop at the radio's coding rate: a repeater or recipient at a faster one can
+  make a genuine acknowledgement of a long text read `suspect`, unless the radio uses the
+  fastest coding rate of its mesh (#90). The history keeps such a message as `confirmed`; the
+  event and the log tell. The fix belongs in the firmware: an acknowledgement authenticated with
+  the secret the two radios share, for the maintainer to raise with the MeshCore project.
 * A client that may write the gateway's topics can show Home Assistant a forged document until
   the gateway restores it: a round trip, up to 10 seconds if it keeps writing, and as long as it
   likes while the gateway is offline, as it can write `online` to `availability` too. Only the

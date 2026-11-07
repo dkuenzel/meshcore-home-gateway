@@ -364,8 +364,9 @@ def test_a_tcp_link_the_radio_closed_while_running_was_taken_over(
 ) -> None:
     """SEC-003: the radio serves one TCP client and closes the gateway's link when another one
     connects, while its uptime goes on. The gateway takes the link back, warns, and the state
-    says so for an hour. A radio that restarted closed the link too, but its uptime began anew;
-    a link that broke otherwise (unplugged, the network) was not taken."""
+    says so for an hour. A radio that restarted after it closed the link was taken too: the
+    other client may have restarted it (#88). A link that broke otherwise (unplugged, the
+    network) was not taken."""
     caplog.set_level(logging.WARNING)
     radio = EmulatedRadio(contacts=[ALICE])
 
@@ -386,9 +387,11 @@ def test_a_tcp_link_the_radio_closed_while_running_was_taken_over(
             assert "another client connected to it" in caplog.text
 
             caplog.clear()
-            radio.uptime_s = 5  # restarted: no takeover, the earlier one counts for the hour
+            radio.uptime_s = 5  # restarted since it closed the link
             assert (await reconnect(bus, radio.close_link))["radio_link_contested"] is True
-            assert "another client" not in caplog.text
+            assert "radio: the radio closed the TCP connection, then restarted" in caplog.text
+            assert "another client connected to it" in caplog.text
+            assert "kept running" not in caplog.text
 
     scenario(main)
 

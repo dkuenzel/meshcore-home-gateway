@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlencode
 
-from meshcore_home_gateway.core.contacts import NODE_TYPES_ADDED
+from meshcore_home_gateway.core.contacts import COPY_INVISIBLE, NODE_TYPES_ADDED
 from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
 from meshcore_home_gateway.texts import TextError
 
@@ -22,17 +22,9 @@ ADD_PATH = "contact/add"
 _KEY = re.compile(r"[0-9a-fA-F]{64}")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2})+")
 _ONCE = ("public_key", "name", "type")
-# Invisible characters a copy may carry: the soft hyphen, the Arabic letter mark, the zero-width
-# space (the dashboard's breaks in long words), the direction marks, embeddings, overrides and
-# isolates, the invisible operators and the byte order mark. No key, link or card holds one. The
-# joiners (U+200C, U+200D) stay: they belong to a name.
-_INVISIBLE = str.maketrans(
-    "",
-    "",
-    "\u00ad\u061c\u200b\u200e\u200f"
-    + "".join(map(chr, [*range(0x202A, 0x202F), *range(0x2060, 0x2065), *range(0x2066, 0x206A)]))
-    + "\ufeff",
-)
+# Invisible characters a copy may carry and no key, link or card holds (core.contacts, the one
+# table of them). The joiners (U+200C, U+200D) and variation selectors stay: they belong to a name.
+_INVISIBLE = str.maketrans("", "", COPY_INVISIBLE)
 
 
 class LinkError(TextError):

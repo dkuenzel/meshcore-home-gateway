@@ -884,6 +884,17 @@ def test_a_device_name_another_device_has_gets_the_key_digits(tmp_path: Path) ->
     assert renamed["dev"]["name"] == "\u0410LICE"
 
 
+def test_a_name_drawn_as_nothing_another_device_has_gets_the_key_digits(tmp_path: Path) -> None:
+    """#89: a name of a Hangul filler alone shows as a blank name, not as none: a later contact
+    named so gets its key's digits in its device name."""
+    contacts, bus = devices(tmp_path)
+    contacts.update(mesh_of(node(ALICE, "\u3164")))
+    bus.take()
+    contacts.update(mesh_of(node(ALICE, "\u3164"), node(BOB, "\u3164")))
+    names = {key_from_discovery_topic(CONFIG, t): d["dev"]["name"] for t, d in bus.take()}
+    assert names == {BOB: f"\u3164 ({BOB[:8]})"}
+
+
 def test_a_name_without_letters_uses_the_key(tmp_path: Path) -> None:
     contacts, bus = devices(tmp_path)
     contacts.update(mesh_of(node(ALICE, "🙂")))

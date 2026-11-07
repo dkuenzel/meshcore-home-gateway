@@ -19,7 +19,7 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial` |
 | `port` | `5000` | TCP port; only with `tcp` |
 | `tcp_unauthenticated` | `false` | required as `true` with `tcp`, an error with `serial`: says that you know what the TCP interface exposes (below) |
-| `set_clock` | `true` | keep the radio clock on the host's: move it forward when it is behind, at connect and every minute, when the host's clock is plausible (`set_clock_max_days`); restart the radio when it is 1 minute to 1 hour ahead, which sets it back (at most once a day, when no message is being delivered) |
+| `set_clock` | `true` | keep the radio clock on the host's: move it forward when it is behind, at connect and every minute, when the host's clock is plausible (`set_clock_max_days`); restart the radio when it is 1 minute to 1 hour ahead, which sets it back to its newest contact time (at most once a day, when no message is being delivered, and only when the next connect may move it forward from there by `set_clock_max_days`) |
 | `set_clock_max_days` | `30` | the largest step, in days, by which `set_clock` moves a radio clock that was set, 0–3650; a host clock further ahead, before the gateway's release or more than ten years after it is not written (a warning says why). A radio without a clock chip restarts at the newest time it wrote to a contact, so a radio that lay unused needs a larger step once. `0`: no limit (the behaviour of earlier versions) |
 
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it
@@ -34,7 +34,8 @@ alerts and the companions' positions are direct messages. Prefer USB. For TCP, p
 network that only the gateway's host reaches (a VLAN of its own, or a second SSID with client
 isolation), never the household's WiFi, and if you build the firmware yourself, leave the two
 flags out, as their own comment in `platformio.ini` suggests. The gateway tells when another
-client took the link (`radio_link_contested` in [`state`](mqtt-api.md#state-state);
+client took the link while it was connected, as a best effort: a client that connects while the
+gateway is stopped leaves no trace (`radio_link_contested` in [`state`](mqtt-api.md#state-state);
 [deployment.md](deployment.md#5-troubleshooting) says what to do then).
 
 ## `[radio.profile]`
@@ -152,7 +153,7 @@ are judged on it. A message to `contacts/<key>/send` gets neither: that recipien
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
 | `publish_channels` | `targets` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's |
-| `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones; off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
+| `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones, and so from the name a channel message claims; a contact's name stays as it came. Off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
 | `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes; the events and the history carry it as sent, duplicates are judged without the suffix |
 | `alert_targets` | `[]` | [targets](#targetsalias) whose messages leave before the others: an alert overtakes the waiting messages and goes between two attempts of one in flight, which continues after it. A request chooses by its target, so a second target for the same recipient gives a client both ([design §6.2](design.md#62-outbound-path)) |
 

@@ -158,9 +158,15 @@ acknowledgement with the secret the two radios share; the gateway can narrow it:
   acknowledgement takes over the path the radio stored: the message on every hop through the
   repeaters and the acknowledgement on one, at the radio's modulation, without preamble so that
   any firmware's is longer. A forger beside the gateway's radio who answers at once is that fast,
-  and the log warns. One who waits is not caught, nor anything sent to a neighbour or flooded,
-  which a genuine acknowledgement can answer as fast as a forged one; nor an attempt repeated
-  after the radio's link broke. `meshcore-home-gateway send --wait` exits 1 on it.
+  and the log warns. The bound takes every hop at the radio's coding rate. The LoRa header
+  carries the coding rate, so the repeaters and the recipient may send at a faster one, 4/5
+  where the radio uses 4/8: then a genuine acknowledgement of a long text can come sooner and
+  read `suspect` (at SF 8, 62.5 kHz and 4/8, a text of 140 bytes over 2 hops: a bound of 4.5 s,
+  a genuine answer in about 4.2 s). Set the gateway's radio, in the MeshCore app, to the fastest
+  coding rate its mesh uses (#90). One who waits is not caught, nor anything sent to a
+  neighbour or flooded, which a genuine acknowledgement can answer as fast as a forged one; nor
+  an attempt repeated after the radio's link broke. `meshcore-home-gateway send --wait` exits 1
+  on it.
 * **An answer** is the proof an alert that must arrive deserves: the recipient sends a word back
   as a [command](#commands-command), which the gateway checks
   ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)), and the automation
@@ -180,11 +186,14 @@ kept in the history; the log counts them at most once a minute. An accepted comm
 published. The radio has acknowledged them all before the gateway sees them, which spends its
 own transmit time ([design §7.4](design.md#74-residual-risks)).
 
-Texts are published as they came: control and direction characters included, which a terminal,
-a file or a page must not take for instructions
+Texts and names are published as they came: control and direction characters included, which a
+terminal, a file or a page must not take for instructions
 ([development.md](development.md#text-from-the-mesh-and-the-bus)). `[messages] clean_received`
-drops them before publishing ([configuration.md](configuration.md#messages)); commands are
-judged on the text as it came.
+drops them from texts before publishing, and so from the name a channel message claims
+([configuration.md](configuration.md#messages)); commands are judged on the text as it came. A
+contact's name stays as its adverts gave it, also in `sender_name`, `history` and the device
+names in Home Assistant; the command line prints such characters escaped in JSON and as spaces
+in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -205,7 +214,7 @@ judged on the text as it came.
 | `sender_name` | contact name from the same table; for channels the **claimed** name from the text, not authenticated |
 | `target` | alias of a configured target matching the sender or channel, else `null` |
 | `channel_index` | channel messages only |
-| `sent_at` | sender's clock; `received_at` the gateway's clock |
+| `sent_at` | sender's clock; `received_at` the gateway's clock when it took the message from the radio: for one that waited in the radio while the gateway was away, the time of the connect ([`history`](#history-history)) |
 | `snr_db` | signal-to-noise ratio of the last hop, 0.25 dB steps; `null` for legacy frames |
 | `hops` | repeaters a flooded message passed; `null` if it arrived by direct route |
 | `command` | `null` unless the first word is a command word; then `accepted` and `reason` |
@@ -292,10 +301,13 @@ restarting the radio ([design §6.1](design.md#61-radio-session)): far from 0 it
 ([deployment.md](deployment.md#5-troubleshooting)).
 
 `radio_link_contested` is `true` for an hour after another client took the radio's TCP link: the
-radio closed the gateway's connection while it kept running, as it does when another client
-connects, and such a client can control the radio and read its private key
-([configuration.md](configuration.md#radio)). `false` while that has not happened; `null` over
-USB, while the radio is not connected, and when its firmware reports no uptime.
+radio closed the gateway's connection, which it does only when another client connects, whether
+it kept running or restarted since (any client can restart it, also to hide what it did), and
+such a client can control the radio and read its private key
+([configuration.md](configuration.md#radio)). `false` while the gateway saw no such close: it is
+a best effort, not proof. A client that connects while the gateway is stopped or away from the
+radio leaves no trace. `null` over USB, while the radio is not connected, and when its firmware
+reports no uptime.
 
 `contact_link` adds the gateway in the MeshCore app, for example as a QR code (`null` until the
 radio is known). It carries no position.
@@ -520,9 +532,14 @@ of its newest one, also not after a restart.
 `name_taken` marks a node whose name a contact has, a name the gateway goes by (its device in
 Home Assistant, its radio's name when `[radio.profile] name` sets it) or another heard node, as a
 person reads names: compared after NFKC normalisation and case folding, Cyrillic and Greek letters
-that look Latin taken as those, invisible format characters left out. Anyone can name a node
-anything: a stranger may pass for a member of the household. The top-level list names up to 16 of
-them, `name_taken_total` counts them all, also with `heard_nodes = "keys"` or `"off"`.
+that look Latin taken as those, characters drawn as nothing left out (Unicode's default
+ignorable characters of any category, such as variation selectors and Hangul fillers, and every
+format character), the braille blank as a space. A combining mark that shows, such as an accent,
+makes another name. A name of such characters alone, such as one Hangul filler or a braille
+blank, is a blank name, the same as every other blank name; a name of format characters or
+spaces alone is none. Anyone can name a node anything: a stranger may pass for a member of the
+household. The top-level list names up to 16 of them, `name_taken_total` counts them all, also
+with `heard_nodes = "keys"` or `"off"`.
 
 `hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert: while its receive
 delay is 0, only from the advert's own log, `null` without it; with a delay above 0, or one the
@@ -538,7 +555,10 @@ and `look_alike_total` still name the look-alikes ([configuration](configuration
 ## History: `history`
 
 The latest messages in and out (up to 50), newest first. The whole document stays within 15 KiB
-(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). They are
+(before 2.1 only its messages did, and it could pass the bound by up to 43 bytes, #111). The bound
+counts the bytes as published, in which a control character takes 6 (`\u0001`): a few long texts
+from senders whose names and texts are full of them leave about 10 messages in the document, long
+plain ones about 30. The database keeps each of them (`history export`, #114). They are
 kept in the gateway's history database, so they survive a restart ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md),
 [configuration](configuration.md)).
 
@@ -555,6 +575,14 @@ kept in the gateway's history database, so they survive a restart ([ADR 0016](de
                "target": "family", "id": null, "queued_at": null, "suspect": null,
                "reason": null}]}
 ```
+
+`at` is the gateway's clock: for an incoming message when it took the message from the radio,
+for an outgoing one when it became final. The radio does not say when it received a message
+([protocol.md](protocol.md#3-responses)), so the messages that waited in the radio while
+the gateway was away share the time of the connect (#113). Of two with the same `at`, the one
+listed first came later: to list them oldest first, reverse the list, then sort it by `at` with a
+stable sort; or use the list's order. After the host's clock went back, a later message can have
+an earlier `at` and is listed below the earlier one.
 
 `name` is the sender's contact name, for channels the **claimed** name from the text; for
 outgoing messages the recipient. `state` is the final delivery state of an outgoing message

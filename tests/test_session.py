@@ -265,12 +265,21 @@ AHEAD_S = 300  # a radio clock five minutes ahead of the host's
 
 
 async def connect(
-    radio: EmulatedRadio, now: int, may_restart: Callable[[], bool] | None = lambda: True
+    radio: EmulatedRadio,
+    now: int,
+    may_restart: Callable[[], bool] | None = lambda: True,
+    *,
+    max_days: int = 30,
 ) -> tuple[RadioError | None, int | None]:
     """One connect as the service's: what ended it, if anything, and the clock offset."""
     events: asyncio.Queue[RadioEvent] = asyncio.Queue()
     session = CompanionSession(
-        radio, events, wall_clock=lambda: now, command_timeout_s=0.3, flush_settle_s=0.01
+        radio,
+        events,
+        wall_clock=lambda: now,
+        command_timeout_s=0.3,
+        flush_settle_s=0.01,
+        set_clock_max_days=max_days,
     )
     session.may_restart = may_restart
     try:
@@ -340,6 +349,71 @@ def test_a_radio_clock_ahead_stays_when_a_restart_would_not_set_it_back(
     else:
         (warning,) = warnings
         assert f"{ahead} s ahead of the host's and not set back ({reason}" in warning
+
+
+DAY_S = 86_400
+
+
+@pytest.mark.parametrize(
+    ("now", "unchanged_s", "max_days", "refused"),
+    [
+        (START_TIME + 100, 40 * DAY_S, 30, "more than set_clock_max_days = 30"),
+        # the next connect may come later than a few seconds after the restart
+        (START_TIME + 100, 30 * DAY_S - 600, 30, "more than set_clock_max_days = 30"),
+        (START_TIME + 100, 29 * DAY_S, 30, None),
+        (START_TIME + 100, 40 * DAY_S, 60, None),
+        (START_TIME + 100, 40 * DAY_S, 0, None),  # no limit
+        (RELEASED_AFTER - DAY_S, 1000, 30, "before this release: it is wrong"),
+        # wrong now, though a connect an hour later would find it after the release
+        (RELEASED_AFTER - 600, 1000, 30, "before this release: it is wrong"),
+        # the newest contact time is in the hour after the release: the time a restart sets is
+        # after it, the limit holds
+        (RELEASED_AFTER + 1800 + 40 * DAY_S, 40 * DAY_S, 30, "more than set_clock_max_days = 30"),
+    ],
+    ids=[
+        "unchanged-40-days",
+        "within-the-hour-of-the-limit",
+        "unchanged-29-days",
+        "unchanged-40-days-60-allowed",
+        "unchanged-40-days-no-limit",
+        "host-before-the-release",
+        "host-in-the-hour-before-the-release",
+        "unchanged-40-days-since-the-hour-after-the-release",
+    ],
+)
+def test_the_radio_is_restarted_only_when_the_next_connect_can_move_its_clock_forward(
+    caplog: pytest.LogCaptureFixture,
+    now: int,
+    unchanged_s: int,
+    max_days: int,
+    refused: str | None,
+) -> None:
+    """A restart starts the clock at the newest contact time plus a second (BaseChatMesh.cpp:
+    60-70), and the next connect moves it forward only by a plausible step. A restart from which
+    no step would be taken leaves a radio minutes ahead days behind (#86)."""
+    caplog.set_level(logging.WARNING)
+    radio = EmulatedRadio(
+        clock=now + AHEAD_S, contacts=[replace(ALICE, last_modified=now - unchanged_s)]
+    )
+
+    async def main() -> None:
+        ended, offset = await connect(radio, now, max_days=max_days)
+        assert (isinstance(ended, RadioRestartedError), offset) == (refused is None, AHEAD_S)
+        later = await connect(radio, now + 10, max_days=max_days)
+        assert later == (None, 0 if refused is None else AHEAD_S - 10)
+
+    asyncio.run(main())
+    assert radio.reboots == (1 if refused is None else 0)
+    warnings = [r.getMessage() for r in caplog.records if r.getMessage().startswith("radio clock")]
+    if refused is None:
+        assert radio.clock == now + 10
+        assert not [w for w in warnings if "behind the host's" in w]
+    else:
+        assert radio.clock == now + AHEAD_S
+        assert len(warnings) == 2  # one at each connect
+        for warning in warnings:
+            assert "not set back (a restart would leave it at its newest contact time" in warning
+            assert refused in warning
 
 
 def test_the_heartbeat_restarts_the_radio_once_the_bridge_allows_it(
@@ -1217,6 +1291,42 @@ def test_tcp_session_starts_against_the_wifi_firmware_parser() -> None:
         assert not radio.raw_written.startswith(b"\x00")  # no flush over TCP
 
     asyncio.run(main())
+
+
+@pytest.mark.parametrize("at_connect", [True, False], ids=["at-connect", "at-the-heartbeat"])
+def test_a_tcp_link_the_gateway_closed_for_a_restart_was_not_closed_by_the_radio(
+    monkeypatch: pytest.MonkeyPatch, at_connect: bool
+) -> None:
+    """The session closes its transport after REBOOT, while its reader still waits: the end of
+    the stream it then reads is its own close, not the radio's, which would read as another client
+    that took the link and restarted the radio (core.link, #88)."""
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.05)
+    now = START_TIME + 100
+    radio = EmulatedRadio(clock=now + AHEAD_S, contacts=[ALICE])
+    allowed = at_connect
+
+    async def main() -> None:
+        nonlocal allowed
+        events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        with TcpRadioServer(radio) as server:
+            transport = TcpTransport("127.0.0.1", server.port)
+            session = CompanionSession(transport, events, wall_clock=lambda: now)
+            session.may_restart = lambda: allowed
+            try:
+                restart: Awaitable[object] = session.start()
+                if not at_connect:
+                    await asyncio.wait_for(restart, 5)
+                    allowed = True  # the next heartbeat restarts it
+                    restart = session.wait_closed()
+                with pytest.raises(RadioRestartedError):
+                    await asyncio.wait_for(restart, 5)
+                await asyncio.sleep(0.1)  # the reader has seen the end of the stream
+                assert session.closed_by_radio is False
+            finally:
+                await session.close()
+
+    asyncio.run(main())
+    assert radio.reboots == 1
 
 
 def test_a_command_waiting_behind_a_dead_session_is_never_sent() -> None:
