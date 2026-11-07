@@ -151,6 +151,7 @@ class Bridge:
                     await asyncio.wait([telemetry])
                 await self.outbox.finish(tasks["outbox"])  # before the radio: it may await an ack
                 await self._finish_inbound(tasks["radio"])
+                self.outbox.keep()  # last: with the answers to the commands just handled (#92)
                 for task in tasks.values():
                     task.cancel()
         finally:

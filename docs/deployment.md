@@ -404,6 +404,19 @@ editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-con
 systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
 ```
 
+To update, check the configuration with the new version first, then switch to it and install
+the unit of its tag too. The unit changes with releases: since 2.0 it gives a stop 90 s
+(`TimeoutStopSec`), which the gateway needs to wait for the acknowledgement of a message in
+flight; the unit of 1.x gives 20 s.
+
+```sh
+install -m 0755 meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/
+python3 -I /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-X.Y.Z.pyz check-config
+ln -sfn meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
+systemctl daemon-reload && systemctl restart meshcore-home-gateway
+```
+
 The command line's texts follow `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`
 ([configuration.md](configuration.md#language-of-the-command-line)); `LANGUAGE=en` keeps them
 English. The service's log is always English.

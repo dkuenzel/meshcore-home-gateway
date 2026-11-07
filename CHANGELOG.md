@@ -89,9 +89,18 @@ format, the command line and Home Assistant discovery are public interfaces
 - The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
   the one being sent, so a single message that waits reads 0 (#112).
 - A send request or the answer to a command that came while a stop handled the last received
-  messages was published `queued` and then lost: the stop had kept the queue already. It now ends
-  `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
-  stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+  messages was published `queued` and then lost: the stop had kept the queue already. The stop
+  now keeps the queue as its last step, with these requests and those still waiting to be taken.
+  A request after it, such as a press of *Send* as the broker connection closes, ends `rejected`
+  with the new reason `stopping`, which the dashboard shows as "the gateway was stopping"
+  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)) (#92).
+- A stop cut short while it waited up to a minute for an acknowledgement lost every queued
+  message: the queue was written only after the wait. A kill does that, and so does the unit of
+  1.x with `TimeoutStopSec=20`, which a manual installation keeps when it updates only the
+  zipapp. The queue is now in `state.json` from the stop's start, with the message in flight and
+  its attempts, and written again at each change in the stop. The guide for other Linux systems
+  has an update step, which installs the release's unit
+  ([deployment.md](docs/deployment.md#3-other-linux-systems)) (#92).
 - After a command's write of `state.json` failed (a full disk), `state_file` stayed `unwritable`
   and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
   which can take hours on a quiet system. The gateway now writes the file again within a minute,

@@ -113,3 +113,11 @@ level), `tests/test_outbox.py` (the order), `tests/test_state.py` (the records).
 * Amended on 2026-11-03 (security and architecture review, CODE-005): the tests that the
   confirmation names in `tests/test_bridge.py` are in `tests/test_outbox.py`, after the
   queue's own, since the bridge's tests follow its parts.
+* Amended on 2026-11-07 (review of 2.0.0, #92): the queue was written once, after the wait for
+  the acknowledgement and before the last received messages were handled. A stop cut short in
+  the wait (a kill, a unit of 1.x with `TimeoutStopSec=20`) lost the queue, and a request or the
+  answer to a command that came after the write was lost. The queue is now written at the stop's
+  start, with the message in flight and its attempts, again at each change in the stop, and a
+  last time as the stop's last step, after those messages and with the requests still waiting
+  to be taken. A request after that is rejected with reason `stopping`. A crash still drops the
+  queue.

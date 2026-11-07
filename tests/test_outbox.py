@@ -6,6 +6,7 @@ import asyncio
 import dataclasses
 import logging
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -32,11 +33,13 @@ from tests.bridge_harness import (
     NOW,
     TWIN,
     FakeBus,
+    InFlightRadio,
     Unreachable,
     fast_timers,  # noqa: F401 - autouse
     make_config,
     running,
     scenario,
+    until,
 )
 from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio
 
@@ -76,13 +79,14 @@ def test_a_message_put_back_goes_first_among_its_kind_also_beyond_the_size() -> 
     assert drained(outbox) == ["a", "b", "c", "e"]
 
 
-def test_take_all_empties_the_queue_in_the_order_it_would_leave() -> None:
+def test_waiting_lists_the_queue_in_the_order_it_would_leave_and_keeps_it() -> None:
+    """What a stop writes to the state file, as often as the queue changes in the stop (#92)."""
     outbox = Outbox(5)
     outbox.put(message("a"))
     outbox.put(message("A", alert=True))
     outbox.put_back(message("first"))
-    assert [item.id for item in outbox.take_all()] == ["A", "first", "a"]
-    assert outbox.qsize() == 0
+    assert [item.id for item in outbox.waiting()] == ["A", "first", "a"]
+    assert drained(outbox) == ["A", "first", "a"]
 
 
 def test_get_waits_for_a_message() -> None:
@@ -313,21 +317,24 @@ def test_a_stop_keeps_the_queue_and_the_next_start_sends_it(tmp_path: Path) -> N
     assert "outbox" not in JsonStateFile(path).load()
 
 
-def test_a_request_after_the_stop_kept_the_queue_is_rejected_and_one_before_is_kept(
+def test_requests_and_answers_that_come_while_the_stop_drains_are_kept(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Requests are taken until the queue is kept (ADR 0028): one that comes while the stop
-    waits for an acknowledgement is kept with the queue; one that comes later, while the stop
-    handles the last received messages, would be queued after the save and lost without a
-    final event. It ends `rejected` with reason `stopping`."""
+    """Requests are taken until the queue is kept, as the stop's last step (ADR 0028, #92): one
+    that comes while the stop waits for an acknowledgement, one that comes while it handles the
+    last received messages, the answer to a command handled there (what that drain is for), and
+    one still waiting for the requests task when the drain ends. Each is `queued`, in the state
+    file, and sent by the next start."""
     monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 5.0)
     monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 5.0)
     monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.3)
-    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    config = make_config()
+    config = dataclasses.replace(config, commands=dataclasses.replace(config.commands, reply="all"))
+    radio = InFlightRadio(contacts=[ALICE, BOB], auto_ack=False)
     buses: list[FakeBus] = []
 
     async def stopped() -> None:
-        async with running(make_config(), radio, tmp_path) as (bridge, bus, _n):
+        async with running(config, radio, tmp_path) as (bridge, bus, _n):
             buses.append(bus)
             bus.send("bob", "Still there?")
             await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
@@ -336,38 +343,107 @@ def test_a_request_after_the_stop_kept_the_queue_is_rejected_and_one_before_is_k
             drain = bridge._finish_inbound
 
             async def late(radio_task: asyncio.Task[None]) -> None:
-                bus.send("alerts", "Too late")  # the requests task still runs
+                bus.send("alerts", "During the drain")  # the requests task still runs
                 await bus.wait_for("/delivery", lambda d: d["target"] == "alerts")
+                # a command on its way out of the radio as the drain starts; too old, it is
+                # judged without the table read that the closed session could not do
+                radio.armed = True
+                radio.queue_direct_message(ALICE.public_key[:6], "status", NOW - 1000)
+                await asyncio.wait_for(radio.synced.wait(), 3)
                 await drain(radio_task)
+                bus.send("alerts", "As the drain ends")  # not taken by the requests task yet
 
             monkeypatch.setattr(bridge, "_finish_inbound", late)
 
     async def started() -> None:
-        async with running(make_config(), EmulatedRadio(contacts=[ALICE, BOB]), tmp_path) as (
-            _,
-            bus,
-            _n,
-        ):
+        second = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(config, second, tmp_path) as (_, bus, _n):
             buses.append(bus)
-            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
-            await asyncio.sleep(0.1)
+            await until(lambda: len(second.channel_texts) == 2 and len(second.texts) == 3)
 
     scenario(stopped)
-    events = [(d["target"], d["event_type"], d["reason"]) for d in buses[0].payloads("/delivery")]
+    events = [(d["target"], d["event_type"], d["text"]) for d in buses[0].payloads("/delivery")]
+    alice = ALICE.public_key.hex()
     assert events == [
-        ("bob", "queued", None),
-        ("bob", "sent", None),
-        ("alice", "queued", None),
-        ("alerts", "rejected", "stopping"),
+        ("bob", "queued", "Still there?"),
+        ("bob", "sent", "Still there?"),
+        ("alice", "queued", "During the wait"),
+        ("alerts", "queued", "During the drain"),
+        (alice, "queued", "rejected: too_old"),
+        ("alerts", "queued", "As the drain ends"),
     ]
     kept = JsonStateFile(tmp_path / "state.json").load()["outbox"]["messages"]
-    assert [(m["target"], m["text"]) for m in kept] == [
-        ("bob", "Still there?"),
-        ("alice", "During the wait"),
+    assert [(m["target"], m["text"], m["sent"]) for m in kept] == [
+        ("bob", "Still there?", 1),
+        ("alice", "During the wait", 0),
+        ("alerts", "During the drain", 0),
+        (alice, "rejected: too_old", 0),
+        ("alerts", "As the drain ends", 0),
     ]
     scenario(started)
-    sent = {d["text"] for d in buses[1].payloads("/delivery") if d["event_type"] == "sent"}
-    assert "Too late" not in sent
+    sent = [(d["text"], d["event_type"]) for d in buses[1].payloads("/delivery")]
+    for text in ("During the wait", "During the drain", "rejected: too_old", "As the drain ends"):
+        assert (text, "sent") in sent
+
+
+def test_a_stop_cut_short_while_it_waits_for_an_acknowledgement_keeps_the_queue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A unit with a shorter TimeoutStopSec, or a kill, can end the stop while it waits for the
+    acknowledgement of the message in flight (#92). The queue is on the disk from the stop's
+    start, that message with its attempts, and so is a request taken meanwhile: the next start
+    sends them all, the alert first."""
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 5.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 5.0)
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 1.0)
+    config = make_config(messages='alert_targets = ["alerts"]')
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    path, killed = tmp_path / "state.json", tmp_path / "killed"
+    killed.mkdir()
+    on_disk: list[list[tuple[str, str, int]]] = []
+
+    def look() -> None:  # what a kill now would leave
+        kept = JsonStateFile(path).load().get("outbox", {}).get("messages", [])
+        on_disk.append([(m["target"], m["text"], m["sent"]) for m in kept])
+
+    async def stopped() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, notes):
+            bus.send("bob", "Still there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            bus.send("alice", "one")
+            bus.send("alerts", "two")  # an alert: it would leave first
+            await bus.wait_for("/delivery", lambda d: d["text"] == "two")
+
+            async def kill() -> None:
+                await until(lambda: "STOPPING=1" in notes)
+                await asyncio.sleep(0.2)
+                look()
+                bus.send("alice", "three")  # taken while the stop waits
+                await asyncio.sleep(0.2)
+                look()
+                shutil.copy(path, killed / "state.json")
+
+            watcher = asyncio.create_task(kill())
+        await watcher
+
+    second = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def started() -> None:
+        async with running(config, second, killed) as (_, bus, _n):
+            await bus.wait_for(
+                "/delivery", lambda d: d["text"] == "three" and d["event_type"] == "confirmed"
+            )
+
+    scenario(stopped)
+    before = [("alerts", "two", 0), ("bob", "Still there?", 1), ("alice", "one", 0)]
+    assert on_disk == [before, [*before, ("alice", "three", 0)]]
+    scenario(started)
+    assert [(t.text, t.attempt) for t in second.texts] == [
+        ("Still there?", 1),
+        ("one", 0),
+        ("three", 0),
+    ]
+    assert [text for _, text, _ in second.channel_texts] == ["two"]
 
 
 def test_kept_messages_whose_time_ran_out_or_whose_target_left_end_at_the_start(

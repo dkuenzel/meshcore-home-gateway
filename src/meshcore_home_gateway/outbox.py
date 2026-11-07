@@ -3,7 +3,9 @@
 Messages wait in the queue for the radio and for airtime, alerts before the others (IMP-032), each
 kind in the order it came. A message taken out keeps its progress (its radio timestamp, the
 attempts sent, their acknowledgement codes), so that it can be put back: paused for an alert, or
-kept for the next start when the service stops (ARC-013).
+kept for the next start when the service stops (ARC-013). From the stop's start on, the state
+file holds every message on its way, written again at each change, so that a stop cut short
+loses none (#92).
 
 The delivery takes the send requests from the bus, refuses or queues each, and delivers one message
 at a time: an attempt when the radio is there and the airtime budget allows it, until it is
@@ -150,9 +152,9 @@ class Outbox:
             await self._ready.wait()
         return heapq.heappop(self._heap)[2]
 
-    def take_all(self) -> list[Outgoing]:
-        """Every message, in the order they would leave; the queue is empty then."""
-        return [heapq.heappop(self._heap)[2] for _ in range(len(self._heap))]
+    def waiting(self) -> list[Outgoing]:
+        """Every message, in the order they would leave; the queue keeps them."""
+        return [entry[2] for entry in sorted(self._heap)]
 
     def _push(self, item: Outgoing, order: int) -> None:
         heapq.heappush(self._heap, (0 if item.alert else 1, order, item))
@@ -260,7 +262,7 @@ class Delivery:
         # the messages accepted and not final, by id, the oldest first: in the queue or in flight
         self._pending: dict[str, Outgoing] = {}
         self._pending_due = False  # `pending` goes out once this moment's steps are done
-        self._kept = False  # the stop kept the queue: a request now would be lost (ADR 0028)
+        self._kept = False  # the stop's last save is done: a request now would be lost (#92)
 
     def queued(self) -> int:
         return self._queue.qsize()
@@ -719,10 +721,13 @@ class Delivery:
             asyncio.get_running_loop().call_soon(self.publish_pending)
 
     def publish_pending(self) -> None:
-        """The messages on their way, the oldest first, to the observer for `pending`."""
+        """The messages on their way, the oldest first, to the observer for `pending`; in the
+        stop, to the state file too (#92)."""
         self._pending_due = False
         entries = [self._pending_entry(item) for item in self._pending.values()]
         observe(self._observer.pending, entries)
+        if self._flight.stopping and not self._kept:
+            self._save_queue()
 
     def _pending_entry(self, item: Outgoing) -> PendingEntry:
         """As the history will name it: a message to `contacts/<key>/send` has no target (its
@@ -745,37 +750,57 @@ class Delivery:
 
     async def finish(self, loop: asyncio.Task[None]) -> None:
         """No attempt starts any more; one that waits for its acknowledgement gets it, for at
-        most STOP_OUTBOX_S, then `loop` (the task that runs `run`) ends. The messages still
-        queued, that one too if it needs another attempt, are kept for the next start (ARC-013):
-        requests are taken until then, and refused after."""
+        most STOP_OUTBOX_S, then `loop` (the task that runs `run`) ends. From now on the
+        messages on their way, that one too, are in the state file, written at once and again
+        at every change: a stop cut short (a kill, a unit with a shorter TimeoutStopSec) loses
+        none (#92). Requests are still taken; `keep` ends the stop."""
         flight = self._flight
         flight.stopping = True
+        self._save_queue()
         if flight.acking:
             with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(STOP_OUTBOX_S):
                     await flight.idle.wait()
         loop.cancel()
         await asyncio.wait([loop])
+
+    def keep(self) -> None:
+        """The stop's last step, after the last received messages were handled: the requests
+        still waiting for the requests task are taken, and the queue is kept for the next start
+        (ARC-013). A request after it is refused (`stopping`): nothing would keep it."""
+        requests = self._bus.requests
+        while not requests.empty():
+            self.accept(requests.get_nowait())
+        kept = self._save_queue()
         self._kept = True
-        now, kept = self._mono(), self._queue.take_all()
-        OutboxRecords(self._store).save(
-            [
-                SavedMessage(
-                    item.id,
-                    item.target.alias,
-                    item.text,
-                    item.raw,
-                    now - item.created,
-                    item.timestamp,
-                    item.sent,
-                    item.queued_at,
-                )
-                for item in kept
-            ],
-            self._wall(),
-        )
         if kept:
-            log.info("%d messages kept for the next start", len(kept))
+            log.info("%d messages kept for the next start", kept)
+
+    def _save_queue(self) -> int:
+        """The messages on their way to the state file, at once, in the order they would leave:
+        the queue's, with the one in flight first among its kind, as it would be put back. The
+        number kept."""
+        waiting, flying = self._queue.waiting(), self._flight.item
+        if flying is not None:  # never in the queue too: put back only as it leaves the flight
+            waiting.insert(0, flying)
+        ordered = sorted(waiting, key=lambda item: not item.alert)  # stable: in order otherwise
+        now = self._mono()
+        kept = [
+            SavedMessage(
+                item.id,
+                item.target.alias,
+                item.text,
+                item.raw,
+                now - item.created,
+                item.timestamp,
+                item.sent,
+                item.queued_at,
+            )
+            for item in ordered
+        ]
+        OutboxRecords(self._store).save(kept, self._wall())
+        self._store.flush()
+        return len(kept)
 
     def restore(self) -> None:
         """The messages the last stop kept: those with time left are queued again, `queued`
