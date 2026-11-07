@@ -285,7 +285,8 @@ async def test_a_message_not_delivered_not_sent_or_maybe_forged_is_yellow_with_t
 ) -> None:
     """§3.4: failed, expired and a suspect confirmation in a yellow box with the reason in words
     (a code the dashboard does not know stays a code), but none that repeats "waited too long";
-    the delivery code of a direct message is hidden, sent or still on its way (PC 16, M55)."""
+    the delivery code of a direct message the history holds is hidden (PC 16, M55); one on its
+    way has none (#87)."""
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
     alice = thread(loaded, "alice")
     documented(
@@ -299,7 +300,7 @@ async def test_a_message_not_delivered_not_sent_or_maybe_forged_is_yellow_with_t
             received(60, "Ends in #1a2b3c4d", **to_alice()),  # hers: as received
         ],
     )
-    documented(hass, PENDING, [on_its_way(5, "Soon" + CODE, **to_alice(target=None))])
+    documented(hass, PENDING, [on_its_way(5, "Soon", **to_alice(target=None))])
     output = render(hass, alice)
     shown = rows(output)
     assert texts(output) == [
@@ -319,6 +320,54 @@ async def test_a_message_not_delivered_not_sent_or_maybe_forged_is_yellow_with_t
     assert "⚠ delivered? maybe forged" in yellow[3]
     assert "… waiting to send" in shown[-1][1]
     assert "<i>Soon</i>" in shown[-1][1]
+    assert problems(caplog) == []
+
+
+async def test_the_delivery_code_is_cut_only_where_and_while_the_gateway_adds_one(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#87: the gateway adds the code of `[messages] confirm_nonce` only to what the history and
+    the final delivery event carry; `pending`, `queued` and `sent` show the text without it. So
+    the cards cut ' #' and 8 hex digits only from a sent direct message of the history, and only
+    while the configuration says confirm_nonce is on. With it off, a household's own text that
+    ends like a code shows whole, in a chat, Latest messages, Latest chats and All chats; on its
+    way, also with it on. Without the setting (the gateway offline: Home Assistant drops the
+    configuration's attributes) the cards cut it as before. The refused line's events, which
+    are final at once, never carry a code: they show the text whole."""
+    config = make_config()
+    loaded = await chats_of(hass, hass_ws_client, tmp_path, config)
+    alice = thread(loaded, "alice")
+    everything = card(loaded, "macro entry(e)")
+    latest = card(cards(loaded, "overview"), "./messages")  # Latest chats
+    chats = card(loaded, "Who reads what")  # All chats
+    own = "Gate code ends #0a1b2c3d"  # the household's own words, as typed
+    for nonce, sent, shown in (
+        ({"confirm_nonce": False}, own, own),
+        ({"confirm_nonce": True}, own + CODE, own),
+        ({"truncate": True}, own + CODE, own),  # a section without the setting
+        (None, own + CODE, own),  # no section: the gateway offline
+    ):
+        hass.states.async_set(CONFIGURATION, ago(0), {} if nonce is None else {"messages": nonce})
+        documented(hass, HISTORY, [final(60, sent, **to_alice(state="confirmed"))])
+        documented(hass, PENDING, [])
+        assert texts(render(hass, alice)) == [shown], nonce
+        assert texts(render(hass, everything)) == [shown], nonce
+        for found in (latest, chats):
+            assert f"Sent: {shown}</small>" in render(hass, found), (nonce, found["content"][:40])
+        documented(hass, PENDING, [on_its_way(5, own, **to_alice(target=None))])
+        assert texts(render(hass, alice))[-1] == own, nonce
+        assert texts(render(hass, everything))[-1] == own, nonce
+        for found in (latest, chats):
+            assert f"On its way: {own}</small>" in render(hass, found), nonce
+    refused = page(loaded, "alice")["footer"]["card"]["cards"][0]
+    event = DeliveryEvent("r1", "operator", DeliveryState.DUPLICATE, text=own)
+    await fire(hass, topics_of(config).delivery, delivery_payload(event))
+    assert f"<br>{own}</ha-alert>" in render(hass, refused)
     assert problems(caplog) == []
 
 
@@ -695,8 +744,9 @@ async def test_a_chat_listens_to_its_documents_and_the_minute_only(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Contract item 10: a chat's thread renders again on the history, the pending messages,
-    the radio and the minute; its refused line on the delivery event, the two documents and
-    the minute: no domain, no state of every entity."""
+    the radio, the configuration (whether the gateway adds confirm_nonce's code, #87) and the
+    minute; its refused line on the delivery event, the two documents and the minute: no
+    domain, no state of every entity."""
     from homeassistant.helpers.template import Template  # noqa: PLC0415
 
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
@@ -704,8 +754,9 @@ async def test_a_chat_listens_to_its_documents_and_the_minute_only(
     radio = f"binary_sensor.{PREFIX}_radio"
     delivery = f"event.{PREFIX}_delivery"
     for found, expected in (
-        (thread(loaded, "alice"), {HISTORY, PENDING, radio}),  # the time of each message
-        (card(loaded, "macro entry(e)"), {HISTORY, PENDING, radio}),
+        # the radio for the time of each message
+        (thread(loaded, "alice"), {HISTORY, PENDING, radio, CONFIGURATION}),
+        (card(loaded, "macro entry(e)"), {HISTORY, PENDING, radio, CONFIGURATION}),
         (page(loaded, "alice")["footer"]["card"]["cards"][0], {HISTORY, PENDING, delivery}),
     ):
         info = Template(found["content"], hass).async_render_to_info(
@@ -748,7 +799,7 @@ async def test_all_chats_and_latest_chats_show_each_chats_newest_message(
             received(1300, "Stranger", channel_index=5, target=None),
         ],
     )
-    documented(hass, PENDING, [on_its_way(30, "Soon" + CODE, **to_alice(target=None))])
+    documented(hass, PENDING, [on_its_way(30, "Soon", **to_alice(target=None))])
     for found in (everything, latest):
         said = render(hass, found)
         assert CODE not in said, said
@@ -852,7 +903,7 @@ async def test_latest_messages_show_each_message_once_as_its_chat_does(
             received(60, "Ends in #1a2b3c4d", **to_alice()),
         ],
     )
-    documented(hass, PENDING, [on_its_way(5, "Soon" + CODE, **to_alice(target=None))])
+    documented(hass, PENDING, [on_its_way(5, "Soon", **to_alice(target=None))])
     output = render(hass, everything)
     assert texts(output) == ["Ends in #1a2b3c4d", "Stuck", "Dinner", "Lights", "Soon"]
     assert CODE not in "".join(cell for _, cell in rows(output) if "Ends in" not in cell)
@@ -863,7 +914,7 @@ async def test_latest_messages_show_each_message_once_as_its_chat_does(
         hass,
         PENDING,
         [
-            on_its_way(30, "Done" + CODE, **to_alice(target=None), id="d1", step="sent"),
+            on_its_way(30, "Done", **to_alice(target=None), id="d1", step="sent"),
             on_its_way(5, "Waiting", **to_alice(target=None)),
             on_its_way(4, "To all"),
         ],

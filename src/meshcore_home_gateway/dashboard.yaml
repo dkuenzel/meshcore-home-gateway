@@ -340,9 +340,11 @@ views:
               {%- endif -%}
               {%- endif -%}
               {%- endmacro -%}
+              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') != 'in' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
               {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
@@ -520,9 +522,11 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
+              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') != 'in' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
               {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
@@ -670,10 +674,11 @@ views:
               {%- else -%}{{ m(e.get('name') or '?') }}
               {%- endif -%}
               {%- endmacro -%}
+              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro entry(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}
-              {#- a direct message sent from this home ends in the code of confirm_nonce, also while it is on its way (no direction yet): hidden (PC 16) -#}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') != 'in' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
@@ -2359,10 +2364,11 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
+              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro row(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}
-              {#- a direct message sent from this home ends in the code of confirm_nonce, also while it is on its way (no direction yet): hidden (PC 16) -#}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') != 'in' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}

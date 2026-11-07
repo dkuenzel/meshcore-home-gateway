@@ -709,7 +709,11 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
   a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
   its way in italics. The newest six stay open, fewer when they are long, the older ones in a
-  fold. The delivery code that `[messages] confirm_nonce` adds is hidden; the thread's help links
+  fold. The delivery code that `[messages] confirm_nonce` adds is hidden: the gateway adds it
+  only to the history's copy of a sent direct message (#87), so the cards cut ` #` and 8 hex
+  digits from those, while *Configuration* says the setting is on; with it off, a text of the
+  household's that ends that way shows whole. While the gateway is offline, Home Assistant
+  drops *Configuration*'s attributes and the cards cut it as before. The thread's help links
   to *Help*, which explains each reason. Under the thread, why writing is not possible when it is
   not, and *About*: where the person is, the battery, asking for position and battery with how
   the device answers, or the chat's text before and after messages. The page ends in the field
