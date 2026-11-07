@@ -11,6 +11,7 @@ import json
 import os
 import sqlite3
 import stat
+import sys
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -279,6 +280,74 @@ def test_doctor_tells_a_radio_clock_behind_from_one_ahead(
     out = capsys.readouterr().out
     assert "  warning  the radio's clock is 120 s behind the host's: with [radio] set_clock" in out
     assert "ahead" not in out
+
+
+LISTS, UPGRADE = "APT::Periodic::Update-Package-Lists", "APT::Periodic::Unattended-Upgrade"
+
+
+def apt_config(tmp_path: Path, settings: dict[str, str] | None) -> Path:
+    """A stand-in for apt-config: `shell VAR NAME ...` prints `VAR='value'` for each NAME that
+    is set, as apt-config does and apt's daily job reads it (apt.systemd.daily); None: it fails."""
+    script = tmp_path / "apt-config"
+    body = "sys.exit(100)" if settings is None else f"settings = {settings!r}"
+    script.write_text(
+        f"""#!{sys.executable}
+import shlex, sys
+{body}
+args = sys.argv[1:]
+assert args[0] == "shell"
+for var, name in zip(args[1::2], args[2::2]):
+    if name in settings:
+        print(var + "=" + shlex.quote(settings[name]) if settings[name] else var + "=''")
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+@pytest.mark.parametrize(
+    ("settings", "level", "text"),
+    [
+        ({LISTS: "1", UPGRADE: "1"}, "ok", "security updates are installed automatically"),
+        ({LISTS: "1d", UPGRADE: "always"}, "ok", "security updates are installed automatically"),
+        (
+            {LISTS: "1", UPGRADE: "0"},
+            "warning",
+            'automatic updates are off: apt has APT::Periodic::Unattended-Upgrade "0"',
+        ),
+        (
+            {LISTS: "1"},
+            "warning",
+            "automatic updates are off: apt has no APT::Periodic::Unattended-Upgrade",
+        ),
+        (
+            {LISTS: "0", UPGRADE: "1"},
+            "warning",
+            'automatic updates are off: apt has APT::Periodic::Update-Package-Lists "0"',
+        ),
+        (None, "warning", "cannot read apt's settings for automatic updates (exit status 100)"),
+    ],
+    ids=["on", "intervals", "off", "not-set", "lists-off", "unreadable"],
+)
+def test_doctor_reads_whether_apt_installs_the_updates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: dict[str, str] | None,
+    level: str,
+    text: str,
+) -> None:
+    """#107: unattended-upgrades installed is not enough; apt's daily job runs it only while
+    APT::Periodic::Unattended-Upgrade, and updates the lists only while
+    APT::Periodic::Update-Package-Lists, is set and not "0"."""
+    monkeypatch.setattr(cli_doctor, "UPGRADER", tmp_path)  # present
+    monkeypatch.setattr(cli_doctor, "REBOOT_REQUIRED", tmp_path / "reboot-required")
+    monkeypatch.setattr(cli_doctor, "APT_CONFIG", apt_config(tmp_path, settings))
+    findings = cli_doctor.host_findings(tmp_path)
+    updates = [f for f in findings if "updates" in f.text]
+    assert len(updates) == 1
+    assert updates[0].level == level
+    assert updates[0].text.startswith(text)
 
 
 # --- backup ------------------------------------------------------------------------------------

@@ -111,6 +111,18 @@ format, the command line and Home Assistant discovery are public interfaces
   and *Gateway degraded* on, and `status` exited 1, until some other part of the state changed,
   which can take hours on a quiet system. The gateway now writes the file again within a minute,
   also with nothing else changed, and clears both once the write succeeds (#94).
+- When a broker that speaks MQTT 3.1.1 only refused the connection of `[mqtt] protocol = "5"`
+  (`Unsupported protocol version`), the log said to test the login. It now says that the broker
+  does not speak that version and names the setting
+  ([deployment.md](docs/deployment.md#5-troubleshooting)) (#107).
+- `doctor` said that security updates are installed automatically as soon as
+  `unattended-upgrades` was installed, also with `APT::Periodic::Unattended-Upgrade "0"`. It now
+  reads that setting and `APT::Periodic::Update-Package-Lists` as apt's daily job does, and warns
+  when either is `"0"` or missing (#107).
+- The release plan told a change checked before a merged release was tagged that CI on main tags
+  it once its jobs pass. CI on main tags only pre-releases; the message now names
+  `release-due.yml`, which tags a release a day after its version commit, and the time from which
+  it does (#107).
 
 ## [2.0.0] - 2026-11-07
 

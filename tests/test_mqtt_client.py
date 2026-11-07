@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import re
 import socket
 import threading
@@ -196,6 +197,31 @@ def test_refused_connection_is_only_logged(caplog: pytest.LogCaptureFixture) -> 
         assert "check-config --broker" in caplog.text
         assert "'p'" not in caplog.text
         assert "without answering" not in caplog.text  # the refusal was the answer
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("protocol", ["5", "3.1.1"])
+def test_a_refused_protocol_version_names_the_setting_not_the_login(
+    caplog: pytest.LogCaptureFixture, protocol: str
+) -> None:
+    """#107: a broker that does not speak the MQTT version of `[mqtt] protocol` (a broker of
+    MQTT 3.1.1 only, asked with MQTT 5) refuses every connection with this reason, whatever the
+    login: the log names the setting, not the login check."""
+
+    async def scenario() -> None:
+        config = MqttConfig(host="broker.example.org", node_id="radio1", username="u", password="p")
+        bus, fake = make_bus(dataclasses.replace(config, protocol=protocol))
+        await bus.start()
+        refused = paho.convert_connack_rc_to_reason_code(paho.CONNACK_REFUSED_PROTOCOL_VERSION)
+        fake.on_connect(fake, None, None, refused, None)
+        await asyncio.sleep(0)
+        assert not bus.connected
+        assert (
+            f"MQTT: connection refused: Unsupported protocol version: the broker does not speak "
+            f"MQTT {protocol}; set protocol in [mqtt] to the version it speaks"
+        ) in caplog.text
+        assert "check-config --broker" not in caplog.text
 
     asyncio.run(scenario())
 

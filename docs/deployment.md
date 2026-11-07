@@ -463,9 +463,10 @@ updates wait for.
   (the kernel is the host's). A running service keeps the Python and paho-mqtt it started with:
   restart it after an update of them (`grep -E 'python3|paho'
   /var/log/unattended-upgrades/unattended-upgrades.log`). `systemctl list-timers
-  apt-daily-upgrade.timer` shows the next run, and `apt-config dump
-  APT::Periodic::Unattended-Upgrade` must say `"1"` (the package switches itself on when it is
-  installed without dialogs). An installation from before this version gets the package with its
+  apt-daily-upgrade.timer` shows the next run, and `apt-config dump APT::Periodic` must show
+  `APT::Periodic::Update-Package-Lists` and `APT::Periodic::Unattended-Upgrade` with `"1"` (the
+  package switches itself on when it is installed without dialogs); `doctor` warns when either
+  is `"0"` or missing. An installation from before this version gets the package with its
   next `--update`.
 * **Disk:** the container has 2 GB. The installer limits the journal to 100 MB
   (`/etc/systemd/journald.conf.d/meshcore-home-gateway.conf`; Debian's default is a tenth of the
@@ -574,6 +575,7 @@ updates wait for.
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
 | Commands rejected with `sender_unverified` | The gateway fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
 | `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto` (and add further users without `-c`, which replaces the file). `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on takes a Home Assistant user by its login name, not the display name (the Supervisor log names the user it refused: `Unauthorized login for '…'`), or a `logins` entry (read when the add-on starts); it remembers a refused login for about 5 minutes, so restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1-` and a random part), not the user |
+| `MQTT: connection refused: Unsupported protocol version: the broker does not speak MQTT 5` | `[mqtt] protocol = "5"` and a broker that speaks MQTT 3.1.1 only. Set `protocol = "3.1.1"` (the default) or remove the line, or update the broker; the login has nothing to do with it ([configuration.md](configuration.md#mqtt)) |
 | `MQTT: cannot reach …` | No broker answered at that name or address and port: check `mqtt.host` (a host name or IP address, no `mqtt://`) and `mqtt.port`, the network and the firewall |
 | `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
 | `MQTT: another client wrote …; restoring the gateway's payload` | Another client wrote one of the gateway's retained topics, and the gateway wrote its own again ([mqtt-api.md](mqtt-api.md#securing-the-broker)). A second gateway with the same `node_id` and `base_topic` (an old container, a test install), a tool that cleared retained messages, or a client whose ACL lets it write below the gateway's topics: only the gateway's user may |
