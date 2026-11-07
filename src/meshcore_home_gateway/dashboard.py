@@ -676,14 +676,19 @@ def _with_texts(
 
 
 def _document(item: Item) -> dict[str, object]:
-    """A chat page for the cards that list them: numbers as numbers, the aliases as a list."""
+    """A chat page for the cards that list them: numbers as numbers, the aliases as a list, and
+    `write` whether the page has a field. The field's and the button's entity IDs stay out: they
+    stand only inside the guard of the page's footer (rule 3 of the template)."""
     return {
         key: int(value)
         if key in ("channel", "room")
         else (value.split(",") if value else [])
         if key == "aliases"
+        else bool(value)
+        if key == "write"
         else value
         for key, value in item.items()
+        if key != "send"
     }
 
 

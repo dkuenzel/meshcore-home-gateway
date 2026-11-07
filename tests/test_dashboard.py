@@ -47,7 +47,9 @@ DAVE = "e5" * 32
 HERE = Position(52.1, 9.2)
 # what every Markdown card that prints a value from Home Assistant defines first
 MACRO = (
-    r"{%- macro m(x) -%}{{ (x or '') | string | replace('\r', ' ') | replace('\n', ' ') | e }}"
+    r"{%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c"
+    r"\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064"
+    r"\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}"
     r"{%- endmacro -%}"
 )
 Speaker = Callable[[str, Mapping[str, str]], str]
@@ -97,11 +99,13 @@ def test_the_dashboard_names_the_gateways_entities(
     assert lines[0].startswith(
         f"# meshcore-home-gateway dashboard for node {node_id}, made by version {__version__}"
     )
-    assert f"entity: binary_sensor.meshcore_home_gateway_{gateway}_radio\n" in text
-    assert f"'sensor.meshcore_home_gateway_{gateway}_queue'" in text
-    assert f'state_not: ["{__version__}", unknown]' in text
+    assert f"'binary_sensor.meshcore_home_gateway_{gateway}_radio'" in text
+    assert f"'sensor.meshcore_home_gateway_{gateway}_message_history'" in text
+    assert f"This dashboard was made for version {__version__}; the gateway runs " in text
+    major, minor = __version__.split(".")[:2]
+    assert f"!= ({int(major)}, {int(minor)})" in text  # P10: the gateway's major and minor
     assert f"meshcore_home_gateway_{node_id}_" not in text or node_id == gateway
-    assert f"Home Assistant has no entity of node {node_id}: " in text
+    assert f"Home Assistant has no entity of node {node_id}. " in text
     assert not re.search(r"@\w+@", text)
     assert '_("' not in text
 
@@ -185,7 +189,7 @@ def test_the_pseudo_language_passes_the_guard(
     text, _ = dashboard.dashboard(config(more='[homeassistant]\nlanguage = "xx"\n'), tmp_path)
     assert '\ntitle: "‹Mesh›"\n' in text
     assert "‹{{ n }} min ago›" in text
-    assert "‹Home Assistant has no entity of node radio1: " in text
+    assert "‹For your administrator: Home Assistant has no entity of node radio1. " in text
     english, _ = dashboard.dashboard(config(), tmp_path)
     assert "‹" not in english
     assert re.sub(r"[‹›]", "", text) == english
@@ -313,28 +317,75 @@ def test_the_controls_card_lists_each_contacts_switch_and_button(tmp_path: Path)
     assert "Telemetry and removal" not in dashboard.dashboard(config(), tmp_path)[0]
 
 
+# the reasons of docs/mqtt-api.md, Delivery and Managing contacts
+DELIVERY_REASONS = [
+    "no_acknowledgement",
+    "unknown_contact",
+    "unknown_target",
+    "ambiguous_target",
+    "not_a_companion",
+    "channel_not_configured",
+    "too_long",
+    "too_large",
+    "invalid_utf8",
+    "empty",
+    "retained",
+    "queue_full",
+    "queue_ttl",
+    "no_radio",
+    "airtime_budget",
+    "exceeds_airtime_burst",
+    "internal_error",
+]
+CONTACT_REASONS = [
+    "invalid_request",
+    "invalid_link",
+    "unsupported_link",
+    "unsupported_type",
+    "unknown_node",
+    "unknown_contact",
+    "management_off",
+    "own_key",
+    "protected",
+    "busy",
+    "no_radio",
+    "untested_firmware",
+    "rate_limited",
+    "already_contact",
+    "look_alike",
+    "table_full",
+    "not_confirmed",
+    "outcome_unknown",
+    "not_a_companion",
+    "too_many",
+    "not_saved",
+    "not_forgotten",
+    "state_unwritable",
+    "too_large",
+    "invalid_utf8",
+    "retained",
+    "internal_error",
+]
+
+
 def test_reason_codes_read_as_texts_and_an_unknown_one_stays_a_code() -> None:
     """IMP-049: each reason the API documents for a delivery and for a contact request has a
-    text; one added later, and the radio's own refusals, stay codes, through m()."""
+    text, in every copy of the card's macro why() (the thread, Latest messages, the refused
+    line; the last contact event); one added later, and the radio's own refusals, stay codes,
+    through m(); a card with why() prints no reason as a bare code."""
     template = shipped()
-    delivery, contact = (template.split("macro why(v)")[i].split("endmacro")[0] for i in (1, 2))
-    documented = {
-        delivery: """no_acknowledgement unknown_contact unknown_target ambiguous_target
-            not_a_companion channel_not_configured too_long too_large invalid_utf8 empty
-            retained queue_full queue_ttl no_radio airtime_budget exceeds_airtime_burst
-            internal_error""",
-        contact: """invalid_request invalid_link unsupported_link unsupported_type unknown_node
-            unknown_contact management_off own_key protected busy no_radio untested_firmware
-            rate_limited already_contact look_alike table_full not_confirmed outcome_unknown
-            not_a_companion too_many not_saved not_forgotten state_unwritable too_large
-            invalid_utf8 retained internal_error""",
-    }
-    for macro, codes in documented.items():
-        for code in codes.split():
-            assert f"v == '{code}'" in macro, code
-    for macro in (delivery, contact):
-        assert "{%- else -%}<code>{{ m(v) }}</code>" in macro
-    assert "<code>{{ m(reason) }}</code>" not in template
+    macros = [part.split("endmacro")[0] for part in template.split("macro why(v)")[1:]]
+    delivery = [macro for macro in macros if "v == 'no_acknowledgement'" in macro]
+    contact = [macro for macro in macros if "v == 'invalid_request'" in macro]
+    assert (len(delivery), len(contact)) == (1, 1)
+    assert len(set(delivery)) == 1  # one text, copied (DR-30)
+    for found, codes in ((delivery[0], DELIVERY_REASONS), (contact[0], CONTACT_REASONS)):
+        for code in codes:
+            assert f"v == '{code}'" in found, code
+        assert "{%- else -%}<code>{{ m(v) }}</code>" in found
+    for card in _cards(template):
+        if any("macro why(v)" in line for line in card):
+            assert not any(re.search(r"<code>\{\{ m\((reason|code)\) \}\}", t) for t in card)
 
 
 def test_the_contacts_card_finds_the_contacts_by_the_configured_prefix() -> None:
@@ -424,7 +475,7 @@ def test_the_same_inputs_give_the_same_bytes() -> None:
     assert first == render(shipped(), trackers=list(reversed(listed)))
     assert first == render(shipped(), trackers=sorted(listed))
     assert "\r" not in first
-    assert first.endswith('heading: "Help"\n')  # the last page without a chat
+    assert first.endswith("updates one of them.</li></ul></details>\n")  # Help, the last
     assert not first.endswith("\n\n")
 
 
@@ -453,6 +504,7 @@ _PLACEHOLDERS = {
     "@chats@",
 }
 _JINJA_NOTE = re.compile(r"\{#-?\s*Translators:.*-?#\}")
+_CLASS = re.compile(r"\{#- problem: \w+ -#\}")  # a problem card's class (rule 9)
 _OPENS = {
     "<div>": "</div>",
     "<table>": "</table>",
@@ -586,13 +638,16 @@ def _of_item(placeholder: str, listed: str | None) -> bool:
 
 
 def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
-    """A card prints a value read from Home Assistant only through m() or a mapping, on a line
-    that is one whole HTML element, and starts with the macro m; each mapping has a branch per
-    value of the gateway's list and m() for a value added later."""
+    """A card prints a value read from Home Assistant only through m(), mt() or a macro of the
+    card, on a line that is one whole HTML element, and starts with the macro m (after the class
+    of a problem card, rule 9); a macro prints only through m(), mt() and the macros above it;
+    each mapping has a branch per value of the gateway's list and m() for a value added later."""
     found: list[str] = []
     texts = [text for _, text in block.lines]
+    if texts and _CLASS.fullmatch(texts[0]):
+        texts = texts[1:]
     macros: dict[str, tuple[str, list[str]]] = {}  # name: its parameter and its lines
-    body: set[int] = set()
+    body: dict[int, str] = {}  # a macro's line: the macro
     current = ""
     for number, text in block.lines:
         if text == MACRO:
@@ -602,9 +657,10 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
             macros[current] = (match.group(2), [])
         if current:
             macros[current][1].append(text)
-            body.add(number)
+            body[number] = current
             if "endmacro" in text:
                 current = ""
+    order = list(macros)
     sets: dict[str, list[str]] = {}
     integers: set[str] = set()
     values: set[str] = set()
@@ -612,7 +668,8 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
         for match in _SET.finditer(text):
             name, source = match.groups()
             sets.setdefault(name, []).append(source)
-            if source.startswith(("m(", "mt(")) and source.endswith(")"):
+            call = re.fullmatch(r"(\w+)\(.*\)", source)
+            if call is not None and (call.group(1) in ("m", "mt") or call.group(1) in macros):
                 values.add(name)
             elif (whole := _INTEGER.fullmatch(source)) and (
                 whole.group(1) is None or whole.group(1) in integers
@@ -633,7 +690,9 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
             if call is None or (call.group(1) not in ("m", "mt") and call.group(1) not in macros):
                 found.append(f"{number}: {{{{ {expression} }}}} is neither m() nor a mapping")
             elif number in body and call.group(1) not in ("m", "mt"):
-                found.append(f"{number}: a mapping prints {expression}")
+                callee, caller = call.group(1), body[number]
+                if order.index(callee) >= order.index(caller):
+                    found.append(f"{number}: a macro prints {expression}, not one above it")
         fields = [f for marker in dashboard.MARKER.finditer(text) for f in _fields(_msgid(marker))]
         for name in fields:
             if name in dashboard.FIXED:
@@ -660,7 +719,8 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
         branches = [line for line in lines if f"{parameter} == '" in line]
         if any('-%}_("' not in line for line in branches):
             found.append(f"{name}: a branch without a text")
-        if not any(line.endswith(f"{{%- else -%}}{{{{ m({parameter}) }}}}") for line in lines):
+        added = (f"{{{{ m({parameter}) }}}}", f"<code>{{{{ m({parameter}) }}}}</code>")  # D-8
+        if not any(line.endswith(f"{{%- else -%}}{a}") for line in lines for a in added):
             found.append(f"{name}: no m({parameter}) for a value added later")
     return found
 
@@ -674,9 +734,13 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         for _, t in block.lines
         for name in re.findall(r"macro (\w+)\(", t)
     }
-    assert {"m", "ago", "said", "telemetry", "what"} <= names
-    assert template.count(MACRO) == 9
+    assert {"m", "mt", "when", "said", "why", "problem", "place", "telemetry", "what"} <= names
+    assert template.count(MACRO) == 19
     assert len(list(dashboard.MARKER.finditer(template))) > 70
+
+
+SETTINGS = '            heading: _("Settings")\n'
+LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
 
 
 @pytest.mark.parametrize(
@@ -687,9 +751,13 @@ def test_the_shipped_template_keeps_its_rules() -> None:
             '              {{ m(_("No message yet.")) }}',
             "a marker inside a Jinja tag",
         ),
-        ("<br>{{ m(text) }}</div>", "<br>{{ text | e }}</div>", "| e outside the macro m"),
-        ("<br>{{ m(text) }}</div>", "<br>{{ text }}</div>", "is neither m() nor a mapping"),
-        (" | replace('\\n', ' ') | e }}", " | e }}", "starts with the macro m"),
+        ("<b>{{ m(r.title) }}</b>", "<b>{{ r.title | e }}</b>", "| e outside the macro m"),
+        ("<b>{{ m(r.title) }}</b>", "<b>{{ r.title }}</b>", "is neither m() nor a mapping"),
+        (
+            " | regex_replace('[\\t\\r\\n\\u2028\\u2029]', ' ') | e }}",
+            " | e }}",
+            "starts with the macro m",
+        ),
         (
             '              _("No message yet.")',
             '              # Translators: x\n              _("No message yet.")',
@@ -697,12 +765,18 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         ),
         ("              {%- elif v == 'away' -%}_(\"away\")\n", "", "telemetry: the branches"),
         ("{%- else -%}{{ m(v) }}", "{%- else -%}{{ v }}", "neither m() nor a mapping"),
-        ('> **_("Gateway ready.")**', "> **{{ m(link) }}**", "an alert line prints a value"),
-        ('state: "on"', "state: on", "on unquoted"),
-        ('state_not: ["@version@", unknown]', "state_not: [@version@, unknown]", "unquoted"),
+        (
+            '              > _("No contact had a position',
+            '              > {{ m(states("sensor.x")) }} _("No contact had a position',
+            "an alert line prints a value",
+        ),
+        (SETTINGS, SETTINGS + "            show_state: on\n", "on unquoted"),
+        (SETTINGS, SETTINGS + "            version: @version@\n", "unquoted"),
         ("binary_sensor.@gw@_radio", "binary_sensor.@gx@_radio", "the placeholder @gx@"),
-        ("{queue}.", "{queues}.", "{queues} is set nowhere"),
+        ("{waiting}.", "{waitings}.", "{waitings} is set nowhere"),
         ("{%- set running = m(", "{%- set running = (", "set from neither m() nor integers"),
+        ("{%- set first = problem(", "{%- set first = other(", "{first} is set from neither"),
+        (LISTED, LISTED.replace("who(k)", "listed(k)"), "not one above it"),
         ('heading: _("Gateway")', 'heading: [_("Gateway")]', "neither a whole value"),
         ('title: _("Mesh")', 'title: _("Mesh {node}")', "a field in a whole value"),
         ("<table><tr><th>", "<p><tr><th>", "a value outside one whole"),
@@ -732,9 +806,11 @@ def _cards(template: str) -> Iterator[list[str]]:
 
 
 def test_every_card_that_prints_a_value_defines_the_macro_first() -> None:
+    """After a problem card's class (rule 9)."""
     printing = [card for card in _cards(shipped()) if any(re.search(r"\bm\(", t) for t in card)]
-    assert len(printing) == 9
-    assert all(card[0] == MACRO for card in printing)
+    assert len(printing) == 19
+    assert all(card[_CLASS.fullmatch(card[0]) is not None] == MACRO for card in printing)
+    assert sum(_CLASS.fullmatch(card[0]) is not None for card in printing) == 8
 
 
 # --- the template language of 2.1: lists, items, {name} ------------------------------------------
@@ -963,12 +1039,11 @@ def test_the_chats_placeholder_is_the_pages_as_a_jinja_list() -> None:
         "target": "family",
         "aliases": ["alerts", "family"],
         "pair": "",
-        "write": "text.meshcore_home_gateway_radio_1_write_family",
-        "send": "button.meshcore_home_gateway_radio_1_write_family_send",
+        "write": True,  # whether it has a field: its entity IDs stand only in its footer's guard
         "room": 158,
     }
     assert listed[1]["aliases"] == ["alarm"]
-    assert listed[1]["write"] == ""
+    assert listed[1]["write"] is False
     assert pages('x ["@chats@"]\n') == "x []\n"
 
 
@@ -1268,17 +1343,18 @@ def test_the_dashboard_has_a_page_per_chat(tmp_path: Path) -> None:
 # --- the rules of 2.1 that need the dashboard's structure (dashboard_rules.py) -------------------
 
 # What the shipped template still breaks, by rule: the cards of 2.0 that stages 4 and 5 rewrite
-# (docs/development.md, the dashboard's template). Each rewrite lowers the counts, to none.
+# (docs/development.md, the dashboard's template); Overview breaks none. Each rewrite lowers the
+# counts, to none.
 PENDING = {
     "rule 3": 2,  # the 2.0 card of the switches and remove buttons
-    "rule 4": 7,  # 2.0's problem tiles, its version card, the script's tile and hint
+    "rule 4": 2,  # the script's tile and hint
     "rule 5": 1,  # the remove buttons as entity rows
-    "rule 8": 122,  # help at every card, About in every view, the Help page (stages 4 and 5)
-    "rule 9": 1,  # the status line and the problem cards
-    "rule 11": 3,  # the status line, the script's hint, the map's note
+    # help at the cards of Chats, Contacts, Map and Gateway and of the chat pages, About in those
+    # views and in Settings, the words of 2.0's cards, and the views and controls on Help
+    "rule 8": 107,
+    "rule 11": 2,  # the script's hint, the map's note
     "rule 13": 4,  # Last message and Last sent
     "rule 17": 1,  # the script's hint
-    "rule 19": 1,  # m() of 2.0
 }
 
 
@@ -1386,8 +1462,21 @@ def test_the_reader_refuses_yaml_the_template_does_not_use(text: str) -> None:
 
 def test_the_shipped_template_breaks_only_what_stages_4_and_5_rewrite() -> None:
     """The numbered rules on the shipped template: all hold but those of PENDING, and
-    those exactly as often as counted."""
-    assert rule_counts(rules.findings(shipped())) == PENDING
+    those exactly as often as counted; none on a page written again."""
+    found = rules.findings(shipped())
+    assert rule_counts(found) == PENDING
+    lines = shipped().split("\n")
+
+    def page(finding: str) -> str:
+        """The view a finding names, or the view of the template's line it names."""
+        where = finding.split(": ")[1]
+        if not where.isdigit():
+            return where
+        above = (re.match(r'    path: "?([^"]+)"?$', line) for line in lines[: int(where)])
+        return [match.group(1) for match in above if match][-1]
+
+    written = ["overview"]
+    assert [page(f) for f in found if "Help does not list" not in f and page(f) in written] == []
 
 
 def test_the_views_are_three_tabs_and_pages_without_a_tab() -> None:
@@ -1427,18 +1516,18 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
         if isinstance(n, dict) and "navigation_path" in n
     ]
     links += [h for t in rules.texts(loaded) for h in re.findall(r'href="([^"]*)"', t)]
-    assert sorted({link.removeprefix("./") for link in links}) == [
-        "gateway",
-        "help",
-        "map",
-        "settings",
-    ]
-    assert {link.removeprefix("./") for link in links} <= paths
+    pages = {link.removeprefix("./") for link in links if not link.startswith(("./{{", "http"))}
+    assert sorted(pages) == ["contacts", "gateway", "help", "map", "messages", "settings"]
+    assert pages <= paths
+    # each chat of Latest chats and All chats, from the list of the chat pages
+    assert {link for link in links if link.startswith("./{{")} == {"./{{ m(r.path) }}"}
+    assert not [link for link in links if link.startswith("http")]
     assert rules.rule_6(shipped(), None, loaded, rules.HOUSEHOLD) == []
 
 
 MT = "{%- macro mt(x) -%}{{ m(x) }}{%- endmacro -%}"
 GUIDE_LINK = rules.GUIDE_URL.replace("{version}", "@version@")
+HELPED = '<details><summary>_("Help")</summary>_("Help")</details>'
 BROKEN = [
     # rule 2: a mapping over a closed list
     (
@@ -1574,24 +1663,25 @@ BROKEN = [
     ),
     # rule 7: a marker in an attribute
     (card('<div><a href="./help" title="_("Help")">x</a></div>'), "rule 7: "),
-    # rule 8: a card without help
-    (card('<div>_("Help")</div>'), "rule 8: help: a markdown card without help"),
-    # rule 9: the problem cards in another order than the status line
+    # rule 8: a card without help, where no card with help follows it
+    (
+        ["@@", SETTINGS, SETTINGS + "\n".join(card('<div>_("Help")</div>')) + "\n"],
+        "rule 8: settings: a markdown card without help",
+    ),
+    # rule 8: a Markdown card holds its own help, also when a card with help follows it (M19)
     (
         [
-            *card(
-                "{%- macro problem(v) -%}",
-                "{%- if v == 'clock' -%}_(\"Help\")",
-                "{%- elif v == 'full' -%}_(\"Help\")",
-                "{%- else -%}{{ m(v) }}",
-                "{%- endif -%}",
-                "{%- endmacro -%}",
-            ),
-            *card("{#- problem: full -#}", '_("Help")'),
-            *card("{#- problem: clock -#}", '_("Help")'),
+            "@@",
+            SETTINGS,
+            SETTINGS
+            + "\n".join([*card('<div>_("Help")</div>'), *card(HELPED, text_only="true")])
+            + "\n",
         ],
-        "rule 9: the status line has ['clock', 'full']",
+        "rule 8: settings: a markdown card without help",
     ),
+    # rule 9: a problem card missing from the status line's order, a second status line
+    (["@@", "{#- problem: clock -#}", "{#- problem: time -#}"], "rule 9: the status line has"),
+    (card("{%- macro problem(v) -%}", "{%- endmacro -%}"), "rule 9: 2 status cards"),
     # rule 11: a GitHub alert
     (card("> [!NOTE]", '> _("Help")'), "rule 11: "),
     # rule 13: a message's text through m(), a card without mt(), two forms of m()
@@ -1675,9 +1765,6 @@ def test_each_rule_finds_its_break(change: list[str], finding: str) -> None:
     assert any(finding in f for f in added(broken)), added(broken)
 
 
-HELPED = '<details><summary>_("Help")</summary>_("Help")</details>'
-
-
 @pytest.mark.real_catalogs
 @pytest.mark.parametrize(
     "change",
@@ -1690,26 +1777,18 @@ HELPED = '<details><summary>_("Help")</summary>_("Help")</details>'
         ),
         card('<div>_("Help")</div>', HELPED),
         card('<table role="presentation" width="100%"><tr><td>_("Help")</td></tr></table>', HELPED),
-        [
-            *card(
-                "{%- macro problem(v) -%}",
-                "{%- if v == 'clock' -%}_(\"Help\")",
-                "{%- elif v == 'full' -%}_(\"Help\")",
-                "{%- else -%}{{ m(v) }}",
-                "{%- endif -%}",
-                "{%- endmacro -%}",
-                HELPED,
-            ),
-            *card("{#- problem: taken_over -#}", '_("Help")', HELPED),
-            *card("{#- problem: clock -#}", '_("Help")', HELPED),
-            *card("{#- problem: full -#}", '_("Help")', HELPED),
+        card("{#- problem: taken_over -#}", '_("Help")', HELPED),
+        [  # a tile's help in the text-only card after it (design D-10)
+            "          - type: tile",
+            "            entity: sensor.@gw@_nodes",
+            *card(HELPED, text_only="true"),
         ],
     ],
 )
 def test_what_a_rule_allows_adds_no_finding(change: list[str]) -> None:
     """A link to the guide's anchor of this version, the menus in a line for the administrator,
-    a card with its help, a table of presentation, the problem cards in the status line's order
-    (a class the status line tests first, such as a takeover, aside)."""
+    a card with its help, a table of presentation, a problem card of a class that the status
+    line tests before its problems, such as a takeover (rule 9)."""
     assert added(into_help(*change)) == []
 
 
@@ -1811,7 +1890,7 @@ def test_the_name_beside_send_says_the_buttons_label() -> None:
     names the button's label, so it is in QUOTES; a catalog whose name says another word than
     its button fails (§6.2). A whole value that names a button's label bare needs QUOTES too;
     a heading that shares a word with another label does not."""
-    assert rules.QUOTES == {"Return, then Send": "Send"}
+    assert rules.QUOTES["Return, then Send"] == "Send"
     texts = {"Send": "Abschicken", "Return, then Send": "Eingabe, dann Senden"}
     german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
     assert rules.quote_findings(shipped(), rules.QUOTES, [german]) == [

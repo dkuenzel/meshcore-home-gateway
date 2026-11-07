@@ -52,6 +52,8 @@ MAPPINGS = (
     "kind",
     "audience",
 )
+# rule 8: mappings whose words need no explanation: the names of the months
+SELF_EVIDENT = frozenset({"mon"})
 # rule 16: a text that quotes a label of the dashboard, by msgid: text -> label. The name
 # beside a chat's Send button names the button's label (design §6.2)
 QUOTES: dict[str, str] = {"Return, then Send": "Send"}
@@ -618,8 +620,10 @@ def rule_6(template: str, source: Any, loaded: Any, household: Household) -> lis
             continue
         if href.startswith(guide + "#") and href.removeprefix(guide + "#") in anchors:
             continue
-        page = re.fullmatch(r"\./\{\{ (\w+)\.path \}\}", href)
-        if page and listed in content and re.search(rf"\bfor {page.group(1)} in\b", content):
+        # its path as it is or through m(): an item of the chats list, never text from the mesh
+        page = re.fullmatch(r"\./\{\{ (?:m\((\w+)\.path\)|(\w+)\.path) \}\}", href)
+        name = (page.group(1) or page.group(2)) if page else None
+        if name and listed in content and re.search(rf"\bfor {name} in\b", content):
             continue  # a page of the chats list, in a card that loops over it
         found.append(f"rule 6: a link nowhere in this dashboard: {href}")
     return found
@@ -643,7 +647,10 @@ def rule_8(template: str, source: Any, loaded: Any, household: Household) -> lis
             card for section in view.get("sections") or [] for card in section.get("cards") or []
         ]
         for card, after in zip(listed, [*listed[1:], None], strict=True):
-            if card.get("type") == "heading" or _helped(card) or (after and _about(after)):
+            # a Markdown card holds its own help; the card after a tile, entities, map or
+            # history-graph card may hold its help (design D-10)
+            borrowed = card.get("type") != "markdown" and after is not None and _about(after)
+            if card.get("type") == "heading" or _helped(card) or borrowed:
                 continue
             found.append(f"rule 8: {view['path']}: a {card.get('type')} card without help")
         if not listed or not _about(listed[-1]):
@@ -655,7 +662,7 @@ def rule_8(template: str, source: Any, loaded: Any, household: Household) -> lis
             m for line in card.lines if line.startswith("<details>") for m in msgids(line)
         )
         for name, (_, lines) in macros(card).items():
-            if name in MAPPINGS:
+            if name in MAPPINGS and name not in SELF_EVIDENT:
                 found += [
                     f"rule 8: {card.first}: {name} says {word!r}, which no help explains"
                     for line in lines

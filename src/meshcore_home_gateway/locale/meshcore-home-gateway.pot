@@ -1585,12 +1585,141 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "A contact may change this home's radio over the air."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A dashboard of another version can miss new cards or name entities that changed."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A full radio adds nobody new, also not someone who wants to write to this home."
+msgstr ""
+
+#. keys names the contacts that nodes nearby imitate, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "A node nearby imitates a contact: {keys} and {more} more."
+msgstr ""
+
+#. keys names the contacts that nodes nearby imitate, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "A node nearby imitates a contact: {keys}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A part of the gateway does not work as it should. Messages still go out."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A person's device tells everyone in range where it is."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A position counts for an hour after the last answer."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A radio nearby has a key that starts like a contact's."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Act now: see the red card below."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Add a contact"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Add the gateway in the MeshCore app"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "All chats"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "All fine."
+msgstr ""
+
+#. since is a time, such as 10:31 or yesterday 10:31
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Another program took over the radio's link, since {since}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Apr"
+msgstr ""
+
+#. version and running are versions of the gateway, such as 2.1.0
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Ask your administrator to make the dashboard again."
+msgstr ""
+
+#. version and running are versions of the gateway, such as 2.1.0
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Ask your administrator to update the gateway to {version}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Asking for position and battery is paused until the file is fixed or deleted."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Asking for position and battery is paused."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Asking for position and battery is paused: the list of people not to ask cannot be read."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Asking for position and battery is paused: the radio adds contacts by itself."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Asking for position and battery is paused: the radio sent a lot in the last hour."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Asking for position and battery starts within the hour."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Aug"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Blue: for your information, or no value yet."
 msgstr ""
 
 #. a tab's title. Overview, Chats and Contacts together have at most 22 letters,
@@ -1602,9 +1731,10 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Check the problems below."
+msgid "Chats need gateway version 2.1 or later. Ask your administrator to update the gateway."
 msgstr ""
 
+#. count and limit are whole numbers: the contacts on the radio and how many it holds
 #. a tab's title. Overview, Chats and Contacts together have at most 22 letters,
 #. or the tabs do not fit a phone 360 pixels wide
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1614,7 +1744,39 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Contacts are told apart by the first bytes of their key. A node with the same first bytes may be chance or someone imitating that contact. The gateway does not act on commands from it and does not ask it for its position. If it stays, tell your administrator."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Contacts on the radio"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Dec"
+msgstr ""
+
+#. keys names the contacts that nodes nearby imitate, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Do not trust a message only because its name looks known."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Everyone in this home who uses Home Assistant reads and writes the same chats."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Feb"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "For your administrator: Home Assistant has no entity of node {node}. Check MQTT discovery, or make this dashboard for the right node."
 msgstr ""
 
 #. name is the chat's title, a and b are aliases of targets of the gateway's configuration
@@ -1622,6 +1784,16 @@ msgstr ""
 #, python-brace-format
 msgctxt "dashboard"
 msgid "For your administrator: the targets {a} and {b} get the same entity IDs in Home Assistant. Rename one of them in the gateway's configuration."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Free some space on the gateway's disk."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "GPS off, location not allowed in the app, out of range, or asking is off (Contacts)."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1639,9 +1811,20 @@ msgctxt "dashboard"
 msgid "Gateway offline."
 msgstr ""
 
+#. found is a list of the parts at fault, such as program errors in the last hour, disk almost full
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Gateway ready."
+msgid "Gateway: Health"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Gateway: Radio settings"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Green: all fine."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1656,13 +1839,50 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Home Assistant gets no answer from the gateway: nothing is sent or received."
+msgid "How chats work"
+msgstr ""
+
+#. since is a time, such as 10:31 or yesterday 10:31
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "If it was you (the phone app over Wi-Fi, a command-line tool), close it and stop the gateway first next time. If not, tell your administrator now: the radio needs a network of its own and a new key."
+msgstr ""
+
+#. names are the names of contacts, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "If nobody meant to allow it, ask your administrator to take the permission away in the MeshCore app."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
-#, python-brace-format
 msgctxt "dashboard"
-msgid "Home Assistant has no entity of node {node}: check MQTT discovery, or generate the dashboard for the right node."
+msgid "If this lasts more than a few minutes, tell your administrator."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "It starts again by itself."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "It works now, but a restart would forget the latest change."
+msgstr ""
+
+#. an abbreviated month name, as in 22 Oct 10:31
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Jan"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Jul"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Jun"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1682,7 +1902,22 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Latest chats"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Map"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Mar"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "May"
 msgstr ""
 
 #. the dashboard's title, above its views
@@ -1691,15 +1926,40 @@ msgctxt "dashboard"
 msgid "Mesh"
 msgstr ""
 
+#. found is a list of the parts at fault, such as program errors in the last hour, disk almost full
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Messages still go out. Tell your administrator."
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "Messages waiting: {queue}."
+msgid "Messages waiting over a minute: {waiting}."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Name"
+msgstr ""
+
+#. first is a problem in lower case, such as a fault in the gateway; the sentence names it, more counts the others
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Needs a look: {first} and {more} more."
+msgstr ""
+
+#. first is a problem in lower case, such as a fault in the gateway; the sentence names it, more counts the others
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Needs a look: {first}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "New: a message arrived less than 15 minutes ago."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1729,7 +1989,22 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "No value yet."
+msgid "No message yet. Open a chat to write the first one."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "No report yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Nobody shares a position yet. Asking for position and battery is off in this home's settings (your administrator)."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Nobody shares a position yet. Turn on Ask for position and battery for a person who agrees (Contacts)."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1744,9 +2019,52 @@ msgctxt "dashboard"
 msgid "Not on this map: {names}. Generate the dashboard again to add them."
 msgstr ""
 
+#. the text of a message that waited too long to be sent
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Not sent: {text}"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Nothing is sent or received. Messages stay readable."
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Nothing sent yet."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Nov"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Oct"
+msgstr ""
+
+#. names are the names of contacts, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "On that device, in the MeshCore app, turn off sharing the location in adverts."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "One note below."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Open the map"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Other radios see this radio's time in its adverts; a clock far off can make them ignore it. The gateway sets it at most once a day."
 msgstr ""
 
 #. a tab's title. Overview, Chats and Contacts together have at most 22 letters,
@@ -1754,6 +2072,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Overview"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Positions come from the person's device when the gateway asks it (Ask for position and battery), or from its adverts."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1771,6 +2094,22 @@ msgctxt "dashboard"
 msgid "Radio health"
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Radio taken over by another program."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Red: act now; nothing gets through, or someone else controls the radio."
+msgstr ""
+
+#. count and limit are whole numbers: the contacts on the radio and how many it holds
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Remove contacts you no longer need."
+msgstr ""
+
 #. the name beside a chat's send button: the keyboard's key in the words
 #. the phones of your language show, then the button's label exactly as translated
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1784,9 +2123,48 @@ msgctxt "dashboard"
 msgid "Send"
 msgstr ""
 
+#. the text of a message sent from this home
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Sent: {text}"
+msgstr ""
+
+#. the text of a message sent from this home that the person's radio did not confirm
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Sent: {text} – not delivered"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Sep"
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Settings"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Some cards may be missing or empty until your administrator updates one of them."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Someone changed the radio's settings."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Such a contact can change the radio's settings and read its contacts from afar. Give it only to a radio you control."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Tap a name to open the chat and write."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1799,11 +2177,90 @@ msgctxt "dashboard"
 msgid "Telemetry and removal"
 msgstr ""
 
+#. d is how far the clock is off, such as 12 min, 3 h or 4 days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "The gateway has not reported its radio since Home Assistant started."
+msgid "Tell your administrator to check the computer's clock first."
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Tell your administrator to turn off automatic adding on the radio."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Tell your administrator."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Tell your administrator: the file must be fixed or deleted, then the gateway restarted."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The chats show no new messages until the gateway is restarted. Your administrator checks the disk."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The computer gives the gateway too little time: a backup, or too little memory."
+msgstr ""
+
+#. count and limit are whole numbers: the contacts on the radio and how many it holds
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "The contact table is full: {count} of {limit}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The disk is full or read-only. The gateway forgets new contacts' devices at its next start."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The first line of Overview names the problem; the card below it says what to do. Tell your administrator the time and what the card says."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway asks nobody for now; the card says why."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway asks the devices of people who agreed for their position and battery. It pauses by itself when asking could harm the household's privacy or the airtime."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway caught an error and runs on. Its log has the details."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway has not reported since Home Assistant started."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway is not found: see the first line of Overview."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway keeps a few radio settings as this home needs them. If the radio's frequency or speed differ from the others', messages do not reach them."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway reaches its radio over the network, and the radio serves one program at a time. A program that held the link could control the radio and read its key, which decrypts direct messages."
+msgstr ""
+
+#. first is a problem in lower case, such as a fault in the gateway; the sentence names it, more counts the others
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The gateway runs and its radio is connected."
@@ -1811,7 +2268,25 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "The gateway runs but cannot reach its radio; messages wait."
+msgid "The gateway runs but cannot reach its radio. Messages wait."
+msgstr ""
+
+#. found is a list of the parts at fault, such as program errors in the last hour, disk almost full
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway runs with a fault."
+msgstr ""
+
+#. found is a list of the parts at fault, such as program errors in the last hour, disk almost full
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "The gateway runs with a fault: {found}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway took the link back; this card stays for an hour. A takeover the radio did not report can be missed, so the absence of this card is no proof."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1821,19 +2296,73 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "The household's map does not need it: the gateway asks for positions privately (Ask for position and battery). The card goes when that device's next advert carries no position."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The last 50 messages are kept here, fewer when they are long."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The radio cannot add a new contact."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The radio is not known yet."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "They wait for the radio or for airtime."
+msgid "The radio's clock is far off."
 msgstr ""
 
-#. version and running are versions of the gateway, such as 1.1.0
+#. d is how far the clock is off, such as 12 min, 3 h or 4 days
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "This dashboard was made for version {version}; the gateway runs {running}. Generate it again."
+msgid "The radio's clock is {d} ahead."
+msgstr ""
+
+#. d is how far the clock is off, such as 12 min, 3 h or 4 days
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "The radio's clock is {d} behind."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The radio's settings could not be set, or someone changed them."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The radio's settings could not be set."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The words after Needs a look are explained in Help."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "They go out one at a time, as soon as the radio and the airtime allow."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "This dashboard cannot reach the gateway. Tell your administrator."
+msgstr ""
+
+#. version and running are versions of the gateway, such as 2.1.0
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "This dashboard was made for version {version}; the gateway runs {running}."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1844,6 +2373,51 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Type"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Until then, turn it off for each person who does not agree."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "What the colours mean"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "What this means"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "What this view is for"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "When something is wrong"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Where everyone is"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Where the device was at its last answer; a place's name when it was in another zone of Home Assistant."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Whether everything is fine, what needs a look, the latest chats and where everyone is."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Why someone is missing or not current"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1864,6 +2438,11 @@ msgctxt "dashboard"
 msgid "Write to {name}"
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Yellow: something is missing or looks odd; the card below says what to do."
+msgstr ""
+
 #. name is the chat's title, a and b are aliases of targets of the gateway's configuration
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -1873,7 +2452,28 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Your administrator runs:"
+msgstr ""
+
+#. the problems the first line of Overview names, after Needs a look: in lower case, so that they read as one sentence
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "a fault in the gateway"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "a link of another kind"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "a node imitates a contact"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "a position broadcast to everyone"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1904,6 +2504,23 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "answering"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "asking for position and battery is paused"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "at home"
+msgstr ""
+
+#. since is a time, such as 10:31 or yesterday 10:31
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "at {zone}"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1944,6 +2561,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "device deleted in Home Assistant"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "disk almost full"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2003,7 +2625,22 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "list of people not to ask not saved"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "list of people not to ask unreadable"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "look-alike"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "message history broken"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2014,6 +2651,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "never asked for telemetry"
+msgstr ""
+
+#. new marks a chat with a message received less than 15 minutes ago
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "new"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2044,6 +2687,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "no position"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no position yet"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2083,6 +2731,16 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "position not current"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "program errors in the last hour"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "published with the retain flag"
 msgstr ""
 
@@ -2099,6 +2757,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "rejected"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "remote access to the radio"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2136,6 +2799,23 @@ msgctxt "dashboard"
 msgid "shares its position in adverts"
 msgstr ""
 
+#. since is a time, such as 10:31 or yesterday 10:31
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "since {since}"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "slow responses"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "state file cannot be written"
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "text not UTF-8"
@@ -2148,7 +2828,27 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "the contact table is full"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the dashboard and the gateway are of different versions"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "the gateway's own key"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the radio's clock"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the radio's settings"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2186,6 +2886,72 @@ msgctxt "dashboard"
 msgid "waiting"
 msgstr ""
 
+#. the day before today and a clock time such as 23:50
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "yesterday {time}"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{days} days"
+msgstr ""
+
+#. an older day: the day of the month, an abbreviated month name and a clock time, as in 22 Oct 10:31
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{day} {month} {time}"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{hours} h"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{mins} min"
+msgstr ""
+
+#. names are the names of contacts, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{names} and {more} more broadcast their position to everyone in range."
+msgstr ""
+
+#. names are the names of contacts, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{names} and {more} more may control this home's radio over the air."
+msgstr ""
+
+#. names are the names of contacts, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{names} broadcast their position to everyone in range."
+msgstr ""
+
+#. names are the names of contacts, or the first digits of their keys
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{names} may control this home's radio over the air."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{notes} notes below."
+msgstr ""
+
 #. how long ago; n is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -2205,6 +2971,13 @@ msgstr ""
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{n} min ago"
+msgstr ""
+
+#. a channel message in one line: the sender's name, as the sender typed it, then the text
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{sender}: {text}"
 msgstr ""
 
 #. key is the setting mqtt.cert_file; path and key_file are files.

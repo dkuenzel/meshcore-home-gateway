@@ -35,7 +35,15 @@ from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import slugify
 from pytest_homeassistant_custom_component.common import CLIENT_ID
-from test_contract import RADIO, fire, guide_block, make_config, problems, state_document
+from test_contract import (
+    PREFIX,
+    RADIO,
+    fire,
+    guide_block,
+    make_config,
+    problems,
+    state_document,
+)
 from test_languages import offer
 from visibility import household_viewer
 
@@ -170,8 +178,13 @@ CARDS = frozenset(
 VIEWS = frozenset({"masonry", "panel", "sidebar", "sections"})
 SECTIONS = frozenset({"grid"})
 # the Markdown cards, by a part of their content or visibility
-STATUS, VERSION, WRITE = "set problems", "bridge_version", "script.mesh_message"
-MESSAGE, SENT, TABLE = "_message'", "_delivery'", "_last_heard"
+WRITE, MESSAGE, SENT = "script.mesh_message", "_message'", "_delivery'"
+TABLE = "sort(attribute=0, reverse=true)"  # the contacts table of 2.0
+# the gateway's sensors of 2.1 that the cards read; a gateway of 2.0 has none of them
+HISTORY = f"sensor.{PREFIX}_message_history"
+PENDING = f"sensor.{PREFIX}_pending_messages"
+CONFIGURATION = f"sensor.{PREFIX}_configuration"
+OF_2_1 = (HISTORY, PENDING, CONFIGURATION)
 # the contact event's entity; a reason code such as 'unknown_contact' ends the same way
 EVENT = re.compile(r"event\.meshcore_home_gateway_\w+_contact'")
 HEARD, QR, HINT = "_add_node'", "contact_link", "set listed"
@@ -258,6 +271,22 @@ async def deliver(
         companion = tracked.node.node_type == COMPANION
         document = contact_document(tracked, telemetry_state="answering" if companion else None)
         await fire(hass, topics.contact(key), document | state, retain=True)
+
+
+def documented(
+    hass: HomeAssistant, entity: str, messages: list[dict[str, Any]], **more: Any
+) -> None:
+    """The history's or the pending messages' sensor as the gateway of 2.1 announces it
+    (docs/mqtt-api.md, History and Messages on their way): the document as its attributes, the
+    newest message's time or the count as its state. The cards' rules are tested on this state;
+    test_the_dashboard_reads_the_sensors_of_a_gateway_of_2_1 checks that discovery makes the
+    sensors, which is the gateway's work (stage 2)."""
+    document = {"total": len(messages), "truncated": False, "messages": messages} | more
+    if entity == HISTORY:
+        state = messages[0]["at"] if messages else "unknown"
+    else:
+        state = str(document["total"])
+    hass.states.async_set(entity, state, document)
 
 
 def keep(language: str, outputs: dict[str, str]) -> None:
@@ -491,7 +520,7 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
             for c in walk(v["sections"])
             if c["type"] == "heading" or "title" in c or "name" in c
         ]
-        assert len(titles) == 23  # with *Telemetry and removal*: Alice has a device
+        assert len(titles) == 24  # with *Telemetry and removal*: Alice has a device
         for title in titles:
             if language == "xx":
                 assert title.startswith("‹xx: ")
@@ -519,7 +548,9 @@ async def test_the_dashboard_names_only_entities_that_exist(
 ) -> None:
     """The gateway's entities, its controls, the trackers, the contacts' switches and buttons
     and the guide's script; the same in English and in xx, with the household discovered in
-    `language`."""
+    `language`. Not here: the gateway's sensors of 2.1
+    (test_the_dashboard_reads_the_sensors_of_a_gateway_of_2_1) and the chat pages' fields and
+    Send buttons, which only their guards name (the footers' tests)."""
     offer("xx", monkeypatch, XX)
     config = in_language(make_config(), language)
     broker, mesh = Broker(), household(ALICE_NODE, HILL_NODE)
@@ -543,7 +574,32 @@ async def test_the_dashboard_names_only_entities_that_exist(
     assert controls <= names  # IMP-049: the household's controls; a repeater is never asked
     assert "switch.mesh_hilltop_telemetry" not in names
     assert len(names) > 20
-    assert names <= {e.entity_id for e in er.async_get(hass).entities.values()}
+    fields = {e for e in names if re.fullmatch(r"(text|button)\.\w+_write(_\w+)?", e)}
+    assert fields == {
+        f"text.{PREFIX}_write_{alias}" for alias in ("alerts", "my_target", "operator")
+    } | {f"button.{PREFIX}_write_{alias}_send" for alias in ("alerts", "my_target", "operator")}
+    registered = {e.entity_id for e in er.async_get(hass).entities.values()}
+    assert names - set(OF_2_1) - fields <= registered
+    assert problems(caplog) == []
+
+
+async def test_the_dashboard_reads_the_sensors_of_a_gateway_of_2_1(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The messages, the messages on their way and the configuration: sensors that the gateway
+    announces since 2.1, each named by the dashboard and in the registry once it is announced.
+    Red until the gateway of 2.1 announces them (its stage 2)."""
+    config = make_config()
+    names = referenced(await made(hass, hass_ws_client, config, tmp_path))
+    assert set(OF_2_1) <= names
+    await gateway(hass, config)
+    registered = {e.entity_id for e in er.async_get(hass).entities.values()}
+    assert sorted(set(OF_2_1) - registered) == []
     assert problems(caplog) == []
 
 
@@ -590,58 +646,43 @@ async def test_every_card_renders_in_every_situation(
     caplog: pytest.LogCaptureFixture,
     language: str,
 ) -> None:
-    """Strictly and without a warning, with the status line's alert of each situation; no card
-    listens to a domain or to every state, the contacts table to the time also with no contact."""
+    """Strictly and without a warning or a blank line: no gateway, not online yet, offline, no
+    report yet, the radio disconnected, a gateway of 2.0 (none of the sensors of 2.1), the
+    messages waiting, a problem. No card listens to a domain or to every state. The status
+    line's words in each: test_overview.py."""
     config = speaking(language, monkeypatch)
     broker, mesh = Broker(), household(ALICE_NODE, HILL_NODE)
     contacts_of(config, tmp_path, broker).update(mesh)
     loaded = await made(hass, hass_ws_client, config, tmp_path)
-    status = card(loaded, STATUS)
     seen: dict[str, dict[str, str]] = {}
 
-    async def situation(name: str, kind: str, msgid: str, **values: str) -> None:
+    def situation(name: str) -> None:
         seen[name] = rendered(hass, loaded)
-        assert alert(render(hass, status)) == (kind, said(config, msgid, **values)), name
         assert listening(hass, loaded) == [], name
 
-    await situation("no gateway", "NOTE", "Gateway not found.")
+    situation("no gateway")
     assert render(hass, card(loaded, HEARD)) == said(
         config, "The gateway's controls are not in Home Assistant yet."
     )
     topics = await gateway(hass, config, online=False)
-    await situation("not online yet", "CAUTION", "Gateway offline.")
+    situation("not online yet")
     await fire(hass, topics.availability, "offline", retain=True)
-    await situation("offline", "CAUTION", "Gateway offline.")
+    situation("offline")
     await fire(hass, topics.availability, "online")
-    await situation("online without a value", "NOTE", "No value yet.")
+    situation("no report yet")
     await fire(hass, topics.state, state_document(known=False), retain=True)
-    await situation("radio disconnected", "CAUTION", "Radio disconnected.")
+    situation("radio disconnected")
     await fire(hass, topics.state, state_document(known=True) | {"queue": 0})
-    await situation("no contacts", "TIP", "Gateway ready.")
+    situation("a gateway of 2.0")
     assert render(hass, card(loaded, TABLE)) == said(
         config, "No contact has a device in Home Assistant."
     )
     assert render(hass, card(loaded, MESSAGE)) == said(config, "No message yet.")
     assert render(hass, card(loaded, SENT)) == said(config, "Nothing sent yet.")
     await fire(hass, topics.state, state_document(known=True))
-    await situation("messages waiting", "WARNING", "Messages waiting: {queue}.", queue="2")
+    situation("messages waiting")
     await fire(hass, topics.nodes, {"total": 1, "look_alike": [BOB], "look_alike_total": 1})
-    await situation("a problem", "WARNING", "Check the problems below.")
-    await fire(hass, topics.nodes, {"total": 0, "look_alike": [], "look_alike_total": 0})
-    await deliver(hass, config, broker, mesh)
-    await fire(hass, topics.state, state_document(known=True) | {"queue": 0, "version": "9.9.9"})
-    await situation("another version", "TIP", "Gateway ready.")
-    assert render(hass, card(loaded, VERSION)) == (
-        '<div><ha-alert alert-type="warning">'
-        + said(
-            config,
-            "This dashboard was made for version {version}; the gateway runs "
-            "{running}. Generate it again.",
-            version=dashboard.__version__,
-            running="9.9.9",
-        )
-        + "</ha-alert></div>"
-    )
+    situation("a problem")
     for name, outputs in seen.items():
         assert form_findings(outputs) == [], name
     assert problems(caplog) == []
@@ -717,7 +758,6 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
         TABLE: "device name",
         HEARD: "a heard node's label",
         HINT: "tracker not on the map",
-        VERSION: "version",
         QR: "contact link",
     }
     every: dict[str, str] = {}
@@ -762,59 +802,6 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
 
 
 # --- what shows when ----------------------------------------------------------------------------
-
-
-async def test_cards_show_only_while_their_state_says_so(
-    hass: HomeAssistant,
-    mqtt: Any,
-    hass_ws_client: Any,
-    *,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """For a household user: the version card only while the gateway runs another version; the
-    script's tile only with the script, its hint not then; a problem's tile only while it is
-    on."""
-    config = make_config()
-    loaded = await made(hass, hass_ws_client, config, tmp_path)
-    viewer = await household_viewer(hass, hass_ws_client)
-    version = card(loaded, VERSION)
-    (tile,) = [c for c in walk(loaded) if c["type"] == "tile" and c["entity"] == WRITE]
-    problem = {
-        c["entity"]: c
-        for c in walk(loaded)
-        if c["type"] == "tile" and c["entity"].startswith("binary_sensor.") and "visibility" in c
-    }
-    assert len(problem) == 4  # look-alikes, a remote CLI, a position in adverts, degraded
-    assert not await viewer.visible(version)  # no gateway
-    assert not await viewer.visible(tile)
-    topics = await gateway(hass, config)
-    assert not await viewer.visible(version)
-    assert not [e for e, c in problem.items() if await viewer.visible(c)]
-    await fire(hass, topics.state, state_document(known=True) | {"version": "9.9.9"})
-    assert await viewer.visible(version)
-    await fire(hass, topics.availability, "offline")  # its attributes go with it
-    assert not await viewer.visible(version)
-    await fire(hass, topics.availability, "online")
-    await fire(hass, topics.nodes, {"total": 1, "look_alike": [BOB], "look_alike_total": 1})
-    assert [e for e, c in problem.items() if await viewer.visible(c)] == [
-        "binary_sensor.meshcore_home_gateway_radio1_look_alike"
-    ]
-    contacts = {
-        "total": 1,
-        "max": 350,
-        "remote_cli": [BOB],
-        "remote_cli_total": 1,
-        "advert_carries_position": [BOB],
-        "advert_carries_position_total": 1,
-    }
-    await fire(hass, topics.contacts, contacts, retain=True)
-    degraded = state_document(known=True) | {"health": {"degraded": True}}
-    await fire(hass, topics.state, degraded)
-    assert [e for e, c in problem.items() if await viewer.visible(c)] == list(problem)
-    await guide_script(hass)
-    assert (await viewer.visible(tile), await viewer.visible(card(loaded, WRITE))) == (True, False)
-    assert problems(caplog) == []
 
 
 async def test_the_script_hint_shows_while_the_script_is_missing(
