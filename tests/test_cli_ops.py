@@ -9,6 +9,8 @@ import dataclasses
 import io
 import json
 import os
+import re
+import shlex
 import sqlite3
 import stat
 import tarfile
@@ -366,6 +368,66 @@ def test_backup_keeps_the_secrets_only_when_asked(tmp_path: Path) -> None:
     members = _members(archive)
     assert {"password", "command-codes"} & set(members) == set()
     assert json.loads(members["MANIFEST.json"])["codes"] == "left_out"
+
+
+REPOSITORY = Path(__file__).resolve().parent.parent
+
+
+def _restore() -> list[list[str]]:
+    """The `install` commands of the restore in docs/deployment.md, each as its arguments."""
+    guide = (REPOSITORY / "docs" / "deployment.md").read_text(encoding="utf-8")
+    after = guide.partition("To restore")[2]
+    block = re.search(r"```sh\n(.*?)```", after, flags=re.DOTALL)
+    assert block is not None, "no commands after 'To restore' in docs/deployment.md"
+    lines = [line.strip() for line in block[1].splitlines()]
+    return [shlex.split(line) for line in lines if line.startswith("install ")]
+
+
+UNIT = REPOSITORY / "deploy" / "systemd" / "meshcore-home-gateway.service"
+
+
+def _unit(key: str) -> str:
+    found = re.search(rf"^{key}=(.+)$", UNIT.read_text(encoding="utf-8"), flags=re.MULTILINE)
+    assert found is not None, key
+    return found[1]
+
+
+def test_the_guides_restore_gives_each_file_its_owner_group_and_mode(tmp_path: Path) -> None:
+    """#98: the archive holds every file as root with mode 0600, and the restore said only where
+    each goes. A file the copy creates keeps that, so in a new container the service could not
+    read the codes file and stopped with a configuration error. The guide puts every file of an
+    archive with the secrets back with the owner, group and mode the gateway gives it: the
+    configuration and the secrets for the service's group to read, as `config render --group` and
+    `commands enrol` write them; the state the service's own (the unit's User= and UMask=0077)."""
+    secret, codes = tmp_path / "password", tmp_path / "command-codes"
+    secret.write_text("s3cret\n", encoding="utf-8")
+    codes.write_text(f'{KEY} = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"\n', encoding="utf-8")
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'[mqtt]\nhost = "h"\nnode_id = "radio1"\nusername = "gw"\npassword_file = "{secret}"\n'
+        f'[commands]\nsenders = ["{KEY}"]\nwords = ["arm"]\ncodes_file = "{codes}"\n',
+        encoding="utf-8",
+    )
+    archive, state_dir = tmp_path / "b.tgz", _state_dir(tmp_path)
+    argv = ["backup", str(archive), "--config", str(config), "--state-dir", str(state_dir)]
+    assert main([*argv, "--with-secrets"]) == EX_OK
+    service = (_unit("User"), _unit("Group"))
+    assert _unit("UMask") == "0077"
+    etc = "/etc/meshcore-home-gateway/"
+    expected = {  # the member: mode, owner, group, where it goes
+        "config.toml": ("0640", "root", service[1], etc + "config.toml"),
+        "password": ("0640", "root", service[1], etc + "mqtt-password"),  # the installer's
+        "command-codes": ("0640", "root", service[1], etc + "command-codes"),
+        "state/*": ("0600", *service, f"/var/lib/{_unit('StateDirectory')}/"),
+    }
+    assert _unit("ExecStart").endswith(f" --config {expected['config.toml'][3]}")
+    restored = {}
+    for arguments in _restore():
+        options = dict(zip(arguments[1:-2:2], arguments[2:-2:2], strict=True))
+        restored[arguments[-2]] = (options["-m"], options["-o"], options["-g"], arguments[-1])
+    assert restored == expected
+    members = set(_members(archive)) - {"MANIFEST.json"}
+    assert {m if not m.startswith("state/") else "state/*" for m in members} == set(expected)
 
 
 def test_backup_refuses_a_password_it_cannot_leave_out(

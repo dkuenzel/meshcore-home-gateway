@@ -474,10 +474,26 @@ updates wait for.
   without the broker password, and the archive without the command senders' code secrets, unless
   `--with-secrets` (which also takes the file `password_file` names and the one `codes_file`
   names, as `password` and `command-codes`); without it, set the password again after a restore
-  and enrol the senders anew. To restore: stop
-  the service, unpack the archive, copy `config.toml` to `/etc/meshcore-home-gateway/` and the
-  files under `state/` to `/var/lib/meshcore-home-gateway/` (owned by `meshcore-home-gateway`),
-  put the secrets back where `MANIFEST.json` says they came from, then start it. By hand: back up
+  and enrol the senders anew. To restore, in the container as root: stop the service, unpack
+  the archive into a private directory, and put each file back with its owner, group and mode.
+  The archive holds every file as `root` with mode 0600; a file copied so cannot be read by the
+  service, which then stops with a configuration error. The configuration and the secrets are
+  `root:meshcore-home-gateway` 0640, so that the service's group reads them, and the state is the
+  service's own. The secrets go where `MANIFEST.json` says they came from (`password_file`,
+  `codes_file`), here the usual paths; leave out the line of a file the archive does not hold
+  (`files` in `MANIFEST.json`):
+
+  ```sh
+  systemctl stop meshcore-home-gateway
+  mkdir -m 0700 /root/restore && tar -xzf FILE -C /root/restore && cd /root/restore
+  install -m 0640 -o root -g meshcore-home-gateway config.toml /etc/meshcore-home-gateway/config.toml
+  install -m 0640 -o root -g meshcore-home-gateway password /etc/meshcore-home-gateway/mqtt-password
+  install -m 0640 -o root -g meshcore-home-gateway command-codes /etc/meshcore-home-gateway/command-codes
+  install -m 0600 -o meshcore-home-gateway -g meshcore-home-gateway state/* /var/lib/meshcore-home-gateway/
+  systemctl start meshcore-home-gateway
+  ```
+
+  By hand: back up
   `/etc/meshcore-home-gateway/` (`config.toml`, and `mqtt-password` where the installer wrote it,
   and the file `codes_file` names) and the three files of
   `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop

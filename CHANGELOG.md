@@ -99,6 +99,11 @@ format, the command line and Home Assistant discovery are public interfaces
   sends the gateway its own last will, which the log names once for `availability`: harmless
   ([deployment.md](docs/deployment.md#5-troubleshooting)). The system test of a broker restart
   read the state paho sent again for the current one, and failed now and then (#101).
+- The guide's restore of a backup puts each file back with its owner, group and mode: the
+  configuration and the secrets `root:meshcore-home-gateway` 0640, the state the service's own.
+  It said only where the files go, and the archive holds them as `root` with mode 0600: in a new
+  container the copy of the codes file of `--with-secrets` kept that, and the service stopped
+  with a configuration error ([deployment.md](docs/deployment.md#4-operations), #98).
 
 ### Security
 
