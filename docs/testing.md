@@ -49,7 +49,8 @@ installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-hom
 other condition sent to Home Assistant's `subscribe_condition` as a user who is no administrator;
 an error there hides the card. A card shows only with every card, stack, conditional row and
 section above it (`Viewer.shown`): a section whose cards all hide is hidden, and a Markdown card
-with `show_empty: false` that renders nothing hides itself. `test_helpers.py` checks these
+that may be empty hides by its condition of its own content while it renders nothing (the
+generator writes that condition in place of `show_empty: false`, development.md rule 21). `test_helpers.py` checks these
 helpers and `cards()`, which finds a page's cards by its path, a chat page's alias or a contact's
 key. The chats' cards read the gateway's message history, its messages on their way and its
 configuration: `test_chats.py` sets the sensors' states as the gateway announces them, and its
@@ -153,7 +154,10 @@ of `make check`.
 * `tools/browser_check.py` logs in through Home Assistant's own login page as the user given, opens
   each view of a dashboard at a phone, a tablet and a desktop size, in a light and a dark colour
   scheme, and saves a screenshot of each. It lists the console errors of each page and exits with
-  1 when a page reported one, or when a view is missing.
+  1 when a page reported one, or when a view is missing. An error that matches a pattern of
+  `--allow-error` stays in the list and fails no page: without internet, the map's tile proxy
+  answers 502 on every map page (`--allow-error '502 \(Bad Gateway\)'`;
+  `tests/test_browser_check.py` checks the choice).
 * `tools/emulated_radio.py run` gives that Home Assistant a real gateway without hardware. It
   serves the emulated radio of `tests/radio_emulator.py` over TCP, as a WiFi companion does, and
   starts `meshcore-home-gateway run` on it and on the broker. Then it fills the gateway: the

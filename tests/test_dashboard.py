@@ -559,6 +559,73 @@ def test_the_same_inputs_give_the_same_bytes() -> None:
     assert not first.endswith("\n\n")
 
 
+# --- a card that may be empty (the stage-5 browser check) ---------------------------------------
+
+MAY_BE_EMPTY = (
+    "views:\n"
+    "  - title: Overview\n"
+    "    path: overview\n"
+    "    cards:\n"
+    "      - type: markdown\n"
+    "        text_only: true\n"
+    "        show_empty: false\n"
+    "{visibility}"
+    "        content: |-\n"
+    "          {%- if is_state('binary_sensor.@gw@_radio', 'off') -%}\n"
+    "\n"
+    '          <div>_("The radio is disconnected.")</div>\n'
+    "          {%- endif -%}\n"
+    "      - type: markdown\n"
+    "        content: x\n"
+)
+GUARD = (
+    "          - condition: template\n            value_template: >-\n              {{ true }}\n"
+)
+BODY = (
+    "{%- if is_state('binary_sensor.meshcore_home_gateway_radio_1_radio', 'off') -%}\n"
+    "\n"
+    "<div>The radio is disconnected.</div>\n"
+    "{%- endif -%}"
+)
+SHOWN = {
+    "condition": "template",
+    "value_template": "{%- set body -%}\n" + BODY + "\n{%- endset -%}\n{{ body | trim != '' }}",
+}
+
+
+@pytest.mark.parametrize(
+    ("visibility", "conditions"),
+    [
+        ("", [SHOWN]),
+        (
+            "        visibility:\n" + GUARD,
+            [{"condition": "template", "value_template": "{{ true }}"}, SHOWN],
+        ),
+    ],
+)
+def test_a_card_that_may_be_empty_shows_by_a_condition_of_its_content(
+    visibility: str, conditions: list[dict[str, str]]
+) -> None:
+    """Home Assistant's card wrapper takes a Markdown card that hides itself (`show_empty:
+    false`, nothing rendered) out of the page, and its template with it: it does not show again
+    until the page is loaded again (`hui-card`'s `_setElementVisibility`). The stage-5 browser
+    check saw it: the refused line under a chat's field stayed away after a press with nothing
+    stored, and a problem card stayed away on an open Overview. A card that hides by its
+    visibility conditions comes back once they hold, so the made card shows by a condition of its
+    own content, after its other conditions, and no longer hides itself."""
+    made = render(MAY_BE_EMPTY.replace("{visibility}", visibility))
+    assert "show_empty" not in made
+    first, second = rules.load(made)["views"][0]["cards"]
+    assert first["visibility"] == conditions
+    assert first["content"] == BODY
+    assert second == {"type": "markdown", "content": "x"}
+
+
+def test_a_card_that_may_be_empty_needs_its_content_last_as_a_block() -> None:
+    with pytest.raises(TemplateError, match="content"):
+        render(MAY_BE_EMPTY.replace("{visibility}", "").replace("content: |-", "content: >-"))
+
+
 # --- the shipped template's rules ---------------------------------------------------------------
 
 # a block scalar: `key: |-` (or `|`); its lines are those indented more than its key
@@ -2268,17 +2335,21 @@ def test_the_asking_words_are_the_chat_pages_words() -> None:
 
 
 def test_contacts_lists_people_then_asks_adds_and_removes() -> None:
-    """Design §2.5: People and devices with its badges and the column Asking (HC 23); Sensors;
+    """Design §2.5: the badges, People and devices with the column Asking (HC 23); Sensors;
     Ask for position and battery; Add or remove, the QR code under "Let someone add this home"
-    before the remove rows (HC 28); Nodes heard nearby without it; About last."""
+    before the remove rows (HC 28); Nodes heard nearby without it; About last. The badges have a
+    heading of their own: beside "People and devices" the badge row scrolled at 360 and 390 px
+    and hid Help (stage-5 browser check); alone they have the width of the page."""
     contacts = view_of("contacts")
-    assert kinds(contacts)[:5] == [
+    assert kinds(contacts)[:6] == [
+        "heading ",
         "heading People and devices",
         "markdown",
         "heading Sensors",
         "markdown",
         "heading Ask for position and battery",
     ]
+    assert "badges" not in contacts["sections"][0]["cards"][1]
     heading = contacts["sections"][0]["cards"][0]
     assert [b["tap_action"]["navigation_path"] for b in heading["badges"]] == [
         "./gateway",
@@ -2396,13 +2467,34 @@ def test_settings_show_what_the_administrator_set_and_change_nothing() -> None:
     }
     tables = [t for t in rules.texts(settings) if "<th>What it means</th>" in t]
     assert len(tables) == 4
-    for key in ("messages.confirm_nonce", "contacts.heard_nodes", "homeassistant.controls"):
-        assert any(f"<code>{key}</code>" in t for t in tables), key
-    assert any("<code>radio.profile.manage</code>" in t for t in tables)
-    assert any("<code>commands.codes</code>" in t for t in tables)
+    for section, key in (
+        ("messages", "confirm_nonce"),
+        ("contacts", "heard_nodes"),
+        ("homeassistant", "controls"),
+        ("radio.profile", "manage"),
+        ("commands", "codes"),
+    ):
+        assert any(f"<code>[{section}]</code> <code>{key}</code>" in t for t in tables), key
     assert any(
         f"<td>This dashboard</td><td>{rules.VERSION}</td>" in t for t in rules.texts(settings)
     )
+
+
+# the longest word the last column of a Settings table takes at 360 px beside the other two (the
+# stage-5 browser check measured 154 px for radio.profile.manage, 20 letters, and too little for
+# messages.publish_channels, 25)
+CODE_LETTERS = 21
+
+
+def test_settings_name_each_key_by_its_section_and_its_name_so_the_tables_fit_a_phone() -> None:
+    """The stage-5 browser check at 360 px: a dotted key such as messages.publish_channels is one
+    word, too wide for the last column, and three of the four tables ran past their cards. As
+    docs/configuration.md writes them, the section in brackets and the key are two words."""
+    settings = view_of("settings")
+    words = [w for t in rules.texts(settings) for w in re.findall(r"<code>([^<{]*)</code>", t)]
+    assert "contact_entity_prefix" in words
+    assert [w for w in words if "." in w and not w.startswith("[")] == []
+    assert max(len(w) for w in words) <= CODE_LETTERS, max(words, key=len)
 
 
 # DR-14: what Help names, besides the titles and the names rule 8 finds by themselves

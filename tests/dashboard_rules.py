@@ -503,10 +503,13 @@ def load(text: str) -> Any:
 
 
 def nodes(node: Any, above: tuple[Any, ...] = ()) -> Iterator[tuple[Any, tuple[Any, ...]]]:
-    """Every mapping, list and string, with the nodes above it."""
+    """Every mapping, list and string, with the nodes above it; not a card's condition of its
+    own content, a copy of the content (dashboard._shown_by_condition)."""
     yield node, above
     if isinstance(node, dict):
-        for value in node.values():
+        for key, value in node.items():
+            if key == "visibility" and shown_by_content(node):
+                value = value[:-1]  # noqa: PLW2901 - the copy left out
             yield from nodes(value, (*above, node))
     elif isinstance(node, list):
         for value in node:
@@ -1152,7 +1155,7 @@ def rule_18(template: str, source: Any, loaded: Any, household: Household) -> li
         refused, field, tile = parts
         rows = field.get("entities") or []
         actions = ("tap_action", "hold_action", "double_tap_action")
-        if refused.get("show_empty") is not False:
+        if not shown_by_content(refused):
             found.append(f"rule 18: {view['path']}: the refused line shows when empty")
         if (
             len(rows) != 1
@@ -1211,6 +1214,39 @@ def rule_20(template: str, source: Any, loaded: Any, household: Household) -> li
     ]
 
 
+def _cards_of(found: Any) -> Iterator[dict[str, Any]]:
+    """Every card of the made dashboard, nested ones and the footers' included."""
+    if isinstance(found, dict):
+        if "type" in found and ("content" in found or "cards" in found or "entities" in found):
+            yield found
+        for value in found.values():
+            yield from _cards_of(value)
+    elif isinstance(found, list):
+        for value in found:
+            yield from _cards_of(value)
+
+
+def shown_by_content(card: Mapping[str, Any]) -> bool:
+    """The card shows by a condition of its own content, as the generator makes a card that may
+    be empty (dashboard._shown_by_condition): it hides while its content renders nothing."""
+    conditions = card.get("visibility") or []
+    body = "{%- set body -%}\n" + str(card.get("content")) + "\n{%- endset -%}\n"
+    return bool(conditions) and conditions[-1] == {
+        "condition": "template",
+        "value_template": body + "{{ body | trim != '' }}",
+    }
+
+
+def rule_21(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
+    """No card of the made dashboard hides itself: Home Assistant's card wrapper would take it
+    out of the page for good (dashboard._shown_by_condition, the stage-5 browser check)."""
+    return [
+        f"rule 21: a card hides itself: {str(card.get('content', ''))[:60]!r}"
+        for card in _cards_of(loaded)
+        if "show_empty" in card
+    ]
+
+
 def tab_letters(template: str, translator: i18n.Translator) -> int:
     """Rule 14: the letters of the three tabs' titles in a language."""
     source = load(template)
@@ -1240,6 +1276,7 @@ RULES: list[Rule] = [
     rule_18,
     rule_19,
     rule_20,
+    rule_21,
 ]
 
 

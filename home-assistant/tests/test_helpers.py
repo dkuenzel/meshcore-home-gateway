@@ -403,19 +403,28 @@ async def test_a_section_whose_cards_all_hide_is_not_shown(
     assert problems(caplog) == []
 
 
+def hiding(content: str) -> dict[str, Any]:
+    """A Markdown card as the generator makes one that may be empty: it shows by a condition of
+    its own content (dashboard._shown_by_condition)."""
+    body = "{%- set body -%}\n" + content + "\n{%- endset -%}\n{{ body | trim != '' }}"
+    condition = {"condition": "template", "value_template": body}
+    return {"type": "markdown", "content": content, "visibility": [condition]}
+
+
 async def test_an_empty_card_renders_to_nothing_at_all(hass: HomeAssistant) -> None:
-    """Core strips the output, so blank lines are nothing; markup without text is something;
-    a card without `show_empty: false` shows even nothing (hui-markdown-card.ts)."""
+    """Core strips the output, so blank lines are nothing, and the card's condition of its own
+    content hides it; markup without text is something; a card without that condition shows
+    even nothing (hui-markdown-card.ts)."""
     for content in (
         "{%- if false %}x{% endif -%}",
         "\n",
         "{{ ' ' }}",
         "{% if false %}x{% endif %}\n",
     ):
-        shows_nothing(hass, {"type": "markdown", "show_empty": False, "content": content})
+        shows_nothing(hass, hiding(content))
     for content in ("<div></div>", "&nbsp;", "{{ '\u200b' }}"):
         with pytest.raises(AssertionError, match="shows"):
-            shows_nothing(hass, {"type": "markdown", "show_empty": False, "content": content})
+            shows_nothing(hass, hiding(content))
         assert render(hass, {"type": "markdown", "content": content}) != ""
-    with pytest.raises(AssertionError, match="show_empty"):
+    with pytest.raises(AssertionError, match="does not hide when empty"):
         shows_nothing(hass, {"type": "markdown", "content": "\n"})

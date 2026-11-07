@@ -94,8 +94,8 @@ format, the command line and Home Assistant discovery are public interfaces
   three latest chats and where everyone is. *Help* explains the problems and why a message was
   not sent, and opens from each tab's *What this view is for* and from each chat's help.
 
-- *Contacts* on the dashboard, written again for the household: *People and devices*, this
-  gateway's contacts by their devices, each with its type (person, repeater, room or sensor), its
+- *Contacts* on the dashboard, written again for the household: buttons to *Gateway*,
+  *Settings* and *Help*; *People and devices*, this gateway's contacts by their devices, each with its type (person, repeater, room or sensor), its
   battery and *Asking*, how its device answers asking for position and battery, and a link to its
   chat page; *Sensors*, the readings of the contacts that report some; *Ask for position and
   battery*, a switch for each person; *Add or remove* with the result of the last request under
@@ -113,7 +113,7 @@ format, the command line and Home Assistant discovery are public interfaces
   them, and the airtime left of the hour's budget; *Radio*; *Radio settings*, with who may ask
   the radio for its battery, position and readings as the radio acts on it; *Latest of each
   kind*, the newest event of each kind. *Settings*: what the administrator set, read only, from
-  the sensor *Configuration*, each setting with its key, and the versions. While the gateway is
+  the sensor *Configuration*, each setting with its section and key, and the versions. While the gateway is
   offline, these cards say so instead of values that would read as never reported. *Help* names
   every page, button and switch, and says what the dashboard cannot do, the kinds of messages and
   what each word of the cards means ([home-assistant.md](docs/home-assistant.md#dashboard)).
@@ -186,6 +186,12 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+
+- The dashboard's cards that show only while they have something to say (the problems on
+  *Overview*, the line under a chat's field that says a message was not sent, the map's hints)
+  now appear on a page that is open. Home Assistant took such a card out of the page once it was
+  empty, so it stayed away until the page was loaded again; it now shows by a condition of its
+  own content.
 
 - The dashboard's switches and remove buttons of the contacts show only while their entity is
   that of this gateway's contact with the key the dashboard was made for: a second gateway's

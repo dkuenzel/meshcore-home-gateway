@@ -431,15 +431,33 @@ def render(hass: HomeAssistant, found: dict[str, Any]) -> str:
     )
 
 
+def shown_by_content(found: dict[str, Any]) -> str | None:
+    """The card's condition of its own content, as the generator makes a card that may be empty
+    (dashboard._shown_by_condition), or None: Home Assistant's card wrapper takes a card that
+    hides itself (`show_empty: false`) out of the page for good, one hidden by its condition
+    comes back (stage-5 browser check)."""
+    conditions = found.get("visibility") or []
+    body = "{%- set body -%}\n" + str(found.get("content")) + "\n{%- endset -%}\n"
+    last = conditions[-1] if conditions else {}
+    expected = body + "{{ body | trim != '' }}"
+    if last.get("condition") != "template" or last.get("value_template") != expected:
+        return None
+    return expected
+
+
 def shows_nothing(hass: HomeAssistant, found: dict[str, Any]) -> None:
-    """The card renders to exactly "": a Markdown card with `show_empty: false` hides only then
-    (hui-markdown-card.ts lines 184-187 at 20260930.4, 232-235 at 20261028.4). Core strips what a
-    template renders (helpers/template/__init__.py line 474 at 2026.10.2, 493 at 2026.11.0), so
-    spaces and line breaks are nothing already; an element without text, `&nbsp;` or a zero-width
-    space is not, and shows an empty box. Without `show_empty: false` even "" shows one."""
-    assert found.get("show_empty") is False, f"{found['content'][:60]!r} has no show_empty: false"
+    """The card renders to exactly "", and its condition of its own content, which core renders
+    as the frontend asks for it, hides it then. Core strips what a template renders
+    (helpers/template/__init__.py line 474 at 2026.10.2, 493 at 2026.11.0), so spaces and line
+    breaks are nothing already; an element without text, `&nbsp;` or a zero-width space is not,
+    and would show an empty box."""
+    condition = shown_by_content(found)
+    assert condition is not None, f"{found['content'][:60]!r} does not hide when empty"
     output = render(hass, found)
     assert output == "", f"{found['content'][:60]!r} shows {output!r}"
+    variables = {"config": found, "user": "Bob"}
+    hidden = Template(condition, hass).async_render(variables, parse_result=False, strict=True)
+    assert hidden == "False", f"{found['content'][:60]!r}: its condition says {hidden!r}"
 
 
 def rendered(hass: HomeAssistant, loaded: dict[str, Any]) -> dict[str, str]:
@@ -563,7 +581,9 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
             c.get("heading") or c.get("title") or c["name"]
             for v in pages
             for c in walk(v["sections"])
-            if (c["type"] == "heading" or "title" in c or "name" in c) and id(c) not in rows
+            if (c["type"] == "heading" or "title" in c or "name" in c)
+            and id(c) not in rows
+            and c.get("heading") != ""  # the badges' own heading on Contacts has no title
         ]
         assert len(titles) == 33, titles  # the headings of every page, Hidden contacts
         for title in titles:

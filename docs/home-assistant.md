@@ -714,7 +714,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   to write in and its *Send* button (writing, below). A person whose device is gone, removed from
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.
-* *Contacts*: *People and devices*, this gateway's contacts by their devices, heard newest
+* *Contacts*: buttons to *Gateway*, *Settings* and *Help* at the top; *People and devices*,
+  this gateway's contacts by their devices, heard newest
   first, each with its type (person, repeater, room or sensor), its battery and the column
   *Asking*: whether the gateway asks its device for its position and battery and how it answers,
   in the words of a chat's page;
@@ -742,7 +743,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   attributes of an unavailable entity, so they would read as never reported.
 * *Settings*: what your administrator set, read only, from the gateway's *Configuration*:
   chats and messages, privacy, contacts and Home Assistant, the radio and airtime, each setting
-  with its key of the configuration file; and the versions of the dashboard, the gateway and the
+  with its section and key of the configuration file, such as `[messages]` `truncate`; and the
+  versions of the dashboard, the gateway and the
   radio. A gateway before 2.1 reports no settings, and the page says so and shows only what it
   can tell; offline, it says that instead.
 * *Help*: what the gateway does, the pages, every button and switch, the kinds of messages, what

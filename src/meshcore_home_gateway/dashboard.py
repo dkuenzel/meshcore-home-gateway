@@ -465,7 +465,65 @@ def render(
             out.append(match.group(1) + json.dumps(chosen, ensure_ascii=False))
         else:
             out.append(_with_texts(line, fixed, text))
-    return "\n".join(out)
+    return "\n".join(_shown_by_condition(out))
+
+
+_HIDES_ITSELF: Final = re.compile(r"^( *)show_empty: false$")
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _shown_by_condition(lines: list[str]) -> list[str]:
+    """Each Markdown card marked `show_empty: false` shows by a visibility condition of its own
+    content instead: the condition is true while the content renders more than spaces.
+
+    Home Assistant's card wrapper takes a card that hides itself out of the page, and the card's
+    template with it, so it never shows again until the page is loaded again (`hui-card`'s
+    `_setElementVisibility`, frontends 20260930.4 and 20261028.4; the stage-5 browser check saw
+    the refused line and the problem cards stay hidden). The wrapper keeps asking a card's
+    visibility conditions while the card is hidden, and puts the card back once they hold."""
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if (match := _HIDES_ITSELF.match(lines[i])) is None:
+            out.append(lines[i])
+            i += 1
+            continue
+        level = len(match.group(1))
+        end = i + 1
+        while end < len(lines) and (not lines[end].strip() or _indent(lines[end]) > level):
+            end += 1
+        while end < len(lines) and _indent(lines[end]) == level and lines[end].strip()[:2] != "- ":
+            end += 1
+            while end < len(lines) and (not lines[end].strip() or _indent(lines[end]) > level):
+                end += 1
+        card = lines[i + 1 : end]
+        keys = {line.strip(): n for n, line in enumerate(card) if _indent(line) == level}
+        if "content: |-" not in keys:
+            raise TemplateError(f"a card that may be empty needs `content: |-`: {lines[i - 1]}")
+        start = keys["content: |-"] + 1
+        stop = min([n for n in keys.values() if n >= start] or [len(card)])
+        condition = [
+            " " * (level + 2) + "- condition: template",
+            " " * (level + 4) + "value_template: |-",
+            " " * (level + 6) + "{%- set body -%}",
+            *[line and " " * 4 + line for line in card[start:stop]],
+            " " * (level + 6) + "{%- endset -%}",
+            " " * (level + 6) + "{{ body | trim != '' }}",
+        ]
+        if "visibility:" in keys:
+            after = min([n for n in keys.values() if n > keys["visibility:"]] or [len(card)])
+            card[after:after] = condition
+        else:
+            card[keys["content: |-"] : keys["content: |-"]] = [
+                " " * level + "visibility:",
+                *condition,
+            ]
+        out += card
+        i = end
+    return out
 
 
 @dataclass(frozen=True, slots=True)

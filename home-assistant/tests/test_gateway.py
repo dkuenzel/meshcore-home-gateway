@@ -47,6 +47,7 @@ from test_dashboard import (
     made,
     page,
     render,
+    shown_by_content,
     shows_nothing,
 )
 
@@ -335,8 +336,8 @@ async def test_settings_read_the_configuration_the_gateway_announces(
     assert row(said, "Radio settings managed") == "only watched"
     assert row(said, "Command senders") == "1"
     assert row(said, "Command codes") == "off"
-    assert "<code>radio.profile.manage</code>" in said
-    assert "<code>commands.codes</code>" in said
+    assert "<code>[radio.profile]</code> <code>manage</code>" in said
+    assert "<code>[commands]</code> <code>codes</code>" in said
     assert row(said, "This dashboard") == dashboard.__version__
     codes = document | {"commands": {"senders": 1, "codes": True, "reply": "none"}}
     await fire(
@@ -395,7 +396,7 @@ async def test_settings_without_the_configuration_say_what_is_missing(
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     view = cards(loaded, "settings")
     first = card(view, WHO)
-    tables = [c for c in view if c.get("show_empty") is False]
+    tables = [c for c in view if shown_by_content(c)]
     assert len(tables) == 4
     assert render(hass, first).startswith(
         "<div>The gateway is not found: see the first line of Overview.</div>"

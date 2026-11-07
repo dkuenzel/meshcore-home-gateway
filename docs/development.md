@@ -214,7 +214,7 @@ its rule; the shipped template breaks none of them.
 10. The counts in the tests follow the template.
 11. No GitHub alert (`> [!`): a coloured box is a `<div><ha-alert>` line.
 12. The tabs are `overview`, `messages` and `contacts`, without icons. *Overview* links to
-    *Map*, *Gateway*, *Settings* and *Help* outside every `<details>`, and the heading of
+    *Map*, *Gateway*, *Settings* and *Help* outside every `<details>`, and a heading of
     *Contacts* has buttons to *Gateway*, *Settings* and *Help*.
 13. A card that prints a message's text prints it through `mt()`; `m()` and `mt()` read the same
     in every card.
@@ -230,12 +230,17 @@ its rule; the shipped template breaks none of them.
     the key before ↵ in a word of the name beside *Send*.
 17. No text names a section of the guide; it links to its anchor instead. Only a line that
     starts with "For your administrator:" names Home Assistant's menus.
-18. A chat page's footer is a `vertical-stack` of the refused line (a Markdown card with
-    `show_empty: false`), one text row whose three actions are `none`, and a tile with a
+18. A chat page's footer is a `vertical-stack` of the refused line (a Markdown card that hides
+    while empty, rule 21), one text row whose three actions are `none`, and a tile with a
     `button` feature.
 19. `m()` removes the C0 and C1 controls but tab, LF and CR, and the invisible characters the
     gateway drops before it reads a contact link; never U+200C and U+200D.
 20. No page has a `back_path`: the back arrow goes back to the page it came from.
+21. No card of the made dashboard hides itself. The template marks a Markdown card that may be
+    empty with `show_empty: false`, and the generator turns that into a visibility condition of
+    the card's own content: Home Assistant's card wrapper takes a card that hides itself out of
+    the page, and it does not come back until the page is loaded again; a card hidden by its
+    conditions comes back once they hold.
 
 A translation of a dashboard text is used only when `dashboard.unsafe()` finds nothing in it (no
 Jinja, HTML, Markdown link or address, no line break); the catalog check applies the same test.
