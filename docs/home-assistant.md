@@ -684,8 +684,8 @@ script, and the examples below, exactly as written here (`make ha-test`,
 `meshcore-home-gateway dashboard` writes a dashboard for the gateway it runs beside, as YAML for
 Home Assistant. It has three tabs, *Overview*, *Chats* and *Contacts*, and pages without a tab:
 one for each chat, *Map*, *Gateway*, *Settings* and *Help*. Every card has a fold that explains
-it, every page but a chat's ends in *What this view is for*, which links to *Help*, and *Help*
-names every page, button and switch.
+it, every page but a chat's and *Help* ends in *What this view is for*, which links to *Help*, and
+*Help* names every page, button and switch and ends in what the administrator does.
 
 * *Overview* answers whether everything is fine. Its first line says it in a colour: red for
   act now (the gateway not found or offline, the radio disconnected or taken over by another
@@ -715,16 +715,20 @@ names every page, button and switch.
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.
 * *Contacts*: *People and devices*, this gateway's contacts by their devices, heard newest
-  first, each with its type, its battery and the column *Asking*: whether the gateway asks its
-  device for its position and battery and how it answers, in the words of a chat's page;
+  first, each with its type (person, repeater, room or sensor), its battery and the column
+  *Asking*: whether the gateway asks its device for its position and battery and how it answers,
+  in the words of a chat's page;
   *Sensors*, the readings of the contacts that report some; *Ask for position and battery*, a
   switch for each person; *Add or remove*: *Add at once: pick a node heard nearby* and *Add by
   key or contact link* (paste it, then tap Return), the result of the last request below them,
   the QR code of the gateway under *Let someone add this home*
   ([above](#adding-and-removing-contacts)), a *Remove* for each contact, which asks first, and
-  *Hidden contacts* with *Show again*; and *Nodes heard nearby*. While the controls cannot act,
-  a line above them says why: the gateway offline (in red), `controls = false`, contact
-  management off, the radio away, or firmware the gateway is not tested with.
+  *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the
+  controls cannot act, a line above them says why: the gateway offline or the radio disconnected
+  (in red, as on *Overview*), `controls = false`, contact management off, the radio not reported
+  yet, or firmware the gateway is not tested with; above the switches also asking turned off in
+  the settings, while the switches still keep who would be asked. A list whose rows all hide
+  shows no empty frame.
 * *Map*: the contacts with a position and their traces of the last 24 hours
   ([Traces on the map](#traces-on-the-map)), and below it *Where everyone is*, in words.
 * *Gateway*: *Health*, each part of the gateway with its state, those that need a look named
@@ -733,18 +737,23 @@ names every page, button and switch.
   firmware and radio settings, how the gateway reaches it, its background noise and battery and
   a day of airtime; *Radio settings*, what the managed profile wants and what the radio has,
   with who may ask the radio for its battery, position and readings as the radio acts on it;
-  *Latest of each kind*, the newest contact, telemetry, setting, node and command event.
+  *Latest of each kind*, the newest contact, telemetry, setting, node and command event. While
+  the gateway is offline, these cards say so instead of values: Home Assistant keeps no
+  attributes of an unavailable entity, so they would read as never reported.
 * *Settings*: what your administrator set, read only, from the gateway's *Configuration*:
   chats and messages, privacy, contacts and Home Assistant, the radio and airtime, each setting
   with its key of the configuration file; and the versions of the dashboard, the gateway and the
-  radio. A gateway before 2.1 reports no settings, and the page says so.
+  radio. A gateway before 2.1 reports no settings, and the page says so and shows only what it
+  can tell; offline, it says that instead.
 * *Help*: what the gateway does, the pages, every button and switch, the kinds of messages, what
   the dashboard cannot do, what each word of the cards means, who sees what, and what the
   administrator does.
 
 It uses only the gateway's entities and the cards of Home Assistant, no custom card. Its texts
 follow `homeassistant.language`; entity IDs, reason codes and names from the mesh stay as they
-are. Every name and text from the mesh shows as text: no name or message can add a link or load
+are. A card that finds the contacts' devices in Home Assistant's registry, which tells no card
+of a change, renders again each minute: a contact that gets its device, or a tracker, shows
+within a minute. Every name and text from the mesh shows as text: no name or message can add a link or load
 an image ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 
 **Make it** in the gateway's container, as root (it reads the service's state, read only, for the

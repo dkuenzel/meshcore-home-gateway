@@ -160,7 +160,8 @@ lines of its own, which `dashboard.py` reads:
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
 * `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@contact@` and `@guide@` (the guide of
   this version, for a link to one of its sections) are filled in;
-  `["@trackers@"]` and `["@chats@"]` become JSON lists. A chat page in `["@chats@"]` says with
+  `["@trackers@"]` and `["@chats@"]` become JSON lists, `["@models@"]` the pairs of each model of
+  a contact's device, as the gateway names it in the dashboard's language, and its node type. A chat page in `["@chats@"]` says with
   `write` only whether it has a field: the entity IDs of its field and its *Send* button stand
   only in the guard of its footer (rule 3 below).
 
@@ -191,8 +192,8 @@ its rule; the shipped template breaks none of them.
 1. A value goes onto one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element per line, or
    onto a line of `<table role="presentation" width="100%">` elements.
 2. A mapping macro (`said`, `mark`, `why`, `what`, `telemetry`, `status`, `profile`, `part`,
-   `place`, `problem`, `mon`, `kind`, `audience`) gives each branch a text, an unknown value
-   through `m()`, and has a branch for each value of the gateway's list where there is one.
+   `place`, `problem`, `mon`, `kind`, `audience`, `node`) gives each branch a text, an unknown
+   value through `m()`, and has a branch for each value of the gateway's list where there is one.
 3. A condition holds no marker and no `m()`, and never `has_value()`. The entity ID of a contact
    appears only inside a card or row whose template condition tests, for that entity, that it
    exists, that it is not `unavailable`, its device's `via_device_id` and `serial_number`; for a
@@ -220,9 +221,12 @@ its rule; the shipped template breaks none of them.
 14. The three tabs' titles have at most 22 letters together in every language shipped, or the
     tabs do not fit a phone.
 15. No condition has `enabled`, no number in a condition is a string.
-16. A text or a name that quotes a label of the dashboard, and a name that names a button's
-    label (*Return, then Send*), is listed in `QUOTES` with the labels it names, and every
-    language says each label as it translates it. A text that asks for the keyboard's key says
+16. A text or a name that quotes a label of the dashboard, a name that names a button's label
+    (*Return, then Send*), and a text that names a label of `NAMED` by its words, quote marks or
+    not (D-63: *Send*, *Contacts*, *Gateway*, *Settings*, *Ask for position and battery*, the
+    controls and headings of *Contacts*), is listed in `QUOTES` with the labels it names, or in
+    `PLAIN` where the words mean no label; and every language says each label as it translates
+    it. A text that asks for the keyboard's key says
     the key before ↵ in a word of the name beside *Send*.
 17. No text names a section of the guide; it links to its anchor instead. Only a line that
     starts with "For your administrator:" names Home Assistant's menus.

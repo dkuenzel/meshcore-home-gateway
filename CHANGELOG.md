@@ -95,23 +95,28 @@ format, the command line and Home Assistant discovery are public interfaces
   not sent, and opens from each tab's *What this view is for* and from each chat's help.
 
 - *Contacts* on the dashboard, written again for the household: *People and devices*, this
-  gateway's contacts by their devices, each with its battery and *Asking*, how its device answers
-  asking for position and battery, and a link to its chat page; *Sensors*, the readings of the
-  contacts that report some; *Ask for position and battery*, a switch for each person; *Add or
-  remove* with the result of the last request under the fields, the QR code under *Let someone
-  add this home*, a *Remove* for each contact that asks first, naming the contact, and *Hidden
-  contacts* with *Show again*; *Nodes heard nearby*. A line above the controls says why they
-  cannot act when they cannot: the gateway offline, `controls = false`, contact management off,
-  the radio away, or firmware the gateway is not tested with (#99).
+  gateway's contacts by their devices, each with its type (person, repeater, room or sensor), its
+  battery and *Asking*, how its device answers asking for position and battery, and a link to its
+  chat page; *Sensors*, the readings of the contacts that report some; *Ask for position and
+  battery*, a switch for each person; *Add or remove* with the result of the last request under
+  the fields, the QR code under *Let someone add this home*, a *Remove* for each contact that
+  asks first, naming the contact, and *Hidden contacts* with *Show again*; *Nodes heard nearby*,
+  the nodes you can add. A line above the controls says why they cannot act when they cannot:
+  the gateway offline or the radio disconnected (in red, as on *Overview*), `controls = false`,
+  contact management off, the radio not reported yet, or firmware the gateway is not tested with
+  (#99); above the switches also asking turned off in the settings. A list whose rows all hide
+  shows no empty frame. Cards that find the contacts' devices in Home Assistant's registry, on
+  every page, render again each minute, so a new contact or tracker shows within a minute.
 
 - *Gateway* on the dashboard: *Health*, each part of the gateway with its state, those that need
   a look named first, the messages on their way counted as the first line of *Overview* counts
   them, and the airtime left of the hour's budget; *Radio*; *Radio settings*, with who may ask
   the radio for its battery, position and readings as the radio acts on it; *Latest of each
   kind*, the newest event of each kind. *Settings*: what the administrator set, read only, from
-  the sensor *Configuration*, each setting with its key, and the versions. *Help* names every
-  page, button and switch, and says what the dashboard cannot do, the kinds of messages and what
-  each word of the cards means ([home-assistant.md](docs/home-assistant.md#dashboard)).
+  the sensor *Configuration*, each setting with its key, and the versions. While the gateway is
+  offline, these cards say so instead of values that would read as never reported. *Help* names
+  every page, button and switch, and says what the dashboard cannot do, the kinds of messages and
+  what each word of the cards means ([home-assistant.md](docs/home-assistant.md#dashboard)).
 
 ### Changed
 
