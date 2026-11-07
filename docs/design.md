@@ -326,11 +326,11 @@ sequenceDiagram
   is behind the host's and the bounds above let the next connect, within an hour, set it forward
   from there (else the restart would leave it days behind, #86), after taking the radio's
   messages, when no message is queued or being delivered, and at most once a day (the bridge's
-  `may_restart`); the check runs at connect and at every heartbeat. Further ahead, a warning says so: nodes and repeaters ignore the radio's
-  adverts and logins until real time passes the times it sent before, which is fine for minutes
-  but not for days. Command age checks do not use the radio's clock: they compare the sender's
-  timestamp with the host's clock (§7.3). The unit starts after `time-sync.target` where a
-  service provides it.
+  `may_restart`); the check runs at connect and at every heartbeat. Further ahead, a warning
+  says so: nodes and repeaters ignore the radio's adverts and logins until real time passes the
+  times it sent before, which is fine for minutes but not for days. Command age checks do not
+  use the radio's clock: they compare the sender's timestamp with the host's clock (§7.3). The
+  unit starts after `time-sync.target` where a service provides it.
 * **Messages.** On `MSG_WAITING`, after connecting, and every 5 minutes as a safety net, the session
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
@@ -870,9 +870,9 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   on the radio shows it afterwards. The bridge sees only a link that the radio closed, which the
   firmware does only for another client, whether the radio kept running or restarted since (the
   other client may have restarted it); a client that connects while the bridge is away leaves no
-  trace at all. `radio_link_contested` is a best effort, and `false` is no proof. Treat a key that may have been read as
-  lost (deployment.md, *Troubleshooting*): with no forward secrecy, a new key protects only what
-  comes after.
+  trace at all. `radio_link_contested` is a best effort, and `false` is no proof. Treat a key
+  that may have been read as lost (deployment.md, *Troubleshooting*): with no forward secrecy, a
+  new key protects only what comes after.
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
@@ -883,10 +883,9 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. Its
   bound takes every hop at the radio's coding rate: a repeater or recipient at a faster one can
   make a genuine acknowledgement of a long text read `suspect`, unless the radio uses the
-  fastest coding rate of its mesh (#90). The
-  history keeps such a message as `confirmed`; the event and the log tell. The fix belongs in the
-  firmware: an acknowledgement authenticated with the secret the two radios share, for the
-  maintainer to raise with the MeshCore project.
+  fastest coding rate of its mesh (#90). The history keeps such a message as `confirmed`; the
+  event and the log tell. The fix belongs in the firmware: an acknowledgement authenticated with
+  the secret the two radios share, for the maintainer to raise with the MeshCore project.
 * A client that may write the gateway's topics can show Home Assistant a forged document until
   the gateway restores it: a round trip, up to 10 seconds if it keeps writing, and as long as it
   likes while the gateway is offline, as it can write `online` to `availability` too. Only the

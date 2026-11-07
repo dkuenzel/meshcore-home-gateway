@@ -163,9 +163,10 @@ acknowledgement with the secret the two radios share; the gateway can narrow it:
   where the radio uses 4/8: then a genuine acknowledgement of a long text can come sooner and
   read `suspect` (at SF 8, 62.5 kHz and 4/8, a text of 140 bytes over 2 hops: a bound of 4.5 s,
   a genuine answer in about 4.2 s). Set the gateway's radio, in the MeshCore app, to the fastest
-  coding rate its mesh uses (#90). One who waits is not caught, nor anything sent to a neighbour or flooded,
-  which a genuine acknowledgement can answer as fast as a forged one; nor an attempt repeated
-  after the radio's link broke. `meshcore-home-gateway send --wait` exits 1 on it.
+  coding rate its mesh uses (#90). One who waits is not caught, nor anything sent to a
+  neighbour or flooded, which a genuine acknowledgement can answer as fast as a forged one; nor
+  an attempt repeated after the radio's link broke. `meshcore-home-gateway send --wait` exits 1
+  on it.
 * **An answer** is the proof an alert that must arrive deserves: the recipient sends a word back
   as a [command](#commands-command), which the gateway checks
   ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)), and the automation

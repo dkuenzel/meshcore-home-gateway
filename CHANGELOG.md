@@ -92,8 +92,8 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
-- With `set_clock`, a radio clock 1 minute to 1 hour ahead is no longer restarted when no
-  contact changed for longer than `set_clock_max_days`, or the host's clock is before the
+- With `set_clock`, the radio is no longer restarted for a clock 1 minute to 1 hour ahead when
+  no contact changed for longer than `set_clock_max_days`, or the host's clock is before the
   release: the restart starts the clock at the newest contact time, and the next connect then
   refused to move it forward, which left the radio weeks behind. The log says why it waits
   ([deployment.md](docs/deployment.md#5-troubleshooting)) (#86).
@@ -104,12 +104,13 @@ format, the command line and Home Assistant discovery are public interfaces
   gateway's own restart for the clock no longer counts as a link the radio closed. The guide
   calls the sensor what it is, a best effort: `false` is no proof
   ([mqtt-api.md](docs/mqtt-api.md#state-state)) (#88).
-- Names compare without every character drawn as nothing, not only the format characters: a
-  node named `Bob` with a variation selector, a grapheme joiner, a Hangul filler or a braille
-  blank added gets the `name_taken` mark, ` (name taken)` in *Add heard node* and, once added,
-  its key's digits in its device name. A combining mark that shows, such as an accent, still
-  makes another name. One table of these characters serves the names and what `add_contact`
-  drops from a copied key or link ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)) (#89).
+- Names are compared without any of the characters drawn as nothing, not only without the
+  format characters: a node named `Bob` with a variation selector, a grapheme joiner, a Hangul
+  filler or a braille blank added gets the `name_taken` mark, ` (name taken)` in *Add heard
+  node* and, once added, its key's digits in its device name. A combining mark that shows, such
+  as an accent, still makes another name. One table of these characters serves the names and
+  what `add_contact` drops from a copied key or link
+  ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)) (#89).
 - The guide names a limit of `suspect`: its bound takes every hop at the radio's coding rate,
   so where repeaters or the recipient send at a faster one (4/5 against the radio's 4/8), a
   genuine acknowledgement of a long text can read `suspect`. Set the gateway's radio to the
