@@ -168,10 +168,12 @@ def test_service_end_to_end(
 def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> None:
     """Hardware checklist step 16: the broker stops and starts again, without the retained
     messages it had (`persistence false`). The service reconnects by itself and publishes
-    `online` and its documents again. paho sends again what the broker had not acknowledged when
-    it stopped, ahead of the connect's documents: a state from before the radio was connected,
-    which a test that read the first state after the restart once took for the current one
-    (#101). What counts is the state the broker keeps."""
+    `online` and its documents again. The broker is stopped only once the radio is connected,
+    and the state is read from what the broker keeps: this test once stopped it while the first
+    state, from before the radio was connected, was on its way, and took the copy paho sent again
+    after the restart for the current state (#101). That such copies draw no warning is
+    test_with_broker_what_paho_sends_again_after_a_restart_is_the_gateways_own in
+    test_mqtt_client.py; this test has nothing in flight when the broker stops."""
     if SKIP_BROKER:
         pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
     port = free_port()
@@ -233,7 +235,7 @@ def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> Non
                     _, errors = service.communicate()
             assert service.returncode == 0, errors.decode()
             assert b"Traceback" not in errors
-            # the copies of what paho sent again are the gateway's own (#101)
+            # a restart alone is no other client's write
             assert b"another client wrote meshcore/radio1/state" not in errors
     finally:
         stop_mosquitto(mosquitto)
