@@ -394,7 +394,7 @@ A release is checked in three places, none of them a procedure by hand
 
    | # | Check | Expected |
    | --- | --- | --- |
-   | R1 | `bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/download/vX.Y.ZrcN/meshcore-home-gateway-lxc.sh)" -- --update <id>` | the log ends with `self-test passed` |
+   | R1 | The candidate's installer with `--update <id>`, as [deployment.md](deployment.md#update-reconfigure-remove) runs it, from the candidate's release (`releases/download/vX.Y.ZrcN/` for `releases/latest/download/`) | the log says `self-test passed`, followed by doctor's report; the final message says `Self-test: passed` |
    | R2 | The gateway's device in Home Assistant | online, the radio connected |
    | R3 | A companion of the household sends the gateway a message | it shows in Home Assistant |
    | R4 | A companion's switch *Telemetry* | it switches; battery and position follow within the companion's interval |

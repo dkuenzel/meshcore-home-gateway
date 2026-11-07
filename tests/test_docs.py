@@ -283,6 +283,29 @@ def test_the_guide_names_the_sensors_and_the_entity_prefix() -> None:
     assert "contact_entity_prefix`" in ids
 
 
+def test_the_release_check_r1_expects_what_the_installer_prints() -> None:
+    """Since the installer prints doctor's report after `self-test passed` (the warnings a
+    passed self-test has, #80), its log no longer ends with that line: R1 names the line, the
+    report after it and the final message. The row names the installer by a link to the
+    update in deployment.md, not by the repository's address."""
+    testing = (ROOT / "docs" / "testing.md").read_text(encoding="utf-8")
+    (r1,) = [line for line in testing.splitlines() if line.lstrip().startswith("| R1 |")]
+    check, expected = r1.strip().strip("|").split(" | ")[1:]
+    assert "ends with" not in expected
+    assert "`self-test passed`" in expected
+    assert "doctor" in expected
+    assert "`Self-test: passed`" in expected
+    assert "://" not in r1
+    assert "(deployment.md#update-reconfigure-remove)" in check
+    assert "--update <id>" in check
+    installer = (ROOT / "deploy" / "proxmox" / "meshcore-home-gateway-lxc.sh").read_text(
+        encoding="utf-8"
+    )
+    passed = installer.partition('log "self-test passed (')[2].partition("\n  else")[0]
+    assert "printf '%s\\n' \"$report\"" in passed  # the report follows the line
+    assert "Self-test:    {selftest}" in installer
+
+
 def test_the_design_names_every_placeholder_of_the_dashboard_template() -> None:
     """#106: the design's bullet on the template named neither `@contact@`, `["@controls@"]`
     nor the second conditional, which `dashboard.py` fills in and keeps."""
