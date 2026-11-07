@@ -136,11 +136,14 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ### Security
 
-- The release workflow publishes a tag only if CI on `main` or the hourly `release-due.yml` would
-  have made it: its commit must be on `main`, and a release must be on the commit that wrote its
-  version, a day after it, with CI passed on it on `main`. Before, a `v*` tag pushed by hand on
-  any commit was signed and published within minutes. The check is part of the tagged commit, so
-  a tag on a commit off `main` can still bring a workflow without it
+- The release workflow checks a tag pushed by hand as well. Its commit must be on `main`. A
+  release must be where the hourly `release-due.yml` would tag it: on the commit that wrote the
+  version of `main`, a day after that commit's date, with CI passed on it on `main`, and while
+  `release-due.yml` is enabled, so that disabling it stops the release. A pre-release needs a
+  commit of `main` with its version. Before, a `v*` tag pushed by hand on any commit was signed
+  and published within minutes. A release tagged by hand within its day is refused with the time
+  it is due, and `release-due.yml` starts it then. The check is part of the tagged commit, so a
+  tag on a commit off `main` can still bring a workflow without it
   ([SECURITY.md](SECURITY.md#how-the-repository-and-the-releases-are-protected), #84).
 - `SECURITY.md` names the exception to the protection of `main` and of the release tags: both
   rulesets let a repository role bypass them at any time, which the maintainer's login has, and

@@ -4,7 +4,8 @@
 # release candidate too, once every job passed on it. This run tags the version commit of main once
 # it is due and CI passed on it, and starts release.yml on the tag, as that job does, once: a
 # release that failed is followed by the next version. A later run finds the tag and the release,
-# or the run of release.yml, and does nothing. Tags are not moved or deleted (the tag ruleset).
+# or the run of release.yml, and does nothing. A run whose job admit refused the tag, pushed by
+# hand before its day, does not count. Tags are not moved or deleted (the tag ruleset).
 name: Release due
 
 on:
@@ -74,10 +75,19 @@ jobs:
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
           set -euo pipefail
-          runs=$(gh run list --workflow release.yml --branch "$TAG" --json status --jq length)
+          admit="a tag that CI would make" # the name of release.yml's first job
+          tried=0 # runs on the tag that admit let through, or has not refused yet
+          for run in $(gh run list --workflow release.yml --branch "$TAG" --json databaseId \
+            --jq '.[].databaseId'); do
+            refused=$(gh run view "$run" --json jobs \
+              --jq "[.jobs[] | select(.name == \"$admit\" and .conclusion == \"failure\")] | length")
+            if [[ $refused == 0 ]]; then
+              tried=$((tried + 1))
+            fi
+          done
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "$TAG is released already"
-          elif [[ $runs != 0 ]]; then
+          elif [[ $tried != 0 ]]; then
             echo "release.yml ran on $TAG already"
           else
             gh workflow run release.yml --ref "$TAG"

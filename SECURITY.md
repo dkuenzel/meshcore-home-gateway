@@ -63,15 +63,19 @@ the authority (`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them
   bypass actor is a repository role that the maintainer's login has: the maintainer's login,
   and the agent through it, can bypass it at any time, and push to `main` directly, also by
   force (`current_user_can_bypass: always` in the API).
-- A release is tagged a day after its version reached `main` (`release-due.yml`): time to stop
-  a merged change before it is signed and published. It ships the program of a release
-  candidate tagged before; pre-releases, candidates too, are tagged once CI passed on them and
-  reach only installations that name them.
-- `release.yml` publishes a tag only if CI or `release-due.yml` would have made it, also one
-  pushed by hand: its commit is on `main`, and a release is on the commit that wrote its version,
-  a day later, with CI passed on it on `main`. This check is part of the tagged commit: a tag on
-  a commit off `main` brings that commit's `release.yml`, which can leave the check out. Such a
-  tag is kept from being made only by who may create tags (below).
+- A release is tagged a day after the date of the commit that wrote its version
+  (`release-due.yml`): time to stop a merged change before it is signed and published. A squash
+  merge dates that commit when it reaches `main`; a commit pushed past the ruleset carries the
+  date its author gave it. It ships the program of a release candidate tagged before;
+  pre-releases, candidates too, are tagged once CI passed on them and reach only installations
+  that name them.
+- `release.yml` publishes a release only where `release-due.yml` would tag it, also on a tag
+  pushed by hand: on the commit that wrote the version `main` has, a day after that commit's
+  date, with CI passed on it on `main`, and while `release-due.yml` is enabled, so that disabling
+  it stops a release. A pre-release needs only a commit of `main` that carries its version: one
+  tagged by hand is published also where CI has not passed. This check is part of the tagged
+  commit: a tag on a commit off `main` brings that commit's `release.yml`, which can leave the
+  check out. Such a tag is kept from being made only by who may create tags (below).
 - Release tags `v*` (ruleset `v-star`): cannot be moved or deleted
   ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)). Its bypass actor is the
   same role: the maintainer's login, and the agent through it, can bypass it at any time, and

@@ -11,9 +11,11 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -517,32 +519,154 @@ def test_a_release_is_tagged_a_day_after_its_version_commit() -> None:
     assert "SHA: ${{ steps.plan.outputs.sha }}" in due
     assert 'gh run list --workflow ci.yml --commit "$SHA" --event push --status success' in due
     assert "        if: steps.tested.outputs.passed == 'true'\n" in due
-    assert 'gh run list --workflow release.yml --branch "$TAG" --json status --jq length' in due
 
 
 def test_release_yml_publishes_only_a_tag_ci_would_have_made() -> None:
     """#84: a tag pushed by hand started the release at once, without the commit on main, CI on
-    main or the day of waiting. The first job admits a tag on main, a release only on its
-    version commit a day later with CI passed; nothing is built or published before it. A tag on
-    a commit off main brings its own release.yml, which may lack the job (SECURITY.md)."""
+    main or the day of waiting. The first job admits a tag on main, a release only where
+    release-due.yml would tag it, with CI passed and the workflow enabled (the steps run below);
+    nothing is built or published before it. A tag on a commit off main brings its own
+    release.yml, which may lack the job (SECURITY.md)."""
     jobs = workflow_jobs("release.yml")
     admit = jobs["admit"]
     assert "      - uses: actions/checkout@" in admit
     assert "          fetch-depth: 0 # main, the version commit and the tags\n" in admit
     assert 'python3 -I tools/release_plan.py admit "$TAG" >>"$GITHUB_OUTPUT"' in admit
     assert admit.count("if: startsWith(github.ref, 'refs/tags/v')\n") == 2  # a branch: dry run
-    assert "        if: steps.plan.outputs.final == 'true'\n" in admit
-    assert 'gh run list --workflow ci.yml --commit "$SHA" --event push --status success' in admit
+    assert admit.count("        if: steps.plan.outputs.final == 'true'\n") == 2  # the steps below
     permissions = re.search(r"\n    permissions:\n((?:      .*\n)+)", admit)
     assert permissions is not None
     assert permissions[1].splitlines() == [
         "      contents: read",
-        "      actions: read # whether CI passed on the commit of a release",
+        "      actions: read # whether CI passed on a release, and release-due.yml is enabled",
     ]
     assert "    needs: admit\n" in jobs["check"]
     assert "    needs: admit\n" in jobs["build"]
     assert "    needs: [admit, check, build, rebuild]\n" in jobs["publish"]
     assert next(iter(jobs)) == "admit"  # before every other job
+
+
+def step_script(workflow: str, job: str, name: str) -> str:
+    """The script of the step called `name` in a job of a workflow: its `run: |` block."""
+    for step in re.split(r"\n(?=      - )", workflow_jobs(workflow)[job]):
+        if re.search(rf"^(?:      - |        )name: {re.escape(name)}$", step, flags=re.MULTILINE):
+            script = step.partition("        run: |\n")[2]
+            assert script, f"{workflow}, {job}: the step {name!r} has no run: | block"
+            return textwrap.dedent(script)
+    raise AssertionError(f"{workflow}, {job}: no step {name!r}")
+
+
+@dataclass
+class Ran:
+    status: int
+    output: str
+    calls: list[str]  # the arguments of each call of gh
+
+
+def run_step(tmp_path: Path, script: str, answers: dict[str, tuple[str, int]], **env: str) -> Ran:
+    """Runs a step's script as a GitHub runner does (bash -eo pipefail) with the step's `env`.
+    The `gh` it calls prints, for arguments that start with a key of `answers`, the text of its
+    value (what gh prints after --jq) and exits with its status; any other call fails."""
+    tools = tmp_path / "tools"
+    tools.mkdir(exist_ok=True)
+    cases = "".join(
+        f"  {shlex.quote(start)}*) printf '%s' {shlex.quote(text)}; exit {status} ;;\n"
+        for start, (text, status) in answers.items()
+    )
+    log = tmp_path / "gh.log"
+    log.unlink(missing_ok=True)
+    executable(
+        tools / "gh",
+        f'#!/bin/bash\necho "$*" >>{shlex.quote(str(log))}\ncase "$*" in\n{cases}esac\n'
+        'echo "gh: no answer for $*" >&2\nexit 2\n',
+    )
+    (tmp_path / "step.sh").write_text(script, encoding="utf-8")
+    ran = subprocess.run(  # noqa: S603 - our workflow's own script with a stub gh
+        ["/bin/bash", "--noprofile", "--norc", "-eo", "pipefail", str(tmp_path / "step.sh")],
+        env={"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}", **env},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    return Ran(ran.returncode, ran.stdout + ran.stderr, calls)
+
+
+SHA = "1" * 40
+CI_PASSED = f"run list --workflow ci.yml --commit {SHA} --event push --status success"
+
+
+def test_release_yml_refuses_a_release_without_ci_passed_on_main(tmp_path: Path) -> None:
+    """#84 review: the step was only read as text; with its refusal turned into a warning, a
+    release without CI passed on main was published, and every test stayed green."""
+    script = step_script("release.yml", "admit", "CI passed on the commit of a release")
+    env = {"SHA": SHA, "GH_REPO": "owner/repo", "GH_TOKEN": "token"}
+    failed = run_step(tmp_path, script, {CI_PASSED: ("0", 0)}, **env)
+    assert failed.status == 1
+    assert f"::error::CI has not passed on {SHA} on main" in failed.output
+    assert failed.calls == [f"{CI_PASSED} --json databaseId --jq length"]
+    assert run_step(tmp_path, script, {CI_PASSED: ("1", 0)}, **env).status == 0
+    assert run_step(tmp_path, script, {CI_PASSED: ("", 1)}, **env).status == 1  # gh failed
+
+
+STATE = "api repos/owner/repo/actions/workflows/release-due.yml --jq .state"
+
+
+@pytest.mark.parametrize("state", ["disabled_manually", "disabled_inactivity", "deleted"])
+def test_release_yml_refuses_a_release_while_release_due_is_disabled(
+    tmp_path: Path, state: str
+) -> None:
+    """#84 review: disabling release-due.yml stops a release within its day, but a tag pushed by
+    hand after the day was still published. The first job now refuses a release while the
+    workflow is not active; a pre-release does not ask."""
+    script = step_script("release.yml", "admit", "No release while release-due.yml is disabled")
+    env = {"GH_REPO": "owner/repo", "GH_TOKEN": "token"}
+    stopped = run_step(tmp_path, script, {STATE: (state, 0)}, **env)
+    assert stopped.status == 1
+    assert f"::error::release-due.yml is {state}" in stopped.output
+    assert stopped.calls == [STATE]
+    assert run_step(tmp_path, script, {STATE: ("active", 0)}, **env).status == 0
+    assert run_step(tmp_path, script, {STATE: ("", 1)}, **env).status == 1  # gh failed
+
+
+ADMIT_JOB = re.search(r"^    name: (.+)$", workflow_jobs("release.yml")["admit"], re.MULTILINE)
+RUNS = "run list --workflow release.yml --branch v2.0.1 --json databaseId --jq .[].databaseId"
+REFUSED = (
+    '--json jobs --jq [.jobs[] | select(.name == "a tag that CI would make" and .conclusion'
+    ' == "failure")] | length'
+)
+
+
+@pytest.mark.parametrize(
+    ("runs", "refused", "started"),
+    [
+        ("", {}, True),  # no run yet
+        ("7\n", {"7": "1"}, True),  # a tag pushed by hand within the day: admit refused it
+        ("7\n8\n", {"7": "1", "8": "1"}, True),
+        ("7\n", {"7": "0"}, False),  # it ran: a release that failed is followed by the next
+        ("7\n8\n", {"7": "1", "8": "0"}, False),
+    ],
+)
+def test_release_due_starts_a_release_that_admit_refused_before(
+    tmp_path: Path, runs: str, refused: dict[str, str], started: bool
+) -> None:
+    """#84 review: a release tag pushed by hand within the day made a run that admit refused;
+    release-due.yml counted it as the release's run and never started the release once it was
+    due. A run whose job admit failed has not tried the release; any other run has."""
+    assert ADMIT_JOB is not None
+    assert ADMIT_JOB[1] == "a tag that CI would make"  # the name REFUSED selects
+    script = step_script("release-due.yml", "due", "Start the release on the tag")
+    answers = {"release view v2.0.1": ("", 1), RUNS: (runs, 0), "workflow run": ("", 0)}
+    answers |= {f"run view {run} {REFUSED}": (count, 0) for run, count in refused.items()}
+    env = {"TAG": "v2.0.1", "GH_REPO": "owner/repo", "GH_TOKEN": "token"}
+    ran = run_step(tmp_path, script, answers, **env)
+    assert ran.status == 0, ran.output
+    assert ("workflow run release.yml --ref v2.0.1" in ran.calls) is started, ran.calls
+    assert ("release.yml ran on v2.0.1 already" in ran.output) is not started
+    answers["release view v2.0.1"] = ("", 0)
+    released = run_step(tmp_path, script, answers, **env)
+    assert "v2.0.1 is released already" in released.output
+    assert not any(call.startswith("workflow run") for call in released.calls)
 
 
 def _numbers(version: str) -> tuple[int, ...]:

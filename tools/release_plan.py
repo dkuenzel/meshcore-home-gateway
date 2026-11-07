@@ -16,9 +16,11 @@ tools/public_interface.py) with that of the last release, which the revision mus
 it removes or narrows needs a `**Breaking:**` entry or a `### Removed` section since then, what it
 adds or changes an entry that makes the next release at least a minor one
 (docs/development.md#compatibility); the changelog sections since the last release stay as
-tagged. A release is tagged a day after its version reached main, a pre-release (a release
-candidate too) at once (SUP-001). release.yml publishes a tag only if CI on main or the schedule
-would have made it, also one pushed by hand (#84). It reads the commit, not the working tree.
+tagged. A release is tagged a day after the commit date of its version commit on main, a
+pre-release (a release candidate too) at once (SUP-001). release.yml publishes a release tag, also
+one pushed by hand, only where the schedule would put it (`admit` asks `due` on main), and a
+pre-release only on a commit of main that carries its version (#84). It reads the commit, not the
+working tree.
 Standard library only; git runs as a subprocess in the current directory.
 """
 
@@ -486,12 +488,12 @@ def tag(base: str = "") -> tuple[str, bool, bool]:
     return f"v{written}", tagged, written.final
 
 
-def due(now: float) -> tuple[str, str, bool, int]:
-    """For main on a schedule: the tag of the version HEAD carries, the commit that wrote it,
+def due(now: float, main: str = "HEAD") -> tuple[str, str, bool, int]:
+    """For main on a schedule: the tag of the version `main` carries, the commit that wrote it,
     whether the tag is on that commit already, and the seconds until the commit is due: at once for
-    a pre-release (a release candidate too), COOLDOWN_S after the commit for a release. A tag on
-    another commit is an error."""
-    found = git("log", "-1", "--format=%H %ct", "-G^__version__ = ", "HEAD", "--", VERSION_FILE)
+    a pre-release (a release candidate too), COOLDOWN_S after the commit date for a release. A tag
+    on another commit is an error."""
+    found = git("log", "-1", "--format=%H %ct", "-G^__version__ = ", main, "--", VERSION_FILE)
     sha, committed = found.split()
     written = Version.parse(version_text(sha))
     existing = tags().get(written)
@@ -506,9 +508,10 @@ def due(now: float) -> tuple[str, str, bool, int]:
 
 def admit(name: str, now: float, main: str = MAIN) -> tuple[str, bool]:
     """For release.yml on the tag `name` (#84): the commit it tags and whether it is a release.
-    Refuses what neither CI on main nor release-due.yml tags: a commit that is not on `main`, a
-    version other than the tag's, and a release that is not on the commit that wrote its version
-    or not yet COOLDOWN_S after that commit. Whether CI passed on it is the workflow's to ask."""
+    Refuses a commit that is not on `main` and a version other than the tag's. A release must be
+    what release-due.yml tags, asked the same way (due): main's version, on the commit that wrote
+    it, COOLDOWN_S after that commit. Whether CI passed on it, and whether release-due.yml is
+    enabled, is the workflow's to ask."""
     written = Version.parse(name.removeprefix("v"))
     if name != f"v{written}":
         msg = f"{name!r} is not a release tag vX.Y.Z"
@@ -521,14 +524,23 @@ def admit(name: str, now: float, main: str = MAIN) -> tuple[str, bool]:
         msg = f"{name} tags a commit of {text}"
         raise PlanError(msg)
     if written.waits:
-        found = git("log", "-1", "--format=%H %ct", "-G^__version__ = ", sha, "--", VERSION_FILE)
-        wrote, committed = found.split()
-        if wrote != sha:
-            msg = f"{name} tags {sha}, not on {wrote}, which wrote the version (release-due.yml)"
+        try:
+            mains, wrote, _, left = due(now, main)
+        except PlanError as exc:
+            msg = f"{name}: release-due.yml would tag none on {main}: {exc}"
+            raise PlanError(msg) from None
+        if (mains, wrote) != (name, sha):
+            msg = (
+                f"{name} tags {sha}; main's version is {mains}, of {wrote}:"
+                " release-due.yml tags only that"
+            )
             raise PlanError(msg)
-        left = int(committed) + COOLDOWN_S - int(now)
         if left > 0:
-            msg = f"{name} is due in {left} s: a release waits a day after its version commit"
+            at = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(now + left))
+            msg = (
+                f"{name} is due in {left} s, at {at}, when release-due.yml starts it on this tag:"
+                " a release waits a day after its version commit"
+            )
             raise PlanError(msg)
     return sha, written.final
 

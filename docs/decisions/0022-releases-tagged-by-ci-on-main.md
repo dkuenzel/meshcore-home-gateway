@@ -162,8 +162,12 @@ two days later. The review had suggested that candidates wait too (SUP-001); the
 otherwise.
 
 Amended on 2026-11-07 (#84): a tag pushed by hand is checked too. The first job of `release.yml`
-refuses a tag that neither the job *tag and release* nor `release-due.yml` would have made: a
-commit off `main`, or a release that is not on the commit that wrote its version, not a day
-after it, or without CI passed on it on `main` (`tools/release_plan.py admit`). The check is part
-of the tagged commit, so a tag on a commit off `main` can bring a `release.yml` without it; only
-who may create tags stands in its way there (SECURITY.md).
+(`tools/release_plan.py admit`) refuses a commit off `main`, and a release that `release-due.yml`
+would not tag, asked the same way on `main`: not on the commit that wrote the version of `main`,
+not a day after that commit's date, without CI passed on it on `main`, or while
+`release-due.yml` is disabled, so that disabling it stops a release also against a tag pushed by
+hand. `release-due.yml` does not count a run that this job refused, and starts the release on a
+tag pushed within the day once it is due. A pre-release is admitted on any commit of `main` that
+carries its version, also one where CI has not passed. The check is part of the tagged commit, so
+a tag on a commit off `main` can bring a `release.yml` without it; only who may create tags stands
+in its way there (SECURITY.md).

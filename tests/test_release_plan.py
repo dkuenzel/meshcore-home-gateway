@@ -318,8 +318,8 @@ def test_a_release_is_due_a_day_after_its_version_commit(
 
 
 def test_release_yml_admits_a_pre_release_on_main_at_once(repo: Repo) -> None:
-    """#84: release.yml publishes a tag only if CI on main or release-due.yml would have made
-    it; a pre-release, a release candidate too, as soon as it is on main."""
+    """#84: release.yml admits a pre-release, a release candidate too, on a commit of main that
+    carries its version, at once; whether CI passed on it is not asked (SECURITY.md)."""
     repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
     head = repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
     repo.tag("v1.0.0rc1")
@@ -352,8 +352,56 @@ def test_release_yml_refuses_a_release_before_its_day(repo: Repo) -> None:
     assert plan.admit("v1.0.0", 1800000000 + day, "main") == (release, True)
     later = repo.commit("1.0.0", changelog, program="print('later')\n")
     repo.git("tag", "-f", "-a", "v1.0.0", "-m", "v1.0.0", later)
-    with pytest.raises(plan.PlanError, match=re.escape(f"not on {release}, which wrote")):
+    with pytest.raises(plan.PlanError, match=re.escape(f"already tags {later}, not {release}")):
         plan.admit("v1.0.0", 1800000000 + day, "main")
+
+
+def test_release_yml_says_when_a_release_tagged_too_early_is_due(repo: Repo) -> None:
+    """#84 review: a release tag pushed by hand within the day is refused, and release-due.yml
+    starts the release on that tag once it is due; the refusal says when."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"  # 2027-01-15 08:00 UTC
+    repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    repo.tag("v1.0.0")
+    refusal = "v1.0.0 is due in 79200 s, at 2027-01-16 08:00 UTC, when release-due.yml starts it"
+    with pytest.raises(plan.PlanError, match=re.escape(refusal)):
+        plan.admit("v1.0.0", 1800000000 + 2 * 3600, "main")
+
+
+def test_release_yml_refuses_a_release_whose_version_main_took_back(repo: Repo) -> None:
+    """#84 review: admit looked for the version commit from the tag's commit, release-due.yml
+    from main's head. A version commit that a later commit of main took back was admitted on a
+    tag pushed by hand after its day, though release-due.yml would never tag it. Both now ask
+    the same function on main."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    stopped = repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    repo.env["GIT_COMMITTER_DATE"] = "@1800003600 +0000"
+    repo.git("revert", "--no-edit", stopped)
+    day = 1800000000 + plan.COOLDOWN_S
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0rc1 already tags")):
+        plan.due(day)  # release-due.yml tags nothing
+    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", stopped)
+    repo.git("checkout", "-q", "v1.0.0")  # as release.yml checks out the tag: HEAD is not main
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0: release-due.yml would tag none")):
+        plan.admit("v1.0.0", day, "main")
+
+
+def test_release_yml_refuses_a_release_that_is_not_mains_version(repo: Repo) -> None:
+    """A release tag on a version commit that main has moved on from (a re-run of all jobs of its
+    run, once the next version was tagged): release-due.yml tags only main's version."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    changelog = section("1.0.0", "Tested.") + FIRST
+    release = repo.commit("1.0.0", "## [Unreleased]\n\n" + changelog)
+    repo.tag("v1.0.0")
+    day = 1800000000 + plan.COOLDOWN_S
+    assert plan.admit("v1.0.0", day, "main") == (release, True)
+    following = repo.commit("1.0.1rc1", section("1.0.1rc1", "Later.", kind="Fixed") + changelog)
+    repo.tag("v1.0.1rc1")
+    refusal = f"v1.0.0 tags {release}; main's version is v1.0.1rc1, of {following}"
+    with pytest.raises(plan.PlanError, match=re.escape(refusal)):
+        plan.admit("v1.0.0", day, "main")
 
 
 def test_release_yml_refuses_a_tag_of_another_version(repo: Repo) -> None:
