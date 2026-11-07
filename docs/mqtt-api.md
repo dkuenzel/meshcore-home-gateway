@@ -523,7 +523,10 @@ of its newest one, also not after a restart.
 `name_taken` marks a node whose name a contact has, a name the gateway goes by (its device in
 Home Assistant, its radio's name when `[radio.profile] name` sets it) or another heard node, as a
 person reads names: compared after NFKC normalisation and case folding, Cyrillic and Greek letters
-that look Latin taken as those, invisible format characters left out. Anyone can name a node
+that look Latin taken as those, characters drawn as nothing left out (Unicode's default
+ignorable characters of any category, such as variation selectors and Hangul fillers, and every
+format character), the braille blank as a space. A combining mark that shows, such as an accent,
+makes another name. Anyone can name a node
 anything: a stranger may pass for a member of the household. The top-level list names up to 16 of
 them, `name_taken_total` counts them all, also with `heard_nodes = "keys"` or `"off"`.
 

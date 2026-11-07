@@ -3,6 +3,8 @@
 import pytest
 
 from meshcore_home_gateway.core.contacts import (
+    COPY_INVISIBLE,
+    INVISIBLE,
     Contact,
     ContactBook,
     add_refusal,
@@ -130,6 +132,45 @@ def test_other_names_stay_apart() -> None:
     assert name_key("Bob") == "bob"
     assert name_key("") == name_key("\u200b") == ""  # no name
     assert name_key("\u039d\u0399\u039a\u039f") == name_key("NIKO")  # Greek capitals
+
+
+@pytest.mark.parametrize(
+    "imitation",
+    [
+        "Bob" + chr(0xFE0F),  # variation selector (Mn)
+        "Bo" + chr(0x034F) + "b",  # combining grapheme joiner (Mn)
+        "B" + chr(0x3164) + "ob",  # Hangul filler (Lo)
+        "Bob" + chr(0x115F),  # Hangul choseong filler (Lo)
+        "Bob" + chr(0xFFA0),  # halfwidth Hangul filler (Lo)
+        "Bob" + chr(0x17B4),  # Khmer vowel inherent (Mn)
+        "Bob" + chr(0x180B),  # Mongolian free variation selector (Mn)
+        "Bob" + chr(0xE0100),  # variation selector 17 (Mn)
+        "Bob" + chr(0x2800),  # braille pattern blank (So): a space at the end
+        "Bob" + chr(0x200B),  # zero width space (Cf), dropped before too
+    ],
+    ids=lambda name: f"U+{ord(name.strip('Bob')[0]):04X}",
+)
+def test_names_compare_without_the_invisible_characters_of_any_category(imitation: str) -> None:
+    """SEC-007: Unicode's default ignorable characters are drawn as nothing, not only the format
+    characters (Cf): variation selectors, the combining grapheme joiner, the Hangul fillers. The
+    braille blank looks like a space (#89)."""
+    assert name_key(imitation) == name_key("Bob") == "bob"
+
+
+def test_a_braille_blank_inside_a_name_is_a_space_and_visible_marks_stay() -> None:
+    """The blank separates words as a space does; a combining mark that shows (U+0301, an
+    acute accent) makes another name, and the grapheme joiner before one changes nothing."""
+    assert name_key("B" + chr(0x2800) + "ob") == name_key("B ob") == "b ob"
+    assert name_key("Bob" + chr(0x0301)) != name_key("Bob")
+    assert name_key("Jos" + "e" + chr(0x034F) + chr(0x0301)) == name_key("Jos\u00e9")
+
+
+def test_the_invisible_characters_of_a_copy_are_part_of_the_one_table() -> None:
+    """protocol.links drops from a copied key, link or card the invisible characters a copy may
+    carry, which are among those names compare without: one table for both."""
+    assert set(COPY_INVISIBLE) < INVISIBLE
+    assert "\u200c" not in COPY_INVISIBLE  # the joiners belong to a name
+    assert "\ufe0f" not in COPY_INVISIBLE  # as do the variation selectors of an emoji
 
 
 def test_a_label_marks_a_name_that_is_taken() -> None:

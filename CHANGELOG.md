@@ -104,6 +104,12 @@ format, the command line and Home Assistant discovery are public interfaces
   gateway's own restart for the clock no longer counts as a link the radio closed. The guide
   calls the sensor what it is, a best effort: `false` is no proof
   ([mqtt-api.md](docs/mqtt-api.md#state-state)) (#88).
+- Names compare without every character drawn as nothing, not only the format characters: a
+  node named `Bob` with a variation selector, a grapheme joiner, a Hangul filler or a braille
+  blank added gets the `name_taken` mark, ` (name taken)` in *Add heard node* and, once added,
+  its key's digits in its device name. A combining mark that shows, such as an accent, still
+  makes another name. One table of these characters serves the names and what `add_contact`
+  drops from a copied key or link ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)) (#89).
 
 ## [2.0.0] - 2026-11-07
 
