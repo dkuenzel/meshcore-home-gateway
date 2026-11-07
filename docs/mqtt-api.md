@@ -622,7 +622,8 @@ The draft is retained on `homeassistant/draft/<kind>/<chat>` as `{"text": "…"}
 string, `""` when there is none. The gateway holds it in memory only:
 
 * After a start every draft is empty. A draft is published again, as held, at every connect to
-  the broker and after Home Assistant's birth message.
+  the broker and after the gateway's discovery that follows Home Assistant's birth message: at
+  most once every 30 seconds, however many birth messages come.
 * A draft unchanged for 15 minutes is emptied.
 * A clean stop publishes `{"text": ""}` for every draft that is not empty, so that no unsent text
   stays retained on the broker, or in its persistence file, while the gateway is away.

@@ -21,11 +21,12 @@ are connected here (`gateway`). Who tells, when, and the listeners in the order 
 * `bus.on_show_hidden`, a request to show the hidden contacts' devices: `devices.show_hidden`;
 * `bus.on_draft_request`, a text or a press of a chat in Home Assistant: `drafts.request`, which
   hands a press to `outbox.accept` at once; `bus.on_draft_retained`, the broker's copy of a draft:
-  `drafts.retained_copy`; the drafts are published again after `bus.on_connected` and
-  `bus.on_ha_online`, and cleared at `bus.on_stopping`;
+  `drafts.retained_copy`; the drafts are published again after `bus.on_connected`, and cleared
+  at `bus.on_stopping`;
 * `devices.on_writable`, the companions whose device has a draft: `drafts.contacts`;
 * the announcer, before the gateway's discovery: `drafts.announcing`, which cuts a draft longer
-  than its new `max` and publishes it;
+  than its new `max` and publishes it; after the discovery that follows Home Assistant's birth
+  messages, at most one per ANNOUNCE_MIN_INTERVAL_S however many come: `drafts.republish`;
 * `observer.on_document` and `status.on_document`, a document was published (or cleared):
   `homie.document`, with `[homie] enabled`;
 * a radio session's `on_contact_key`, the radio named a key: `inbox.contact_key`;
@@ -210,7 +211,6 @@ def _hear_drafts(bus: Bus, drafts: Drafts, devices: ContactDevices | None) -> No
     """The drafts' part of the table above; after the announcer's, so that a connect publishes
     the drafts after the discovery."""
     bus.on_connected.append(lambda: observe(drafts.republish))
-    bus.on_ha_online.append(lambda: observe(drafts.republish))
     bus.on_draft_request.append(lambda *request: observe(drafts.request, *request))
     bus.on_draft_retained.append(lambda *copy: observe(drafts.retained_copy, *copy))
     bus.on_stopping.append(lambda: observe(drafts.stop))

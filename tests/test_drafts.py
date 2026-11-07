@@ -43,6 +43,7 @@ from tests.bridge_harness import (
     ALICE,
     BOB,
     FakeBus,
+    births,
     fast_timers,  # noqa: F401 - autouse
     make_config,
     running,
@@ -571,19 +572,28 @@ GATEWAY_DOCUMENT = "/device/meshcore_home_gateway_radio1/config"
 
 
 def test_home_assistants_birth_publishes_every_draft_as_held(tmp_path: Path) -> None:
-    """A Home Assistant that started again reads the drafts the gateway holds, at once."""
+    """A Home Assistant that started again reads the drafts the gateway holds, with the
+    announcement that follows its birth message, after the discovery. A storm of births, which
+    any client of the status topic can send, makes one announcement (SEC-006), and so one
+    publish of each draft, not one per birth."""
     radio = EmulatedRadio(contacts=[ALICE, BOB])
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
             for callback in bus.on_draft_request:
                 callback(TARGET, "alerts", b'{"text": "Half a sentence"}', False)
-            start = len(bus.published)
-            for birth in bus.on_ha_online:
-                birth()
+            await asyncio.sleep(0.05)
+            start, announced = len(bus.published), len(bus.payloads(GATEWAY_DOCUMENT))
+            births(bus, 100)
+            await bus.wait_for(GATEWAY_DOCUMENT, lambda _: True, since=announced)
+            await asyncio.sleep(0.05)
+            after = [(t, p) for t, p, _ in bus.published[start:]]
             draft = "meshcore/radio1/homeassistant/draft/target/alerts"
-            published = [p for t, p, _ in bus.published[start:] if t == draft]
-            assert published == [b'{"text":"Half a sentence"}']
+            assert [p for t, p in after if t == draft] == [b'{"text":"Half a sentence"}']
+            drafts = [t for t, _ in after if "/draft/" in t]
+            assert len(drafts) == 3  # alerts, alice, bob: once each
+            topics = [t for t, _ in after]
+            assert topics.index(draft) > topics.index("homeassistant" + GATEWAY_DOCUMENT)
 
     scenario(main)
 

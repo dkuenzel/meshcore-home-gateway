@@ -21,9 +21,10 @@ text stored just before it.
   ignored.
 * A stored text is echoed at once, then at most once per ECHO_WINDOW_S and chat: of a burst only
   the last follows when the window ends. The clear after a press, the republish at a connect to the
-  broker and at Home Assistant's birth, a cut and an expiry go out at once, and drop an echo the
-  window still holds: a held echo of the text before a press would refill the field after the
-  clear.
+  broker and with the announcement after Home Assistant's birth (at most one per
+  ANNOUNCE_MIN_INTERVAL_S however many births come, SEC-006), a cut and an expiry go out at once,
+  and drop an echo the window still holds: a held echo of the text before a press would refill
+  the field after the clear.
 * A draft unchanged for EXPIRY_S is cleared: a forgotten half sentence would otherwise be sent by
   the next press, maybe days later and by someone else.
 * A lower `max` (a renamed radio, or its first connect, takes room from channel texts) cuts a
@@ -163,9 +164,9 @@ class Drafts:
     # --- the gateway's side ---------------------------------------------------------------------
 
     def republish(self) -> None:
-        """At a connect to the broker and at Home Assistant's birth: every draft as it is held, at
-        once. Never an empty text in place of a held one, which the next press would still
-        send."""
+        """At a connect to the broker and with the announcement after Home Assistant's birth:
+        every draft as it is held, at once. Never an empty text in place of a held one, which the
+        next press would still send."""
         for chat, draft in self._drafts.items():
             self._publish_now(chat, draft)
 
