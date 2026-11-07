@@ -389,6 +389,24 @@ pct stop 105 && pct destroy 105
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
+* **Roll back to 2.0** from 2.1 leaves three kinds of retained topics on the broker that 2.0
+  neither publishes nor clears: `pending`, `config` and the drafts of Home Assistant's chats,
+  `homeassistant/draft/<kind>/<chat>`, which the stop of 2.1 empties but leaves retained. Once 2.0
+  runs (2.1 would publish them again), clear them with an empty retained message on each, as the
+  changelog of 2.1 gives them; for node `radio1`, with the broker's address and a user that may
+  write them (`-h`, `-u`, `-P`):
+
+  ```sh
+  mosquitto_pub -r -n -t meshcore/radio1/pending
+  mosquitto_pub -r -n -t meshcore/radio1/config
+  mosquitto_sub -t 'meshcore/radio1/homeassistant/draft/#' --retained-only --remove-retained -W 2
+  ```
+
+  Then make the dashboard again with 2.0's `meshcore-home-gateway dashboard` and paste it
+  ([home-assistant.md](home-assistant.md#dashboard)): the dashboard of 2.1 names entities that
+  2.0 does not announce, and its version card asks to update the gateway. An entity of 2.1 that
+  Home Assistant keeps afterwards can be deleted under *Settings → Entities*. The history
+  database keeps working; 2.0 leaves the columns 2.1 added empty.
 * **Roll back to 1.x** from 2.0 or later keeps the state directory, which 1.x reads in its own
   way (#95). 1.x knows no inclusions (`[telemetry] ask` is 2.0's): it asks every companion that
   is not excluded, other people's too. And the first exclusion made under 1.x writes

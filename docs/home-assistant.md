@@ -865,9 +865,10 @@ stays a text: written as `message: "{{ message }}"`, Home Assistant would read `
 `None`.
 
 **Make it again** after an update of the gateway to another major or minor version (*Overview*
-then shows a card with both versions), after a target was added or a contact got a device that
-takes texts (each needs its chat page; *All chats* names the contacts without one), when the map's
-hint names a contact (one that got a position after the dashboard was made), and after the radio
+then shows a card with both versions) and after a roll back to one, with that version's command
+([deployment.md](deployment.md#update-reconfigure-remove)), after a target was added or a contact
+got a device that takes texts (each needs its chat page; *All chats* names the contacts without
+one), when the map's hint names a contact (one that got a position after the dashboard was made), and after the radio
 got a contact that should have its switch and button there. The
 contacts table, the sensors, the result of the last request, the nodes heard, *Gateway* and
 *Settings* follow by themselves.

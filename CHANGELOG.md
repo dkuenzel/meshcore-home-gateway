@@ -113,6 +113,9 @@ format, the command line and Home Assistant discovery are public interfaces
   read as never reported. *Help* names every page, button and switch, and says what the
   dashboard cannot do, the kinds of messages and what each word of the cards means
   ([home-assistant.md](docs/home-assistant.md#dashboard)).
+- The update guide says how to roll back from 2.1 to 2.0: clear the retained `pending`, `config`
+  and drafts, which 2.0 neither publishes nor clears, and make the dashboard again with 2.0
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
 
 ### Changed
 
