@@ -233,10 +233,8 @@ async def test_a_hyphen_in_the_node_id_becomes_an_underscore_only_in_the_entity_
     hyphen, underscore = make_config(node_id="radio-1"), make_config(node_id="radio_1")
     document = discovery_payload(hyphen, Topics(hyphen.mqtt.base_topic, "radio-1"))
     await fire(hass, discovery_topic(hyphen), document)
-    expected = {
-        f"{c['p']}.meshcore_home_gateway_radio_1_{key.replace('-', '_')}"
-        for key, c in document["cmps"].items()
-    }
+    # the default entity IDs with '_' for '-' (a draft's Send button: not its key, D-47)
+    expected = {c["default_entity_id"].replace("-", "_") for c in document["cmps"].values()}
     assert entity_ids(hass) == expected
 
     other = discovery_payload(underscore, Topics(underscore.mqtt.base_topic, "radio_1"))
@@ -364,7 +362,9 @@ words = ["status", "arm"]
 {TARGETS}
 """)
     removed = {"rx_rssi": "sensor", "rx_snr": "sensor"}
-    expected = set(discovery_payload(fewer, TOPICS)["cmps"])
+    # the entity IDs' object parts: a key's, but `write_<alias>_send` for `write_<alias>__send`
+    components = discovery_payload(fewer, TOPICS)["cmps"].values()
+    expected = {c["default_entity_id"].rsplit("_radio1_", 1)[1] for c in components}
 
     async def announce_removal() -> list[tuple[Any, ...]]:
         mqtt.async_publish.reset_mock()

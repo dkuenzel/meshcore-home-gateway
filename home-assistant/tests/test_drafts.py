@@ -225,6 +225,29 @@ async def test_hidden_targets_and_contact_targets_have_no_field(
     assert problems(caplog) == []
 
 
+async def test_targets_x_and_x_send_each_keep_their_field_and_button(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    """The Send button of `alerts` and the field of `alerts_send` share their entity IDs' object
+    part on two platforms, and their components no key: Home Assistant creates all four, and
+    each sends on its own chat's topic."""
+    config = make_config("[targets.alerts]\nchannel = 1\n[targets.alerts_send]\nchannel = 2\n")
+    gateway = await with_drafts(hass, tmp_path, config)
+    second = f"text.{PREFIX}_write_alerts_send"
+    entities = {ALERTS, ALERTS_SEND, second, f"button.{PREFIX}_write_alerts_send_send"}
+    assert entities <= entity_ids(hass)
+    await gateway.take(mqtt)
+    await call(hass, "text", "set_value", second, value="Second chat")
+    await call(hass, "button", "press", ALERTS_SEND)
+    requests = await gateway.take(mqtt)
+    assert [(topic, request) for topic, request, _, _ in requests] == [
+        (TOPICS.target_draft_request("alerts_send"), {"text": "Second chat"}),
+        (REQUEST, {"send": True}),
+    ]
+    assert hass.states.get(second).state == "Second chat"
+    assert problems(caplog) == []
+
+
 def tracked_for(key: str, name: str) -> Tracked:
     return Tracked(Node(key, name, 1))
 
