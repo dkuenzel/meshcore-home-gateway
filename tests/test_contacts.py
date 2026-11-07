@@ -1,5 +1,7 @@
 """Contact book: resolution of 6-byte key prefixes to full public keys."""
 
+import unicodedata
+
 import pytest
 
 from meshcore_home_gateway.core.contacts import (
@@ -163,6 +165,28 @@ def test_a_braille_blank_inside_a_name_is_a_space_and_visible_marks_stay() -> No
     assert name_key("B" + chr(0x2800) + "ob") == name_key("B ob") == "b ob"
     assert name_key("Bob" + chr(0x0301)) != name_key("Bob")
     assert name_key("Jos" + "e" + chr(0x034F) + chr(0x0301)) == name_key("Jos\u00e9")
+
+
+def test_a_name_drawn_as_nothing_compares_as_one_blank_name() -> None:
+    """A name of characters drawn as nothing that are no format characters (a Hangul filler, a
+    braille blank, a variation selector) shows as a blank name, not as none: such names are one
+    name. A name of format characters, spaces or control characters alone shows as none (#89)."""
+    blank = name_key("\u3164")
+    assert blank
+    shown_blank = ("\u2800", "\ufe0f", "\u115f\u2800", " \uffa0 ", "\u200b\u3164", "\x01\u034f")
+    assert {name_key(name) for name in shown_blank} == {blank}
+    assert blank not in {name_key(name) for name in ("Bob", "_", "\u3164Bob", "\u2800Bob")}
+    no_name = ("", " ", "\u200b", "\u2066\u2069", "\x01", "\u2028", "\u3000")
+    assert {name_key(name) for name in no_name} == {""}
+
+
+def test_only_a_name_drawn_as_nothing_has_the_blank_name_key() -> None:
+    """The blank name's key is no other name's: of the names of one character (here those up to
+    U+FFFF), exactly the shown ones drawn as nothing have it."""
+    blank = name_key("\u3164")
+    shown_blank = {ch for ch in INVISIBLE if unicodedata.category(ch) != "Cf"} | {"\u2800"}
+    holders = {chr(c) for c in range(0x10000) if name_key(chr(c)) == blank}
+    assert holders == {ch for ch in shown_blank if ord(ch) < 0x10000}
 
 
 def test_the_invisible_characters_of_a_copy_are_part_of_the_one_table() -> None:

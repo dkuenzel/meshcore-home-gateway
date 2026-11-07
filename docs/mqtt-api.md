@@ -534,9 +534,11 @@ person reads names: compared after NFKC normalisation and case folding, Cyrillic
 that look Latin taken as those, characters drawn as nothing left out (Unicode's default
 ignorable characters of any category, such as variation selectors and Hangul fillers, and every
 format character), the braille blank as a space. A combining mark that shows, such as an accent,
-makes another name. Anyone can name a node
-anything: a stranger may pass for a member of the household. The top-level list names up to 16 of
-them, `name_taken_total` counts them all, also with `heard_nodes = "keys"` or `"off"`.
+makes another name. A name of such characters alone, such as one Hangul filler or a braille
+blank, is a blank name, the same as every other blank name; a name of format characters or
+spaces alone is none. Anyone can name a node anything: a stranger may pass for a member of the
+household. The top-level list names up to 16 of them, `name_taken_total` counts them all, also
+with `heard_nodes = "keys"` or `"off"`.
 
 `hops`, `snr_db` and `rssi_dbm` come from the radio's packet log of the advert: while its receive
 delay is 0, only from the advert's own log, `null` without it; with a delay above 0, or one the

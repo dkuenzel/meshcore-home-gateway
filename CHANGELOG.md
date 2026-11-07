@@ -108,8 +108,10 @@ format, the command line and Home Assistant discovery are public interfaces
   format characters: a node named `Bob` with a variation selector, a grapheme joiner, a Hangul
   filler or a braille blank added gets the `name_taken` mark, ` (name taken)` in *Add heard
   node* and, once added, its key's digits in its device name. A combining mark that shows, such
-  as an accent, still makes another name. One table of these characters serves the names and
-  what `add_contact` drops from a copied key or link
+  as an accent, still makes another name. A name of such characters alone, such as one Hangul
+  filler, is still a name: a blank one, the same as every other blank name; one of format
+  characters alone is none. One table of these characters serves the names and what
+  `add_contact` drops from a copied key or link
   ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)) (#89).
 - The guide names a limit of `suspect`: its bound takes every hop at the radio's coding rate,
   so where repeaters or the recipient send at a faster one (4/5 against the radio's 4/8), a

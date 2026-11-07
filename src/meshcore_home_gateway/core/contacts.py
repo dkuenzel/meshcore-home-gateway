@@ -164,6 +164,9 @@ COPY_INVISIBLE = "".join(
 )
 _NAME_INVISIBLE = str.maketrans(dict.fromkeys(INVISIBLE))
 _BLANKS = frozenset("\u2800")  # the braille pattern blank (So): drawn as a space
+# the key of a name that is shown, but drawn as nothing (a Hangul filler, a braille blank): the
+# braille blank, which no other key holds (`name_key` makes it a space)
+_BLANK_NAME = "\u2800"
 # Cyrillic and Greek letters that look like Latin ones (SEC-007): a small table, not Unicode's
 # confusables (UTS #39), against the common imitations of a name; mapped before case folding
 _LOOK_ALIKE_LETTERS = str.maketrans(
@@ -176,12 +179,15 @@ def name_key(name: str) -> str:
     """A name as compared with others: NFKC, case-folded, Cyrillic and Greek look-alikes as the
     Latin letters, without the invisible characters (`INVISIBLE` and every format character:
     zero-width, direction, variation selectors, fillers), control characters, line breaks and
-    the braille blank as spaces, single spaces (SEC-007). Empty for a name that is none."""
+    the braille blank as spaces, single spaces (SEC-007). Empty for a name that is none, as a
+    label shows none; a name shown but drawn as nothing, such as a Hangul filler, is one blank
+    name (#89)."""
     # dropped before NFKC, which maps nothing into the table: a grapheme joiner would keep a
     # mark from composing with its letter
     folded = unicodedata.normalize("NFKC", name.translate(_NAME_INVISIBLE))
     plain = "".join(_compared(ch) for ch in folded)
-    return " ".join(plain.translate(_LOOK_ALIKE_LETTERS).casefold().split())
+    key = " ".join(plain.translate(_LOOK_ALIKE_LETTERS).casefold().split())
+    return key if key or not _shown(name) else _BLANK_NAME
 
 
 def _compared(ch: str) -> str:
@@ -198,13 +204,19 @@ def node_label(key: str, name: str, node_type: int, *, name_taken: bool = False)
     taken)` for a name another node or the gateway has: the key comes
     first, so no name can push it aside or imitate it. A person compares both parts with the
     node's own screen; an attacker can copy the first 6 bytes of a key, not the rest (ADR 0009)."""
-    plain = " ".join(
-        "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in name).split()
-    )
+    plain = _shown(name)
     named = f" {plain}" if plain else ""
     start, end = key[:PREFIX_HEX_DIGITS], key[-LABEL_SUFFIX_HEX_DIGITS:]
     mark = NAME_TAKEN if name_taken else ""
     return f"{start}…{end}{named}{_LABEL_TYPE.get(node_type, '')}{mark}"
+
+
+def _shown(name: str) -> str:
+    """The name as a label shows it: control, format and line break characters as spaces, single
+    spaces."""
+    return " ".join(
+        "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in name).split()
+    )
 
 
 def key_from_label(label: str, keys: Iterable[str]) -> str | None:
