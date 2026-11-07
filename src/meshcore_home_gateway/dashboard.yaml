@@ -1885,16 +1885,42 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
-              {%- set c = 'event.@gw@_contact' -%}{%- set t = 'event.@gw@_telemetry' -%}{%- set s = 'event.@gw@_setting' -%}{%- set n = 'event.@gw@_node' -%}{%- set k = 'event.@gw@_command' -%}
+              {#- the reasons of mqtt-api.md, Commands (core.commands.Rejection); one added later stays a code -#}
+              {%- macro why(v) -%}
+              {#- Translators: why the gateway refused a command, after the command's word -#}
+              {%- if v == 'sender_unknown' -%}_("sender not a contact")
+              {%- elif v == 'sender_ambiguous' -%}_("another contact has the same key prefix")
+              {%- elif v == 'sender_not_allowed' -%}_("sender not allowed")
+              {%- elif v == 'sender_unverified' -%}_("sender not checked yet")
+              {%- elif v == 'state_unwritable' -%}_("cannot be stored")
+              {%- elif v == 'broker_unavailable' -%}_("broker unreachable")
+              {%- elif v == 'replay' -%}_("an old command again")
+              {%- elif v == 'too_old' -%}_("too old")
+              {%- elif v == 'from_the_future' -%}_("dated in the future")
+              {%- elif v == 'code_missing' -%}_("no code")
+              {%- elif v == 'code_invalid' -%}_("wrong code")
+              {%- elif v == 'code_reused' -%}_("code used already")
+              {%- elif v == 'code_locked' -%}_("too many wrong codes")
+              {%- else -%}<code>{{ m(v) }}</code>
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set c = 'event.@gw@_contact' -%}{%- set t = 'event.@gw@_telemetry' -%}{%- set s = 'event.@gw@_setting' -%}{%- set n = 'event.@gw@_node' -%}{%- set k = 'event.@gw@_command' -%}{%- set r = 'event.@gw@_message' -%}
+              {#- a refused command is only on received (command.accepted false): it is the newest command event while it came after the newest accepted one -#}
+              {%- set q = state_attr(r, 'command') -%}{%- set at = states(r) | as_datetime(default=none) -%}{%- set last = states(k) | as_datetime(default=none) -%}
+              {%- set refused = q is mapping and q.get('accepted') == false and at is not none and (last is none or not state_attr(k, 'event_type') or at > last) -%}
+              {%- if refused -%}
+              {%- set word = m(q.get('word')) -%}{%- set sender = m(state_attr(r, 'sender_name') or (state_attr(r, 'sender_key') or state_attr(r, 'sender_prefix') or '')[:8] or '?') -%}{%- set reason = why(q.get('reason')) -%}
+              {%- else -%}
               {%- set word = m(state_attr(k, 'event_type')) -%}{%- set sender = m(state_attr(k, 'sender_name') or (state_attr(k, 'sender_key') or '')[:8] or '?') -%}
+              {%- endif -%}
               {%- if states['binary_sensor.@gw@_radio'] is none -%}
               <div>_("The gateway is not found: see the first line of Overview.")</div>
               {#- offline, Home Assistant drops the events' attributes: each would read as none yet -#}
               {%- elif is_state('binary_sensor.@gw@_radio', 'unavailable') -%}
               <div>_("The gateway is offline: this shows again when it is back.")</div>
               {%- else -%}
-              {#- Translators: the newest event of each kind; sender is the name of a contact that may send commands, word a command word #}
-              <table><tr><td>_("Contact")</td><td>{% if state_attr(c, 'event_type') %}<b>{{ m(state_attr(c, 'name') or state_attr(c, 'prefix') or '?') }}</b> {{ what(state_attr(c, 'event_type')) }} · {{ when(states(c)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Position and battery")</td><td>{% if state_attr(t, 'event_type') %}<b>{{ m(state_attr(t, 'name') or state_attr(t, 'prefix') or '?') }}</b> {% if state_attr(t, 'event_type') == 'answered' %}_("answers again"){% else %}_("stopped answering"){% endif %} · {{ when(states(t)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Radio settings")</td><td>{% if state_attr(s, 'event_type') %}{{ setting(state_attr(s, 'setting')) }}: {{ status(state_attr(s, 'event_type')) }} · {{ when(states(s)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("New node")</td><td>{% if state_attr(n, 'event_type') %}<b>{{ m(state_attr(n, 'name') or (state_attr(n, 'key') or '')[:8] or '?') }}</b> _("heard for the first time") · {{ when(states(n)) }}{% else %}_("none yet"){% endif %}</td></tr>{% if states[k] is not none %}<tr><td>_("Command")</td><td>{% if state_attr(k, 'event_type') %}_("{sender}: {word}") · {{ when(states(k)) }}{% else %}_("none yet"){% endif %}</td></tr>{% endif %}</table>
+              {#- Translators: the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code #}
+              <table><tr><td>_("Contact")</td><td>{% if state_attr(c, 'event_type') %}<b>{{ m(state_attr(c, 'name') or state_attr(c, 'prefix') or '?') }}</b> {{ what(state_attr(c, 'event_type')) }} · {{ when(states(c)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Position and battery")</td><td>{% if state_attr(t, 'event_type') %}<b>{{ m(state_attr(t, 'name') or state_attr(t, 'prefix') or '?') }}</b> {% if state_attr(t, 'event_type') == 'answered' %}_("answers again"){% else %}_("stopped answering"){% endif %} · {{ when(states(t)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Radio settings")</td><td>{% if state_attr(s, 'event_type') %}{{ setting(state_attr(s, 'setting')) }}: {{ status(state_attr(s, 'event_type')) }} · {{ when(states(s)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("New node")</td><td>{% if state_attr(n, 'event_type') %}<b>{{ m(state_attr(n, 'name') or (state_attr(n, 'key') or '')[:8] or '?') }}</b> _("heard for the first time") · {{ when(states(n)) }}{% else %}_("none yet"){% endif %}</td></tr>{% if states[k] is not none %}<tr><td>_("Command")</td><td>{% if refused %}_("{sender}: {word}, refused: {reason}") · {{ when(states(r)) }}{% elif state_attr(k, 'event_type') %}_("{sender}: {word}") · {{ when(states(k)) }}{% else %}_("none yet"){% endif %}</td></tr>{% endif %}</table>
               {%- endif %}
               <details><summary>_("What this shows")</summary><ul><li>_("The newest event of each kind, in full. Home Assistant keeps only the newest of each here.")</li><li>_("Help explains each word.") <a href="./help">_("Help")</a></li></ul></details>
           - type: markdown
@@ -2109,6 +2135,11 @@ views:
             text_only: true
             content: |-
               <details><summary>_("Why adding or removing did not work")</summary><ul><li><b>_("no key, link or contact card")</b>, <b>_("a link of another kind")</b>: _("The field held no key or contact link this gateway reads. Copy it again from the MeshCore app (Share contact).")</li><li><b>_("invalid request")</b>, <b>_("request too large")</b>, <b>_("request not UTF-8")</b>, <b>_("published with the retain flag")</b>: _("An automation sent the request in a wrong form; your administrator fixes it.")</li><li><b>_("unsupported node type")</b>: _("This kind of node cannot be added.")</li><li><b>_("no heard node or contact of that name")</b>: _("The node is no longer among the nodes heard nearby. Pick it again once it is heard.")</li><li><b>_("not a contact on the radio")</b>: _("The contact is gone from the radio already.")</li><li><b>_("contact management is off")</b>, <b>_("firmware not tested")</b>, <b>_("no radio")</b>: _("Adding and removing do not work now; the line above the controls on Contacts says why.")</li><li><b>_("the gateway's own key")</b>: _("That is this home's own radio.")</li><li><b>_("a target or command sender")</b>: _("Your administrator keeps this contact on the radio on purpose.")</li><li><b>_("too many requests waiting")</b>, <b>_("too many requests")</b>: _("Too many requests came at once. Try again in a minute.")</li><li><b>_("already a contact")</b>: _("It is on the radio already.")</li><li><b>_("another contact has the same key prefix")</b>: _("Another contact's key starts the same, so the radio could not tell them apart. Compare the whole key with the node's own screen.")</li><li><b>_("contact table full")</b>: _("The radio's contact list is full. Remove contacts you no longer need.")</li><li><b>_("the radio's table does not show it")</b>, <b>_("outcome unknown: the next table read tells")</b>: _("The radio did not confirm the change. Look at the contacts again in a minute.")</li><li><b>_("never asked for position and battery")</b>: _("Only a person's device is asked for its position and battery.")</li><li><b>_("too many keys stored")</b>, <b>_("in effect, not stored yet")</b>, <b>_("in effect, history not deleted")</b>, <b>_("cannot be stored")</b>: _("The change works now, but the gateway could not store it. Tell your administrator.")</li><li><b>_("internal error: see the log")</b>: _("The gateway hit an error; tell your administrator the time.")</li></ul></details>
+          - type: markdown
+            text_only: true
+            content: |-
+              {#- Translators: security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused #}
+              <details><summary>_("Why a command was refused")</summary><ul><li>_("The newest command may be one the gateway refused; the reason follows the word refused.")</li><li><b>_("sender not a contact")</b>, <b>_("sender not allowed")</b>, <b>_("another contact has the same key prefix")</b>: _("Only the contacts your administrator chose may send commands, and only while no other node's key starts the same.")</li><li><b>_("sender not checked yet")</b>: _("The gateway could not check the sender at that moment, such as while it connected to the radio. The sender can send the command again.")</li><li><b>_("an old command again")</b>, <b>_("too old")</b>, <b>_("dated in the future")</b>: _("A copy of an earlier command, or a clock that is off: the sender's or the computer's. A command sent anew works; if it happens again, your administrator checks the clocks.")</li><li><b>_("no code")</b>, <b>_("wrong code")</b>, <b>_("code used already")</b>: _("A command of this sender ends in the 6-digit code of an authenticator app, new every 30 seconds and good once. Check the clock of the sender's phone.")</li><li><b>_("too many wrong codes")</b>: _("5 wrong codes within an hour: the gateway refuses that sender's commands until the first of them is an hour old. Someone may be guessing the codes; tell your administrator.")</li><li><b>_("cannot be stored")</b>, <b>_("broker unreachable")</b>: _("The gateway could not keep the command safe from copies, or could not pass it on to the automations. The sender can send the command again; tell your administrator if it repeats.")</li></ul></details>
           - type: markdown
             text_only: true
             content: |-

@@ -5,6 +5,7 @@ dashboard and renders its cards is for the contract tests (make ha-test)."""
 
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 import re
@@ -12,15 +13,17 @@ import string
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 
-from meshcore_home_gateway import __version__, dashboard, i18n
+from meshcore_home_gateway import __version__, dashboard, i18n, outbox
 from meshcore_home_gateway.catalog import Entry, read_po
 from meshcore_home_gateway.config import Config, load_config, parse_config
 from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core import text as text_module
+from meshcore_home_gateway.core.commands import Rejection
 from meshcore_home_gateway.core.mesh import NODE_TYPES
 from meshcore_home_gateway.core.model import DeliveryState, Position
 from meshcore_home_gateway.dashboard import TemplateError
@@ -396,26 +399,88 @@ CONTACT_REASONS = [
     "retained",
     "internal_error",
 ]
+# the reasons of docs/mqtt-api.md, Commands: why the gateway refused a received command
+COMMAND_REASONS = [reason.value for reason in Rejection]
 
 
 def test_reason_codes_read_as_texts_and_an_unknown_one_stays_a_code() -> None:
-    """IMP-049: each reason the API documents for a delivery and for a contact request has a
-    text, in every copy of the card's macro why() (the thread, Latest messages, the refused
-    line; the last contact event); one added later, and the radio's own refusals, stay codes,
-    through m(); a card with why() prints no reason as a bare code."""
+    """IMP-049: each reason the API documents for a delivery, for a contact request and for a
+    refused command has a text, in every copy of the card's macro why() (the thread, Latest
+    messages, the refused line; the last contact event; the last command on Gateway); one added
+    later, and the radio's own refusals, stay codes, through m(); a card with why() prints no
+    reason as a bare code."""
     template = shipped()
     macros = [part.split("endmacro")[0] for part in template.split("macro why(v)")[1:]]
     delivery = [macro for macro in macros if "v == 'no_acknowledgement'" in macro]
     contact = [macro for macro in macros if "v == 'invalid_request'" in macro]
-    assert (len(delivery), len(contact)) == (3, 1)  # Latest messages, a chat, its refused line
+    command = [macro for macro in macros if "v == 'code_locked'" in macro]
+    # Latest messages, a chat, its refused line; the contact event; Latest of each kind
+    assert (len(delivery), len(contact), len(command)) == (3, 1, 1)
+    assert len(macros) == 5
     assert len(set(delivery)) == 1  # one text, copied (DR-30)
-    for found, codes in ((delivery[0], DELIVERY_REASONS), (contact[0], CONTACT_REASONS)):
+    for found, codes in (
+        (delivery[0], DELIVERY_REASONS),
+        (contact[0], CONTACT_REASONS),
+        (command[0], COMMAND_REASONS),
+    ):
         for code in codes:
             assert f"v == '{code}'" in found, code
         assert "{%- else -%}<code>{{ m(v) }}</code>" in found
     for card in _cards(template):
         if any("macro why(v)" in line for line in card):
             assert not any(re.search(r"<code>\{\{ m\((reason|code)\) \}\}", t) for t in card)
+
+
+def _reasons_written(*modules: ModuleType) -> set[str]:
+    """The reasons the code of `modules` ends a delivery with, as it writes them: the second
+    argument of _FinalError, the first of TextRejectedError, a keyword `reason=` and the value a
+    variable `reason` gets, each a string or a choice of strings. The radio's own refusals pass
+    through from its answer and stay codes."""
+    found: set[str] = set()
+
+    def strings(*nodes: ast.AST | None) -> set[str]:
+        return {
+            leaf.value
+            for node in nodes
+            if node is not None
+            for leaf in ast.walk(node)
+            if isinstance(leaf, ast.Constant) and isinstance(leaf.value, str)
+        }
+
+    for module in modules:
+        for each in ast.walk(ast.parse(inspect.getsource(module))):
+            if isinstance(each, ast.Call):
+                called = getattr(each.func, "id", getattr(each.func, "attr", ""))
+                if called == "_FinalError":
+                    found |= strings(*each.args[1:2])
+                elif called == "TextRejectedError":
+                    found |= strings(*each.args[:1])
+                found |= strings(*(k.value for k in each.keywords if k.arg == "reason"))
+            elif isinstance(each, ast.Assign):
+                for target in each.targets:
+                    if isinstance(target, ast.Name) and target.id == "reason":
+                        found |= strings(each.value)
+                    elif isinstance(target, ast.Tuple) and isinstance(each.value, ast.Tuple):
+                        pairs = zip(target.elts, each.value.elts, strict=True)
+                        found |= strings(
+                            *(v for t, v in pairs if isinstance(t, ast.Name) and t.id == "reason")
+                        )
+    return found
+
+
+def test_every_reason_the_gateway_publishes_has_words_on_the_dashboard() -> None:
+    """The reasons come from the gateway, not from a list kept here: a refused command's from
+    core.commands.Rejection (code_locked, #79, came so), a delivery's from the outbox's code and
+    the text policy's. One the gateway adds later without words on the dashboard fails here,
+    as one the API does not document; the radio's own refusals stay codes."""
+    assert set(COMMAND_REASONS) == {reason.value for reason in Rejection}
+    assert "code_locked" in COMMAND_REASONS
+    written = _reasons_written(outbox, text_module)
+    assert written == set(DELIVERY_REASONS)
+    macros = [part.split("endmacro")[0] for part in shipped().split("macro why(v)")[1:]]
+    for reasons, copies in ((written, 3), (set(COMMAND_REASONS), 1)):
+        found = [m for m in macros if set(re.findall(r"v == '(\w+)'", m)) == reasons]
+        assert len(found) == copies, sorted(reasons)
 
 
 # which messages a chat's thread holds: a channel's by its index, a person's by the key

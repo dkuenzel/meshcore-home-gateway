@@ -740,7 +740,10 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   firmware and radio settings, how the gateway reaches it, its background noise and battery and
   a day of airtime; *Radio settings*, what the managed profile wants and what the radio has,
   with who may ask the radio for its battery, position and readings as the radio acts on it;
-  *Latest of each kind*, the newest contact, telemetry, setting, node and command event. While
+  *Latest of each kind*, the newest contact, telemetry, setting, node and command event; a
+  command the gateway refused counts as the newest while it came after the newest accepted one,
+  with the reason in words, such as *too many wrong codes* for `code_locked`
+  (`event.meshcore_home_gateway_radio1_message`, its attribute `command`). While
   the gateway is offline, these cards say so instead of values: Home Assistant keeps no
   attributes of an unavailable entity, so they would read as never reported.
 * *Settings*: what your administrator set, read only, from the gateway's *Configuration*:

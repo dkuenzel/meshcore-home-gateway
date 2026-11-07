@@ -105,7 +105,8 @@ format, the command line and Home Assistant discovery are public interfaces
   a look named first, the messages on their way counted as the first line of *Overview* counts
   them, and the airtime left of the hour's budget; *Radio*; *Radio settings*, with who may ask
   the radio for its battery, position and readings as the radio acts on it; *Latest of each
-  kind*, the newest event of each kind. *Settings*: what the administrator set, read only, from
+  kind*, the newest event of each kind, also a command the gateway refused, with the reason in
+  words (`code_locked` too). *Settings*: what the administrator set, read only, from
   the sensor *Configuration*, each setting with its section and key, and the versions. While the gateway is
   offline, these cards say so instead of values that would read as never reported. *Help* names
   every page, button and switch, and says what the dashboard cannot do, the kinds of messages and

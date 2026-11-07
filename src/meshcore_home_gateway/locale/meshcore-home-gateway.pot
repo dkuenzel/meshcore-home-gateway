@@ -1715,6 +1715,12 @@ msgctxt "dashboard"
 msgid "4/{cr}"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "5 wrong codes within an hour: the gateway refuses that sender's commands until the first of them is an hour old. Someone may be guessing the codes; tell your administrator."
+msgstr ""
+
 #. security text (docs/translations.md): who can read a chat, and that a name on a channel proves nothing
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -1732,6 +1738,12 @@ msgctxt "dashboard"
 msgid "A chat's page"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A command of this sender ends in the 6-digit code of an authenticator app, new every 30 seconds and good once. Check the clock of the sender's phone."
+msgstr ""
+
 #. security text (docs/translations.md): who can read a chat, and that a name on a channel proves nothing
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -1746,6 +1758,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "A contact prefix of its own keeps two gateways' contacts apart in Home Assistant."
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A copy of an earlier command, or a clock that is off: the sender's or the computer's. A command sent anew works; if it happens again, your administrator checks the clocks."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2233,7 +2251,7 @@ msgctxt "dashboard"
 msgid "Coding rate"
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Command"
@@ -2268,7 +2286,7 @@ msgctxt "dashboard"
 msgid "Connected by: how the gateway reaches the radio, with a cable (USB) or over the network."
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contact"
@@ -3071,7 +3089,7 @@ msgctxt "dashboard"
 msgid "Needs a look: {first}."
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "New node"
@@ -3371,6 +3389,12 @@ msgctxt "dashboard"
 msgid "Only automations write to {name} from this home."
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Only the contacts your administrator chose may send commands, and only while no other node's key starts the same."
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Only turn it on for people who agreed."
@@ -3437,7 +3461,7 @@ msgctxt "dashboard"
 msgid "Picking a node in the list Add at once adds it to the radio at once."
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Position and battery"
@@ -3533,7 +3557,7 @@ msgid "Radio name"
 msgstr ""
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio settings"
@@ -3953,6 +3977,18 @@ msgctxt "dashboard"
 msgid "The gateway caught an error and runs on. Its log has the details."
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway could not check the sender at that moment, such as while it connected to the radio. The sender can send the command again."
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway could not keep the command safe from copies, or could not pass it on to the automations. The sender can send the command again; tell your administrator if it repeats."
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The gateway does not keep this setting, or the radio does not report it."
@@ -4170,6 +4206,12 @@ msgstr ""
 #, python-brace-format
 msgctxt "dashboard"
 msgid "The name comes from {name}'s own device and can change."
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The newest command may be one the gateway refused; the reason follows the word refused."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4798,6 +4840,12 @@ msgctxt "dashboard"
 msgid "Who sees what"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Why a command was refused"
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Why a contact is missing above"
@@ -5019,6 +5067,12 @@ msgctxt "dashboard"
 msgid "already a contact"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "an old command again"
+msgstr ""
+
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -5026,6 +5080,7 @@ msgctxt "dashboard"
 msgid "and {more} more"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "another contact has the same key prefix"
@@ -5043,7 +5098,7 @@ msgctxt "dashboard"
 msgid "answering, no position"
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "answers again"
@@ -5103,6 +5158,13 @@ msgctxt "dashboard"
 msgid "broken"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "broker unreachable"
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "cannot be stored"
@@ -5154,6 +5216,12 @@ msgctxt "dashboard"
 msgid "channel · only automations write here"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "code used already"
+msgstr ""
+
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5184,6 +5252,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "cut, ending in ..."
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "dated in the future"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -5234,7 +5308,7 @@ msgctxt "dashboard"
 msgid "given up"
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "heard for the first time"
@@ -5385,6 +5459,12 @@ msgctxt "dashboard"
 msgid "no answer lately"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "no code"
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "no heard node or contact of that name"
@@ -5434,7 +5514,7 @@ msgctxt "dashboard"
 msgid "none"
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "none yet"
@@ -5694,6 +5774,25 @@ msgctxt "dashboard"
 msgid "room"
 msgstr ""
 
+#. why the gateway refused a command, after the command's word
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "sender not a contact"
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "sender not allowed"
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "sender not checked yet"
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "sensor"
@@ -5739,7 +5838,7 @@ msgctxt "dashboard"
 msgid "state file cannot be written"
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "stopped answering"
@@ -5833,6 +5932,18 @@ msgctxt "dashboard"
 msgid "too many requests waiting"
 msgstr ""
 
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "too many wrong codes"
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "too old"
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "turned off in the firmware"
@@ -5883,6 +5994,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "written"
+msgstr ""
+
+#. security text (docs/translations.md): a command needs the sender's current code; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "wrong code"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6058,11 +6175,18 @@ msgctxt "dashboard"
 msgid "{sender}: {text}"
 msgstr ""
 
-#. the newest event of each kind; sender is the name of a contact that may send commands, word a command word
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{sender}: {word}"
+msgstr ""
+
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{sender}: {word}, refused: {reason}"
 msgstr ""
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
