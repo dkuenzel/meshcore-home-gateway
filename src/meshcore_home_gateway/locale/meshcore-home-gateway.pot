@@ -2677,6 +2677,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "The gateway was shutting down or restarting. Send it again once it is back."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The gateway's controls are not in Home Assistant yet."
 msgstr ""
 
@@ -3487,6 +3492,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "the dashboard and the gateway are of different versions"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the gateway was stopping"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

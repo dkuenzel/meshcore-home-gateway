@@ -332,6 +332,7 @@ DELIVERY_REASONS = [
     "empty",
     "retained",
     "queue_full",
+    "stopping",
     "queue_ttl",
     "no_radio",
     "airtime_budget",

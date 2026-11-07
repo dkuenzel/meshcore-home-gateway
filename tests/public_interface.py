@@ -742,7 +742,7 @@ def _draft_requests(config: Config, topics: Topics) -> tuple[dict[str, str], str
     gateway = discovery_payload(config, topics)["cmps"]
     target = {}
     for alias in (t.alias for t in config.targets):
-        text, button = gateway[f"write_{alias}"], gateway[f"write_{alias}_send"]
+        text, button = gateway[f"write_{alias}"], gateway[f"write_{alias}__send"]
         if text["command_topic"] != button["command_topic"]:
             raise AssertionError(f"{alias}: the draft and its Send on two topics")
         target[alias] = text["command_topic"]

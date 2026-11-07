@@ -1947,7 +1947,7 @@
      "entity_id": "text.<device>_write_<alias>",
      "platform": "text"
     },
-    "write_<alias>_send": {
+    "write_<alias>__send": {
      "entity_id": "button.<device>_write_<alias>_send",
      "platform": "button"
     }

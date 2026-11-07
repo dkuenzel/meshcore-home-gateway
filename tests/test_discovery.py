@@ -153,10 +153,14 @@ def test_document_has_the_mandatory_parts() -> None:
     for key, component in doc["cmps"].items():
         assert component["p"] in {"binary_sensor", "sensor", "event", "notify", "button", "text"}
         assert component["unique_id"] == f"meshcore_home_gateway_radio-1_{key}"
+        # a draft's Send button `write_<alias>__send` keeps the entity ID of D-47; no other key
+        # holds "__"
+        object_id = key.replace("__", "_")
+        assert object_id == key or (key.startswith("write_") and key.endswith("__send"))
         # Home Assistant turns the '-' into '_' in the entity ID (home-assistant/tests)
         assert (
             component["default_entity_id"]
-            == f"{component['p']}.meshcore_home_gateway_radio-1_{key}"
+            == f"{component['p']}.meshcore_home_gateway_radio-1_{object_id}"
         )
 
 
@@ -174,9 +178,9 @@ def test_entities_and_their_sources() -> None:
         "send_alerts",
         "send_alice",
         "write_alerts",
-        "write_alerts_send",
+        "write_alerts__send",
         "write_alice",
-        "write_alice_send",
+        "write_alice__send",
         "noise_floor",
         "radio_airtime",
         "uptime",
@@ -744,9 +748,9 @@ def test_each_visible_target_has_a_draft_and_a_send_button_on_one_request_topic(
         "icon": "mdi:message-draw",
         "qos": 0,
     }
-    assert cmps["write_alerts_send"] == {
+    assert cmps["write_alerts__send"] == {
         "p": "button",
-        "unique_id": "meshcore_home_gateway_radio-1_write_alerts_send",
+        "unique_id": "meshcore_home_gateway_radio-1_write_alerts__send",
         "default_entity_id": "button.meshcore_home_gateway_radio-1_write_alerts_send",
         "name": "Send what is written to alerts",
         "command_topic": request,
@@ -756,8 +760,32 @@ def test_each_visible_target_has_a_draft_and_a_send_button_on_one_request_topic(
     }
     assert discovery_payload(CONFIG, TOPICS)["qos"] == 1  # the shared one, for the others
     alice = cmps["write_alice"]
-    assert alice["command_topic"] == cmps["write_alice_send"]["command_topic"]
+    assert alice["command_topic"] == cmps["write_alice__send"]["command_topic"]
     assert alice["command_topic"] == "meshcore/radio-1/homeassistant/draft/target/alice/request"
+
+
+def test_targets_x_and_x_send_keep_each_its_draft_and_its_send_button() -> None:
+    """The button of `family` and the text of `family_send` must not share a key: the one
+    written second would replace the other in the document, and one chat would lose an entity.
+    No alias holds `__`, so the button's key `write_<alias>__send` is no text's key. The default
+    entity IDs stay `text.…_write_<alias>` and `button.…_write_<alias>_send`: they differ by
+    platform."""
+    uid, topics = "meshcore_home_gateway_radio1", Topics("meshcore", "radio1")
+    for first, second in (("family", "family_send"), ("family_send", "family")):
+        config = _targets(f"[targets.{first}]\nchannel = 1\n[targets.{second}]\nchannel = 2\n")
+        drafts = {
+            key: component
+            for key, component in discovery_payload(config, topics)["cmps"].items()
+            if key.startswith("write_")
+        }
+        assert len(drafts) == 4, (first, second)
+        assert len({c["unique_id"] for c in drafts.values()}) == 4
+        for alias in ("family", "family_send"):
+            request = topics.target_draft_request(alias)
+            chat = {c["p"]: c for c in drafts.values() if c["command_topic"] == request}
+            assert chat["text"]["default_entity_id"] == f"text.{uid}_write_{alias}"
+            assert chat["button"]["default_entity_id"] == f"button.{uid}_write_{alias}_send"
+            assert drafts[f"write_{alias}__send"] is chat["button"]
 
 
 def test_the_drafts_max_is_the_room_of_the_targets_texts() -> None:
@@ -798,7 +826,7 @@ def test_a_hidden_target_has_no_draft() -> None:
 def test_controls_off_leaves_the_drafts_available() -> None:
     """Sending is no control: every user can send with the notify entities anyway."""
     off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
-    for key in ("write_alerts", "write_alerts_send", "write_alice", "write_alice_send"):
+    for key in ("write_alerts", "write_alerts__send", "write_alice", "write_alice__send"):
         assert (
             discovery_payload(off, TOPICS)["cmps"][key]
             == discovery_payload(CONFIG, TOPICS)["cmps"][key]

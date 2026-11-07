@@ -640,6 +640,7 @@ views:
               {%- elif v == 'empty' -%}_("empty text")
               {%- elif v == 'retained' -%}_("published with the retain flag")
               {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'stopping' -%}_("the gateway was stopping")
               {%- elif v == 'queue_ttl' -%}_("waited too long")
               {%- elif v == 'no_radio' -%}_("no radio")
               {%- elif v == 'airtime_budget' -%}_("airtime used up")
@@ -995,7 +996,7 @@ views:
             text_only: true
             content: |-
               <details><summary>_("When something is wrong")</summary><ul><li>_("The first line of Overview names the problem; the card below it says what to do. Tell your administrator the time and what the card says.")</li><li><b>_("a fault in the gateway")</b>: _("A part of the gateway does not work as it should. Messages still go out.")</li><li><b>_("a node imitates a contact")</b>: _("A radio nearby has a key that starts like a contact's.")</li><li><b>_("remote access to the radio")</b>: _("A contact may change this home's radio over the air.")</li><li><b>_("a position broadcast to everyone")</b>: _("A person's device tells everyone in range where it is.")</li><li><b>_("the radio's settings")</b>: _("The radio's settings could not be set, or someone changed them.")</li><li><b>_("asking for position and battery is paused")</b>: _("The gateway asks nobody for now; the card says why.")</li><li><b>_("the radio's clock")</b>: _("The radio's clock is far off.")</li><li><b>_("the contact table is full")</b>: _("The radio cannot add a new contact.")</li><li><b>_("the dashboard and the gateway are of different versions")</b>: _("Some cards may be missing or empty until your administrator updates one of them.")</li></ul></details>
-              <details><summary>_("Why a message was not sent")</summary><ul><li><b>_("no acknowledgement")</b>: _("The person's radio did not confirm it: out of range, switched off, or the way through the mesh changed.")</li><li><b>_("not a contact on the radio")</b>, <b>_("not a companion")</b>: _("The radio cannot send to this person now; your administrator checks the contact.")</li><li><b>_("no such target")</b>, <b>_("channel not set up on the radio")</b>: _("The chat does not exist on the gateway or on the radio; your administrator checks the configuration.")</li><li><b>_("another contact has the same key prefix")</b>: _("Two contacts start alike, so the radio cannot tell them apart; your administrator removes one.")</li><li><b>_("text too long")</b>, <b>_("request too large")</b>: _("Write a shorter text.")</li><li><b>_("text not UTF-8")</b>, <b>_("published with the retain flag")</b>: _("An automation sent it in a wrong form; your administrator fixes it.")</li><li><b>_("empty text")</b>: _("There was nothing to send.")</li><li><b>_("queue full")</b>, <b>_("waited too long")</b>, <b>_("airtime used up")</b>, <b>_("needs more airtime than one burst")</b>: _("The radio may send only so much per hour, and many messages were waiting. Send it again later, or shorter.")</li><li><b>_("no radio")</b>: _("The gateway had no connection to its radio.")</li><li><b>_("internal error: see the log")</b>: _("The gateway hit an error; tell your administrator the time.")</li></ul></details>
+              <details><summary>_("Why a message was not sent")</summary><ul><li><b>_("no acknowledgement")</b>: _("The person's radio did not confirm it: out of range, switched off, or the way through the mesh changed.")</li><li><b>_("not a contact on the radio")</b>, <b>_("not a companion")</b>: _("The radio cannot send to this person now; your administrator checks the contact.")</li><li><b>_("no such target")</b>, <b>_("channel not set up on the radio")</b>: _("The chat does not exist on the gateway or on the radio; your administrator checks the configuration.")</li><li><b>_("another contact has the same key prefix")</b>: _("Two contacts start alike, so the radio cannot tell them apart; your administrator removes one.")</li><li><b>_("text too long")</b>, <b>_("request too large")</b>: _("Write a shorter text.")</li><li><b>_("text not UTF-8")</b>, <b>_("published with the retain flag")</b>: _("An automation sent it in a wrong form; your administrator fixes it.")</li><li><b>_("empty text")</b>: _("There was nothing to send.")</li><li><b>_("queue full")</b>, <b>_("waited too long")</b>, <b>_("airtime used up")</b>, <b>_("needs more airtime than one burst")</b>: _("The radio may send only so much per hour, and many messages were waiting. Send it again later, or shorter.")</li><li><b>_("no radio")</b>: _("The gateway had no connection to its radio.")</li><li><b>_("the gateway was stopping")</b>: _("The gateway was shutting down or restarting. Send it again once it is back.")</li><li><b>_("internal error: see the log")</b>: _("The gateway hit an error; tell your administrator the time.")</li></ul></details>
 # @each chats
   - title: "@chats.title@"
     path: "@chats.path@"
@@ -1189,6 +1190,7 @@ views:
               {%- elif v == 'empty' -%}_("empty text")
               {%- elif v == 'retained' -%}_("published with the retain flag")
               {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'stopping' -%}_("the gateway was stopping")
               {%- elif v == 'queue_ttl' -%}_("waited too long")
               {%- elif v == 'no_radio' -%}_("no radio")
               {%- elif v == 'airtime_budget' -%}_("airtime used up")
@@ -1452,6 +1454,7 @@ views:
               {%- elif v == 'empty' -%}_("empty text")
               {%- elif v == 'retained' -%}_("published with the retain flag")
               {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'stopping' -%}_("the gateway was stopping")
               {%- elif v == 'queue_ttl' -%}_("waited too long")
               {%- elif v == 'no_radio' -%}_("no radio")
               {%- elif v == 'airtime_budget' -%}_("airtime used up")

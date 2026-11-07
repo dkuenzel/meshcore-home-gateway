@@ -67,7 +67,8 @@ class Announcer:
     ) -> None:
         """`publish_state`: the state document follows every announcement; `components`: what
         earlier runs announced; `manage`: the controls that add contacts; `devices`: the
-        contacts' devices; `drafts`: the chats' drafts, whose `max` the discovery announces."""
+        contacts' devices; `drafts`: the chats' drafts, whose `max` the discovery announces and
+        which the announcement after a birth publishes again."""
         self.config = config
         self._topics, self._bus, self._radio = topics, bus, radio
         self._publish_state = publish_state
@@ -128,6 +129,8 @@ class Announcer:
             self._state.last = self._mono()
             if (devices := self._devices) is not None:
                 observe(lambda: devices.announce_all(birth=birth))
+            if birth and self._drafts is not None:  # as held, after the discovery (SEC-006)
+                observe(self._drafts.republish)
         self._publish_state()
 
     def schedule(self, *, birth: bool = False) -> None:

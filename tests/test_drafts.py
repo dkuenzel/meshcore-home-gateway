@@ -43,6 +43,7 @@ from tests.bridge_harness import (
     ALICE,
     BOB,
     FakeBus,
+    births,
     fast_timers,  # noqa: F401 - autouse
     make_config,
     running,
@@ -378,6 +379,29 @@ def test_a_malformed_request_is_ignored_and_the_draft_published_again(tmp_path: 
 
 
 @in_loop
+def test_a_text_no_utf_8_can_carry_is_ignored_and_breaks_no_other_chat(tmp_path: Path) -> None:
+    """JSON writes a lone surrogate as an escape (`\\ud800`): the request is ASCII, but no UTF-8
+    text holds it. Held, it would raise at every echo, press, republish and cut, also for the
+    chats after it in the loop."""
+    chats = Chats(tmp_path)
+    chats.set(FAMILY, "Kept")
+    chats.set(CAROL_CHAT, "Carol, call me")
+    for payload in (b'{"text": "\\ud800"}', b'{"text": "hi \\udfff there"}'):
+        chats.clock.advance(1)
+        published = len(chats.states(FAMILY))
+        chats.request(FAMILY, payload)
+        assert chats.held(FAMILY) == "Kept", payload
+        assert chats.states(FAMILY)[published:] == ["Kept"], payload
+    start = len(chats.bus.published)
+    chats.drafts.republish()  # every chat, the ones after `family` too
+    republished = {t: json.loads(p)["text"] for t, p, _ in chats.bus.published[start:]}
+    assert republished == {chats.topic(chat): text for chat, text in chats.drafts.chats().items()}
+    assert republished[chats.topic(CAROL_CHAT)] == "Carol, call me"
+    chats.press(FAMILY)
+    assert last(chats.events()) == ("queued", "family", "Kept", None)
+
+
+@in_loop
 def test_a_text_of_max_characters_is_taken_as_home_assistant_writes_it(tmp_path: Path) -> None:
     """Home Assistant's `tojson` writes every character outside ASCII as an escape, an emoji as
     two: 12 bytes for one character of `max`."""
@@ -471,6 +495,19 @@ def test_a_clean_stop_clears_every_draft_that_is_not_empty(tmp_path: Path) -> No
     assert chats.held(FAMILY) == ""
 
 
+@in_loop
+def test_a_clean_stop_clears_a_draft_emptied_while_its_echo_was_held(tmp_path: Path) -> None:
+    """The broker still holds the text when its clear waits for the limiter's window: the stop
+    publishes the clear, or the unsent text stays retained while the gateway is away."""
+    chats = Chats(tmp_path)
+    chats.set(FAMILY, "Our door code is 4711")  # echoed at once, the window opens
+    chats.clock.advance(ECHO_WINDOW_S / 2)
+    chats.set(FAMILY, "")  # its echo is held for the window's end
+    chats.drafts.stop()
+    chats.clock.advance(1)
+    assert chats.states(FAMILY) == ["Our door code is 4711", ""]
+
+
 def test_the_gateway_starts_with_empty_drafts_and_clears_them_when_it_stops(
     tmp_path: Path,
 ) -> None:
@@ -501,23 +538,62 @@ def test_the_gateway_starts_with_empty_drafts_and_clears_them_when_it_stops(
     scenario(main)
 
 
+def test_a_press_after_the_stop_kept_the_queue_is_rejected_not_lost(tmp_path: Path) -> None:
+    """The outbox keeps its queue early in the stop; the drafts take presses until the bus
+    stops. A press between the two would be queued after the queue was saved, its draft
+    cleared, and the message lost without a final event: it ends `rejected` with reason
+    `stopping`, and the clean stop clears its draft."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    buses = [FakeBus(), FakeBus()]
+    draft = "meshcore/radio1/homeassistant/draft/target/alerts"
+
+    def late_press() -> None:  # Home Assistant's text and press, before the drafts' stop
+        for payload in (b'{"text": "Leaving now"}', b'{"send": true}'):
+            for callback in buses[0].on_draft_request:
+                callback(TARGET, "alerts", payload, False)
+
+    buses[0].on_stopping.append(late_press)
+
+    async def main() -> None:
+        for bus in buses:
+            async with running(make_config(), radio, tmp_path, bus=bus):
+                await asyncio.sleep(0.05)
+
+    scenario(main)
+    events = [(e["event_type"], e["target"], e["reason"]) for e in buses[0].payloads("/delivery")]
+    assert events == [("rejected", "alerts", "stopping")]
+    states = [json.loads(p)["text"] for t, p, _ in buses[0].published if t == draft]
+    assert states == ["", "Leaving now", ""]
+    assert buses[1].payloads("/delivery") == []  # the next start has nothing to send
+    assert radio.channel_texts == []
+
+
 GATEWAY_DOCUMENT = "/device/meshcore_home_gateway_radio1/config"
 
 
 def test_home_assistants_birth_publishes_every_draft_as_held(tmp_path: Path) -> None:
-    """A Home Assistant that started again reads the drafts the gateway holds, at once."""
+    """A Home Assistant that started again reads the drafts the gateway holds, with the
+    announcement that follows its birth message, after the discovery. A storm of births, which
+    any client of the status topic can send, makes one announcement (SEC-006), and so one
+    publish of each draft, not one per birth."""
     radio = EmulatedRadio(contacts=[ALICE, BOB])
 
     async def main() -> None:
         async with running(make_config(), radio, tmp_path) as (_, bus, _n):
             for callback in bus.on_draft_request:
                 callback(TARGET, "alerts", b'{"text": "Half a sentence"}', False)
-            start = len(bus.published)
-            for birth in bus.on_ha_online:
-                birth()
+            await asyncio.sleep(0.05)
+            start, announced = len(bus.published), len(bus.payloads(GATEWAY_DOCUMENT))
+            births(bus, 100)
+            await bus.wait_for(GATEWAY_DOCUMENT, lambda _: True, since=announced)
+            await asyncio.sleep(0.05)
+            after = [(t, p) for t, p, _ in bus.published[start:]]
             draft = "meshcore/radio1/homeassistant/draft/target/alerts"
-            published = [p for t, p, _ in bus.published[start:] if t == draft]
-            assert published == [b'{"text":"Half a sentence"}']
+            assert [p for t, p in after if t == draft] == [b'{"text":"Half a sentence"}']
+            drafts = [t for t, _ in after if "/draft/" in t]
+            assert len(drafts) == 3  # alerts, alice, bob: once each
+            topics = [t for t, _ in after]
+            assert topics.index(draft) > topics.index("homeassistant" + GATEWAY_DOCUMENT)
 
     scenario(main)
 

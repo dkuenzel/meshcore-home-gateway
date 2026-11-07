@@ -249,8 +249,8 @@ def hostile() -> list[Node]:
 
 def undrafted(document: dict[str, Any]) -> dict[str, Any]:
     """A device's discovery document without the draft fields and Send buttons that a gateway of
-    2.1 announces (G4): `write_<alias>` and its `_send` on the gateway's device, `write` and
-    `write_send` on a contact's. A test that gives a chat its fields itself starts from it."""
+    2.1 announces (G4): `write_<alias>` and `write_<alias>__send` on the gateway's device, `write`
+    and `write_send` on a contact's. A test that gives a chat its fields itself starts from it."""
     components = document.get("cmps")
     if not isinstance(components, dict):
         return document

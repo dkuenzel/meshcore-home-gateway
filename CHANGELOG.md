@@ -147,6 +147,11 @@ format, the command line and Home Assistant discovery are public interfaces
 - The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
   the one being sent, so a single message that waits reads 0 (#112).
 
+- A send request or the answer to a command that came while a stop handled the last received
+  messages was published `queued` and then lost: the stop had kept the queue already. It now ends
+  `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
+  stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+
 ## [2.0.0] - 2026-11-07
 
 The second stable release. It ships the program of 2.0.0rc3, which CI, the installer's self-test

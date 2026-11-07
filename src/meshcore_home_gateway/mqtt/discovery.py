@@ -475,7 +475,11 @@ def discovery_payload(
             text_room(config, target, radio),
         )
         components[write] = component(write, "text", names[0], **text)
-        components[f"{write}_send"] = component(f"{write}_send", "button", names[1], **send)
+        # no alias holds "__": `write_<alias>_send` would be the text of a target `<alias>_send`;
+        # the entity IDs differ by platform, so the button keeps the one of design D-47
+        button = f"{write}__send"
+        send["default_entity_id"] = f"button.{uid}_{write}_send"
+        components[button] = component(button, "button", names[1], **send)
     with_removed(components, uid, topics, removed, ha_name, bind=bind)
     device: dict[str, Any] = {
         "ids": [uid],

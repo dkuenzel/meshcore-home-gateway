@@ -15,23 +15,26 @@ text stored just before it.
   the second tap of a double tap, ends silently: the first one's events are its outcome. Queued,
   the draft is cleared at once, inside the press's handler; refused or a duplicate, it stays, to
   be changed.
-* A request that is not exactly `{"text": <string>}` or `{"send": true}`, not UTF-8, or with a
-  text longer than the chat's `max` is ignored, and the draft published again. A retained request
-  is a left-over and ignored.
+* A request that is not exactly `{"text": <string>}` or `{"send": true}`, not UTF-8 (a lone
+  surrogate, which JSON writes as an escape, is none either), or with a text longer than the
+  chat's `max` is ignored, and the draft published again. A retained request is a left-over and
+  ignored.
 * A stored text is echoed at once, then at most once per ECHO_WINDOW_S and chat: of a burst only
   the last follows when the window ends. The clear after a press, the republish at a connect to the
-  broker and at Home Assistant's birth, a cut and an expiry go out at once, and drop an echo the
-  window still holds: a held echo of the text before a press would refill the field after the
-  clear.
+  broker and with the announcement after Home Assistant's birth (at most one per
+  ANNOUNCE_MIN_INTERVAL_S however many births come, SEC-006), a cut and an expiry go out at once,
+  and drop an echo the window still holds: a held echo of the text before a press would refill
+  the field after the clear.
 * A draft unchanged for EXPIRY_S is cleared: a forgotten half sentence would otherwise be sent by
   the next press, maybe days later and by someone else.
 * A lower `max` (a renamed radio, or its first connect, takes room from channel texts) cuts a
   longer draft, which goes out before the gateway's discovery: Home Assistant cannot take a state
   longer than `max`, and writes the state again as soon as it takes the discovery.
-* A clean stop clears every draft that is not empty, so no unsent text stays retained on the
-  broker while the gateway is away. A chat that is gone has its topic deleted once its device's
-  discovery is gone; the broker's copies of topics no chat owns are deleted at most CLEARS_PER_S
-  a second. The draft topics are not documents of `views`: they exist for Home Assistant only.
+* A clean stop clears every draft that is not empty or whose echo is held, so no unsent text
+  stays retained on the broker while the gateway is away. A chat that is gone has its topic
+  deleted once its device's discovery is gone; the broker's copies of topics no chat owns are
+  deleted at most CLEARS_PER_S a second. The draft topics are not documents of `views`: they
+  exist for Home Assistant only.
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ import json
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import RateLimit
@@ -161,9 +164,9 @@ class Drafts:
     # --- the gateway's side ---------------------------------------------------------------------
 
     def republish(self) -> None:
-        """At a connect to the broker and at Home Assistant's birth: every draft as it is held, at
-        once. Never an empty text in place of a held one, which the next press would still
-        send."""
+        """At a connect to the broker and with the announcement after Home Assistant's birth:
+        every draft as it is held, at once. Never an empty text in place of a held one, which the
+        next press would still send."""
         for chat, draft in self._drafts.items():
             self._publish_now(chat, draft)
 
@@ -205,12 +208,14 @@ class Drafts:
 
     def stop(self) -> None:
         """A clean stop: every draft that is not empty is cleared, so that no unsent text stays
-        retained on the broker while the gateway is away. Requests that come later are ignored:
-        their drafts would stay."""
+        retained on the broker while the gateway is away; so is one whose echo is held, which
+        the broker has with the text before. Requests that come later are ignored: their drafts
+        would stay."""
         self._stopped = True
         for chat, draft in self._drafts.items():
+            held = draft.held
             draft.cancel()
-            if draft.text:
+            if draft.text or held:
                 draft.text = ""
                 self._publish(chat, "")
 
@@ -290,8 +295,20 @@ def _parsed(payload: bytes) -> str | bool | None:
     if not isinstance(request, dict) or len(request) != 1:
         return None
     ((name, value),) = request.items()
-    if name == "text" and isinstance(value, str):
+    if name == "text" and _unicode(value):
         return value
     if name == "send" and value is True:
         return True
     return None
+
+
+def _unicode(value: object) -> TypeGuard[str]:
+    """A string that UTF-8 can carry: JSON writes a lone surrogate as an escape, in ASCII, and
+    no UTF-8 text holds it; held, it would raise at every echo, press, republish and cut."""
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
