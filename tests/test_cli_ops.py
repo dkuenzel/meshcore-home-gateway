@@ -12,19 +12,26 @@ import os
 import sqlite3
 import stat
 import tarfile
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import paho.mqtt.client as paho
 import pytest
+from paho.mqtt.enums import CallbackAPIVersion
 
 from meshcore_home_gateway.cli import EX_FAILURE, EX_OK, main
 from meshcore_home_gateway.cli import backup as cli_backup
 from meshcore_home_gateway.cli import broker as cli_broker
 from meshcore_home_gateway.cli import doctor as cli_doctor
 from meshcore_home_gateway.history import SCHEMA_VERSION, History
+from meshcore_home_gateway.mqtt.homie import HomieDevice
+from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.state import JsonStateFile
 from meshcore_home_gateway.views import HistoryEntry
+from tests.conftest import Broker
 
 ROOT = "meshcore/radio1"
 KEY = "a1" * 32
@@ -52,10 +59,19 @@ class FakeBroker:
     published: list[tuple[str, bytes, bool]] = dataclasses.field(default_factory=list)
     anonymous: bool = False  # it takes clients without a user name
     refused: tuple[str, ...] = ()  # the subscriptions its ACL refuses
+    read_only: tuple[str, ...] = ()  # the topics its ACL lets the user read, not write
+    pace_s: float = 0.0  # the retained messages of a subscription come this far apart
+    subscribed: dict[str, int] = dataclasses.field(default_factory=dict)  # topic -> QoS
+    granted: list[tuple[str, int]] = dataclasses.field(default_factory=list)
+    echoed: list[str] = dataclasses.field(default_factory=list)  # publishes sent back to us
     clients: list[str] = dataclasses.field(default_factory=list)
     on_connect: Any = None
     on_subscribe: Any = None
+    on_unsubscribe: Any = None
     on_message: Any = None
+    _pacing: dict[str, tuple[threading.Thread, threading.Event]] = dataclasses.field(
+        default_factory=dict
+    )
 
     def connect(self, _host: str, _port: int, _keepalive: int) -> None:
         pass
@@ -68,14 +84,42 @@ class FakeBroker:
         if topic in self.refused:
             self.on_subscribe(self, None, 1, [_Code("Not authorized")], None)
             return
+        self.subscribed[topic] = qos
+        self.granted.append((topic, qos))
         self.on_subscribe(self, None, 1, [_Code()], None)
-        for name, body in list(self.retained.items()):
-            if _matches(topic, name):
+        held = [(name, body) for name, body in self.retained.items() if _matches(topic, name)]
+        if not self.pace_s:
+            for name, body in held:
                 self.on_message(self, None, SimpleNamespace(topic=name, payload=body, retain=True))
+            return
+        stop = threading.Event()
+
+        def paced() -> None:  # paho's thread, as a remote broker's messages come
+            for name, body in held:
+                if stop.wait(self.pace_s):
+                    return  # unsubscribed: a broker may drop what it has not sent of QoS 0
+                message = SimpleNamespace(topic=name, payload=body, retain=True)
+                self.on_message(self, None, message)
+
+        thread = threading.Thread(target=paced, daemon=True)
+        self._pacing[topic] = (thread, stop)
+        thread.start()
+
+    def unsubscribe(self, topic: str) -> None:
+        self.subscribed.pop(topic, None)
+        thread, stop = self._pacing.pop(topic, (None, threading.Event()))
+        stop.set()
+        if thread is not None:
+            thread.join()
+        self.on_unsubscribe(self, None, 1, [], None)
 
     def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any:
         self.published.append((topic, payload, retain))
-        if retain and payload:
+        if any(_matches(pattern, topic) for pattern in self.subscribed):
+            self.echoed.append(topic)
+        if any(_matches(pattern, topic) for pattern in self.read_only):
+            pass  # acknowledged, and dropped (Mosquitto's ACL with MQTT 3.1.1)
+        elif retain and payload:
             self.retained[topic] = payload
         elif retain:
             self.retained.pop(topic, None)
@@ -107,7 +151,7 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeBroker:
         return broker
 
     monkeypatch.setattr(cli_broker, "mqtt_client", client)
-    for name in ("CONNECT_TIMEOUT_S", "SUBSCRIBE_TIMEOUT_S", "RETAINED_WAIT_S"):
+    for name in ("CONNECT_TIMEOUT_S", "SUBSCRIBE_TIMEOUT_S", "RETAINED_WAIT_S", "RETAINED_QUIET_S"):
         monkeypatch.setattr(cli_broker, name, 0.01)
     return broker
 
@@ -543,6 +587,187 @@ def test_retire_without_a_grant_for_homie_retires_the_rest_while_homie_is_off(
     assert main(["retire", "--yes", "--config", str(on), *state_dir]) == EX_FAILURE
     assert f"refused the subscription to {HOMIE}/#" in capsys.readouterr().err
     assert fake.published == []
+
+
+def test_retire_reads_with_qos_0_and_stops_reading_before_it_clears(
+    tmp_path: Path, fake: FakeBroker
+) -> None:
+    """A broker sends the retained messages of a subscription with QoS 1 through a queue of its
+    own, Mosquitto's `max_queued_messages` (1000), and drops the rest: a device with 50
+    companions has more. QoS 0 has no such queue. A subscription still open while `retire`
+    clears would bring every cleared topic back to it (#96)."""
+    publish(fake, {"availability": "offline", "state": state()})
+    _homie_device(fake)
+    argv = ["retire", "--yes", "--config", str(config_file(tmp_path))]
+    assert main([*argv, "--state-dir", str(tmp_path / "state")]) == EX_OK
+    sweeps = [(t, q) for t, q in fake.granted if t.endswith("/#")]
+    assert sweeps == [(f"{ROOT}/#", 0), (f"{HOMIE}/#", 0)] * 2  # then again, to check
+    assert fake.echoed == [f"{ROOT}/availability"]  # the subscription of `open` alone
+    assert fake.subscribed == {f"{ROOT}/availability": 1}
+
+
+def test_retire_waits_until_no_retained_message_comes_any_more(
+    tmp_path: Path, fake: FakeBroker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A remote broker's retained messages come for longer than a fixed wait: `retire` reads
+    until none has come for a while, and clears them all (#96)."""
+    monkeypatch.setattr(cli_broker, "RETAINED_QUIET_S", 0.4)
+    publish(fake, {"availability": "offline", "state": state()})
+    _homie_device(fake)
+    fake.pace_s = 0.03  # 7 messages, 0.2 s: twenty times the wait of the fixture
+    argv = ["retire", "--yes", "--config", str(config_file(tmp_path))]
+    assert main([*argv, "--state-dir", str(tmp_path / "state")]) == EX_OK
+    assert fake.retained == {f"{ROOT}/availability": b"offline"}
+
+
+def test_retire_fails_when_retained_messages_are_left_after_clearing(
+    tmp_path: Path, fake: FakeBroker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`retire` looks again after clearing: a broker whose ACL lets the gateway's user read the
+    Homie device but not write it acknowledges the clearing and keeps the messages (#96)."""
+    publish(fake, {"availability": "offline", "state": state()})
+    _homie_device(fake)
+    fake.read_only = (f"{HOMIE}/#",)
+    argv = ["retire", "--yes", "--config", str(config_file(tmp_path))]
+    assert main([*argv, "--state-dir", str(tmp_path / "state")]) == EX_FAILURE
+    captured = capsys.readouterr()
+    assert "retired" not in captured.out
+    assert (
+        f"broker: 5 retained messages left after clearing, such as {HOMIE}/$state" in captured.err
+    )
+
+
+@pytest.mark.parametrize("held", ["init", "ready", "alert", "sleeping"])
+def test_retire_leaves_a_homie_device_alone_that_a_connection_holds(
+    tmp_path: Path, fake: FakeBroker, capsys: pytest.CaptureFixture[str], held: str
+) -> None:
+    """With this gateway stopped, only another gateway's connection holds its Homie device in
+    one of these states: node IDs that differ only in `_` and `-` share one (`radio_1` and
+    `radio-1`). `retire` leaves it as it is (#96)."""
+    publish(fake, {"availability": "offline", "state": state()})
+    _homie_device(fake)
+    fake.retained[f"{HOMIE}/$state"] = held.encode()
+    device = {t: p for t, p in fake.retained.items() if t.startswith(HOMIE + "/")}
+    argv = ["retire", "--config", str(config_file(tmp_path))]
+    state_dir = ["--state-dir", str(tmp_path / "state")]
+    for yes in ([], ["--yes"]):
+        assert main([*argv, *yes, *state_dir]) == EX_OK
+        out = capsys.readouterr().out
+        assert (
+            f"broker: Homie device {HOMIE} not cleared: a gateway is connected to it (state {held})"
+            in out
+        )
+        assert "Homie messages to clear" not in out
+    assert {t: p for t, p in fake.retained.items() if t.startswith(HOMIE + "/")} == device
+    assert fake.retained[f"{ROOT}/availability"] == b"offline"
+    assert f"{ROOT}/state" not in fake.retained
+
+
+def _homie_left_behind(companions: int) -> dict[str, bytes]:
+    """The retained messages of the Homie device of a run with `[homie] enabled` and this many
+    companions, as it leaves them after a clean stop."""
+    held: dict[str, bytes] = {}
+    pending: list[list[Any]] = []
+
+    def publish(topic: str, payload: bytes, retain: bool) -> None:
+        if retain:
+            held[topic] = payload
+
+    def call_later(_delay_s: float, callback: Any) -> Any:
+        pending.append(entry := [callback])
+        return SimpleNamespace(cancel=entry.clear)
+
+    topics = Topics("meshcore", "radio1")
+    device = HomieDevice(
+        "radio1",
+        "Gate",
+        companions,
+        topics,
+        publish=publish,
+        send=lambda _: None,
+        call_later=call_later,
+    )
+    device.connected()
+    device.document(topics.state, {"radio": "connected"})
+    device.contacts_read()
+    for n in range(companions):
+        key = f"{n:064x}"
+        fields = {"latitude": 47.5, "longitude": 8.25, "battery_v": 3.9, "heard_at": "2026"}
+        fields["telemetry_state"] = "answering"
+        device.document(topics.contact(key), {"key": key, "name": "Bob", "type": "chat", **fields})
+    while pending:
+        for callback in pending.pop(0):
+            callback()
+    held[f"{HOMIE}/$state"] = b"disconnected"
+    return {topic: payload for topic, payload in held.items() if payload}
+
+
+def _retained_on(broker: Broker, *patterns: str) -> dict[str, bytes]:
+    """What the broker retains under `patterns`, read with QoS 0 (no queue limits it) until
+    nothing has come for half a second."""
+    found: dict[str, bytes] = {}
+    heard = [time.monotonic()]
+    subscribed = threading.Event()
+
+    def message(_c: Any, _u: Any, message: Any) -> None:
+        if message.retain:
+            found[message.topic] = bytes(message.payload)
+            heard.append(time.monotonic())
+
+    client = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    client.on_subscribe = lambda *_: subscribed.set()
+    client.on_message = message
+    client.connect(broker.host, broker.port)
+    client.loop_start()
+    try:
+        client.subscribe([(pattern, 0) for pattern in patterns])
+        assert subscribed.wait(5)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < min(heard[-1] + 0.5, deadline):
+            time.sleep(0.05)
+    finally:
+        client.disconnect()  # first: loop_stop() alone waits for the network loop's timeout
+        client.loop_stop()
+    return found
+
+
+@pytest.mark.broker
+def test_with_broker_retire_clears_a_homie_device_beyond_the_brokers_queue(
+    tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Through Mosquitto with its defaults: a device with the default 50 companions has more
+    retained topics than the 1000 messages Mosquitto queues for a subscription with QoS 1.
+    `retire` clears every one of them, and nothing of the gateway is left (#96)."""
+    device = _homie_left_behind(50)
+    assert len(device) > 1020
+    documents = {f"{ROOT}/availability": b"offline", f"{ROOT}/state": json.dumps(state()).encode()}
+    publisher = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    publisher.connect(broker.host, broker.port)
+    publisher.loop_start()
+    try:
+        sent = [
+            publisher.publish(topic, payload, qos=1, retain=True)
+            for topic, payload in {**documents, **device}.items()
+        ]
+        for info in sent:
+            info.wait_for_publish(10)
+    finally:
+        publisher.disconnect()
+        publisher.loop_stop()
+    assert _retained_on(broker, f"{HOMIE}/#", f"{ROOT}/#") == {**documents, **device}
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[radio]\ntransport = "serial"\ndevice = "/dev/ttyUSB0"\n'
+        f'[mqtt]\nhost = "{broker.host}"\nport = {broker.port}\nnode_id = "radio1"\n',
+        encoding="utf-8",
+    )
+    argv = ["retire", "--yes", "--config", str(config), "--state-dir", str(tmp_path / "state")]
+    assert main(argv) == EX_OK
+    out = capsys.readouterr().out
+    assert f"broker: {len(device)} retained Homie messages to clear under {HOMIE}/" in out
+    assert "retired" in out
+    left = _retained_on(broker, f"{HOMIE}/#", f"{ROOT}/#")
+    assert left == {f"{ROOT}/availability": b"offline"}
 
 
 # --- history export ----------------------------------------------------------------------------

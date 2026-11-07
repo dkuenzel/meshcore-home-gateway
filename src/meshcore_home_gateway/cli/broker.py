@@ -1,6 +1,7 @@
 """The commands' MQTT client (`send`, `listen`, `contacts`, `check-config --broker`): a client
-id of its own, QoS 1 and bounded waits for the broker's answers. The commands call it through the
-module (`broker.mqtt_client`), so that a test replaces it in one place."""
+id of its own, QoS 1 (0 for a sweep of retained messages) and bounded waits for the broker's
+answers. The commands call it through the module (`broker.mqtt_client`), so that a test
+replaces it in one place."""
 
 from __future__ import annotations
 
@@ -17,6 +18,8 @@ CONNECT_TIMEOUT_S = 10.0
 PUBLISH_TIMEOUT_S = 10.0
 SUBSCRIBE_TIMEOUT_S = 5.0
 RETAINED_WAIT_S = 2.0  # for the gateway's retained documents; brokers send them on SUBACK
+RETAINED_QUIET_S = 1.0  # a sweep of retained messages ends when none has come for this long,
+RETAINED_MAX_S = 60.0  # at the latest after this long
 
 
 def mqtt_client(mqtt: MqttConfig, suffix: str) -> Any:
@@ -71,8 +74,10 @@ class Connection:
         return None
 
 
-def subscribe(client: Any, topic: str) -> str | None:
-    """Subscribe with QoS 1 and wait for the broker's answer; returns an error text."""
+def subscribe(client: Any, topic: str, qos: int = 1) -> str | None:
+    """Subscribe and wait for the broker's answer; returns an error text. With QoS 1, Mosquitto
+    passes on at most 1040 retained messages to a new subscription and drops the others; with
+    QoS 0, all (docs/platform-notes.md, Mosquitto)."""
     answered = threading.Event()
     refused: list[str] = []
 
@@ -81,7 +86,7 @@ def subscribe(client: Any, topic: str) -> str | None:
         answered.set()
 
     client.on_subscribe = on_subscribe
-    client.subscribe(topic, qos=1)
+    client.subscribe(topic, qos=qos)
     if not answered.wait(SUBSCRIBE_TIMEOUT_S):
         return tr("broker did not confirm the subscription")
     if refused:
@@ -89,6 +94,17 @@ def subscribe(client: Any, topic: str) -> str | None:
         return tr(
             "broker refused the subscription to {topic}: {reason}", topic=topic, reason=refused[0]
         )
+    return None
+
+
+def unsubscribe(client: Any, topic: str) -> str | None:
+    """End a subscription and wait for the broker's answer, which Mosquitto sends after every
+    message it queued for the subscription; returns an error text."""
+    answered = threading.Event()
+    client.on_unsubscribe = lambda *_: answered.set()
+    client.unsubscribe(topic)
+    if not answered.wait(SUBSCRIBE_TIMEOUT_S):
+        return tr("broker did not confirm the end of the subscription")
     return None
 
 

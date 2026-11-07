@@ -99,6 +99,7 @@ One line per fact, by section.
 * A password file written by `mosquitto_passwd` 2.1 loses users on a 2.0 broker.
 * Mosquitto accepts passwords with unusual characters.
 * Mosquitto passes MQTT 5 properties between MQTT 5 clients and lowers a message's expiry by the time it kept the message.
+* A new subscription with QoS 1 or 2 gets at most 1040 of the retained messages; with QoS 0 it gets them all.
 
 **[Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on)**
 
@@ -908,6 +909,22 @@ mosquitto -c m.conf & broker=$!
   the message without them: 3.1.1 has no properties. *Here:* `[mqtt] protocol = "5"`
   ([mqtt-api.md](mqtt-api.md#mqtt-5)); clients of both versions share the broker. *Check:*
   `mosquitto_sub -V mqttv5 -F '%t %P' -t 'meshcore/#'` prints the user properties.
+* **A new subscription with QoS 1 or 2 gets at most 1040 of the retained messages; with QoS 0
+  it gets them all.** On a SUBSCRIBE, Mosquitto queues every retained message that matches, then
+  sends the SUBACK and then the messages. With QoS 1 or 2, 20 go in flight
+  (`max_inflight_messages`) and 1020 wait (`max_queued_messages`, 1000, counted beyond those in
+  flight); the rest are dropped, and the log says, once per client, `Outgoing messages are being
+  dropped for client <id>.` A QoS 0 message is dropped only while 1000 packets already wait for the client's
+  connection, and those of one SUBSCRIBE are all queued before the first is written. *Verified:*
+  2.0.18, with paho-mqtt 2.1.0: of 1100 retained messages, a new subscriber got 1040 with QoS 1
+  and 2, all 1100 with QoS 0; `src/retain.c:215`, `src/handle_subscribe.c:191-241`,
+  `src/database.c:54-75` and `:499-545`. *Here:* a Homie device with 50 companions has 1055
+  retained topics, so `retire` reads the retained messages with QoS 0 (`sweep()` in
+  [`cli/retire.py`](../src/meshcore_home_gateway/cli/retire.py)) and looks again after
+  clearing: `test_with_broker_retire_clears_a_homie_device_beyond_the_brokers_queue` in
+  [`tests/test_cli_ops.py`](../tests/test_cli_ops.py). *Check:* `for i in $(seq 1100); do
+  mosquitto_pub -p 18830 -u mhg -P s3cret -r -t "t/$i" -m x; done`, then `mosquitto_sub -p 18830
+  -u mhg -P s3cret -q 1 -t 't/#' --retained-only -W 3 | wc -l` prints 1040, and with `-q 0` 1100.
 
 ## Home Assistant Mosquitto add-on
 

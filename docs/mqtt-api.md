@@ -1033,7 +1033,11 @@ positions: nothing clears it then. Clear it by hand, for example with
 `mosquitto_sub -t 'homie/meshcore-radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
 2.0). `meshcore-home-gateway retire` clears it before the gateway goes, also with `[homie]` off
 while the broker still lets the gateway's user read and write `homie/meshcore-radio1/#`
-([operations](deployment.md#4-operations)).
+([operations](deployment.md#4-operations)). Without the grant to read, it finds nothing of the
+device and leaves it there without a word; without the grant to write, it says what is left. It
+leaves a device alone whose `$state` says that a gateway is connected to it (`init`, `ready`,
+`alert` or `sleeping`): with this gateway stopped, that is another one. Node IDs that differ only
+in `_` and `-`, such as `radio_1` and `radio-1`, share a Homie device.
 
 | Property | Datatype | From the document | Notes |
 | --- | --- | --- | --- |

@@ -504,6 +504,7 @@ NODE = "d4" * 32
 NODE_LABEL = f"{NODE[:12]}…{NODE[-8:]}"
 NODE_TWIN = NODE[:12] + "00" * 22 + NODE[-8:]  # the label's digits too
 TOPICS = Topics("meshcore", "radio1")
+HOMIE = "homie/meshcore-radio1"
 SHIPPED = [code for code in i18n.LANGUAGES if code != "en"]
 SUMMARIES = {  # between them, every kind of line of check-config's summary
     "tcp": (
@@ -530,7 +531,10 @@ VALUES = (
     "/dev/ttyACM0",
     "gateway",
     "meshcore/radio1/delivery",
+    "meshcore/radio1/state",
     "meshcore/radio1",
+    "homie/meshcore-radio1",
+    "ready",
     "homeassistant",
     "English",
     "alerts",
@@ -690,11 +694,14 @@ class _Client:
     unreachable: bool = False  # no broker at the address
     silent: bool = False  # the broker never answers
     subscription: str | None = ""  # granted (""), refused for this reason, or never answered
+    unsubscription: bool = True  # the broker confirms the end of a subscription
     documents: dict[str, Any] = dataclasses.field(default_factory=dict)  # retained, by topic
+    kept: dict[str, Any] = dataclasses.field(default_factory=dict)  # retained, cannot be cleared
     sending: str | None = ""  # confirmed (""), failed with this error, or never confirmed
     answer: Answer | None = None  # the messages a request brings
     on_connect: Any = None
     on_subscribe: Any = None
+    on_unsubscribe: Any = None
     on_message: Any = None
 
     def connect(self, _host: str, _port: int, _keepalive: int) -> None:
@@ -712,6 +719,13 @@ class _Client:
         for name in names:
             if name in self.documents:
                 self._deliver(name, self.documents[name], retain=True)
+            for kept, body in self.kept.items():
+                if name.endswith("/#") and kept.startswith(name[:-1]):
+                    self._deliver(kept, body, retain=True)
+
+    def unsubscribe(self, _topic: str) -> None:
+        if self.unsubscription:
+            self.on_unsubscribe(self, None, 1, [], None)
 
     def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any:
         for name, body in self.answer(topic, payload) if self.answer else []:
@@ -746,6 +760,7 @@ def _broker(monkeypatch: pytest.MonkeyPatch, **behaviour: Any) -> None:
         (cli_broker, "CONNECT_TIMEOUT_S"),
         (cli_broker, "SUBSCRIBE_TIMEOUT_S"),
         (cli_broker, "RETAINED_WAIT_S"),
+        (cli_broker, "RETAINED_QUIET_S"),
     ):
         monkeypatch.setattr(module, name, 0.01)
 
@@ -1080,6 +1095,9 @@ def _operations(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
         ({}, ["retire", "--yes", "--state-dir", state_dir]),
         ({"sending": "the client is not connected"}, ["retire", "--yes", "--state-dir", state_dir]),
         ({"unreachable": True}, ["retire"]),
+        ({"unsubscription": False}, ["retire"]),
+        ({"kept": {TOPICS.state: {}}}, ["retire", "--yes", "--state-dir", state_dir]),
+        ({"kept": {f"{HOMIE}/$state": "ready"}}, ["retire", "--yes", "--state-dir", state_dir]),
     ]
     printed = []
     for behaviour, command in runs:

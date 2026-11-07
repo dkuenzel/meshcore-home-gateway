@@ -530,8 +530,10 @@ updates wait for.
   Assistant. `meshcore-home-gateway retire --yes`, with the service stopped and Home Assistant
   running, removes the devices (each bound first, so that Home Assistant also drops what earlier
   versions announced), clears every retained document under the gateway's topics and every
-  retained message of its Homie device, also with `[homie]` off now, and leaves its availability
-  `offline`; without `--yes` it counts what it would do. By hand: for example,
+  retained message of its Homie device, also with `[homie]` off now while the broker still lets
+  the gateway's user read and write `homie/meshcore-<node_id>/#`, and leaves its availability
+  `offline`. Then it looks again: a retained message left is an error. Without `--yes` it counts
+  what it would do. By hand: for example,
   `mosquitto_sub -t 'meshcore/radio1/#' -t 'homie/meshcore-radio1/#' --retained-only
   --remove-retained -W 2` (Mosquitto 2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
 * **Logs contain no message texts** at the default level; set `log_level = "debug"` temporarily to

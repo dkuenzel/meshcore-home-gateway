@@ -345,6 +345,10 @@ msgid "broker did not answer"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/broker.py
+msgid "broker did not confirm the end of the subscription"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/broker.py
 msgid "broker did not confirm the request"
 msgstr ""
 
@@ -1068,6 +1072,12 @@ msgid_plural "Home Assistant: {count} devices to remove"
 msgstr[0] ""
 msgstr[1] ""
 
+#. {root} is the Homie device's topic; {state} its state, such as ready
+#: src/meshcore_home_gateway/cli/retire.py
+#, python-brace-format
+msgid "broker: Homie device {root} not cleared: a gateway is connected to it (state {state})"
+msgstr ""
+
 #. {root} is the Homie device's topic, such as homie/meshcore-radio1
 #: src/meshcore_home_gateway/cli/retire.py
 #, python-brace-format
@@ -1080,6 +1090,13 @@ msgstr[1] ""
 #, python-brace-format
 msgid "broker: {count} retained document to clear under {root}/"
 msgid_plural "broker: {count} retained documents to clear under {root}/"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/meshcore_home_gateway/cli/retire.py
+#, python-brace-format
+msgid "broker: {count} retained message left after clearing, such as {topic}"
+msgid_plural "broker: {count} retained messages left after clearing, such as {topic}"
 msgstr[0] ""
 msgstr[1] ""
 
