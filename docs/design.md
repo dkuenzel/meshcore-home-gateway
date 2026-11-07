@@ -831,7 +831,9 @@ radio, the link nor the mesh carries. The secret is 160 random bits from
 `meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
 stops the service rather than let commands pass without codes. The secret of a key that is not
 in `senders` is ignored, with a warning at the start: removing a lost phone's sender ends its
-commands and nothing else, and `commands revoke` then removes its secret.
+commands and nothing else, and `commands revoke` then removes its secret. A sender's key
+corrected by hand leaves its secret behind the same way, and the corrected key commands without
+a code; so while a secret is ignored, the warnings also name each sender without one.
 
 **Answers** (EXT-009). With `[commands] reply`, the bridge answers the sender of a published
 command (`ok: <word>`) and, with `all`, of a command it refused after the sender checks passed

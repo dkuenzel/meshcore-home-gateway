@@ -1517,6 +1517,13 @@ msgstr ""
 msgid "commands.codes_file: {key} has a code secret but is not in commands.senders: the secret is ignored; '{command}' removes it"
 msgstr ""
 
+#. sender is a full public key; command is the command line that gives it
+#. a code secret
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "commands.senders: {sender} has no code secret while one is ignored: if it is the ignored key corrected, its commands now pass without a code; '{command}' gives it one"
+msgstr ""
+
 #: src/meshcore_home_gateway/config_checks.py
 msgid "log level debug: the journal gets the texts of the messages, the positions, the keys and every frame of the radio, which journald keeps for weeks; set it back to info after the search (docs/configuration.md, diagnostics)"
 msgstr ""

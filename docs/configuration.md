@@ -232,7 +232,8 @@ systemd credential of its name is read instead, as for the broker password
 
 **A lost phone.** Remove its key from `senders` and restart the service: that ends the sender's
 commands, and nothing else. The gateway ignores the secret of a key that is not a sender, and
-its start and `check-config` warn about it. Then remove the secret from the file:
+its start, `check-config`, `doctor` and the installer's self-test warn about it. Then remove the
+secret from the file:
 
 ```sh
 meshcore-home-gateway commands revoke <full key>
@@ -240,7 +241,9 @@ meshcore-home-gateway commands revoke <full key>
 
 `revoke` takes only a key that is no longer in `senders`: a sender without its secret would
 command without a code. To keep the sender with a new phone, run `enrol` again instead; the new
-secret ends the old one.
+secret ends the old one. Correcting a sender's key in `senders` leaves its secret behind under
+the old key: the corrected key then commands without a code. While a secret is ignored, the
+warnings also name each sender without one; `enrol` gives it one, and `revoke` removes the old.
 
 Commands that the gateway fetches while it connects are rejected: those that waited in the radio
 while the gateway was not running (restart, update, unplugged radio), and those that arrive during

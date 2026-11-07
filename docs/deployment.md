@@ -129,9 +129,10 @@ broker settings again (without dialogs it warns and goes on: the service keeps t
 service runs, the script has the gateway check itself (`meshcore-home-gateway doctor`: the
 configuration, the broker, the radio as the gateway reports it, the container) and repeats the
 check for about a minute while the radio connects. The final message shows the result of the
-login, the self-test's `passed` (or the problems it found, with the report above it) and how to
-read the logs. If a step fails or the script is
-interrupted after the container was created, the error message says how to remove it.
+login, the self-test's `passed` (or the problems it found) and how to read the logs; the
+self-test's report stands above it, also when it passed, with the warnings it passed with, such
+as a code secret the gateway ignores. If a step fails or the script is interrupted after the
+container was created, the error message says how to remove it.
 
 The dialogs run in the `C.UTF-8` locale: in a locale the host lacks (for example one passed on by
 ssh), whiptail would drop every non-ASCII character typed, passwords included.

@@ -114,8 +114,12 @@ format, the command line and Home Assistant discovery are public interfaces
 - Removing a command sender that had a code secret stopped the gateway: the secret made the
   configuration an error (exit 78), which systemd does not restart, so alerts, telemetry and Home
   Assistant went down with the sender's commands. The installer's `--reconfigure` got there on
-  its own when a sender was unticked or the insecure broker was declined. The gateway now ignores the
-  secret of a key that is not a sender, and its start and `check-config` warn about it (#80).
+  its own when a sender was unticked or the insecure broker was declined. The gateway now ignores
+  the secret of a key that is not a sender, and its start, `check-config` and `doctor` warn about
+  it; while one is ignored, they also name each sender without a secret, which a key corrected by
+  hand would be. The installer shows the self-test's report also when it passed, with these
+  warnings. 2.0 refuses such a secret again (exit 78): before a downgrade to 2.0, remove it with
+  `commands revoke` (#80).
 
 ## [2.0.0] - 2026-11-07
 

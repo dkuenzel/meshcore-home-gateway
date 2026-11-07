@@ -370,7 +370,8 @@ A release is checked in three places, none of them a procedure by hand
    passes, for about a minute while the radio connects. It checks the configuration, the broker
    login, the radio connected as the gateway reports it, its clock and firmware, the gateway's
    health and the container ([deployment.md](deployment.md#install)). The final message says
-   `Self-test: passed`, or shows the problems; nothing is undone.
+   `Self-test: passed`, or shows the problems; the report stands above it, with the warnings a
+   passed self-test has. Nothing is undone.
 3. **The maintainer's use of the release candidate**: he updates his installation with the
    candidate's installer and uses Home Assistant as every day.
 

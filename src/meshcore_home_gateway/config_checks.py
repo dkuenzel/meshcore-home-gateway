@@ -37,8 +37,11 @@ def start_warnings(config: Config) -> list[Text]:
 def ignored_secrets(config: Config) -> list[Text]:
     """The code secrets of keys that are not command senders: removing a sender ends its
     commands and nothing else, so its secret is ignored until `commands revoke` removes it
-    (#80). A key that is no sender cannot command, so the secret changes no verdict."""
-    return [
+    (#80). A key that is no sender cannot command, so the secret changes no verdict. While one
+    is ignored, also each sender without a secret: a sender's key corrected by hand leaves its
+    secret behind, and the corrected key commands without a code."""
+    commands = config.commands
+    warnings = [
         # Translators: key is a full public key; command is the command line that removes it
         Text(
             "commands.codes_file: {key} has a code secret but is not in commands.senders: the "
@@ -46,7 +49,22 @@ def ignored_secrets(config: Config) -> list[Text]:
             key=key,
             command=f"meshcore-home-gateway commands revoke {key}",
         )
-        for key in config.commands.ignored_secrets
+        for key in commands.ignored_secrets
+    ]
+    if not commands.ignored_secrets:
+        return warnings
+    return warnings + [
+        # Translators: sender is a full public key; command is the command line that gives it
+        # a code secret
+        Text(
+            "commands.senders: {sender} has no code secret while one is ignored: if it is the "
+            "ignored key corrected, its commands now pass without a code; '{command}' gives it "
+            "one",
+            sender=sender,
+            command=f"meshcore-home-gateway commands enrol {sender}",
+        )
+        for sender in sorted(commands.senders)
+        if commands.secret(sender) is None
     ]
 
 

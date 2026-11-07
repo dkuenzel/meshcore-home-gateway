@@ -82,8 +82,10 @@ def test_the_secrets_of_keys_that_are_no_senders_are_warned_about() -> None:
     config = make_config()
     assert ignored_secrets(config) == []
     keys = ("b2" * 32, "c3" * 32)
+    secrets = tuple((sender, b"12345678901234567890") for sender in config.commands.senders)
     config = dataclasses.replace(
-        config, commands=dataclasses.replace(config.commands, ignored_secrets=keys)
+        config,
+        commands=dataclasses.replace(config.commands, secrets=secrets, ignored_secrets=keys),
     )
     warnings = [str(w) for w in ignored_secrets(config)]
     assert warnings == [
@@ -92,3 +94,32 @@ def test_the_secrets_of_keys_that_are_no_senders_are_warned_about() -> None:
         for key in keys
     ]
     assert [str(w) for w in start_warnings(config) if "codes_file" in str(w)] == warnings
+
+
+def test_a_sender_without_a_secret_beside_an_ignored_secret_is_warned_about() -> None:
+    """#80: a sender's key corrected by hand leaves the old key's secret ignored and the new
+    key without one, so its commands pass without a code; before, that made the configuration
+    an error. While a secret is ignored, each sender without one is named, with the command
+    that gives it one. A sender with a secret is not named, nor is any without an ignored one."""
+    base = make_config()
+    sender = next(iter(base.commands.senders))
+    coded = "d4" * 32
+    commands = dataclasses.replace(
+        base.commands,
+        senders=frozenset({sender, coded}),
+        secrets=((coded, b"12345678901234567890"),),
+    )
+    assert ignored_secrets(dataclasses.replace(base, commands=commands)) == []
+    old = "b2" * 32
+    config = dataclasses.replace(
+        base, commands=dataclasses.replace(commands, ignored_secrets=(old,))
+    )
+    warnings = [str(w) for w in ignored_secrets(config)]
+    named = (
+        f"commands.senders: {sender} has no code secret while one is ignored: if it is the "
+        f"ignored key corrected, its commands now pass without a code; "
+        f"'meshcore-home-gateway commands enrol {sender}' gives it one"
+    )
+    assert warnings[1:] == [named]
+    assert len(warnings) == 2
+    assert old in warnings[0]
