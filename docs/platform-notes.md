@@ -955,7 +955,7 @@ mosquitto -c m.conf & broker=$!
   connection, and those of one SUBSCRIBE are all queued before the first is written. *Verified:*
   2.0.18, with paho-mqtt 2.1.0: of 1100 retained messages, a new subscriber got 1040 with QoS 1
   and 2, all 1100 with QoS 0; `src/retain.c:215`, `src/handle_subscribe.c:191-241`,
-  `src/database.c:54-75` and `:499-545`. *Here:* a Homie device with 50 companions has 1055
+  `src/database.c:54-75` and `:499-545`. *Here:* a Homie device with 50 companions has 1062
   retained topics, so `retire` reads the retained messages with QoS 0 (`sweep()` in
   [`cli/retire.py`](../src/meshcore_home_gateway/cli/retire.py)) and looks again after
   clearing: `test_with_broker_retire_clears_a_homie_device_beyond_the_brokers_queue` in

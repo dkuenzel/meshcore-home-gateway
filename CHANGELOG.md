@@ -119,7 +119,7 @@ format, the command line and Home Assistant discovery are public interfaces
   battery, last heard and position stayed on the broker (#96). It reads the retained messages
   with QoS 0 now, until none has come for a second, and looks again after clearing: one left is
   an error. With QoS 1, Mosquitto passes on at most 1040 retained messages to a subscription, and
-  a device with 50 companions has 1055. It leaves alone a Homie device that a gateway is
+  a device with 50 companions has 1062. It leaves alone a Homie device that a gateway is
   connected to: node IDs that differ only in `_` and `-` share one. Switching `[homie]` off
   leaves the device there: the privacy page lists it, and
   [mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device) says how to clear it.
