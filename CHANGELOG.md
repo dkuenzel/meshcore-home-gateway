@@ -92,6 +92,13 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+- After a restart of the broker the log no longer warns that another client wrote the gateway's
+  documents. paho sends again what the broker had not acknowledged when it stopped, such as a
+  state from before the radio was connected; the gateway takes those copies as its own, and
+  publishes the current document again if the old one arrived last. As it stops, the broker still
+  sends the gateway its own last will, which the log names once for `availability`: harmless
+  ([deployment.md](docs/deployment.md#5-troubleshooting)). The system test of a broker restart
+  read the state paho sent again for the current one, and failed now and then (#101).
 
 ## [2.0.0] - 2026-11-07
 
