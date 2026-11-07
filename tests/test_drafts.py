@@ -378,6 +378,29 @@ def test_a_malformed_request_is_ignored_and_the_draft_published_again(tmp_path: 
 
 
 @in_loop
+def test_a_text_no_utf_8_can_carry_is_ignored_and_breaks_no_other_chat(tmp_path: Path) -> None:
+    """JSON writes a lone surrogate as an escape (`\\ud800`): the request is ASCII, but no UTF-8
+    text holds it. Held, it would raise at every echo, press, republish and cut, also for the
+    chats after it in the loop."""
+    chats = Chats(tmp_path)
+    chats.set(FAMILY, "Kept")
+    chats.set(CAROL_CHAT, "Carol, call me")
+    for payload in (b'{"text": "\\ud800"}', b'{"text": "hi \\udfff there"}'):
+        chats.clock.advance(1)
+        published = len(chats.states(FAMILY))
+        chats.request(FAMILY, payload)
+        assert chats.held(FAMILY) == "Kept", payload
+        assert chats.states(FAMILY)[published:] == ["Kept"], payload
+    start = len(chats.bus.published)
+    chats.drafts.republish()  # every chat, the ones after `family` too
+    republished = {t: json.loads(p)["text"] for t, p, _ in chats.bus.published[start:]}
+    assert republished == {chats.topic(chat): text for chat, text in chats.drafts.chats().items()}
+    assert republished[chats.topic(CAROL_CHAT)] == "Carol, call me"
+    chats.press(FAMILY)
+    assert last(chats.events()) == ("queued", "family", "Kept", None)
+
+
+@in_loop
 def test_a_text_of_max_characters_is_taken_as_home_assistant_writes_it(tmp_path: Path) -> None:
     """Home Assistant's `tojson` writes every character outside ASCII as an escape, an emoji as
     two: 12 bytes for one character of `max`."""

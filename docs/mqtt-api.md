@@ -648,7 +648,8 @@ just before it.
   `send/<alias>` does. Only a press within 2 seconds after a queued press of the same chat, the
   second tap of a double tap, ends without an event: the first press's events are its outcome.
 * A request that is not exactly one of the two forms, that is not UTF-8 or larger than 1984 bytes
-  (room for `max` characters written as escapes, as Home Assistant's `tojson` does), or whose text
+  (room for `max` characters written as escapes, as Home Assistant's `tojson` does), whose text
+  holds a lone surrogate (such as the escape `\ud800`, which no UTF-8 text holds), or whose text
   is longer than the chat's `max` is ignored, and the draft is published again.
 * A retained request is a left-over and is ignored without an event. So is a request for a chat
   the gateway does not have: a hidden target, or a contact target's key.

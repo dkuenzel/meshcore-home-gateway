@@ -15,9 +15,10 @@ text stored just before it.
   the second tap of a double tap, ends silently: the first one's events are its outcome. Queued,
   the draft is cleared at once, inside the press's handler; refused or a duplicate, it stays, to
   be changed.
-* A request that is not exactly `{"text": <string>}` or `{"send": true}`, not UTF-8, or with a
-  text longer than the chat's `max` is ignored, and the draft published again. A retained request
-  is a left-over and ignored.
+* A request that is not exactly `{"text": <string>}` or `{"send": true}`, not UTF-8 (a lone
+  surrogate, which JSON writes as an escape, is none either), or with a text longer than the
+  chat's `max` is ignored, and the draft published again. A retained request is a left-over and
+  ignored.
 * A stored text is echoed at once, then at most once per ECHO_WINDOW_S and chat: of a burst only
   the last follows when the window ends. The clear after a press, the republish at a connect to the
   broker and at Home Assistant's birth, a cut and an expiry go out at once, and drop an echo the
@@ -40,7 +41,7 @@ import json
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import RateLimit
@@ -290,8 +291,20 @@ def _parsed(payload: bytes) -> str | bool | None:
     if not isinstance(request, dict) or len(request) != 1:
         return None
     ((name, value),) = request.items()
-    if name == "text" and isinstance(value, str):
+    if name == "text" and _unicode(value):
         return value
     if name == "send" and value is True:
         return True
     return None
+
+
+def _unicode(value: object) -> TypeGuard[str]:
+    """A string that UTF-8 can carry: JSON writes a lone surrogate as an escape, in ASCII, and
+    no UTF-8 text holds it; held, it would raise at every echo, press, republish and cut."""
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
