@@ -1,9 +1,12 @@
 """The outbox (design §6.2, ADR 0028, ARC-009): the queue of outgoing messages, and their delivery.
 
 Messages wait in the queue for the radio and for airtime, alerts before the others (IMP-032), each
-kind in the order it came. A message taken out keeps its progress (its radio timestamp, the
-attempts sent, their acknowledgement codes), so that it can be put back: paused for an alert, or
-kept for the next start when the service stops (ARC-013).
+kind in the order it came: an alert that comes while another message waits for the radio or for
+airtime, also before its first attempt, goes first (#93). A message taken out keeps its progress
+(its radio timestamp, the attempts sent, their acknowledgement codes), so that it can be put
+back: paused for an alert, or kept for the next start when the service stops (ARC-013). From the
+stop's start on, the state file holds every message on its way, written again at each change,
+so that a stop cut short loses none (#92).
 
 The delivery takes the send requests from the bus, refuses or queues each, and delivers one message
 at a time: an attempt when the radio is there and the airtime budget allows it, until it is
@@ -20,8 +23,9 @@ import heapq
 import itertools
 import logging
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from typing import Any, TypeVar
 
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.airtime import (
@@ -63,6 +67,8 @@ from meshcore_home_gateway.views import PendingEntry
 
 log = logging.getLogger(__name__)
 log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
+
+T = TypeVar("T")
 
 MAX_REQUEST_BYTES = 1024
 # on stop, the acknowledgement of the message in flight is awaited this long, the longest wait of
@@ -111,6 +117,9 @@ class Outgoing:
     # its latest delivery event while it is on its way, for `pending`: `queued` (again after a
     # start), then `sent`; pausing it for an alert sends none and leaves it `sent`
     step: DeliveryState = DeliveryState.QUEUED
+    # the gateway added confirm_nonce's random suffix to `text`: events show it without until
+    # the delivery ended (#87), whatever the setting is by then
+    nonce: bool = False
 
 
 class Outbox:
@@ -123,6 +132,7 @@ class Outbox:
         self._order = itertools.count()
         self._front = itertools.count(-1, -1)
         self._ready = asyncio.Event()
+        self._alert = asyncio.Event()  # set when an alert was put
 
     def qsize(self) -> int:
         return len(self._heap)
@@ -130,6 +140,12 @@ class Outbox:
     @property
     def alert_waiting(self) -> bool:
         return bool(self._heap) and self._heap[0][0] == 0
+
+    async def alert_comes(self) -> None:
+        """Returns once an alert waits."""
+        while not self.alert_waiting:
+            self._alert.clear()
+            await self._alert.wait()
 
     def put(self, item: Outgoing) -> None:
         """Raises asyncio.QueueFull when the queue holds `size` messages."""
@@ -150,13 +166,20 @@ class Outbox:
             await self._ready.wait()
         return heapq.heappop(self._heap)[2]
 
-    def take_all(self) -> list[Outgoing]:
-        """Every message, in the order they would leave; the queue is empty then."""
-        return [heapq.heappop(self._heap)[2] for _ in range(len(self._heap))]
+    def waiting(self) -> list[Outgoing]:
+        """Every message, in the order they would leave; the queue keeps them."""
+        return [entry[2] for entry in sorted(self._heap)]
 
     def _push(self, item: Outgoing, order: int) -> None:
         heapq.heappush(self._heap, (0 if item.alert else 1, order, item))
         self._ready.set()
+        if item.alert:
+            self._alert.set()
+
+
+class _OvertakenError(Exception):
+    """An alert came while a message that is none waited for the radio or for airtime: that
+    message goes back to the queue, with its progress (IMP-032, #93)."""
 
 
 class _FinalError(Exception):
@@ -183,14 +206,19 @@ class AckWaiter:
 
     def __init__(self, monotonic: Callable[[], float]) -> None:
         self._now = monotonic
-        self._waiting: dict[bytes, asyncio.Future[int]] = {}
+        # a waiting message's codes -> what resolves its wait: the code answered, its round trip
+        self._waiting: dict[bytes, asyncio.Future[tuple[bytes, int]]] = {}
         self._recent: dict[bytes, tuple[float, int]] = {}
 
     def resolve(self, ack: bytes, round_trip_ms: int) -> None:
         future = self._waiting.pop(ack, None)
         if future is not None and not future.done():
-            future.set_result(round_trip_ms)
+            future.set_result((ack, round_trip_ms))
             return
+        self._keep(ack, round_trip_ms)
+
+    def _keep(self, ack: bytes, round_trip_ms: int) -> None:
+        """A late acknowledgement, for `take`."""
         # No count bound, and none needed (CODE-012): the radio pushes SEND_CONFIRMED only for a
         # code in its table of the 8 latest expected acknowledgements (docs/protocol.md,
         # MyMesh.cpp:424-434), all of them codes of this gateway's own attempts; the keys are
@@ -207,20 +235,32 @@ class AckWaiter:
         return None
 
     async def wait(self, codes: list[bytes], timeout_s: float) -> int | None:
+        """The round trip of an acknowledgement of one of `codes`, None after `timeout_s`. One
+        that comes in the turn of the loop that ends the wait is not lost (#93): the round trip
+        when the time ran out, and kept for `take` when the wait is cancelled (an alert ended
+        it)."""
         if (round_trip := self.take(codes)) is not None:
             return round_trip
-        future: asyncio.Future[int] = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[tuple[bytes, int]] = asyncio.get_running_loop().create_future()
         for code in codes:
             self._waiting[code] = future
         try:
             async with asyncio.timeout(timeout_s):  # not wait_for: see RadioLink.until
-                return await future
+                return (await future)[1]
         except TimeoutError:
-            return None
+            return future.result()[1] if _resolved(future) else None
+        except asyncio.CancelledError:
+            if _resolved(future):
+                self._keep(*future.result())
+            raise
         finally:
             for code in codes:
                 if self._waiting.get(code) is future:
                     del self._waiting[code]
+
+
+def _resolved(future: asyncio.Future[tuple[bytes, int]]) -> bool:
+    return future.done() and not future.cancelled()
 
 
 class Delivery:
@@ -260,7 +300,7 @@ class Delivery:
         # the messages accepted and not final, by id, the oldest first: in the queue or in flight
         self._pending: dict[str, Outgoing] = {}
         self._pending_due = False  # `pending` goes out once this moment's steps are done
-        self._kept = False  # the stop kept the queue: a request now would be lost (ADR 0028)
+        self._kept = False  # the stop's last save is done: a request now would be lost (#92)
 
     def queued(self) -> int:
         return self._queue.qsize()
@@ -310,23 +350,31 @@ class Delivery:
         if deduplicate and self._dedup.is_duplicate(key, now):
             state = DeliveryState.DUPLICATE
         else:
-            nonce = target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
-            sent = with_nonce(text) if nonce else text  # duplicates are judged without it
+            nonce = self._nonce(target)
+            sent = with_nonce(text) if nonce else text  # judged without it
             alert = target.alias in self.config.messages.alert_targets
             dedup = (key, now) if deduplicate else None
             queued_at = self._wall()  # for the history: `now` is monotonic
             item = Outgoing(
-                event_id, target, sent, now, raw, alert=alert, dedup=dedup, queued_at=queued_at
+                event_id,
+                target,
+                sent,
+                now,
+                raw,
+                alert=alert,
+                dedup=dedup,
+                queued_at=queued_at,
+                nonce=nonce,
             )
             try:
                 self._queue.put(item)
                 self._pending[event_id] = item
                 self.activity.touch()
-                text = sent
             except asyncio.QueueFull:
                 if deduplicate:  # not taken, so a retry must not count as duplicate
                     self._dedup.forget(key)
                 state, reason, queued_at = DeliveryState.REJECTED, "queue_full", None
+        # the suffix stays the radios' until the delivery ends (#87): `text` is without it
         event = DeliveryEvent(
             event_id, target.alias, state, text=text, reason=reason, queued_at=queued_at
         )
@@ -449,27 +497,30 @@ class Delivery:
         `expired` means the message never left: once an attempt reached the radio, running out
         of time or airtime ends it as `failed` (no acknowledgement). An attempt interrupted by a
         radio error is repeated, with the same number, when the radio is back. `attempt` in a
-        final event counts the transmissions so far. Between two attempts the message is put
-        back, with its progress, when an alert waits behind it (IMP-032) or the service stops
-        (ARC-013).
+        final event counts the transmissions so far. The message is put back, with its progress,
+        when an alert waits behind it, between two attempts and while it waits for the radio or
+        for airtime, also before its first (IMP-032, #93), and between two attempts when the
+        service stops (ARC-013).
         """
         deadline = item.created + self.config.messages.queue_ttl_s
         if item.timestamp is None:  # one timestamp for all attempts: retries stay recognisable
             item.timestamp = int(self._wall())
         attempts = self._attempts(item.target)
         while item.sent < attempts:
-            if item.sent and (
-                self._flight.stopping or (not item.alert and self._queue.alert_waiting)
-            ):
+            if item.sent and (self._flight.stopping or self._overtaken(item)):
                 log.info("delivery %s: paused after attempt %d", item.id, item.sent)
                 self._queue.put_back(item)
                 return
-            session = await self._radio.until(deadline)
-            if session is None:
-                self._end(item, self._out_of_time(item, item.sent))
-                return
             try:
+                session = await self._unless_alert(item, self._radio.until(deadline))
+                if session is None:
+                    self._end(item, self._out_of_time(item, item.sent))
+                    return
                 outcome = await self._attempt(session, item, deadline=deadline)
+            except _OvertakenError:
+                log.info("delivery %s: an alert goes first (%d attempts sent)", item.id, item.sent)
+                self._queue.put_back(item)
+                return
             except _FinalError as exc:
                 outcome = self._final(item, exc.state, exc.reason, item.sent)
             except CommandFailedError as exc:
@@ -487,6 +538,28 @@ class Delivery:
             item, DeliveryState.FAILED, attempt=item.sent, reason="no_acknowledgement"
         )
         self._end(item, failed)
+
+    def _overtaken(self, item: Outgoing) -> bool:
+        """An alert waits behind this message, which is none."""
+        return not item.alert and self._queue.alert_waiting
+
+    async def _unless_alert(self, item: Outgoing, waiting: Coroutine[Any, Any, T]) -> T:
+        """What `waiting` returns; for a message that is no alert, ended early by an alert that
+        comes meanwhile (_OvertakenError): it waits for the radio or for airtime, which the
+        alert should have first (#93)."""
+        if item.alert:
+            return await waiting
+        task = asyncio.ensure_future(waiting)
+        alert = asyncio.ensure_future(self._queue.alert_comes())
+        try:
+            await asyncio.wait((task, alert), return_when=asyncio.FIRST_COMPLETED)
+        finally:  # also when the stop cancels the delivery
+            for each in (task, alert):
+                each.cancel()
+            await asyncio.wait((task, alert))
+        if task.cancelled():  # the alert came first
+            raise _OvertakenError
+        return task.result()
 
     def _attempts(self, target: Target) -> int:
         """A direct message is sent until it is acknowledged; a channel message once."""
@@ -543,18 +616,20 @@ class Delivery:
         if self._mono() + wait > deadline:
             raise _FinalError(DeliveryState.EXPIRED, "airtime_budget")
         round_trip = None
-        if wait > 0:
+        if wait > 0:  # an alert that comes meanwhile goes first (#93)
             log.info("delivery %s waits %.1f s for airtime", item.id, wait)
             if acks.codes:  # an earlier attempt may still be acknowledged meanwhile
-                round_trip = await self.acks.wait(acks.codes, wait)
+                round_trip = await self._unless_alert(item, self.acks.wait(acks.codes, wait))
             else:
-                await asyncio.sleep(wait)
+                await self._unless_alert(item, asyncio.sleep(wait))
         if acks.codes and round_trip is None:
             round_trip = self.acks.take(acks.codes)
         if round_trip is not None:  # an earlier attempt arrived after all: send nothing more
             return self._confirmed(item, round_trip)
         if wait > 0 and await self._read_changed_contacts(session, target):
             self._resolve(session, target)  # a look-alike may have come while waiting
+        if self._overtaken(item):  # an alert came as the wait ended, or while the table was read
+            raise _OvertakenError
         if reset_path is not None:
             await session.reset_path(reset_path)  # only now: this attempt will be sent and flood
         self.budget.consume(airtime, self._mono())
@@ -671,7 +746,7 @@ class Delivery:
             item.id,
             item.target.alias,
             state,
-            text=item.text,
+            text=item.text if _is_final(state, item.target) else self._on_its_way(item),
             attempt=attempt,
             reason=reason,
             rtt_ms=rtt_ms,
@@ -679,6 +754,19 @@ class Delivery:
             suspect=suspect,
             queued_at=item.queued_at,
         )
+
+    def _nonce(self, target: Target) -> bool:
+        """Whether a message to the target gets the random suffix of `confirm_nonce` now."""
+        return target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
+
+    @staticmethod
+    def _on_its_way(item: Outgoing) -> str:
+        """The text that events and `pending` show until the delivery ended: without the
+        suffix the gateway added (`Outgoing.nonce`). The suffix is the only secret of the
+        acknowledgement's code, so it stays the radios' until no acknowledgement counts any more
+        (#87); the final event and the history carry the text as sent. A household's own text
+        that ends like a suffix is shown whole."""
+        return without_nonce(item.text) if item.nonce else item.text
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
         # %r: the alias of a rejected request comes from its topic, which may hold any character
@@ -719,10 +807,13 @@ class Delivery:
             asyncio.get_running_loop().call_soon(self.publish_pending)
 
     def publish_pending(self) -> None:
-        """The messages on their way, the oldest first, to the observer for `pending`."""
+        """The messages on their way, the oldest first, to the observer for `pending`; in the
+        stop, to the state file too (#92)."""
         self._pending_due = False
         entries = [self._pending_entry(item) for item in self._pending.values()]
         observe(self._observer.pending, entries)
+        if self._flight.stopping and not self._kept:
+            self._save_queue()
 
     def _pending_entry(self, item: Outgoing) -> PendingEntry:
         """As the history will name it: a message to `contacts/<key>/send` has no target (its
@@ -737,7 +828,7 @@ class Delivery:
             key,
             target.channel_index,
             contact.node.name if contact else target.alias,
-            item.text,
+            self._on_its_way(item),
             item.step.value,
             item.sent,
             self._attempts(target),
@@ -745,37 +836,69 @@ class Delivery:
 
     async def finish(self, loop: asyncio.Task[None]) -> None:
         """No attempt starts any more; one that waits for its acknowledgement gets it, for at
-        most STOP_OUTBOX_S, then `loop` (the task that runs `run`) ends. The messages still
-        queued, that one too if it needs another attempt, are kept for the next start (ARC-013):
-        requests are taken until then, and refused after."""
+        most STOP_OUTBOX_S, then `loop` (the task that runs `run`) ends. From now on the
+        messages on their way, that one too, are in the state file, written at once and again
+        at every change: a stop cut short (a kill, a unit with a shorter TimeoutStopSec) loses
+        none (#92). Requests are still taken; `keep` ends the stop."""
         flight = self._flight
         flight.stopping = True
+        self._save_queue()
         if flight.acking:
             with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(STOP_OUTBOX_S):
                     await flight.idle.wait()
         loop.cancel()
         await asyncio.wait([loop])
+
+    def keep(self) -> None:
+        """The stop's last step, after the last received messages were handled: the requests
+        still waiting for the requests task are taken, and the queue is kept for the next start
+        (ARC-013). A request after it is refused (`stopping`): nothing would keep it."""
+        self._take_waiting()
+        kept = self._save_queue()
         self._kept = True
-        now, kept = self._mono(), self._queue.take_all()
-        OutboxRecords(self._store).save(
-            [
-                SavedMessage(
-                    item.id,
-                    item.target.alias,
-                    item.text,
-                    item.raw,
-                    now - item.created,
-                    item.timestamp,
-                    item.sent,
-                    item.queued_at,
-                )
-                for item in kept
-            ],
-            self._wall(),
-        )
         if kept:
-            log.info("%d messages kept for the next start", len(kept))
+            log.info("%d messages kept for the next start", kept)
+
+    def bus_stopping(self) -> None:
+        """The bus stops, before it publishes `offline`. The requests it took after `keep`, as
+        the radio closed, which no task takes any more, end `rejected` with reason `stopping`
+        (#92). In a run that ended without `keep` they stay: one queued now would be lost."""
+        if self._kept:
+            self._take_waiting()
+
+    def _take_waiting(self) -> None:
+        """The requests the bus took that the requests task has not taken."""
+        requests = self._bus.requests
+        while not requests.empty():
+            self.accept(requests.get_nowait())
+
+    def _save_queue(self) -> int:
+        """The messages on their way to the state file, at once, in the order they would leave:
+        the queue's, with the one in flight first among its kind, as it would be put back. The
+        number kept."""
+        waiting, flying = self._queue.waiting(), self._flight.item
+        if flying is not None:  # never in the queue too: put back only as it leaves the flight
+            waiting.insert(0, flying)
+        ordered = sorted(waiting, key=lambda item: not item.alert)  # stable: in order otherwise
+        now = self._mono()
+        kept = [
+            SavedMessage(
+                item.id,
+                item.target.alias,
+                item.text,
+                item.raw,
+                now - item.created,
+                item.timestamp,
+                item.sent,
+                item.queued_at,
+                item.nonce,
+            )
+            for item in ordered
+        ]
+        OutboxRecords(self._store).save(kept, self._wall())
+        self._store.flush()
+        return len(kept)
 
     def restore(self) -> None:
         """The messages the last stop kept: those with time left are queued again, `queued`
@@ -808,12 +931,13 @@ class Delivery:
                 timestamp=saved.timestamp,
                 sent=saved.sent,
                 queued_at=saved.queued_at,
+                # kept by 2.1 with its record; by 2.0, as the setting says
+                nonce=self._nonce(target) if saved.nonce is None else saved.nonce,
             )
             if age >= config.queue_ttl_s:  # it would have expired meanwhile
                 self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))
                 continue
-            nonce = target.kind is MessageKind.CONTACT and config.confirm_nonce
-            key = (target.alias, without_nonce(item.text) if nonce else item.text)
+            key = (target.alias, self._on_its_way(item))
             if not self._dedup.is_duplicate(key, now):
                 item.dedup = (key, now)
             self._queue.restore(item)

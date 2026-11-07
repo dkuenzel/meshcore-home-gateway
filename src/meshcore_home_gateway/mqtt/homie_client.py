@@ -65,7 +65,9 @@ class HomieConnection:
             self._client.publish(topic, payload, qos=1, retain=retain)
 
     async def stop(self, timeout_s: float = 2.0) -> None:
-        """`$state` `disconnected`, as Homie asks before a clean disconnect."""
+        """`$state` `disconnected`, as Homie asks before a clean disconnect, and nothing of the
+        device after it (a change of its nodes may wait for its time)."""
+        self._device.disconnected()
         info = self._client.publish(self._device.will, b"disconnected", qos=1, retain=True)
         wait = getattr(info, "wait_for_publish", None)
         if self.connected and callable(wait):
@@ -128,6 +130,11 @@ def homie_adapter(
     def publish(topic: str, payload: bytes, retain: bool) -> None:
         connection.publish(topic, payload, retain)
 
-    device = HomieDevice(config.node_id, name, limit, topics, publish=publish, send=send)
+    def call_later(delay_s: float, callback: Callable[[], None]) -> asyncio.TimerHandle:
+        return asyncio.get_running_loop().call_later(delay_s, callback)
+
+    device = HomieDevice(
+        config.node_id, name, limit, topics, publish=publish, send=send, call_later=call_later
+    )
     connection = HomieConnection(config, device, client_factory)
     return connection

@@ -35,9 +35,10 @@ def _matches(event_text: Any, wanted: str) -> bool:
 
 class _DeliveryWatch:
     """Follows the delivery events of one send request. The bridge names the request in its first
-    event (queued, duplicate or rejected) with its own id and the final text, with `nonce` the
-    random suffix included; the result is the final event with that id. Events of other requests
-    to the same target are ignored."""
+    event (queued, duplicate or rejected) with its own id and the final text; with `nonce`, a
+    bridge before 2.1 included the random suffix there, which it now shows in the final event
+    only (#87). The result is the final event with that id. Events of other requests to the
+    same target are ignored."""
 
     def __init__(self, alias: str, wanted: str, final: set[str], *, nonce: bool = False) -> None:
         self._alias, self._wanted, self._final, self._nonce = alias, wanted, final, nonce

@@ -1,5 +1,6 @@
 """Persistent state: atomic JSON file and the ledger of accepted command timestamps."""
 
+import dataclasses
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from meshcore_home_gateway.core.commands import CODE_FAILURE_LIMIT, CODE_FAILURE_WINDOW_S
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 from meshcore_home_gateway.state import (
@@ -181,10 +183,51 @@ def test_ledger_remembers_the_time_step_of_the_newest_code(tmp_path: Path) -> No
     assert dict(CommandLedger(JsonStateFile(path)).code_steps) == {"aa" * 32: 7}
 
 
+def test_ledger_counts_wrong_codes_per_sender_across_a_restart(tmp_path: Path) -> None:
+    """#79: the times of a sender's recent wrong codes, so that a restart does not give it new
+    guesses; it says when a sender reaches the limit. Older ones and more than the limit are
+    not kept: the file stays small however many come."""
+    path = tmp_path / "state.json"
+    ledger = CommandLedger(JsonStateFile(path))
+    now = 1_800_000_000.0
+    other = "bb" * 32
+    assert ledger.code_failure(other, now - CODE_FAILURE_WINDOW_S) is False  # expires first
+    reached = [ledger.code_failure("aa" * 32, now + n) for n in range(CODE_FAILURE_LIMIT + 1)]
+    assert reached == [False] * (CODE_FAILURE_LIMIT - 1) + [True, False]
+    assert dict(ledger.code_failures) == {
+        "aa" * 32: tuple(int(now) + n for n in range(1, CODE_FAILURE_LIMIT + 1))
+    }
+    reloaded = CommandLedger(JsonStateFile(path))
+    assert dict(reloaded.code_failures) == dict(ledger.code_failures)
+    reloaded.record("aa" * 32, 100, 7)  # an accepted command keeps them: they expire
+    assert dict(CommandLedger(JsonStateFile(path)).code_failures) == dict(ledger.code_failures)
+
+
+def test_a_sender_reaches_the_limit_again_each_time_a_wrong_code_left_the_window(
+    tmp_path: Path,
+) -> None:
+    """#79, design §7.4: the window slides. A guesser who goes on reaches the limit again each
+    time its oldest wrong code is an hour old, so the log warns up to CODE_FAILURE_LIMIT times
+    an hour, not once."""
+    ledger = CommandLedger(JsonStateFile(tmp_path / "state.json"))
+    now = 1_800_000_000.0
+    sender = "aa" * 32
+    first = [ledger.code_failure(sender, now + n) for n in range(CODE_FAILURE_LIMIT)]
+    assert first[-1] is True
+    later = now + CODE_FAILURE_WINDOW_S
+    again = [ledger.code_failure(sender, later + n) for n in range(CODE_FAILURE_LIMIT)]
+    assert again == [True] * CODE_FAILURE_LIMIT
+
+
 def test_ledger_ignores_malformed_content(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text('{"command_timestamps": {"x": "not a number"}}', encoding="utf-8")
     assert CommandLedger(JsonStateFile(path)).last("x") is None
+    path.write_text(
+        '{"command_code_failures": {"a": [1, "x", true, 2.5], "b": 3, "c": [null]}}',
+        encoding="utf-8",
+    )
+    assert dict(CommandLedger(JsonStateFile(path)).code_failures) == {"a": (1, 2)}
 
 
 def test_state_file_that_is_not_utf8_is_kept_aside(tmp_path: Path) -> None:
@@ -263,6 +306,34 @@ def test_a_failed_save_leaves_no_temporary_file_and_keeps_the_ledger(
     assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100
     RetainedKeys(ledger.store, "contacts").replace({"bb" * 32})  # another section's write
     assert ledger.store.flush()
+    assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100  # not the refused one
+
+
+def test_a_failed_save_is_written_again_by_the_next_flush_with_nothing_else_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A command's write fails on a full disk; on a quiet system no other section changes after
+    it. `failed` (the health section's `state_file: unwritable`) must not stay until one does
+    (#94): the next flush writes the file once it can, and clears it."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    ledger = CommandLedger(store)
+    ledger.record("aa" * 32, 100)
+    attempts: list[int] = []
+
+    def full_disk(_fd: int) -> None:
+        attempts.append(1)
+        raise OSError(28, "No space left on device")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", full_disk)
+        with pytest.raises(OSError, match="No space left"):
+            ledger.record("aa" * 32, 200)
+        assert store.failed
+        assert (store.flush(), store.failed) == (False, True)  # the disk is still full: tried
+    assert len(attempts) == 2
+    assert (store.flush(), store.failed) == (True, False)
+    assert store.flush()  # nothing left to write
     assert CommandLedger(JsonStateFile(path)).last("aa" * 32) == 100  # not the refused one
 
 
@@ -760,6 +831,34 @@ def test_a_kept_message_keeps_when_it_was_accepted(tmp_path: Path) -> None:
         ("c", None),
         ("d", None),
         ("e", 1_800_000_000.0),
+    ]
+
+
+def test_a_kept_message_keeps_whether_the_gateway_added_the_suffix(tmp_path: Path) -> None:
+    """#87: whether the text ends with confirm_nonce's suffix is the record's, not the next
+    start's setting: written with the stop, `null` for a message kept by 2.0, which has none,
+    or with a value that is no truth value; the start then goes by the setting."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    kept = [dataclasses.replace(KEPT[0], nonce=False), dataclasses.replace(KEPT[1], nonce=True)]
+    OutboxRecords(store).save([*kept, KEPT[2]], 1_000.0)
+    assert store.flush()
+    written = JsonStateFile(path).load()["outbox"]["messages"]
+    assert [m["nonce"] for m in written] == [False, True, None]
+    assert OutboxRecords(JsonStateFile(path)).take(1_000.0)[0] == [*kept, KEPT[2]]
+    entries: list[dict[str, Any]] = [
+        {"id": "a", "target": "alerts", "text": "x", "age_s": 1.0},  # 2.0's
+        {"id": "b", "target": "alerts", "text": "x", "age_s": 1.0, "nonce": 1},
+        {"id": "c", "target": "alerts", "text": "x", "age_s": 1.0, "nonce": "true"},
+        {"id": "d", "target": "alerts", "text": "x", "age_s": 1.0, "nonce": True},
+    ]
+    JsonStateFile(path).save({"outbox": {"saved_at": 0.0, "messages": entries}})
+    messages, _ = OutboxRecords(JsonStateFile(path)).take(1.0)
+    assert [(m.id, m.nonce) for m in messages] == [
+        ("a", None),
+        ("b", None),
+        ("c", None),
+        ("d", True),
     ]
 
 

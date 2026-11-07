@@ -34,8 +34,8 @@ weakens a control updates the boundary's section here in the same pull request.
 | T1 | A stranger in radio range | Send any packet: adverts under any name and any key of their own, channel messages, acknowledgements and paths in the clear; read what is in the clear; jam | The firmware decrypts direct messages only from contacts; floods are bounded (B1); acknowledgements prove little ([what `confirmed` proves](mqtt-api.md#what-confirmed-proves)) |
 | T2 | A stranger with a 6-byte key prefix collision | Pose as an allowed sender's prefix, after about 2⁴⁸ key generations ([residual risks](#residual-risks)) | The look-alike memory ([design §7.3](design.md#73-command-authorisation-in-detail)); codes ([configuration](configuration.md#commands)) |
 | T3 | A contact of the radio outside the household | Direct messages the radio decrypts, telemetry answers, adverts | Commands need the allowlist; telemetry asks only the household (`ask = "household"`, the default) ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)); rate limits per sender |
-| T4 | Whoever holds an allowed sender's handheld or key | Send accepted commands | Codes, a second factor on a phone; a small word list; automations that confirm |
-| T5 | A host on the radio's network (TCP) | Be the radio, or a second client of it: read and write everything, export the private key | USB is the default; TCP needs `tcp_unauthenticated = true`; a contested link is reported; codes ([design §7.4](design.md#74-residual-risks)) |
+| T4 | Whoever holds an allowed sender's handheld or key | Send accepted commands | Codes, a second factor on a phone, at most 5 wrong ones per sender an hour; a small word list; automations that confirm |
+| T5 | A host on the radio's network (TCP) | Be the radio, or a second client of it: read and write everything, export the private key | USB is the default; TCP needs `tcp_unauthenticated = true`; a contested link is reported; codes, at most 5 wrong ones per sender an hour ([design §7.4](design.md#74-residual-risks)) |
 | T6 | A broker client other than the gateway | Publish and read what the broker's ACL allows: forge events and documents, send messages, manage contacts, read the household's unsent drafts and send them | The ACL ([securing the broker](mqtt-api.md#securing-the-broker)); warnings and refusals for a broker without login or TLS; forged documents restored |
 | T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, also the draft another user left in a chat, add and remove contacts, switch telemetry, see positions and messages, and the settings in effect, the hidden targets' names and prefixes included (never a secret, host or key) | `[homeassistant] controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
 | T8 | Home Assistant's administrator or host | All of T7, automations, the recorder | Not an attacker of the gateway; a victim of what reaches Home Assistant |
@@ -162,15 +162,16 @@ Each leaf names what stands in the way now.
 ```text
 Run an automation in the home (A1)
 ├─ a command from a direct message
-│  ├─ hold an allowed sender's key (T4) ............... codes; confirming automations
+│  ├─ hold an allowed sender's key (T4) ............... codes, 5 guesses an hour; confirming automations
 │  ├─ a look-alike the household added (T2) ........... look-alike memory; codes
 │  ├─ replay a recorded command ....................... timestamp ledger; repeat memory; codes serve once
-│  └─ be the radio over TCP (T5) ...................... USB; codes
+│  └─ be the radio over TCP (T5) ...................... USB; codes, 5 guesses an hour
 ├─ publish a `command` event (T6) ..................... the ACL; no commands over an open broker
 └─ a forged position for a presence automation (T6) ... the ACL; restored documents
 
 Make the household believe an alert arrived (A2)
 ├─ forge the acknowledgement (T1) ..................... confirm_nonce; suspect; an answer as proof
+├─ read the suffix on the broker, then forge (T6) ..... the suffix published only after the end
 ├─ be the radio over TCP (T5) ......................... USB
 └─ publish a `delivery` event (T6) .................... the ACL
 

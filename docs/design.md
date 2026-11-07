@@ -220,26 +220,32 @@ Long-running tasks on the loop, supervised by a task group:
 On stop the telemetry poller is cancelled first, so no request goes out after it, and saves its
 schedule; an answer that arrives later is dropped. The outbox worker starts no attempt any more:
 one that waits for its acknowledgement gets it for at most 60 s (the unit's `TimeoutStopSec` is
-90 s), and the messages still queued, that one too if it needs another attempt, are kept in the
-state file for the next start (§6.2). Then the radio supervisor ends and closes the
+90 s). From the stop's start the messages on their way, that one too, are in the state file,
+written at once and again at each change, so a stop that is cut short (a kill, an older unit's
+20 s) loses none (§6.2). Then the radio supervisor ends and closes the
 session. The radio events and the message
 handler then finish the messages the radio has already handed over, for at most 2 s (a command
-waiting for its table read is rejected, `sender_unverified`); then the other tasks are cancelled.
-Messages still waiting in the radio are fetched at the next start.
+waiting for its table read is rejected, `sender_unverified`). Requests are taken until then, the
+answers to those commands too: the last step keeps the queue for the next start, with the
+requests still waiting to be taken; then the other tasks are cancelled. A request after it is
+rejected (`stopping`): a press of *Send* at once, and one from the broker when the bus stops,
+before it publishes `offline`; one that comes after `offline` gets no event, and the Homie
+adapter neither takes nor echoes one then. Messages still waiting in the radio are fetched at
+the next start.
 
-The state file (`state.json`, `state.py`) is one store for every part that keeps something
-across a restart (ARC-004): read once at the start, held in memory, and written whole and
-atomically (a temporary file, `fsync`, rename). A part changes its section in memory; the status
-reporter writes what changed at its tick (every 30 s under systemd's watchdog, else every
-minute) and at the stop, so a
-table read that changes the contact devices, the published keys and the components costs one
+The state file (`state.json`, `state.py`) is one store for every part that keeps something across a
+restart (ARC-004): read once at the start, held in memory, and written whole and atomically (a
+temporary file, `fsync`, rename). A part changes its section in memory; the status reporter writes
+what changed at its tick (every 30 s under systemd's watchdog, else every minute) and at the stop,
+so a table read that changes the contact devices, the published keys and the components costs one
 write. What a crash must not lose is written at once: the newest accepted command time per sender
-before the command is published (§6.4), the observer's kept documents and advert checks when they
-change (a place a companion stopped sharing must not come back, §6.6), the telemetry schedule
-after a flood and at the first-start hour (§6.11) and the radio profile's attempts before its
-setters. A crash loses at most the other changes since the last tick, which the next table read
-makes again. A file replaced on disk while the service runs is overwritten with every section by
-the next write; a backup is restored with the service stopped (§9).
+before the command is published (§6.4), the time of a sender's wrong code as it comes (§7.3), the
+observer's kept documents and advert checks when they change (a place a companion stopped sharing
+must not come back, §6.6), the telemetry schedule after a flood and at the first-start hour
+(§6.11), the radio profile's attempts before its setters, and from the stop's start the messages on
+their way (above). A crash loses at most the other changes since the last tick, which the next
+table read makes again. A file replaced on disk while the service runs is overwritten with every
+section by the next write; a backup is restored with the service stopped (§9).
 
 Each radio session runs two tasks of its own: a **reader** that routes frames, and a
 **maintenance** task that re-reads the contact table after adverts and contact pushes, drains the
@@ -323,15 +329,17 @@ sequenceDiagram
   `set_clock_max_days = 0` lifts both bounds. Ahead by more than a minute and at most an hour,
   the session restarts the radio: at start the firmware sets its clock to its newest contact time
   plus a second, also back, and the next connect sets it forward. It does so only when that time
-  is behind the host's, after taking the radio's messages, when no message is queued or being
-  delivered, and at most once a day (the bridge's `may_restart`); the check runs at connect and
-  at every heartbeat. Further ahead, a warning says so: nodes and repeaters ignore the radio's
-  adverts and logins until real time passes the times it sent before, which is fine for minutes
-  but not for days. Command age checks do not use the radio's clock: they compare the sender's
-  timestamp with the host's clock (§7.3). The unit is ordered after `time-sync.target`, which
-  waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled:
-  neither is by default, and `systemd-time-wait-sync` skips containers, whose clock is the host's.
-  The bounds of a plausible host clock above are the guard.
+  is behind the host's and the bounds above let the next connect, within an hour, set it forward
+  from there (else the restart would leave it days behind, #86), after taking the radio's
+  messages, when no message is queued or being delivered, and at most once a day (the bridge's
+  `may_restart`); the check runs at connect and at every heartbeat. Further ahead, a warning says
+  so: nodes and repeaters ignore the radio's adverts and logins until real time passes the times
+  it sent before, which is fine for minutes but not for days. Command age checks do not use the
+  radio's clock: they compare the sender's timestamp with the host's clock (§7.3). The unit is
+  ordered after `time-sync.target`, which waits for a synchronised clock only where
+  `systemd-time-wait-sync` or `chrony-wait` is enabled: neither is by default, and
+  `systemd-time-wait-sync` skips containers, whose clock is the host's. The bounds of a plausible
+  host clock above are the guard.
 * **Messages.** On `MSG_WAITING`, after connecting, and every 5 minutes as a safety net, the session
   drains the radio's queue with `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES`. Messages queued
   before the bridge requested protocol version 3 arrive in the legacy layout; both are decoded.
@@ -417,8 +425,11 @@ sequenceDiagram
    request rejected because the queue is full does not count, so its retry is accepted.
 5. **Queue.** Bounded (`queue_size`); a full queue rejects. Each entry carries its arrival time and
    a time to live of `queue_ttl_s`. The messages to `[messages] alert_targets` leave before the
-   others (IMP-032); each kind leaves in arrival order. At a stop the queue goes to the state
-   file (`outbox`, with each message's time waited, radio timestamp and attempts sent); the next
+   others (IMP-032): an alert that comes while another message waits for the radio or for
+   airtime, also before its first attempt, or between two of its attempts, goes first, and that
+   message continues after it with its progress (#93); each kind leaves in arrival order. At a
+   stop the queue goes to the state file (`outbox`, with each message's time waited, radio
+   timestamp and attempts sent), from the stop's start to its last step (§5.2); the next
    start queues those with time left again and publishes `queued` again with their `id`, ends
    the others as they would have ended, and counts their texts for the duplicate check
    ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A message that never left within that time is `expired`:
@@ -603,12 +614,13 @@ the file.
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
 | `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
 | `meshcore-home-gateway commands enrol KEY` | Give a command sender (a full key of `[commands] senders`) a new code secret in `[commands] codes_file` (160 random bits; the file keeps its mode and group, a new one gets 0640 and the configuration's group) and print it as an `otpauth://` line for an authenticator app on standard output; standard error says the secret to type in and to restart the service. Exit 1 without `codes_file`, for a key that is not a sender or a file it cannot read or write, 2 for text that is no full key. |
+| `meshcore-home-gateway commands revoke KEY` | Remove the code secret of a key that is no longer in `[commands] senders` from `[commands] codes_file`; the file keeps its mode and group, and stays when it holds no secret any more. Standard error says to restart the service and, when no secret is ignored any more, names each sender without a secret: it then commands without a code. Exit 1 without `codes_file`, for a key that is still a sender (without its secret it would command without a code), a key without a secret, or a file it cannot read or write; 2 for text that is no full key. |
 | `meshcore-home-gateway contacts telemetry [--wait S] [--forget] CONTACT {on,off}` | Ask a companion for telemetry again (`on`) or exclude it (`off`; a full key also before it is on the radio, `KEY12…KEY8` from the index); `--forget` with `off` also deletes its readings and positions from telemetry from the history. Exit 0 on `excluded` or `included` without a reason, 1 on `refused`, `failed`, any reason, no result in time or the gateway offline, 2 on a usage error. |
 | `meshcore-home-gateway dashboard [--state-dir DIR]` | Print a Home Assistant dashboard for this gateway as YAML, its texts in `[homeassistant] language`; the map lists the contacts with a position in the service's state (read only, default `$STATE_DIRECTORY` or `/var/lib/meshcore-home-gateway`), and standard error says how many. Exit 1 when `[homeassistant] discovery` is off. |
 | `meshcore-home-gateway status [--json]` | What the running gateway reports of itself, from its retained documents: availability, radio, battery, the radio's clock, a contested TCP link, airtime, queue, telemetry, the health section and the contacts; `--json` gives `availability`, `state` and `contacts` as published. Exit 0 while the gateway is online and its health section is not degraded, 1 otherwise and when the broker cannot be reached. |
 | `meshcore-home-gateway doctor [--state-dir DIR]` | One line per check, `ok`, `warning` or `problem`: the configuration and its warnings, a radio over TCP, TLS, the broker login and whether the broker takes clients without a user name, the gateway online, its radio, a radio clock more than 60 s off, a contested link, untested firmware, the health section, then on this host the free space for the state, automatic security updates and a restart that updates wait for. Exit 1 when a check finds a problem. |
 | `meshcore-home-gateway backup FILE [--with-secrets] [--state-dir DIR]` | Write the configuration, `state.json`, `telemetry-excluded.json`, a copy of `history.sqlite3` made with SQLite's online backup and `MANIFEST.json` (version, time, paths, files, whether the password is in it) into a tar.gz that only its owner can read, while the service runs; never over an existing file. The broker password's line becomes a comment unless `--with-secrets`, which also takes the files `password_file` and `codes_file` name. Exit 1 when a file cannot be read or the archive written. |
-| `meshcore-home-gateway retire [--yes] [--state-dir DIR]` | With the service stopped: remove the gateway, its controls and every contact device (also one whose removal is pending) from Home Assistant, each bound to all components it had first; clear every retained document under the gateway's topics; leave its availability `offline`. Without `--yes`, count what it would do. Exit 1 while the gateway is online or when the broker refuses. |
+| `meshcore-home-gateway retire [--yes] [--state-dir DIR]` | With the service stopped: remove the gateway, its controls and every contact device (also one whose removal is pending) from Home Assistant, each bound to all components it had first; clear every retained document under the gateway's topics and every retained message of its Homie device `homie/meshcore-<node_id>/…`, also with `[homie]` off now (`$state` first), but not a device whose `$state` says that a gateway is connected to it (`init`, `ready`, `alert`, `sleeping`); leave its availability `offline`; then read them again. It reads them with QoS 0, until none has come for a second (Mosquitto passes on at most 1040 to a subscription with QoS 1, [platform notes](platform-notes.md#mosquitto)). Without `--yes`, count what it would do. Exit 1 while the gateway is online, when the broker refuses, or when a retained message is left after clearing. |
 | `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Since 2.1 `messages` ends with `target`, `delivery_id`, `queued_at` (a time), `suspect` (`true` or `false`) and `reason`, the keys of the `history` document ([mqtt-api.md](mqtt-api.md#history-history)). Exit 1 without a history or with one of a newer version. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
@@ -741,7 +753,7 @@ boundaries and what stands in the way of each; this section is its summary.
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
 | Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
-| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts) | Names are compared as a person reads them (NFKC, case folding, Cyrillic and Greek letters that look Latin, invisible format characters left out): such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007). |
+| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts) | Names are compared as a person reads them (NFKC, case folding, Cyrillic and Greek letters that look Latin, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name): such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007). |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted; a command refused because the broker was unreachable counts too) and within `max_age_s` of the bridge clock. Exact repeats are dropped for an hour, also those of a rejected command. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
@@ -749,7 +761,7 @@ boundaries and what stands in the way of each; this section is its summary.
 | Forged events on the bridge's topics by another broker client (a fake `command` event triggers automations as if an allowlisted sender had sent it) | Topic ACLs: only the bridge user may publish below `<base>/<node>/`, except `send/`. Required when commands are configured (mqtt-api.md, last section); the sender check protects only the radio side. The gateway cannot see the ACL; it warns at start and in `check-config` when it logs in without a user name, or without TLS to a broker beyond its host or link, and with commands configured either is a configuration error until `[mqtt] insecure = true` accepts it. `check-config --broker` logs in once more without credentials and warns when the broker takes that client. |
 | A forged, cleared or stale retained document by another broker client (a forged position in `contacts/<key>` steers a presence automation; an empty one makes the contact's entities unknown) | Topic ACLs, as above: the documents carry no origin, so their consumers trust them because only the gateway may write them ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md), amendment). The gateway subscribes to its retained topics and undoes what another client writes there: its own payload again, or an empty one where it has published nothing in this run, at once and then at most every 10 seconds per topic; the log names the topic once a minute, and says when the gateway cannot read its topics (a refused subscription, or its `online` not back within 10 seconds, as Mosquitto's `acl_file` grants every subscription). A forgery stands until then, and while the gateway is offline (§7.4). |
 | Another broker client takes the gateway's client id, or floods Home Assistant's status topic with birth messages | The default client id has a random part per start, so it cannot be read off the topics (a broker drops a client when another connects with its id). Announcements after birth messages and discovery clears are never postponed by a later one and come at most every 30 s; more than 5 births a minute are logged with the topic. |
-| Unauthenticated TCP companion interface | Prefer USB. Whoever reaches the radio's TCP port controls the radio: the release firmware hands its private key to any client and takes a new one (`ENABLE_PRIVATE_KEY_EXPORT` and `_IMPORT` in its common build flags), and as MeshCore's direct messages have no forward secrecy, the key decrypts every direct message of the radio, also earlier ones recorded from the air; a client can also send any packet, move the radio off the mesh's frequency, reset it, create temporary contacts the contact list never shows, and take messages before the bridge does ([protocol.md](protocol.md) §1). So a TCP radio needs `[radio] tcp_unauthenticated = true`, which the installer asks for with these facts; put the radio in a network that only the bridge's host reaches (a VLAN of its own, a second SSID with client isolation), and leave the two flags out of a firmware built for it. The radio serves one client and closes the link when another one connects: the bridge takes it back after a second, and a link the radio closed while its uptime went on is logged and shown as `radio_link_contested` in `state` for an hour (`core.link`). Nor does the bridge authenticate the radio: a host that takes the radio's address (ARP or DNS spoofing, or while the radio is off) can present an allowlisted key as a contact and forge accepted commands, and it receives the outgoing messages. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
+| Unauthenticated TCP companion interface | Prefer USB. Whoever reaches the radio's TCP port controls the radio: the release firmware hands its private key to any client and takes a new one (`ENABLE_PRIVATE_KEY_EXPORT` and `_IMPORT` in its common build flags), and as MeshCore's direct messages have no forward secrecy, the key decrypts every direct message of the radio, also earlier ones recorded from the air; a client can also send any packet, move the radio off the mesh's frequency, reset it, create temporary contacts the contact list never shows, and take messages before the bridge does ([protocol.md](protocol.md) §1). So a TCP radio needs `[radio] tcp_unauthenticated = true`, which the installer asks for with these facts; put the radio in a network that only the bridge's host reaches (a VLAN of its own, a second SSID with client isolation), and leave the two flags out of a firmware built for it. The radio serves one client and closes the link when another one connects: the bridge takes it back after a second, and a link the radio closed is logged and shown as `radio_link_contested` in `state` for an hour, also when the radio restarted since (`core.link`, #88). Nor does the bridge authenticate the radio: a host that takes the radio's address (ARP or DNS spoofing, or while the radio is off) can present an allowlisted key as a contact and forge accepted commands, and it receives the outgoing messages. Over TCP the radio also drops pushes while its send queue is full; the bridge warns when commands are configured with TCP. |
 | Credential disclosure | Configuration 0640 `root:meshcore-home-gateway`; the broker password in a file of its own (`password_file`, which the installer writes), so the configuration, `config answers` and the installer's reconfiguration carry only its path; the installer passes answers through a temporary file in the container and deletes it; secrets are never logged. |
 | Compromised dependency | Runtime code from the distribution only; development tools hash-pinned with a cooldown; actions pinned by SHA; Dependabot with cooldown. |
 | Tampered release download | Release files are built by the release workflow from the tagged commit and attested with Sigstore-signed build provenance; `SHA256SUMS` and `gh attestation verify` with the release workflow and the tag check them (ADR 0013); the tag ruleset keeps tags from being moved or deleted, and CI tags only a commit whose checks passed (ADR 0022). |
@@ -760,7 +772,7 @@ boundaries and what stands in the way of each; this section is its summary.
 | A forged advert in the packet log (the radio logs every packet before it checks the signature) | A log counts only for an advert the radio pushed and whose timestamp the next table read shows as `last_advert`. While the receive delay is 0, the log that is the frame directly before the push decides, and a forged copy is never there; otherwise all logs of the key with that time must agree, and differing copies decide nothing. A flagged log must hold the position the record took. A forged position is never shown: positions come from the record. |
 | A flood of adverts with invented keys (a new key costs microseconds; any board in range) | Memory, documents and history stay bounded: 50 heard nodes, of which those heard again stay longest; the `nodes` document at most every 30 seconds while only heard nodes change; `node` events at most one every 5 seconds on average; the history keeps only the nodes the gateway keeps. A stranger's advert reads no contact table (firmware 1.12 and newer). The airtime the flood takes is the mesh's problem, not the gateway's (§8). |
 | A flood of messages from a contact, or on a channel (anyone who knows its key: the *Public* channel's is in the firmware) | What messages produce is rate-limited per sender and per channel: beyond a burst of 10 direct messages one every 2 s, beyond a burst of 20 channel messages one a second, are published and kept in the history; the others are judged as commands (an accepted command always goes out) and counted in the log, at most once a minute. The radio acknowledges each direct message of a contact before the bridge sees it (§7.4). Keep the contact table to the household; `ignore_channels` keeps a busy channel out. |
-| A forged acknowledgement: anyone in range who knows or guesses a direct message's text (an alarm's is fixed) computes its code and sends it in the clear; the delivery reads `confirmed` and the retries stop | The firmware's weakness, which only an acknowledgement authenticated with the pair's secret would close (§7.4). `[messages] confirm_nonce` ends direct messages with 8 random hex digits, so the code is as hard to guess as itself; a `confirmed` event is `suspect`, and the log warns, when its round trip is shorter than the stored path through repeaters allows (`core.airtime.shortest_acknowledgement_s`); `send --wait` exits 1 on it. The documentation says what `confirmed` proves and recommends an answer from the recipient for alerts ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). |
+| A forged acknowledgement: anyone in range who knows or guesses a direct message's text (an alarm's is fixed) computes its code and sends it in the clear; the delivery reads `confirmed` and the retries stop | The firmware's weakness, which only an acknowledgement authenticated with the pair's secret would close (§7.4). `[messages] confirm_nonce` ends direct messages with 8 random hex digits, so the code is as hard to guess as itself; the digits reach the broker only in the final event and the history, so that a reader of the topics with a board in range cannot use them while an acknowledgement counts; a `confirmed` event is `suspect`, and the log warns, when its round trip is shorter than the stored path through repeaters allows (`core.airtime.shortest_acknowledgement_s`); `send --wait` exits 1 on it. The documentation says what `confirmed` proves and recommends an answer from the recipient for alerts ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). |
 
 ### 7.3 Command authorisation in detail
 
@@ -816,11 +828,33 @@ the apps compute it. After the checks above, the last word must be the code of t
 clock's step or of the step before or after (`code_missing`, `code_invalid`), of a step newer
 than the sender's last accepted code (`code_reused`); `args` leaves it out. The step is stored
 with the timestamp, before the event goes out, so a code serves once, also across a restart.
+After 5 wrong codes of a sender within an hour (`code_missing` and `code_invalid`; not the
+`code_missing` of a sender without a secret while one is ignored, below), its commands
+are refused without a look at the code (`code_locked`, RFC 4226 section 7.3) until the first of
+them is an hour old, and the log warns each time the sender reaches the limit; their times are
+in the state file, so a restart does not end it (§7.4). A command that came late (it waited in
+the radio through a restart, an update or a re-plug, or in the mesh) ends with the sender's code
+of the time it was sent, which the bridge clock no longer accepts. It is refused as
+`code_invalid`, but it is no guess and is not counted: its code is the sender's for the step of
+its own timestamp, or the step before or after, and that step is older than those the bridge
+accepts. A guess that hits such a code gains nothing: the command is refused all the same, and
+the code of a past step serves no later command. A step ahead of the bridge's never counts as
+late, so the count tells a guesser no code it could use once its time came.
 The code shows that the sender's app made it in that time window, whatever frame carries it: it
 comes from the secret, which neither the radio, the link nor the mesh carries. It does not bind
 the text (§7.4). The secret is 160 random bits from
 `meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
-stops the service rather than let commands pass without codes.
+stops the service rather than let commands pass without codes. The secret of a key that is not
+in `senders` is ignored, with a warning at the start: removing a lost phone's sender ends its
+commands, and `commands revoke` removes its secret. A sender's key corrected by hand leaves its
+secret behind the same way, and the corrected key has none. So while a secret is ignored, the
+commands of each sender without one are refused (`code_missing`, not counted as a wrong code),
+and the warnings name it, until `commands revoke` removes the ignored secret or `commands enrol`
+gives the sender one, and the service restarts. 2.0 did not start then (exit 78); now the rest
+of the gateway keeps running, and the commands still fail closed. The revoke of the last ignored
+secret ends the refusal of every sender without one, a corrected key's too if it was not
+enrolled: so `commands revoke` names those senders, and the warnings say to enrol a corrected
+key first.
 
 **Answers** (EXT-009). With `[commands] reply`, the bridge answers the sender of a published
 command (`ok: <word>`) and, with `all`, of a command it refused after the sender checks passed
@@ -852,6 +886,15 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2). Without its code secret a look-alike that got past those checks
   cannot command a sender who has one.
+* A code is one of a million, and three time steps pass, so a guess wins with at most 3 in a
+  million. Whoever has the bridge judge commands of an allowed sender without the secret (a host
+  posing as the radio over TCP, at link speed; a stolen handheld, one every few seconds over
+  the air) would otherwise find one within a minute, or in about two weeks. Held to 5 wrong
+  codes per sender an hour (§7.3), such a guesser wins with about 1 in 2,800 a day, and with
+  about 12 % in a year of guessing without a pause. The log warns each time the sender reaches
+  the limit again, up to 5 times an hour, and the `received` events show `code_locked`. The
+  same limit lets the guesser keep the sender's commands refused for as long as it guesses:
+  remove a sender whose codes someone guesses ([configuration.md](configuration.md#commands)).
 * A code binds neither the text nor its sender's radio, and it lives up to 90 seconds: whoever
   reads a code before the bridge accepted it (a host posing as the radio over TCP sees the text;
   so does a reader of the `received` event of a command rejected for another reason) can use it
@@ -869,22 +912,27 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   that address can forge commands from an allowlisted key. Commands should use USB, or a network
   that only the bridge and the radio can reach.
 * A client that reaches the radio's TCP port can read its private key in a moment, and nothing
-  on the radio shows it afterwards. The bridge sees only a link that the radio closed while it kept
-  running (after 49.7 days its uptime wraps, and a takeover then reads as a restart); a client that
-  connects while the bridge is away leaves no trace at all. Treat a key that may have been read as
-  lost (deployment.md, *Troubleshooting*): with no forward secrecy, a new key protects only what
-  comes after.
+  on the radio shows it afterwards. The bridge sees only a link that the radio closed, which the
+  firmware does only for another client, whether the radio kept running or restarted since (the
+  other client may have restarted it); a client that connects while the bridge is away leaves no
+  trace at all. `radio_link_contested` is a best effort, and `false` is no proof. Treat a key
+  that may have been read as lost (deployment.md, *Troubleshooting*): with no forward secrecy, a
+  new key protects only what comes after.
 * A second client of the radio (another interface of a multi-interface build, or anyone on the
   TCP port) can change the contact table without the bridge seeing it. The bridge must be the
   radio's only client.
 * `confirmed` proves that the acknowledgement's code arrived, which anyone who knows the text
   can compute (§7.2). Without `confirm_nonce` a stranger in range can confirm a fixed alert text
   nobody received; with it, the odds are those of guessing 32 bits within the acknowledgement
-  wait. `suspect` catches only a forger beside the gateway who answers at once over a path
-  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. The
-  history keeps such a message as `confirmed`; the event and the log tell. The fix belongs in the
-  firmware: an acknowledgement authenticated with the secret the two radios share, for the
-  maintainer to raise with the MeshCore project.
+  wait, also for a reader of the broker, which sees the suffix only in the final event. A stop
+  keeps a message that waits with its suffix in the state file, where only the service and root
+  read it. `suspect` catches only a forger beside the gateway who answers at once over a path
+  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. Its bound
+  takes every hop at the radio's coding rate: a repeater or recipient at a faster one can make a
+  genuine acknowledgement of a long text read `suspect`, unless the radio uses the fastest coding
+  rate of its mesh (#90). The history keeps such a message as `confirmed`; the event and the log
+  tell. The fix belongs in the firmware: an acknowledgement authenticated with the secret the two
+  radios share, for the maintainer to raise with the MeshCore project.
 * A client that may write the gateway's topics can show Home Assistant a forged document until
   the gateway restores it: a round trip, up to 10 seconds if it keeps writing, and as long as it
   likes while the gateway is offline, as it can write `online` to `availability` too. Only the

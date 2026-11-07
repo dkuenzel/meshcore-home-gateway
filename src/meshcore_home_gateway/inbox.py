@@ -13,6 +13,9 @@ from dataclasses import replace
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import Deduplicator, KeyedRateLimit
 from meshcore_home_gateway.core.commands import (
+    CODE_FAILURE_LIMIT,
+    CODE_FAILURE_WINDOW_S,
+    WRONG_CODES,
     Command,
     CommandDecision,
     Rejection,
@@ -51,6 +54,7 @@ _FINAL_FROM_CACHE = frozenset(
         Rejection.CODE_MISSING,
         Rejection.CODE_INVALID,
         Rejection.CODE_REUSED,
+        Rejection.CODE_LOCKED,
     }
 )
 
@@ -164,12 +168,7 @@ class Inbox:
         those are published (SEC-012): neither published nor answered."""
         if message.kind is not MessageKind.CHANNEL:
             return False
-        messages = self.config.messages
-        if message.channel_index in messages.ignore_channels:
-            return True
-        return messages.publish_channels == "targets" and (
-            message.channel_index not in target_channels(self.config)
-        )
+        return not channel_published(self.config, message.channel_index)
 
     async def _on_message(self, event: MessageReceived) -> None:
         message, session = event.message, event.session
@@ -186,6 +185,7 @@ class Inbox:
             log.debug("duplicate of a received message dropped (sender retry or replay)")
             return
         decision = await self._judge(event)
+        self._count_wrong_code(decision)
         command = decision.command if decision else None
         if decision is not None and command is not None:
             try:
@@ -252,6 +252,28 @@ class Inbox:
         if decision is not None:
             self._answer(decision, command)
 
+    def _count_wrong_code(self, decision: CommandDecision | None) -> None:
+        """A wrong code is counted before anything is published (#79): at the limit the
+        sender's codes are refused unchecked for a while (core.commands.codes_locked), and the
+        log says so. The sender's own code of the time it sent a command that came late (it
+        waited in the radio or the mesh) is no guess and is not counted, nor is the refusal of
+        a sender without a secret while one is ignored (#80): it has no code to guess."""
+        if decision is None or decision.rejection not in WRONG_CODES or decision.late:
+            return
+        if not decision.sender_key or self.config.commands.secret(decision.sender_key) is None:
+            return
+        key = decision.sender_key
+        if self._ledger.code_failure(key, self._wall()):
+            log.warning(
+                "command sender %s…%s sent %d wrong command codes within %d minutes: its "
+                "commands are refused (code_locked) until the first of them is that old; "
+                "someone may be guessing its codes",
+                key[:12],
+                key[-8:],
+                CODE_FAILURE_LIMIT,
+                CODE_FAILURE_WINDOW_S // 60,
+            )
+
     def _answer(self, decision: CommandDecision, command: Command | None) -> None:
         """`[commands] reply`: the sender learns whether its command was published."""
         text = self.config.commands.reply_text(decision)
@@ -303,6 +325,7 @@ class Inbox:
             self._wall(),
             seen=self._seen,
             last_codes=self._ledger.code_steps,
+            code_failures=self._ledger.code_failures,
         )
 
     def contact_key(self, key: str, held: bool) -> None:
@@ -331,3 +354,12 @@ class Inbox:
 def target_channels(config: Config) -> frozenset[int]:
     """The channels of `[targets.*]` entries."""
     return frozenset(t.channel_index for t in config.targets if t.channel_index is not None)
+
+
+def channel_published(config: Config, index: int | None) -> bool:
+    """Whether the messages of channel `index` are published and kept in the history: not one of
+    `ignore_channels`, and a target's while only those are published (SEC-012)."""
+    messages = config.messages
+    if index in messages.ignore_channels:
+        return False
+    return messages.publish_channels != "targets" or index in target_channels(config)

@@ -11,8 +11,8 @@ Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext
 [GitHub](#github), [whiptail](#whiptail),
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
 [paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
-dashboards](#home-assistant-dashboards), [MeshCore companion
-firmware](#meshcore-companion-firmware).
+dashboards](#home-assistant-dashboards), [openHAB Homie binding](#openhab-homie-binding),
+[MeshCore companion firmware](#meshcore-companion-firmware).
 
 <!-- index of the facts -->
 ## Index of the facts
@@ -101,6 +101,7 @@ One line per fact, by section.
 * A password file written by `mosquitto_passwd` 2.1 loses users on a 2.0 broker.
 * Mosquitto accepts passwords with unusual characters.
 * Mosquitto passes MQTT 5 properties between MQTT 5 clients and lowers a message's expiry by the time it kept the message.
+* A new subscription with QoS 1 or 2 gets at most 1040 of the retained messages; with QoS 0 it gets them all.
 
 **[Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on)**
 
@@ -191,6 +192,10 @@ One line per fact, by section.
 * A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and its more-info dialog shows a form for its `fields`.
 * A script's `data` written as a mapping of templates reads each value as Python would: `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text without the spaces around it, and refuses `None`. One template for the whole mapping, `data: "{{ {'message': message} }}"`, keeps the text as it was.
 * Every user can open any entity from the entity search (`e`) and use its controls: a button's dialog has *Press*, a switch's dialog its toggle; only the device and command searches, and the *Settings* panel with the device pages, are for administrators.
+
+**[openHAB Homie binding](#openhab-homie-binding)**
+
+* openHAB brings up a Homie device only once `$homie`, `$name`, `$state` and `$nodes` have come, and a node only once its `$name` and `$properties` have; an empty message counts as none.
 
 **[MeshCore companion firmware](#meshcore-companion-firmware)**
 
@@ -499,9 +504,15 @@ One line per fact, by section.
   2026-11-03: the version in trixie), source on sources.debian.org: `debian/templates:10-12`,
   `debian/config:19`, `debian/postinst:47-52`, `data/50unattended-upgrades.Debian:23-44`
   (`Origins-Pattern`) and `:116`. Read in the source; whether Proxmox's Debian 13 template ships
-  the package already was not checked. *Here:* the installer installs it
-  ([deployment.md](deployment.md#4-operations), *Updates of the container*). *Check:*
-  `pct exec 105 -- apt-config dump APT::Periodic::Unattended-Upgrade` says `"1"`.
+  the package already was not checked. apt's daily job runs `unattended-upgrade` only while
+  `APT::Periodic::Unattended-Upgrade`, and updates the package lists only while
+  `APT::Periodic::Update-Package-Lists`, is neither `"0"` nor missing (missing counts as 0); it
+  reads them with `apt-config shell`. *Verified:* apt 2.8.3 `debian/apt.systemd.daily:82-97`
+  (`check_stamp`: `0` never runs) and `:392-402` (the defaults and `apt-config shell`), read in
+  the installed file. *Here:* the installer installs it
+  ([deployment.md](deployment.md#4-operations), *Updates of the container*), and `doctor` reads
+  both settings the same way and warns unless both are on (#107). *Check:*
+  `pct exec 105 -- apt-config dump APT::Periodic` shows both with `"1"`.
 * **`IPAddressDeny=` and `IPAddressAllow=` need a cgroup BPF program; where systemd cannot load
   one, it starts the service without the filter and says so only at debug level.** Loading needs
   `CAP_BPF` in the initial user namespace while `kernel.unprivileged_bpf_disabled` is set, which
@@ -789,8 +800,10 @@ mosquitto -c m.conf & broker=$!
   affected."; `ExecReload=/bin/kill -HUP $MAINPID` in the package's `mosquitto.service`. *Here:*
   [deployment.md](deployment.md#1-before-you-start) and its troubleshooting row say to run
   `systemctl reload mosquitto` after `mosquitto_passwd`; `check-config --broker` repeats it when
-  the login is refused. *Check:* `mosquitto_passwd -b pw bob pw1`; `mosquitto_sub -p 18830 -u bob
-  -P pw1 -t x -E` exits with 5; `kill -HUP $broker`, and the same command exits with 0.
+  the login is refused, and names `protocol` in `[mqtt]` instead when the broker refuses the MQTT
+  version (`Unsupported protocol version`). *Check:* `mosquitto_passwd -b pw bob pw1`;
+  `mosquitto_sub -p 18830 -u bob -P pw1 -t x -E` exits with 5; `kill -HUP $broker`, and the same
+  command exits with 0.
 * **`mosquitto_passwd -c` creates the file anew, without the users already in it**, as
   [deployment.md](deployment.md#5-troubleshooting) says. *Verified:* 2.0.18. *Check:*
   `mosquitto_passwd -c -b f a x; mosquitto_passwd -b f b y; mosquitto_passwd -c -b f c z; cut -d:
@@ -933,6 +946,22 @@ mosquitto -c m.conf & broker=$!
   the message without them: 3.1.1 has no properties. *Here:* `[mqtt] protocol = "5"`
   ([mqtt-api.md](mqtt-api.md#mqtt-5)); clients of both versions share the broker. *Check:*
   `mosquitto_sub -V mqttv5 -F '%t %P' -t 'meshcore/#'` prints the user properties.
+* **A new subscription with QoS 1 or 2 gets at most 1040 of the retained messages; with QoS 0
+  it gets them all.** On a SUBSCRIBE, Mosquitto queues every retained message that matches, then
+  sends the SUBACK and then the messages. With QoS 1 or 2, 20 go in flight
+  (`max_inflight_messages`) and 1020 wait (`max_queued_messages`, 1000, counted beyond those in
+  flight); the rest are dropped, and the log says, once per client, `Outgoing messages are being
+  dropped for client <id>.` A QoS 0 message is dropped only while 1000 packets already wait for the client's
+  connection, and those of one SUBSCRIBE are all queued before the first is written. *Verified:*
+  2.0.18, with paho-mqtt 2.1.0: of 1100 retained messages, a new subscriber got 1040 with QoS 1
+  and 2, all 1100 with QoS 0; `src/retain.c:215`, `src/handle_subscribe.c:191-241`,
+  `src/database.c:54-75` and `:499-545`. *Here:* a Homie device with 50 companions has 1062
+  retained topics, so `retire` reads the retained messages with QoS 0 (`sweep()` in
+  [`cli/retire.py`](../src/meshcore_home_gateway/cli/retire.py)) and looks again after
+  clearing: `test_with_broker_retire_clears_a_homie_device_beyond_the_brokers_queue` in
+  [`tests/test_cli_ops.py`](../tests/test_cli_ops.py). *Check:* `for i in $(seq 1100); do
+  mosquitto_pub -p 18830 -u mhg -P s3cret -r -t "t/$i" -m x; done`, then `mosquitto_sub -p 18830
+  -u mhg -P s3cret -q 1 -t 't/#' --retained-only -W 3 | wc -l` prints 1040, and with `-q 0` 1100.
 
 ## Home Assistant Mosquitto add-on
 
@@ -1731,6 +1760,27 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   *Here:* the guide says that the device page keeps no user from removing a contact or from its
   *Telemetry* switch. *Check:* `make ha-test`, and `sed -n 104,138p src/state/quick-bar-mixin.ts`
   at `20260930.2`.
+
+## openHAB Homie binding
+
+Read in the source of openHAB's add-ons at tag `5.0.1`, in
+`bundles/org.openhab.binding.mqtt.homie/src/main/java/org/openhab/binding/mqtt/homie/internal/`
+and `bundles/org.openhab.binding.mqtt.generic/src/main/java/org/openhab/binding/mqtt/generic/`.
+Not run here: the releases check no openHAB
+([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)).
+
+* **openHAB brings up a Homie device only once `$homie`, `$name`, `$state` and `$nodes` have
+  come, and a node only once its `$name` and `$properties` have; an empty message counts as
+  none.** The binding gives up on a missing one with `Did not receive mandatory topic value`, and
+  it skips a message without payload. An empty retained message stores nothing, so `$nodes` must
+  never be empty. It does not read `$extensions`. *Verified:* read only, not run:
+  `homie300/DeviceAttributes.java:40-43` and `homie300/NodeAttributes.java:30-31`
+  (`@MandatoryField`), `mapping/SubscribeFieldToMQTTtopic.java:135-138` ("NULL payload") and
+  `:172-174`. *Here:* the Homie device's first node is the gateway's own, `gateway`, also without
+  contacts (`_announce()` in [`mqtt/homie.py`](../src/meshcore_home_gateway/mqtt/homie.py),
+  `test_the_gateway_is_a_node_so_that_nodes_is_never_empty`). *Check:* with
+  `[homie] contacts = 0`, `mosquitto_sub -t 'homie/meshcore-radio1/$nodes' -C 1` prints
+  `gateway`, and openHAB's inbox lists the device.
 
 ## MeshCore companion firmware
 

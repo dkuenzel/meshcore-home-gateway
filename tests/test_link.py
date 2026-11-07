@@ -21,6 +21,7 @@ def test_a_radio_that_closed_the_link_and_kept_running_was_taken_over() -> None:
     watch = closed()
     assert watch.started(3600 + 75, T + 70)  # the reads 70 s apart, the uptime 75 s on
     assert watch.taken_at == T + 70
+    assert watch.restarted is False
     assert watch.contested(T + 70) is True
 
 
@@ -32,10 +33,16 @@ def test_a_radio_that_closed_the_link_and_kept_running_was_taken_over() -> None:
         (3500, T + 70),  # less than before: a restart (or the uptime wrapped after 49.7 days)
     ],
 )
-def test_a_radio_that_restarted_was_not_taken_over(uptime_s: int, read_at: float) -> None:
+def test_a_radio_that_closed_the_link_and_restarted_since_was_taken_over_too(
+    uptime_s: int, read_at: float
+) -> None:
+    """The firmware closes the link only for another client (SerialWifiInterface.cpp:57-62),
+    and a restart does not close it first: the client that took it may have restarted the radio,
+    which any client can, after reading its key (#88)."""
     watch = closed()
-    assert not watch.started(uptime_s, read_at)
-    assert watch.contested(read_at) is False
+    assert watch.started(uptime_s, read_at)
+    assert (watch.taken_at, watch.restarted) == (read_at, True)
+    assert watch.contested(read_at) is True
 
 
 def test_only_a_link_the_radio_closed_can_have_been_taken() -> None:

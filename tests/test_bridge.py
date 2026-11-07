@@ -12,11 +12,13 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import bridge as bridge_module
+from meshcore_home_gateway import outbox as outbox_module
 from meshcore_home_gateway.config import ProfileConfig, parse_config
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.ports import ContactRequest, RadioEvent, Transport
+from meshcore_home_gateway.protocol.codec import expected_ack
 from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.profile import RadioProfile
@@ -43,7 +45,7 @@ from tests.bridge_harness import (
     scenario,
     until,
 )
-from tests.radio_emulator import EmulatedContact, EmulatedRadio, TcpRadioServer
+from tests.radio_emulator import SELF_KEY, EmulatedContact, EmulatedRadio, TcpRadioServer
 
 
 @pytest.mark.parametrize(("transport", "warned"), [("tcp", True), ("serial", False)])
@@ -359,13 +361,43 @@ def test_the_radio_is_restarted_for_its_clock_at_most_once_a_day(
     assert radio.reboots == 1
 
 
+def test_the_radio_is_not_restarted_for_its_clock_while_a_message_is_delivered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2.0.0rc3: a restart drops what the radio holds, the acknowledgement a delivery waits for
+    included. A radio clock that runs ahead while a message waits for it is set back only once
+    the delivery ended."""
+    monkeypatch.setattr(bridge_module, "RESTART_WAIT_S", 0.02)
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.02)  # the clock read often
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 30.0)  # waits until acknowledged
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _n):
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected")
+            bus.send("alice", "door open")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            radio.clock = int(NOW) + 300  # ahead now, with the acknowledgement still to come
+            reads = radio.commands().count(Command.GET_DEVICE_TIME)
+            await until(lambda: radio.commands().count(Command.GET_DEVICE_TIME) >= reads + 5)
+            assert radio.reboots == 0
+            assert bridge.radio.session is not None
+            assert bridge.radio.session.clock_offset_s == 300
+            radio.acknowledge(expected_ack(int(NOW), 0, "door open", SELF_KEY))
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            await until(lambda: radio.reboots == 1)
+
+    scenario(main)
+
+
 def test_a_tcp_link_the_radio_closed_while_running_was_taken_over(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """SEC-003: the radio serves one TCP client and closes the gateway's link when another one
     connects, while its uptime goes on. The gateway takes the link back, warns, and the state
-    says so for an hour. A radio that restarted closed the link too, but its uptime began anew;
-    a link that broke otherwise (unplugged, the network) was not taken."""
+    says so for an hour. A radio that restarted after it closed the link was taken too: the
+    other client may have restarted it (#88). A link that broke otherwise (unplugged, the
+    network) was not taken."""
     caplog.set_level(logging.WARNING)
     radio = EmulatedRadio(contacts=[ALICE])
 
@@ -386,9 +418,11 @@ def test_a_tcp_link_the_radio_closed_while_running_was_taken_over(
             assert "another client connected to it" in caplog.text
 
             caplog.clear()
-            radio.uptime_s = 5  # restarted: no takeover, the earlier one counts for the hour
+            radio.uptime_s = 5  # restarted since it closed the link
             assert (await reconnect(bus, radio.close_link))["radio_link_contested"] is True
-            assert "another client" not in caplog.text
+            assert "radio: the radio closed the TCP connection, then restarted" in caplog.text
+            assert "another client connected to it" in caplog.text
+            assert "kept running" not in caplog.text
 
     scenario(main)
 

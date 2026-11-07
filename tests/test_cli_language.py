@@ -31,6 +31,7 @@ from meshcore_home_gateway.catalog import read_po
 from meshcore_home_gateway.cli import EX_CONFIG, EX_OK, EX_USAGE, main
 from meshcore_home_gateway.cli import broker as cli_broker
 from meshcore_home_gateway.cli import common as cli_common
+from meshcore_home_gateway.cli import doctor as cli_doctor
 from meshcore_home_gateway.cli import probe as cli_probe
 from meshcore_home_gateway.config import (
     ConfigError,
@@ -51,6 +52,7 @@ from meshcore_home_gateway.protocol.links import LinkError, contact_link, parse_
 from meshcore_home_gateway.texts import Text, TextError
 from meshcore_home_gateway.views import HistoryEntry
 from tests.i18n_helpers import hostile, percents, pseudo, speaking, wide, widened
+from tests.test_cli_ops import LISTS, UPGRADE, apt_config
 from tests.test_links import card
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -504,6 +506,7 @@ NODE = "d4" * 32
 NODE_LABEL = f"{NODE[:12]}…{NODE[-8:]}"
 NODE_TWIN = NODE[:12] + "00" * 22 + NODE[-8:]  # the label's digits too
 TOPICS = Topics("meshcore", "radio1")
+HOMIE = "homie/meshcore-radio1"
 SHIPPED = [code for code in i18n.LANGUAGES if code != "en"]
 SUMMARIES = {  # between them, every kind of line of check-config's summary
     "tcp": (
@@ -530,7 +533,10 @@ VALUES = (
     "/dev/ttyACM0",
     "gateway",
     "meshcore/radio1/delivery",
+    "meshcore/radio1/state",
     "meshcore/radio1",
+    "homie/meshcore-radio1",
+    "ready",
     "homeassistant",
     "English",
     "alerts",
@@ -543,6 +549,8 @@ VALUES = (
     "the client is not connected",
     "the radio went away",
     "No such file or directory",
+    "APT::Periodic::Update-Package-Lists",
+    "APT::Periodic::Unattended-Upgrade",
     "Not a directory",
     "File exists",
     "no-such-group",
@@ -690,11 +698,14 @@ class _Client:
     unreachable: bool = False  # no broker at the address
     silent: bool = False  # the broker never answers
     subscription: str | None = ""  # granted (""), refused for this reason, or never answered
+    unsubscription: bool = True  # the broker confirms the end of a subscription
     documents: dict[str, Any] = dataclasses.field(default_factory=dict)  # retained, by topic
+    kept: dict[str, Any] = dataclasses.field(default_factory=dict)  # retained, cannot be cleared
     sending: str | None = ""  # confirmed (""), failed with this error, or never confirmed
     answer: Answer | None = None  # the messages a request brings
     on_connect: Any = None
     on_subscribe: Any = None
+    on_unsubscribe: Any = None
     on_message: Any = None
 
     def connect(self, _host: str, _port: int, _keepalive: int) -> None:
@@ -712,6 +723,13 @@ class _Client:
         for name in names:
             if name in self.documents:
                 self._deliver(name, self.documents[name], retain=True)
+            for kept, body in self.kept.items():
+                if name.endswith("/#") and kept.startswith(name[:-1]):
+                    self._deliver(kept, body, retain=True)
+
+    def unsubscribe(self, _topic: str) -> None:
+        if self.unsubscription:
+            self.on_unsubscribe(self, None, 1, [], None)
 
     def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> Any:
         for name, body in self.answer(topic, payload) if self.answer else []:
@@ -746,6 +764,7 @@ def _broker(monkeypatch: pytest.MonkeyPatch, **behaviour: Any) -> None:
         (cli_broker, "CONNECT_TIMEOUT_S"),
         (cli_broker, "SUBSCRIBE_TIMEOUT_S"),
         (cli_broker, "RETAINED_WAIT_S"),
+        (cli_broker, "RETAINED_QUIET_S"),
     ):
         monkeypatch.setattr(module, name, 0.01)
 
@@ -1080,12 +1099,21 @@ def _operations(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
         ({}, ["retire", "--yes", "--state-dir", state_dir]),
         ({"sending": "the client is not connected"}, ["retire", "--yes", "--state-dir", state_dir]),
         ({"unreachable": True}, ["retire"]),
+        ({"unsubscription": False}, ["retire"]),
+        ({"kept": {TOPICS.state: {}}}, ["retire", "--yes", "--state-dir", state_dir]),
+        ({"kept": {f"{HOMIE}/$state": "ready"}}, ["retire", "--yes", "--state-dir", state_dir]),
     ]
     printed = []
     for behaviour, command in runs:
         _broker(monkeypatch, **behaviour)
         ran = _main([command[0], "--config", config, *command[1:]])
         printed += [ran.out, ran.err]
+    # unattended-upgrades installed: apt-config fails, has neither setting, one off, both on
+    monkeypatch.setattr(cli_doctor, "UPGRADER", tmp)
+    for settings in (None, {}, {LISTS: "1", UPGRADE: "0"}, {LISTS: "1", UPGRADE: "1"}):
+        monkeypatch.setattr(cli_doctor, "APT_CONFIG", apt_config(tmp, settings))
+        _broker(monkeypatch, unreachable=True)
+        printed.append(_main(["doctor", "--config", config, "--state-dir", state_dir]).out)
     archive = str(tmp / "backup.tgz")
     for _ in range(2):  # the second finds the archive of the first
         ran = _main(["backup", archive, "--config", config, "--state-dir", state_dir])
@@ -1268,7 +1296,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
     with cli_common._speaking(translator):
         parser = cli._parser()
         helps = [command.format_help() for command in _parsers(parser)]
-    assert len(helps) == 24  # the program, its commands and theirs
+    assert len(helps) == 25  # the program, its commands and theirs
     if language == "xx":
         assert all(text.startswith("‹usage: ›") for text in helps)
     if language in {"hostile", "percents"}:  # argparse formats them: English

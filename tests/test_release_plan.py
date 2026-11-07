@@ -854,38 +854,44 @@ def test_a_shallow_clone_is_told_to_fetch_the_history(tmp_path: Path) -> None:
     assert _checked(shallow, origin.env).stdout.endswith(f"{COMPATIBLE}\n")
 
 
-UNTAGGED = (  # the release in the changelog has no tag here
-    "CHANGELOG.md has 1.0.0, but there is no tag v1.0.0 here: if 1.0.0 was merged just now, CI on"
-    " main tags it once its jobs pass (a re-run of failed jobs tags it), then run again; otherwise"
-    " fetch the tags of the main repository"
+WRITTEN = "@1800000000 +0000"  # the commit time of the version commit of 1.0.0
+UNTAGGED = (  # the release in the changelog has no tag here (#107)
+    "CHANGELOG.md has 1.0.0, but there is no tag v1.0.0 here: if 1.0.0 was merged lately,"
+    " release-due.yml tags it a day after its version commit, from 2027-01-16 08:00 UTC on, once"
+    " CI on main passed on it; run again then. Otherwise fetch the tags of the main repository"
 )
 
 
 def test_a_clone_without_the_tag_of_the_last_release_is_told_to_fetch_it(repo: Repo) -> None:
     """A fork synced with the main repository has its commits but not its tags: compared with
     an older release, or with none, a removal would pass."""
+    repo.env["GIT_COMMITTER_DATE"] = WRITTEN
     base = after_1_0_0(repo)
     repo.git("tag", "-d", "v1.0.0")
     repo.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(NEW))
     with pytest.raises(plan.PlanError, match=re.escape(UNTAGGED)):
         plan.check(base)
     fix = "## [Unreleased]\n\n" + section("1.0.1rc1", "x.", kind="Fixed") + OUT
+    repo.env["GIT_COMMITTER_DATE"] = "@1800007200 +0000"  # the day counts from 1.0.0's commit
     repo.commit("1.0.1rc1", fix, interface=snapshot(OLD))
     with pytest.raises(plan.PlanError, match=re.escape(UNTAGGED)):
         plan.check(base)
 
 
 def test_a_release_merged_but_not_tagged_yet_is_waited_for(repo: Repo) -> None:
-    """CI on main tags 1.0.0 once every job of its merge passed: a pull request on top of that
-    main, or a further push to it, runs in between and is told to run again then."""
+    """release-due.yml tags 1.0.0 a day after its version commit, once CI on main passed on it
+    (CI on main tags only pre-releases): a pull request on top of that main, or a further push
+    to it, runs in between and is told when to run again (#107)."""
     released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = WRITTEN
     merged = repo.commit("1.0.0", "## [Unreleased]\n\n" + OUT)  # main, not tagged yet
+    repo.env["GIT_COMMITTER_DATE"] = "@1800003600 +0000"
     repo.git("checkout", "-q", "-b", "fix")
     repo.commit("1.0.0", unreleased("Fixed", "A fix."))
     with pytest.raises(plan.PlanError) as refused:
         plan.check(merged)
     assert str(refused.value) == UNTAGGED
-    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", merged)  # CI on main tagged it
+    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", merged)  # release-due.yml tagged it
     assert plan.check(merged) == f"no release: __version__ stays 1.0.0\n{COMPATIBLE}"
 
 

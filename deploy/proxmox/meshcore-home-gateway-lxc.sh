@@ -564,7 +564,10 @@ self_test() {  # self_test CTID: the running gateway's own check (doctor), retri
   done
   if (( status == 0 )); then
     SELF_TEST=passed
-    log "self-test passed (meshcore-home-gateway doctor in container $ctid)"
+    # its warnings too, which doctor passes with: an ignored code secret (#80), a broker without
+    # login. doctor words them in the dialogs' language, so the whole report
+    log "self-test passed (meshcore-home-gateway doctor in container $ctid):"
+    printf '%s\n' "$report" >&2 || true
   else
     SELF_TEST=problems
     log "warning: the self-test found problems (meshcore-home-gateway doctor in container $ctid):"

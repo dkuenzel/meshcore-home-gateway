@@ -370,7 +370,8 @@ A release is checked in three places, none of them a procedure by hand
    passes, for about a minute while the radio connects. It checks the configuration, the broker
    login, the radio connected as the gateway reports it, its clock and firmware, the gateway's
    health and the container ([deployment.md](deployment.md#install)). The final message says
-   `Self-test: passed`, or shows the problems; nothing is undone.
+   `Self-test: passed`, or shows the problems; the report stands above it, with the warnings a
+   passed self-test has. Nothing is undone.
 3. **The maintainer's use of the release candidate**: he updates his installation with the
    candidate's installer and uses Home Assistant as every day.
 
@@ -493,7 +494,7 @@ Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, s
 | 55 | Set `[commands] codes_file`, run `meshcore-home-gateway commands enrol <B's key>`, scan `qrencode -t ansiutf8 '<line>'` with the app, restart the service. B sends `status <code>`, the same text anew within 30 s, then `status` | a `command` event `status` with empty `args`; then `received` shows `code_reused`, then `code_missing` |
 | 56 | Set `[commands] reply = "all"` and `prefix = "Home: "` on a channel target; restart. B sends `status <code>`, then `status`; publish `Gate open` to the channel target | B's app shows `ok: status`, then `rejected: code_missing`, each confirmed in `delivery` with B's key as `target`; the channel shows `Home: Gate open` |
 | 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart, switch its *Telemetry* on | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
-| 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
+| 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with the node *Gateway* and a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
 
 ### Where each step is checked
 

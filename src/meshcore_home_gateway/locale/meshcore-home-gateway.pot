@@ -197,6 +197,12 @@ msgstr ""
 msgid "remove a contact from the radio"
 msgstr ""
 
+#. security text (docs/translations.md): only for a key that is no sender
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "remove the code secret of a key that is no longer in [commands] senders from the codes file"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "run the bridge (the systemd service does this)"
@@ -235,6 +241,11 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "the archive; it must not exist yet"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "the former sender's full public key"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
@@ -345,6 +356,10 @@ msgid "broker did not answer"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/broker.py
+msgid "broker did not confirm the end of the subscription"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/broker.py
 msgid "broker did not confirm the request"
 msgstr ""
 
@@ -375,6 +390,17 @@ msgid "request not sent: {detail}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/codes.py
+msgid "[commands] codes_file is not set: no secret to revoke"
+msgstr ""
+
+#. security text (docs/translations.md): sender is a full public key;
+#. command is the command line that gives it a code secret
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "after the restart, {sender} commands without a code: it has no code secret, and no secret is ignored any more; '{command}' gives it one"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/codes.py
 msgid "set [commands] codes_file first, such as /etc/meshcore-home-gateway/command-codes (docs/configuration.md)"
 msgstr ""
 
@@ -382,6 +408,30 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/codes.py
 #, python-brace-format
 msgid "the code secret of {key} is in {path}: restart the service to use it (systemctl restart meshcore-home-gateway). Add the line above to the sender's authenticator app (as a QR code: qrencode -t ansiutf8 'LINE'), or type in {secret}. Commands from this sender then end with the app's 6-digit code; its earlier secret no longer works."
+msgstr ""
+
+#. the service reads the codes file only when it starts; while it ignores a
+#. secret, it refuses the commands of senders without one (#80)
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "the code secret of {key} is removed from {path}. The service reads the file at its start: restart it to apply this (systemctl restart meshcore-home-gateway)."
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/codes.py src/meshcore_home_gateway/cli/config_cmd.py
+#, python-brace-format
+msgid "warning: {detail}"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "{key} has no code secret in {path}"
+msgstr ""
+
+#. security text (docs/translations.md): a sender without its secret would
+#. command without a code; command is the command line that gives it a new secret
+#: src/meshcore_home_gateway/cli/codes.py
+#, python-brace-format
+msgid "{key} is in [commands] senders: without its secret it would command without a code. Remove it from the senders first, or give it a new secret: {command}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/codes.py
@@ -533,6 +583,12 @@ msgstr ""
 msgid "the broker accepts clients without a user name: unless its ACL keeps them off the gateway's topics, any client that reaches it can read messages and positions and publish command events (docs/mqtt-api.md, Securing the broker)"
 msgstr ""
 
+#. "protocol" and "[mqtt]" are the setting and its section, not translated
+#: src/meshcore_home_gateway/cli/config_cmd.py
+#, python-brace-format
+msgid "the broker does not speak MQTT {protocol}; set protocol in [mqtt] to the version it speaks ({guide})"
+msgstr ""
+
 #. security text (docs/translations.md)
 #: src/meshcore_home_gateway/cli/config_cmd.py
 #, python-brace-format
@@ -543,11 +599,6 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/config_cmd.py
 #, python-brace-format
 msgid "user {user!r} without a password"
-msgstr ""
-
-#: src/meshcore_home_gateway/cli/config_cmd.py
-#, python-brace-format
-msgid "warning: {detail}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/config_cmd.py
@@ -732,9 +783,34 @@ msgstr ""
 msgid "another client took the radio's TCP link in the last hour"
 msgstr ""
 
+#. {setting} is the name of an apt setting, such as
+#. APT::Periodic::Unattended-Upgrade
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "automatic updates are off: apt has no {setting}, which counts as 0: security updates wait for someone to install them (docs/deployment.md)"
+msgstr ""
+
+#. {setting} is the name of an apt setting, {value} its value
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "automatic updates are off: apt has {setting} \"{value}\": security updates wait for someone to install them (docs/deployment.md)"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/doctor.py
 #, python-brace-format
 msgid "broker {host}:{port}: logged in"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "cannot read apt's settings for automatic updates ({error}): apt-config dump APT::Periodic shows them"
+msgstr ""
+
+#. why apt-config gave no answer, shown in brackets in a line of doctor;
+#. {status} is the number it exited with
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "exit status {status}"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/doctor.py
@@ -1068,10 +1144,31 @@ msgid_plural "Home Assistant: {count} devices to remove"
 msgstr[0] ""
 msgstr[1] ""
 
+#. {root} is the Homie device's topic; {state} its state, such as ready
+#: src/meshcore_home_gateway/cli/retire.py
+#, python-brace-format
+msgid "broker: Homie device {root} not cleared: a gateway is connected to it (state {state})"
+msgstr ""
+
+#. {root} is the Homie device's topic, such as homie/meshcore-radio1
+#: src/meshcore_home_gateway/cli/retire.py
+#, python-brace-format
+msgid "broker: {count} retained Homie message to clear under {root}/"
+msgid_plural "broker: {count} retained Homie messages to clear under {root}/"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/meshcore_home_gateway/cli/retire.py
 #, python-brace-format
 msgid "broker: {count} retained document to clear under {root}/"
 msgid_plural "broker: {count} retained documents to clear under {root}/"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/meshcore_home_gateway/cli/retire.py
+#, python-brace-format
+msgid "broker: {count} retained message left after clearing, such as {topic}"
+msgid_plural "broker: {count} retained messages left after clearing, such as {topic}"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -1464,11 +1561,6 @@ msgstr ""
 msgid "{key}: {path}: {detail}"
 msgstr ""
 
-#: src/meshcore_home_gateway/config.py
-#, python-brace-format
-msgid "{key}: {sender} has a code secret but is not in commands.senders"
-msgstr ""
-
 #. security text (docs/translations.md); insecure = true is a setting
 #: src/meshcore_home_gateway/config_checks.py
 msgid "MQTT without TLS: the password, the messages, the positions and the command events cross the network in the clear (insecure = true accepts it)"
@@ -1481,6 +1573,20 @@ msgstr ""
 
 #: src/meshcore_home_gateway/config_checks.py
 msgid "command sender"
+msgstr ""
+
+#. key is a full public key; command is the command line that removes it
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "commands.codes_file: {key} has a code secret but is not in commands.senders: the secret is ignored; '{command}' removes it"
+msgstr ""
+
+#. security text (docs/translations.md): sender is a full public key;
+#. command is the command line that gives it a code secret; code_missing, commands
+#. revoke, enrol and revoke stay as they are
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "commands.senders: {sender} has no code secret while one is ignored: its commands are refused (code_missing) until '{command}' gives it one. Once no secret is ignored (commands revoke), it commands without a code: enrol a key corrected by hand first. Restart the service after enrol or revoke"
 msgstr ""
 
 #: src/meshcore_home_gateway/config_checks.py

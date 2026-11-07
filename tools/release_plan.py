@@ -234,25 +234,46 @@ def tool(name: str) -> ModuleType:
 
 
 def last_release(
-    changelog: str, known: Collection[Version], releasing: Version | None = None
+    changelog: str,
+    known: Collection[Version],
+    releasing: Version | None = None,
+    rev: str = "HEAD",
 ) -> Version | None:
     """The newest release among the tags `known`. Refuses a clone without tags whose changelog
     has releases, which would take every version for the first, and one without the tag of the
     newest release that the changelog dates, but for the one the revision `releasing` writes:
-    CI on main has not tagged it yet, or a fork lacks the tags (syncing copies none)."""
+    release-due.yml has not tagged it yet (it waits a day after the version commit of `rev`'s
+    history), or a fork lacks the tags (syncing copies none)."""
     if not known and len(_DATED.findall(changelog)) > 1:
         msg = "no release tags v* here, though the changelog has releases: git fetch --tags"
         raise PlanError(msg)
     dated = [Version.parse(name) for name in _DATED.findall(changelog) if _FORM.fullmatch(name)]
     newest = max((v for v in dated if v.final and v != releasing), default=None)
     if known and newest is not None and newest not in known:
+        wrote = version_commit(newest, rev)
+        due = "" if wrote is None else f", from {_utc(wrote[1] + COOLDOWN_S)} on"
         msg = (
             f"{CHANGELOG} has {newest}, but there is no tag v{newest} here: if {newest} was merged"
-            " just now, CI on main tags it once its jobs pass (a re-run of failed jobs tags it),"
-            " then run again; otherwise fetch the tags of the main repository"
+            f" lately, release-due.yml tags it a day after its version commit{due}, once CI on"
+            " main passed on it; run again then. Otherwise fetch the tags of the main repository"
         )
         raise PlanError(msg)
     return max((v for v in known if v.final), default=None)
+
+
+def version_commit(version: Version, rev: str) -> tuple[str, int] | None:
+    """The commit of `rev`'s history that wrote `version` into __version__, and its commit time,
+    as release-due.yml counts the day from (`due`); None if the history lacks it."""
+    log = git("log", "--format=%H %ct", "-G^__version__ = ", rev, "--", VERSION_FILE)
+    for line in log.splitlines():
+        sha, committed = line.split()
+        if version_text(sha) == str(version):
+            return sha, int(committed)
+    return None
+
+
+def _utc(seconds: float) -> str:
+    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(seconds))
 
 
 def has(rev: str, path: str) -> bool:
@@ -305,7 +326,7 @@ def interface(rev: str, releasing: Version | None = None) -> str:
     takes. `releasing`: the version `rev` writes, whose tag does not exist yet."""
     changelog = git("show", f"{rev}:{CHANGELOG}")
     known = tags()
-    last = last_release(changelog, known, releasing)
+    last = last_release(changelog, known, releasing, rev)
     if last is None:
         return "public interface: no release yet to compare with"
     if git_fails("merge-base", "--is-ancestor", f"v{last}", rev):  # its additions: no removals
@@ -399,7 +420,7 @@ def validate(written: Version, rev: str) -> None:
         msg = f"{CHANGELOG}: an empty [Unreleased], then the section of {written}"
         raise PlanError(msg)
     known = tags()
-    last_final = last_release(changelog, known, written)
+    last_final = last_release(changelog, known, written, rev)
     base = next_base(last_final, kind(changelog, last_final) if last_final else None)
     if written.base != base:
         msg = f"{written}: the next release is {base} (or a pre-release of it)"
