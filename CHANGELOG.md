@@ -127,6 +127,12 @@ format, the command line and Home Assistant discovery are public interfaces
   `mesh_`, where `contact_entity_prefix` chooses the start
   ([home-assistant.md](docs/home-assistant.md#contacts)); and the design's note on the
   dashboard's template named neither `@contact@`, `["@controls@"]` nor its second conditional.
+- The triage log of the review of 2026-11 states where the work is: its state was that of
+  2026-11-04, with pull requests up to #64, and its 162 fixed items counted six that defer a
+  part. It now lists the 10 deferred items, the 6 deferred parts and the 3 drafts for MeshCore
+  not sent, each with the condition that brings it back, to get an issue of its own
+  ([triage log](docs/audit/2026-11-security-architecture-review/13-triage-log.md#deferred-to-be-tracked),
+  #104).
 
 ### Security
 

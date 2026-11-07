@@ -296,3 +296,47 @@ def test_the_design_names_every_placeholder_of_the_dashboard_template() -> None:
         assert f"`{placeholder}`" in bullet, placeholder
     for flag in flags | {"trackers"}:
         assert f"`# @if {flag}`" in bullet, flag
+
+
+# --- the triage log of the review (#104) ------------------------------------------------------
+
+TRIAGE = ROOT / "docs" / "audit" / "2026-11-security-architecture-review" / "13-triage-log.md"
+
+
+def test_the_triage_log_counts_its_rows_and_lists_what_waits() -> None:
+    """#104: the log's state said "2026-11-04 … #37 to #64" while its rows cite pull requests up
+    to #72 and decisions of 2026-11-05 and 06, and its "162 fixed" counted six rows that defer a
+    part. Its state comes from its rows, and every deferred item, deferred part and unsent draft
+    for MeshCore is listed to get an issue of its own."""
+    text = TRIAGE.read_text(encoding="utf-8")
+    kinds = ("fix", "accept", "reject", "defer", "split")
+    rows = [
+        row
+        for row in (line.split(" | ") for line in text.splitlines() if line.startswith("| "))
+        if re.fullmatch(r"\| [A-Z]+-\d+", row[0]) and len(row) > 1 and row[1] in kinds
+    ]
+    decisions = [row[1] for row in rows]
+    state = _words(text.partition("**State on ")[2].partition("\n\n")[0])
+    assert state.startswith(max(re.findall(r"2026-\d\d-\d\d", text)))
+    assert f"All {len(rows)} items have a decision" in state
+    for word, decision in (
+        ("fixed", "fix"),
+        ("accepted", "accept"),
+        ("deferred", "defer"),
+        ("rejected", "reject"),
+    ):
+        assert f"{decisions.count(decision)} {word}" in state, word
+    cited = sorted({int(n) for row in rows for n in re.findall(r"/pull/(\d+)\)", " ".join(row))})
+    assert f"(#{cited[0]} to #{cited[-1]})" in state
+    partly = {
+        row[0].strip("| ")
+        for row in rows
+        if row[1] == "fix" and re.search(r"deferred|upstream", row[2])
+    }
+    assert f"{len(partly)} of them with a part deferred" in state
+    waiting = text.partition("\n## Deferred, to be tracked\n")[2].partition("\n## ")[0]
+    listed = set(re.findall(r"^\| ([A-Z]+-\d+)\b", waiting, flags=re.MULTILINE))
+    assert {row[0].strip("| ") for row in rows if row[1] == "defer"} | partly == listed
+    upstream = (ROOT / "docs" / "upstream" / "README.md").read_text(encoding="utf-8")
+    for draft in re.findall(r"^\| \[[^\]]+\]\(([\w-]+\.md)\)", upstream, flags=re.MULTILINE):
+        assert f"(../../upstream/{draft})" in waiting, draft
