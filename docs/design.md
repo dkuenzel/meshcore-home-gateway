@@ -613,6 +613,7 @@ the file.
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
 | `meshcore-home-gateway contacts link` | Print the gateway's contact link (for a QR code). |
 | `meshcore-home-gateway commands enrol KEY` | Give a command sender (a full key of `[commands] senders`) a new code secret in `[commands] codes_file` (160 random bits; the file keeps its mode and group, a new one gets 0640 and the configuration's group) and print it as an `otpauth://` line for an authenticator app on standard output; standard error says the secret to type in and to restart the service. Exit 1 without `codes_file`, for a key that is not a sender or a file it cannot read or write, 2 for text that is no full key. |
+| `meshcore-home-gateway commands revoke KEY` | Remove the code secret of a key that is no longer in `[commands] senders` from `[commands] codes_file`; the file keeps its mode and group, and stays when it holds no secret any more. Standard error says to restart the service and, when no secret is ignored any more, names each sender without a secret: it then commands without a code. Exit 1 without `codes_file`, for a key that is still a sender (without its secret it would command without a code), a key without a secret, or a file it cannot read or write; 2 for text that is no full key. |
 | `meshcore-home-gateway contacts telemetry [--wait S] [--forget] CONTACT {on,off}` | Ask a companion for telemetry again (`on`) or exclude it (`off`; a full key also before it is on the radio, `KEY12…KEY8` from the index); `--forget` with `off` also deletes its readings and positions from telemetry from the history. Exit 0 on `excluded` or `included` without a reason, 1 on `refused`, `failed`, any reason, no result in time or the gateway offline, 2 on a usage error. |
 | `meshcore-home-gateway dashboard [--state-dir DIR]` | Print a Home Assistant dashboard for this gateway as YAML, its texts in `[homeassistant] language`; the map lists the contacts with a position in the service's state (read only, default `$STATE_DIRECTORY` or `/var/lib/meshcore-home-gateway`), and standard error says how many. Exit 1 when `[homeassistant] discovery` is off. |
 | `meshcore-home-gateway status [--json]` | What the running gateway reports of itself, from its retained documents: availability, radio, battery, the radio's clock, a contested TCP link, airtime, queue, telemetry, the health section and the contacts; `--json` gives `availability`, `state` and `contacts` as published. Exit 0 while the gateway is online and its health section is not degraded, 1 otherwise and when the broker cannot be reached. |
@@ -770,7 +771,7 @@ boundaries and what stands in the way of each; this section is its summary.
 | A forged advert in the packet log (the radio logs every packet before it checks the signature) | A log counts only for an advert the radio pushed and whose timestamp the next table read shows as `last_advert`. While the receive delay is 0, the log that is the frame directly before the push decides, and a forged copy is never there; otherwise all logs of the key with that time must agree, and differing copies decide nothing. A flagged log must hold the position the record took. A forged position is never shown: positions come from the record. |
 | A flood of adverts with invented keys (a new key costs microseconds; any board in range) | Memory, documents and history stay bounded: 50 heard nodes, of which those heard again stay longest; the `nodes` document at most every 30 seconds while only heard nodes change; `node` events at most one every 5 seconds on average; the history keeps only the nodes the gateway keeps. A stranger's advert reads no contact table (firmware 1.12 and newer). The airtime the flood takes is the mesh's problem, not the gateway's (§8). |
 | A flood of messages from a contact, or on a channel (anyone who knows its key: the *Public* channel's is in the firmware) | What messages produce is rate-limited per sender and per channel: beyond a burst of 10 direct messages one every 2 s, beyond a burst of 20 channel messages one a second, are published and kept in the history; the others are judged as commands (an accepted command always goes out) and counted in the log, at most once a minute. The radio acknowledges each direct message of a contact before the bridge sees it (§7.4). Keep the contact table to the household; `ignore_channels` keeps a busy channel out. |
-| A forged acknowledgement: anyone in range who knows or guesses a direct message's text (an alarm's is fixed) computes its code and sends it in the clear; the delivery reads `confirmed` and the retries stop | The firmware's weakness, which only an acknowledgement authenticated with the pair's secret would close (§7.4). `[messages] confirm_nonce` ends direct messages with 8 random hex digits, so the code is as hard to guess as itself; a `confirmed` event is `suspect`, and the log warns, when its round trip is shorter than the stored path through repeaters allows (`core.airtime.shortest_acknowledgement_s`); `send --wait` exits 1 on it. The documentation says what `confirmed` proves and recommends an answer from the recipient for alerts ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). |
+| A forged acknowledgement: anyone in range who knows or guesses a direct message's text (an alarm's is fixed) computes its code and sends it in the clear; the delivery reads `confirmed` and the retries stop | The firmware's weakness, which only an acknowledgement authenticated with the pair's secret would close (§7.4). `[messages] confirm_nonce` ends direct messages with 8 random hex digits, so the code is as hard to guess as itself; the digits reach the broker only in the final event and the history, so that a reader of the topics with a board in range cannot use them while an acknowledgement counts; a `confirmed` event is `suspect`, and the log warns, when its round trip is shorter than the stored path through repeaters allows (`core.airtime.shortest_acknowledgement_s`); `send --wait` exits 1 on it. The documentation says what `confirmed` proves and recommends an answer from the recipient for alerts ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). |
 
 ### 7.3 Command authorisation in detail
 
@@ -826,11 +827,33 @@ the apps compute it. After the checks above, the last word must be the code of t
 clock's step or of the step before or after (`code_missing`, `code_invalid`), of a step newer
 than the sender's last accepted code (`code_reused`); `args` leaves it out. The step is stored
 with the timestamp, before the event goes out, so a code serves once, also across a restart.
+After 5 wrong codes of a sender within an hour (`code_missing` and `code_invalid`; not the
+`code_missing` of a sender without a secret while one is ignored, below), its commands
+are refused without a look at the code (`code_locked`, RFC 4226 section 7.3) until the first of
+them is an hour old, and the log warns each time the sender reaches the limit; their times are
+in the state file, so a restart does not end it (§7.4). A command that came late (it waited in
+the radio through a restart, an update or a re-plug, or in the mesh) ends with the sender's code
+of the time it was sent, which the bridge clock no longer accepts. It is refused as
+`code_invalid`, but it is no guess and is not counted: its code is the sender's for the step of
+its own timestamp, or the step before or after, and that step is older than those the bridge
+accepts. A guess that hits such a code gains nothing: the command is refused all the same, and
+the code of a past step serves no later command. A step ahead of the bridge's never counts as
+late, so the count tells a guesser no code it could use once its time came.
 The code shows that the sender's app made it in that time window, whatever frame carries it: it
 comes from the secret, which neither the radio, the link nor the mesh carries. It does not bind
 the text (§7.4). The secret is 160 random bits from
 `meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
-stops the service rather than let commands pass without codes.
+stops the service rather than let commands pass without codes. The secret of a key that is not
+in `senders` is ignored, with a warning at the start: removing a lost phone's sender ends its
+commands, and `commands revoke` removes its secret. A sender's key corrected by hand leaves its
+secret behind the same way, and the corrected key has none. So while a secret is ignored, the
+commands of each sender without one are refused (`code_missing`, not counted as a wrong code),
+and the warnings name it, until `commands revoke` removes the ignored secret or `commands enrol`
+gives the sender one, and the service restarts. 2.0 did not start then (exit 78); now the rest
+of the gateway keeps running, and the commands still fail closed. The revoke of the last ignored
+secret ends the refusal of every sender without one, a corrected key's too if it was not
+enrolled: so `commands revoke` names those senders, and the warnings say to enrol a corrected
+key first.
 
 **Answers** (EXT-009). With `[commands] reply`, the bridge answers the sender of a published
 command (`ok: <word>`) and, with `all`, of a command it refused after the sender checks passed
@@ -862,6 +885,15 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   A restart of the service ends that early; commands that waited in the radio meanwhile are
   rejected anyway (§7.3, step 2). Without its code secret a look-alike that got past those checks
   cannot command a sender who has one.
+* A code is one of a million, and three time steps pass, so a guess wins with at most 3 in a
+  million. Whoever has the bridge judge commands of an allowed sender without the secret (a host
+  posing as the radio over TCP, at link speed; a stolen handheld, one every few seconds over
+  the air) would otherwise find one within a minute, or in about two weeks. Held to 5 wrong
+  codes per sender an hour (§7.3), such a guesser wins with about 1 in 2,800 a day, and with
+  about 12 % in a year of guessing without a pause. The log warns each time the sender reaches
+  the limit again, up to 5 times an hour, and the `received` events show `code_locked`. The
+  same limit lets the guesser keep the sender's commands refused for as long as it guesses:
+  remove a sender whose codes someone guesses ([configuration.md](configuration.md#commands)).
 * A code binds neither the text nor its sender's radio, and it lives up to 90 seconds: whoever
   reads a code before the bridge accepted it (a host posing as the radio over TCP sees the text;
   so does a reader of the `received` event of a command rejected for another reason) can use it
@@ -891,13 +923,15 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 * `confirmed` proves that the acknowledgement's code arrived, which anyone who knows the text
   can compute (§7.2). Without `confirm_nonce` a stranger in range can confirm a fixed alert text
   nobody received; with it, the odds are those of guessing 32 bits within the acknowledgement
-  wait. `suspect` catches only a forger beside the gateway who answers at once over a path
-  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. Its
-  bound takes every hop at the radio's coding rate: a repeater or recipient at a faster one can
-  make a genuine acknowledgement of a long text read `suspect`, unless the radio uses the
-  fastest coding rate of its mesh (#90). The history keeps such a message as `confirmed`; the
-  event and the log tell. The fix belongs in the firmware: an acknowledgement authenticated with
-  the secret the two radios share, for the maintainer to raise with the MeshCore project.
+  wait, also for a reader of the broker, which sees the suffix only in the final event. A stop
+  keeps a message that waits with its suffix in the state file, where only the service and root
+  read it. `suspect` catches only a forger beside the gateway who answers at once over a path
+  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. Its bound
+  takes every hop at the radio's coding rate: a repeater or recipient at a faster one can make a
+  genuine acknowledgement of a long text read `suspect`, unless the radio uses the fastest coding
+  rate of its mesh (#90). The history keeps such a message as `confirmed`; the event and the log
+  tell. The fix belongs in the firmware: an acknowledgement authenticated with the secret the two
+  radios share, for the maintainer to raise with the MeshCore project.
 * A client that may write the gateway's topics can show Home Assistant a forged document until
   the gateway restores it: a round trip, up to 10 seconds if it keeps writing, and as long as it
   likes while the gateway is offline, as it can write `online` to `availability` too. Only the

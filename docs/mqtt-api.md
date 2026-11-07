@@ -131,8 +131,11 @@ the send topics gets no event for the excess, which the log counts (at most once
 | `duplicate` | same target and text within `dedup_window_s`, unless that message ended `failed` or `expired`: one that never arrived can be sent again at once | – |
 | `rejected` | not accepted | `unknown_target`, `unknown_contact`, `not_a_companion`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full`, `stopping` (the gateway stops and has kept its queue already) |
 
-`id` is a random identifier per request. In final events, `attempt` is the number of
-transmissions so far (0 if the message never left). Retries of a direct message keep the radio
+`id` is a random identifier per request. `text` is the text as it is sent, with the target's
+prefix and suffix; with `[messages] confirm_nonce` the events before the final one leave out the
+random suffix, which the final event carries ([below](#what-confirmed-proves)). A message a stop
+kept goes by whether it got the suffix, not by the setting of the next start. In final events,
+`attempt` is the number of transmissions so far (0 if the message never left). Retries of a direct message keep the radio
 timestamp, so a recipient that got the message but whose acknowledgement was lost may show it
 twice. An attempt that a radio disconnect interrupted after the radio had sent it is repeated as
 the identical packet: nodes that saw the first copy drop it, so it earns no acknowledgement, and
@@ -155,7 +158,12 @@ acknowledgement with the secret the two radios share; the gateway can narrow it:
   every direct message with ` #` and 8 random hex digits, the same on each attempt, which the
   recipient sees: 32 bits, as many as the code, so that guessing the text is no easier than
   guessing the code. Even sending nothing but guesses at the fastest LoRa settings during the
-  longest wait, four attempts of 60 s, a forger succeeds about once in 160,000 messages.
+  longest wait, four attempts of 60 s, a forger succeeds about once in 160,000 messages. The
+  suffix is the only secret of the code, so it stays off the broker until no acknowledgement
+  counts any more: `queued`, `sent` and `pending` show the text without it, the final event and
+  `history` with it. A reader of the gateway's topics with a board in range cannot compute the
+  code before then; whoever reads the gateway's state directory can, while a stop keeps the
+  message there.
 * **`suspect`** is `true` in a `confirmed` event whose round trip is shorter than a genuine
   acknowledgement takes over the path the radio stored: the message on every hop through the
   repeaters and the acknowledgement on one, at the radio's modulation, without preamble so that
@@ -253,9 +261,10 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `broker_unavailable` | the gateway knew the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the gateway clock; with `max_age_s = 0`, more than a day ahead |
-| `code_missing` | the sender has a code secret, and the last word is no 6-digit code |
-| `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, or the phone's clock or the host's off) |
+| `code_missing` | the sender has a code secret, and the last word is no 6-digit code; or the sender has none while the gateway ignores the code secret of a key that is no sender, which is no wrong code ([configuration.md](configuration.md#commands)) |
+| `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, the phone's clock or the host's off, or a command that came late: it waited in the radio or the mesh) |
 | `code_reused` | a code of 30 seconds whose code this sender already used, or of earlier ones: a code serves once |
+| `code_locked` | this sender sent 5 wrong codes within the last hour (`code_missing` or `code_invalid`, except the sender's code of the time it sent a command that came late, and the `code_missing` of the time it had no secret while the gateway ignored one): its commands are refused without a look at the code until the first of them is an hour old, also across a restart ([configuration.md](configuration.md#commands)) |
 
 An identical copy of a command's packet, also of a rejected one, is dropped as a repeat: it is
 the sender's retry after a lost acknowledgement or a replay, which cannot be told apart. To have
@@ -622,7 +631,7 @@ only within a topic). The whole document stays within 8 KiB: `total` counts ever
 {"total": 2, "truncated": false,
  "messages": [{"id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00", "target": "alice",
                "kind": "contact", "contact_key": "a1b2…", "channel_index": null,
-               "name": "Alice", "text": "Back soon #0f1e2d3c", "step": "sent", "attempt": 1,
+               "name": "Alice", "text": "Back soon", "step": "sent", "attempt": 1,
                "max_attempts": 3},
               {"id": "9f8e7d6c", "queued_at": "2026-10-18T09:01:10+00:00", "target": "family",
                "kind": "channel", "contact_key": null, "channel_index": 1, "name": "family",
@@ -636,7 +645,7 @@ only within a topic). The whole document stays within 8 KiB: `total` counts ever
 | `queued_at` | when the gateway accepted the request, also for a message kept across a stop; `null` for one that 2.0 kept |
 | `target` | the target it goes to; `null` for a message sent through `contacts/<key>/send`, whose key is `contact_key` |
 | `kind`, `contact_key`, `channel_index`, `name` | as in `history`: `name` is the contact's name, else the target's alias |
-| `text` | as it is sent, with the target's prefix and suffix and the code of `confirm_nonce` |
+| `text` | as it is sent, with the target's prefix and suffix, but without the random suffix of `confirm_nonce`: that one only the final delivery event and `history` show ([what `confirmed` proves](#what-confirmed-proves)) |
 | `step` | its latest delivery event: `queued` (not sent yet; again after a restart that kept it) or `sent` (an attempt went out; it waits for the acknowledgement or its next attempt, also while an alert goes first) |
 | `attempt`, `max_attempts` | the transmissions so far, and how many it may take: `max_attempts` for a direct message, 1 for a channel |
 

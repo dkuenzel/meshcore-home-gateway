@@ -232,8 +232,14 @@ def load_config(path: Path) -> Config:
         password = read_password(Path(config.mqtt.password_file))
         config = replace(config, mqtt=replace(config.mqtt, password=password))
     if config.commands.codes_file is not None:
-        secrets = read_code_secrets(Path(config.commands.codes_file), config.commands.senders)
-        config = replace(config, commands=replace(config.commands, secrets=secrets))
+        secrets = read_code_secrets(Path(config.commands.codes_file))
+        senders = config.commands.senders
+        commands = replace(
+            config.commands,
+            secrets=tuple((key, secret) for key, secret in secrets if key in senders),
+            ignored_secrets=tuple(key for key, _ in secrets if key not in senders),
+        )
+        config = replace(config, commands=commands)
     return config
 
 
@@ -259,11 +265,12 @@ def read_password(path: Path) -> str:
     return password
 
 
-def read_code_secrets(path: Path, senders: frozenset[str]) -> tuple[tuple[str, bytes], ...]:
-    """The code secrets of command senders (IMP-002): a TOML file of `<public key> = "<base32>"`
-    lines, as `commands enrol` writes it. A file that cannot be read is a configuration error,
-    also a missing one: commands would no longer need the codes. A systemd credential of the
-    file's name is read instead."""
+def read_code_secrets(path: Path) -> tuple[tuple[str, bytes], ...]:
+    """The code secrets of command senders (IMP-002), by key: a TOML file of `<public key> =
+    "<base32>"` lines, as `commands enrol` writes it. A file that cannot be read is a
+    configuration error, also a missing one: commands would no longer need the codes. A systemd
+    credential of the file's name is read instead. The secret of a key that is no sender (any
+    more) is the caller's to leave out (#80)."""
     key = "commands.codes_file"
     path = _credential(path)
     try:
@@ -277,12 +284,6 @@ def read_code_secrets(path: Path, senders: frozenset[str]) -> tuple[tuple[str, b
             public_key = normalise_key(sender)
         except TextError as exc:
             raise ConfigError("{key}: {detail}", key=key, detail=exc.text) from exc
-        if public_key not in senders:
-            raise ConfigError(
-                "{key}: {sender} has a code secret but is not in commands.senders",
-                key=key,
-                sender=public_key,
-            )
         secret = decode_secret(value) if isinstance(value, str) else None
         if secret is None or len(secret) < MIN_SECRET_BYTES:
             raise ConfigError(

@@ -13,7 +13,13 @@ from typing import Any
 import pytest
 
 from meshcore_home_gateway import inbox as inbox_module
-from meshcore_home_gateway.core.commands import CODE_STEP_S, code_at
+from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.core.commands import (
+    CODE_FAILURE_LIMIT,
+    CODE_FAILURE_WINDOW_S,
+    CODE_STEP_S,
+    code_at,
+)
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.state import CommandLedger, JsonStateFile
 from meshcore_home_gateway.wiring import gateway
@@ -508,6 +514,214 @@ def test_a_sender_with_a_code_secret_commands_only_with_a_fresh_code(tmp_path: P
     assert stored["command_code_steps"] == {sender: int(NOW // CODE_STEP_S)}
 
 
+def test_wrong_codes_lock_the_sender_out_for_a_while_also_across_a_restart(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#79, RFC 4226 section 7.3: each guess of a code wins with 3 in 10^6, and a host posing
+    as the radio feeds thousands a second. After CODE_FAILURE_LIMIT wrong codes within
+    CODE_FAILURE_WINDOW_S (a command without one counts too) the sender's commands are refused
+    from the cached table, the right code's too, and the log says so once; the count is in the
+    state file, so a restart does not end it."""
+    caplog.set_level(logging.WARNING)
+    secret = b"12345678901234567890"
+    config = make_config()
+    sender = ALICE.public_key.hex()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, secrets=((sender, secret),))
+    )
+    step = int(NOW // CODE_STEP_S)
+    good = {code_at(secret, step + d) for d in (-1, 0, 1)}
+    wrong = [c for c in (f"{n:06d}" for n in range(20)) if c not in good]
+    alice = ALICE.public_key[:6]
+    tries = CODE_FAILURE_LIMIT + 2
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE])
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            reads = radio.commands().count(Command.GET_CONTACTS)
+            for n in range(tries):
+                text = f"arm {wrong[n]}" if n % 2 else "arm now"
+                radio.queue_direct_message(alice, text, NOW - 100 + n)
+            right = f"arm {code_at(secret, step)}"
+            radio.queue_direct_message(alice, right, NOW - 50)
+            await bus.wait_for("/received", lambda r: r["text"] == right)
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            wrong_ones = ["code_missing", "code_invalid"] * CODE_FAILURE_LIMIT
+            assert reasons == wrong_ones[:CODE_FAILURE_LIMIT] + ["code_locked"] * 3
+            assert not bus.payloads("/command")
+            assert radio.commands().count(Command.GET_CONTACTS) == reads  # the cache's verdict
+        assert caplog.text.count("wrong command codes") == 1
+        restarted = EmulatedRadio(contacts=[ALICE])
+        async with running(config, restarted, tmp_path) as (_, bus, _notes):
+            restarted.queue_direct_message(alice, f"status {code_at(secret, step)}", NOW - 40)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "code_locked"
+        later = NOW + CODE_FAILURE_WINDOW_S
+        again = EmulatedRadio(contacts=[ALICE])
+        async with running(config, again, tmp_path, wall_clock=lambda: later) as (_, bus, _n):
+            right = code_at(secret, int(later // CODE_STEP_S))
+            again.queue_direct_message(alice, f"status {right}", int(later) - 5)
+            await bus.wait_for("/command", lambda c: c["event_type"] == "status")
+
+    scenario(main)
+
+
+def test_genuine_codes_that_came_late_do_not_lock_their_sender_out(tmp_path: Path) -> None:
+    """#79: commands that waited in the radio through a restart, an update or a re-plug end
+    with the code of the time they were sent, which the bridge clock no longer accepts
+    (code_invalid). They are no guesses: they are not counted, so the sender's next command,
+    sent with the current code, is accepted, not code_locked."""
+    secret = b"12345678901234567890"
+    config = make_config()
+    sender = ALICE.public_key.hex()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, secrets=((sender, secret),))
+    )
+    radio = EmulatedRadio(contacts=[ALICE])
+    alice = ALICE.public_key[:6]
+    for n in range(CODE_FAILURE_LIMIT):  # what the radio kept while the bridge was away
+        sent = NOW - 300 + CODE_STEP_S * n
+        code = code_at(secret, sent // CODE_STEP_S)
+        radio.queue_direct_message(alice, f"arm {code}", sent, push=False)
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for(
+                "/received", lambda r: len(bus.payloads("/received")) == CODE_FAILURE_LIMIT
+            )
+            right = f"arm {code_at(secret, int(NOW // CODE_STEP_S))}"
+            radio.queue_direct_message(alice, right, NOW - 2)
+            await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_invalid"] * CODE_FAILURE_LIMIT + [None]
+
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert not stored.get("command_code_failures")
+
+
+SECRET = b"12345678901234567890"
+FORMER = "d4" * 32  # a key with a secret in the codes file that is no sender (any more)
+
+
+def ignoring(enrolled: bool = False, revoked: bool = False) -> Config:
+    """Alice and Bob are senders and Alice has a code secret; the codes file also holds the
+    secret of FORMER, as after a sender's key was corrected by hand, unless revoked; with
+    `enrolled`, Bob has a secret too. As load_config reads the files at the start."""
+    base = make_config()
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    secrets = ((alice, SECRET), (bob, SECRET[::-1])) if enrolled else ((alice, SECRET),)
+    commands = dataclasses.replace(
+        base.commands,
+        senders=frozenset({alice, bob}),
+        secrets=secrets,
+        ignored_secrets=() if revoked else (FORMER,),
+    )
+    return dataclasses.replace(base, commands=commands)
+
+
+def test_while_a_code_secret_is_ignored_senders_without_one_cannot_command(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#80: a sender's key corrected by hand leaves its secret under the old key, ignored, and
+    the corrected key without one. 2.0 did not start then (exit 78). Now the gateway runs, and
+    while a secret is ignored the commands of a sender without one are refused as code_missing:
+    published on `received`, never as a command event. They are no wrong codes: no count, no
+    lockout warning. A sender with a secret commands with its code. The codes file is read at
+    the start: after `commands revoke` and a restart the sender without a secret commands."""
+    caplog.set_level(logging.WARNING)
+    alice, bob = ALICE.public_key.hex(), BOB.public_key.hex()
+    tries = CODE_FAILURE_LIMIT + 1
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(tries):
+                radio.queue_direct_message(BOB.public_key[:6], "arm now", NOW - 100 + n)
+            right = f"arm now {code_at(SECRET, int(NOW // CODE_STEP_S))}"
+            radio.queue_direct_message(ALICE.public_key[:6], right, NOW - 50)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["sender_key"], command["args"]) == (alice, "now")
+            refused = [(r["sender_key"], r["command"]) for r in bus.payloads("/received")]
+            assert refused == [
+                (bob, {"word": "arm", "accepted": False, "reason": "code_missing"})
+            ] * tries + [(alice, {"word": "arm", "accepted": True, "reason": None})]
+            assert len(bus.payloads("/command")) == 1
+        assert "wrong command codes" not in caplog.text
+        restarted = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(revoked=True), restarted, tmp_path) as (_, bus, _notes):
+            restarted.queue_direct_message(BOB.public_key[:6], "arm now", NOW - 40)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["sender_key"], command["args"]) == (bob, "now")
+
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert not stored.get("command_code_failures")
+
+
+def test_while_a_code_secret_is_ignored_wrong_codes_still_lock_a_sender_with_one(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#79 and #80: the refusals of a sender without a secret are no wrong codes, but those of
+    a sender with one are, while a secret is ignored as at any time. After CODE_FAILURE_LIMIT
+    of them its right code is refused (code_locked), the log warns of guessing and the state
+    file keeps the count."""
+    caplog.set_level(logging.WARNING)
+    step = int(NOW // CODE_STEP_S)
+    good = {code_at(SECRET, step + d) for d in (-1, 0, 1)}
+    wrong = [c for c in (f"{n:06d}" for n in range(20)) if c not in good]
+    alice = ALICE.public_key[:6]
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(CODE_FAILURE_LIMIT):
+                radio.queue_direct_message(alice, f"arm {wrong[n]}", NOW - 100 + n)
+            right = f"arm {code_at(SECRET, step)}"
+            radio.queue_direct_message(alice, right, NOW - 50)
+            await bus.wait_for("/received", lambda r: r["text"] == right)
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_invalid"] * CODE_FAILURE_LIMIT + ["code_locked"]
+            assert not bus.payloads("/command")
+        assert caplog.text.count("wrong command codes") == 1
+
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert list(stored["command_code_failures"]) == [ALICE.public_key.hex()]
+    assert len(stored["command_code_failures"][ALICE.public_key.hex()]) == CODE_FAILURE_LIMIT
+
+
+def test_a_sender_enrolled_while_a_secret_is_ignored_commands_with_its_code(
+    tmp_path: Path,
+) -> None:
+    """#80: `commands enrol` and a restart are the other way out: the sender then commands with
+    its code, though the old secret is still ignored. Its refusals before were no wrong codes,
+    so its codes are not locked (code_locked)."""
+    bob = BOB.public_key[:6]
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(CODE_FAILURE_LIMIT):
+                radio.queue_direct_message(bob, "arm", NOW - 100 + n)
+            await bus.wait_for(
+                "/received", lambda r: len(bus.payloads("/received")) == CODE_FAILURE_LIMIT
+            )
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_missing"] * CODE_FAILURE_LIMIT
+        restarted = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(ignoring(enrolled=True), restarted, tmp_path) as (_, bus, _notes):
+            right = code_at(SECRET[::-1], int(NOW // CODE_STEP_S))
+            restarted.queue_direct_message(bob, "arm now", NOW - 41)
+            restarted.queue_direct_message(bob, f"arm now {right}", NOW - 40)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["sender_key"], command["args"]) == (BOB.public_key.hex(), "now")
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_missing", None]
+
+    scenario(main)
+
+
 def test_commands_are_answered_when_asked(tmp_path: Path) -> None:
     """EXT-009: with `reply = "all"` the sender learns that its command was published, or why
     not, through the queue as any message; also when the same command comes again. A sender the
@@ -770,6 +984,34 @@ def test_a_flooding_sender_or_channel_is_not_published_beyond_its_rate(
             assert ": 1 direct, 0 channel" in caplog.text
             bridge.inbox._received.report(time.monotonic() + 120)
             assert ": 4 direct, 5 channel" in caplog.text
+
+    scenario(main)
+
+
+def test_an_accepted_command_goes_out_after_its_sender_used_up_the_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC-013: the rate of received messages bounds what a sender makes the gateway publish,
+    never an accepted command. Its timestamp is in the ledger before it goes out, so one left out
+    would be lost for good: the sender would only learn of it as a replay."""
+    monkeypatch.setattr(inbox_module, "RECEIVED_PER_SENDER_PER_S", 1e-6)  # no refill meanwhile
+    radio = EmulatedRadio(contacts=[ALICE])
+    burst = int(inbox_module.RECEIVED_PER_SENDER_BURST)
+    alice = ALICE.public_key[:6]
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            for n in range(burst + 3):
+                radio.queue_direct_message(alice, f"hello {n}", NOW - 100 + n)
+            radio.queue_direct_message(alice, "arm now", NOW - 50)  # the burst is used up
+            command = await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
+            assert command["args"] == "now"
+            received = bus.payloads("radio1/received")
+            assert [e["text"] for e in received] == [
+                *(f"hello {n}" for n in range(burst)),
+                "arm now",
+            ]
+            assert received[-1]["command"] == {"word": "arm", "accepted": True, "reason": None}
 
     scenario(main)
 

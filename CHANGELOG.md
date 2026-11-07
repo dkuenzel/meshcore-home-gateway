@@ -60,6 +60,10 @@ format, the command line and Home Assistant discovery are public interfaces
   downgrade to 2.0 the broker keeps the last `config`; an empty retained message clears it, such
   as `mosquitto_pub -r -n -t meshcore/radio1/config`
   ([mqtt-api.md](docs/mqtt-api.md#configuration-config)).
+- `meshcore-home-gateway commands revoke KEY` removes the code secret of a key that is no longer
+  in `[commands] senders` from the codes file. It refuses a key that is still a sender, which
+  would then command without a code; `enrol` gives such a sender a new secret
+  ([configuration.md](docs/configuration.md#commands)) (#80).
 
 ### Changed
 
@@ -75,6 +79,21 @@ format, the command line and Home Assistant discovery are public interfaces
 - The generated dashboard needs Home Assistant 2026.10 or newer: it shows cards by template
   conditions, which the frontend evaluates since 2026.10. The gateway and its entities keep
   2026.8 ([home-assistant.md](docs/home-assistant.md#requirements)).
+- A command sender with a code secret gets at most 5 wrong codes an hour; a command without a
+  code counts too, but not a command that came late (it waited in the radio or the mesh) with
+  the sender's code of the time it was sent. Then the gateway refuses its commands without a
+  look at the code, with the new reason `code_locked`, until the first of them is an hour old,
+  and its log warns each time the sender reaches the limit; the times are in `state.json`, so a
+  restart does not end it. Before, nothing counted wrong codes: a host posing as the radio over
+  TCP found a code within a minute, a stolen handheld over the air in about two weeks; now a
+  guesser wins with about 1 in 2,800 a day
+  ([design §7.4](docs/design.md#74-residual-risks)) (#79).
+- With `[messages] confirm_nonce`, the random suffix of a direct message reaches the broker only
+  once its delivery ended: in the final delivery event and the history. The `queued` and `sent`
+  events and `pending` show the text without it, also for a message a stop kept when the next
+  start has the setting changed. Before, every event carried it from `queued` on, so a client
+  that may read the gateway's topics, with a board in range, could compute the acknowledgement's
+  code and forge `confirmed` ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#87).
 
 ### Fixed
 
@@ -89,9 +108,12 @@ format, the command line and Home Assistant discovery are public interfaces
 - The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
   the one being sent, so a single message that waits reads 0 (#112).
 - A send request or the answer to a command that came while a stop handled the last received
-  messages was published `queued` and then lost: the stop had kept the queue already. It now ends
-  `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
-  stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+  messages was published `queued` and then lost: the stop had kept the queue already. The stop
+  now keeps the queue as its last step, with these requests and those still waiting to be taken.
+  A request after it, such as a press of *Send* or a request that comes as the radio closes, ends
+  `rejected` with the new reason `stopping`, until the gateway publishes `offline`, which the
+  dashboard shows as "the gateway was stopping"
+  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)) (#92).
 - `retire` also clears the Homie device `homie/meshcore-<node_id>/…`, also with `[homie]` off
   now while the broker lets the gateway's user read and write it; before, its contacts' names,
   battery, last heard and position stayed on the broker (#96). It reads the retained messages
@@ -202,12 +224,6 @@ format, the command line and Home Assistant discovery are public interfaces
   channel message claims; and that the 15 KiB of `history` hold fewer messages whose names and
   texts are full of control characters, about 10, since JSON writes each in 6 bytes
   ([mqtt-api.md](docs/mqtt-api.md#received-messages-received)) (#114).
-  messages was published `queued` and then lost: the stop had kept the queue already. The stop
-  now keeps the queue as its last step, with these requests and those still waiting to be taken.
-  A request after it, such as a press of *Send* or a request that comes as the radio closes, ends
-  `rejected` with the new reason `stopping`, until the gateway publishes `offline`, which the
-  dashboard shows as "the gateway was stopping"
-  ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)) (#92).
 - A stop cut short while it waited up to a minute for an acknowledgement lost every queued
   message: the queue was written only after the wait. A kill does that, and so does the unit of
   1.x with `TimeoutStopSec=20`, which a manual installation keeps when it updates only the
@@ -254,6 +270,21 @@ format, the command line and Home Assistant discovery are public interfaces
   it once its jobs pass. CI on main tags only pre-releases; the message now names
   `release-due.yml`, which tags a release a day after its version commit, and the time from which
   it does (#107).
+- Removing a command sender that had a code secret stopped the gateway: the secret made the
+  configuration an error (exit 78), which systemd does not restart, so alerts, telemetry and Home
+  Assistant went down with the sender's commands. The installer's `--reconfigure` got there on
+  its own when a sender was unticked or the insecure broker was declined. The gateway now ignores
+  the secret of a key that is not a sender, and its start, `check-config` and `doctor` warn about
+  it. Such a secret may be a sender's under its key before a correction by hand, and the
+  corrected key has none: so while one is ignored, the commands of every sender without a secret
+  are refused as `code_missing`, which counts as no wrong code, and the warnings name each such
+  sender. That lasts until `commands revoke` removes the secret or `commands enrol` gives the
+  sender one, and the service restarts. Once no secret is ignored, every sender without one
+  commands without a code again: `commands revoke` then names them, and the warnings say to
+  enrol a key corrected by hand first. Senders with a secret command with their codes. The
+  installer shows the self-test's report also when it passed, with these warnings. 2.0 refuses
+  such a secret again (exit 78): before a downgrade to 2.0, remove it with `commands revoke`
+  (#80).
 
 ### Security
 

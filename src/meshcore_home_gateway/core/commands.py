@@ -14,7 +14,14 @@ A received message is a command only if all of these hold:
 * if the sender has a code secret (IMP-002), its last word is the sender's 6-digit code (RFC 6238)
   for the bridge clock, within a time step either way, of a step newer than its last accepted
   code's: the code shows that the sender's app made it in that window, whatever reached the
-  bridge, and serves once. It does not bind the text (design §7.4).
+  bridge, and serves once. It does not bind the text (design §7.4). A sender with
+  CODE_FAILURE_LIMIT wrong codes within CODE_FAILURE_WINDOW_S has its codes refused unchecked
+  (RFC 4226, section 7.3): each guess wins with 3 in 10^6, so guesses must be few. The sender's
+  code of the time it sent the command, which came too late for the bridge clock, is refused
+  too, but is no guess;
+* while a code secret is ignored (its key is no sender, #80), a sender without a secret is
+  refused as if its code were missing: the ignored one may be its own under its key before a
+  correction by hand, and the corrected key must not command without a code. It is no guess.
 
 The bridge publishes accepted commands as events; it never executes anything itself.
 """
@@ -42,15 +49,22 @@ class Rejection(StrEnum):
     SENDER_UNVERIFIED = "sender_unverified"  # the bridge cannot rule out a look-alike sender
     STATE_UNWRITABLE = "state_unwritable"  # the replay ledger could not be saved
     BROKER_UNAVAILABLE = "broker_unavailable"  # the event could only reach automations late
-    CODE_MISSING = "code_missing"  # the sender has a code secret; the last word is no code
+    # the sender has a code secret and the last word is no code, or it has none while a secret
+    # is ignored (#80)
+    CODE_MISSING = "code_missing"
     CODE_INVALID = "code_invalid"  # not the sender's code within a time step of the bridge clock
     CODE_REUSED = "code_reused"  # the code of a time step this sender already used
+    CODE_LOCKED = "code_locked"  # too many wrong codes of this sender of late: none is checked
 
 
 CODE_DIGITS = 6
 CODE_STEP_S = 30  # RFC 6238's time step, as authenticator apps use it
 CODE_SKEW_STEPS = 1  # the sender's clock may be a step off the bridge's, either way
 MIN_SECRET_BYTES = 16  # RFC 4226: a secret has at least 128 bits
+# RFC 4226 section 7.3: a sender's wrong codes within the window; at the limit its codes are
+# refused unchecked until the oldest of them leaves the window (#79)
+CODE_FAILURE_LIMIT = 5
+CODE_FAILURE_WINDOW_S = 3600.0
 REPLIES = ("none", "accepted", "all")  # `[commands] reply` (EXT-009)
 # rejections of a sender the checks identified: telling it the reason reveals nothing new
 REPLIED_REJECTIONS = frozenset(
@@ -61,10 +75,13 @@ REPLIED_REJECTIONS = frozenset(
         Rejection.CODE_MISSING,
         Rejection.CODE_INVALID,
         Rejection.CODE_REUSED,
+        Rejection.CODE_LOCKED,
         Rejection.STATE_UNWRITABLE,
         Rejection.BROKER_UNAVAILABLE,
     }
 )
+# what counts as a wrong code: a guess, or a command of a sender with a secret that lacks one
+WRONG_CODES = frozenset({Rejection.CODE_MISSING, Rejection.CODE_INVALID})
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +92,9 @@ class CommandRules:
     codes_file: str | None = None  # the senders' code secrets, which load_config reads
     secrets: tuple[tuple[str, bytes], ...] = field(default=(), repr=False)  # key, secret
     reply: str = "none"  # REPLIES: answer accepted commands, and also safe rejections
+    # keys with a secret in codes_file that are not senders: ignored, and the start says so;
+    # while there is one, senders without a secret are refused (#80)
+    ignored_secrets: tuple[str, ...] = ()
 
     @classmethod
     def create(
@@ -130,6 +150,9 @@ class CommandDecision:
     command: Command | None = None
     rejection: Rejection | None = None
     sender_key: str | None = None  # of a rejection after the sender checks passed
+    # a code_invalid whose code is the sender's of the time it was sent, before the steps the
+    # bridge accepts: a genuine command that came late, not counted as a wrong code (#79)
+    late: bool = False
 
 
 def command_word(message: InboundMessage, rules: CommandRules) -> str | None:
@@ -152,13 +175,15 @@ def evaluate_command(
     *,
     seen: Iterable[str] = (),
     last_codes: Mapping[str, int] | None = None,
+    code_failures: Mapping[str, Iterable[float]] | None = None,
 ) -> CommandDecision | None:
     """None if the message is not a command at all, otherwise acceptance or the reason.
 
     For an acceptance, `contacts` must be the radio's contact table as read after the message
     arrived; an older table can only confirm a rejection. `seen` are full keys the radio
     reported recently (table reads, pushes); they only add doubt, never a sender (ADR 0009).
-    `last_codes` are the time steps of the senders' last accepted codes.
+    `last_codes` are the time steps of the senders' last accepted codes, `code_failures` the
+    times of their recent wrong codes (WRONG_CODES), on the clock of `now`.
     """
     word = command_word(message, rules)
     if word is None or message.sender_prefix is None:
@@ -167,12 +192,18 @@ def evaluate_command(
     sender, rejection = _authorise(message.sender_prefix, rules, contacts, seen)
     if rejection is None and sender is not None:
         rejection = _check_time(message.sender_timestamp, rules, last_accepted.get(sender), now)
-    step = None
+    step, late = None, False
     if rejection is None and sender is not None and (secret := rules.secret(sender)) is not None:
-        last_step = (last_codes or {}).get(sender)
-        args, step, rejection = _check_code(args, secret, last_step, now)
+        if codes_locked((code_failures or {}).get(sender, ()), now):
+            rejection = Rejection.CODE_LOCKED
+        else:
+            last_step = (last_codes or {}).get(sender)
+            sent = message.sender_timestamp
+            args, step, rejection, late = _check_code(args, secret, last_step, now, sent)
+    elif rejection is None and sender is not None and rules.ignored_secrets:
+        rejection = Rejection.CODE_MISSING  # until revoked or the sender enrolled (#80)
     if sender is None or rejection is not None:
-        return CommandDecision(word, rejection=rejection, sender_key=sender)
+        return CommandDecision(word, rejection=rejection, sender_key=sender, late=late)
     command = Command(word, args, sender, message.sender_timestamp, step)
     return CommandDecision(word, command=command)
 
@@ -216,6 +247,18 @@ def _check_time(
     return None
 
 
+def recent_code_failures(times: Iterable[float], now: float) -> list[float]:
+    """The times of wrong codes within CODE_FAILURE_WINDOW_S of `now`, oldest first. A time
+    ahead of `now` counts as well (the clock went back), as far as the window reaches."""
+    return sorted(t for t in times if abs(now - t) < CODE_FAILURE_WINDOW_S)
+
+
+def codes_locked(times: Iterable[float], now: float) -> bool:
+    """Whether a sender's codes are refused unchecked: CODE_FAILURE_LIMIT wrong codes within
+    the window. It ends when the oldest of them leaves it."""
+    return len(recent_code_failures(times, now)) >= CODE_FAILURE_LIMIT
+
+
 def code_at(secret: bytes, step: int) -> str:
     """The code of a time step: RFC 6238's TOTP with SHA-1 and 6 digits, the default of
     authenticator apps (RFC 4226's HOTP of the step)."""
@@ -226,23 +269,35 @@ def code_at(secret: bytes, step: int) -> str:
 
 
 def _check_code(
-    args: str, secret: bytes, last_step: int | None, now: float
-) -> tuple[str, int | None, Rejection | None]:
-    """The arguments without the code, the code's time step, or why the code is refused."""
+    args: str, secret: bytes, last_step: int | None, now: float, sent: int
+) -> tuple[str, int | None, Rejection | None, bool]:
+    """The arguments without the code, the code's time step, or why the code is refused; and
+    whether a refused code came late: the sender's code for `sent`, its timestamp, of a step
+    before those the bridge accepts (#79). A step ahead never counts as late: a guesser who
+    learnt such a code from the count of wrong ones could use it once its time came."""
     parts = args.rsplit(maxsplit=1)
     code = parts[-1] if parts else ""
     if len(code) != CODE_DIGITS or not (code.isascii() and code.isdigit()):
-        return args, None, Rejection.CODE_MISSING
+        return args, None, Rejection.CODE_MISSING, False
     rest = parts[0] if len(parts) == 2 else ""
     current = int(now // CODE_STEP_S)
-    steps = [
-        step
-        for step in range(current - CODE_SKEW_STEPS, current + CODE_SKEW_STEPS + 1)
-        if hmac.compare_digest(code_at(secret, step), code)
-    ]
+    steps = _steps_of(code, secret, current)
     fresh = [step for step in steps if last_step is None or step > last_step]
     if not steps:
-        return rest, None, Rejection.CODE_INVALID
+        late = any(
+            s < current - CODE_SKEW_STEPS for s in _steps_of(code, secret, sent // CODE_STEP_S)
+        )
+        return rest, None, Rejection.CODE_INVALID, late
     if not fresh:
-        return rest, None, Rejection.CODE_REUSED
-    return rest, fresh[0], None
+        return rest, None, Rejection.CODE_REUSED, False
+    return rest, fresh[0], None, False
+
+
+def _steps_of(code: str, secret: bytes, around: int) -> list[int]:
+    """The time steps within CODE_SKEW_STEPS of `around` whose code is `code`; none is before
+    the epoch (a sender timestamp of 0 with the age check off)."""
+    return [
+        step
+        for step in range(max(around - CODE_SKEW_STEPS, 0), around + CODE_SKEW_STEPS + 1)
+        if hmac.compare_digest(code_at(secret, step), code)
+    ]

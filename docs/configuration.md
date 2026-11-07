@@ -154,7 +154,7 @@ are judged on it. A message to `contacts/<key>/send` gets neither: that recipien
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
 | `publish_channels` | `targets` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's |
 | `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones, and so from the name a channel message claims; a contact's name stays as it came. Off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
-| `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes; the events and the history carry it as sent, duplicates are judged without the suffix |
+| `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes. The suffix is the only secret of the acknowledgement, so the gateway publishes it only once the delivery ended: in the final delivery event and the history, which carry the text as sent; `queued`, `sent` and `pending` show the text without it. Duplicates are judged without the suffix |
 | `alert_targets` | `[]` | [targets](#targetsalias) whose messages leave before the others: an alert overtakes the waiting messages, also one taken out of the queue that waits for the radio or for airtime before its first attempt, and goes between two attempts of one in flight, which continues after it. A request chooses by its target, so a second target for the same recipient gives a client both ([design §6.2](design.md#62-outbound-path)) |
 
 ## `[airtime]`
@@ -183,8 +183,8 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
-| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error |
-| `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
+| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error. The secret of a key that is not in `senders` is ignored, with a warning; while one is, senders without a secret cannot command (below) |
+| `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `code_locked`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
@@ -209,7 +209,16 @@ made it in that time window, whatever reached the gateway: a node that shares an
 key prefix, or a host that poses as a radio over TCP, cannot command without a current code. A
 code does not bind the text: whoever reads a command before the gateway does, such as that host,
 can send another text with its code, once, within about 90 seconds
-([design §7.4](design.md#74-residual-risks)). Senders without a secret keep the rules above. To
+([design §7.4](design.md#74-residual-risks)). Senders without a secret keep the rules above,
+except while a secret is ignored (below).
+After 5 wrong codes of a sender within an hour, a command without a code included (but not
+the refusals of a sender without a secret while one is ignored, below), the gateway
+refuses that sender's commands without a look at the code (`code_locked`) until the first of
+them is an hour old, and its log warns: someone may be guessing the codes. A restart does not
+end it. So a guess wins with at most 3 in a million, and 5 guesses an hour are all there are
+([design §7.4](design.md#74-residual-risks)). A command that waited in the radio (a restart, an
+update, a re-plug) or in the mesh carries the code of the time it was sent: it is refused as
+`code_invalid` when it comes too late, but it does not count as a wrong code. To
 give one a secret (or a new one, which ends the old):
 
 ```sh
@@ -226,6 +235,29 @@ systemd credential of its name is read instead, as for the broker password
 ([deployment.md](deployment.md#4-operations)). The phone's clock and the host's must agree within
 30 seconds; phones set theirs from the network. The code travels in the message's text: the
 `received` event and the history show it, which is harmless once the code is used.
+
+**A lost phone.** Remove its key from `senders`, remove its secret from the file, and restart
+the service:
+
+```sh
+meshcore-home-gateway commands revoke <full key>
+systemctl restart meshcore-home-gateway
+```
+
+`revoke` takes only a key that is no longer in `senders`: a sender without its secret would
+command without a code. To keep the sender with a new phone, run `enrol` again instead; the new
+secret ends the old one.
+
+**An ignored secret.** The gateway ignores the secret of a key that is not a sender, and its
+start, `check-config`, `doctor` and the installer's self-test warn about it. Such a secret may
+be a sender's under its key before a correction by hand: the corrected key has none. So while a
+secret is ignored, the commands of every sender without a secret are refused as `code_missing`,
+and the warnings name each such sender. Senders with a secret command with their codes, and the
+rest of the gateway keeps running. `enrol` gives the sender a secret; `revoke` removes the
+ignored one, and once none is ignored, every sender without a secret commands without a code
+again: `revoke` then names them. So enrol a key corrected by hand before its old secret is
+revoked, or instead. The gateway reads the file only at its start: restart it after either.
+These refusals do not count as wrong codes.
 
 Commands that the gateway fetches while it connects are rejected: those that waited in the radio
 while the gateway was not running (restart, update, unplugged radio), and those that arrive during

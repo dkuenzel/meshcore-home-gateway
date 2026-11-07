@@ -117,6 +117,9 @@ class Outgoing:
     # its latest delivery event while it is on its way, for `pending`: `queued` (again after a
     # start), then `sent`; pausing it for an alert sends none and leaves it `sent`
     step: DeliveryState = DeliveryState.QUEUED
+    # the gateway added confirm_nonce's random suffix to `text`: events show it without until
+    # the delivery ended (#87), whatever the setting is by then
+    nonce: bool = False
 
 
 class Outbox:
@@ -347,23 +350,31 @@ class Delivery:
         if deduplicate and self._dedup.is_duplicate(key, now):
             state = DeliveryState.DUPLICATE
         else:
-            nonce = target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
-            sent = with_nonce(text) if nonce else text  # duplicates are judged without it
+            nonce = self._nonce(target)
+            sent = with_nonce(text) if nonce else text  # judged without it
             alert = target.alias in self.config.messages.alert_targets
             dedup = (key, now) if deduplicate else None
             queued_at = self._wall()  # for the history: `now` is monotonic
             item = Outgoing(
-                event_id, target, sent, now, raw, alert=alert, dedup=dedup, queued_at=queued_at
+                event_id,
+                target,
+                sent,
+                now,
+                raw,
+                alert=alert,
+                dedup=dedup,
+                queued_at=queued_at,
+                nonce=nonce,
             )
             try:
                 self._queue.put(item)
                 self._pending[event_id] = item
                 self.activity.touch()
-                text = sent
             except asyncio.QueueFull:
                 if deduplicate:  # not taken, so a retry must not count as duplicate
                     self._dedup.forget(key)
                 state, reason, queued_at = DeliveryState.REJECTED, "queue_full", None
+        # the suffix stays the radios' until the delivery ends (#87): `text` is without it
         event = DeliveryEvent(
             event_id, target.alias, state, text=text, reason=reason, queued_at=queued_at
         )
@@ -735,7 +746,7 @@ class Delivery:
             item.id,
             item.target.alias,
             state,
-            text=item.text,
+            text=item.text if _is_final(state, item.target) else self._on_its_way(item),
             attempt=attempt,
             reason=reason,
             rtt_ms=rtt_ms,
@@ -743,6 +754,19 @@ class Delivery:
             suspect=suspect,
             queued_at=item.queued_at,
         )
+
+    def _nonce(self, target: Target) -> bool:
+        """Whether a message to the target gets the random suffix of `confirm_nonce` now."""
+        return target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
+
+    @staticmethod
+    def _on_its_way(item: Outgoing) -> str:
+        """The text that events and `pending` show until the delivery ended: without the
+        suffix the gateway added (`Outgoing.nonce`). The suffix is the only secret of the
+        acknowledgement's code, so it stays the radios' until no acknowledgement counts any more
+        (#87); the final event and the history carry the text as sent. A household's own text
+        that ends like a suffix is shown whole."""
+        return without_nonce(item.text) if item.nonce else item.text
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
         # %r: the alias of a rejected request comes from its topic, which may hold any character
@@ -804,7 +828,7 @@ class Delivery:
             key,
             target.channel_index,
             contact.node.name if contact else target.alias,
-            item.text,
+            self._on_its_way(item),
             item.step.value,
             item.sent,
             self._attempts(target),
@@ -868,6 +892,7 @@ class Delivery:
                 item.timestamp,
                 item.sent,
                 item.queued_at,
+                item.nonce,
             )
             for item in ordered
         ]
@@ -906,12 +931,13 @@ class Delivery:
                 timestamp=saved.timestamp,
                 sent=saved.sent,
                 queued_at=saved.queued_at,
+                # kept by 2.1 with its record; by 2.0, as the setting says
+                nonce=self._nonce(target) if saved.nonce is None else saved.nonce,
             )
             if age >= config.queue_ttl_s:  # it would have expired meanwhile
                 self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))
                 continue
-            nonce = target.kind is MessageKind.CONTACT and config.confirm_nonce
-            key = (target.alias, without_nonce(item.text) if nonce else item.text)
+            key = (target.alias, self._on_its_way(item))
             if not self._dedup.is_duplicate(key, now):
                 item.dedup = (key, now)
             self._queue.restore(item)

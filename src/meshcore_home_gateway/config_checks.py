@@ -28,9 +28,47 @@ def start_warnings(config: Config) -> list[Text]:
     return (
         protected_look_alikes(config)
         + alias_pairs(config)
+        + ignored_secrets(config)
         + broker_warnings(config)
         + log_level_warnings(config)
     )
+
+
+def ignored_secrets(config: Config) -> list[Text]:
+    """The code secrets of keys that are not command senders: removing a sender ends its
+    commands, so its secret is ignored until `commands revoke` removes it (#80). While one is
+    ignored, also each sender without a secret, whose commands are refused (code_missing): a
+    sender's key corrected by hand leaves its secret behind, and the corrected key must not
+    command without a code. Once no secret is ignored, such a sender commands without one, so
+    the warning says to enrol a corrected key first."""
+    commands = config.commands
+    warnings = [
+        # Translators: key is a full public key; command is the command line that removes it
+        Text(
+            "commands.codes_file: {key} has a code secret but is not in commands.senders: the "
+            "secret is ignored; '{command}' removes it",
+            key=key,
+            command=f"meshcore-home-gateway commands revoke {key}",
+        )
+        for key in commands.ignored_secrets
+    ]
+    if not commands.ignored_secrets:
+        return warnings
+    return warnings + [
+        # Translators: security text (docs/translations.md): sender is a full public key;
+        # command is the command line that gives it a code secret; code_missing, commands
+        # revoke, enrol and revoke stay as they are
+        Text(
+            "commands.senders: {sender} has no code secret while one is ignored: its commands "
+            "are refused (code_missing) until '{command}' gives it one. Once no secret is "
+            "ignored (commands revoke), it commands without a code: enrol a key corrected by "
+            "hand first. Restart the service after enrol or revoke",
+            sender=sender,
+            command=f"meshcore-home-gateway commands enrol {sender}",
+        )
+        for sender in sorted(commands.senders)
+        if commands.secret(sender) is None
+    ]
 
 
 def alias_pairs(config: Config) -> list[Text]:
