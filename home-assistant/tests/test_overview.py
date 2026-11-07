@@ -21,9 +21,10 @@ from visibility import household_viewer
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config, parse_config
+from meshcore_home_gateway.config_view import shown_settings
 from meshcore_home_gateway.core.mesh import Node
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.views import iso
+from meshcore_home_gateway.views import config_document, iso
 from test_contact_devices import ALICE, ALICE_NODE, COMPANION, HILL_NODE, Broker
 from test_dashboard import (
     BOB,
@@ -359,6 +360,39 @@ async def test_each_problem_card_shows_while_its_problem_exists(  # noqa: PLR091
     assert after.endswith('<a href="./contacts">Contacts</a>')
     await fire(hass, topics.contacts, index())
     assert [n for n, c in found.items() if render(hass, c)] == []
+    assert problems(caplog) == []
+
+
+async def test_the_clock_card_says_the_gateway_leaves_the_clock_while_set_clock_is_off(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The gateway reports the radio's clock offset whatever `[radio] set_clock` says, and with
+    it off neither moves the clock nor restarts the radio (radio/session.py): the card says so
+    from the configuration document, naming the key; with it on, and while the gateway does not
+    say, how the gateway keeps the clock."""
+    config = make_config()
+    loaded, topics = await household_of(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    clock = problem_cards(loaded)["clock"]
+    await fire(hass, topics.state, health() | {"radio_clock_offset_s": 900})
+    keeps = render(hass, clock)
+    assert first(keeps)[1] == "The radio's clock is 15 min ahead."
+    assert "moves the clock forward" in keeps
+    settings = shown_settings(config)
+    for set_clock in (False, True):
+        radio = settings["radio"] | {"set_clock": set_clock}
+        document = config_document(time.time(), [], settings | {"radio": radio})
+        await fire(hass, topics.config, document, retain=not set_clock)  # only the first (fire)
+        said = render(hass, clock)
+        assert first(said)[1] == "The radio's clock is 15 min ahead.", set_clock
+        leaves = "The gateway does not set this radio's clock" in said
+        assert leaves == (not set_clock), said
+        assert ("<code>[radio]</code> <code>set_clock</code>" in said) == leaves
+        assert ("moves the clock forward" in said) == set_clock
     assert problems(caplog) == []
 
 

@@ -2556,6 +2556,25 @@ def test_the_clock_card_says_how_the_gateway_keeps_the_radios_clock() -> None:
     assert "The gateway sets it at most once a day." not in fold
     for words in ("forward", "back", "at most once a day", "an hour", "computer's clock"):
         assert words in fold, words
+    # #86: and only when the next connect can move it forward from there again
+    assert "can move it forward again" in fold
+
+
+def test_the_clock_card_says_the_gateway_leaves_the_clock_while_set_clock_is_off() -> None:
+    """The radio's clock offset is published whatever `[radio] set_clock` says, and with it
+    off the gateway neither moves the clock nor restarts the radio (radio/session.py): the card
+    reads the setting from the configuration document and says so then, naming the key as
+    Settings does; a gateway that does not say, being offline or before 2.1, keeps the text of
+    the setting's default."""
+    (card,) = [t for t in rules.texts(view_of("overview")) if "{#- problem: clock -#}" in t]
+    fold = card.partition("<details>")[2]
+    assert "state_attr('sensor.meshcore_home_gateway_radio1_configuration', 'radio')" in card
+    assert ".get('set_clock') == false" in card
+    off, _, on = fold.partition("{% else %}")
+    assert "The gateway does not set this radio's clock" in off
+    assert "<code>[radio]</code> <code>set_clock</code>" in off
+    assert "forward" not in off
+    assert "forward" in on
 
 
 def _command_fold() -> list[str]:
