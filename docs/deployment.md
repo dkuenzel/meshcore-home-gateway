@@ -81,8 +81,8 @@ Options follow a `--`, for example `bash -c "$(wget -qO- URL)" -- --answers FILE
 them. If the command does nothing at all, the address could not be downloaded (`bash -c` gets an
 empty script): `wget -O- URL` shows why.
 
-Once the gateway offers a language besides English (2.0.0 offers English only), the first
-dialog chooses the installer's language, preselected from your session (`LANGUAGE`, `LC_ALL`,
+The installer speaks English and German (since 2.1.0; 2.0.0 offered English only): the first
+dialog chooses its language, preselected from your session (`LANGUAGE`, `LC_ALL`,
 `LC_MESSAGES`, `LANG`). The script reads that language's pack from where the script comes from
 (its release, the checkout next to it, else `main`) into memory, stores nothing, and uses it only
 when its SHA-256 is the one the script carries (the release attests the script); else the dialogs

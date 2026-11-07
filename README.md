@@ -60,10 +60,10 @@ flowchart LR
   ([`contrib/mqtt2prometheus`](contrib/mqtt2prometheus/README.md)); the MQTT API as an AsyncAPI
   document generated from the code and attached to each release
   ([`docs/mqtt-api.asyncapi.yaml`](docs/mqtt-api.asyncapi.yaml)).
-- **Translatable:** the command line, the installer, the names in Home Assistant and the
-  dashboard come from gettext catalogs; English for now, more languages by contribution
-  ([`docs/translations.md`](docs/translations.md)). Machine output never changes with the
-  language.
+- **In English and German:** the command line, the installer, the names in Home Assistant and
+  the dashboard, since 2.1.0, from gettext catalogs; more languages by contribution
+  ([`docs/translations.md`](docs/translations.md)). The guides stay English, and machine output
+  never changes with the language.
 - **Small supply chain:** Python standard library plus `paho-mqtt` from the Linux distribution; no
   other runtime dependency.
 - **One-step installation on Proxmox VE** in an unprivileged container, configured through dialogs

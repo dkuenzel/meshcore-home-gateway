@@ -5,8 +5,9 @@ design is in [design §6.12](design.md#612-translations) and
 [ADR 0019](decisions/0019-internationalisation-with-gettext.md); the rules for code that shows a
 text are in [development.md](development.md#translations).
 
-1.1.0a4 ships English only. Every other language comes as a contribution: the catalog files of
-[Adding a language](#adding-a-language), in one pull request. A language is offered only when
+2.1.0 ships English and German: the command line, the installer, the names in Home Assistant
+and the dashboard, each in both. Every other language comes as a contribution: the catalog files
+of [Adding a language](#adding-a-language), in one pull request. A language is offered only when
 its texts are complete.
 
 ## What is translated
@@ -139,9 +140,9 @@ For a language `ll` (its ISO 639-1 code, two lower-case letters):
 
 Nothing else changes for a language: `tests/test_adding_a_language.py` adds a pseudo-language to a
 copy of the checkout through exactly these steps and runs the checks that read the languages in
-it. The first language besides English also shows the installer's language menu; the tests of
-the English dialogs run a copy of the script that offers English only. `make release` publishes
-each pack beside the installer. A language listed in `LANGUAGES` is a choice of
+it. A language besides English also shows the installer's language menu, as German does; the
+tests of the English dialogs run a copy of the script that offers English only. `make release`
+publishes each pack beside the installer. A language listed in `LANGUAGES` is a choice of
 `[homeassistant] language`, which a later version keeps
 ([compatibility](development.md#compatibility)): remove one only in a major version.
 

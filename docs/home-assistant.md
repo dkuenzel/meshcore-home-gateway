@@ -107,7 +107,7 @@ restart of either side.
 
 ### Language of the names
 
-The names the gateway sends follow `homeassistant.language`
+The names the gateway sends follow `homeassistant.language`, English or German
 ([configuration.md](configuration.md#homeassistant)): the entity names, the models of the
 contacts' devices (*Companion*, *Repeater*, *Room server*, *Sensor*), the reading types
 (*Temperature 2*) and the default device name `MeshCore radio`. This guide gives them in English.
