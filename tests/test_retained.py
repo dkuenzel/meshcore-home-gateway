@@ -73,6 +73,7 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         CONTACT,
         TOPICS.nodes,
         TOPICS.history,
+        TOPICS.pending,
         TOPICS.settings,
         TOPICS.contact("not-a-key"),
     ):
@@ -96,6 +97,7 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         "meshcore/radio1/contacts",
         "meshcore/radio1/history",
         "meshcore/radio1/nodes",
+        "meshcore/radio1/pending",
         "meshcore/radio1/settings",
         "meshcore/radio1/state",
         "meshcore/radio1/stats",
@@ -127,6 +129,15 @@ def test_another_clients_write_is_undone_with_a_warning(caplog: pytest.LogCaptur
     assert "docs/mqtt-api.md, Securing the broker" in caplog.text
     retained.received(CONTACT, b'{"latitude": 1}', retained=False)  # the restore comes back
     assert len(bus.published) == 1
+
+
+def test_a_forged_list_of_messages_on_their_way_is_undone() -> None:
+    """Another client's `pending` would otherwise show messages the gateway never accepted."""
+    retained, bus = make()
+    retained.sent(TOPICS.pending, b'{"total": 0}', published=True)
+    retained.received(TOPICS.pending, b'{"total": 0}', retained=False)
+    retained.received(TOPICS.pending, b'{"total": 1}', retained=False)
+    assert bus.published == [(TOPICS.pending, b'{"total": 0}')]
 
 
 def test_a_cleared_topic_is_restored() -> None:

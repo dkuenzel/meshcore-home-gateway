@@ -8,7 +8,8 @@ kept for the next start when the service stops (ARC-013).
 The delivery takes the send requests from the bus, refuses or queues each, and delivers one message
 at a time: an attempt when the radio is there and the airtime budget allows it, until it is
 confirmed, sent to a channel, or out of attempts or time. Every step goes out on the delivery
-topic and to the observer.
+topic and to the observer, and the messages accepted and not final yet, the one being delivered
+included, go to the observer as the `pending` document after each step (#112).
 """
 
 from __future__ import annotations
@@ -58,6 +59,7 @@ from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.radio_link import RadioLink
 from meshcore_home_gateway.state import AirtimeLevel, JsonStateFile, OutboxRecords, SavedMessage
 from meshcore_home_gateway.telemetry_poller import OutboxActivity
+from meshcore_home_gateway.views import PendingEntry
 
 log = logging.getLogger(__name__)
 log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
@@ -106,6 +108,9 @@ class Outgoing:
     # when it fails or expires, so that it can be sent again at once
     dedup: tuple[tuple[str, str], float] | None = None
     queued_at: float | None = None  # wall clock at its acceptance, kept over a stop (history)
+    # its latest delivery event while it is on its way, for `pending`: `queued` (again after a
+    # start), then `sent`; pausing it for an alert sends none and leaves it `sent`
+    step: DeliveryState = DeliveryState.QUEUED
 
 
 class Outbox:
@@ -252,6 +257,9 @@ class Delivery:
         self._flight = _Flight()
         # MQTT 5: the correlation data of a request, by its id, until its final event (ARC-014)
         self._correlations: dict[str, bytes] = {}
+        # the messages accepted and not final, by id, the oldest first: in the queue or in flight
+        self._pending: dict[str, Outgoing] = {}
+        self._pending_due = False  # `pending` goes out once this moment's steps are done
 
     def queued(self) -> int:
         return self._queue.qsize()
@@ -308,6 +316,7 @@ class Delivery:
             )
             try:
                 self._queue.put(item)
+                self._pending[event_id] = item
                 self.activity.touch()
                 text = sent
             except asyncio.QueueFull:
@@ -437,12 +446,10 @@ class Delivery:
         back, with its progress, when an alert waits behind it (IMP-032) or the service stops
         (ARC-013).
         """
-        messages = self.config.messages
-        deadline = item.created + messages.queue_ttl_s
+        deadline = item.created + self.config.messages.queue_ttl_s
         if item.timestamp is None:  # one timestamp for all attempts: retries stay recognisable
             item.timestamp = int(self._wall())
-        direct = item.target.kind is MessageKind.CONTACT
-        attempts = messages.max_attempts if direct else 1
+        attempts = self._attempts(item.target)
         while item.sent < attempts:
             if item.sent and (
                 self._flight.stopping or (not item.alert and self._queue.alert_waiting)
@@ -473,6 +480,10 @@ class Delivery:
             item, DeliveryState.FAILED, attempt=item.sent, reason="no_acknowledgement"
         )
         self._end(item, failed)
+
+    def _attempts(self, target: Target) -> int:
+        """A direct message is sent until it is acknowledged; a channel message once."""
+        return self.config.messages.max_attempts if target.kind is MessageKind.CONTACT else 1
 
     def _end(self, item: Outgoing, event: DeliveryEvent) -> None:
         """The last event of a message. One that failed or expired no longer counts as a
@@ -676,20 +687,54 @@ class Delivery:
             encode(delivery_payload(event)),
             correlation=self._correlation(event),
         )
-        observe(self._observer.delivery, event, self.target_of(event.target))
+        observe(self._observer.delivery, event, self.target_of(event.target))  # the history
+        if (item := self._pending.get(event.id)) is not None:  # a step of a message on its way
+            if _is_final(event.state, item.target):
+                del self._pending[event.id]
+            else:
+                item.step = event.state
+            self._pending_changed()
 
     def _correlation(self, event: DeliveryEvent) -> bytes | None:
         """The correlation data of the event's request; forgotten with its final event. A message
         kept across a restart has none: the data was the requester's, not the gateway's."""
         if event.id not in self._correlations:
             return None
-        target = self.target_of(event.target)
-        final = event.state not in (DeliveryState.QUEUED, DeliveryState.SENT) or (
-            event.state is DeliveryState.SENT
-            and target is not None
-            and target.kind is MessageKind.CHANNEL
-        )
+        final = _is_final(event.state, self.target_of(event.target))
         return self._correlations.pop(event.id) if final else self._correlations[event.id]
+
+    def _pending_changed(self) -> None:
+        """`pending` goes out when the steps of this moment are done: after the history entry of
+        a message that became final, so that no reader misses it between the two documents
+        (MQTT keeps the order only within a topic), and once for a burst of requests."""
+        if not self._pending_due:
+            self._pending_due = True
+            asyncio.get_running_loop().call_soon(self.publish_pending)
+
+    def publish_pending(self) -> None:
+        """The messages on their way, the oldest first, to the observer for `pending`."""
+        self._pending_due = False
+        entries = [self._pending_entry(item) for item in self._pending.values()]
+        observe(self._observer.pending, entries)
+
+    def _pending_entry(self, item: Outgoing) -> PendingEntry:
+        """As the history will name it: a message to `contacts/<key>/send` has no target (its
+        alias is the key), and the recipient is the contact's name, else the alias."""
+        target, key = item.target, item.target.public_key
+        contact = self._observer.mesh.contacts.get(key) if key else None
+        return PendingEntry(
+            item.id,
+            item.queued_at,
+            None if target.alias == key else target.alias,
+            target.kind.value,
+            key,
+            target.channel_index,
+            contact.node.name if contact else target.alias,
+            item.text,
+            item.step.value,
+            item.sent,
+            self._attempts(target),
+        )
 
     async def finish(self, loop: asyncio.Task[None]) -> None:
         """No attempt starts any more; one that waits for its acknowledgement gets it, for at
@@ -764,8 +809,13 @@ class Delivery:
             if not self._dedup.is_duplicate(key, now):
                 item.dedup = (key, now)
             self._queue.restore(item)
+            self._pending[item.id] = item
             queued += 1
             self._deliver_event(self._event(item, DeliveryState.QUEUED, attempt=item.sent))
+        # the oldest first, as accepted: the queue keeps alerts and a message put back in front
+        # (one of 2.0 has no acceptance time: it is older); published also when none is left
+        self._pending = dict(sorted(self._pending.items(), key=lambda i: i[1].queued_at or 0.0))
+        self._pending_changed()
         if messages:
             log.info(
                 "messages kept by the last stop: %d queued again, %d at an end",
@@ -800,6 +850,13 @@ class Delivery:
                     log.warning(
                         "target %s: contact missing on the radio or prefix ambiguous", target.alias
                     )
+
+
+def _is_final(state: DeliveryState, target: Target | None) -> bool:
+    """The last event of a request: a refusal, an end, or `sent` to a channel."""
+    if state is DeliveryState.SENT:
+        return target is not None and target.kind is MessageKind.CHANNEL
+    return state is not DeliveryState.QUEUED
 
 
 def _key(target: Target) -> str:

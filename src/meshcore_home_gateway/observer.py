@@ -72,6 +72,7 @@ from meshcore_home_gateway.state import (
 from meshcore_home_gateway.views import (
     SETTING_NAMES,
     HistoryEntry,
+    PendingEntry,
     RadioReadings,
     contact_document,
     contact_event,
@@ -82,6 +83,7 @@ from meshcore_home_gateway.views import (
     look_alike_nodes,
     name_taken_nodes,
     nodes_document,
+    pending_document,
     restated,
     setting_value,
     settings_document,
@@ -169,6 +171,7 @@ class Observer:
         self._readings: RadioReadings | None = None
         self._tuning: codec.TuningParams | None = None
         self._recent: deque[HistoryEntry] = deque(maxlen=RECENT_MESSAGES)
+        self._on_their_way: list[PendingEntry] = []  # the outbox's messages not final yet
         self._logged: dict[str, tuple[float, Signal]] = {}  # key -> logged advert's signal
         self._published: dict[str, bytes] = {}  # topic -> payload last published
         self._first_read = True
@@ -459,6 +462,12 @@ class Observer:
             )
         )
 
+    def pending(self, entries: list[PendingEntry]) -> None:
+        """The messages the outbox accepted that are not final yet, the oldest first: after
+        their steps, and so after the history entry of one that became final."""
+        self._on_their_way = entries
+        self._publish(self._topics.pending, pending_document(entries))
+
     def publish_all(self) -> None:
         """Publish every document again, and clear the topics of contacts removed: the broker
         connected, and it may have lost them, or the adapter dropped them while it was away. A
@@ -468,6 +477,7 @@ class Observer:
             self._bus.publish(topic, payload, retain=True)
         self._restate_all(connect=True)
         self._publish(self._topics.history, history_document(self._recent), force=True)
+        self._publish(self._topics.pending, pending_document(self._on_their_way), force=True)
 
     def tick(self) -> None:
         """Called about once a minute: forget stale heard nodes and logged adverts, purge the

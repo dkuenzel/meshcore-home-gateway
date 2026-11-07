@@ -65,6 +65,7 @@ class RetainedTopics:
                 topics.contacts,
                 topics.nodes,
                 topics.history,
+                topics.pending,
                 topics.settings,
             }
         )

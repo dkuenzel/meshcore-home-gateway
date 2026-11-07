@@ -22,6 +22,7 @@ from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType,
 
 INDEX_LIMIT_BYTES = 32 * 1024  # the contact index; Home Assistant reads only its count
 ATTRIBUTE_LIMIT_BYTES = 15 * 1024  # documents read into attributes: below the recorder's 16 KiB
+PENDING_LIMIT_BYTES = 8 * 1024  # the `pending` document, whole: it goes out with every step
 WARNING_KEYS = 16  # keys listed per warning in the contact index; the total is counted
 TELEMETRY_ACCURACY_M = 15.0  # of a position from telemetry: cell centring and the GNSS (ADR 0018)
 _FLAGS = {
@@ -66,6 +67,8 @@ def bounded(
     size, total = 0, 0
     for entry in entries:
         total += 1
+        if size > limit_bytes:  # cut: none after it is kept, so none is encoded
+            continue
         size += len(encode(entry)) + 1
         if size <= limit_bytes:
             kept.append(entry)
@@ -578,5 +581,54 @@ def history_document(entries: Iterable[HistoryEntry]) -> dict[str, Any]:
     head = {"total": len(ordered), "truncated": True, "messages": []}
     kept, total = bounded(
         (history_entry(e) for e in ordered), ATTRIBUTE_LIMIT_BYTES - len(encode(head))
+    )
+    return {"total": total, "truncated": len(kept) < total, "messages": kept}
+
+
+# --- messages on their way ----------------------------------------------------------------------
+
+PENDING_STEPS = ("queued", "sent")  # `step` of a pending message: not sent yet, or sent
+
+
+@dataclass(frozen=True, slots=True)
+class PendingEntry:
+    """A message the gateway accepted that is not final yet, as `pending` lists it."""
+
+    id: str  # of its delivery events
+    queued_at: float | None  # when the gateway accepted it (wall clock); None if not known
+    target: str | None  # the configured alias; None for `contacts/<key>/send`
+    kind: str  # "contact" or "channel"
+    contact_key: str | None
+    channel_index: int | None
+    name: str  # the recipient: the contact's name, else the alias
+    text: str  # as it is sent
+    step: str  # one of PENDING_STEPS: its latest delivery event, `queued` or `sent`
+    attempt: int  # transmissions so far
+    max_attempts: int
+
+
+def pending_entry(entry: PendingEntry) -> dict[str, Any]:
+    return {
+        "id": entry.id,
+        "queued_at": iso(entry.queued_at),
+        "target": entry.target,
+        "kind": entry.kind,
+        "contact_key": entry.contact_key,
+        "channel_index": entry.channel_index,
+        "name": entry.name,
+        "text": entry.text,
+        "step": entry.step,
+        "attempt": entry.attempt,
+        "max_attempts": entry.max_attempts,
+    }
+
+
+def pending_document(entries: Collection[PendingEntry]) -> dict[str, Any]:
+    """`pending`: the messages accepted and not final yet, the one being sent included, in the
+    order given (the oldest first). The bound counts the whole document, its head too; a cut
+    leaves out the newest."""
+    head = {"total": len(entries), "truncated": True, "messages": []}
+    kept, total = bounded(
+        (pending_entry(e) for e in entries), PENDING_LIMIT_BYTES - len(encode(head))
     )
     return {"total": total, "truncated": len(kept) < total, "messages": kept}

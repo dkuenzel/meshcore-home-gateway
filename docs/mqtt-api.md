@@ -31,6 +31,7 @@ and no closed lists of values: this page stays normative.
 | `contacts/<key>/received` | gateway → | no | the `received` events of messages from that contact |
 | `nodes` | gateway → | yes | JSON: nodes heard but not added |
 | `history` | gateway → | yes | JSON: the latest messages in and out |
+| `pending` | gateway → | yes | JSON: the messages on their way, accepted and not final yet |
 | `settings` | gateway → | yes | JSON: the managed radio profile at the last connect |
 | `contact` | gateway → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
 | `telemetry` | gateway → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
@@ -274,6 +275,10 @@ reason, and every 60 s.
             "errors_1h": 0, "loop_lag_max_s": 0.004, "events_dropped_1h": 0,
             "disk_free_mb": 5120}}
 ```
+
+`queue` counts the messages waiting behind the one being sent, not that one: 0 while a single
+message waits for the radio, for airtime or for its acknowledgement. [`pending`](#messages-on-their-way-pending)
+lists them all (#112).
 
 `radio_clock_offset_s` is how far the radio's clock is ahead of the host's, in seconds (negative:
 behind), as last read: at connect and with every heartbeat (60 s); `null` while the radio is not
@@ -562,6 +567,44 @@ message from an earlier version):
 | `queued_at` | outgoing: when the gateway accepted the request, also for a message kept across a stop; `at` is when it became final |
 | `suspect` | outgoing, `confirmed`: the acknowledgement came sooner than the path allows, as in its delivery event ([what `confirmed` proves](#what-confirmed-proves)) |
 | `reason` | outgoing, `failed` or `expired`: why, as in its delivery event |
+
+## Messages on their way: `pending`
+
+The messages the gateway accepted that are not final yet, the oldest first: those in the queue
+and the one being sent, which the `queue` of [`state`](#state-state) does not count (#112). So
+there are at most `queue_size` + 1, more after a restart with a smaller `queue_size`. The
+document goes out after the delivery steps of a moment, at every connect to the broker and after
+the start, when the messages a stop kept are queued again. When a message becomes final,
+`history` with it goes out before `pending` without it: a reader of both sees it in both for a
+moment, never in neither, unless the broker delivers the two out of order (MQTT keeps the order
+only within a topic). The whole document stays within 8 KiB: `total` counts every message,
+`truncated` is `true` when the newest were left out.
+
+```json
+{"total": 2, "truncated": false,
+ "messages": [{"id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00", "target": "alice",
+               "kind": "contact", "contact_key": "a1b2…", "channel_index": null,
+               "name": "Alice", "text": "Back soon #0f1e2d3c", "step": "sent", "attempt": 1,
+               "max_attempts": 3},
+              {"id": "9f8e7d6c", "queued_at": "2026-10-18T09:01:10+00:00", "target": "family",
+               "kind": "channel", "contact_key": null, "channel_index": 1, "name": "family",
+               "text": "Dinner is ready", "step": "queued", "attempt": 0,
+               "max_attempts": 1}]}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `id` | the `id` of its delivery events, and of its entry in `history` once it is final |
+| `queued_at` | when the gateway accepted the request, also for a message kept across a stop; `null` for one that 2.0 kept |
+| `target` | the target it goes to; `null` for a message sent through `contacts/<key>/send`, whose key is `contact_key` |
+| `kind`, `contact_key`, `channel_index`, `name` | as in `history`: `name` is the contact's name, else the target's alias |
+| `text` | as it is sent, with the target's prefix and suffix and the code of `confirm_nonce` |
+| `step` | its latest delivery event: `queued` (not sent yet; again after a restart that kept it) or `sent` (an attempt went out; it waits for the acknowledgement or its next attempt, also while an alert goes first) |
+| `attempt`, `max_attempts` | the transmissions so far, and how many it may take: `max_attempts` for a direct message, 1 for a channel |
+
+A message waits for the radio and for airtime only while it is `queued`: one that has been
+`queued` for more than a minute is stuck behind the radio or the airtime budget. A `sent` one
+may wait up to a minute for each acknowledgement.
 
 ## Contact and node events: `contact`, `node`
 

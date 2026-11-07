@@ -24,7 +24,10 @@ from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.views import (
     ATTRIBUTE_LIMIT_BYTES,
     INDEX_LIMIT_BYTES,
+    PENDING_LIMIT_BYTES,
+    PENDING_STEPS,
     HistoryEntry,
+    PendingEntry,
     RadioReadings,
     advert_carries_position,
     bounded,
@@ -38,6 +41,8 @@ from meshcore_home_gateway.views import (
     iso,
     name_taken_nodes,
     nodes_document,
+    pending_document,
+    pending_entry,
     restated,
     stats_document,
     telemetry_event,
@@ -401,6 +406,125 @@ def test_a_history_near_its_bound_stays_within_it_whole_or_cut() -> None:
         entries = [HistoryEntry(T + i, "in", "channel", "x" * size) for i in range(50)]
         document = history_document(entries)
         assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, size
+        whole.add(document["truncated"] is False)
+    assert whole == {True, False}
+
+
+PENDING_KEYS = [
+    "id",
+    "queued_at",
+    "target",
+    "kind",
+    "contact_key",
+    "channel_index",
+    "name",
+    "text",
+    "step",
+    "attempt",
+    "max_attempts",
+]
+
+
+def test_a_pending_entry_has_every_key_with_null_where_unknown() -> None:
+    """A message accepted and not final yet (`pending`). A direct message sent through
+    `contacts/<key>/send` has no target (its key is `contact_key`); one kept by 2.0 has no
+    `queued_at`."""
+    direct = PendingEntry(
+        "1a2b3c4d",
+        T + 2.75,
+        None,
+        "contact",
+        KEY,
+        None,
+        "Alice",
+        "Back soon #0f1e2d3c",
+        "sent",
+        1,
+        3,
+    )
+    assert list(pending_entry(direct)) == PENDING_KEYS
+    assert pending_entry(direct) == {
+        "id": "1a2b3c4d",
+        "queued_at": "2027-01-15T08:00:02+00:00",
+        "target": None,
+        "kind": "contact",
+        "contact_key": KEY,
+        "channel_index": None,
+        "name": "Alice",
+        "text": "Back soon #0f1e2d3c",
+        "step": "sent",
+        "attempt": 1,
+        "max_attempts": 3,
+    }
+    channel = PendingEntry(
+        "9f8e7d6c", None, "family", "channel", None, 1, "family", "Hi", "queued", 0, 1
+    )
+    assert pending_entry(channel) | {"id": None} == dict.fromkeys(PENDING_KEYS) | {
+        "target": "family",
+        "kind": "channel",
+        "channel_index": 1,
+        "name": "family",
+        "text": "Hi",
+        "step": "queued",
+        "attempt": 0,
+        "max_attempts": 1,
+    }
+    assert PENDING_STEPS == ("queued", "sent")
+
+
+def test_the_pending_document_lists_the_messages_oldest_first() -> None:
+    """In the order the outbox gives them (accepted first, first), every key there when empty."""
+    assert pending_document([]) == {"total": 0, "truncated": False, "messages": []}
+    entries = [
+        PendingEntry(
+            f"{i:08x}", T + i, "alerts", "channel", None, 0, "alerts", f"m{i}", "queued", 0, 1
+        )
+        for i in range(3)
+    ]
+    document = pending_document(entries)
+    assert (document["total"], document["truncated"]) == (3, False)
+    assert [m["id"] for m in document["messages"]] == ["00000000", "00000001", "00000002"]
+
+
+def _worst_pending(text_bytes: int, count: int) -> list[PendingEntry]:
+    """Every key filled at its longest: a 32-character alias, a 31-byte name of control
+    characters (6 bytes each in JSON), a text of quotes and backslashes (2 bytes each)."""
+    text = ('"\\' * text_bytes)[:text_bytes]
+    return [
+        PendingEntry(
+            f"{i:08x}", T + i, "t" * 32, "contact", KEY, None, "\x02" * 31, text, "sent", 2, 3
+        )
+        for i in range(count)
+    ]
+
+
+def test_the_whole_pending_document_stays_within_8_kib() -> None:
+    """Bounded by bytes, as ADR 0015 asks of every list: `total` counts every message and
+    `truncated` is true exactly when some were left out; the oldest stay."""
+    cut = set()
+    for text_bytes in range(0, 161, 4):
+        for count in (1, 10, 21, 1001):  # the largest queue and the message in flight
+            document = pending_document(_worst_pending(text_bytes, count))
+            assert len(encode(document)) <= PENDING_LIMIT_BYTES, (text_bytes, count)
+            assert document["total"] == count
+            kept = document["messages"]
+            assert document["truncated"] is (len(kept) < count)
+            assert [m["id"] for m in kept] == [f"{i:08x}" for i in range(len(kept))]
+            cut.add(document["truncated"])
+    assert cut == {True, False}
+    assert PENDING_LIMIT_BYTES == 8 * 1024
+
+
+def test_a_pending_document_near_its_bound_stays_within_it_whole_or_cut() -> None:
+    """Entries that fill the bound to the byte without the head: whole only if the head fits."""
+    whole = set()
+    for size in range(100, 300):
+        entries = [
+            PendingEntry(f"{i:08x}", T, "a", "channel", None, 0, "a", "x" * size, "queued", 0, 1)
+            for i in range(20)
+        ]
+        document = pending_document(entries)
+        assert len(encode(document)) <= PENDING_LIMIT_BYTES, size
         whole.add(document["truncated"] is False)
     assert whole == {True, False}
 

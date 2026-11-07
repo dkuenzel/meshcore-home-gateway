@@ -2134,6 +2134,22 @@
     "total",
     "truncated"
    ],
+   "pending": [
+    "messages",
+    "messages[].attempt",
+    "messages[].channel_index",
+    "messages[].contact_key",
+    "messages[].id",
+    "messages[].kind",
+    "messages[].max_attempts",
+    "messages[].name",
+    "messages[].queued_at",
+    "messages[].step",
+    "messages[].target",
+    "messages[].text",
+    "total",
+    "truncated"
+   ],
    "received": [
     "channel_index",
     "command",
@@ -2344,6 +2360,11 @@
     "retained": false
    },
    "<base_topic>/<node_id>/nodes": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/pending": {
     "payload": "json",
     "qos": 1,
     "retained": true
@@ -2597,6 +2618,9 @@
    "<base_topic>/<node_id>/nodes": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/pending": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/send/+": {
     "qos": 1
    },
@@ -2678,6 +2702,10 @@
    ],
    "node:event_type": [
     "new"
+   ],
+   "pending:messages.step": [
+    "queued",
+    "sent"
    ],
    "received:command.reason": [
     "broker_unavailable",

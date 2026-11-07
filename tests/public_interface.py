@@ -116,6 +116,7 @@ from meshcore_home_gateway.ports import (
     ContactsRead,
     MessageReceived,
     PacketLogged,
+    SendRequest,
     StatsRead,
 )
 from meshcore_home_gateway.protocol import codec
@@ -675,6 +676,19 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     ):
         event = DeliveryEvent("id", ALIAS, final, text="Hi", attempt=3, queued_at=T - 5, **extra)
         bridge.outbox._deliver_event(event)
+    # a message on its way: queued, then sent once (`pending` goes out after a moment's steps);
+    # then a list longer than the document holds
+    bridge.outbox.accept(SendRequest(ALIAS, b"On my way", False))
+    await asyncio.sleep(0)
+    (on_its_way,) = bridge.outbox._pending.values()
+    sent = DeliveryEvent(on_its_way.id, ALIAS, DeliveryState.SENT, text="On my way", attempt=1)
+    bridge.outbox._deliver_event(sent)
+    await asyncio.sleep(0)
+    long = views.PendingEntry(
+        "id", T, ALIAS, "contact", KEY, None, "Alice", "x" * 150, "sent", 1, 4
+    )
+    observer.pending([long] * 40)
+    bridge.outbox.publish_pending()
     bridge.announcer.announce()  # discovery, the controls, the contacts' devices; state
     bridge.radio.ready.set()
     bridge.status.publish()  # the radio connected
@@ -758,6 +772,7 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     readings = views.RadioReadings(codec.Battery(0, 0, 0), errors, None, None, T)
     states, statuses = "contacts/<key>:telemetry_state", "state:telemetry"
     reasons, event_states = "state:telemetry_reason", "telemetry:state"
+    steps = "pending:messages.step"
     _within(states, _emitted(published, "contacts/<key>", "telemetry_state"), STATES)
     _within(statuses, _emitted(published, "state", "telemetry"), STATUSES)
     _within(reasons, _emitted(published, "state", "telemetry_reason"), PAUSE_REASONS)
@@ -781,6 +796,9 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
             cast(str, views.setting_value(profile.ADVERT_LOCATION, shared)) for shared in (0, 1)
         ],
         "contacts/<key>:type": list(NODE_TYPES.values()),
+        steps: _declared(
+            steps, _listed(published, "pending", "messages", "step"), [*views.PENDING_STEPS]
+        ),
         "contacts/<key>:flags": views.flag_names(sum(ContactFlag)),
         "stats:errors": views.stats_document(readings, AirtimeMeter(), None)["errors"],
         states: _options(states, contact["telemetry_state"]["options"], STATES),
@@ -797,6 +815,19 @@ def _emitted(published: Sequence[tuple[str, bytes, bool, int]], name: str, key: 
         json.loads(payload)[key]
         for published_on, payload, _, _ in published
         if placeholders(published_on) == topic and payload
+    }
+
+
+def _listed(
+    published: Sequence[tuple[str, bytes, bool, int]], name: str, items: str, key: str
+) -> set[Any]:
+    """The values of `key` in the entries of the list `items` of the document `name`."""
+    topic = _DOCUMENTS + name
+    return {
+        entry[key]
+        for published_on, payload, _, _ in published
+        if placeholders(published_on) == topic and payload
+        for entry in json.loads(payload)[items]
     }
 
 

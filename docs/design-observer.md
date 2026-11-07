@@ -11,8 +11,8 @@ statistics, the packet log), every received message and every final delivery
 core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
-`contacts` and `contacts/<key>`, `nodes`, `history`, and the events `contact`, `node` and
-`telemetry`.
+`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, and the events `contact`, `node`
+and `telemetry`.
 
 ```mermaid
 flowchart LR
@@ -84,6 +84,16 @@ flowchart LR
   `queued_at`, `suspect` and `reason` after a look at its columns, in version 2 as the table
   `reading` was: 2.0 names its columns in every statement, so a downgrade leaves them empty and
   keeps the history.
+* **Messages on their way** go to the `pending` document (oldest first, the whole document within
+  8 KiB): the outbox keeps the messages it accepted until their final event, the one it delivers
+  included, which the queue's count in `state` leaves out (#112). An entry follows its delivery
+  events: `queued`, then `sent` with each attempt; a message paused for an alert has no event and
+  stays `sent`, and one kept across a stop is `queued` again with its attempts. The outbox hands
+  the list to the observer once the steps of a moment are done (`call_soon`): after the `history`
+  of a message that became final, so that a reader of both topics never misses it, and once for a
+  burst of requests rather than for each. The observer publishes it again at every connect, and
+  the outbox after the start, when the messages a stop kept are queued again (oldest first by
+  their acceptance time).
 * **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
   `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
   history's table `reading`, one row per value, in one transaction. The table was added to the

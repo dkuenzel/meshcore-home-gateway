@@ -668,7 +668,8 @@ def test_an_advert_flood_is_bounded_on_the_bus_and_in_the_history(
 
 def test_documents_are_published_again_when_the_broker_reconnects() -> None:
     """The MQTT adapter drops retained messages while the broker is away: a reconnect sends the
-    current documents again, and the clearing of a removed contact's topic too."""
+    current documents again, and the clearing of a removed contact's topic too; the history and
+    the messages on their way also before anything was published on them."""
     bus = FakeBus()
     observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
     alice, bob = contact_record(ALICE), contact_record(BOB)
@@ -679,7 +680,10 @@ def test_documents_are_published_again_when_the_broker_reconnects() -> None:
     bus.published.clear()
     observer.publish_all()
     again = {t: p for t, p, keep in bus.published if keep}
-    assert again == current | {f"{ROOT}/history": again[f"{ROOT}/history"]}
+    assert again == current | {
+        f"{ROOT}/history": again[f"{ROOT}/history"],
+        f"{ROOT}/pending": b'{"total":0,"truncated":false,"messages":[]}',
+    }
     assert again[f"{ROOT}/contacts/{keys[1]}"] == b""  # cleared again
     assert again[f"{ROOT}/contacts/{keys[0]}"] != b""
 

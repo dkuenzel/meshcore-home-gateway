@@ -1415,6 +1415,60 @@
         }
       }
     },
+    "pending": {
+      "address": "{base_topic}/{node_id}/pending",
+      "messages": {
+        "pending": {
+          "name": "pending",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "messages": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "attempt": {},
+                    "channel_index": {},
+                    "contact_key": {},
+                    "id": {},
+                    "kind": {},
+                    "max_attempts": {},
+                    "name": {},
+                    "queued_at": {},
+                    "step": {
+                      "x-values": [
+                        "queued",
+                        "sent"
+                      ]
+                    },
+                    "target": {},
+                    "text": {}
+                  }
+                }
+              },
+              "total": {},
+              "truncated": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
     "received": {
       "address": "{base_topic}/{node_id}/received",
       "messages": {
@@ -2240,6 +2294,24 @@
         }
       ]
     },
+    "receive_pending": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/pending"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/pending/messages/pending"
+        }
+      ]
+    },
     "receive_send_alias": {
       "action": "receive",
       "channel": {
@@ -3047,6 +3119,24 @@
       "messages": [
         {
           "$ref": "#/channels/nodes/messages/nodes"
+        }
+      ]
+    },
+    "send_pending": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/pending"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/pending/messages/pending"
         }
       ]
     },

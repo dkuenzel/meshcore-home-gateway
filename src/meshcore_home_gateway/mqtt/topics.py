@@ -17,6 +17,7 @@ class Topics:
         self.contacts = f"{self.root}/contacts"  # index of the radio's contact table
         self.nodes = f"{self.root}/nodes"  # nodes heard, not contacts
         self.history = f"{self.root}/history"  # the latest messages in and out
+        self.pending = f"{self.root}/pending"  # the messages accepted and not final yet
         self.settings = f"{self.root}/settings"  # the managed radio profile (ADR 0020)
         # events
         self.contact_event = f"{self.root}/contact"  # added, removed; hidden or shown in HA
