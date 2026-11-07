@@ -53,7 +53,9 @@ with `show_empty: false` that renders nothing hides itself. `test_helpers.py` ch
 helpers and `cards()`, which finds a page's cards by its path, a chat page's alias or a contact's
 key. The chats' cards read the gateway's message history and its messages on their way:
 `test_chats.py` sets the two sensors' states as the gateway announces them, and two of its tests
-feed the documents and the drafts through the gateway's own discovery. The suite checks what
+feed the documents and the drafts through the gateway's own discovery. A test that gives a chat
+its field and *Send* button itself, as discovery documents of its own, starts without the
+gateway's (`gateway(drafts=False)`, `deliver(drafts=False)`). The suite checks what
 [home-assistant.md](home-assistant.md) promises, including the example
 automations taken from that page, and that Home Assistant logs no warning. It is a separate CI job
 and not part of `make check`, because Home Assistant needs a newer Python than the gateway and

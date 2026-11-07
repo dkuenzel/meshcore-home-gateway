@@ -643,8 +643,8 @@ script, and the examples below, exactly as written here (`make ha-test`,
 `meshcore-home-gateway dashboard` writes a dashboard for the gateway it runs beside, as YAML for
 Home Assistant. It has three tabs, *Overview*, *Chats* and *Contacts*, and pages without a tab:
 one for each chat, *Map*, *Gateway*, *Settings* and *Help*. On *Overview*, on *Chats* and on a
-chat's page every card has a fold that explains it, and the two tabs end in *What this view is
-for*.
+chat's page every card above the field to write in has a fold that explains it, and the two tabs
+end in *What this view is for*, which links to *Help*.
 
 * *Overview* answers whether everything is fine. Its first line says it in a colour: red for
   act now (the gateway not found or offline, the radio disconnected or taken over by another
@@ -657,8 +657,8 @@ for*.
   position and battery paused, the radio's clock far off, a full contact table, and a gateway of
   another major or minor version than the dashboard's (which of the two to update).
   *Latest chats* shows the three chats with the newest messages, each a link to its page, "new"
-  for a message received in the last 15 minutes. *Where everyone is* lists the contacts with a
-  position, in words, and links to the map.
+  for a message received in the last 15 minutes, and a message not sent yet as on its way.
+  *Where everyone is* lists the contacts with a position, in words, and links to the map.
 * *Chats*: *All chats*, every chat page with its kind and newest message, those only automations
   write to last, then the contacts with a device that have no chat page yet and the channels
   heard that have none; and *Latest messages*, all messages together as a thread.
@@ -666,10 +666,13 @@ for*.
   right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
   a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
   its way in italics. The newest six stay open, fewer when they are long, the older ones in a
-  fold. The delivery code that `[messages] confirm_nonce` adds is hidden. Under the thread, why
-  writing is not possible when it is not, and *About*: where the person is, the battery, asking
-  for position and battery, or the chat's text before and after messages. The page ends in the
-  field to write in and its *Send* button (writing, below).
+  fold. The delivery code that `[messages] confirm_nonce` adds is hidden; the thread's help links
+  to *Help*, which explains each reason. Under the thread, why writing is not possible when it is
+  not, and *About*: where the person is, the battery, asking for position and battery with how
+  the device answers, or the chat's text before and after messages. The page ends in the field
+  to write in and its *Send* button (writing, below). A person whose device is gone, removed from
+  the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
+  how to get the contact back.
 * *Contacts*: the contacts on the radio with their type, when they were heard and their telemetry
   state, newest first; *Telemetry and removal*, each contact's switch *Telemetry* and button
   *Remove from radio*; *Add heard node* and *Add contact (key or link)*; the last contact event,
@@ -730,7 +733,9 @@ tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at t
 a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why above the
 field, also when the field held no text. The field and the button are entities of a gateway of
 version 2.1; with an earlier gateway, the page says so instead. A channel that only automations
-write to (`homeassistant.hidden_targets`) has no field.
+write to (`homeassistant.hidden_targets`) has no field. While the field or the button is disabled
+or unavailable in Home Assistant, or has another entity ID than the page expects, the page says
+which for the administrator.
 
 **The script for automations.** The dashboard does not use the script *Mesh message*; it stays
 for automations and the developer tools, as a form that sends to a target or a contact. Add it

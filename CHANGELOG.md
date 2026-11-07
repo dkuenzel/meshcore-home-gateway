@@ -25,14 +25,17 @@ format, the command line and Home Assistant discovery are public interfaces
   yellow with the reason in words, one on its way in italics, the newest open and the older ones
   folded, the delivery code of `confirm_nonce` hidden. At its top it says how to write (type,
   Return, then *Send*), above its field why a *Send* was refused, also when the field held no
-  text; under the thread, why writing is not possible when it is not, and about the person or
-  the chat: where the person is, the battery, asking for position and battery, the text the
-  gateway adds before and after each message. These need the message history and the messages on
-  their way of gateway 2.1.
-- *Chats* lists every chat page under *All chats* with its newest message and "new" for a
-  message received in the last 15 minutes, the contacts and channels that have no page yet, and
-  all messages together under *Latest messages*. *Overview* shows the three latest chats and
-  where everyone is. *Help* explains the problems and why a message was not sent.
+  text; under the thread, why writing is not possible when it is not (the field or its *Send*
+  button disabled, unavailable or under another ID, for the administrator), and about the person
+  or the chat: where the person is, the battery, asking for position and battery with how the
+  device answers, the text the gateway adds before and after each message. A person removed from
+  the radio or hidden keeps the page, which says how to get the contact back. These need the
+  message history and the messages on their way of gateway 2.1.
+- *Chats* lists every chat page under *All chats* with its newest message, one not sent yet as
+  on its way, and "new" for a message received in the last 15 minutes, the contacts and channels
+  that have no page yet, and all messages together under *Latest messages*. *Overview* shows the
+  three latest chats and where everyone is. *Help* explains the problems and why a message was
+  not sent, and opens from each tab's *What this view is for* and from each chat's help.
 
 ### Changed
 

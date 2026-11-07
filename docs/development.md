@@ -128,7 +128,8 @@ The rules:
   prefix (`meshcore-home-gateway: `) stays outside every text. Commands, paths and option names a
   user copies are fields where the line allows it.
 * A `# Translators:` comment directly above the call or its statement goes into the catalog: say
-  where the text is shown and what a field holds. In a card of the dashboard's template it is
+  where the text is shown and what a field holds. Every text of the dashboard with a field has
+  one. In a card of the dashboard's template it is
   `{#- Translators: … -#}` on the line above the text (a `#` line there is card content); never in
   a GitHub-alert line, which it would join to the next.
 * Never translate a log call, machine output (`--json`, `--list`, the results with `--wait`,
@@ -218,8 +219,9 @@ often they still break one; *Overview*, *Chats* and the chat pages break none.
     tabs do not fit a phone.
 15. No condition has `enabled`, no number in a condition is a string.
 16. A text or a name that quotes a label of the dashboard, and a name that names a button's
-    label (*Return, then Send*), is listed in `QUOTES`, and every language says the label as it
-    translates it.
+    label (*Return, then Send*), is listed in `QUOTES` with the labels it names, and every
+    language says each label as it translates it. A text that asks for the keyboard's key says
+    the key before ↵ in a word of the name beside *Send*.
 17. No text names a section of the guide; it links to its anchor instead. Only a line that
     starts with "For your administrator:" names Home Assistant's menus.
 18. A chat page's footer is a `vertical-stack` of the refused line (a Markdown card with
