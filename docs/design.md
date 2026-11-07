@@ -420,9 +420,9 @@ sequenceDiagram
    a time to live of `queue_ttl_s`. The messages to `[messages] alert_targets` leave before the
    others (IMP-032): an alert that comes while another message waits for the radio or for
    airtime, also before its first attempt, or between two of its attempts, goes first, and that
-   message continues after it with its progress (#93); each kind leaves in arrival order. At a stop the queue goes to the state
-   file (`outbox`, with each message's time waited, radio timestamp and attempts sent), from the
-   stop's start to its last step (§5.2); the next
+   message continues after it with its progress (#93); each kind leaves in arrival order. At a
+   stop the queue goes to the state file (`outbox`, with each message's time waited, radio
+   timestamp and attempts sent), from the stop's start to its last step (§5.2); the next
    start queues those with time left again and publishes `queued` again with their `id`, ends
    the others as they would have ended, and counts their texts for the duplicate check
    ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A message that never left within that time is `expired`:
