@@ -339,6 +339,17 @@ def test_a_degraded_gateway_is_a_problem() -> None:
         assert f"'{key}': h.get('{key}')" in sensor["json_attributes_template"]
 
 
+def test_the_contacts_sensor_says_why_requests_are_refused() -> None:
+    """The guide and the changelog of 2.0.0 name `manage_reason` as an attribute of *Contacts*
+    (#99): why add and remove requests are refused now, `null` while they are taken. An index of
+    an earlier version lacks it: `.get` logs nothing in Home Assistant."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["contacts"]
+    assert sensor["state_topic"] == sensor["json_attributes_topic"] == TOPICS.contacts
+    assert sensor["json_attributes_template"] == (
+        "{{ {'max': value_json.max, 'manage_reason': value_json.get('manage_reason')} | tojson }}"
+    )
+
+
 def test_a_look_alike_node_is_a_problem() -> None:
     sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["look_alike"]
     assert (sensor["p"], sensor["device_class"]) == ("binary_sensor", "problem")

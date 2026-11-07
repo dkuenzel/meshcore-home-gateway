@@ -8,6 +8,12 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Added
+
+- The attribute `manage_reason` of *Contacts* in Home Assistant, which the guide and the
+  changelog of 2.0.0 already named: why requests to add or remove contacts are refused now,
+  `null` while they are taken (#99).
+
 ### Changed
 
 - Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery

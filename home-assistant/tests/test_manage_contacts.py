@@ -280,6 +280,19 @@ async def test_the_controls_setting_takes_effect_at_once_both_ways(
     assert problems(caplog) == []
 
 
+async def test_the_contacts_sensor_says_why_requests_are_refused(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The attribute `manage_reason` of *Contacts*, as the guide names it (#99)."""
+    await with_controls(hass, [])
+    sensor = f"sensor.{PREFIX}_contacts"
+    assert hass.states.get(sensor).attributes["manage_reason"] is None
+    for reason in ("management_off", "no_radio", "untested_firmware"):
+        await fire(hass, TOPICS.contacts, contacts_document(Mesh(), manage_reason=reason))
+        assert hass.states.get(sensor).attributes["manage_reason"] == reason
+    assert problems(caplog) == []
+
+
 # --- removing ----------------------------------------------------------------------------------
 
 

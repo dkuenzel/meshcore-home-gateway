@@ -1668,6 +1668,7 @@
     },
     "contacts": {
      "attributes": [
+      "manage_reason",
       "max"
      ],
      "entity_id": "sensor.<device>_contacts",

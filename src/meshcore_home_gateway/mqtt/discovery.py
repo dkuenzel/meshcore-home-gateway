@@ -509,7 +509,11 @@ def _mesh_components(
             icon="mdi:account-multiple",
             state_class="measurement",
             value_template="{{ value_json.total }}",
-            json_attributes_template="{{ {'max': value_json.max} | tojson }}",
+            # why requests to add or remove contacts are refused now (#99)
+            json_attributes_template=(
+                "{{ {'max': value_json.max, 'manage_reason': value_json.get('manage_reason')}"
+                " | tojson }}"
+            ),
             **contacts,
         ),
         "nodes": component(
