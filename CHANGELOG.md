@@ -8,6 +8,18 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- The update guide: from 1.x to 2.0, the setting that a radio over TCP (`[radio]
+  tcp_unauthenticated`) or commands over a broker without credentials or TLS (`[mqtt] insecure`)
+  need cannot come from `--reconfigure`, which asks with the installed version. The guide shows
+  the line to add by hand right before `--update`, and the troubleshooting table has a row for
+  `mqtt.insecure` ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+- The development guide: a release that is due is stopped by disabling the workflow *Release
+  due*, not by a revert of its version, which the release plan refuses; a run of `release.yml`
+  that failed before it published is re-run on the same tag
+  ([development.md](docs/development.md#release)).
+
 ## [2.0.0] - 2026-11-07
 
 The second stable release. It ships the program of 2.0.0rc3, which CI, the installer's self-test

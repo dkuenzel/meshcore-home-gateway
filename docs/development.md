@@ -426,8 +426,14 @@ it passes. `releases/latest` and the installer's default never pick a pre-releas
    push of several commits is tagged on its last one. A release waits a day (SUP-001): the
    workflow `release-due.yml` looks every hour and tags the commit that wrote the version once it
    has been on `main` for 24 hours and CI passed on it, then starts the release the same way,
-   once: a release that failed is followed by the next version. Until then, a revert of the
-   version stops it; a published release cannot be withdrawn. Everything a release is built from
+   once: a release that failed is followed by the next version. A run of `release.yml` that
+   failed before it published (a flaky test in its job *check*) needs no new version: *Re-run
+   failed jobs* on that run runs the failed job and the ones after it on the same tag, which
+   stays. Until the tag is made, disabling the workflow stops the release
+   (`gh workflow disable release-due.yml`, or *Disable workflow* in the Actions tab; enable it
+   again for the next version). A revert of the version does not stop it: the release plan
+   refuses it, because the tag of the version it goes back to is on another commit. A published
+   release cannot be withdrawn. Everything a release is built from
    was on `main` for a day, and its program was tagged as the candidate before; a pre-release
    reaches only an installation that names it, so a faulty candidate is followed by the next one
    as soon as CI passed on it. A re-run, of the failed job or of all jobs, is safe: it finds the

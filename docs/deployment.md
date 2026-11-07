@@ -304,7 +304,8 @@ pct stop 105 && pct destroy 105
   `meshcore-home-gateway-<version>.pyz`, switches the `current.pyz` link and restarts the service. If the configuration does not pass, the old
   version stays active, also when the version string did not change. A newer version can refuse
   a configuration that an older one accepted (see the changelog); fix the setting it names, for
-  example with `--reconfigure`, and update again. The `latest` address serves the latest release,
+  example with `--reconfigure`, and update again (a setting the installed version does not know
+  yet: see the next point). The `latest` address serves the latest release,
   never a pre-release (`a`, `b`, `rc`, `dev`): it does not find one, or installs an older release
   over it. Install or update to a pre-release with its own installer
   (`releases/download/vX.Y.Zrc1/meshcore-home-gateway-lxc.sh`) or with `--release X.Y.Zrc1`; the
@@ -313,6 +314,22 @@ pct stop 105 && pct destroy 105
   installation gets `unattended-upgrades` with it. After the restart it runs the same self-test
   as an installation; with problems the new version keeps running, and the log shows the report
   and points to [Roll back](#update-reconfigure-remove).
+* **A setting that only the new version knows:** from 1.x to 2.0, a radio over TCP needs
+  `tcp_unauthenticated = true` in `[radio]`, and commands over a broker connection without a user
+  name, or without TLS to a broker beyond the gateway's host, need `insecure = true` in `[mqtt]`.
+  `--reconfigure` cannot write them: it asks with the installed version, which does not know
+  them, and `--update` asks nothing. Read first what each one accepts
+  ([configuration.md](configuration.md#radio),
+  [mqtt-api.md](mqtt-api.md#securing-the-broker)); a radio over USB, or a broker with credentials
+  and TLS, needs neither. Then add the line by hand and update at once, because the installed
+  version refuses the unknown setting at its next start:
+
+  ```sh
+  pct exec 105 -- sed -i '/^\[radio\]/a tcp_unauthenticated = true' /etc/meshcore-home-gateway/config.toml
+  pct exec 105 -- sed -i '/^\[mqtt\]/a insecure = true' /etc/meshcore-home-gateway/config.toml
+  bash -c "$(wget -qO- $installer)" -- --update 105
+  ```
+
 * **The privacy defaults after an update to 2.0.0:** only the messages of the channels that are a
   target are published, of other people's radios only their keys and types, and telemetry asks
   only the companions the household includes. Switch *Telemetry* on for each of the household's
@@ -566,7 +583,8 @@ updates wait for.
 | `MQTT: another client wrote …; restoring the gateway's payload` | Another client wrote one of the gateway's retained topics, and the gateway wrote its own again ([mqtt-api.md](mqtt-api.md#securing-the-broker)). A second gateway with the same `node_id` and `base_topic` (an old container, a test install), a tool that cleared retained messages, or a client whose ACL lets it write below the gateway's topics: only the gateway's user may |
 | `MQTT: the broker refused the subscription to …` | The broker's ACL does not let the gateway's user read these topics: requests there do not arrive, and what other clients write on its documents stays. Give the gateway's user `readwrite` below its topics ([mqtt-api.md](mqtt-api.md#securing-the-broker)) |
 | ``MQTT: the gateway's `online` on … did not come back within 10 s`` | The same with Mosquitto's `acl_file`, which grants every subscription and leaves out what the user may not read: give the gateway's user `readwrite` below its topics, not only `write` |
-| `radio.tcp_unauthenticated: the radio's TCP interface has no authentication` | A radio over TCP needs `tcp_unauthenticated = true` in `[radio]` since 2.0: read what the interface exposes ([configuration.md](configuration.md#radio)), then add the setting, or connect the radio over USB. `--reconfigure` asks for it |
+| `radio.tcp_unauthenticated: the radio's TCP interface has no authentication` | A radio over TCP needs `tcp_unauthenticated = true` in `[radio]` since 2.0: read what the interface exposes ([configuration.md](configuration.md#radio)), then add the setting, or connect the radio over USB. After an update from 1.x, add it by hand ([Update](#update-reconfigure-remove)) |
+| `mqtt.insecure: commands are configured and the broker connection has no credentials` (or `no TLS`) | Since 2.0, commands (`[commands] senders`) need a broker connection with a user name, and TLS to a broker beyond the gateway's host: any client that reaches the broker could publish command events. Add credentials and TLS, or read [Securing the broker](mqtt-api.md#securing-the-broker) and set `insecure = true` in `[mqtt]`. After an update from 1.x, add it by hand ([Update](#update-reconfigure-remove)) |
 | `radio: the radio closed the TCP connection and kept running` | Another client connected to the radio's TCP port, and the gateway took the link back (`radio_link_contested` in `state`, *Radio link taken over* in Home Assistant, for an hour). If it was you (the phone app over WiFi, `meshcore-cli`), stop the gateway first next time, or use USB. If not, treat the radio's private key as read: put the radio in a network of its own, give it a new key (a factory reset formats its storage, and at the next start it makes a new key, without its contacts, channels and settings), re-add the gateway on every companion, and set the radio up again. Nothing protects the direct messages recorded before (no forward secrecy) |
 | Commands rejected with `broker_unavailable` | The gateway could not reach the broker when the command arrived; check the broker connection (`availability`, the log), then send the command again |
 | Commands rejected with `state_unwritable` | `/var/lib/meshcore-home-gateway/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
