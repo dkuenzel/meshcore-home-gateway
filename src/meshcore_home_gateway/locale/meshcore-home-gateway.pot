@@ -755,6 +755,13 @@ msgstr ""
 msgid "cannot read apt's settings for automatic updates ({error}): apt-config dump APT::Periodic shows them"
 msgstr ""
 
+#. why apt-config gave no answer, shown in brackets in a line of doctor;
+#. {status} is the number it exited with
+#: src/meshcore_home_gateway/cli/doctor.py
+#, python-brace-format
+msgid "exit status {status}"
+msgstr ""
+
 #: src/meshcore_home_gateway/cli/doctor.py
 #, python-brace-format
 msgid "firmware {firmware} is not one the gateway is tested with: it takes no contact requests (docs/companions.md)"

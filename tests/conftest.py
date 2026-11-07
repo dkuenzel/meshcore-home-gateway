@@ -19,6 +19,7 @@ import pytest
 
 from meshcore_home_gateway import health, i18n, telemetry_poller
 from meshcore_home_gateway.catalog import read_po
+from meshcore_home_gateway.cli import doctor
 
 SKIP_BROKER = os.environ.get("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS") == "1"
 SKIP_GETTEXT = os.environ.get("MESHCORE_HOME_GATEWAY_SKIP_GETTEXT_TESTS") == "1"
@@ -53,6 +54,23 @@ def fresh_failures() -> None:
     """The count of caught bugs and the memory of their tracebacks are the process's: each test
     starts without those of the tests before (health.FAILURES)."""
     health.FAILURES.reset()
+
+
+@pytest.fixture(scope="session")
+def empty_directory(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A directory that stays empty: its files do not exist."""
+    return tmp_path_factory.mktemp("empty")
+
+
+@pytest.fixture(autouse=True)
+def bare_host(monkeypatch: pytest.MonkeyPatch, empty_directory: Path) -> None:
+    """`doctor` reads the host: whether unattended-upgrades is installed, apt's settings through
+    apt-config (#107), and whether an update waits for a restart. Every test sees a host without
+    them, so that what doctor prints does not depend on the machine that runs the tests; a test
+    of those checks sets its own."""
+    monkeypatch.setattr(doctor, "UPGRADER", empty_directory / "unattended-upgrade")
+    monkeypatch.setattr(doctor, "APT_CONFIG", empty_directory / "apt-config")
+    monkeypatch.setattr(doctor, "REBOOT_REQUIRED", empty_directory / "reboot-required")
 
 
 @pytest.fixture(autouse=True)

@@ -31,6 +31,7 @@ from meshcore_home_gateway.catalog import read_po
 from meshcore_home_gateway.cli import EX_CONFIG, EX_OK, EX_USAGE, main
 from meshcore_home_gateway.cli import broker as cli_broker
 from meshcore_home_gateway.cli import common as cli_common
+from meshcore_home_gateway.cli import doctor as cli_doctor
 from meshcore_home_gateway.cli import probe as cli_probe
 from meshcore_home_gateway.config import (
     ConfigError,
@@ -51,6 +52,7 @@ from meshcore_home_gateway.protocol.links import LinkError, contact_link, parse_
 from meshcore_home_gateway.texts import Text, TextError
 from meshcore_home_gateway.views import HistoryEntry
 from tests.i18n_helpers import hostile, percents, pseudo, speaking, wide, widened
+from tests.test_cli_ops import LISTS, UPGRADE, apt_config
 from tests.test_links import card
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -543,6 +545,8 @@ VALUES = (
     "the client is not connected",
     "the radio went away",
     "No such file or directory",
+    "APT::Periodic::Update-Package-Lists",
+    "APT::Periodic::Unattended-Upgrade",
     "Not a directory",
     "File exists",
     "no-such-group",
@@ -1086,6 +1090,12 @@ def _operations(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
         _broker(monkeypatch, **behaviour)
         ran = _main([command[0], "--config", config, *command[1:]])
         printed += [ran.out, ran.err]
+    # unattended-upgrades installed: apt-config fails, has neither setting, one off, both on
+    monkeypatch.setattr(cli_doctor, "UPGRADER", tmp)
+    for settings in (None, {}, {LISTS: "1", UPGRADE: "0"}, {LISTS: "1", UPGRADE: "1"}):
+        monkeypatch.setattr(cli_doctor, "APT_CONFIG", apt_config(tmp, settings))
+        _broker(monkeypatch, unreachable=True)
+        printed.append(_main(["doctor", "--config", config, "--state-dir", state_dir]).out)
     archive = str(tmp / "backup.tgz")
     for _ in range(2):  # the second finds the archive of the first
         ran = _main(["backup", archive, "--config", config, "--state-dir", state_dir])

@@ -282,6 +282,16 @@ def test_doctor_tells_a_radio_clock_behind_from_one_ahead(
     assert "ahead" not in out
 
 
+def test_the_tests_see_a_host_without_what_doctor_reads_of_it() -> None:
+    """doctor reads the host: whether unattended-upgrades is installed, apt's settings through
+    apt-config (#107), and whether an update waits for a restart. A test that runs doctor must
+    not depend on the machine that runs it: with unattended-upgrades installed there and apt's
+    settings off, it would print other texts. conftest gives every test a host without them; a
+    test of those checks sets its own."""
+    for path in (cli_doctor.UPGRADER, cli_doctor.APT_CONFIG, cli_doctor.REBOOT_REQUIRED):
+        assert not path.exists()
+
+
 LISTS, UPGRADE = "APT::Periodic::Update-Package-Lists", "APT::Periodic::Unattended-Upgrade"
 
 

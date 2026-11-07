@@ -253,7 +253,9 @@ def _shell_values(output: str) -> dict[str, str]:
 def _failure(exc: Exception) -> str:
     """Why apt-config gave no answer, in a few words."""
     if isinstance(exc, subprocess.CalledProcessError):
-        return f"exit status {exc.returncode}"
+        # Translators: why apt-config gave no answer, shown in brackets in a line of doctor;
+        # {status} is the number it exited with
+        return tr("exit status {status}", status=exc.returncode)
     if isinstance(exc, OSError):
         return str(exc.strerror or exc)
     return str(exc) or type(exc).__name__
