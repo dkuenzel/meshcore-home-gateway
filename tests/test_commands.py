@@ -453,3 +453,12 @@ def test_wrong_codes_ahead_of_the_clock_count_only_within_the_window() -> None:
         NOW - 10,
         NOW + 10,
     ]
+
+
+def test_a_code_with_a_sender_timestamp_of_the_epoch_is_judged() -> None:
+    """With the age check off a sender timestamp may be 0: the steps around its own are not
+    negative, which no code has, so a wrong code is code_invalid and nothing raises."""
+    rules = dataclasses.replace(CODED, max_age_s=0.0)
+    decision = evaluate_command(dm("arm 000000", ts=0), rules, CODED_BOOK, {}, NOW)
+    assert decision is not None
+    assert (decision.rejection, decision.late) == (Rejection.CODE_INVALID, False)

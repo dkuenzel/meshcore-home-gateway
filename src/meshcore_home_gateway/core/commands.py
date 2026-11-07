@@ -285,9 +285,10 @@ def _check_code(
 
 
 def _steps_of(code: str, secret: bytes, around: int) -> list[int]:
-    """The time steps within CODE_SKEW_STEPS of `around` whose code is `code`."""
+    """The time steps within CODE_SKEW_STEPS of `around` whose code is `code`; none is before
+    the epoch (a sender timestamp of 0 with the age check off)."""
     return [
         step
-        for step in range(around - CODE_SKEW_STEPS, around + CODE_SKEW_STEPS + 1)
+        for step in range(max(around - CODE_SKEW_STEPS, 0), around + CODE_SKEW_STEPS + 1)
         if hmac.compare_digest(code_at(secret, step), code)
     ]
