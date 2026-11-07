@@ -92,6 +92,11 @@ format, the command line and Home Assistant discovery are public interfaces
   messages was published `queued` and then lost: the stop had kept the queue already. It now ends
   `rejected` with the new reason `stopping`, which the dashboard shows as "the gateway was
   stopping" ([mqtt-api.md](docs/mqtt-api.md#delivery-delivery)).
+- With `set_clock`, a radio clock 1 minute to 1 hour ahead is no longer restarted when no
+  contact changed for longer than `set_clock_max_days`, or the host's clock is before the
+  release: the restart starts the clock at the newest contact time, and the next connect then
+  refused to move it forward, which left the radio weeks behind. The log says why it waits
+  ([deployment.md](docs/deployment.md#5-troubleshooting)) (#86).
 
 ## [2.0.0] - 2026-11-07
 

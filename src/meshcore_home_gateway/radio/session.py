@@ -76,6 +76,9 @@ CLOCK_AHEAD_WARNING_S = 60
 # a restart sets a clock ahead back. Up to an hour: nodes and repeaters ignore the radio's adverts
 # and logins until real time passes the times it sent before (BaseChatMesh.cpp:133).
 CLOCK_RESTART_MAX_S = 3600
+# The step forward that follows a restart is judged for a connect this much later: the radio is
+# back within seconds, a connect that fails waits longer.
+RESTART_RECONNECT_S = 3600
 # No release of the gateway is older than this: a clock before it was never set. A radio without
 # a clock chip starts at 2024-05-15, or at the newest time it wrote to a contact
 # (ArduinoHelpers.h:11, BaseChatMesh.cpp:60-70). Raised at every release (docs/development.md).
@@ -575,24 +578,40 @@ class CompanionSession:
         raise error
 
     def _restart_refused(self, ahead: int) -> str | None:
-        """Why the radio is not restarted to set its clock back now, or None. After a restart its
-        clock is its newest contact time plus a second, and the next connect moves it forward."""
+        """Why the radio is not restarted to set its clock back now, or None."""
         if not self._set_clock:
             return "set_clock = false"
         if ahead > CLOCK_RESTART_MAX_S:
             return (
                 "more than an hour: nodes and repeaters would ignore it that long after a restart"
             )
+        refused = self._restart_time_refused()
+        if refused is not None:
+            return refused
+        if self.may_restart is None or not self.may_restart():
+            return "once no message is being delivered, at most once a day"
+        return None
+
+    def _restart_time_refused(self) -> str | None:
+        """Why the time a restart starts the clock at does not help, or None. That time is the
+        newest contact time plus a second; it must be behind the host's, and the next connect
+        must move it forward from there, which `_clock_refused` may refuse: the radio would stay
+        behind (#86)."""
         newest = max((record.last_modified for record in self.contact_records.values()), default=0)
         if not newest:
             return "without contacts a restart does not set it back"
-        if newest + 1 > int(self._wall()) - CLOCK_SET_THRESHOLD_S:
+        now = int(self._wall())
+        if newest + 1 > now - CLOCK_SET_THRESHOLD_S:
             return (
                 f"a restart starts it at its newest contact time, {_iso(newest)}; "
                 "checked again every minute"
             )
-        if self.may_restart is None or not self.may_restart():
-            return "once no message is being delivered, at most once a day"
+        stuck = self._clock_refused(now, newest + 1 - RESTART_RECONNECT_S)
+        if stuck is not None:
+            return (
+                f"a restart would leave it at its newest contact time, {_iso(newest)}, and the "
+                f"next connect would not move it forward: {stuck}"
+            )
         return None
 
     def _clock_refused(self, now: int, radio_time: int) -> str | None:

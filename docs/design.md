@@ -323,9 +323,10 @@ sequenceDiagram
   `set_clock_max_days = 0` lifts both bounds. Ahead by more than a minute and at most an hour,
   the session restarts the radio: at start the firmware sets its clock to its newest contact time
   plus a second, also back, and the next connect sets it forward. It does so only when that time
-  is behind the host's, after taking the radio's messages, when no message is queued or being
-  delivered, and at most once a day (the bridge's `may_restart`); the check runs at connect and
-  at every heartbeat. Further ahead, a warning says so: nodes and repeaters ignore the radio's
+  is behind the host's and the bounds above let the next connect, within an hour, set it forward
+  from there (else the restart would leave it days behind, #86), after taking the radio's
+  messages, when no message is queued or being delivered, and at most once a day (the bridge's
+  `may_restart`); the check runs at connect and at every heartbeat. Further ahead, a warning says so: nodes and repeaters ignore the radio's
   adverts and logins until real time passes the times it sent before, which is fine for minutes
   but not for days. Command age checks do not use the radio's clock: they compare the sender's
   timestamp with the host's clock (§7.3). The unit starts after `time-sync.target` where a
