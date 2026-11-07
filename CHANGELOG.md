@@ -110,6 +110,11 @@ format, the command line and Home Assistant discovery are public interfaces
   its key's digits in its device name. A combining mark that shows, such as an accent, still
   makes another name. One table of these characters serves the names and what `add_contact`
   drops from a copied key or link ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)) (#89).
+- The guide names a limit of `suspect`: its bound takes every hop at the radio's coding rate,
+  so where repeaters or the recipient send at a faster one (4/5 against the radio's 4/8), a
+  genuine acknowledgement of a long text can read `suspect`. Set the gateway's radio to the
+  fastest coding rate of its mesh
+  ([mqtt-api.md](docs/mqtt-api.md#what-confirmed-proves)) (#90).
 
 ## [2.0.0] - 2026-11-07
 

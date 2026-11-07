@@ -880,7 +880,10 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   can compute (§7.2). Without `confirm_nonce` a stranger in range can confirm a fixed alert text
   nobody received; with it, the odds are those of guessing 32 bits within the acknowledgement
   wait. `suspect` catches only a forger beside the gateway who answers at once over a path
-  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. The
+  through repeaters; one who waits, and anything sent to a neighbour or flooded, passes. Its
+  bound takes every hop at the radio's coding rate: a repeater or recipient at a faster one can
+  make a genuine acknowledgement of a long text read `suspect`, unless the radio uses the
+  fastest coding rate of its mesh (#90). The
   history keeps such a message as `confirmed`; the event and the log tell. The fix belongs in the
   firmware: an acknowledgement authenticated with the secret the two radios share, for the
   maintainer to raise with the MeshCore project.
