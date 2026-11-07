@@ -15,7 +15,9 @@ A received message is a command only if all of these hold:
   for the bridge clock, within a time step either way, of a step newer than its last accepted
   code's: the code authenticates the text whatever reached the bridge, and serves once. A sender
   with CODE_FAILURE_LIMIT wrong codes within CODE_FAILURE_WINDOW_S has its codes refused
-  unchecked (RFC 4226, section 7.3): each guess wins with 3 in 10^6, so guesses must be few.
+  unchecked (RFC 4226, section 7.3): each guess wins with 3 in 10^6, so guesses must be few. The
+  sender's code of the time it sent the command, which came too late for the bridge clock, is
+  refused too, but is no guess.
 
 The bridge publishes accepted commands as events; it never executes anything itself.
 """
@@ -141,6 +143,9 @@ class CommandDecision:
     command: Command | None = None
     rejection: Rejection | None = None
     sender_key: str | None = None  # of a rejection after the sender checks passed
+    # a code_invalid whose code is the sender's of the time it was sent, before the steps the
+    # bridge accepts: a genuine command that came late, not counted as a wrong code (#79)
+    late: bool = False
 
 
 def command_word(message: InboundMessage, rules: CommandRules) -> str | None:
@@ -180,15 +185,16 @@ def evaluate_command(
     sender, rejection = _authorise(message.sender_prefix, rules, contacts, seen)
     if rejection is None and sender is not None:
         rejection = _check_time(message.sender_timestamp, rules, last_accepted.get(sender), now)
-    step = None
+    step, late = None, False
     if rejection is None and sender is not None and (secret := rules.secret(sender)) is not None:
         if codes_locked((code_failures or {}).get(sender, ()), now):
             rejection = Rejection.CODE_LOCKED
         else:
             last_step = (last_codes or {}).get(sender)
-            args, step, rejection = _check_code(args, secret, last_step, now)
+            sent = message.sender_timestamp
+            args, step, rejection, late = _check_code(args, secret, last_step, now, sent)
     if sender is None or rejection is not None:
-        return CommandDecision(word, rejection=rejection, sender_key=sender)
+        return CommandDecision(word, rejection=rejection, sender_key=sender, late=late)
     command = Command(word, args, sender, message.sender_timestamp, step)
     return CommandDecision(word, command=command)
 
@@ -254,23 +260,34 @@ def code_at(secret: bytes, step: int) -> str:
 
 
 def _check_code(
-    args: str, secret: bytes, last_step: int | None, now: float
-) -> tuple[str, int | None, Rejection | None]:
-    """The arguments without the code, the code's time step, or why the code is refused."""
+    args: str, secret: bytes, last_step: int | None, now: float, sent: int
+) -> tuple[str, int | None, Rejection | None, bool]:
+    """The arguments without the code, the code's time step, or why the code is refused; and
+    whether a refused code came late: the sender's code for `sent`, its timestamp, of a step
+    before those the bridge accepts (#79). A step ahead never counts as late: a guesser who
+    learnt such a code from the count of wrong ones could use it once its time came."""
     parts = args.rsplit(maxsplit=1)
     code = parts[-1] if parts else ""
     if len(code) != CODE_DIGITS or not (code.isascii() and code.isdigit()):
-        return args, None, Rejection.CODE_MISSING
+        return args, None, Rejection.CODE_MISSING, False
     rest = parts[0] if len(parts) == 2 else ""
     current = int(now // CODE_STEP_S)
-    steps = [
-        step
-        for step in range(current - CODE_SKEW_STEPS, current + CODE_SKEW_STEPS + 1)
-        if hmac.compare_digest(code_at(secret, step), code)
-    ]
+    steps = _steps_of(code, secret, current)
     fresh = [step for step in steps if last_step is None or step > last_step]
     if not steps:
-        return rest, None, Rejection.CODE_INVALID
+        late = any(
+            s < current - CODE_SKEW_STEPS for s in _steps_of(code, secret, sent // CODE_STEP_S)
+        )
+        return rest, None, Rejection.CODE_INVALID, late
     if not fresh:
-        return rest, None, Rejection.CODE_REUSED
-    return rest, fresh[0], None
+        return rest, None, Rejection.CODE_REUSED, False
+    return rest, fresh[0], None, False
+
+
+def _steps_of(code: str, secret: bytes, around: int) -> list[int]:
+    """The time steps within CODE_SKEW_STEPS of `around` whose code is `code`."""
+    return [
+        step
+        for step in range(around - CODE_SKEW_STEPS, around + CODE_SKEW_STEPS + 1)
+        if hmac.compare_digest(code_at(secret, step), code)
+    ]

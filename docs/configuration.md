@@ -210,7 +210,9 @@ After 5 wrong codes of a sender within an hour, a command without a code include
 refuses that sender's commands without a look at the code (`code_locked`) until the first of
 them is an hour old, and its log warns: someone may be guessing the codes. A restart does not
 end it. So a guess wins with at most 3 in a million, and 5 guesses an hour are all there are
-([design §7.4](design.md#74-residual-risks)). To
+([design §7.4](design.md#74-residual-risks)). A command that waited in the radio (a restart, an
+update, a re-plug) or in the mesh carries the code of the time it was sent: it is refused as
+`code_invalid` when it comes too late, but it does not count as a wrong code. To
 give one a secret (or a new one, which ends the old):
 
 ```sh

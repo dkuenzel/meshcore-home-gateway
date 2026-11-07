@@ -817,8 +817,15 @@ than the sender's last accepted code (`code_reused`); `args` leaves it out. The 
 with the timestamp, before the event goes out, so a code serves once, also across a restart.
 After 5 wrong codes of a sender within an hour (`code_missing` and `code_invalid`), its commands
 are refused without a look at the code (`code_locked`, RFC 4226 section 7.3) until the first of
-them is an hour old, and the log warns once; their times are in the state file, so a restart
-does not end it (§7.4).
+them is an hour old, and the log warns each time the sender reaches the limit; their times are
+in the state file, so a restart does not end it (§7.4). A command that came late (it waited in
+the radio through a restart, an update or a re-plug, or in the mesh) ends with the sender's code
+of the time it was sent, which the bridge clock no longer accepts. It is refused as
+`code_invalid`, but it is no guess and is not counted: its code is the sender's for the step of
+its own timestamp, or the step before or after, and that step is older than those the bridge
+accepts. A guess that hits such a code gains nothing: the command is refused all the same, and
+the code of a past step serves no later command. A step ahead of the bridge's never counts as
+late, so the count tells a guesser no code it could use once its time came.
 The code authenticates the text, not the frame: it comes from the secret, which neither the
 radio, the link nor the mesh carries. The secret is 160 random bits from
 `meshcore-home-gateway commands enrol`; the file is read once, at the start, and a missing one
@@ -861,10 +868,10 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   posing as the radio over TCP, at link speed; a stolen handheld, one every few seconds over
   the air) would otherwise find one within a minute, or in about two weeks. Held to 5 wrong
   codes per sender an hour (§7.3), such a guesser wins with about 1 in 2,800 a day, and with
-  about 12 % in a year of guessing without a pause; each hour of it logs a warning, and the `received`
-  events show `code_locked`. The same limit lets the guesser keep the sender's commands refused
-  for as long as it guesses: remove a sender whose codes someone guesses
-  ([configuration.md](configuration.md#commands)).
+  about 12 % in a year of guessing without a pause. The log warns each time the sender reaches
+  the limit again, up to 5 times an hour, and the `received` events show `code_locked`. The
+  same limit lets the guesser keep the sender's commands refused for as long as it guesses:
+  remove a sender whose codes someone guesses ([configuration.md](configuration.md#commands)).
 * A code authenticates the text, not its sender's radio, and it lives up to 90 seconds: whoever
   reads a code before the bridge accepted it (a host posing as the radio over TCP sees the text;
   so does a reader of the `received` event of a command rejected for another reason) can use it

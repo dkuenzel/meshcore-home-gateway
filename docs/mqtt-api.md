@@ -250,9 +250,9 @@ Treat `args` as untrusted input. Rejected attempts appear only on `received`, wi
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the gateway clock; with `max_age_s = 0`, more than a day ahead |
 | `code_missing` | the sender has a code secret, and the last word is no 6-digit code |
-| `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, or the phone's clock or the host's off) |
+| `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, the phone's clock or the host's off, or a command that came late: it waited in the radio or the mesh) |
 | `code_reused` | a code of 30 seconds whose code this sender already used, or of earlier ones: a code serves once |
-| `code_locked` | this sender sent 5 wrong codes within the last hour (`code_missing` or `code_invalid`): its commands are refused without a look at the code until the first of them is an hour old, also across a restart ([configuration.md](configuration.md#commands)) |
+| `code_locked` | this sender sent 5 wrong codes within the last hour (`code_missing` or `code_invalid`, except the sender's code of the time it sent a command that came late): its commands are refused without a look at the code until the first of them is an hour old, also across a restart ([configuration.md](configuration.md#commands)) |
 
 An identical copy of a command's packet, also of a rejected one, is dropped as a repeat: it is
 the sender's retry after a lost acknowledgement or a replay, which cannot be told apart. To have

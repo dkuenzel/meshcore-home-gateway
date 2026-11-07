@@ -260,8 +260,11 @@ class Inbox:
     def _count_wrong_code(self, decision: CommandDecision | None) -> None:
         """A wrong code is counted before anything is published (#79): at the limit the
         sender's codes are refused unchecked for a while (core.commands.codes_locked), and the
-        log says so once."""
-        if decision is None or decision.rejection not in WRONG_CODES or not decision.sender_key:
+        log says so. The sender's own code of the time it sent a command that came late (it
+        waited in the radio or the mesh) is no guess and is not counted."""
+        if decision is None or decision.rejection not in WRONG_CODES or decision.late:
+            return
+        if not decision.sender_key:
             return
         key = decision.sender_key
         if self._ledger.code_failure(key, self._wall()):

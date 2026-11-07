@@ -14,6 +14,7 @@ from meshcore_home_gateway.core.commands import (
     code_at,
     command_word,
     evaluate_command,
+    recent_code_failures,
 )
 from meshcore_home_gateway.core.contacts import Contact, ContactBook
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, TextType
@@ -410,3 +411,45 @@ def test_a_sender_with_too_many_wrong_codes_is_locked_out_for_a_while() -> None:
     other = coded(f"arm now {code()}", key=CAROL, failures={ALICE: recent})
     assert other is not None
     assert other.command is not None
+
+
+def test_the_code_of_the_time_a_late_command_was_sent_is_no_guess() -> None:
+    """#79: a command that waited in the radio (a restart, an update, a re-plug) or in the mesh
+    ends with the sender's code of the time it was sent, a step the bridge clock no longer
+    accepts. It is refused as code_invalid, but marked late: it does not count as a wrong code,
+    or the household's own late commands would lock their sender out. Only a step before the
+    bridge's accepts is late: a code of one ahead would tell a guesser a code to use later."""
+    sent = NOW - 300
+    late = evaluate_command(dm(f"arm {code(sent)}", ts=sent), CODED, CODED_BOOK, {}, NOW)
+    assert late is not None
+    assert (late.command, late.rejection, late.late) == (None, Rejection.CODE_INVALID, True)
+    near = [code(sent + d * CODE_STEP_S) for d in (-1, 1)]  # the sender's clock a step off
+    for text in near:
+        decision = evaluate_command(dm(f"arm {text}", ts=sent), CODED, CODED_BOOK, {}, NOW)
+        assert decision is not None
+        assert (decision.rejection, decision.late) == (Rejection.CODE_INVALID, True)
+    wrong = next(c for c in (f"{n:06d}" for n in range(10)) if c not in {code(sent), *near})
+    guess = evaluate_command(dm(f"arm {wrong}", ts=sent), CODED, CODED_BOOK, {}, NOW)
+    assert guess is not None
+    assert (guess.rejection, guess.late) == (Rejection.CODE_INVALID, False)
+    ahead = NOW + 300
+    early = evaluate_command(dm(f"arm {code(ahead)}", ts=ahead), CODED, CODED_BOOK, {}, NOW)
+    assert early is not None
+    assert (early.rejection, early.late) == (Rejection.CODE_INVALID, False)
+    missing = evaluate_command(dm("arm now", ts=sent), CODED, CODED_BOOK, {}, NOW)
+    assert missing is not None
+    assert (missing.rejection, missing.late) == (Rejection.CODE_MISSING, False)
+    accepted = coded(f"arm {code()}")
+    assert accepted is not None
+    assert (accepted.rejection, accepted.late) == (None, False)
+
+
+def test_wrong_codes_ahead_of_the_clock_count_only_within_the_window() -> None:
+    """#79: a wrong code's time ahead of now (the clock went back since) counts as far as the
+    window reaches, not until the clock catches up with it: else a clock set back by a day
+    would keep the sender locked out for that day."""
+    later = [NOW + 10, NOW + CODE_FAILURE_WINDOW_S + 100]
+    assert recent_code_failures([*later, NOW - 10, NOW - CODE_FAILURE_WINDOW_S], NOW) == [
+        NOW - 10,
+        NOW + 10,
+    ]

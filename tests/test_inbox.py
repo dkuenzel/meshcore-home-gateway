@@ -565,6 +565,40 @@ def test_wrong_codes_lock_the_sender_out_for_a_while_also_across_a_restart(
     scenario(main)
 
 
+def test_genuine_codes_that_came_late_do_not_lock_their_sender_out(tmp_path: Path) -> None:
+    """#79: commands that waited in the radio through a restart, an update or a re-plug end
+    with the code of the time they were sent, which the bridge clock no longer accepts
+    (code_invalid). They are no guesses: they are not counted, so the sender's next command,
+    sent with the current code, is accepted, not code_locked."""
+    secret = b"12345678901234567890"
+    config = make_config()
+    sender = ALICE.public_key.hex()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, secrets=((sender, secret),))
+    )
+    radio = EmulatedRadio(contacts=[ALICE])
+    alice = ALICE.public_key[:6]
+    for n in range(CODE_FAILURE_LIMIT):  # what the radio kept while the bridge was away
+        sent = NOW - 300 + CODE_STEP_S * n
+        code = code_at(secret, sent // CODE_STEP_S)
+        radio.queue_direct_message(alice, f"arm {code}", sent, push=False)
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            await bus.wait_for(
+                "/received", lambda r: len(bus.payloads("/received")) == CODE_FAILURE_LIMIT
+            )
+            right = f"arm {code_at(secret, int(NOW // CODE_STEP_S))}"
+            radio.queue_direct_message(alice, right, NOW - 2)
+            await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_invalid"] * CODE_FAILURE_LIMIT + [None]
+
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert not stored.get("command_code_failures")
+
+
 def test_commands_are_answered_when_asked(tmp_path: Path) -> None:
     """EXT-009: with `reply = "all"` the sender learns that its command was published, or why
     not, through the queue as any message; also when the same command comes again. A sender the

@@ -202,6 +202,22 @@ def test_ledger_counts_wrong_codes_per_sender_across_a_restart(tmp_path: Path) -
     assert dict(CommandLedger(JsonStateFile(path)).code_failures) == dict(ledger.code_failures)
 
 
+def test_a_sender_reaches_the_limit_again_each_time_a_wrong_code_left_the_window(
+    tmp_path: Path,
+) -> None:
+    """#79, design §7.4: the window slides. A guesser who goes on reaches the limit again each
+    time its oldest wrong code is an hour old, so the log warns up to CODE_FAILURE_LIMIT times
+    an hour, not once."""
+    ledger = CommandLedger(JsonStateFile(tmp_path / "state.json"))
+    now = 1_800_000_000.0
+    sender = "aa" * 32
+    first = [ledger.code_failure(sender, now + n) for n in range(CODE_FAILURE_LIMIT)]
+    assert first[-1] is True
+    later = now + CODE_FAILURE_WINDOW_S
+    again = [ledger.code_failure(sender, later + n) for n in range(CODE_FAILURE_LIMIT)]
+    assert again == [True] * CODE_FAILURE_LIMIT
+
+
 def test_ledger_ignores_malformed_content(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text('{"command_timestamps": {"x": "not a number"}}', encoding="utf-8")

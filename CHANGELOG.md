@@ -80,11 +80,13 @@ format, the command line and Home Assistant discovery are public interfaces
   conditions, which the frontend evaluates since 2026.10. The gateway and its entities keep
   2026.8 ([home-assistant.md](docs/home-assistant.md#requirements)).
 - A command sender with a code secret gets at most 5 wrong codes an hour; a command without a
-  code counts too. Then the gateway refuses its commands without a look at the code, with the
-  new reason `code_locked`, until the first of them is an hour old, and its log warns once;
-  the times are in `state.json`, so a restart does not end it. Before, nothing counted wrong
-  codes: a host posing as the radio over TCP found a code within a minute, a stolen handheld
-  over the air in about two weeks; now a guesser wins with about 1 in 2,800 a day
+  code counts too, but not a command that came late (it waited in the radio or the mesh) with
+  the sender's code of the time it was sent. Then the gateway refuses its commands without a
+  look at the code, with the new reason `code_locked`, until the first of them is an hour old,
+  and its log warns each time the sender reaches the limit; the times are in `state.json`, so a
+  restart does not end it. Before, nothing counted wrong codes: a host posing as the radio over
+  TCP found a code within a minute, a stolen handheld over the air in about two weeks; now a
+  guesser wins with about 1 in 2,800 a day
   ([design §7.4](docs/design.md#74-residual-risks)) (#79).
 - With `[messages] confirm_nonce`, the random suffix of a direct message reaches the broker only
   once its delivery ended: in the final delivery event and the history. The `queued` and `sent`
