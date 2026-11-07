@@ -342,7 +342,7 @@ views:
               {%- endif -%}
               {%- endif -%}
               {%- endmacro -%}
-              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
               {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
@@ -524,7 +524,7 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
-              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
               {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
@@ -676,7 +676,7 @@ views:
               {%- else -%}{{ m(e.get('name') or '?') }}
               {%- endif -%}
               {%- endmacro -%}
-              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
               {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro entry(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}
@@ -2366,7 +2366,7 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
-              {#- confirm_nonce's code ends a direct message sent from this home only in the history (#87): cut while the gateway adds one; a gateway that does not say, being offline, as before (PC 16) -#}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
               {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
               {%- macro row(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}

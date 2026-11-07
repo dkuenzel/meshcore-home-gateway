@@ -42,7 +42,7 @@ def target_settings(config: Config, radio: RadioInfo | None) -> list[TargetSetti
 def shown_settings(config: Config) -> dict[str, dict[str, Any]]:
     """The other settings that are shown, by section; lists sorted. The hidden targets are
     counted (each target says whether it is one), the command senders too, and of the codes only
-    whether commands need them."""
+    whether `codes_file` is set, so that the senders with a code secret need codes."""
     messages, ha, radio = config.messages, config.homeassistant, config.radio
     history, commands = config.history, config.commands
     return {

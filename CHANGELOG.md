@@ -249,7 +249,7 @@ format, the command line and Home Assistant discovery are public interfaces
   where `[telemetry] ask_types` gives sensors both, and said that contact entity IDs start with
   `mesh_`, where `contact_entity_prefix` chooses the start
   ([home-assistant.md](docs/home-assistant.md#contacts)); and the design's note on the
-  dashboard's template named neither `@contact@`, `["@controls@"]` nor its second conditional.
+  dashboard's template did not name all that `dashboard.py` fills in and keeps.
 - The triage log of the review of 2026-11 states where the work is: its state was that of
   2026-11-04, with pull requests up to #64, and its 162 fixed items counted six that defer a
   part. It now lists the 10 deferred items, the 6 deferred parts and the 3 drafts for MeshCore

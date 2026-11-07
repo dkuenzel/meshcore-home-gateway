@@ -135,24 +135,31 @@ beside ([home-assistant.md](home-assistant.md#dashboard)). This is the first par
 [ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md), which stays the
 target: no new entity, topic or setting, only the entities and the cards Home Assistant has.
 
-* **Four sections views:** *Overview* (a status line, a card while the gateway runs another
-  version than the dashboard was made for, the radio's link, airtime, queue, battery and health,
-  each problem sensor while it is on), *Messages* (the form, the last message, the last delivery
-  step), *Contacts* (the contacts on the radio, each contact's switch *Telemetry* and button
-  *Remove from radio*, the add controls, the last contact event, the nodes heard, the QR code)
-  and *Map* (the contacts' trackers with 24 hours of traces). Sections
-  reflow on a phone, so there is one variant; visibility conditions only on states.
-* **The form** is the guide's script *Mesh message* (`script.mesh_message`): its more-info dialog
-  asks for a notify entity of MQTT and a text and calls `notify.send_message`. A hint replaces the
-  tile while the script is missing.
+* **Views:** 2.0 had four tabs, *Overview*, *Messages*, *Contacts* and *Map*. Since 2.1 there
+  are three tabs: *Overview* (a status line in a colour that names the first problem, a card for
+  each problem while it exists, the latest chats, where everyone is), *Chats* (every chat with
+  its newest message, and all messages as one thread) and *Contacts* (the contacts by their
+  devices, the sensors' readings, each switch *Ask for position and battery*, *Add or remove*
+  with each contact's *Remove*, which asks first, the nodes heard nearby). The other pages have
+  no tab (`subview: true`): a page for each chat, *Map* (the contacts' trackers with 24 hours of
+  traces), *Gateway* (health, the radio, its settings, the latest event of each kind),
+  *Settings* (the configuration document, read only) and *Help*. All are sections views, which
+  reflow on a phone, so there is one variant; cards show by conditions on states and on
+  templates, which the frontend evaluates since Home Assistant 2026.10.
+* **Writing:** 2.0 offered the guide's script *Mesh message* (`script.mesh_message`) as a form
+  in a tile, with a hint while the script was missing. Since 2.1 each chat page ends in the
+  gateway's draft of that chat, the text entity *Write to …*, and its button *Send*: the gateway
+  keeps the draft until it is sent ([home-assistant.md](home-assistant.md#dashboard)). The
+  script stays for automations.
 * **What changes while the dashboard stays** comes from Markdown templates over the device
   registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
   the heard nodes, the last contact event. What a card needs as fixed IDs is written when the
   dashboard is made: the gateway's entity IDs from `mqtt.node_id`, and from the state file
   (`ha_contact_devices`, read only) the map's trackers (the announced contacts with a position)
   and the contacts' switches and buttons (IMP-049; a contact announced later needs the dashboard
-  made again, as for the map). A hint names a tracker of this gateway whose contact's key no
-  listed tracker has.
+  made again, as for the map), and since 2.1 the chat pages, one for each target and each
+  contact with a device. A hint names a tracker of this gateway whose contact's key no listed
+  tracker has.
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
   filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@contact@` (how the contacts'
   entity IDs begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers),
@@ -191,12 +198,14 @@ Where the MVP departs from ADR 0021:
 2. The map shows the contacts' trackers only, no heard repeater without a contact: the gateway
    keeps no stranger's position ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)), and keeping
    them was rejected in the review of 2026-11 (IMP-049).
-3. Relative times ("5 min ago") and counts are formatted in the templates: a Markdown card cannot
-   hand a value to the frontend's formatter. The tiles still format their own values; the
-   dashboard shows no clock time, so no time zone is involved.
-4. The version card says that the versions differ, not which is newer.
+3. Times and counts are formatted in the templates: a Markdown card cannot hand a value to the
+   frontend's formatter. The tiles still format their own values. 2.0 showed relative times
+   ("5 min ago") and no clock time; since 2.1 the cards show a time as a history does, "10:31",
+   "yesterday 10:31" or "22 Oct 10:31", in Home Assistant's time zone.
+4. The version card of 2.0 said that the versions differ, not which is newer; since 2.1 it shows
+   only for another major or minor version and says which of the two to update.
 
 Deferred: release files per node and language, `--language` and `--output`, a second variant,
-more languages, a message history, the gateway's own compose entities, settings and help views,
-a colour legend, a list of the gateways on the broker, and the right tracker IDs when the contacts of two
-gateways share a name.
+more languages, a colour legend, a list of the gateways on the broker, and the right tracker IDs
+when the contacts of two gateways share a name. 2.1 added what 2.0 deferred besides: a message
+history, the gateway's own entities to write with, and the settings and help views.

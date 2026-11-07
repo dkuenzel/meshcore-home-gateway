@@ -709,14 +709,18 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
   a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
   its way in italics. The newest six stay open, fewer when they are long, the older ones in a
-  fold. The delivery code that `[messages] confirm_nonce` adds is hidden: the gateway adds it
-  only to the history's copy of a sent direct message (#87), so the cards cut ` #` and 8 hex
-  digits from those, while *Configuration* says the setting is on; with it off, a text of the
-  household's that ends that way shows whole. While the gateway is offline, Home Assistant
-  drops *Configuration*'s attributes and the cards cut it as before. The thread's help links
-  to *Help*, which explains each reason. Under the thread, why writing is not possible when it is
-  not, and *About*: where the person is, the battery, asking for position and battery with how
-  the device answers, or the chat's text before and after messages. The page ends in the field
+  fold. The delivery code that `[messages] confirm_nonce` adds to every direct message is
+  hidden: the gateway publishes it only in the final delivery event and the history (#87), so
+  the cards cut ` #` and 8 hex digits from the history's sent direct messages while
+  *Configuration* says the setting is on; with it off, a text of the household's that ends that
+  way shows whole. The cards follow the setting of now, the gateway that of the time a message
+  was sent: after a change, the messages sent before it, also one kept on its way across the
+  restart that changed it, show the other way until they leave the history. While the gateway
+  is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
+  The thread's help links to *Help*, which explains each reason. Under the thread, why writing is
+  not possible when it is not, and *About*: where the person is, the battery, asking for
+  position and battery with how the device answers, or the chat's text before and after
+  messages. The page ends in the field
   to write in and its *Send* button (writing, below). A person whose device is gone, removed from
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.
@@ -726,8 +730,9 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   *Asking*: whether the gateway asks its device for its position and battery and how it answers,
   in the words of a chat's page;
   *Sensors*, the readings of the contacts that report some; *Ask for position and battery*, a
-  switch for each person; *Add or remove*: *Add at once: pick a node heard nearby* and *Add by
-  key or contact link* (paste it, then tap Return), the result of the last request below them,
+  switch for each person, and for each sensor asked for readings (`[telemetry] ask_types`);
+  *Add or remove*: *Add at once: pick a node heard nearby* and *Add by key or contact link*
+  (paste it, then tap Return), the result of the last request below them,
   the QR code of the gateway under *Let someone add this home*
   ([above](#adding-and-removing-contacts)), a *Remove* for each contact, which asks first, and
   *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the

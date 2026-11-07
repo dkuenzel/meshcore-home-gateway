@@ -1008,7 +1008,7 @@ default where the file sets none.
 | `messages`, `contacts`, `telemetry`, `airtime`, `history` | the settings of these sections, lists sorted (`messages.flood_after` and `alert_targets` aside: the latter is each target's `alert`) |
 | `homeassistant` | `controls`, `contact_entity_prefix`, `language`, `contact_devices`; `hidden_targets` is how many targets are hidden |
 | `radio` | `transport` (`serial` is USB), `tcp_unauthenticated`, `set_clock`, and `profile.manage` (`auto`, `observe` or `always`) |
-| `commands` | `senders`: how many senders may send commands; `codes`: whether their commands need codes (`codes_file` is set); `reply` |
+| `commands` | `senders`: how many senders may send commands; `codes`: whether `codes_file` is set, so that the senders with a code secret need codes (and, while the gateway ignores a secret in it, the senders without one cannot command: [configuration.md](configuration.md#commands)); `reply` |
 
 Settings that are not listed here are left out on purpose; a later version may add keys.
 
