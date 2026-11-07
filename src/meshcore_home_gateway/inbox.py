@@ -109,7 +109,7 @@ class Inbox:
         ledger: CommandLedger,
         activity: OutboxActivity,
         telemetry: TelemetryPoller | None = None,
-        reply: Callable[[str, str], None] | None = None,
+        reply: Callable[[str, str], object] | None = None,
         monotonic: Callable[[], float],
         wall_clock: Callable[[], float],
     ) -> None:

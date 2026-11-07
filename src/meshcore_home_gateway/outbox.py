@@ -34,10 +34,10 @@ from meshcore_home_gateway.core.budget import HOUR_S, AirtimeBudget, Deduplicato
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact, is_key
 from meshcore_home_gateway.core.model import DeliveryEvent, DeliveryState, MessageKind, Target
 from meshcore_home_gateway.core.text import (
-    CONFIRM_NONCE_BYTES,
     TextPolicy,
     TextRejectedError,
     prepare_text,
+    text_limit,
     with_nonce,
     without_nonce,
 )
@@ -287,9 +287,11 @@ class Delivery:
         while True:
             self.accept(await self._bus.requests.get())
 
-    def accept(self, request: SendRequest, *, deduplicate: bool = True) -> None:
-        """`deduplicate=False`: the answer to a command, which the inbox judged once; the same
-        command sent again later deserves its answer again (EXT-009)."""
+    def accept(self, request: SendRequest, *, deduplicate: bool = True) -> DeliveryState:
+        """Queue the request or refuse it, at once; its state: `queued`, `rejected` or
+        `duplicate` (a draft's press keeps the draft unless it was queued). `deduplicate=False`:
+        the answer to a command, which the inbox judged once; the same command sent again later
+        deserves its answer again (EXT-009)."""
         event_id = secrets.token_hex(4)
         if request.correlation is not None:
             self._correlations[event_id] = request.correlation
@@ -300,7 +302,7 @@ class Delivery:
             alias = request.alias[:MAX_ECHOED_ALIAS]
             event = DeliveryEvent(event_id, alias, exc.state, reason=exc.reason)
             self._deliver_refusal(event)
-            return
+            return exc.state
         state, reason, queued_at = DeliveryState.QUEUED, None, None
         key, now = (target.alias, text), self._mono()
         if deduplicate and self._dedup.is_duplicate(key, now):
@@ -330,6 +332,7 @@ class Delivery:
             self._deliver_event(event)
         else:
             self._deliver_refusal(event)
+        return state
 
     def _deliver_refusal(self, event: DeliveryEvent) -> None:
         """The event of a request refused at once (rejected, duplicate), at a bounded rate: a
@@ -403,13 +406,13 @@ class Delivery:
     def _text_policy(self, target: Target, info: RadioInfo | None) -> TextPolicy:
         """Without the radio's name, a channel text gets the limit of the shortest one. A direct
         text leaves room for the random suffix of `confirm_nonce` (SEC-001)."""
-        limit = MAX_TEXT_BYTES
         messages = self.config.messages
-        if target.kind is MessageKind.CHANNEL:
-            name = len(info.name.encode()) if info else 0
-            limit = MAX_TEXT_BYTES - name - 2  # the firmware prepends "<name>: "
-        elif messages.confirm_nonce:
-            limit = MAX_TEXT_BYTES - CONFIRM_NONCE_BYTES
+        limit = text_limit(
+            MAX_TEXT_BYTES,
+            channel=target.kind is MessageKind.CHANNEL,
+            radio_name=info.name if info else None,
+            nonce=messages.confirm_nonce,
+        )
         return TextPolicy(limit, ascii_only=messages.ascii_only, truncate=messages.truncate)
 
     async def run(self) -> None:
