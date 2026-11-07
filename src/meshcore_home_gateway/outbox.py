@@ -260,6 +260,7 @@ class Delivery:
         # the messages accepted and not final, by id, the oldest first: in the queue or in flight
         self._pending: dict[str, Outgoing] = {}
         self._pending_due = False  # `pending` goes out once this moment's steps are done
+        self._kept = False  # the stop kept the queue: a request now would be lost (ADR 0028)
 
     def queued(self) -> int:
         return self._queue.qsize()
@@ -291,7 +292,8 @@ class Delivery:
         """Queue the request or refuse it, at once; its state: `queued`, `rejected` or
         `duplicate` (a draft's press keeps the draft unless it was queued). `deduplicate=False`:
         the answer to a command, which the inbox judged once; the same command sent again later
-        deserves its answer again (EXT-009)."""
+        deserves its answer again (EXT-009). Once the stop kept the queue, every request is
+        `rejected` with `stopping`: nothing would keep it."""
         event_id = secrets.token_hex(4)
         if request.correlation is not None:
             self._correlations[event_id] = request.correlation
@@ -361,6 +363,8 @@ class Delivery:
     def _validate(self, request: SendRequest) -> tuple[Target, str, str | None]:
         """The target, the prepared text and, if the text is limited only when it is sent (a
         channel text before the radio's name is known), the request text."""
+        if self._kept:  # a draft's press or a command's answer can still come in the stop
+            raise _FinalError(DeliveryState.REJECTED, "stopping")
         if request.retained:
             raise _FinalError(DeliveryState.REJECTED, "retained")
         if len(request.payload) > MAX_REQUEST_BYTES:
@@ -743,7 +747,7 @@ class Delivery:
         """No attempt starts any more; one that waits for its acknowledgement gets it, for at
         most STOP_OUTBOX_S, then `loop` (the task that runs `run`) ends. The messages still
         queued, that one too if it needs another attempt, are kept for the next start (ARC-013):
-        requests are taken until then."""
+        requests are taken until then, and refused after."""
         flight = self._flight
         flight.stopping = True
         if flight.acking:
@@ -752,6 +756,7 @@ class Delivery:
                     await flight.idle.wait()
         loop.cancel()
         await asyncio.wait([loop])
+        self._kept = True
         now, kept = self._mono(), self._queue.take_all()
         OutboxRecords(self._store).save(
             [

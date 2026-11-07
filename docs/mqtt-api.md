@@ -107,9 +107,10 @@ message and `confirmed` for a direct message. A stop keeps the queued messages, 
 whose acknowledgement does not come within a minute, for the next start: it publishes `queued`
 again with the same `id` (and `attempt` the transmissions so far), then the rest of the steps, or
 the final event the message would have had meanwhile
-([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A crash drops them without
-a final event, and so does a broker outage with more than 1000 events waiting; wait for a final
-event with a timeout. Messages to `[messages] alert_targets` leave before the others. The `rejected` and `duplicate` events of
+([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)). A request that comes later
+in the stop, once the queue is kept, ends `rejected` with reason `stopping`. A crash drops the
+queued messages without a final event, and so does a broker outage with more than 1000 events
+waiting; wait for a final event with a timeout. Messages to `[messages] alert_targets` leave before the others. The `rejected` and `duplicate` events of
 requests refused at once are limited to 20 per second, in bursts of up to 100: a client that floods
 the send topics gets no event for the excess, which the log counts (at most once a minute).
 
@@ -126,7 +127,7 @@ the send topics gets no event for the excess, which the log counts (at most once
 | `failed` | given up | `no_acknowledgement` (sent, but not acknowledged in time), `unknown_contact`, `unknown_target` (kept by a stop, its target no longer configured), `ambiguous_target`, `channel_not_configured`, `too_long`, `exceeds_airtime_burst`, `internal_error` (a bug; see the log), the radio's refusals: `disabled` or an error name such as `not_found`, `table_full`, `error_<code>` |
 | `expired` | never sent within `queue_ttl_s` | `no_radio`, `queue_ttl` (waited behind other messages), `airtime_budget` |
 | `duplicate` | same target and text within `dedup_window_s`, unless that message ended `failed` or `expired`: one that never arrived can be sent again at once | – |
-| `rejected` | not accepted | `unknown_target`, `unknown_contact`, `not_a_companion`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full` |
+| `rejected` | not accepted | `unknown_target`, `unknown_contact`, `not_a_companion`, `retained`, `too_large`, `invalid_utf8`, `empty`, `too_long`, `queue_full`, `stopping` (the gateway stops and has kept its queue already) |
 
 `id` is a random identifier per request. In final events, `attempt` is the number of
 transmissions so far (0 if the message never left). Retries of a direct message keep the radio

@@ -501,6 +501,36 @@ def test_the_gateway_starts_with_empty_drafts_and_clears_them_when_it_stops(
     scenario(main)
 
 
+def test_a_press_after_the_stop_kept_the_queue_is_rejected_not_lost(tmp_path: Path) -> None:
+    """The outbox keeps its queue early in the stop; the drafts take presses until the bus
+    stops. A press between the two would be queued after the queue was saved, its draft
+    cleared, and the message lost without a final event: it ends `rejected` with reason
+    `stopping`, and the clean stop clears its draft."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    buses = [FakeBus(), FakeBus()]
+    draft = "meshcore/radio1/homeassistant/draft/target/alerts"
+
+    def late_press() -> None:  # Home Assistant's text and press, before the drafts' stop
+        for payload in (b'{"text": "Leaving now"}', b'{"send": true}'):
+            for callback in buses[0].on_draft_request:
+                callback(TARGET, "alerts", payload, False)
+
+    buses[0].on_stopping.append(late_press)
+
+    async def main() -> None:
+        for bus in buses:
+            async with running(make_config(), radio, tmp_path, bus=bus):
+                await asyncio.sleep(0.05)
+
+    scenario(main)
+    events = [(e["event_type"], e["target"], e["reason"]) for e in buses[0].payloads("/delivery")]
+    assert events == [("rejected", "alerts", "stopping")]
+    states = [json.loads(p)["text"] for t, p, _ in buses[0].published if t == draft]
+    assert states == ["", "Leaving now", ""]
+    assert buses[1].payloads("/delivery") == []  # the next start has nothing to send
+    assert radio.channel_texts == []
+
+
 GATEWAY_DOCUMENT = "/device/meshcore_home_gateway_radio1/config"
 
 

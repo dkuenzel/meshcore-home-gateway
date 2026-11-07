@@ -313,6 +313,63 @@ def test_a_stop_keeps_the_queue_and_the_next_start_sends_it(tmp_path: Path) -> N
     assert "outbox" not in JsonStateFile(path).load()
 
 
+def test_a_request_after_the_stop_kept_the_queue_is_rejected_and_one_before_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Requests are taken until the queue is kept (ADR 0028): one that comes while the stop
+    waits for an acknowledgement is kept with the queue; one that comes later, while the stop
+    handles the last received messages, would be queued after the save and lost without a
+    final event. It ends `rejected` with reason `stopping`."""
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MIN_S", 5.0)
+    monkeypatch.setattr(outbox_module, "ACK_TIMEOUT_MAX_S", 5.0)
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.3)
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    buses: list[FakeBus] = []
+
+    async def stopped() -> None:
+        async with running(make_config(), radio, tmp_path) as (bridge, bus, _n):
+            buses.append(bus)
+            bus.send("bob", "Still there?")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            loop = asyncio.get_running_loop()
+            loop.call_later(0.1, bus.send, "alice", "During the wait")  # the stop waits
+            drain = bridge._finish_inbound
+
+            async def late(radio_task: asyncio.Task[None]) -> None:
+                bus.send("alerts", "Too late")  # the requests task still runs
+                await bus.wait_for("/delivery", lambda d: d["target"] == "alerts")
+                await drain(radio_task)
+
+            monkeypatch.setattr(bridge, "_finish_inbound", late)
+
+    async def started() -> None:
+        async with running(make_config(), EmulatedRadio(contacts=[ALICE, BOB]), tmp_path) as (
+            _,
+            bus,
+            _n,
+        ):
+            buses.append(bus)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            await asyncio.sleep(0.1)
+
+    scenario(stopped)
+    events = [(d["target"], d["event_type"], d["reason"]) for d in buses[0].payloads("/delivery")]
+    assert events == [
+        ("bob", "queued", None),
+        ("bob", "sent", None),
+        ("alice", "queued", None),
+        ("alerts", "rejected", "stopping"),
+    ]
+    kept = JsonStateFile(tmp_path / "state.json").load()["outbox"]["messages"]
+    assert [(m["target"], m["text"]) for m in kept] == [
+        ("bob", "Still there?"),
+        ("alice", "During the wait"),
+    ]
+    scenario(started)
+    sent = {d["text"] for d in buses[1].payloads("/delivery") if d["event_type"] == "sent"}
+    assert "Too late" not in sent
+
+
 def test_kept_messages_whose_time_ran_out_or_whose_target_left_end_at_the_start(
     tmp_path: Path,
 ) -> None:
