@@ -97,6 +97,13 @@ format, the command line and Home Assistant discovery are public interfaces
   release: the restart starts the clock at the newest contact time, and the next connect then
   refused to move it forward, which left the radio weeks behind. The log says why it waits
   ([deployment.md](docs/deployment.md#5-troubleshooting)) (#86).
+- *Radio link taken over* (`radio_link_contested`) is on also when the radio restarted after it
+  closed the gateway's TCP link: the firmware closes it only for another client, and that client
+  can restart the radio to hide that it read the key. Before, the restart read as a harmless one,
+  and the log names it now (`radio: the radio closed the TCP connection, then restarted`). The
+  gateway's own restart for the clock no longer counts as a link the radio closed. The guide
+  calls the sensor what it is, a best effort: `false` is no proof
+  ([mqtt-api.md](docs/mqtt-api.md#state-state)) (#88).
 
 ## [2.0.0] - 2026-11-07
 

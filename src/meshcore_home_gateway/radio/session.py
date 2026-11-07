@@ -689,7 +689,9 @@ class CompanionSession:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - any failure ends the session
-            self.closed_by_radio = isinstance(exc, ClosedByRadioError)
+            # a session that ended already closed its transport itself, after a restart for the
+            # clock while this read waited: the end of the stream is its own (core.link, #88)
+            self.closed_by_radio = isinstance(exc, ClosedByRadioError) and not self.closed
             self._end(exc if isinstance(exc, RadioError) else RadioError(str(exc) or repr(exc)))
 
     async def _dispatch(self, frame: bytes) -> None:

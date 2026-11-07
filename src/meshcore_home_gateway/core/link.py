@@ -1,12 +1,15 @@
 """Whether another client took the radio's TCP link (SEC-003, IMP-041).
 
 The radio's TCP interface serves one client: a new connection replaces the one before, which the
-radio closes. The radio's uptime (`uptime_s` of its statistics, milliseconds since boot divided
-by 1000) tells a radio that closed the link while it kept running from one that restarted. A link
-that the radio closed while its uptime went on was taken by another client (or, rarely, dropped by
-the radio's network): the gateway takes it back with its reconnect, and the other client could
-control the radio and read its private key meanwhile (docs/design.md, section 7.4). After 49.7
-days the uptime wraps, and a takeover then reads as a restart.
+radio closes (SerialWifiInterface.cpp:57-62, the only place it closes one). A link that the radio
+closed was taken by another client (or, rarely, dropped by the radio's network): the gateway
+takes it back with its reconnect, and the other client could control the radio and read its
+private key meanwhile (docs/design.md, section 7.4). The radio's uptime (`uptime_s` of its
+statistics, milliseconds since boot divided by 1000) tells whether it kept running since or
+restarted. A restart does not close the link first (`REBOOT` restarts at once, ESP32Board.h:
+156-158), and any client can restart the radio, also to hide what it did: a link the radio closed
+counts as taken either way (#88). A link the gateway closed (a restart for the clock, a timeout,
+unplugged) was not taken.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ class LinkWatch:
     """The last uptime of a link the radio closed, and the time of the last takeover."""
 
     taken_at: float | None = None  # the host's clock at the last takeover
+    restarted: bool = False  # the radio restarted between the last takeover and the next link
     known: bool = False  # the current link reports an uptime: takeovers can be told
     _closed: tuple[int, float] | None = None
 
@@ -34,17 +38,17 @@ class LinkWatch:
             self._closed = (uptime_s, read_at)
 
     def started(self, uptime_s: int | None, read_at: float | None) -> bool:
-        """A new link's first statistics; True: the radio closed the link before and kept
-        running, so another client took it."""
+        """A new link's first statistics; True: the radio closed the link before, so another
+        client took it, and `restarted` tells whether the radio restarted since (or its uptime
+        wrapped after 49.7 days)."""
         closed, self._closed = self._closed, None
         self.known = uptime_s is not None
         if closed is None or uptime_s is None or read_at is None:
             return False
         last_uptime_s, last_read_at = closed
-        if uptime_s < last_uptime_s or uptime_s + UPTIME_SLACK_S < last_uptime_s + (
+        self.restarted = uptime_s < last_uptime_s or uptime_s + UPTIME_SLACK_S < last_uptime_s + (
             read_at - last_read_at
-        ):
-            return False  # the radio restarted (or its uptime wrapped)
+        )
         self.taken_at = read_at
         return True
 

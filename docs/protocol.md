@@ -225,9 +225,12 @@ booted:
 | 2 packets | 28 | packets received, sent, sent flood, sent direct, received flood, received direct, receive errors, uint32 each; the last one from 1.18 on (24 bytes before) |
 
 The uptime is `millis() / 1000` (`MyMesh.cpp:1921-1924`): it starts again only when the radio
-restarts, and wraps after 49.7 days with `millis()`. A TCP link that ends while the uptime goes on
-was closed by something else than a restart: over TCP, as the radio closes the link itself, by
-another client that connected (`core.link`).
+restarts, and wraps after 49.7 days with `millis()`. Over TCP the radio closes the link itself
+only when another client connects (`SerialWifiInterface.cpp:57-62`, its only `client.stop()`);
+`REBOOT` restarts it at once (`MyMesh.cpp:1512-1516`, `esp_restart()` in `ESP32Board.h:156-158`)
+without closing the link first. So a link the radio closed was taken by another client, and the
+uptime tells only whether the radio restarted since, which that client may have caused
+(`core.link`).
 
 **`CHANNEL_INFO`** (18), 50 bytes: index (1), name (2–33, NUL-terminated; **the bytes after the NUL
 are stale buffer contents**), secret (34–49) (`MyMesh.cpp:1752-1766`). The gateway does not keep

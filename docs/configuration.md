@@ -34,7 +34,8 @@ alerts and the companions' positions are direct messages. Prefer USB. For TCP, p
 network that only the gateway's host reaches (a VLAN of its own, or a second SSID with client
 isolation), never the household's WiFi, and if you build the firmware yourself, leave the two
 flags out, as their own comment in `platformio.ini` suggests. The gateway tells when another
-client took the link (`radio_link_contested` in [`state`](mqtt-api.md#state-state);
+client took the link while it was connected, as a best effort: a client that connects while the
+gateway is stopped leaves no trace (`radio_link_contested` in [`state`](mqtt-api.md#state-state);
 [deployment.md](deployment.md#5-troubleshooting) says what to do then).
 
 ## `[radio.profile]`

@@ -292,10 +292,13 @@ restarting the radio ([design §6.1](design.md#61-radio-session)): far from 0 it
 ([deployment.md](deployment.md#5-troubleshooting)).
 
 `radio_link_contested` is `true` for an hour after another client took the radio's TCP link: the
-radio closed the gateway's connection while it kept running, as it does when another client
-connects, and such a client can control the radio and read its private key
-([configuration.md](configuration.md#radio)). `false` while that has not happened; `null` over
-USB, while the radio is not connected, and when its firmware reports no uptime.
+radio closed the gateway's connection, which it does only when another client connects, whether
+it kept running or restarted since (any client can restart it, also to hide what it did), and
+such a client can control the radio and read its private key
+([configuration.md](configuration.md#radio)). `false` while the gateway saw no such close: it is
+a best effort, not proof. A client that connects while the gateway is stopped or away from the
+radio leaves no trace. `null` over USB, while the radio is not connected, and when its firmware
+reports no uptime.
 
 `contact_link` adds the gateway in the MeshCore app, for example as a QR code (`null` until the
 radio is known). It carries no position.

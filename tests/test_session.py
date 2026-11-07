@@ -1286,6 +1286,42 @@ def test_tcp_session_starts_against_the_wifi_firmware_parser() -> None:
     asyncio.run(main())
 
 
+@pytest.mark.parametrize("at_connect", [True, False], ids=["at-connect", "at-the-heartbeat"])
+def test_a_tcp_link_the_gateway_closed_for_a_restart_was_not_closed_by_the_radio(
+    monkeypatch: pytest.MonkeyPatch, at_connect: bool
+) -> None:
+    """The session closes its transport after REBOOT, while its reader still waits: the end of
+    the stream it then reads is its own close, not the radio's, which would read as another client
+    that took the link and restarted the radio (core.link, #88)."""
+    monkeypatch.setattr(session_module, "HEARTBEAT_INTERVAL_S", 0.05)
+    now = START_TIME + 100
+    radio = EmulatedRadio(clock=now + AHEAD_S, contacts=[ALICE])
+    allowed = at_connect
+
+    async def main() -> None:
+        nonlocal allowed
+        events: asyncio.Queue[RadioEvent] = asyncio.Queue()
+        with TcpRadioServer(radio) as server:
+            transport = TcpTransport("127.0.0.1", server.port)
+            session = CompanionSession(transport, events, wall_clock=lambda: now)
+            session.may_restart = lambda: allowed
+            try:
+                restart: Awaitable[object] = session.start()
+                if not at_connect:
+                    await asyncio.wait_for(restart, 5)
+                    allowed = True  # the next heartbeat restarts it
+                    restart = session.wait_closed()
+                with pytest.raises(RadioRestartedError):
+                    await asyncio.wait_for(restart, 5)
+                await asyncio.sleep(0.1)  # the reader has seen the end of the stream
+                assert session.closed_by_radio is False
+            finally:
+                await session.close()
+
+    asyncio.run(main())
+    assert radio.reboots == 1
+
+
 def test_a_command_waiting_behind_a_dead_session_is_never_sent() -> None:
     """A command queued on the lock must not reach the radio after the session ended: the
     bridge repeats the attempt on the next session, so the radio would send the text twice."""
