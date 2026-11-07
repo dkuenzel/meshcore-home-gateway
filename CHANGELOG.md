@@ -108,6 +108,10 @@ format, the command line and Home Assistant discovery are public interfaces
   any commit was signed and published within minutes. The check is part of the tagged commit, so
   a tag on a commit off `main` can still bring a workflow without it
   ([SECURITY.md](SECURITY.md#how-the-repository-and-the-releases-are-protected), #84).
+- `SECURITY.md` names the exception to the protection of `main` and of the release tags: both
+  rulesets let a repository role bypass them at any time, which the maintainer's login has, and
+  the agent works through that login. It can push to `main` directly and move or delete a tag
+  until its release is published (#102).
 
 ## [2.0.0] - 2026-11-07
 

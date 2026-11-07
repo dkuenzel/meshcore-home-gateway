@@ -471,9 +471,11 @@ it passes. `releases/latest` and the installer's default never pick a pre-releas
      --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
    ```
 
-The release tags are protected by a repository ruleset for `v*`: only its bypass actors (the
-maintainer, for emergencies) can move or delete them, and by policy nobody does, so the
-attestation's tag names one commit. Creating them is open to write access, which only the
+The release tags are protected by a repository ruleset for `v*`: only its bypass actor, a
+repository role of the maintainer's login, can move or delete them (for emergencies), and by
+policy nobody does, so the attestation's tag names one commit. The agent works through that
+login, so the ruleset does not hold against it, nor does the one of `main`
+([SECURITY.md](../SECURITY.md#how-the-repository-and-the-releases-are-protected)). Creating them is open to write access, which only the
 maintainer and the workflows of this repository have (pull requests from forks get read-only
 tokens); *admit* refuses what CI would not have tagged. A release that failed is followed by the
 next version, never by a moved tag.

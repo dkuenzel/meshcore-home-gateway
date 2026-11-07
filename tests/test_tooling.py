@@ -453,6 +453,30 @@ def test_release_tags_cannot_be_moved_or_deleted() -> None:
     assert {"deletion", "non_fast_forward", "update"} <= {rule["type"] for rule in tags["rules"]}
 
 
+BYPASS = {  # what SECURITY.md says of a ruleset whose bypass actors have this mode
+    "always": "can bypass it at any time",
+    "pull_request": "can bypass it only through a pull request",
+}
+
+
+def test_security_md_names_who_can_bypass_each_ruleset() -> None:
+    """#102: SECURITY.md stated the protections of main and of the release tags as if they held
+    for everyone, while both rulesets let a repository role bypass them always; the maintainer's
+    login has it (`current_user_can_bypass: always`), and the agent works through that login.
+    The bullet of each ruleset says who can bypass it, and how, as the export has it."""
+    security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    bullets = re.split(r"\n(?=- )", security.partition("## How the repository")[2])
+    for name in ("main", "v-star"):
+        [bullet] = [b for b in bullets if f"(ruleset `{name}`)" in b]
+        bullet = " ".join(bullet.split())
+        modes = {actor["bypass_mode"] for actor in ruleset(name)["bypass_actors"]}
+        expected = {BYPASS[mode] for mode in modes} or {"nobody can bypass it"}
+        for phrase in expected:
+            assert phrase in bullet, f"{name}: {phrase!r} not in {bullet!r}"
+        if modes:
+            assert "the maintainer's login, and the agent through it," in bullet, bullet
+
+
 GITHUB_ACTIONS = 15368  # the app id of GitHub Actions: no other app can report a required check
 
 

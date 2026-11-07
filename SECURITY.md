@@ -59,7 +59,10 @@ the authority (`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them
 - `main` (ruleset `main`): changes arrive by pull request and squash merge only, once the CI
   jobs passed; no force push, no deletion. No review is required: a second identity for the
   agent, whose approval would mean something, would make every change wait for the
-  maintainer, who accepted the shared identity instead (SUP-001, 2026-11-05).
+  maintainer, who accepted the shared identity instead (SUP-001, 2026-11-05). The ruleset's
+  bypass actor is a repository role that the maintainer's login has: the maintainer's login,
+  and the agent through it, can bypass it at any time, and push to `main` directly, also by
+  force (`current_user_can_bypass: always` in the API).
 - A release is tagged a day after its version reached `main` (`release-due.yml`): time to stop
   a merged change before it is signed and published. It ships the program of a release
   candidate tagged before; pre-releases, candidates too, are tagged once CI passed on them and
@@ -70,7 +73,10 @@ the authority (`gh api repos/dkuenzel/meshcore-home-gateway/rulesets` lists them
   a commit off `main` brings that commit's `release.yml`, which can leave the check out. Such a
   tag is kept from being made only by who may create tags (below).
 - Release tags `v*` (ruleset `v-star`): cannot be moved or deleted
-  ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)).
+  ([ADR 0022](docs/decisions/0022-releases-tagged-by-ci-on-main.md)). Its bypass actor is the
+  same role: the maintainer's login, and the agent through it, can bypass it at any time, and
+  move or delete a tag until its release is published, which then keeps it. Anyone with write
+  access can create a tag: the maintainer's login and the workflows of this repository.
 - Releases are immutable once published. Each carries Sigstore-signed build provenance (SLSA Build
   Level 2), its files are built twice, on x86-64 and on arm64 runners, and compared, and the
   published installer pins the program it installs ([install](docs/deployment.md#install)).
