@@ -474,8 +474,12 @@ class HomeAssistant:
         request = urllib.request.Request(  # noqa: S310 - http or https, checked above
             self.url + path, data=data, headers=headers, method=method
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as answer:  # noqa: S310
-            content = answer.read()
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as answer:  # noqa: S310
+                content = answer.read()
+        except urllib.error.HTTPError as exc:
+            exc.close()  # it holds the answer, and one left open warns when collected (3.14)
+            raise
         return json.loads(content) if content else None
 
     def log_in(self, user: str, secret: str) -> None:
