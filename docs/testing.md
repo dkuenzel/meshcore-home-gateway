@@ -37,8 +37,9 @@ IDs, unique IDs and attributes in English and in a pseudo-language, a change of 
 renames only display names, a device name the user chose kept) and `test_dashboard.py` the
 generated dashboard (loaded as a YAML-mode
 dashboard, its Markdown cards rendered as the frontend asks for them, also with hostile names and
-texts in every place, the visibility of its cards for a household user, the map's trackers and
-hint, the guide's script run by a household user, in English and in a pseudo-language) into the
+texts in every place, the visibility of its cards for a household user, the status line and the
+problem cards, the chats' threads, the map's trackers and hint, the guide's script run by a
+household user, in English and in a pseudo-language) into the
 MQTT integration of the Home Assistant release that
 `pytest-homeassistant-custom-component` pins (`home-assistant/requirements.in`; the environment is
 installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-homeassistant`, about
@@ -46,8 +47,13 @@ installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-hom
 (`home-assistant/tests/visibility.py` names the frontend's source lines it follows): `screen`,
 `user`, `view_columns`, `location`, `time` and a `state` with an attribute in the test, every
 other condition sent to Home Assistant's `subscribe_condition` as a user who is no administrator;
-an error there hides the card. `test_helpers.py` checks these helpers and `cards()`, which finds
-a page's cards by its path, a chat page's alias or a contact's key. The suite checks what
+an error there hides the card. A card shows only with every card, stack, conditional row and
+section above it (`Viewer.shown`): a section whose cards all hide is hidden, and a Markdown card
+with `show_empty: false` that renders nothing hides itself. `test_helpers.py` checks these
+helpers and `cards()`, which finds a page's cards by its path, a chat page's alias or a contact's
+key. The chats' cards read the gateway's message history and its messages on their way:
+`test_chats.py` sets the two sensors' states as the gateway announces them, and two of its tests
+feed the documents and the drafts through the gateway's own discovery. The suite checks what
 [home-assistant.md](home-assistant.md) promises, including the example
 automations taken from that page, and that Home Assistant logs no warning. It is a separate CI job
 and not part of `make check`, because Home Assistant needs a newer Python than the gateway and

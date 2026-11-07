@@ -75,8 +75,9 @@ broker. The code keeps them data everywhere they go, and new code follows the sa
 * **Logs:** names, labels and texts with `%r`, so that they cannot forge a line or steer a
   terminal; message texts only at debug level.
 * **Terminals:** the command line prints them through `_safe_text` or `_json_text`.
-* **Home Assistant:** Markdown cards print every value through the macro `m()` (Translations,
-  below); nothing from the mesh becomes an entity ID, a unique ID or an event type.
+* **Home Assistant:** Markdown cards print every value through the macro `m()`, a message's
+  text through `mt()` (Translations, below); nothing from the mesh becomes an entity ID, a unique
+  ID or an event type.
 * **MQTT:** JSON only; texts are passed on as received (`docs/mqtt-api.md`: consumers treat them
   as plain data, never as markup), or with `[messages] clean_received` without control and
   direction characters, as outgoing texts are; commands are judged on the text as received.
@@ -153,8 +154,11 @@ lines of its own, which `dashboard.py` reads:
   chat page, switch or button whose values do not match is left out, and the command says so.
 * `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
-* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@` and `@contact@` are filled in;
-  `["@trackers@"]` and `["@chats@"]` become JSON lists.
+* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@contact@` and `@guide@` (the guide of
+  this version, for a link to one of its sections) are filled in;
+  `["@trackers@"]` and `["@chats@"]` become JSON lists. A chat page in `["@chats@"]` says with
+  `write` only whether it has a field: the entity IDs of its field and its *Send* button stand
+  only in the guard of its footer (rule 3 below).
 
 `tests/test_dashboard.py` checks these rules on the shipped file:
 
@@ -162,13 +166,15 @@ lines of its own, which `dashboard.py` reads:
    `{{ }}`, `{% %}` or a flow value. A field in a marker is `node`, `version`, `name` (the title
    of the item, only inside an `@each`), or a Jinja variable the card sets before it. A whole
    value takes `name` only.
-2. Every Markdown card that prints a value starts its content with the macro
-   `{%- macro m(x) -%}{{ (x or '') | string | replace('\r', ' ') | replace('\n', ' ') | e }}{%- endmacro -%}`
-   and prints every value read from Home Assistant (states, attributes, the registry) through it,
-   through `mt()`, or through a mapping macro of the card that ends in `m(v)`, on a line that is
-   one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element, or a row of
-   `<table role="presentation" width="100%">` elements. `| e` appears nowhere else. GitHub-alert
-   lines print only our texts and integers.
+2. Every Markdown card that prints a value starts its content with the macro `m()` (after the
+   line that names a problem card's class, rule 9 below):
+   `{%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}`.
+   It prints every value read from Home Assistant (states, attributes, the registry) through it,
+   through `mt()`, or through a macro of the card, on a line that is one `<div>`, `<table>`,
+   `<details>` or `<ha-qr-code` element, or a row of `<table role="presentation" width="100%">`
+   elements. A macro prints only through `m()`, `mt()` and the macros above it, and a field is set
+   from one of them or is a whole number. A mapping ends in `m(v)`, in `<code>` where the value is
+   a code. `| e` appears nowhere else. GitHub-alert lines print only our texts and integers.
 3. The mapping macros (`said`, `telemetry`, `what`) have one branch per value of the gateway's
    list (`DeliveryState`, `telemetry.STATES`, the `contact` events' types).
 4. `on`, `off` and versions are quoted (YAML 1.1 reads `on` as true).
@@ -177,7 +183,7 @@ lines of its own, which `dashboard.py` reads:
 The dashboard of 2.1 follows the numbered rules below as well. `tests/dashboard_rules.py` checks
 them on the dashboard made for a household with one chat of every kind, and each finding names
 its rule. Until the cards of 2.0 are written again, `tests/test_dashboard.py` counts, per rule, how
-often they still break one.
+often they still break one; *Overview*, *Chats* and the chat pages break none.
 
 1. A value goes onto one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element per line, or
    onto a line of `<table role="presentation" width="100%">` elements.
@@ -192,12 +198,12 @@ often they still break one.
 4. No `condition: state`, except with an `attribute` on the radio's entity; no `state_not`.
 5. No remove button as an entity row; a remove asks first, and its question names `{name}`.
 6. A link goes to `./` and a page of the same dashboard, or to an anchor of the guide of this
-   version (`v@version@`). A link to `./{{ x.path }}` stands only in a card that loops over
-   `["@chats@"]` with `for x in`.
+   version (`v@version@`). A link to `./{{ x.path }}` or `./{{ m(x.path) }}` stands only in a
+   card that loops over `["@chats@"]` with `for x in`.
 7. No marker inside an HTML attribute.
-8. Every card but a heading has a `<details>` last, or a `text_only` card with one follows it;
-   every page ends with such a card; what a mapping macro says is explained there or on *Help*;
-   *Help* names every page and every control.
+8. Every card but a heading has a `<details>` last; a tile, entities, map or history-graph card
+   may have it in a `text_only` card that follows it; every page ends with such a card; what a mapping macro says is explained there or on *Help*
+   (but the names of the months); *Help* names every page and every control.
 9. The status line and the problem cards list the same problems in the same order: the branches
    of the status line's `problem()`, and the problem a card names on its first line,
    `{#- problem: <class> -#}`.

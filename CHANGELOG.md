@@ -20,6 +20,19 @@ format, the command line and Home Assistant discovery are public interfaces
 - Two targets whose aliases differ only in `-` and `_` (such as `a-b` and `a_b`) get the same
   entity IDs in Home Assistant. Their chat pages have no message field and say why, and
   `meshcore-home-gateway dashboard` names the pair.
+- A chat's page shows the chat as a messenger does: received messages on the left, those sent
+  from this home on the right with ✓ or ✓✓, a message not delivered, not sent or maybe forged in
+  yellow with the reason in words, one on its way in italics, the newest open and the older ones
+  folded, the delivery code of `confirm_nonce` hidden. At its top it says how to write (type,
+  Return, then *Send*), above its field why a *Send* was refused, also when the field held no
+  text; under the thread, why writing is not possible when it is not, and about the person or
+  the chat: where the person is, the battery, asking for position and battery, the text the
+  gateway adds before and after each message. These need the message history and the messages on
+  their way of gateway 2.1.
+- *Chats* lists every chat page under *All chats* with its newest message and "new" for a
+  message received in the last 15 minutes, the contacts and channels that have no page yet, and
+  all messages together under *Latest messages*. *Overview* shows the three latest chats and
+  where everyone is. *Help* explains the problems and why a message was not sent.
 
 ### Changed
 
@@ -31,6 +44,18 @@ format, the command line and Home Assistant discovery are public interfaces
 - The generated dashboard needs Home Assistant 2026.10 or later, and
   `meshcore-home-gateway dashboard` says so after every dashboard it writes. The gateway itself
   still works with Home Assistant 2026.8 and later.
+- *Overview* says in its first line, in a colour, whether everything is fine, and names the
+  first problem; a card for each problem says what to do, in place of the problem sensors' tiles
+  and of the tiles of the radio link, airtime, queue and battery. The messages waiting over a
+  minute count the message being sent too. The version card shows only for another major or
+  minor version, and says which of the two to update.
+- The dashboard drops control and direction characters from every name and text, and breaks long
+  words in messages so that they fit a phone.
+
+### Removed
+
+- The dashboard's tile *Write a message* and its hint to add the script *Mesh message*: each chat
+  page has its own field. The guide keeps the script for automations.
 
 ## [2.0.0] - 2026-11-07
 
