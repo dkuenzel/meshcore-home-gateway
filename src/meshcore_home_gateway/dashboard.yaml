@@ -122,9 +122,8 @@ views:
                 state: ["on", "off"]
           - type: markdown
             visibility:
-              - condition: state
-                entity: script.mesh_message
-                state_not: ["on", "off"]
+              - condition: template
+                value_template: '{{ states["script.mesh_message"] is none }}'
             content: |-
               > [!NOTE]
               > _("To write messages here, add the script Mesh message once, as the guide shows (Home Assistant, Dashboard).")

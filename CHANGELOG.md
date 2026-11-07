@@ -8,6 +8,11 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- The generated dashboard shows the hint to add the script *Mesh message* while the script is
+  missing; since Home Assistant 2026.10 it never showed (#110).
+
 ## [2.0.0] - 2026-11-07
 
 The second stable release. It ships the program of 2.0.0rc3, which CI, the installer's self-test
