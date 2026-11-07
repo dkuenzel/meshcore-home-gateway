@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -331,8 +332,11 @@ def test_the_triage_log_counts_its_rows_and_lists_what_waits() -> None:
         if re.fullmatch(r"\| [A-Z]+-\d+", row[0]) and len(row) > 1 and row[1] in kinds
     ]
     decisions = [row[1] for row in rows]
-    state = _words(text.partition("**State on ")[2].partition("\n\n")[0])
-    assert state.startswith(max(re.findall(r"2026-\d\d-\d\d", text)))
+    before, _, after = text.partition("**State on ")
+    state = _words(after.partition("\n\n")[0])
+    on = state.partition(":")[0]  # not before the newest date of the rest, nor after today
+    dates = re.findall(r"\b20\d\d-\d\d-\d\d\b", before + after.partition("\n\n")[2])
+    assert max(dates) <= on <= datetime.now(UTC).date().isoformat(), on
     assert f"All {len(rows)} items have a decision" in state
     for word, decision in (
         ("fixed", "fix"),
