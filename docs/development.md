@@ -47,7 +47,8 @@ docs/            design, decisions, protocol, API, operations
 tests/           pytest suites, emulated radio, broker fixture; tests/manual: checks run by hand;
                  tests/firmware: the real firmware on a simulated air (make firmware-test)
 tools/           build and release helpers: zipapp, release plan, public interface comparison,
-                 the pinned fetch of the firmware, the translation templates and checks (i18n.py)
+                 the pinned fetch of the firmware, the translation templates and checks (i18n.py),
+                 the browser check and its gateway on the emulated radio (docs/testing.md)
 .github/         CI workflow, Dependabot, issue forms, pull request template
 ```
 

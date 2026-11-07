@@ -88,7 +88,7 @@ Assistant clears a device's discovery topic once for each entity it removes
 | Dashboard | `tests/test_dashboard.py` (the generator, and the template's rules on the shipped template: markers, the macro `m`, quoting, translator notes, the mapping macros against the gateway's value lists) | nothing |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | Service manager | `tests/test_unit_run.py` (`make unit-run` after `make dist`: the zipapp and the unit installed as an installation has them and run under systemd as the service user, with an emulated radio over TCP and a private broker: readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog fed and firing on `SIGSTOP`) | root, systemd, `mosquitto`, the distribution's `python3` with paho-mqtt 2; it installs into the system, so only on a machine to throw away: CI's job *unit check* |
-| System | `tests/test_system.py` (the service as a process with an emulated radio and a broker; a broker restart, without its retained messages) | `mosquitto` |
+| System | `tests/test_system.py` (the service as a process with an emulated radio and a broker; a broker restart, without its retained messages), `test_emulated_radio.py` (the browser check's gateway on the emulated radio, [above](#the-dashboard-in-a-browser): the household it fills, a draft sent once, the stuck messages, and the round trip against a stand-in for Home Assistant's REST API) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
 | Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_dashboard.py`, `test_helpers.py` (above) | `make ha-test`: Python 3.14.2 or newer |
 | Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 3–6 and 10 (`test_messages.py`: to a channel and to B, a text cut to 160 bytes, B out of reach, what B sends), 11–13, 55 and 56 (`test_commands.py`: commands of a sender and of another contact, one that waited in the radio, codes and replies) and 14 (`test_radio_profile.py`: the profile set back and kept), of steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)), `test_clock.py`, a radio clock ahead set back by a restart (the firmware starts at its newest contact time plus a second, the next connect sets it forward), and `test_acknowledgements.py`, forged acknowledgements (SEC-001): a stand-in beside A who knows the text confirms a message B never received, not with `confirm_nonce`, and one that answers sooner than a repeater allows is `suspect` while B's genuine one is not | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
@@ -130,6 +130,87 @@ installer's language tests make a pack of `xx` from the installer's template and
 copy of the script whose block of language packs lists it (`offering`): through a `wget` stub, or
 next to a checkout. They keep the published script within 98,304 bytes (96 KiB, three quarters
 of what Linux takes as one argument, `bash -c "$(wget …)"`).
+
+## The dashboard in a browser
+
+The contract tests decide what the frontend shows from the dashboard's configuration. Two tools
+check what a browser shows, against a running Home Assistant with its frontend. They are not part
+of `make check`.
+
+* `tools/browser_check.py` logs in through Home Assistant's own login page as the user given, opens
+  each view of a dashboard at a phone, a tablet and a desktop size, in a light and a dark colour
+  scheme, and saves a screenshot of each. It lists the console errors of each page and exits with
+  1 when a page reported one, or when a view is missing.
+* `tools/emulated_radio.py run` gives that Home Assistant a real gateway without hardware. It
+  serves the emulated radio of `tests/radio_emulator.py` over TCP, as a WiFi companion does, and
+  starts `meshcore-home-gateway run` on it and on the broker. Then it fills the gateway: the
+  targets `family` (a channel), `alice` and `bob` (companions) and the companion Carol, who is no
+  target; three received and two sent messages in the history; and a draft in Bob's chat. The
+  radio acknowledges every direct message at once, and the airtime budget is an hour's worth, so a
+  hundred messages go out within a few minutes. With `--stuck` the budget is a second an hour, and
+  the last messages to `family` stay on their way (`pending`), as behind a radio that used up its
+  airtime. Ctrl-C stops the gateway, which empties its drafts, and then the radio.
+* `tools/emulated_radio.py round-trip` sends one draft through Home Assistant. As the user given,
+  through Home Assistant's REST API, it writes a new text into a chat's *Write to …*, presses its
+  *Send what is written to …* and waits for the text in *Message history*. It passes when the text
+  is there once, is no longer in *Messages on their way*, and the draft is empty again.
+
+Set up the browser check once, in an environment of its own (Python 3.11 or newer):
+
+```sh
+python3 -m venv .venv-browser
+.venv-browser/bin/pip install --require-hashes -r tools/browser_check-requirements.txt
+.venv-browser/bin/python -m playwright install chromium
+```
+
+Then, for each Home Assistant version to check (before a release, each series that
+[home-assistant.md](home-assistant.md#requirements) names as tested):
+
+1. Run a broker on the loopback that lets clients in without a user name, for example
+   `mosquitto -c broker.conf` with `listener 1884 127.0.0.1` and `allow_anonymous true` in
+   `broker.conf`.
+2. Run Home Assistant with its frontend and the MQTT integration on that broker. Add a user who
+   is no administrator: *Settings → People → Add person*, *Allow login* on,
+   *Administrator* off. The checks run as that user, as a household would.
+3. Start the gateway on the emulated radio. The work folder must be new or empty; it keeps the
+   gateway's configuration, its state and its log, `gateway.log`:
+
+   ```sh
+   .venv/bin/python tools/emulated_radio.py run --mqtt-port 1884 --work build/emulated-radio
+   ```
+
+   It prints `ready: …` once the household's messages and the draft are in place.
+4. Make the dashboard from the runner's configuration and state, and add it as a YAML-mode
+   dashboard with the path `mesh-radio1` ([home-assistant.md](home-assistant.md#dashboard)):
+
+   ```sh
+   .venv/bin/meshcore-home-gateway dashboard --config build/emulated-radio/config.toml \
+     --state-dir build/emulated-radio/state > <config>/dashboards/mesh-radio1.yaml
+   ```
+
+5. Send a draft through Home Assistant, with the user's password in `HA_PASSWORD` (or in a file
+   named by `--password-file`; never on the command line):
+
+   ```sh
+   .venv/bin/python tools/emulated_radio.py round-trip --url http://127.0.0.1:8123 \
+     --user household --chat family
+   ```
+
+   It prints what it found and ends with `round trip: passed`, or `failed` and exit code 1.
+   `--chat alice` sends to a companion, whose message waits for its acknowledgement.
+6. Take the screenshots, with the same password:
+
+   ```sh
+   .venv-browser/bin/python tools/browser_check.py --url http://127.0.0.1:8123 \
+     --user household --dashboard mesh-radio1 --out build/browser overview messages contacts map
+   ```
+
+7. Stop the runner with Ctrl-C. For the pages that show messages on their way, start it again with
+   `--stuck` and a new work folder.
+
+`--language` sets the gateway's `homeassistant.language`: the names of its entities, and the texts
+of a dashboard made from its configuration. The language in the user's profile sets the rest of
+Home Assistant's page.
 
 ## Tests against the real firmware
 
