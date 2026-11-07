@@ -28,6 +28,11 @@ class Topics:
         self.show_hidden = f"{self.root}/homeassistant/show_hidden"  # contacts deleted in HA
         self.add_node = f"{self.root}/homeassistant/add_node"  # a heard node by its label (HA)
         self.add_contact = f"{self.root}/add_contact"  # a key, contact link or card (ADR 0017)
+        # the drafts of Home Assistant's chats: `draft/<kind>/<id>`, kind `target` (its alias) or
+        # `contact` (its key); retained {"text": …}, and the requests below each (design §6.7)
+        self._draft = f"{self.root}/homeassistant/draft/"
+        self.draft_subscription = self._draft + "+/+"
+        self.draft_request_subscription = self._draft + "+/+/request"
         self._send = f"{self.root}/send/"
         self.send_subscription = self._send + "+"
         self.contact_send_subscription = f"{self.contacts}/+/send"
@@ -71,3 +76,36 @@ class Topics:
             return None
         alias = topic[len(self._send) :]
         return alias if alias and "/" not in alias else None
+
+    def target_draft(self, alias: str) -> str:
+        """The draft of a target's chat in Home Assistant (retained)."""
+        return f"{self._draft}target/{alias}"
+
+    def target_draft_request(self, alias: str) -> str:
+        """Home Assistant's requests for that draft: a text to keep, or the press of Send."""
+        return self.target_draft(alias) + "/request"
+
+    def contact_draft(self, key: str) -> str:
+        """The draft of a companion's chat in Home Assistant (retained)."""
+        return f"{self._draft}contact/{key}"
+
+    def contact_draft_request(self, key: str) -> str:
+        return self.contact_draft(key) + "/request"
+
+    def draft_from_topic(self, topic: str) -> tuple[str, str] | None:
+        """The kind and id levels of `homeassistant/draft/<kind>/<id>`, whatever they hold; None
+        for any other topic."""
+        return _levels(topic, self._draft, "")
+
+    def draft_from_request_topic(self, topic: str) -> tuple[str, str] | None:
+        """The kind and id levels of `homeassistant/draft/<kind>/<id>/request`."""
+        return _levels(topic, self._draft, "/request")
+
+
+def _levels(topic: str, prefix: str, suffix: str) -> tuple[str, str] | None:
+    if not (topic.startswith(prefix) and topic.endswith(suffix)):
+        return None
+    kind, sep, ident = topic[len(prefix) : len(topic) - len(suffix)].partition("/")
+    if not (sep and kind and ident) or "/" in ident:
+        return None
+    return kind, ident

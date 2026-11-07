@@ -141,6 +141,8 @@ One line per fact, by section.
 * The new entity triggers, such as `event.received`, reach through a device, area or floor target only the entities without an `entity_category`.
 * While an entity is unavailable, its state drops the state and extra attributes: an event entity's `event_type` and payload attributes are hidden until the gateway is online again.
 * A component of a device document with an `availability` of its own keeps it while the device's availability topic says `offline`; with its state topic as the availability topic and `value_template: "{{ 'online' }}"`, every message there, a retained one after a restart of Home Assistant too, makes it available.
+* A text entity's state may not be longer than its `max`: Home Assistant raises for such a state, also when it writes the state again as it takes a new discovery that lowers `max`.
+* A `command_template` with Jinja's `tojson` writes every character outside ASCII as a `\u` escape, an emoji as two (12 bytes), and `<`, `>`, `&` and `'` as escapes too.
 * Event attributes, message texts and sender keys included, are recorded, and the last event of each event entity is kept as restore data in `.storage/core.restore_state`.
 * The MQTT notify entity publishes only the `message` of `notify.send_message`, with the entity's QoS and without retain; `title` is dropped.
 * From 2026.10.0, `mqtt.publish` and `mqtt.dump` need an administrator when a user starts them; `notify.send_message` does not.
@@ -1259,7 +1261,22 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   (`_merge_common_device_options`), `components/mqtt/schemas.py` lines 64-76 at 2026.10.2
   (`SHARED_OPTIONS`). *Here:* *Message history* and *Messages on their way* read the retained
   `history` and `pending` documents, which the gateway never clears, so the messages stay readable
-  while it is offline. *Check:* `make ha-test`.
+  while it is offline. The drafts' text entities and *Send* buttons set `qos: 0` over the device's
+  `qos: 1` ([mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)).
+  *Check:* `make ha-test`.
+* **A text entity's state may not be longer than its `max`: Home Assistant raises for such a state,
+  also when it writes the state again as it takes a new discovery that lowers `max`.** The entity
+  then keeps its old state and `max`. *Verified:* 2026.10.2 and 2026.11.0,
+  `test_a_state_longer_than_a_new_max_breaks_the_entity` (home-assistant/tests/test_drafts.py);
+  source `components/text/__init__.py` lines 143-147 at 2026.10.2 and `components/text/entity.py`
+  lines 78-82 at 2026.11.0. *Here:* when the radio's name lowers a chat's `max`, the gateway cuts
+  the draft and publishes it before the new discovery (drafts.py). *Check:* `make ha-test`.
+* **A `command_template` with Jinja's `tojson` writes every character outside ASCII as a `\u`
+  escape, an emoji as two (12 bytes), and `<`, `>`, `&` and `'` as escapes too.** Home Assistant
+  leaves Jinja's JSON policy as it is (`json.dumps` with `sort_keys`). *Verified:* 2026.10.2 and
+  2026.11.0 (Jinja 3.1.6), `test_max_is_the_room_of_each_chat`; source `jinja2/utils.py` lines
+  637-674 (`htmlsafe_json_dumps`). *Here:* a draft request of 160 emoji is about 1.9 KiB, and the
+  gateway takes requests up to 1984 bytes. *Check:* `make ha-test`.
 * **Event attributes, message texts and sender keys included, are recorded, and the last event of
   each event entity is kept as restore data in `.storage/core.restore_state`.** The event platform
   keeps only `event_types` out of the recorder. *Verified:* 2026.10.0, source

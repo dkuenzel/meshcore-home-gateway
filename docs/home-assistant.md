@@ -65,6 +65,8 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_pending_messages` | count | *Messages on their way*: the messages the gateway accepted and has not delivered or given up yet, the one being sent included; the `pending` document as attributes `messages` (oldest first, with `step` `queued` or `sent` and their keys as in [mqtt-api.md](mqtt-api.md#messages-on-their-way-pending)), `total` and `truncated`. A message `queued` for more than a minute waits for the radio or for airtime. It stays available while the gateway is offline |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
+| `text.meshcore_home_gateway_radio1_write_<alias>` | text, one per target not in `hidden_targets` | *Write to …*: the draft of a message to that target, which the gateway keeps until it is sent ([below](#writing-and-sending)); `max` is the room of a text to the target in bytes |
+| `button.meshcore_home_gateway_radio1_write_<alias>_send` | button, one per target not in `hidden_targets` | *Send what is written to …*: sends that draft |
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
 | `sensor.meshcore_home_gateway_radio1_contacts` | count | contacts in the radio's table; attribute `max`, and `manage_reason`: why requests to add or remove contacts are refused now (`management_off`, `no_radio`, `untested_firmware`), `null` while they are taken |
 | `sensor.meshcore_home_gateway_radio1_nodes` | count | nodes heard in the last 7 days that are not contacts |
@@ -132,6 +134,8 @@ by another client of the radio, such as a phone app) gets it at once. The entiti
 | Entity | Platform | Content |
 | --- | --- | --- |
 | `notify.mesh_alice` | notify, named like the device | sends a direct message, through the same queue, airtime budget and duplicate check as a target |
+| `text.mesh_alice_write` | text | *Write*: the draft of a direct message to the companion ([below](#writing-and-sending)); not for a contact target's key, whose chat is the target's |
+| `button.mesh_alice_write_send` | button | *Send what is written*: sends that draft |
 | `event.mesh_alice_message` | event: `contact` | each message from the contact, with the attributes of `received` |
 | `sensor.mesh_alice_last_heard` | timestamp | when the gateway last heard the contact (advert, message; its telemetry answers at most once an hour) |
 | `sensor.mesh_alice_hops` | diagnostic | repeaters the last advert or message passed (*unknown*: direct, or not known) |
@@ -145,9 +149,10 @@ by another client of the radio, such as a phone app) gets it at once. The entiti
 | `sensor.mesh_alice_mcu_temperature` | temperature (°C), diagnostic | its processor's temperature |
 | `sensor.mesh_alice_ch2_temperature`, … | the reading's class and unit | each further reading of its answers, such as those of an environment sensor on channel 2 |
 
-Components exist only where they have data: repeaters and sensors get no notify and message
-entities, room servers no notify entity, and the tracker appears with the first position, from
-the contact's telemetry ([companions.md](companions.md), `[telemetry]`) or its adverts.
+Components exist only where they have data: repeaters and sensors get no notify, draft and
+message entities, room servers no notify and draft entities, and the tracker appears with the
+first position, from the contact's telemetry ([companions.md](companions.md), `[telemetry]`) or
+its adverts.
 *Battery*, *MCU temperature* and the reading sensors appear with the first telemetry answer that
 carries them, at most 16 readings per contact. Every companion has the switch *Telemetry*,
 *Telemetry state* and *Position in adverts* at once, also while telemetry is off, so it can be
@@ -186,6 +191,32 @@ switching sharing off, [companions.md](companions.md#positions-in-adverts)).
   `meshcore-home-gateway contacts telemetry KEY off`.
 * A contact device whose entity was disabled by hand: removing it makes Home Assistant up to
   2026.10 log *No device components to cleanup*, which is harmless.
+
+## Writing and sending
+
+Every chat has a draft that the gateway keeps: a target that is not in `hidden_targets`
+(*Write to …* and *Send what is written to …* on the gateway's device) and a companion that is no
+contact target (*Write* and *Send what is written* on its device). Write the text into the text
+entity and press Return, or leave the field: the gateway keeps the text and Home Assistant shows
+it. *Send what is written* sends what the gateway keeps, as `notify.send_message` would: the same
+queue, airtime budget, duplicate check, history and *Delivery* events. Once the message is queued,
+the field is emptied; a message that is refused (too long with `truncate = false`, a duplicate)
+stays in the field, to be changed, and *Delivery* says why. A *Send* with nothing written is
+refused as `empty`.
+
+* The draft is shared: everyone who sees the chat sees and sends the same draft, and a text
+  another user stores replaces yours in your field.
+* After a broker or Home Assistant restart, the field shows the draft the gateway keeps: read it
+  before you send. A draft unchanged for 15 minutes is emptied, and so is every draft when the
+  gateway stops or restarts.
+* `max` counts bytes, the field characters: a text with accents or emoji can fit the field and
+  still be too long for the radio; `[messages] truncate` then cuts it or refuses it.
+* A *Send* pressed while Home Assistant has no connection to the broker fails with an error and
+  is not sent later.
+
+Writing grants nothing new: every user can send with the notify entities already, and
+`homeassistant.controls = false` changes neither. The topics, the request forms and the rules are
+in [mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat).
 
 ## Adding and removing contacts
 
@@ -504,6 +535,7 @@ and shows a person instead of a tracker that is the person's current source.
 | `contacts/<key>/telemetry` | the switch *Telemetry* |
 | `contacts/<key>/received`, `contacts/<key>/send` | a contact's message event and notify entity |
 | `homeassistant/show_hidden` | the button *Show hidden contacts* |
+| `homeassistant/draft/<kind>/<chat>`, its `…/request` | *Write to …* and *Send what is written to …*, a companion's *Write* and *Send what is written* ([writing and sending](#writing-and-sending)) |
 | `homeassistant/add_node`, `add_contact`, `contacts/<key>/remove` | *Add heard node*, *Add contact (key or link)*, *Remove from radio* |
 | `settings`, `setting` | *Radio profile* (every key as an attribute) and the event *Radio setting* |
 
@@ -1140,8 +1172,9 @@ Message texts, sender keys and sender names are attributes of the event entities
 Assistant stores them in its history database, and the last event of each entity also in
 `.storage/core.restore_state` (restored after a restart). *Message history* holds the latest
 messages in and out as attributes, so the recorder stores them again with every message, and
-*Messages on their way* the texts being sent with each of their steps. To keep them out of the
-history, exclude these entities from the recorder, those of the contacts with one pattern:
+*Messages on their way* the texts being sent with each of their steps. Every draft a user stores
+or the gateway empties is a state of its text entity. To keep them out of the history, exclude
+these entities from the recorder, those of the contacts and the drafts with patterns:
 
 ```yaml
 recorder:
@@ -1152,6 +1185,8 @@ recorder:
       - sensor.meshcore_home_gateway_radio1_pending_messages
     entity_globs:
       - event.mesh_*_message*
+      - text.meshcore_home_gateway_*_write_*
+      - text.mesh_*_write*
 ```
 
 The contacts' trackers store their positions in the history too, which a map card with

@@ -75,7 +75,12 @@ def _covered(topic: str, subscriptions: list[str]) -> bool:
 def test_every_topic_of_the_layout_is_in_the_snapshot(current: dict[str, Any]) -> None:
     """A topic that needs a setting the fixture lacks would be missing silently otherwise."""
     topics = Topics(interface.BASE, interface.NODE)
-    parsers = {"key_from_contact_topic", "alias_from_send_topic"}
+    parsers = {
+        "key_from_contact_topic",
+        "alias_from_send_topic",
+        "draft_from_topic",
+        "draft_from_request_topic",
+    }
     built = [value for name, value in vars(topics).items() if not name.startswith("_")]
     built += [
         getattr(topics, name)(interface.KEY)

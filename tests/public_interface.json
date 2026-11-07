@@ -1616,6 +1616,20 @@
       "waiting"
      ],
      "platform": "sensor"
+    },
+    "write": {
+     "entity_id": "text.mesh_<slug>_write",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "text"
+    },
+    "write_send": {
+     "entity_id": "button.mesh_<slug>_write_send",
+     "node_types": [
+      "chat"
+     ],
+     "platform": "button"
     }
    },
    "gateway": {
@@ -1922,6 +1936,14 @@
      "entity_id": "sensor.<device>_uptime",
      "platform": "sensor",
      "unit": "s"
+    },
+    "write_<alias>": {
+     "entity_id": "text.<device>_write_<alias>",
+     "platform": "text"
+    },
+    "write_<alias>_send": {
+     "entity_id": "button.<device>_write_<alias>_send",
+     "platform": "button"
     }
    },
    "manage_contacts": {
@@ -2104,6 +2126,12 @@
     "messages[].text",
     "total",
     "truncated"
+   ],
+   "homeassistant/draft/contact/<key>": [
+    "text"
+   ],
+   "homeassistant/draft/target/<alias>": [
+    "text"
    ],
    "node": [
     "event_type",
@@ -2355,6 +2383,17 @@
     "retained": false
    },
    "<base_topic>/<node_id>/history": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/homeassistant/draft/contact/<key>": {
+    "cleared": true,
+    "payload": "json",
+    "qos": 1,
+    "retained": true
+   },
+   "<base_topic>/<node_id>/homeassistant/draft/target/<alias>": {
     "payload": "json",
     "qos": 1,
     "retained": true
@@ -2615,6 +2654,12 @@
     "qos": 1
    },
    "<base_topic>/<node_id>/homeassistant/add_node": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/homeassistant/draft/+/+": {
+    "qos": 1
+   },
+   "<base_topic>/<node_id>/homeassistant/draft/+/+/request": {
     "qos": 1
    },
    "<base_topic>/<node_id>/homeassistant/show_hidden": {

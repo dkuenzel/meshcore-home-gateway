@@ -25,6 +25,8 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Messages on their way | `sensor`, its own availability | `pending` → `total`; the document as attributes |
 | Command | `event` (configured words) | `command` |
 | Send to *alias* | `notify`, one per target | `send/<alias>` |
+| Write to *alias*, Send what is written to *alias* | `text`, `button`, one pair per target not in `hidden_targets`, QoS 0 | `homeassistant/draft/target/<alias>` → `text`; → `…/request` |
+| Write, Send what is written | `text`, `button` on each companion's device that is no contact target, QoS 0 | `homeassistant/draft/contact/<key>` → `text`; → `…/request` |
 | Contacts, Nodes heard | `sensor` | `contacts` → `total`, `nodes` → `total` |
 | Contact, New node | `event` | `contact`, `node` |
 | Noise floor, Radio transmit time last hour, uptime and packet counters | `sensor`, diagnostic; the counters disabled by default | `stats` |
@@ -74,6 +76,20 @@ deleting the device in Home Assistant, and the contact stays hidden there until 
 or is shown again. At most `homeassistant.contact_devices` contacts get a device; one keeps its
 device while it stays in the table, and free places go to protected contacts, favourites,
 companions and the most recently heard, in that order.
+
+The drafts of the chats (`drafts.py`, [mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat))
+are Home Assistant's controls for writing, then sending: the gateway holds one draft per chat in
+memory and publishes it retained; the text entity and its button publish `{"text": …}` and
+`{"send": true}` on the chat's one request topic at QoS 0, so the broker keeps their order and a
+press made while Home Assistant's link is down is not sent later. The MQTT adapter hands both to
+the drafts part through callbacks, on the event loop in the order they came (`wiring.py`), and a
+press goes to the outbox's `accept` at once, with no wait. The text's `max` is the room of a text
+to the chat in bytes (`discovery.text_room`); a lower one, after the radio's name became known or
+changed, cuts a longer draft, which goes out before the discovery: Home Assistant writes the state
+again as it takes the discovery and raises for a state longer than `max`. A companion's pair is
+announced only for a key that is no contact target, hidden or not; one announced before the key
+became a target stays, always unavailable (the keep rule, and the never-published availability of
+`controls = false`).
 
 The controls that add contacts (`mqtt/manage_entities.py`) have a discovery document of their own,
 `…/manage_contacts/config`, whose components join the gateway's device: the select's options exist

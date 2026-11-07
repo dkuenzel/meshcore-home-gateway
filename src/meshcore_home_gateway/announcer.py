@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.drafts import Drafts
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.mqtt.contact_devices import (
     ContactDevices,
@@ -60,16 +61,18 @@ class Announcer:
         components: AnnouncedComponents | None = None,
         manage: ManageEntities | None = None,
         devices: ContactDevices | None = None,
+        drafts: Drafts | None = None,
         monotonic: Callable[[], float],
         wall_clock: Callable[[], float],
     ) -> None:
         """`publish_state`: the state document follows every announcement; `components`: what
         earlier runs announced; `manage`: the controls that add contacts; `devices`: the
-        contacts' devices."""
+        contacts' devices; `drafts`: the chats' drafts, whose `max` the discovery announces."""
         self.config = config
         self._topics, self._bus, self._radio = topics, bus, radio
         self._publish_state = publish_state
         self._components, self._manage, self._devices = components, manage, devices
+        self._drafts = drafts
         self._mono, self._wall = monotonic, wall_clock
         self._announced: tuple[str, ...] | None = None  # radio identity in the discovery
         self._removed: dict[str, str] | None = None  # earlier components, removed in this run
@@ -112,6 +115,8 @@ class Announcer:
                 if self._removed:
                     log.info("Home Assistant: removing %s", ", ".join(sorted(self._removed)))
             topic, info = discovery_topic(self.config), self._radio.info
+            if self._drafts is not None:  # a lower `max` cuts a longer draft, published first
+                observe(self._drafts.announcing, info)
             if self._removed:  # Home Assistant removes only what it discovered since its start
                 bind = discovery_payload(self.config, self._topics, info, self._removed, bind=True)
                 self._bus.publish(topic, encode(bind))

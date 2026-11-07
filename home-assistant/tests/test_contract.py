@@ -267,7 +267,12 @@ async def test_the_device_page_shows_the_radio_once_it_is_known(
     assert (found.manufacturer, found.model) == ("MeshCore", "Heltec V3")
     assert found.sw_version == "v1.18.0"
     assert found.serial_number == RADIO_KEY
-    assert snapshot(hass, entity_ids(hass)) == before  # the re-announcement changes no state
+    after = snapshot(hass, entity_ids(hass))
+    # the radio's name takes room from channel texts: only the channel drafts' `max` follows it
+    for alias in ("alerts", "my_target"):
+        draft = f"text.{PREFIX}_write_{alias}"
+        assert (before[draft][2].pop("max"), after[draft][2].pop("max")) == (158, 151)
+    assert after == before  # the re-announcement changes no state
 
     await announce(hass, discovery_payload(CONFIG, TOPICS))  # a restart before the radio is known
     assert device(hass).model == "Heltec V3"  # Home Assistant keeps the stored identity

@@ -2285,6 +2285,12 @@ msgctxt "home assistant"
 msgid "Room server"
 msgstr ""
 
+#. button of a companion: sends the draft of "Write"
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Send what is written"
+msgstr ""
+
 #. the model of a contact's device in Home Assistant: the MeshCore node type
 #. (companion: a person's radio; room server: a node that keeps messages for a group)
 #: src/meshcore_home_gateway/mqtt/contact_devices.py
@@ -2321,6 +2327,13 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/contact_devices.py
 msgctxt "home assistant"
 msgid "Voltage"
+msgstr ""
+
+#. text entity of a companion: the draft of a message to it, kept by
+#. the gateway until it is sent. Home Assistant shows the contact's name first.
+#: src/meshcore_home_gateway/mqtt/contact_devices.py
+msgctxt "home assistant"
+msgid "Write"
 msgstr ""
 
 #. sensor (duration) of the gateway: the transmit time left in its
@@ -2538,6 +2551,13 @@ msgctxt "home assistant"
 msgid "Send to {alias}"
 msgstr ""
 
+#. button of the gateway: sends the draft of "Write to {alias}"
+#: src/meshcore_home_gateway/mqtt/discovery.py
+#, python-brace-format
+msgctxt "home assistant"
+msgid "Send what is written to {alias}"
+msgstr ""
+
 #. button of the gateway: brings back the contacts' devices the user
 #. deleted in Home Assistant
 #: src/meshcore_home_gateway/mqtt/discovery.py
@@ -2564,6 +2584,14 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Telemetry status"
+msgstr ""
+
+#. text entity of the gateway: the draft of a message to a target of
+#. the configuration, kept by the gateway until it is sent; {alias} as above
+#: src/meshcore_home_gateway/mqtt/discovery.py
+#, python-brace-format
+msgctxt "home assistant"
+msgid "Write to {alias}"
 msgstr ""
 
 #. text entity of the gateway: a node's public key or a contact link

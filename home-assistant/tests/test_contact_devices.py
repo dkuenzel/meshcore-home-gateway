@@ -161,6 +161,9 @@ ALICE_ANSWER_IDS = {  # with her answers (tests/test_telemetry.py): GPS and a BM
     "sensor.mesh_alice_ch2_barometric_pressure",
     "sensor.mesh_alice_ch2_altitude",
 }
+# a companion that is no contact target can be written to from Home Assistant (in CONFIG Alice's
+# key is the target `operator`'s, whose chat is the target's)
+ALICE_WRITE_IDS = {"text.mesh_alice_write", "button.mesh_alice_write_send"}
 HILL_IDS = {
     "device_tracker.mesh_hilltop",
     "sensor.mesh_hilltop_last_heard",
@@ -196,7 +199,32 @@ async def test_every_contact_gets_a_device_below_the_gateway(
     assert friendly(hass, "sensor.mesh_alice_last_heard") == "Alice Last heard"
     assert friendly(hass, "device_tracker.mesh_hilltop") == "Hilltop Position"
     documented = set(re.findall(r"\b[a-z_]+\.mesh_alice\w*", GUIDE.read_text(encoding="utf-8")))
-    assert documented <= ALICE_IDS | ALICE_ANSWER_IDS
+    assert documented <= ALICE_IDS | ALICE_ANSWER_IDS | ALICE_WRITE_IDS
+    assert problems(caplog) == []
+
+
+async def test_a_companion_that_is_no_contact_target_has_a_draft(
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Its *Write* and *Send what is written*; a contact target's companion has none, its chat
+    is the target's (above)."""
+    from test_contract import make_config  # noqa: PLC0415
+
+    no_target = make_config("[targets.alerts]\nchannel = 1\n")
+    await announce(hass, discovery_payload(no_target, TOPICS, RADIO))
+    await online(hass)
+    devices = ContactDevices(
+        no_target, TOPICS, broker, ContactDeviceRecords(store), wall_clock=lambda: NOW
+    )
+    devices.update(mesh_of(ALICE_NODE))
+    await broker.deliver(hass)
+    assert set(contact_entities(hass, ALICE)) == ALICE_IDS | ALICE_WRITE_IDS
+    assert friendly(hass, "text.mesh_alice_write") == "Alice Write"
+    assert friendly(hass, "button.mesh_alice_write_send") == "Alice Send what is written"
     assert problems(caplog) == []
 
 

@@ -36,6 +36,7 @@ the history holds: treat both as the history itself.
 | Companions' positions and readings, from telemetry and from adverts | the contacts' documents (retained), `state.json` while current, the history | 30 days (`positions_days`, `readings_days`) | only the companions included are asked (`[telemetry] ask = "household"`, the default); exclude a companion from telemetry; `contacts telemetry --forget KEY off` deletes what the history has of it ([companions](companions.md#privacy)) |
 | The newest accepted command time of each sender | `state.json` | while the sender is one | — |
 | Messages on their way, accepted and not sent or given up yet: target, recipient's name and text | `pending` (retained) and Home Assistant's *Messages on their way*; `state.json` when the service stops | until each is final; in `state.json` until the next start queues them again | Home Assistant's recorder: [exclusions](home-assistant.md#privacy) |
+| Drafts of Home Assistant's chats: text a user wrote and has not sent | the gateway's memory, `homeassistant/draft/<kind>/<chat>` (retained, also in the broker's persistence file such as `mosquitto.db`) and the text entities *Write to …* and *Write* | until it is sent; emptied after 15 minutes without a change and at a clean stop of the gateway | Home Assistant's recorder: [exclusions](home-assistant.md#privacy); every user of Home Assistant and every broker client that may read `meshcore/<node>/#` reads them |
 
 ## Other people
 

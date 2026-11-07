@@ -39,6 +39,8 @@ and no closed lists of values: this page stays normative.
 | `setting` | gateway → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
 | `homeassistant/show_hidden` | → gateway | must not be | any payload: show the contacts deleted in Home Assistant again |
 | `homeassistant/add_node` | → gateway | must not be | the label of a heard node, as Home Assistant's select offers it: add it to the radio ([managing contacts](#managing-contacts-add_contact-and-contactskeyremove)) |
+| `homeassistant/draft/<kind>/<chat>` | gateway → | yes | JSON `{"text": "…"}`: the draft of a chat in Home Assistant, `<kind>` `target` (`<chat>` its alias) or `contact` (its key); cleared (empty retained message) when the chat goes ([drafts](#drafts-of-home-assistants-chats-homeassistantdraftkindchat)) |
+| `homeassistant/draft/<kind>/<chat>/request` | → gateway | must not be | JSON `{"text": "…"}`: keep the text as the chat's draft, or `{"send": true}`: send the draft; QoS 0 from Home Assistant ([drafts](#drafts-of-home-assistants-chats-homeassistantdraftkindchat)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/config` | both | no | Home Assistant discovery; `<node_id>` as configured, `-` included; the gateway reads it to notice when Home Assistant clears it ([home-assistant.md](home-assistant.md#how-discovery-behaves)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/manage_contacts/config` | both | no | discovery of the controls that add contacts, on the gateway's device ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)) |
 | `<prefix>/device/meshcore_home_gateway_<node_id>/contact_<key>/config` | both | no | discovery of each contact's device ([home-assistant.md](home-assistant.md#contacts)); the gateway reads it to notice a device deleted in Home Assistant |
@@ -606,6 +608,63 @@ A message waits for the radio and for airtime only while it is `queued`: one tha
 `queued` for more than a minute is stuck behind the radio or the airtime budget. A `sent` one
 may wait up to a minute for each acknowledgement.
 
+## Drafts of Home Assistant's chats: `homeassistant/draft/<kind>/<chat>`
+
+Since 2.1 the gateway holds a draft for each chat of Home Assistant's dashboard: write first, then
+send ([home-assistant.md](home-assistant.md#entities)). A chat is a target that is not in
+`hidden_targets` (`<kind>` `target`, `<chat>` its alias) or a companion whose device has the draft
+(`contact`, its key). A contact target's key has no chat of its own, hidden or not: its chat is
+the target's, with the target's prefix, suffix and priority.
+
+The draft is retained on `homeassistant/draft/<kind>/<chat>` as `{"text": "…"}`: one key, always a
+string, `""` when there is none. The gateway holds it in memory only:
+
+* After a start every draft is empty. A draft is published again, as held, at every connect to
+  the broker and after Home Assistant's birth message.
+* A draft unchanged for 15 minutes is emptied.
+* A clean stop publishes `{"text": ""}` for every draft that is not empty, so that no unsent text
+  stays retained on the broker, or in its persistence file, while the gateway is away.
+* A chat that goes (a contact removed from the radio, its device deleted in Home Assistant) has
+  its topic cleared with an empty retained message, after its device is gone.
+* At a connect the gateway clears a retained draft of no chat it has, at most one a second, and it
+  undoes what another client writes on a draft topic, as on its documents
+  ([securing the broker](#securing-the-broker)).
+
+Requests go to `homeassistant/draft/<kind>/<chat>/request`:
+
+| Payload | What the gateway does |
+| --- | --- |
+| `{"text": "…"}` | The text becomes the draft and is published back: at once, then at most once every 0.2 seconds per chat, the last text of a burst after the pause. |
+| `{"send": true}` | The draft is sent as a request on `send/<alias>` or `contacts/<key>/send` would be, with the same checks, queue, history and `delivery` events. When it is `queued`, the draft is emptied at once. When it is `rejected` or a `duplicate`, the draft stays, to be changed. |
+
+Home Assistant publishes both at QoS 0 on that one topic, so the broker keeps their order, and a
+*Send* pressed while Home Assistant's link to the broker is down is lost rather than sent after
+the reconnect. The gateway handles them in that order, with no wait: a press sends the text stored
+just before it.
+
+* A press on an empty or blank draft ends `rejected` with reason `empty`, as an empty text on
+  `send/<alias>` does. Only a press within 2 seconds after a queued press of the same chat, the
+  second tap of a double tap, ends without an event: the first press's events are its outcome.
+* A request that is not exactly one of the two forms, that is not UTF-8 or larger than 1984 bytes
+  (room for `max` characters written as escapes, as Home Assistant's `tojson` does), or whose text
+  is longer than the chat's `max` is ignored, and the draft is published again.
+* A retained request is a left-over and is ignored without an event. So is a request for a chat
+  the gateway does not have: a hidden target, or a contact target's key.
+
+`max` is the room of a text to the chat in bytes, as Home Assistant's text entity announces it:
+160 bytes, less the target's prefix and suffix, less 10 for a direct message with
+`confirm_nonce`, and less the radio's name and `: ` for a channel (158 while the radio's name is
+not known). Home Assistant counts characters, its text field UTF-16 units and the radio bytes, so a
+text with accents or emoji can be within `max` and still too long: `[messages] truncate` then cuts
+it or refuses it, as for every request. When the radio's name lowers a chat's `max` below its
+draft, the gateway cuts the draft to the new `max` and publishes it before the new discovery:
+Home Assistant takes it under the old, larger `max`, and could not take a longer state with the
+new one.
+
+The drafts are Home Assistant's controls, as `homeassistant/show_hidden` is, not documents of
+every front end ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): a stored
+text ends in no event, its outcome is the draft published back.
+
 ## Contact and node events: `contact`, `node`
 
 ```json
@@ -975,6 +1034,7 @@ topic write meshcore/radio1/contacts/+/remove
 topic write meshcore/radio1/contacts/+/telemetry
 topic write meshcore/radio1/homeassistant/show_hidden
 topic write meshcore/radio1/homeassistant/add_node
+topic write meshcore/radio1/homeassistant/draft/+/+/request
 
 user alarm-script
 topic write meshcore/radio1/send/alerts
@@ -989,6 +1049,9 @@ the gateway may write the event topics (`received`, `command`, `delivery`, `cont
 `telemetry`) and
 the documents, because automations and dashboards trust them. When commands are configured, the ACL is not optional: any client that can write
 `command` can trigger the automations.
+Home Assistant writes only the requests of the chats' drafts, never the drafts themselves. A
+client that may read `meshcore/radio1/#` reads every unsent draft, and one that may write a
+draft's request topic can send it.
 
 Without an ACL every client of the broker can do what the gateway does: publish `command`
 events, write a contact's document with any position, send to every target and read every
@@ -997,7 +1060,7 @@ writes below its topics.
 
 The documents carry no origin, no time of publication by the gateway and no signature: Home
 Assistant and every other consumer trust them because only the gateway may write them. The
-gateway subscribes to its retained topics (`availability`, `state` and the documents) and undoes
+gateway subscribes to its retained topics (`availability`, `state`, the documents and the drafts) and undoes
 what another client writes there: it publishes its own payload again, or an empty one where it
 has published nothing in this run, at once and then at most every 10 seconds per topic, and the
 log names the topic (once a minute). Its own messages come back too and are dropped. A forged

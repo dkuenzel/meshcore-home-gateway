@@ -102,6 +102,9 @@ class FakeBus:
         self.on_ha_offline: list[Callable[[], None]] = []
         self.on_ha_device: list[Callable[[str, bytes, bool], None]] = []
         self.on_show_hidden: list[Callable[[], None]] = []
+        self.on_draft_request: list[Callable[[str, str, bytes, bool], None]] = []
+        self.on_draft_retained: list[Callable[[str, str, bytes], None]] = []
+        self.on_stopping: list[Callable[[], None]] = []
         self.published: list[tuple[str, bytes, bool]] = []
         self.qos: dict[str, set[int]] = {}
         self.correlations: list[tuple[str, Any, bytes]] = []  # MQTT 5 (ARC-014)
@@ -114,6 +117,8 @@ class FakeBus:
             callback()
 
     async def stop(self) -> None:
+        for callback in self.on_stopping:
+            callback()
         self.stopped = True
 
     def dropped_1h(self) -> int:

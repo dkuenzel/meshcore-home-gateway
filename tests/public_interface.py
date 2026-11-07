@@ -628,7 +628,21 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     observer.radio_event(PacketLogged(codec.RxLog(5.0, -90, ADVERT_RAW), T, 10, 1))
     observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY), False), T, 11, 1))
     observer.radio_event(ContactsRead({KEY: alice, KEY_B: bob}, T))  # added; position_in_advert
-    observer.radio_event(ContactsRead({KEY: alice}, T))  # removed: its document and device cleared
+    # a chat's draft and its Send, of a target and of a companion, on the chat's request topic:
+    # the text is echoed, the press queues it and clears the draft; a press on a blank draft is
+    # refused as empty (design §6.7)
+    for request, payload in (
+        (topics.target_draft_request(ALIAS), b'{"text": "Dinner is ready"}'),
+        (topics.target_draft_request(ALIAS), b'{"send": true}'),
+        (topics.contact_draft_request(KEY_B), b'{"text": "Back soon"}'),
+        (topics.contact_draft_request(KEY_B), b'{"send": true}'),
+        (topics.target_draft_request(CHANNEL_ALIAS), b'{"send": true}'),
+    ):
+        client.on_message(
+            client, None, SimpleNamespace(topic=request, payload=payload, retain=False)
+        )
+        await asyncio.sleep(0)  # the request reaches the event loop
+    observer.radio_event(ContactsRead({KEY: alice}, T))  # removed: its document, device and draft
     observer.telemetry(KEY, Answer(lpp.decode(LPP_ALL), T, False, 1, False))  # every reading key
     observer.telemetry_event("answered", KEY, "answering")
     observer.telemetry_event("unanswered", KEY, "away")
@@ -680,7 +694,7 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     # then a list longer than the document holds
     bridge.outbox.accept(SendRequest(ALIAS, b"On my way", False))
     await asyncio.sleep(0)
-    (on_its_way,) = bridge.outbox._pending.values()
+    (on_its_way,) = [m for m in bridge.outbox._pending.values() if m.text == "On my way"]
     sent = DeliveryEvent(on_its_way.id, ALIAS, DeliveryState.SENT, text="On my way", attempt=1)
     bridge.outbox._deliver_event(sent)
     await asyncio.sleep(0)
@@ -1629,9 +1643,13 @@ def homeassistant(language: str = "en") -> dict[str, Any]:
     config = dataclasses.replace(config, homeassistant=names)
     contact = contact_device_id(config, KEY)
     contacts: dict[str, dict[str, Any]] = {}
+    # a contact target's companion has no draft of its own: the target's is its chat
+    companion = dataclasses.replace(
+        config, targets=tuple(t for t in config.targets if t.public_key != KEY)
+    )
     for node_type in NodeType:  # the components of a contact depend on its type
         tracked = _tracked(node_type)
-        found = _components(contact_payload(config, topics, tracked, SLUG)["cmps"], contact)
+        found = _components(contact_payload(companion, topics, tracked, SLUG)["cmps"], contact)
         for key, entry in found.items():
             known = contacts.setdefault(key, entry | {"node_types": []})
             if {name: value for name, value in known.items() if name != "node_types"} != entry:

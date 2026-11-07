@@ -182,6 +182,8 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
         "snr",
         "message",
         "send",
+        "write",
+        "write_send",
         "remove",
         "telemetry",
         "telemetry_state",
@@ -200,6 +202,8 @@ def test_a_companion_can_be_messaged_and_sends_messages() -> None:
         "sensor.mesh_alice_snr",
         "event.mesh_alice_message",
         "notify.mesh_alice",
+        "text.mesh_alice_write",
+        "button.mesh_alice_write_send",
         "button.mesh_alice_remove",
         "switch.mesh_alice_telemetry",
         "sensor.mesh_alice_telemetry_state",
@@ -298,8 +302,9 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.contact(ALICE): set(contact) | {f"readings.{key}" for key in contact["readings"]},
         TOPICS.contact_received(ALICE): set(_received()),
         TOPICS.state: STATE_KEYS,
+        TOPICS.contact_draft(ALICE): {"text"},  # the draft the gateway holds (drafts.py)
     }
-    assert len(cmps) == 12 + len(LPP_ALL_READINGS)  # every component a contact can have
+    assert len(cmps) == 14 + len(LPP_ALL_READINGS)  # every component a contact can have
     for component in cmps.values():
         templates = [
             component.get("value_template", ""),
@@ -756,6 +761,8 @@ def test_a_removed_contact_loses_its_device(tmp_path: Path) -> None:
         "snr",
         "message",
         "send",
+        "write",
+        "write_send",
         "remove",
         "telemetry",
         "telemetry_state",
@@ -1141,3 +1148,109 @@ def test_the_copies_home_assistant_sends_while_it_removes_are_no_deletion(tmp_pa
     for _ in range(3):  # its own echo, then Home Assistant's copies
         contacts.discovery_message(topic(ALICE), b"", retained=False)
     assert bus.take() == []
+
+
+# --- a companion's draft and its Send button (drafts.py, docs/mqtt-api.md) ----------------------
+
+
+def _with_targets(text: str) -> Config:
+    return parse_config(BASE_CONFIG + text)
+
+
+def test_a_companion_has_a_draft_and_a_send_button_on_one_request_topic() -> None:
+    cmps = contact_payload(CONFIG, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
+    request = f"meshcore/radio1/homeassistant/draft/contact/{ALICE}/request"
+    assert cmps["write"] == {
+        "p": "text",
+        "unique_id": f"{GATEWAY}_contact_{ALICE}_write",
+        "default_entity_id": "text.mesh_alice_write",
+        "name": "Write",
+        "command_topic": request,
+        "command_template": '{{ {"text": value} | tojson }}',
+        "state_topic": f"meshcore/radio1/homeassistant/draft/contact/{ALICE}",
+        "value_template": (
+            "{{ value_json.text if value_json is defined and value_json.text is string else '' }}"
+        ),
+        "mode": "text",
+        "max": 160,  # a direct message's room
+        "icon": "mdi:message-draw",
+        "qos": 0,  # over the device's shared QoS 1
+    }
+    assert cmps["write_send"] == {
+        "p": "button",
+        "unique_id": f"{GATEWAY}_contact_{ALICE}_write_send",
+        "default_entity_id": "button.mesh_alice_write_send",
+        "name": "Send what is written",
+        "command_topic": request,
+        "payload_press": '{"send": true}',
+        "icon": "mdi:send",
+        "qos": 0,
+    }
+    nonce = _with_targets("[messages]\nconfirm_nonce = true\n")
+    assert (
+        contact_payload(nonce, TOPICS, Tracked(node(ALICE, "Alice")), "a")["cmps"]["write"]["max"]
+        == 150
+    )
+    for node_type in (NodeType.REPEATER, NodeType.ROOM_SERVER, NodeType.SENSOR):
+        other = contact_payload(CONFIG, TOPICS, Tracked(node(ALICE, "Hill", node_type)), "h")
+        assert {"write", "write_send"}.isdisjoint(other["cmps"])  # no `send` either
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    kept = contact_payload(off, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
+    assert (kept["write"], kept["write_send"]) == (cmps["write"], cmps["write_send"])
+
+
+def test_a_contact_targets_key_has_no_draft_of_its_own_hidden_or_not() -> None:
+    """Its chat is the target's: a companion pair beside it would send without the target's
+    prefix, suffix and priority."""
+    visible = _with_targets(f'[targets.alice]\ncontact = "{ALICE}"\n')
+    hidden = _with_targets(
+        f'[targets.alice]\ncontact = "{ALICE}"\n[homeassistant]\nhidden_targets = ["alice"]\n'
+    )
+    for config in (visible, hidden):
+        cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
+        assert "send" in cmps
+        assert {"write", "write_send"}.isdisjoint(cmps)
+
+
+def test_a_kept_draft_of_a_key_that_became_a_contact_target_is_always_unavailable() -> None:
+    """Home Assistant would drop the whole device if the component went (the keep rule); a
+    topic nobody publishes keeps it unavailable (HA-02), also with controls on."""
+    visible = _with_targets(f'[targets.alice]\ncontact = "{ALICE}"\n')
+    hidden = _with_targets(
+        f'[targets.alice]\ncontact = "{ALICE}"\n[homeassistant]\nhidden_targets = ["alice"]\n'
+    )
+    alone = contact_payload(CONFIG, TOPICS, Tracked(node(ALICE, "Alice")), "alice")["cmps"]
+    for config in (visible, hidden):
+        cmps = contact_payload(config, TOPICS, Tracked(node(ALICE, "Alice")), "alice", keep=alone)[
+            "cmps"
+        ]
+        for key in ("write", "write_send"):
+            assert cmps[key]["availability_mode"] == "all"
+            assert cmps[key]["availability"] == [
+                {"topic": TOPICS.availability},
+                {"topic": f"{TOPICS.root}/homeassistant/off", "value_template": "{{ 'offline' }}"},
+            ]
+            rest = {k: v for k, v in cmps[key].items() if not k.startswith("availability")}
+            assert rest == alone[key]
+    assert "availability" not in alone["write"]
+
+
+def test_the_drafts_hear_which_companions_have_one(tmp_path: Path) -> None:
+    """After each change of the devices: a companion with a device, not a contact target's key,
+    and not a contact the user deleted in Home Assistant."""
+    config = _with_targets(f'[targets.bob]\ncontact = "{BOB}"\n')
+    contacts, _ = devices(tmp_path, config=config)
+    told: list[frozenset[str]] = []
+    contacts.on_writable.append(told.append)
+    mesh = mesh_of(node(ALICE, "Alice"), node(BOB, "Bob"), node(HILL, "Hill", NodeType.REPEATER))
+    contacts.update(mesh)
+    assert told[-1] == contacts.writable() == {ALICE}
+    contacts.discovery_message(topic(ALICE), b"", False)  # deleted in Home Assistant
+    assert told[-1] == frozenset()
+    contacts.show_hidden()
+    assert told[-1] == {ALICE}
+    contacts.update(mesh_of(node(BOB, "Bob"), mesh=mesh))  # Alice left the radio
+    assert told[-1] == frozenset()
+    contacts.update(mesh_of(node(ALICE, "Alice"), mesh=mesh))
+    again, _ = devices(tmp_path, config=config)  # a restart: as announced last
+    assert again.writable() == {ALICE}

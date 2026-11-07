@@ -174,6 +174,7 @@ flowchart TB
 | `outbox` | The outgoing queue (alerts first, kept across a stop) and its delivery: validation, deduplication, attempts, acknowledgements, retries, a delivery event for each step (§6.2). |
 | `inbox` | Received messages: in order, without copies, commands judged (§6.4, §7.3), each published and handed on; a bounded rate per sender and per channel. |
 | `announcer` | Announcements to Home Assistant: the discovery document, the controls that add contacts, the contacts' devices; again after a birth message or a cleared device (§6.7). |
+| `drafts` | The drafts of Home Assistant's chats: one per chat in memory, published retained; a text or a press from Home Assistant, the press handed to the outbox at once (§6.7). |
 | `status` | The state document with its health section, and systemd's status line. |
 | `radio_link` | The radio as the parts see it: the session while connected, what the radio said it is, whether another client took the TCP link. |
 | `config_checks` | What a configuration implies: the contacts it protects, the warnings that the start logs and `check-config` shows. |
@@ -520,6 +521,8 @@ there).
 | `contact`, `node` | out | no | JSON: a contact added or removed, the result of a contact request (also excluded from telemetry or included again); a node heard for the first time |
 | `contacts/<key>/telemetry` | in | must not be | `on`, `off` or JSON: include a companion in telemetry, or exclude it (§6.11) |
 | `telemetry` | out | no | JSON: a companion answers again, or stopped answering (§6.11) |
+| `homeassistant/draft/<kind>/<chat>` | out | yes | JSON `{"text": …}`: the draft of a chat in Home Assistant (§6.7) |
+| `homeassistant/draft/<kind>/<chat>/request` | in | must not be | JSON: a text for the draft, or `{"send": true}` (§6.7) |
 
 * QoS 1 throughout, except command events. MQTT 3.1.1 with a clean session (or, with
   `[mqtt] protocol = "5"`, MQTT 5 without a session expiry interval, which ends the session with

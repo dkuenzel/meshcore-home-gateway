@@ -55,8 +55,13 @@ class RetainedTopics:
         publish: Callable[[str, bytes], None],
         call_later: Callable[[float, Callable[[], None]], Cancellable],
         monotonic: Callable[[], float],
+        *,
+        drafts: bool = False,
     ) -> None:
-        """`publish`: writes a retained payload, if the broker is connected."""
+        """`publish`: writes a retained payload, if the broker is connected; `drafts`: the drafts
+        of Home Assistant's chats are the gateway's too (`homeassistant/draft/<kind>/<id>`). The
+        broker's copies of those reach the drafts part first (mqtt.client), which deletes those
+        of no current chat."""
         self._fixed = frozenset(
             {
                 topics.availability,
@@ -70,7 +75,11 @@ class RetainedTopics:
             }
         )
         self._contact_prefix = topics.contacts + "/"
+        self._topics_layout = topics
+        self._drafts = drafts
         self.filters = (*sorted(self._fixed), topics.contact("+"))
+        if drafts:
+            self.filters += (topics.draft_subscription,)
         self._publish = publish
         self._call_later = call_later
         self._now = monotonic
@@ -80,8 +89,11 @@ class RetainedTopics:
         self._closed = False
 
     def covers(self, topic: str) -> bool:
-        """One of the gateway's retained topics, or a topic where a contact's document would be."""
+        """One of the gateway's retained topics, or a topic where a contact's document or a draft
+        would be."""
         if topic in self._fixed:
+            return True
+        if self._drafts and self._topics_layout.draft_from_topic(topic) is not None:
             return True
         key = topic.removeprefix(self._contact_prefix)
         return key != topic and bool(key) and "/" not in key

@@ -35,6 +35,18 @@ format, the command line and Home Assistant discovery are public interfaces
   the broker keeps the last `pending`; an empty retained message clears it, such as
   `mosquitto_pub -r -n -t meshcore/radio1/pending`
   ([mqtt-api.md](docs/mqtt-api.md#messages-on-their-way-pending)).
+- Writing from Home Assistant, then sending: a draft text and a *Send* button for each target not
+  in `hidden_targets` (*Write to …*, *Send what is written to …* on the gateway's device) and for
+  each companion that is no contact target (*Write*, *Send what is written* on its device). The
+  gateway keeps one draft per chat, retained on `homeassistant/draft/<kind>/<chat>`, and takes
+  both requests on `…/request` in the order they come, so *Send* sends the text stored just
+  before it, through the same checks, queue and events as a send request. A queued message
+  empties the draft; a refused one stays, to be changed. A draft unchanged for 15 minutes, and
+  every draft at a clean stop, is emptied. After a downgrade to 2.0 the broker keeps the last
+  drafts; an empty retained message on each clears it, such as
+  `mosquitto_pub -r -n -t meshcore/radio1/homeassistant/draft/target/family`
+  ([mqtt-api.md](docs/mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat),
+  [home-assistant.md](docs/home-assistant.md#writing-and-sending)).
 
 ### Changed
 

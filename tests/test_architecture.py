@@ -122,3 +122,12 @@ def test_the_application_is_checked() -> None:
     names = {path.relative_to(PACKAGE).as_posix() for path in APPLICATION}
     assert {"bridge.py", "observer.py", "contact_manager.py", "telemetry_poller.py"} <= names
     assert {"mqtt/discovery.py", "ports.py"} <= names
+
+
+def test_the_mqtt_adapter_reaches_the_outbox_and_the_drafts_only_through_callbacks() -> None:
+    """A chat's request goes from the adapter's callbacks to the drafts part, which hands a press
+    to the outbox; wiring.py connects them (design §6.7)."""
+    imported = imported_modules(PACKAGE / "mqtt" / "client.py")
+    for part in ("meshcore_home_gateway.outbox", "meshcore_home_gateway.drafts"):
+        assert not any(name == part or name.startswith(part + ".") for name in imported), part
+    assert "meshcore_home_gateway.drafts" in imported_modules(PACKAGE / "wiring.py")

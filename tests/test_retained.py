@@ -253,3 +253,26 @@ def test_logging_names_the_topic_once_per_minute(caplog: pytest.LogCaptureFixtur
         retained.received(TOPICS.state, b"forged", retained=False)
         bus.advance(HEAL_INTERVAL_S)
     assert caplog.text.count("another client wrote") == 1
+
+
+def test_with_the_drafts_the_chats_draft_topics_are_covered() -> None:
+    """The drafts of Home Assistant's chats are the gateway's too: another client's write is
+    undone with the draft the gateway holds; their requests are no retained topic."""
+    bus = Bus()
+    retained = RetainedTopics(TOPICS, bus.publish, bus.call_later, lambda: bus.now, drafts=True)
+    draft = TOPICS.target_draft("family")
+    for topic in (draft, TOPICS.contact_draft(KEY), "meshcore/radio1/homeassistant/draft/x/y"):
+        assert retained.covers(topic), topic
+    for topic in (
+        TOPICS.target_draft_request("family"),
+        "meshcore/radio1/homeassistant/draft/target",
+        "meshcore/radio2/homeassistant/draft/target/family",
+    ):
+        assert not retained.covers(topic), topic
+    assert retained.filters[-1] == "meshcore/radio1/homeassistant/draft/+/+"
+    retained.sent(draft, b'{"text":"Half a sentence"}', published=True)
+    retained.received(draft, b'{"text":"Half a sentence"}', retained=False)
+    retained.received(draft, b'{"text":"Send money"}', retained=False)  # forged
+    assert bus.published == [(draft, b'{"text":"Half a sentence"}')]
+    plain, _ = make()
+    assert not plain.covers(draft)  # without Home Assistant's discovery there are no drafts
