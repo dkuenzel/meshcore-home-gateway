@@ -54,15 +54,24 @@ MAPPINGS = (
 )
 # rule 8: mappings whose words need no explanation: the names of the months
 SELF_EVIDENT = frozenset({"mon"})
-# rule 16: a text that quotes a label of the dashboard, by msgid: text -> label. The name
-# beside a chat's Send button names the button's label (design §6.2)
-QUOTES: dict[str, str] = {
-    "Return, then Send": "Send",
+# rule 16: a text that quotes or names labels of the dashboard, by msgid: text -> labels. The
+# name beside a chat's Send button names the button's label (design §6.2); the chat's help and
+# the lines for an administrator name Send too (D-63)
+QUOTES: dict[str, tuple[str, ...]] = {
+    "Return, then Send": ("Send",),
     (
         "Type in the field “Write to {name}” at the bottom, tap Return (↵), then tap Send. "
         "Return only keeps the text; Send sends it."
-    ): "Write to {name}",
+    ): ("Write to {name}", "Send"),
+    (
+        "Nothing was sent: the gateway had no text. Tap Return (↵) in the field (on a phone this "
+        "also closes the keyboard), then Send."
+    ): ("Send",),
 }
+# rule 16: the keyboard's key is not a label: each text that asks for it says it before ↵ in
+# the word of the name beside the Send button (D-65)
+KEY = "(↵)"
+KEY_NAME = "Return, then Send"
 # rule 19: what m() removes: C0 controls but tab, LF and CR; C1 controls; the invisible
 # characters the gateway drops before it parses a contact link; never U+200C and U+200D
 INVISIBLE = frozenset(
@@ -821,12 +830,39 @@ def rule_15(template: str, source: Any, loaded: Any, household: Household) -> li
 
 def rule_16(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
     """Quoted labels: a text that quotes a label, and a name (a whole value) that quotes one or
-    names a button's label bare, is in QUOTES; each catalog's text says its label as written."""
-    return quote_findings(template, QUOTES, [i18n.translator(code) for code in i18n.LANGUAGES])
+    names a button's label bare, is in QUOTES; each catalog's text says its labels as written,
+    and the keyboard's key as the name beside the Send button says it."""
+    translators = [i18n.translator(code) for code in i18n.LANGUAGES]
+    return quote_findings(template, QUOTES, translators) + key_findings(template, translators)
+
+
+def said(translator: i18n.Translator, msgid: str) -> str:
+    """A catalog's text of the dashboard, its fields left as they are: each filled with itself,
+    since a text with fields given no values is the English one."""
+    fields = {name: f"{{{name}}}" for _, name, _, _ in string.Formatter().parse(msgid) if name}
+    return translator.pgettext(i18n.DASHBOARD, msgid, **fields)
+
+
+def key_findings(template: str, translators: Sequence[i18n.Translator]) -> list[str]:
+    """Each text that asks for the keyboard's key says, in every catalog, a word of the name
+    beside the Send button just before the sign ↵ (D-65)."""
+    asking = [text for text in dict.fromkeys(msgids(template)) if KEY in text]
+    found = []
+    for translator in translators:
+        name = said(translator, KEY_NAME)
+        for text in asking:
+            asks = said(translator, text)
+            keys = re.findall(rf"(\w+) {re.escape(KEY)}", asks)
+            found += [
+                f"rule 16: {translator.language}: {asks!r} names the key {key!r}, not as {name!r}"
+                for key in keys or [""]
+                if not key or not re.search(rf"(?<!\w){re.escape(key)}(?!\w)", name)
+            ]
+    return found
 
 
 def quote_findings(
-    template: str, quotes: Mapping[str, str], translators: Sequence[i18n.Translator]
+    template: str, quotes: Mapping[str, Sequence[str]], translators: Sequence[i18n.Translator]
 ) -> list[str]:
     labels = {
         json.loads(f'"{m.group(2)}"')
@@ -862,14 +898,15 @@ def quote_findings(
         found += [
             f"rule 16: {help_!r} {verb} {label!r}, not in QUOTES"
             for label, verb in cited.items()
-            if quotes.get(help_) != label
+            if label not in quotes.get(help_, ())
         ]
-    for help_, label in quotes.items():
+    for help_, listed in quotes.items():
         for translator in translators:
-            said = translator.pgettext(i18n.DASHBOARD, help_)
-            named = translator.pgettext(i18n.DASHBOARD, label)
-            if named not in said:
-                found.append(f"rule 16: {translator.language}: {said!r} does not say {named!r}")
+            text = said(translator, help_)
+            for label in listed:
+                named = said(translator, label)
+                if named not in text:
+                    found.append(f"rule 16: {translator.language}: {text!r} does not say {named!r}")
     return found
 
 

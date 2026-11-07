@@ -247,11 +247,26 @@ def hostile() -> list[Node]:
     ]
 
 
-async def gateway(hass: HomeAssistant, config: Config, *, online: bool = True) -> Topics:
+def undrafted(document: dict[str, Any]) -> dict[str, Any]:
+    """A device's discovery document without the draft fields and Send buttons that a gateway of
+    2.1 announces (G4): `write_<alias>` and its `_send` on the gateway's device, `write` and
+    `write_send` on a contact's. A test that gives a chat its fields itself starts from it."""
+    components = document.get("cmps")
+    if not isinstance(components, dict):
+        return document
+    kept = {k: v for k, v in components.items() if not re.fullmatch(r"write(_[\w-]+)?", k)}
+    return document | {"cmps": kept}
+
+
+async def gateway(
+    hass: HomeAssistant, config: Config, *, online: bool = True, drafts: bool = True
+) -> Topics:
     """The gateway's document and controls; the heard nodes offered are the hostile names, raw
-    and as the gateway labels them, and Bob."""
+    and as the gateway labels them, and Bob. Without `drafts`, without the drafts of a gateway
+    of 2.1 (undrafted())."""
     topics = topics_of(config)
-    await fire(hass, discovery_topic(config), discovery_payload(config, topics, RADIO))
+    payload = discovery_payload(config, topics, RADIO)
+    await fire(hass, discovery_topic(config), payload if drafts else undrafted(payload))
     labels = [node_label(key, name, COMPANION) for key, name in zip(KEYS, NAMES, strict=True)]
     options = [*labels, *NAMES, node_label(BOB, "Bob", COMPANION)]
     await fire(hass, manage_topic(config), manage_payload(config, topics, options))
@@ -262,16 +277,33 @@ async def gateway(hass: HomeAssistant, config: Config, *, online: bool = True) -
 
 
 async def deliver(
-    hass: HomeAssistant, config: Config, broker: Broker, mesh: Mesh, **state: Any
+    hass: HomeAssistant,
+    config: Config,
+    broker: Broker,
+    mesh: Mesh,
+    *,
+    drafts: bool = True,
+    **state: Any,
 ) -> None:
-    """What the contacts' devices announced, and each contact's document, retained."""
+    """What the contacts' devices announced, and each contact's document, retained; without
+    `drafts`, without the drafts of a gateway of 2.1 (undrafted())."""
     topics = topics_of(config)
+    if not drafts:
+        broker.sent = [(topic, _undrafted(payload)) for topic, payload in broker.sent]
     await broker.deliver(hass)
     await fire(hass, topics.availability, "online", retain=True)
     for key, tracked in mesh.contacts.items():
         companion = tracked.node.node_type == COMPANION
         document = contact_document(tracked, telemetry_state="answering" if companion else None)
         await fire(hass, topics.contact(key), document | state, retain=True)
+
+
+def _undrafted(payload: bytes) -> bytes:
+    try:
+        document = json.loads(payload)
+    except ValueError:
+        return payload
+    return json.dumps(undrafted(document)).encode() if isinstance(document, dict) else payload
 
 
 def documented(
@@ -884,8 +916,10 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(
             assert n not in without_mt or "\u200b" not in output, where
             for href in re.findall(r'href="([^"]*)"', output):
                 assert href.startswith(("./", "https://github.com/")), (where, href)
-        if "{{ 7 * 7 }}" in text:
-            assert "49" not in render(hass, card(loaded, "macro entry(e)"))
+        if "{{ 7 * 7 }}" in text:  # shown as written, never worked out (the times aside)
+            said = render(hass, card(loaded, "macro entry(e)"))
+            assert "{{ 7 * 7 }}" in said
+            assert "49" not in re.sub(r"\d\d:\d\d", "", said)
         if i >= len(NAMES):
             continue
         for needle, place in places.items():
@@ -1114,8 +1148,8 @@ async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
     viewer = await household_viewer(hass, hass_ws_client)
     footers = {v["path"]: (v, v["footer"]["card"]) for v in loaded["views"] if "footer" in v}
     assert set(footers) == {"chat-alerts", "chat-my-target", "contact-alice", "contact-bob"}
-    await gateway(hass, config)
-    await deliver(hass, config, broker, mesh)
+    await gateway(hass, config, drafts=False)
+    await deliver(hass, config, broker, mesh, drafts=False)
     assert not [path for path, footer in footers.items() if await viewer.shown(*footer)]
     own = discovery_payload(config, topics_of(config), RADIO)["dev"]["ids"][0]
     for alias in ("alerts", "my_target", "operator"):
@@ -1150,8 +1184,8 @@ async def test_a_chat_pages_footer_hides_while_one_of_its_fields_cannot_be_used(
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     viewer = await household_viewer(hass, hass_ws_client)
     footers = {v["path"]: (v, v["footer"]["card"]) for v in loaded["views"] if "footer" in v}
-    await gateway(hass, config)
-    await deliver(hass, config, broker, mesh)
+    await gateway(hass, config, drafts=False)
+    await deliver(hass, config, broker, mesh, drafts=False)
     own = discovery_payload(config, topics_of(config), RADIO)["dev"]["ids"][0]
     await fire(
         hass, f"homeassistant/device/{own}_alerts/config", drafts(own, f"{own}_write_alerts")
@@ -1254,7 +1288,7 @@ STEPS = {
     "sent": "… sent, waiting for confirmation (try 1 of 3)",
     "confirmed": "✓✓ delivered",
     "failed": "✗ not delivered (no acknowledgement)",
-    "expired": "✗ not sent: waited too long (waited too long)",
+    "expired": "✗ not sent: waited too long (no radio)",
     "duplicate": "Not sent again: the same text went to this chat a moment ago.",
     "rejected": "Not sent: text too long.",
 }
@@ -1337,7 +1371,7 @@ async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 -
             assert text in render(hass, line), step
             continue
         else:
-            reason = {"failed": "no_acknowledgement", "expired": "queue_ttl"}.get(step)
+            reason = {"failed": "no_acknowledgement", "expired": "no_radio"}.get(step)
             entry = keys | {"at": at, "direction": "out", "state": step, "suspect": False}
             documented(hass, HISTORY, [entry | {"reason": reason, "hops": None, "snr_db": None}])
         assert text in render(hass, thread), step

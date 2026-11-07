@@ -121,8 +121,11 @@ def translated(template: str) -> str:
         dashboard = entry.msgctxt == "dashboard"
         if dashboard and entry.msgid in TABS:
             msgstr = tuple(english)
-        elif dashboard and (label := QUOTES.get(entry.msgid)) is not None:
-            msgstr = (marked(entry.msgid.replace(label, marked(label))),)
+        elif dashboard and (labels := QUOTES.get(entry.msgid)) is not None:
+            said = entry.msgid
+            for label in labels:
+                said = said.replace(label, marked(label))
+            msgstr = (marked(said),)
         else:
             msgstr = tuple(map(marked, english))
         complete.append(dataclasses.replace(entry, msgstr=msgstr))

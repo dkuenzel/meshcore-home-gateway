@@ -525,14 +525,16 @@ async def test_latest_chats_need_a_gateway_of_2_1_and_name_whom_to_ask(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Without the gateway the card points to the status line; with a gateway that has no
-    message history (before 2.1) it says what the administrator does (HC 8)."""
+    """Without the gateway the card points to the status line, and so does Where everyone is,
+    since no switch helps then; with a gateway that has no message history (before 2.1) it says
+    what the administrator does (HC 8)."""
     config = make_config()
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     latest = card(loaded, LATEST)
-    assert render(hass, latest).startswith(
-        "<div>The gateway is not found: see the first line of Overview.</div>"
-    )
+    for found in (latest, card(loaded, WHERE)):
+        assert render(hass, found).startswith(
+            "<div>The gateway is not found: see the first line of Overview.</div>"
+        )
     await gateway(hass, config)
     hass.states.async_remove(f"sensor.{PREFIX}_message_history")  # a gateway of 2.0 has none
     assert render(hass, latest).startswith(

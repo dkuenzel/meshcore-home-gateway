@@ -20,6 +20,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from test_contract import PREFIX, RADIO, fire, make_config, problems, state_document
 from visibility import household_viewer
 
@@ -34,6 +35,7 @@ from test_dashboard import (
     BOB,
     CONFIGURATION,
     HISTORY,
+    NONE,
     PENDING,
     card,
     cards,
@@ -63,6 +65,13 @@ CODE = " #1a2b3c4d"  # what confirm_nonce adds to a direct message
 
 def ago(seconds: float) -> str:
     return iso(time.time() - seconds)
+
+
+def clock(at: str) -> str:
+    """The local clock time of a time of the documents, as the cards show it (D-9)."""
+    parsed = dt_util.parse_datetime(at)
+    assert parsed is not None, at
+    return dt_util.as_local(parsed).strftime("%H:%M")
 
 
 def received(seconds: float, text: str = "Hi", **more: Any) -> dict[str, Any]:
@@ -145,16 +154,22 @@ def earlier(output: str) -> str | None:
 
 
 async def chats_of(
-    hass: HomeAssistant, hass_ws_client: Any, tmp_path: Path, config: Config | None = None
+    hass: HomeAssistant,
+    hass_ws_client: Any,
+    tmp_path: Path,
+    config: Config | None = None,
+    *,
+    drafts: bool = True,
 ) -> dict[str, Any]:
     """The dashboard of a household of Alice (also the target operator) and Bob, loaded; the
-    gateway online with them."""
+    gateway online with them; without `drafts`, without the chats' fields of a gateway of 2.1,
+    for a test that gives them itself."""
     config = config or make_config()
     broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
     contacts_of(config, tmp_path, broker).update(mesh)
     loaded = await made(hass, hass_ws_client, config, tmp_path)
-    await gateway(hass, config)
-    await deliver(hass, config, broker, mesh)
+    await gateway(hass, config, drafts=drafts)
+    await deliver(hass, config, broker, mesh, drafts=drafts)
     return loaded
 
 
@@ -258,8 +273,8 @@ async def test_a_message_not_delivered_not_sent_or_maybe_forged_is_yellow_with_t
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """§3.4: failed, expired and a suspect confirmation in a yellow box with the reason in words
-    (a code the dashboard does not know stays a code); the delivery code of a direct message is
-    hidden, sent or still on its way (PC 16, M55)."""
+    (a code the dashboard does not know stays a code), but none that repeats "waited too long";
+    the delivery code of a direct message is hidden, sent or still on its way (PC 16, M55)."""
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
     alice = thread(loaded, "alice")
     documented(
@@ -288,7 +303,7 @@ async def test_a_message_not_delivered_not_sent_or_maybe_forged_is_yellow_with_t
     yellow = [cell for _, cell in shown if '<ha-alert alert-type="warning">' in cell]
     assert len(yellow) == 4
     assert "✗ not delivered (<code>error_7</code>)" in yellow[0]
-    assert "✗ not sent: waited too long (waited too long)" in yellow[1]
+    assert "✗ not sent: waited too long</small>" in yellow[1]  # the reason says it again
     assert "✗ not delivered (no acknowledgement)" in yellow[2]
     assert "⚠ delivered? maybe forged" in yellow[3]
     assert "… waiting to send" in shown[-1][1]
@@ -427,18 +442,13 @@ async def test_a_chat_page_says_why_its_field_is_missing(
     this gateway, with that name for the administrator and the guide's section (D-30); yellow
     for a field that is missing; nothing once the field is there."""
     config = make_config()
-    loaded = await chats_of(hass, hass_ws_client, tmp_path)
+    loaded = await chats_of(hass, hass_ws_client, tmp_path, drafts=False)  # without its field
     viewer = await household_viewer(hass, hass_ws_client)
     bob = page(loaded, "bob")
     must_wait = card(cards(loaded, "bob"), "Why you cannot write now")
     cannot = card(cards(loaded, "bob"), "has another name on this gateway")
     topics = topics_of(config)
     documented(hass, HISTORY, [])
-    registry = er.async_get(hass)
-    for field in ("text.mesh_bob_write", "button.mesh_bob_write_send"):  # a gateway of 2.1 has
-        if registry.async_get(field) is not None:  # them: the page starts without its field
-            registry.async_remove(field)
-    await hass.async_block_till_done()
     assert await viewer.shown(bob, cannot)
     said = render(hass, cannot)
     assert said.startswith('<div><ha-alert alert-type="warning"><b>You cannot write to Bob from')
@@ -467,12 +477,65 @@ async def test_a_chat_page_says_why_its_field_is_missing(
     assert render(hass, must_wait).startswith(
         '<div><ha-alert alert-type="error"><b>The radio is disconnected.</b> Messages wait'
     )
+    assert "<summary>Why messages wait</summary>" in render(hass, must_wait)  # writing works
     assert await viewer.shown(bob, bob["footer"]["card"])  # a message waits at the gateway
     await fire(hass, topics.availability, "offline")
     assert render(hass, must_wait).startswith(
         '<div><ha-alert alert-type="error"><b>You cannot write now: the gateway is offline.</b>'
     )
+    assert "<summary>Why you cannot write now</summary>" in render(hass, must_wait)
     shows_nothing(hass, cannot)  # the red line says it
+    assert problems(caplog) == []
+
+
+async def test_a_chat_page_says_when_its_field_or_its_send_button_cannot_be_used(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """S3 for a field under the page's own ID whose footer hides all the same: Bob's Send button
+    unavailable or turned off, the field of Alerts turned off (Home Assistant keeps a disabled
+    entity without a state, and its device does not list it). The card names that cause: not
+    another name, which is for a field found under another ID (D-30), and not making the
+    dashboard again, which is for a field that is missing."""
+    config = make_config()
+    loaded = await chats_of(hass, hass_ws_client, tmp_path, config, drafts=False)
+    viewer = await household_viewer(hass, hass_ws_client)
+    documented(hass, HISTORY, [])
+    own = discovery_payload(config, topics_of(config), RADIO)["dev"]["ids"][0]
+    bob = f"{own}_contact_{BOB}"
+    never = drafts(bob, "mesh_bob_write", via=own, key=BOB)
+    never["cmps"]["mesh_bob_write_send"]["availability_topic"] = "test/never"
+    await fire(hass, f"homeassistant/device/{bob}_drafts/config", never)
+    await fire(
+        hass, f"homeassistant/device/{own}_alerts/config", drafts(own, f"{own}_write_alerts")
+    )
+    registry = er.async_get(hass)
+
+    async def says(chat: str) -> str:
+        view = page(loaded, chat)
+        cannot = card(cards(loaded, chat), "has another name on this gateway")
+        assert not await viewer.shown(view, view["footer"]["card"])
+        assert await viewer.shown(view, cannot)
+        said = render(hass, cannot)
+        assert "another name" not in said
+        assert "make the dashboard again" not in said
+        return said
+
+    assert hass.states.get("button.mesh_bob_write_send").state == "unavailable"
+    turned = "this chat's field or its Send button is disabled, unavailable or on another device"
+    assert turned in await says("bob")
+    view = page(loaded, "alerts")
+    assert await viewer.shown(view, view["footer"]["card"])
+    for entity in ("button.mesh_bob_write_send", f"text.{own}_write_alerts"):
+        registry.async_update_entity(entity, disabled_by=er.RegistryEntryDisabler.USER)
+    await hass.async_block_till_done()
+    assert hass.states.get(f"text.{own}_write_alerts") is None
+    assert turned in await says("bob")
+    assert turned in await says("alerts")
     assert problems(caplog) == []
 
 
@@ -484,16 +547,43 @@ async def test_about_a_person_and_the_target_lines_of_a_chat(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """S4: where the person is, the battery and whether the gateway asks, with the way to
-    Contacts; on a page that writes through a target, its text before and after messages and
-    its priority from the gateway's configuration (HC 30), left out without it."""
+    """S4: where the person is, the battery in volts once it is current, and whether the
+    gateway asks, with the device's answer in words (D-8) and the way to Contacts; the hops and
+    the signal once both are known. On a page that writes through a target, its text before and
+    after messages and its priority from the gateway's configuration (HC 30), left out without
+    it; the help explains a target's lines only on such a page."""
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
     about = card(cards(loaded, "alice"), "Change on Contacts")
     said = render(hass, about)
     assert said.startswith('<table role="presentation" width="100%"><tr><td>Where</td><td>')
-    assert "<td>Ask for position and battery</td><td>on</td>" in said
+    assert "<td>Ask for position and battery</td><td>on · answering</td>" in said
     assert '<div><a href="./contacts">Change on Contacts</a></div>' in said
     assert "Text before or after messages:" not in said.split("<details>")[0]
+    alice = "sensor.mesh_alice_telemetry_state"
+    for state, word in (("no_answer", "no answer for a day"), ("later", "<code>later</code>")):
+        hass.states.async_set(alice, state)
+        assert f"<td>Ask for position and battery</td><td>on · {word}</td>" in render(hass, about)
+    registry = er.async_get(hass)
+    (device,) = [d for d in dr.async_get(hass).devices if d.serial_number == ALICE]
+    battery = registry.async_get_or_create(
+        "sensor",
+        "mqtt",
+        "contract_alice_battery",
+        device_id=device.id,
+        suggested_object_id="mesh_alice_battery",
+    ).entity_id
+    volts = {"device_class": "voltage", "unit_of_measurement": "V"}
+    for state, shown in (("3.912", "3.9 V"), ("unknown", NONE), ("unavailable", NONE)):
+        hass.states.async_set(battery, state, volts)  # unavailable while answers are not current
+        assert f"<td>Battery</td><td>{shown}</td>" in render(hass, about), state
+    hass.states.async_set("sensor.mesh_alice_hops", "2")
+    hass.states.async_set("sensor.mesh_alice_snr", "unknown")
+    assert "hops away" not in render(hass, about)
+    hass.states.async_set("sensor.mesh_alice_snr", "6.25")
+    assert "it was 2 hops away, at a signal of 6.25 dB." in render(hass, about)
+    assert "Sent before other messages:" in render(hass, about)  # Alice's page writes to operator
+    bob = render(hass, card(cards(loaded, "bob"), "Change on Contacts"))
+    assert "Sent before other messages" not in bob  # his own field: no target
     targets = {
         "total": 1,
         "truncated": False,
@@ -503,6 +593,12 @@ async def test_about_a_person_and_the_target_lines_of_a_chat(
     said = render(hass, about)
     assert "<div>Text before or after messages: [Home]  …  -Ops</div>" in said
     assert "<div>Sent before other messages.</div>" in said
+    targets["items"][0] |= {"suffix": ""}
+    hass.states.async_set(CONFIGURATION, ago(0), {"targets": targets})
+    assert "<div>Text before messages: [Home] </div>" in render(hass, about)
+    targets["items"][0] |= {"prefix": "", "suffix": " -Ops"}
+    hass.states.async_set(CONFIGURATION, ago(0), {"targets": targets})
+    assert "<div>Text after messages:  -Ops</div>" in render(hass, about)
     channel = render(hass, card(cards(loaded, "alerts"), "Change on Contacts"))
     assert channel.startswith("<div>About 158 letters per message.</div>")
     assert problems(caplog) == []
@@ -518,10 +614,14 @@ async def test_a_chats_head_says_who_and_how_to_write(
 ) -> None:
     """S1: the name and when the person was last heard, or the channel and who reads it; "How
     to write" with the field's label and the gateway's numbers when it publishes them (G6): the
-    room, the window of the same text, whether a long text is cut; a person no longer on the
-    radio says so instead (S1, HC 3)."""
+    room, the window of the same text in minutes or seconds, none when it is off, whether a
+    long text is cut. A person whose device is gone, removed from the radio or hidden in Home
+    Assistant, says so instead and how to get it back (S1, HC 3), and the card below the thread
+    stays empty; a page that writes through a contact target keeps its field and says that
+    messages fail while the radio does not have the contact."""
     config = make_config()
     loaded = await chats_of(hass, hass_ws_client, tmp_path, config)
+    viewer = await household_viewer(hass, hass_ws_client)
     bob = card(cards(loaded, "bob"), "How to write")
     said = render(hass, bob)
     assert said.startswith("<div><b>Bob</b></div>\n<details><summary>How to write<")  # unheard
@@ -536,16 +636,33 @@ async def test_a_chats_head_says_who_and_how_to_write(
     said = render(hass, bob)
     assert "About 160 letters; a longer text is not sent and stays in the field" in said
     assert "within 10 minutes is not sent again" in said
+    for window, line in ((20, "within 20 seconds"), (90, "within 90 seconds"), (0, None)):
+        messages = {"truncate": True, "dedup_window_s": window}
+        hass.states.async_set(CONFIGURATION, ago(0), {"messages": messages})
+        sames = re.findall(r"<li>The same text to the same chat ([^<]*)</li>", render(hass, bob))
+        assert sames == (
+            [f"{line} is not sent again, unless it was not delivered."] if line else []
+        )
     alerts = render(hass, card(cards(loaded, "alerts"), "How to write"))
     assert alerts.startswith(
         "<div><b>Alerts</b> · channel · everyone with the channel's key reads it</div>"
     )
-    registry = dr.async_get(hass)  # Bob's device deleted
-    (device,) = [d for d in registry.devices if d.serial_number == BOB]
-    registry.async_remove_device(device.id)
+    cannot = card(cards(loaded, "bob"), "has another name on this gateway")
+    documented(hass, HISTORY, [])  # a gateway of 2.1, whose S3 would speak
+    registry = dr.async_get(hass)  # Bob's device deleted: hidden, or gone from the radio
+    for key in (BOB, ALICE):
+        (device,) = [d for d in registry.devices if d.serial_number == key]
+        registry.async_remove_device(device.id)
+    await hass.async_block_till_done()
     said = render(hass, bob)
-    assert "<b>Bob is no longer a contact of this radio.</b>" in said
+    assert "<b>Bob is no longer a contact of this radio, or was hidden.</b>" in said
     assert "<summary>Why you cannot write here</summary>" in said
+    assert "To write again, add the contact again, or show hidden contacts again" in said
+    shows_nothing(hass, cannot)  # the head says why: no second answer
+    assert not await viewer.shown(page(loaded, "bob"), cannot)
+    alice = render(hass, card(cards(loaded, "alice"), "How to write"))  # through operator
+    assert "<b>Alice is no longer a contact of this radio, or was hidden.</b> If the radio" in alice
+    assert "<summary>How to write</summary>" in alice
     assert problems(caplog) == []
 
 
@@ -593,10 +710,11 @@ async def test_all_chats_and_latest_chats_show_each_chats_newest_message(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Each chat with its newest message, without the delivery code (PC 16), and "new" for a
-    message received less than 15 minutes ago, never for one only sent (D-19, HC 22, M54); the
-    chats with a message first; Latest chats the three newest, All chats every page; and the
-    contacts and channels without a page."""
+    """Each chat with its newest message, without the delivery code (PC 16), one on its way
+    called so (D-7), and "new" for a message received less than 15 minutes ago, never for one
+    only sent (D-19, HC 22, M54); the chats with a message first, each with the time it is
+    sorted by: when the gateway took a message from this home, as in its thread; Latest chats
+    the three newest, All chats every page; and the contacts and channels without a page."""
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
     everything = card(loaded, "Who reads what")
     latest = card(loaded, "./messages")
@@ -616,18 +734,34 @@ async def test_all_chats_and_latest_chats_show_each_chats_newest_message(
         assert CODE not in said, said
         first = said.split("</tr>")[0]
         assert '<a href="./contact-alice"><b>Alice</b></a>' in first
-        assert "Sent: Soon" in first
+        assert "On its way: Soon" in first
         assert " · new</small>" in first  # Hello, 5 minutes ago
         assert " · new" not in said.split("</tr>")[1]  # My target: 20 minutes ago
     documented(hass, HISTORY, [final(60, "Only mine", **to_alice(state="confirmed"))])
     documented(hass, PENDING, [])
     assert " · new" not in render(hass, latest)
+    assert " · new" not in render(hass, everything)
     said = render(hass, everything)
     titles = re.findall(r'<a href="\./([\w-]+)"><b>', said)
     assert titles == ["contact-alice", "chat-alerts", "chat-my-target", "contact-bob"]
     assert "<div>Channels heard without a chat page:" not in said
     documented(hass, HISTORY, [received(1300, "Stranger", channel_index=5, target=None)])
-    assert "<div>Channels heard without a chat page: 5</div>" in render(hass, everything)
+    assert "<div>Channels heard without a chat page: channel 5</div>" in render(hass, everything)
+    taken = ago(600)
+    documented(  # confirmed a minute ago, taken ten minutes ago: sorted and shown by the ten
+        hass,
+        HISTORY,
+        [
+            final(60, "Reply", **to_alice(state="confirmed"), queued_at=taken),
+            received(300, "Dinner"),
+        ],
+    )
+    for found in (everything, latest):
+        listed = re.findall(
+            r'<b>([^<]*)</b></a>.*?valign="top"><small>([^<]*)</small>', render(hass, found)
+        )
+        assert [title for title, _ in listed][:2] == ["Alerts", "Alice"]
+        assert clock(taken) in listed[1][1]
     assert problems(caplog) == []
 
 
@@ -665,10 +799,68 @@ async def test_latest_messages_name_each_messages_chat(
     assert problems(caplog) == []
 
 
+async def test_latest_messages_show_each_message_once_as_its_chat_does(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """C2 with the fixtures of the thread's tests: by when the gateway took a message (M3), the
+    delivery code hidden on every direct message from this home, sent or on its way (PC 16,
+    M55), a message on its way that the history holds already shown once (PC 20, M56), and the
+    open rows fewer when long (D-17, M47)."""
+    loaded = await chats_of(hass, hass_ws_client, tmp_path)
+    everything = card(loaded, "macro entry(e)")
+    documented(
+        hass,
+        HISTORY,
+        [
+            final(20, "On my way", **to_alice(state="confirmed"), queued_at=ago(120)),
+            received(30, "Got it", **to_alice()),
+        ],
+    )
+    assert texts(render(hass, everything)) == ["On my way", "Got it"]
+    documented(
+        hass,
+        HISTORY,
+        [
+            final(10, "Lights" + CODE, **to_alice(state="confirmed", suspect=True)),
+            final(20, "Dinner" + CODE, **to_alice(state="failed", reason="no_acknowledgement")),
+            final(30, "Stuck" + CODE, **to_alice(state="expired", reason="no_radio")),
+            received(60, "Ends in #1a2b3c4d", **to_alice()),
+        ],
+    )
+    documented(hass, PENDING, [on_its_way(5, "Soon" + CODE, **to_alice(target=None))])
+    output = render(hass, everything)
+    assert texts(output) == ["Ends in #1a2b3c4d", "Stuck", "Dinner", "Lights", "Soon"]
+    assert CODE not in "".join(cell for _, cell in rows(output) if "Ends in" not in cell)
+    assert "✗ not sent: waited too long (no radio)" in rows(output)[1][1]
+    done = final(10, "Done" + CODE, **to_alice(state="confirmed"), id="d1")
+    documented(hass, HISTORY, [done])
+    documented(
+        hass,
+        PENDING,
+        [
+            on_its_way(30, "Done" + CODE, **to_alice(target=None), id="d1", step="sent"),
+            on_its_way(5, "Waiting", **to_alice(target=None)),
+            on_its_way(4, "To all"),
+        ],
+    )
+    assert texts(render(hass, everything)) == ["Done", "Waiting", "To all"]
+    documented(hass, PENDING, [])
+    documented(hass, HISTORY, [received(10 * i + 10, chr(ord("a") + i) * 150) for i in range(6)])
+    output = render(hass, everything)
+    assert len(rows(output)) == 2
+    assert earlier(output) == "Earlier messages (4)"
+    assert problems(caplog) == []
+
+
 # --- long words --------------------------------------------------------------------------------
 
 KEY = "0123456789abcdef" * 4
-LINK = "https://example.org/" + "a" * 40 + "?q=1&r=2"
+LINK = "https://example.org/" + "a" * 34 + "?q=1&r=2"  # & the 59th letter: a break falls on it
 
 
 async def test_long_words_break_every_20_letters_and_never_inside_an_entity(

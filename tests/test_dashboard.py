@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from meshcore_home_gateway import __version__, dashboard, i18n
-from meshcore_home_gateway.catalog import Entry
+from meshcore_home_gateway.catalog import Entry, read_po
 from meshcore_home_gateway.config import Config, load_config, parse_config
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.model import DeliveryState, Position
@@ -43,6 +43,7 @@ from tests.test_contact_devices import (
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "src" / "meshcore_home_gateway" / "dashboard.yaml"
+POT = ROOT / "src" / "meshcore_home_gateway" / "locale" / "meshcore-home-gateway.pot"
 DAVE = "e5" * 32
 HERE = Position(52.1, 9.2)
 # what every Markdown card that prints a value from Home Assistant defines first
@@ -386,6 +387,47 @@ def test_reason_codes_read_as_texts_and_an_unknown_one_stays_a_code() -> None:
     for card in _cards(template):
         if any("macro why(v)" in line for line in card):
             assert not any(re.search(r"<code>\{\{ m\((reason|code)\) \}\}", t) for t in card)
+
+
+# which messages a chat's thread holds: a channel's by its index, a person's by the key
+THREAD_FILTER = (
+    "((e.get('kind') == 'channel' and e.get('channel_index') == chan) if chan >= 0 else "
+    "(e.get('kind') == 'contact' and e.get('contact_key') == key))"
+)
+# the lines of the thread that pick, order, open and count its messages, by a word of each
+THREAD_RULES = (
+    "regex_replace(' #[0-9a-f]{8}$'",  # the delivery code dropped (PC 16)
+    "set trouble = e.get(",  # what shows in yellow
+    "set state = ",
+    "ns.ids",  # the history's ids, and a pending message among them skipped (PC 20)
+    "ns.rows",  # every message of the chat, by acceptance or arrival (D-17)
+    "sort(attribute='k')",
+    "ns.open",  # the open rows: at most 6, past the second within 360 characters (D-17)
+    "set earlier",
+    "ns.trouble",  # the problems among the folded ones
+)
+
+
+def test_latest_messages_keep_the_threads_rules_as_the_same_text() -> None:
+    """Design §2.3, C2: Latest messages shows the same rows as a chat's thread, "one macro text,
+    one rule to test": its lines that drop the delivery code, order the messages, skip a pending
+    message the history holds and choose the open rows are the thread's, with every chat's
+    messages in place of one chat's (M3, M47, M55 and M56 on its copy). The previews of Latest
+    chats and All chats drop the code as the thread does."""
+    found = list(_cards(shipped()))
+    (thread,) = [card for card in found if any("macro row(e)" in line for line in card)]
+    (latest,) = [card for card in found if any("macro entry(e)" in line for line in card)]
+
+    def ruled(card: list[str]) -> list[str]:
+        lines = [line for line in card if any(word in line for word in THREAD_RULES)]
+        every = (line.replace(f" and {THREAD_FILTER}", "") for line in lines)
+        return [line.replace(THREAD_FILTER, "true") for line in every]
+
+    assert len(ruled(thread)) == 11
+    assert ruled(latest) == ruled(thread)
+    dropped = [line for card in found for line in card if THREAD_RULES[0] in line]
+    assert len(dropped) == 4  # the thread, Latest messages, Latest chats, All chats
+    assert len(set(dropped)) == 1
 
 
 def test_the_contacts_card_finds_the_contacts_by_the_configured_prefix() -> None:
@@ -1504,6 +1546,41 @@ def test_the_views_are_three_tabs_and_pages_without_a_tab() -> None:
     assert any("{%- set a = m('a-b') -%}\n{%- set b = m('a_b') -%}" in t for t in pair)
 
 
+def test_help_opens_from_the_about_of_each_tab_and_from_every_chat_page() -> None:
+    """D-5: Help opens from each view's "About this view": the last card of Overview and of
+    Chats, and on a chat page the help under its thread, whose reasons in words Help explains
+    ("Why a message was not sent")."""
+    views = rules.load(rules.rendered(shipped()))["views"]
+    link = '<a href="./help">Help</a>'
+    for view in views[:2]:
+        about = view["sections"][-1]["cards"][-1]["content"].split("\n")[-1]
+        assert about.startswith("<details>"), view["path"]
+        assert link in about, view["path"]
+    for view in views[7:]:
+        helps = [
+            line
+            for section in view["sections"]
+            for card in section["cards"]
+            for line in str(card.get("content", "")).split("\n")
+            if line.startswith("<details><summary>What ✓ and ✓✓ mean")
+        ]
+        assert len(helps) == 1, view["path"]
+        assert link in helps[0], view["path"]
+
+
+def test_a_text_with_a_field_tells_the_translators_what_the_field_holds() -> None:
+    """Every text of the dashboard with a field has a translators' note (docs/development.md,
+    Translations); one that asks for the keyboard's key says which word to use, with ↵ (D-65)."""
+    _, entries = read_po(POT.read_text(encoding="utf-8"))
+    dashboard_ = [e for e in entries if e.msgctxt == i18n.DASHBOARD]
+    assert [e.msgid for e in dashboard_ if _fields(e.msgid) and not e.comments] == []
+    for entry in dashboard_:
+        if rules.KEY in entry.msgid:
+            note = " ".join(entry.comments)
+            assert "Return (↵)" in note, entry.msgid
+            assert rules.KEY_NAME in note, entry.msgid
+
+
 def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
     """Rule 6: the links and navigation paths of the shipped template, each to a page."""
     loaded = rules.load(rules.rendered(shipped()))
@@ -1841,6 +1918,21 @@ def test_an_over_long_tab_title_is_caught() -> None:
     assert rules.tab_letters(shipped(), german) == 31 > rules.TAB_LETTERS
 
 
+# the chat's help and the line of a Send without text, which name the button and the key
+HOW = next(help_ for help_, labels in rules.QUOTES.items() if "Write to {name}" in labels)
+NOTHING = next(help_ for help_ in rules.QUOTES if help_.startswith("Nothing was sent"))
+GERMAN = {  # a catalog that says the labels and the key as its controls do
+    "Send": "Abschicken",
+    "Return, then Send": "Eingabe, dann Abschicken",
+    "Write to {name}": "An {name} schreiben",
+    HOW: (
+        "Tippe ins Feld „An {name} schreiben“ unten, tippe Eingabe (↵), dann Abschicken. "
+        "Eingabe behält nur den Text; Abschicken sendet ihn."
+    ),
+    NOTHING: "Nichts gesendet. Tippe im Feld Eingabe (↵), dann Abschicken.",
+}
+
+
 @pytest.mark.real_catalogs
 def test_a_quoted_label_is_quoted_in_every_catalog() -> None:
     """Rule 16: a help that quotes a label is in QUOTES, and each catalog's help quotes
@@ -1864,8 +1956,8 @@ def test_a_quoted_label_is_quoted_in_every_catalog() -> None:
     assert rules.quote_findings(template, {}, [i18n.ENGLISH]) == [
         f"rule 16: {quoted!r} quotes 'Send', not in QUOTES"
     ]
-    assert rules.quote_findings(template, {quoted: "Send"}, [i18n.ENGLISH]) == []
-    assert rules.quote_findings(template, {quoted: "Send"}, [german]) == [
+    assert rules.quote_findings(template, {quoted: ("Send",)}, [i18n.ENGLISH]) == []
+    assert rules.quote_findings(template, {quoted: ("Send",)}, [german]) == [
         "rule 16: de: 'Tippe, dann „Senden“.' does not say 'Abschicken'"
     ]
     fixed = compiled(
@@ -1875,7 +1967,7 @@ def test_a_quoted_label_is_quoted_in_every_catalog() -> None:
             Entry(quoted, ("Tippe, dann „Abschicken“.",), i18n.DASHBOARD),
         ],
     )
-    assert rules.quote_findings(template, {quoted: "Send"}, [fixed]) == []
+    assert rules.quote_findings(template, {quoted: ("Send",)}, [fixed]) == []
     bare = template.replace(help_, "Type, then Send.")
     assert rules.quote_findings(bare, {}, [i18n.ENGLISH]) == []  # a bare word is no quote
     named = bare + '    name: _("Tap \\"Help\\" first")\n'  # a quote in a whole value
@@ -1890,19 +1982,46 @@ def test_the_name_beside_send_says_the_buttons_label() -> None:
     names the button's label, so it is in QUOTES; a catalog whose name says another word than
     its button fails (§6.2). A whole value that names a button's label bare needs QUOTES too;
     a heading that shares a word with another label does not."""
-    assert rules.QUOTES["Return, then Send"] == "Send"
-    texts = {"Send": "Abschicken", "Return, then Send": "Eingabe, dann Senden"}
+    assert rules.QUOTES["Return, then Send"] == ("Send",)
+    texts = {**GERMAN, "Return, then Send": "Eingabe, dann Senden"}
     german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
     assert rules.quote_findings(shipped(), rules.QUOTES, [german]) == [
         "rule 16: de: 'Eingabe, dann Senden' does not say 'Abschicken'"
     ]
-    texts["Return, then Send"] = "Eingabe, dann Abschicken"
-    fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
+    fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in GERMAN.items()])
     assert rules.quote_findings(shipped(), rules.QUOTES, [fixed, i18n.ENGLISH]) == []
-    write = next(help_ for help_, label in rules.QUOTES.items() if label == "Write to {name}")
     assert rules.quote_findings(shipped(), {}, [i18n.ENGLISH]) == [
-        f"rule 16: {write!r} quotes 'Write to {{name}}', not in QUOTES",
+        f"rule 16: {HOW!r} quotes 'Write to {{name}}', not in QUOTES",
         "rule 16: 'Return, then Send' names 'Send', not in QUOTES",
+    ]
+
+
+@pytest.mark.real_catalogs
+def test_the_help_says_send_and_return_as_the_button_and_its_name_do() -> None:
+    """Rule 16 (D-63, D-65): the chat's help and the line for a Send without text name the
+    button Send as it is labelled, and the keyboard's key before ↵ in the word of the name
+    beside the button; a German catalog whose help says "Senden" while the button says
+    "Abschicken", or "Zeilenumbruch" while the name says "Eingabe", fails."""
+    assert rules.QUOTES[HOW] == ("Write to {name}", "Send")
+    assert rules.QUOTES[NOTHING] == ("Send",)
+    texts = {**GERMAN, HOW: GERMAN[HOW].replace("Abschicken", "Senden")}
+    german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
+    assert rules.quote_findings(shipped(), rules.QUOTES, [german]) == [
+        f"rule 16: de: {texts[HOW]!r} does not say 'Abschicken'"
+    ]
+    texts = {**GERMAN, NOTHING: GERMAN[NOTHING].replace("Eingabe", "Zeilenumbruch")}
+    german = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
+    named = "not as 'Eingabe, dann Abschicken'"
+    assert rules.key_findings(shipped(), [german]) == [
+        f"rule 16: de: {texts[NOTHING]!r} names the key 'Zeilenumbruch', {named}"
+    ]
+    fixed = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in GERMAN.items()])
+    assert rules.key_findings(shipped(), [fixed, i18n.ENGLISH]) == []
+    bare = "Nichts gesendet. Tippe Eingabe, dann Abschicken."  # no sign: no key named
+    texts = {**GERMAN, NOTHING: bare}
+    without = compiled("de", [Entry(k, (v,), i18n.DASHBOARD) for k, v in texts.items()])
+    assert rules.key_findings(shipped(), [without]) == [
+        f"rule 16: de: {bare!r} names the key '', {named}"
     ]
 
 
