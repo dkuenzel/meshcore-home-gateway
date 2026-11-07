@@ -366,6 +366,25 @@ pct stop 105 && pct destroy 105
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
+* **Roll back to 1.x** from 2.0 or later keeps the state directory, which 1.x reads in its own
+  way (#95). 1.x knows no inclusions (`[telemetry] ask` is 2.0's): it asks every companion that
+  is not excluded, other people's too. And the first exclusion made under 1.x writes
+  `telemetry-excluded.json` without the household's inclusions, so that 2.0, back again, asks
+  none of the household's companions (*Telemetry* off on each). Before the roll back, keep a
+  copy of the file and switch telemetry off for 1.x (`enabled = false` in `[telemetry]`, removed
+  again after the return; 1.0.0 refuses the table, and has no telemetry):
+
+  ```sh
+  pct exec 105 -- cp -p /var/lib/meshcore-home-gateway/telemetry-excluded.json /root/
+  ```
+
+  Back on 2.0 or later, with the service stopped, put the copy back (`cp -p
+  /root/telemetry-excluded.json /var/lib/meshcore-home-gateway/`) if 1.x changed the file; an
+  exclusion made under 1.x is gone then, and a companion the household did not include is not
+  asked anyway.
+  Messages that the stop kept for the next start (`outbox` in `state.json`, with their texts)
+  stay there while 1.x runs, which ignores them; the next start of 2.0 or later ends those whose
+  `queue_ttl_s` has passed, `expired` or `failed`, as their final delivery event.
 
 ## 3 Other Linux systems
 

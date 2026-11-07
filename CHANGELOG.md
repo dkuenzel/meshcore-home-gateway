@@ -118,6 +118,12 @@ format, the command line and Home Assistant discovery are public interfaces
   not published (`publish_channels`, `ignore_channels`). The database keeps them until they are
   `messages_days` old; the update guide says how to be rid of them at once
   ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#103).
+- The guide's roll back did not say what 1.x does with the state directory of 2.0: it asks every
+  companion that is not excluded for telemetry, other people's too, and its first exclusion
+  writes `telemetry-excluded.json` without the household's inclusions, so that 2.0, back again,
+  asks none of them. It now says to keep a copy of the file and switch telemetry off first, and
+  that the messages a stop kept stay in `state.json` while 1.x runs
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#95).
 - When a broker that speaks MQTT 3.1.1 only refused the connection of `[mqtt] protocol = "5"`
   (`Unsupported protocol version`), the log said to test the login. It now says that the broker
   does not speak that version and names the setting
