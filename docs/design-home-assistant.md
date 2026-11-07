@@ -155,13 +155,19 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   listed tracker has.
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
   filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@contact@` (how the contacts'
-  entity IDs begin), `@node@`, `@version@`, `["@trackers@"]` (the map's trackers) and
-  `["@controls@"]` (the contacts' telemetry switches and remove buttons), two conditionals in
-  comment lines (`# @if trackers` while the map lists a tracker, `# @if controls` while there
-  are controls, each ended by `# @end`, with an optional `# @else`), and texts marked `_("…")`
-  with `msgctxt "dashboard"`. A marked whole YAML value becomes a quoted scalar; a marked text
-  inside a card's content becomes the text, `{node}` and `{version}` filled in, any other field
-  the Jinja variable of that name. The same inputs give the same bytes.
+  entity IDs begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers),
+  `@guide@` (the address of the guide of this version), `["@trackers@"]` (the map's trackers),
+  `["@chats@"]` (the chat pages, JSON objects that Jinja reads) and `["@models@"]` (each model
+  of a contact's device with its node type). Since 2.1, comment lines repeat lines for each item
+  of a list, `# @each <list>` … `# @end`, for `chats`, `switches` (the contacts' switches
+  *Telemetry*) and `removes` (their buttons *Remove from radio*), with the item's fields as
+  `@<list>.<field>@`, each value checked against its pattern first; and keep lines,
+  `# @if <flag>` … `# @end` with an optional `# @else`: `# @if trackers` while the map lists a
+  tracker, a list while it is not empty, a field inside its list's `# @each` while it is not
+  empty. Texts are marked `_("…")` with `msgctxt "dashboard"`. A marked whole YAML value becomes
+  a quoted scalar, whose only field is `{name}`, the title of the item of a `# @each`; a marked
+  text inside a card's content becomes the text, `{node}` and `{version}` filled in, any other
+  field the Jinja variable of that name. The same inputs give the same bytes.
 * **Translations of its texts** are used only when they hold no Jinja, HTML, Markdown link or
   address (`{{`, `{%`, `{#`, `<`, `>`, `@`, `](`, `://`, `www.`, `_("`), no control, format, line
   or paragraph separator character, and only the fields of the English text; else the English
@@ -172,8 +178,8 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   `<table>` or `<ha-qr-code>` element: a CommonMark HTML block, which a blank line would end. The
   alerts carry only our texts and integers. Machine values of a closed list (delivery steps,
   telemetry states, contact events) are mapped to texts, with the value itself, through `m`, for
-  one added later; so are the reason codes the API documents for deliveries and contact
-  requests (IMP-049). A reason added later, and the radio's own refusals (`error_<code>`,
+  one added later; so are the reason codes the API documents for deliveries, contact
+  requests (IMP-049) and refused commands. A reason added later, and the radio's own refusals (`error_<code>`,
   `not_found`), stay codes, in `<code>`.
 * **Interface:** the command is the only growth (`cli > commands > dashboard`); the dashboard's
   content is not an interface, the entity IDs it names are.
