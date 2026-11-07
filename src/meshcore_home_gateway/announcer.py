@@ -71,7 +71,7 @@ class Announcer:
         self._publish_state = publish_state
         self._components, self._manage, self._devices = components, manage, devices
         self._mono, self._wall = monotonic, wall_clock
-        self._announced: tuple[str, str, str] | None = None  # radio identity in the discovery
+        self._announced: tuple[str, ...] | None = None  # radio identity in the discovery
         self._removed: dict[str, str] | None = None  # earlier components, removed in this run
         self._state = _Announcing()
 
@@ -178,5 +178,9 @@ def ha_device_topics(config: Config) -> list[str]:
     return [discovery_topic(config), below or manage_topic(config)]
 
 
-def _identity(info: RadioInfo | None) -> tuple[str, str, str] | None:
-    return (info.device.model, info.device.version, info.public_key) if info else None
+def _identity(info: RadioInfo | None) -> tuple[str, ...] | None:
+    """What the announcement depends on of the radio: the device page's model, firmware and key,
+    and the name, which takes room from every channel text."""
+    if info is None:
+        return None
+    return (info.device.model, info.device.version, info.public_key, info.name)

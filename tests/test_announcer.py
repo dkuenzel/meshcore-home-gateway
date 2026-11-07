@@ -98,6 +98,24 @@ def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:
     scenario(main)
 
 
+def test_a_renamed_radio_is_announced_again(tmp_path: Path) -> None:
+    """The radio's name is part of what the discovery depends on (a channel text's room): a
+    rename, seen at the next connect, announces again."""
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            count, states = len(bus.payloads(GATEWAY_DOCUMENT)), len(bus.payloads("/state"))
+            radio.name = "Shed radio"
+            radio.disconnect()
+            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected", since=states)
+            states = len(bus.payloads("/state"))
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=states)
+            assert len(bus.payloads(GATEWAY_DOCUMENT)) == count + 1
+
+    scenario(main)
+
+
 def test_discovery_can_be_switched_off(tmp_path: Path) -> None:
     config = make_config(extra="[homeassistant]\ndiscovery = false")
 
