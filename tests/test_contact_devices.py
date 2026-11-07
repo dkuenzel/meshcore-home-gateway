@@ -1037,6 +1037,21 @@ def test_a_device_deleted_in_home_assistant_stays_hidden(tmp_path: Path) -> None
     assert bus.take() == []
 
 
+def test_the_copies_of_one_deletion_are_one_deletion(tmp_path: Path) -> None:
+    """Home Assistant 2026.11 clears a deleted device's topic once for each of its entities: nine
+    identical empty messages for a companion are one deletion (#115)."""
+    contacts, bus = devices(tmp_path)
+    contacts.update(mesh_of(node(ALICE, "Alice")))
+    bus.take()
+    for _ in range(9):
+        contacts.discovery_message(topic(ALICE), b"", retained=False)
+    assert [(t, e["event_type"], e["key"]) for t, e in bus.take()] == [
+        ("meshcore/radio1/contact", "hidden", ALICE)
+    ]
+    records = ContactDeviceRecords(stopped(tmp_path))
+    assert (records.hidden, set(records.announced)) == ({ALICE}, set())
+
+
 def test_its_own_late_echo_is_no_deletion(tmp_path: Path) -> None:
     """After a broker outage the queued removal arrives late, also after the contact came back:
     it is counted, not timed."""

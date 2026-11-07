@@ -1,0 +1,9 @@
+# Test environment for the Home Assistant contract tests on the 2026.11 series
+# (`make ha-test HA_SERIES=2026.11`, docs/testing.md). Since 2026.11 Home Assistant publishes its
+# own test plugin, which pins one Home Assistant release; no release of
+# pytest-homeassistant-custom-component pins 2026.11. `make ha-lock HA_SERIES=2026.11` writes
+# requirements-2026.11.txt from this file once these releases are COOLDOWN_DAYS old.
+pytest-homeassistant==2026.11.0
+# The MQTT integration's setup imports the hassio integration, which needs it; the plugin brings
+# it only in an extra. The version is the one hassio's manifest of Home Assistant 2026.11.0 pins.
+aiohasupervisor==0.8.1

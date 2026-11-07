@@ -62,6 +62,17 @@ there is a Home Assistant change the next update of the pin has to meet; note it
 request. The Home Assistant releases tested with are listed in
 [home-assistant.md](home-assistant.md#requirements).
 
+Since 2026.11 Home Assistant publishes its own test plugin, `pytest-homeassistant`, and the suite
+runs on that series too: `make ha-test HA_SERIES=2026.11` installs the series' own lock,
+`home-assistant/requirements-2026.11.txt`, into `.venv-homeassistant-2026.11`. The tests take the
+plugin's helpers from `home-assistant/tests/ha_plugin.py`, which imports them from whichever
+plugin is installed. `make ha-lock HA_SERIES=2026.11` writes the lock from
+`requirements-2026.11.in` once the cooldown admits its releases; until then `make ha-test
+HA_SERIES=2026.11` says so and fails, and the CI job *Home Assistant contract (2026.11)* only
+notes it. Where the series differ, a test expects each one's behaviour: since 2026.11 Home
+Assistant clears a device's discovery topic once for each entity it removes
+(`CLEARS_PER_ENTITY` in `test_contract.py`).
+
 | Suite | Files | Needs |
 | --- | --- | --- |
 | Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py`, `test_lpp.py` (CayenneLPP frames and the names of their readings), `test_telemetry.py` (the telemetry schedule and each companion's state on a set clock), `test_adverts.py` (the check for positions in adverts: logged adverts, the radio's push and the record) | nothing |

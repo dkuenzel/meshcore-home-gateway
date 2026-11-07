@@ -8,6 +8,11 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Changed
+
+- Tested with Home Assistant 2026.11 as well. Since 2026.11 it clears a deleted device's discovery
+  topic once for each of its entities; the gateway takes the copies as one deletion (#115).
+
 ### Fixed
 
 - The generated dashboard shows the hint to add the script *Mesh message* while the script is

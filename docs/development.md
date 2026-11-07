@@ -195,6 +195,10 @@ pin.
 Home Assistant), with the versions that `home-assistant/overrides.txt` raises past known
 vulnerabilities; run it in Dependabot's pull requests for that environment too, so that the
 overrides hold (whether Dependabot applies them is not checked).
+`make ha-lock HA_SERIES=2026.11` writes the lock of the second series,
+`home-assistant/requirements-2026.11.txt`, from `requirements-2026.11.in` (Home Assistant's own
+plugin, `pytest-homeassistant`; [testing.md](testing.md#home-assistant-contract-tests)), under the
+same cooldown.
 After a Home Assistant update, run `make ha-test` and adjust "tested with" in
 `docs/home-assistant.md`. Review the diff like code.
 

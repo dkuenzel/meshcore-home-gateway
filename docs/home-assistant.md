@@ -10,7 +10,7 @@ Public interface: see [compatibility](development.md#compatibility).
 
 ## Requirements
 
-* Home Assistant 2026.8 or newer, tested with 2026.10.
+* Home Assistant 2026.8 or newer, tested with 2026.10 and 2026.11.
 * The MQTT integration connected to the same broker, with discovery and the birth message enabled
   (both are the defaults).
 * In the gateway configuration: `homeassistant.discovery = true` (the default), `prefix` equal to
@@ -182,8 +182,8 @@ switching sharing off, [companions.md](companions.md#positions-in-adverts)).
   from telemetry: a hidden companion, and one without a device because of the limit, has no
   switch *Telemetry* but is still asked; exclude it with
   `meshcore-home-gateway contacts telemetry KEY off`.
-* A contact device whose entity was disabled by hand: removing it makes Home Assistant log
-  *No device components to cleanup*, which is harmless.
+* A contact device whose entity was disabled by hand: removing it makes Home Assistant up to
+  2026.10 log *No device components to cleanup*, which is harmless.
 
 ## Adding and removing contacts
 
@@ -591,11 +591,12 @@ test without Home Assistant, in the gateway's container:
   Assistant received it; Home Assistant must have run in that time. A leftover entity can be
   deleted under *Settings → Entities*.
 * When Home Assistant removes a disabled entity (the packet sensors after the rx log was switched
-  off, an entity disabled by hand), or a current entity is deleted, it clears the whole device's
-  discovery topic, and all its entities go. The gateway watches that topic and announces again a
-  moment later, which brings them back; Home Assistant logs *No device components to cleanup*
-  meanwhile ([platform-notes.md](platform-notes.md#home-assistant-mqtt)). For the same reason the
-  gateway's device comes back when it is deleted while the gateway runs: stop the gateway first.
+  off, an entity disabled by hand), or a current entity is deleted, up to 2026.10 it clears the
+  whole device's discovery topic, and all its entities go; since 2026.11 the device keeps its
+  other entities. The gateway watches that topic and announces again a moment later, which brings
+  them back; Home Assistant logs *No device components to cleanup* meanwhile
+  ([platform-notes.md](platform-notes.md#home-assistant-mqtt)). For the same reason the gateway's
+  device comes back when it is deleted while the gateway runs: stop the gateway first.
 * Each contact device has its own discovery topic one level below the gateway's,
   `homeassistant/device/meshcore_home_gateway_radio1/contact_<key>/config`. The gateway subscribes
   to them to notice a device deleted in Home Assistant, which publishes an empty retained message

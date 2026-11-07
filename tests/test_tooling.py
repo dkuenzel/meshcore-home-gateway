@@ -354,13 +354,17 @@ def test_the_release_is_built_where_no_test_or_lint_tool_runs() -> None:
     assert "--require-hashes --no-deps -r requirements/release.txt" in environment.stdout
 
 
+# the locks of the Home Assistant series: requirements.txt, and one per HA_SERIES once it exists
+HOME_ASSISTANT_LOCKS = sorted(ROOT.glob("home-assistant/requirements*.txt"))
+
+
 @pytest.mark.parametrize(
     "lock",
     [
         "requirements/dev.txt",
         "requirements/release.txt",
         "requirements/audit.txt",
-        "home-assistant/requirements.txt",
+        *(lock.relative_to(ROOT).as_posix() for lock in HOME_ASSISTANT_LOCKS),
     ],
 )
 def test_a_lock_file_has_the_form_dependabot_writes(lock: str) -> None:
@@ -383,7 +387,8 @@ def test_every_lock_file_is_audited_and_the_tool_chains_fail_the_audit() -> None
     assert dry_run.returncode == 0, dry_run.stderr
     lines = dry_run.stdout.replace("\\\n", " ").splitlines()  # a command with its continuations
     audits = [line for line in lines if "/pip-audit " in line]
-    locks = [*sorted(ROOT.glob("requirements/*.txt")), ROOT / "home-assistant/requirements.txt"]
+    locks = [*sorted(ROOT.glob("requirements/*.txt")), *HOME_ASSISTANT_LOCKS]
+    assert ROOT / "home-assistant/requirements.txt" in locks
     for lock in locks:
         name = lock.relative_to(ROOT).as_posix()
         [audit] = [line for line in audits if f"-r {name}" in line]
@@ -391,6 +396,45 @@ def test_every_lock_file_is_audited_and_the_tool_chains_fail_the_audit() -> None
     assert all("--require-hashes --strict" in audit for audit in audits)
     ci = job_commands(workflow_jobs("ci.yml")["check"])
     assert "audit" in set().union(*map(make_targets, ci))
+
+
+def test_the_lock_of_each_home_assistant_series_is_audited_on_its_own(tmp_path: Path) -> None:
+    """A series' lock, once `make ha-lock HA_SERIES=…` wrote it, is audited as the first one is,
+    in a run of its own: the two pin different releases of the same packages."""
+    locks = ["home-assistant/requirements.txt", "home-assistant/requirements-2099.1.txt"]
+    for name in (
+        "requirements/dev.txt",
+        "requirements/release.txt",
+        "requirements/audit.txt",
+        *locks,
+    ):
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text("", encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+    dry_run = subprocess.run(  # noqa: S603 - our Makefile with fixed arguments
+        [
+            MAKE,
+            "--no-print-directory",
+            "--dry-run",
+            "-f",
+            str(ROOT / "Makefile"),
+            "-C",
+            str(tmp_path),
+            "audit",
+            "MAKE=true",  # the environment of pip-audit: not made here
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert dry_run.returncode == 0, dry_run.stderr
+    runs = dry_run.stdout.replace("\\\n", " ").replace(";", "\n").splitlines()
+    for lock in locks:
+        [run] = [line for line in runs if f"-r {lock} " in line]
+        assert "/pip-audit " in run
+        assert run.count(" -r ") == 1
+        assert "|| echo" in run
 
 
 def ruleset(name: str) -> dict[str, Any]:
@@ -463,17 +507,71 @@ def test_the_home_assistant_lock_keeps_its_overrides() -> None:
     home_assistant = ROOT / "home-assistant"
     overrides = (home_assistant / "overrides.txt").read_text(encoding="utf-8")
     raised = re.findall(r"^([\w.-]+)(>=|==)([\d.]+)$", overrides, flags=re.MULTILINE)
-    lock = (home_assistant / "requirements.txt").read_text(encoding="utf-8")
-    locked = {
-        name.lower().replace("_", "-"): version
-        for name, version in re.findall(r"^([\w.-]+)==([\d.]+) ", lock, flags=re.MULTILINE)
-    }
     assert raised
-    for name, operator, version in raised:
-        found = locked.get(name.lower().replace("_", "-"))
-        assert found is not None, f"{name} is not in the lock: make ha-lock"
-        allowed = _numbers(found) >= _numbers(version) if operator == ">=" else found == version
-        assert allowed, f"{name}=={found} in the lock, {operator}{version} in overrides.txt"
+    for path in HOME_ASSISTANT_LOCKS:  # every series' lock: make ha-lock applies the same file
+        lock = path.read_text(encoding="utf-8")
+        locked = {
+            name.lower().replace("_", "-"): version
+            for name, version in re.findall(r"^([\w.-]+)==([\d.]+) ", lock, flags=re.MULTILINE)
+        }
+        for name, operator, version in raised:
+            found = locked.get(name.lower().replace("_", "-"))
+            assert found is not None, f"{name} is not in {path.name}: make ha-lock"
+            allowed = _numbers(found) >= _numbers(version) if operator == ">=" else found == version
+            assert allowed, f"{name}=={found} in {path.name}, {operator}{version} in overrides.txt"
+
+
+def test_each_home_assistant_series_has_its_own_lock_and_environment(tmp_path: Path) -> None:
+    """Since 2026.11 Home Assistant brings its own test plugin, and no lock holds both series
+    (#115): HA_SERIES picks the series' lock and environment. Without its lock the series
+    is not tested; only `make ha-lock HA_SERIES=…` writes it, under the cooldown."""
+    default = make("--dry-run", "ha-lock")
+    assert "uv pip compile requirements.in " in default.stdout
+    assert "--output-file requirements.txt" in default.stdout
+    series = make("--dry-run", "ha-lock", "HA_SERIES=2026.11")
+    assert series.returncode == 0, series.stderr
+    assert "uv pip compile requirements-2026.11.in " in series.stdout
+    assert "--output-file requirements-2026.11.txt" in series.stdout
+    assert "--exclude-newer \"$(date -u -d '14 days ago' +%Y-%m-%d)\"" in series.stdout
+    assert (ROOT / "home-assistant" / "requirements-2026.11.in").is_file()
+    for name, lock, venv in (
+        ("", "requirements.txt", ".venv-homeassistant"),
+        ("2026.11", "requirements-2026.11.txt", ".venv-homeassistant-2026.11"),
+    ):
+        environment = tmp_path / f"venv{name}"
+        installed = make(
+            "--dry-run",
+            f"HA_SERIES={name}",
+            f"HA_VENV={environment}",
+            f"{environment}/.installed",
+        )
+        assert f"-r home-assistant/{lock}" in installed.stdout
+        tested = make("--dry-run", "ha-test", f"HA_SERIES={name}")
+        assert f"{venv}/bin/python -m pytest -c home-assistant/pytest.ini" in tested.stdout
+    environment = tmp_path / "venv"
+    missing = make("ha-test", "HA_SERIES=2000.1", f"HA_VENV={environment}")
+    assert missing.returncode != 0
+    assert (
+        "no lock home-assistant/requirements-2000.1.txt yet; make ha-lock HA_SERIES=2000.1"
+        in missing.stderr
+    )
+    assert not environment.exists()
+
+
+def test_ci_tests_the_second_home_assistant_series_once_its_lock_exists() -> None:
+    """The contract suite runs on both series in CI (#115); the job of 2026.11
+    runs it from the commit that adds the series' lock and says why it does not before."""
+    job = workflow_jobs("ci.yml")["homeassistant-2026-11"]
+    lock = "hashFiles('home-assistant/requirements-2026.11.txt')"
+    commands = job_commands(job)
+    [run] = [c for c in commands if "ha-test" in make_targets(c)]
+    assert "HA_SERIES=2026.11" in run
+    steps = job.split("\n      - ")[1:]
+    [test] = [s for s in steps if run in s]
+    assert f"if: {lock} != ''" in test
+    assert any(f"if: {lock} == ''" in s and "::notice::" in s for s in steps)
+    release = workflow_jobs("ci.yml")["release"]
+    assert re.search(r"needs: \[[^]]*\bhomeassistant-2026-11\b", release)
 
 
 def test_make_targets_are_read_from_commands() -> None:

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from ha_plugin import CLIENT_ID
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
@@ -23,8 +24,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import CLIENT_ID
 from test_contract import (
+    CLEARS_PER_ENTITY,
     CONFIG,
     PREFIX,
     RADIO,
@@ -242,7 +243,13 @@ async def test_deleting_the_gateway_device_clears_the_controls_topic_too(
     await hass.async_block_till_done()
     cleared = {(t, p, r) for t, p, _q, r in publishes(mqtt)}
     assert cleared == {(discovery_topic(CONFIG), None, True), (manage_topic(CONFIG), None, True)}
-    assert problems(caplog) == []
+    # since 2026.11 the controls' topic is cleared once for each control, and Home Assistant
+    # finds nothing left to clean up at the second copy
+    leftover = (
+        "WARNING homeassistant.components.mqtt.discovery: No device components to cleanup for "
+        f"manage_contacts, node_id '{PREFIX}'"
+    )
+    assert problems(caplog) == ([leftover] if CLEARS_PER_ENTITY else [])
 
 
 # --- removing ----------------------------------------------------------------------------------

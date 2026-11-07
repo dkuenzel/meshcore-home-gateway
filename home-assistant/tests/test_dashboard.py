@@ -27,6 +27,7 @@ from typing import Any
 import markupsafe
 import pytest
 from freezegun.api import FrozenDateTimeFactory
+from ha_plugin import CLIENT_ID
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -34,7 +35,6 @@ from homeassistant.helpers.service import async_get_cached_service_description
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import slugify
-from pytest_homeassistant_custom_component.common import CLIENT_ID
 from test_contract import RADIO, fire, guide_block, make_config, problems, state_document
 from test_languages import offer
 from visibility import household_viewer

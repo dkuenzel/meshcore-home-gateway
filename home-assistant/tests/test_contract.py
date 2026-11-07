@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 import yaml
 from freezegun.api import FrozenDateTimeFactory
+from ha_plugin import async_fire_mqtt_message
 from homeassistant import const
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
@@ -28,7 +29,6 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import slugify
-from pytest_homeassistant_custom_component.common import async_fire_mqtt_message
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config, parse_config
@@ -63,6 +63,12 @@ TARGETS = (
     "[targets.my-target]\nchannel = 2\n"
 )
 PREFIX = "meshcore_home_gateway_radio1"
+# Since 2026.11 Home Assistant clears a device's discovery topic once for each entity it removes
+# with the device, and no longer when a single component goes while the device stays
+# (components/mqtt/entity.py:816-875, async_remove_entity_discovery_payload); a cleared topic now
+# removes the device's disabled components too (components/mqtt/discovery.py:290-326). Before,
+# it cleared the topic once, and itself whenever it removed a disabled component (#115).
+CLEARS_PER_ENTITY = (const.MAJOR_VERSION, const.MINOR_VERSION) >= (2026, 11)
 
 
 def make_config(targets: str = TARGETS, node_id: str = "radio1") -> Config:
@@ -321,10 +327,11 @@ node_id = "radio1"
 async def test_a_disabled_component_goes_without_losing_the_device_for_long(
     hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The packet sensors are disabled by default. Removing a disabled entity makes Home
-    Assistant clear the device's topic itself, and the broker hands that back to it: all the
-    device's entities go. The gateway sees it and announces again, which restores them; the
-    removal, sent again, then finds nothing disabled and Home Assistant stays quiet."""
+    """The packet sensors are disabled by default. Before 2026.11, removing a disabled entity
+    makes Home Assistant clear the device's topic itself, and the broker hands that back to it:
+    all the device's entities go. The gateway sees it and announces again, which restores them;
+    the removal, sent again, then finds nothing disabled and Home Assistant stays quiet. Since
+    2026.11 the device keeps its other entities throughout (CLEARS_PER_ENTITY)."""
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     fewer = parse_config(f"""
 [radio]
@@ -352,16 +359,22 @@ words = ["status", "arm"]
             await fire(hass, topic, "" if payload is None else payload)
         return published
 
+    def kept() -> set[str]:
+        return {e.rsplit("_radio1_", 1)[1] for e in entity_ids(hass)}
+
     cleared = await announce_removal()
-    assert {(t, p, r) for t, p, _q, r in cleared} == {(discovery_topic(CONFIG), None, True)}
-    assert entity_ids(hass) == set()  # until the gateway announces again
+    if CLEARS_PER_ENTITY:
+        assert cleared == []
+        assert kept() == {k.replace("-", "_") for k in expected}
+    else:
+        assert {(t, p, r) for t, p, _q, r in cleared} == {(discovery_topic(CONFIG), None, True)}
+        assert entity_ids(hass) == set()  # until the gateway announces again
     assert await announce_removal() == []  # the gateway's answer to the cleared topic
-    assert {e.rsplit("_radio1_", 1)[1] for e in entity_ids(hass)} == {
-        k.replace("-", "_") for k in expected
-    }
-    assert {p.split(":")[0] for p in problems(caplog)} == {
-        "WARNING homeassistant.components.mqtt.discovery"
-    }  # "No device components to cleanup" for the copies of the cleared topic
+    assert kept() == {k.replace("-", "_") for k in expected}
+    # before 2026.11: "No device components to cleanup" for the copies of the cleared topic
+    assert {p.split(":")[0] for p in problems(caplog)} == (
+        set() if CLEARS_PER_ENTITY else {"WARNING homeassistant.components.mqtt.discovery"}
+    )
 
 
 # --- state -------------------------------------------------------------------------------------
@@ -764,5 +777,13 @@ async def test_the_actions_of_the_first_steps_send_a_message(
 
 
 def test_the_guide_names_the_tested_release() -> None:
+    """The requirements line names every release series the contract tests run with (`make
+    ha-test HA_SERIES=…`), this one among them: "tested with 2026.10 and 2026.11" (#115)."""
     tested = f"{const.MAJOR_VERSION}.{const.MINOR_VERSION}"
-    assert f"tested with {tested}" in GUIDE.read_text(encoding="utf-8")
+    (line,) = [
+        line
+        for line in GUIDE.read_text(encoding="utf-8").splitlines()
+        if line.startswith("* Home Assistant ") and "tested with" in line
+    ]
+    named = re.findall(r"\d{4}\.\d+", line.split("tested with", 1)[1])
+    assert tested in named, line
