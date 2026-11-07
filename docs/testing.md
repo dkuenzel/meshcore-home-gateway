@@ -37,12 +37,18 @@ IDs, unique IDs and attributes in English and in a pseudo-language, a change of 
 renames only display names, a device name the user chose kept) and `test_dashboard.py` the
 generated dashboard (loaded as a YAML-mode
 dashboard, its Markdown cards rendered as the frontend asks for them, also with hostile names and
-texts in every place, the visibility of its cards, the map's trackers and hint, the guide's script
-run by a household user, in English and in a pseudo-language) into the MQTT integration of the
-Home Assistant release that
+texts in every place, the visibility of its cards for a household user, the map's trackers and
+hint, the guide's script run by a household user, in English and in a pseudo-language) into the
+MQTT integration of the Home Assistant release that
 `pytest-homeassistant-custom-component` pins (`home-assistant/requirements.in`; the environment is
 installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-homeassistant`, about
-900 MB). It checks what [home-assistant.md](home-assistant.md) promises, including the example
+900 MB). A card's visibility is decided as the frontend decides it since Home Assistant 2026.10
+(`home-assistant/tests/visibility.py` names the frontend's source lines it follows): `screen`,
+`user`, `view_columns`, `location`, `time` and a `state` with an attribute in the test, every
+other condition sent to Home Assistant's `subscribe_condition` as a user who is no administrator;
+an error there hides the card. `test_helpers.py` checks these helpers and `cards()`, which finds
+a page's cards by its path, a chat page's alias or a contact's key. The suite checks what
+[home-assistant.md](home-assistant.md) promises, including the example
 automations taken from that page, and that Home Assistant logs no warning. It is a separate CI job
 and not part of `make check`, because Home Assistant needs a newer Python than the gateway and
 is a large download. Run it after changing discovery, payloads, the state document, the
@@ -73,7 +79,7 @@ request. The Home Assistant releases tested with are listed in
 | Service manager | `tests/test_unit_run.py` (`make unit-run` after `make dist`: the zipapp and the unit installed as an installation has them and run under systemd as the service user, with an emulated radio over TCP and a private broker: readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog fed and firing on `SIGSTOP`) | root, systemd, `mosquitto`, the distribution's `python3` with paho-mqtt 2; it installs into the system, so only on a machine to throw away: CI's job *unit check* |
 | System | `tests/test_system.py` (the service as a process with an emulated radio and a broker; a broker restart, without its retained messages) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
-| Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_dashboard.py` (above) | `make ha-test`: Python 3.14.2 or newer |
+| Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_dashboard.py`, `test_helpers.py` (above) | `make ha-test`: Python 3.14.2 or newer |
 | Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 3–6 and 10 (`test_messages.py`: to a channel and to B, a text cut to 160 bytes, B out of reach, what B sends), 11–13, 55 and 56 (`test_commands.py`: commands of a sender and of another contact, one that waited in the radio, codes and replies) and 14 (`test_radio_profile.py`: the profile set back and kept), of steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)), `test_clock.py`, a radio clock ahead set back by a restart (the firmware starts at its newest contact time plus a second, the next connect sets it forward), and `test_acknowledgements.py`, forged acknowledgements (SEC-001): a stand-in beside A who knows the text confirms a message B never received, not with `confirm_nonce`, and one that answers sooner than a repeater allows is `suspect` while B's genuine one is not | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`; a copy of the script that offers English only), `test_installer_language.py` (the messages block cut out and run alone, packs and their pins, the language menu with a pseudo-language, where a pack comes from, the program's messages in the dialogs' language, the size of the published script) | bash |
 
