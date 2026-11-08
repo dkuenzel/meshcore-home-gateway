@@ -41,6 +41,9 @@ REFUSED = f"'event.{GW}_delivery'"
 ALICE, BOB = "a1" * 32, "b2" * 32
 TABS = ("overview", "messages", "contacts")
 TAB_LETTERS = 22  # the three titles together, or the tab bar scrolls at 360 px
+# the name of the tile beside a chat's Send button: 122 px at 360 px, which 17 letters of
+# "Return, then Send" fill to 111 px; a longer name is cut (docs/testing.md, the browser check)
+SEND_NAME_LETTERS = 17
 # rule 2: the mapping macros, each over a closed list; the gateway's list where one exists
 MAPPINGS = (
     "said",

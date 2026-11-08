@@ -22,7 +22,7 @@ from types import ModuleType
 import pytest
 
 from meshcore_home_gateway.catalog import read_po
-from tests.dashboard_rules import QUOTES
+from tests.dashboard_rules import KEY_NAME, QUOTES
 
 ROOT = Path(__file__).resolve().parent.parent
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -113,8 +113,9 @@ TABS = frozenset({"Overview", "Chats", "Contacts"})
 
 def translated(template: str) -> str:
     """Steps 1 and 2: the template as a catalog of the language, every text translated, the
-    plural rule in its header; the tabs' titles as in English, which fit; a dashboard text that
-    says a label of the dashboard says it as translated (rule 16, QUOTES)."""
+    plural rule in its header; the tabs' titles as in English, which fit, and the name beside the
+    Send button short enough; a dashboard text that says a label of the dashboard says it as
+    translated (rule 16, QUOTES)."""
     header, entries = read_po(template)
     complete = []
     for entry in entries:
@@ -122,6 +123,10 @@ def translated(template: str) -> str:
         dashboard = entry.msgctxt == "dashboard"
         if dashboard and entry.msgid in TABS:
             msgstr = tuple(english)
+        elif dashboard and entry.msgid == KEY_NAME:
+            # the name beside the Send button has at most 17 letters (SEND_NAME_LETTERS): marked
+            # whole it would have 22; a short form keeps the key's word and the label as marked
+            msgstr = (f"Return, {marked('Send')}",)
         elif dashboard and (labels := QUOTES.get(entry.msgid)) is not None:
             said = entry.msgid
             for label in labels:

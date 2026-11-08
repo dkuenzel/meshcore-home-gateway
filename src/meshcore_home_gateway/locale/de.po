@@ -1975,7 +1975,7 @@ msgstr "Hinzufügen oder Entfernen hat nicht funktioniert; der Grund in Klammern
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Airtime budget"
-msgstr "Sendezeitbudget"
+msgstr "Budget der Sendezeit"
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2213,7 +2213,7 @@ msgstr "Unter Kontakte ändern"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Channel messages shown"
-msgstr "Angezeigte Kanalnachrichten"
+msgstr "Angezeigte Nachrichten aus Kanälen"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2286,7 +2286,7 @@ msgstr "Befehlscodes"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Command senders"
-msgstr "Befehlsabsender"
+msgstr "Absender von Befehlen"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2315,19 +2315,19 @@ msgstr "Kontakt"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contact controls in Home Assistant"
-msgstr "Kontaktsteuerung in Home Assistant"
+msgstr "Steuerung der Kontakte in Home Assistant"
 
 #. chats are the names of this dashboard's chats, separated by commas
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contact controls in Home Assistant: off."
-msgstr "Kontaktsteuerung in Home Assistant: aus."
+msgstr "Steuerung der Kontakte in Home Assistant: aus."
 
 #. chats are the names of this dashboard's chats, separated by commas
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contact controls in Home Assistant: on."
-msgstr "Kontaktsteuerung in Home Assistant: an."
+msgstr "Steuerung der Kontakte in Home Assistant: an."
 
 #. the settings of the contacts in Home Assistant; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2338,7 +2338,7 @@ msgstr "Entitäts-IDs der Kontakte beginnen mit"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contact types the radio adds by itself"
-msgstr "Kontaktarten, die das Funkgerät selbst hinzufügt"
+msgstr "Arten von Kontakten, die das Funkgerät selbst hinzufügt"
 
 #. count and limit are whole numbers: the contacts on the radio and how many it holds
 #. a tab's title. Overview, Chats and Contacts together have at most 22 letters,
@@ -2514,7 +2514,7 @@ msgstr "Alle, die Home Assistant nutzen, sehen diese Karte und ihren Verlauf."
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Everything the radio sent, last hour"
-msgstr "Alles vom Funkgerät Gesendete, letzte Stunde"
+msgstr "Funkgerät gesamt, letzte Stunde"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2729,7 +2729,7 @@ msgstr "Die Hilfe sagt, was jeder Grund in Klammern bedeutet und was zu tun ist.
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Hidden contacts"
-msgstr "Ausgeblendete Kontakte"
+msgstr "Ausgeblendete"
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2843,7 +2843,7 @@ msgstr "In der MeshCore-App: Kontakte, Hinzufügen, QR-Code scannen."
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "In this home"
-msgstr "Hier eingestellt"
+msgstr "Wert"
 
 #. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3342,7 +3342,7 @@ msgstr "Schalte auf diesem Gerät in der MeshCore-App das Teilen des Standorts i
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On the radio"
-msgstr "Im Funkgerät"
+msgstr "Ist"
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3586,12 +3586,12 @@ msgstr "Funkeinstellungen"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio settings managed"
-msgstr "Funkeinstellungen verwaltet"
+msgstr "Einstellungen des Funkgeräts verwaltet"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio settings managed: the gateway keeps the radio's settings as this home needs them, or only watches them."
-msgstr "Funkeinstellungen verwaltet: Das Gateway hält die Einstellungen des Funkgeräts so, wie dieses Zuhause sie braucht, oder beobachtet sie nur."
+msgstr "Einstellungen des Funkgeräts verwaltet: Das Gateway hält die Einstellungen des Funkgeräts so, wie dieses Zuhause sie braucht, oder beobachtet sie nur."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3652,7 +3652,7 @@ msgstr "Entfernen: Der Kontakt wird vom Funkgerät genommen; um wieder zu schrei
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Return, then Send"
-msgstr "Eingabe, dann Senden"
+msgstr "Eingabe, Senden"
 
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4589,12 +4589,12 @@ msgstr "Wartende Nachrichten"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Wanted"
-msgstr "Gewünscht"
+msgstr "Soll"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Wanted: – means the gateway leaves the setting as it finds it."
-msgstr "Gewünscht: – heißt, das Gateway lässt die Einstellung, wie es sie vorfindet."
+msgstr "Soll: – heißt, das Gateway lässt die Einstellung, wie es sie vorfindet."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5680,7 +5680,7 @@ msgstr "nur Automatisierungen schreiben hier"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "only people turned on"
-msgstr "nur eingeschaltete Personen"
+msgstr "nur Personen mit Schalter an"
 
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml

@@ -2125,6 +2125,16 @@ def test_the_tab_titles_fit_a_phone_in_every_shipped_language() -> None:
     assert rules.tab_letters(shipped(), i18n.ENGLISH) == 21
 
 
+def test_the_name_beside_send_fits_a_phone_in_every_shipped_language() -> None:
+    """The tile beside a chat's Send button names the key and the button (rules.KEY_NAME); at
+    360 px it has room for the English name, 17 letters. A shipped catalog's name has no more:
+    German's "Eingabe, dann Senden" was cut in the browser check."""
+    for language in i18n.LANGUAGES:
+        name = rules.said(i18n.translator(language), rules.KEY_NAME)
+        assert len(name) <= rules.SEND_NAME_LETTERS, (language, name)
+    assert len(rules.said(i18n.ENGLISH, rules.KEY_NAME)) == rules.SEND_NAME_LETTERS
+
+
 @pytest.mark.real_catalogs
 def test_an_over_long_tab_title_is_caught() -> None:
     long = translated({"Overview": "Übersicht", "Chats": "Unterhaltungen", "Contacts": "Kontakte"})
