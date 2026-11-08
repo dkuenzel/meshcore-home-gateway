@@ -371,10 +371,11 @@ check, not part of `make check`. It caught three bugs the stub could not show: d
 captured output, names starting with `-` taken for options, and non-ASCII characters dropped in a
 locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
 
-While the installer offers English only, it shows no language menu; once it offers another
-language, the menu comes first and the script needs a key for it. Whether whiptail draws a
-no-break space (U+00A0, U+202F) is not checked yet: until it is, the catalog checks refuse one in
-the command line's texts, which the installer's boxes show too.
+The installer offers English and German, so its language menu comes first: the script takes
+the menu's default there, German under the script's `LANG=de_DE.UTF-8`, and types the same
+keys into the German dialogs. Whether whiptail draws a no-break space (U+00A0, U+202F) is not
+checked yet: until it is, the catalog checks refuse one in the command line's texts, which the
+installer's boxes show too.
 
 ## Release check
 
