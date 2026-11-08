@@ -227,7 +227,8 @@ its rule; the shipped template breaks none of them.
     not (D-63: *Send*, *Contacts*, *Gateway*, *Settings*, *Ask for position and battery*, the
     controls and headings of *Contacts*), is listed in `QUOTES` with the labels it names, or in
     `PLAIN` where the words mean no label; and every language says each label as it translates
-    it. A text that asks for the keyboard's key says
+    it, its first letter in either case as the language's grammar wants (a German heading ends
+    in its button's verb). A text that asks for the keyboard's key says
     the key before ↵ in a word of the name beside *Send*.
 17. No text names a section of the guide; it links to its anchor instead. Only a line that
     starts with "For your administrator:" names Home Assistant's menus.

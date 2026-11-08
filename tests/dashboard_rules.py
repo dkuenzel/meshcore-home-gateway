@@ -1120,9 +1120,17 @@ def quote_findings(
             text = said(translator, help_)
             for label in listed:
                 named = said(translator, label)
-                if named not in text:
+                if not says(text, named):
                     found.append(f"rule 16: {translator.language}: {text!r} does not say {named!r}")
     return found
+
+
+def says(text: str, label: str) -> bool:
+    """Rule 16: whether `text` says `label`, its first letter in either case, as a language's
+    grammar may want: a German heading ends in its button's verb, "Kontakt entfernen" for
+    "Entfernen"."""
+    rest = label[1:]
+    return any(first + rest in text for first in {label[:1], label[:1].lower(), label[:1].upper()})
 
 
 def _menus(text: str) -> str:

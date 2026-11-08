@@ -2251,6 +2251,37 @@ def test_a_quoted_label_is_quoted_in_every_catalog() -> None:
 
 
 @pytest.mark.real_catalogs
+def test_a_quoted_label_may_change_the_case_of_its_first_letter() -> None:
+    """Rule 16: a language's grammar may write a label's first letter in the other case, as a
+    German heading ends in its button's verb: "Kontakt entfernen" says "Entfernen". Another word,
+    or another letter in the other case, is another word."""
+    template = (
+        "views:\n"
+        '  - title: _("Contacts")\n'
+        '    action_name: _("Remove")\n'
+        "    content: |-\n"
+        '      <div>_("Remove a contact")</div>\n'
+    )
+    quotes = {"Remove a contact": ("Remove",)}
+
+    def german(heading: str) -> i18n.Translator:
+        return compiled(
+            "de",
+            [
+                Entry("Remove", ("Entfernen",), i18n.DASHBOARD),
+                Entry("Remove a contact", (heading,), i18n.DASHBOARD),
+            ],
+        )
+
+    assert rules.quote_findings(template, quotes, [german("Kontakt entfernen")]) == []
+    assert rules.quote_findings(template, quotes, [german("Entfernen eines Kontakts")]) == []
+    for other in ("Kontakt löschen", "Kontakt eNtfernen"):
+        assert rules.quote_findings(template, quotes, [german(other)]) == [
+            f"rule 16: de: {other!r} does not say 'Entfernen'"
+        ]
+
+
+@pytest.mark.real_catalogs
 def test_the_name_beside_send_says_the_buttons_label() -> None:
     """Rule 16 on the shipped template: "Return, then Send", the name beside the Send button,
     names the button's label, so it is in QUOTES; a catalog whose name says another word than
