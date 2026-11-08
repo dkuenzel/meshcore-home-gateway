@@ -415,7 +415,9 @@ and the dashboard's template.
 - The CI job *release plan* (`make release-plan`) compares the snapshot with the one of the last
   release on every pull request and push, and its log shows the result. A finding that removes or
   narrows needs a `**Breaking:**` entry (or a `### Removed` section) since that release, which
-  makes the next release a major one. A finding that adds or changes needs an entry since then
+  makes the next release a major one. `### Removed` is for a public interface only: removing
+  what is none (the generated dashboard, its template, a log text) is a `### Changed` entry. A
+  finding that adds or changes needs an entry since then
   that makes the next release at least a minor one (`### Added` or `### Changed`): neither
   growth nor a change ships in a patch. A release must contain the snapshot, so the releases
   after it are compared with it. Only these findings need a changelog entry: removing what no
@@ -489,17 +491,21 @@ it passes. `releases/latest` and the installer's default never pick a pre-releas
    [testing.md](testing.md#release-check)); the pull request of the release names the Home
    Assistant version. The release ships the program of that candidate: only `__version__`
    may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`. So before the
-   candidate, a change raises `RELEASED_AFTER` in `src/meshcore_home_gateway/radio/session.py` to
-   the date of the last release: the gateway takes a host clock before it, or more than ten years
-   after it, as wrong and does not write it to the radio (design §6.1). One left behind only
-   weakens that check; one in the future would refuse every host clock, which a test catches.
+   candidate, and at the latest with the first version written after a release, a pre-release
+   too (a test checks it), a change raises `RELEASED_AFTER` in
+   `src/meshcore_home_gateway/radio/session.py` to the date of the last release: the gateway
+   takes a host clock before it, or more than ten years after it, as wrong and does not write it
+   to the radio (design §6.1). One left behind only weakens that check; one in the future would
+   refuse every host clock, which a test catches.
 2. The pull request that finishes the increment sets `__version__` in
    `src/meshcore_home_gateway/__init__.py`, runs `make interface` (the AsyncAPI document names the
    version), adds its row to the table of Home Assistant releases tested with
    ([home-assistant.md](home-assistant.md#requirements)) and moves the *Unreleased* entries of
    `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD` (a pre-release's section says that it had no
-   release check). The version must be the next one, which `make release-plan` and the CI job
-   *release plan* check: the kind of change comes from the changelog entries since the last
+   release check). The date is the day the tag is due: the day of the merge for a pre-release,
+   the day after it for a release (step 3); once the day of the merge is known, the section is
+   dated again if it moved. The version must be the next one, which `make release-plan` and the
+   CI job *release plan* check: the kind of change comes from the changelog entries since the last
    release (an entry that starts with `**Breaking:**` or a `### Removed` section: major; Added,
    Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version
    written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed. The

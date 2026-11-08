@@ -465,10 +465,11 @@ def test_the_release_date_floor_is_a_past_date() -> None:
 
 
 def test_the_release_date_floor_is_not_older_than_the_last_release() -> None:
-    """docs/development.md, Release: before a release (its candidate, if it has one) the floor is
-    raised to the date of the last release. So it is never older than the newest release in the
-    changelog that is not this version's, final releases counted: a candidate and its release
-    ship the same floor, whose date may then be the candidate's predecessor's."""
+    """docs/development.md, Release: the first version written after a release, a pre-release
+    too, and so every candidate, raises the floor to the date of that release. So it is never
+    older than the newest release in the changelog that is not this version's, final releases
+    counted: a candidate and its release ship the same floor, whose date may then be the
+    candidate's predecessor's."""
     changelog = (Path(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
     dated = re.findall(r"^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$", changelog, re.MULTILINE)
     last = next(day for version, day in dated if version != __version__)
