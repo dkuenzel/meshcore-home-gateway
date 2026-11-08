@@ -1836,7 +1836,11 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   line that says why on top of them (61 to 77 px): that line pushed the *Send* tile 15 px below
   the screen at 360x800 and 4 px at 390x844. *Here:* since 2.1.0 the refused line stands under
   the thread, and the footer holds only the field and the tile
-  ([development.md](development.md#translations), rule 18). *Check:* `grep -n max-height
+  ([development.md](development.md#translations), rule 18). On a phone the line then stands
+  above the footer (at 360x800 with a full thread it ends 8 px above it), but the footer still
+  covers the bottom of the page until it is scrolled: at 1280x800 with a full thread, the line
+  stood at 589 to 638 px and the footer's top at 606 px, so 32 of its 49 px were behind the
+  field on first paint, on both versions. *Check:* `grep -n max-height
   src/panels/lovelace/views/hui-view-footer.ts` in the frontend's source.
 * **Core strips what a template renders, so a Markdown card whose content renders only spaces or
   line breaks counts as empty; markup without text, an HTML entity such as `&nbsp;` and a

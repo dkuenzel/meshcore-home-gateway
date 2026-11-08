@@ -727,7 +727,9 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   The thread's help links to *Help*, which explains each reason. Under the thread, why the
   gateway refused a message to the chat, why writing is not possible when it is not, and
   *About*: where the person is, the battery, asking for position and battery with how the
-  device answers, or the chat's text before and after messages. The page ends in the field
+  device answers, or the chat's text before and after messages. On a desktop screen with a long
+  thread, the line that says why a message was refused can stand behind the field until the page
+  is scrolled; on a phone it stands above it. The page ends in the field
   to write in and its *Send* button (writing, below). A person whose device is gone, removed from
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.

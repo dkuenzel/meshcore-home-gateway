@@ -30,8 +30,15 @@ For the administrator: make the dashboard again after the update. It needs Home 
 user needs `topic write <base_topic>/<node_id>/homeassistant/draft/+/+/request`, or *Send* does
 nothing ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)). The guide's recorder block now
 keeps the texts sent and the commands out too: copy it again
-([home-assistant.md](docs/home-assistant.md#privacy)). A roll back to 2.0 clears the retained
-documents that 2.1 added ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+([home-assistant.md](docs/home-assistant.md#privacy)). Before a roll back to 2.0, read the update
+guide: 2.0 neither publishes nor clears the retained `pending`, `config` and drafts that 2.1
+added, and the guide gives the commands that clear them
+([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+
+Known limits of the dashboard: a command the gateway refused leaves *Latest of each kind* with
+the next message received (#141); the delivery code of `confirm_nonce` is cut by the setting of
+now, not by that of the message's time (#142); and on a desktop screen with a long thread, the
+line that says why a *Send* was refused can stand behind the field until the page is scrolled.
 
 2.1.0 had no release candidate, as the maintainer decided: CI, the Home Assistant contract tests
 on 2026.10.2 and 2026.11.0 and the browser check of the dashboard on both checked it. The
@@ -300,11 +307,11 @@ maintainer's use follows the release; what it finds ships as 2.1.1.
   tcp_unauthenticated`) or commands over a broker without credentials or TLS (`[mqtt] insecure`)
   need cannot come from `--reconfigure`, which asks with the installed version. The guide shows
   the line to add by hand right before `--update`, and the troubleshooting table has a row for
-  `mqtt.insecure` ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+  `mqtt.insecure` ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#78).
 - The development guide: a release that is due is stopped by disabling the workflow *Release
   due*, not by a revert of its version, which the release plan refuses; a run of `release.yml`
   that failed before it published is re-run on the same tag
-  ([development.md](docs/development.md#release)).
+  ([development.md](docs/development.md#release)) (#85).
 - With `set_clock`, the radio is no longer restarted for a clock 1 minute to 1 hour ahead when
   no contact changed for longer than `set_clock_max_days`, or the host's clock is before the
   release: the restart starts the clock at the newest contact time, and the next connect then
