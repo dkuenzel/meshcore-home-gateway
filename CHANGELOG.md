@@ -8,6 +8,35 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-09
+
+The household's chat, its problems and its settings on the generated dashboard, and German.
+
+`meshcore-home-gateway dashboard` writes the dashboard again for the household, with three tabs,
+*Overview*, *Chats* and *Contacts*, and the pages *Map*, *Gateway*, *Settings* and *Help*. Each
+chat has a page that reads like a messenger, with a field to write and a *Send* button.
+*Overview* says in its first line whether everything is fine and names the first problem, with a
+card for each problem that says what to do. *Contacts* has each person's switch to ask for
+position and battery and a *Remove* that asks first, and *Settings* shows what the administrator
+set, read only. For this the gateway announces new entities in Home Assistant: *Message
+history*, *Messages on their way*, *Configuration*, and a draft with its *Send* button for each
+chat. German comes with this release: the command line, the installer, the names in Home
+Assistant and the dashboard. The release also carries the fixes of the review of 2.0.0, among
+them a limit of wrong codes per command sender (#79), the delivery code of `confirm_nonce` kept
+off the broker until the delivery ended (#87) and the requests a stop used to lose (#92).
+
+For the administrator: make the dashboard again after the update. It needs Home Assistant
+2026.10 or later; the gateway and its entities keep 2026.8. With a broker ACL, Home Assistant's
+user needs `topic write <base_topic>/<node_id>/homeassistant/draft/+/+/request`, or *Send* does
+nothing ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)). The guide's recorder block now
+keeps the texts sent and the commands out too: copy it again
+([home-assistant.md](docs/home-assistant.md#privacy)). A roll back to 2.0 clears the retained
+documents that 2.1 added ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+
+2.1.0 had no release candidate, as the maintainer decided: CI, the Home Assistant contract tests
+on 2026.10.2 and 2026.11.0 and the browser check of the dashboard on both checked it. The
+maintainer's use follows the release; what it finds ships as 2.1.1.
+
 ### Added
 
 - The attribute `manage_reason` of *Contacts* in Home Assistant, which the guide and the
@@ -170,15 +199,12 @@ format, the command line and Home Assistant discovery are public interfaces
   not "5 min ago". The field to add a contact is *Add by key or contact link*; the line below it
   says to tap Return. *Gateway* has no tile of the airtime left: its *Health* row shows it with
   the budget. Make the dashboard again to get these.
-
-### Removed
-
-- The dashboard's tile *Write a message* and its hint to add the script *Mesh message*, which
-  Home Assistant 2026.10 and later never showed (#110): each chat page has its own field. The
-  guide keeps the script for automations.
+- The dashboard has no tile *Write a message* and no hint to add the script *Mesh message* any
+  more, which Home Assistant 2026.10 and later never showed (#110): each chat page has its own
+  field. The guide keeps the script for automations.
 - The dashboard's card *Telemetry and removal*, a fixed list of the contacts' switches and
-  remove buttons, which pressed a button without asking first; each contact's switch and
-  *Remove* now stand in *Ask for position and battery* and *Add or remove*.
+  remove buttons, which pressed a button without asking first, is gone; each contact's switch
+  and *Remove* now stand in *Ask for position and battery* and *Add or remove*.
 
 ### Fixed
 

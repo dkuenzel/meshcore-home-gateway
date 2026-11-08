@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
+from meshcore_home_gateway import __version__
 from meshcore_home_gateway.core.model import MessageKind, Position
 from meshcore_home_gateway.ports import (
     AckReceived,
@@ -458,6 +462,17 @@ def test_the_release_date_floor_is_a_past_date() -> None:
     """A floor after today would refuse every host clock (docs/development.md, Release)."""
     assert time.time() >= RELEASED_AFTER
     assert RELEASED_AFTER % 86_400 == 0  # midnight UTC of a release's date
+
+
+def test_the_release_date_floor_is_not_older_than_the_last_release() -> None:
+    """docs/development.md, Release: before a release (its candidate, if it has one) the floor is
+    raised to the date of the last release. So it is never older than the newest release in the
+    changelog that is not this version's, final releases counted: a candidate and its release
+    ship the same floor, whose date may then be the candidate's predecessor's."""
+    changelog = (Path(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
+    dated = re.findall(r"^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$", changelog, re.MULTILINE)
+    last = next(day for version, day in dated if version != __version__)
+    assert calendar.timegm(time.strptime(last, "%Y-%m-%d")) <= RELEASED_AFTER, last
 
 
 def test_the_clock_offset_follows_the_heartbeat() -> None:

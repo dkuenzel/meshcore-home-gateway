@@ -282,8 +282,8 @@ def test_the_readme_says_which_messages_are_published() -> None:
 
 def test_the_roll_back_to_2_0_clears_every_retained_topic_that_2_1_added() -> None:
     """2.0 neither publishes nor clears the retained topics 2.1 added: `pending`, `config` and the
-    drafts. The note on the roll back in deployment.md clears each the way the changelog does,
-    the topics the gateway's retained guard keeps now less those it kept in 2.0."""
+    drafts. The note on the roll back in deployment.md clears each the way the changelog since
+    2.0.0 does, the topics the gateway's retained guard keeps now less those it kept in 2.0."""
     from meshcore_home_gateway.mqtt.retained import RetainedTopics
     from meshcore_home_gateway.mqtt.topics import Topics
     from tests.test_retained import Bus
@@ -304,15 +304,15 @@ def test_the_roll_back_to_2_0_clears_every_retained_topic_that_2_1_added() -> No
     assert added == {topics.pending, topics.config, topics.draft_subscription}
     deployment = _words((ROOT / "docs" / "deployment.md").read_text(encoding="utf-8"))
     note = deployment.partition("* **Roll back to 2.0**")[2].partition(" * **")[0]
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").partition("\n## [")[2]
-    unreleased = _words(changelog.partition("\n## [")[0])
+    # the entries since 2.0.0: under Unreleased until the release, then under 2.1.0
+    since = _words((ROOT / "CHANGELOG.md").read_text(encoding="utf-8").partition("\n## [2.0.0]")[0])
     for topic in sorted(added - {topics.draft_subscription}):
         command = f"mosquitto_pub -r -n -t {topic}"
         assert command in note, topic
-        assert command in unreleased, topic
+        assert command in since, topic
     drafts = topics.draft_subscription.removesuffix("+/+")
     assert f"mosquitto_sub -t '{drafts}#' --retained-only --remove-retained" in note
-    assert f"mosquitto_pub -r -n -t {drafts}" in unreleased
+    assert f"mosquitto_pub -r -n -t {drafts}" in since
     assert "meshcore-home-gateway dashboard" in note
 
 
