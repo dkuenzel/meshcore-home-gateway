@@ -739,7 +739,7 @@ msgstr "das Gateway nimmt keine Anfragen zum Hinzufügen oder Entfernen an: es i
 
 #: src/meshcore_home_gateway/cli/contacts.py
 msgid "the radio drops its direct messages from then on; messages queued to it fail"
-msgstr "das Funkgerät verwirft ab dann seine Direktnachrichten; Nachrichten an ihn in der Warteschlange schlagen fehl"
+msgstr "das Funkgerät verwirft ab dann Direktnachrichten von diesem Kontakt; Nachrichten an ihn in der Warteschlange schlagen fehl"
 
 #. security text (docs/translations.md): translate all of it, add nothing
 #: src/meshcore_home_gateway/cli/contacts.py
@@ -1569,7 +1569,7 @@ msgstr "{key}: setze password oder password_file, nicht beides"
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
 msgid "{key}: the radio's TCP interface has no authentication: anyone who reaches it controls the radio and can read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use USB, or set tcp_unauthenticated = true for a radio in a network that only the gateway reaches (docs/configuration.md, [radio])"
-msgstr "{key}: die TCP-Schnittstelle des Funkgeräts hat keine Authentifizierung: wer sie erreicht, steuert das Funkgerät und kann seinen privaten Schlüssel lesen, der jede Direktnachricht des Funkgeräts entschlüsselt, auch frühere, die aus der Luft aufgezeichnet wurden. Verwende USB oder setze tcp_unauthenticated = true für ein Funkgerät in einem Netzwerk, das nur das Gateway erreicht (docs/configuration.md, [radio])"
+msgstr "{key}: die TCP-Schnittstelle des Funkgeräts hat keine Authentifizierung: wer sie erreicht, steuert das Funkgerät und kann seinen privaten Schlüssel lesen, der jede Direktnachricht des Funkgeräts entschlüsselt, auch frühere, die über Funk mitgeschnitten wurden. Verwende USB oder setze tcp_unauthenticated = true für ein Funkgerät in einem Netzwerk, zu dem nur das Gateway Zugang hat (docs/configuration.md, [radio])"
 
 #: src/meshcore_home_gateway/config.py
 #, python-brace-format
@@ -1981,7 +1981,7 @@ msgstr "Budget der Sendezeit"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Airtime left this hour"
-msgstr "Verbleibende Sendezeit dieser Stunde"
+msgstr "Verbleibende Sendezeit in dieser Stunde"
 
 #. hour is a whole number of seconds, such as 36
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2061,7 +2061,7 @@ msgstr "Position und Batterie abfragen"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Ask for position and battery on Contacts turns it on or off for each person."
-msgstr "„Position und Batterie abfragen“ unter Kontakte schaltet es für jede Person ein oder aus."
+msgstr "„Position und Batterie abfragen“ unter Kontakte schaltet die Abfrage für jede Person ein oder aus."
 
 #. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2411,7 +2411,7 @@ msgstr "Zustellcode"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Do not trust a message only because its name looks known."
-msgstr "Vertraue einer Nachricht nicht nur deshalb, weil ihr Name bekannt aussieht."
+msgstr "Vertraue einer Nachricht nicht nur deshalb, weil der Name des Absenders bekannt aussieht."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2432,7 +2432,7 @@ msgstr "Jeder hat eigene Entitäten in Home Assistant."
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Each starts with the first digits of its key: compare them with the node's own screen before you add it."
-msgstr "Jeder beginnt mit den ersten Stellen seines Schlüssels: Vergleiche sie mit der Anzeige auf dem Knoten selbst, bevor du ihn hinzufügst."
+msgstr "Jeder Eintrag beginnt mit den ersten Stellen des Schlüssels: Vergleiche sie mit der Anzeige auf dem Knoten selbst, bevor du ihn hinzufügst."
 
 #. a fold of the older messages of a chat; earlier and trouble are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2490,7 +2490,7 @@ msgstr "Alle in diesem Zuhause, die Home Assistant nutzen, lesen und schreiben d
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Everyone in this home who uses Home Assistant reads this chat. Only automations write to it, unless the line below says why there is no field."
-msgstr "Alle in diesem Zuhause, die Home Assistant nutzen, lesen diesen Chat. Nur Automatisierungen schreiben darin, außer die Zeile darunter sagt, warum es kein Feld gibt."
+msgstr "Alle in diesem Zuhause, die Home Assistant nutzen, lesen diesen Chat. Nur Automatisierungen schreiben darin, es sei denn, die Zeile darunter sagt, warum es kein Feld gibt."
 
 #. the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2710,7 +2710,7 @@ msgstr "Die Hilfe erklärt die Begriffe der Spalte „Status“."
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Help explains the words under Asking."
-msgstr "Die Hilfe erklärt die Begriffe unter Abfrage."
+msgstr "Die Hilfe erklärt die Begriffe unter „Abfrage“."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3099,7 +3099,7 @@ msgstr "Name, Modell und Firmware: das Funkgerät dieses Zuhauses, wie es sich s
 #, python-brace-format
 msgctxt "dashboard"
 msgid "Needs a look: {first} and {more} more."
-msgstr "Zu prüfen: {first} und {more} weitere."
+msgstr "Zu prüfen: {first}; weitere Punkte: {more}."
 
 #. first is a problem in lower case, such as a fault in the gateway; the sentence names it, more counts the others
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3626,7 +3626,7 @@ msgstr "Entfernen"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Remove a contact"
-msgstr "Entfernen eines Kontakts"
+msgstr "Kontakt entfernen"
 
 #. count and limit are whole numbers: the contacts on the radio and how many it holds
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3639,7 +3639,7 @@ msgstr "Entferne Kontakte, die du nicht mehr brauchst."
 #, python-brace-format
 msgctxt "dashboard"
 msgid "Remove {name} from the radio?"
-msgstr "Entfernen von {name} aus dem Funkgerät?"
+msgstr "{name} vom Funkgerät entfernen?"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4235,7 +4235,7 @@ msgstr "Die Nachrichten bleiben hier lesbar; die Admins können das Feld reparie
 #, python-brace-format
 msgctxt "dashboard"
 msgid "The name comes from {name}'s own device and can change."
-msgstr "Der Name stammt vom Gerät von {name} selbst und kann sich ändern."
+msgstr "Den Namen gibt das Gerät von {name} selbst an; er kann sich ändern."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4368,21 +4368,21 @@ msgstr "Einstellungen des Funkgeräts: die Begriffe"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The same text to the same chat within a few minutes is not sent again, unless it was not delivered."
-msgstr "Derselbe Text an denselben Chat wird innerhalb weniger Minuten nicht erneut gesendet, außer er wurde nicht zugestellt."
+msgstr "Derselbe Text an denselben Chat wird innerhalb weniger Minuten nicht erneut gesendet, es sei denn, er wurde nicht zugestellt."
 
 #. the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "The same text to the same chat within {seconds} seconds is not sent again, unless it was not delivered."
-msgstr "Derselbe Text an denselben Chat wird innerhalb von {seconds} Sekunden nicht erneut gesendet, außer er wurde nicht zugestellt."
+msgstr "Derselbe Text an denselben Chat wird innerhalb von {seconds} Sekunden nicht erneut gesendet, es sei denn, er wurde nicht zugestellt."
 
 #. the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "The same text to the same chat within {window} minutes is not sent again, unless it was not delivered."
-msgstr "Derselbe Text an denselben Chat wird innerhalb von {window} Minuten nicht erneut gesendet, außer er wurde nicht zugestellt."
+msgstr "Derselbe Text an denselben Chat wird innerhalb von {window} Minuten nicht erneut gesendet, es sei denn, er wurde nicht zugestellt."
 
 #. hour is a whole number of seconds, such as 36
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4437,7 +4437,7 @@ msgstr "Es gab nichts zu senden."
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "These come from the gateway's configuration file when it starts. Home Assistant cannot change them, on purpose."
-msgstr "Sie stammen beim Start aus der Konfigurationsdatei des Gateways. Home Assistant kann sie absichtlich nicht ändern."
+msgstr "Diese Werte liest das Gateway beim Start aus seiner Konfigurationsdatei. Dass Home Assistant sie nicht ändern kann, ist Absicht."
 
 #. waiting is a whole number: the messages on their way that the gateway took over a minute ago
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4467,7 +4467,7 @@ msgstr "Dieses Dashboard wurde für Version {version} erstellt; das Gateway läu
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "This dashboard writes by draft and send: the field keeps your text at the gateway, and Send sends it, once."
-msgstr "Dieses Dashboard schreibt mit Entwurf und Senden: Das Feld legt deinen Text beim Gateway ab, und Senden sendet ihn, einmal."
+msgstr "Dieses Dashboard arbeitet mit Entwurf und Senden: Das Feld legt deinen Text beim Gateway ab, und Senden sendet ihn, einmal."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4787,7 +4787,7 @@ msgstr "Wo die Geräte des Haushalts in den letzten 24 Stunden waren."
 #, python-brace-format
 msgctxt "dashboard"
 msgid "Where {name} is, the battery and asking show here while {name} is a contact of this radio."
-msgstr "Wo {name} ist, die Batterie und die Abfrage erscheinen hier, solange {name} ein Kontakt dieses Funkgeräts ist."
+msgstr "Standort, Batterie und Abfrage von {name} erscheinen hier, solange {name} ein Kontakt dieses Funkgeräts ist."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5173,7 +5173,7 @@ msgstr "abwesend"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "broadcasts its position to everyone in range"
-msgstr "sendet seine Position an alle in Reichweite"
+msgstr "sendet die eigene Position an alle in Reichweite"
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -5313,7 +5313,7 @@ msgstr "jeder Kontakt"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "every person not turned off"
-msgstr "alle außer ausgeschalteten Personen"
+msgstr "alle Personen außer denen mit Schalter aus"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -6006,7 +6006,7 @@ msgstr "zu lange gewartet"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "without accents (ä becomes ae)"
-msgstr "ohne Umlaute (ä wird zu ae)"
+msgstr "ohne Umlaute und Akzente (ä wird zu ae)"
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6231,7 +6231,7 @@ msgstr "{spare} von {hour} s"
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{total} ({waiting} waiting over a minute)"
-msgstr "{total} ({waiting} warten seit über einer Minute)"
+msgstr "{total} (davon {waiting} seit über einer Minute wartend)"
 
 #. the columns of the contacts table; volts is a battery's voltage, such as 3.9
 #. volts is a battery's voltage, such as 3.9
@@ -6289,7 +6289,7 @@ msgstr "✓ gesendet"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "✓ sent: it left the radio. Channels never confirm, so one tick is all a channel message gets."
-msgstr "✓ gesendet: Sie hat das Funkgerät verlassen. Kanäle bestätigen nie, daher bekommt eine Kanalnachricht nur einen Haken."
+msgstr "✓ gesendet: Die Nachricht hat das Funkgerät verlassen. Kanäle bestätigen nie, daher bekommt eine Kanalnachricht nur einen Haken."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -6300,7 +6300,7 @@ msgstr "✓✓ zugestellt"
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "✓✓ delivered: the person's radio confirmed it. It does not say the person read it."
-msgstr "✓✓ zugestellt: Das Funkgerät der Person hat sie bestätigt. Das heißt nicht, dass die Person sie gelesen hat."
+msgstr "✓✓ zugestellt: Das Funkgerät der Person hat die Nachricht bestätigt. Das heißt nicht, dass die Person sie gelesen hat."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -6403,7 +6403,7 @@ msgstr "Frequenz"
 #: src/meshcore_home_gateway/mqtt/contact_devices.py
 msgctxt "home assistant"
 msgid "Generic"
-msgstr "Generisch"
+msgstr "Allgemeiner Wert"
 
 #. sensor of a contact: how many repeaters its last packet passed
 #: src/meshcore_home_gateway/mqtt/contact_devices.py
@@ -6455,7 +6455,7 @@ msgstr "Nachricht"
 #: src/meshcore_home_gateway/mqtt/contact_devices.py
 msgctxt "home assistant"
 msgid "Percentage"
-msgstr "Prozentsatz"
+msgstr "Prozentwert"
 
 #. device tracker of a contact: its position on the map
 #: src/meshcore_home_gateway/mqtt/contact_devices.py
@@ -6567,7 +6567,7 @@ msgstr "Verfügbare Sendezeit"
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Airtime last hour"
-msgstr "Sendezeit letzte Stunde"
+msgstr "Sendezeit, letzte Stunde"
 
 #. event entity of the gateway: a command word from an allowed sender
 #: src/meshcore_home_gateway/mqtt/discovery.py
@@ -6747,7 +6747,7 @@ msgstr "Funkeinstellung"
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Radio transmit time last hour"
-msgstr "Sendezeit des Funkgeräts letzte Stunde"
+msgstr "Sendezeit des Funkgeräts, letzte Stunde"
 
 #. sensor (duration) of the gateway: the time since its radio started
 #: src/meshcore_home_gateway/mqtt/discovery.py
@@ -6796,14 +6796,14 @@ msgstr "Ausgeblendete Kontakte anzeigen"
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Telemetry airtime last hour"
-msgstr "Telemetrie-Sendezeit letzte Stunde"
+msgstr "Telemetrie-Sendezeit, letzte Stunde"
 
 #. sensor (duration) of the gateway: the airtime its telemetry requests
 #. caused in the whole mesh in the last hour, as estimated
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Telemetry mesh airtime last hour"
-msgstr "Telemetrie-Sendezeit im Mesh letzte Stunde"
+msgstr "Telemetrie-Sendezeit im Mesh, letzte Stunde"
 
 #. sensor (enum) of the gateway: whether it asks the household's
 #. companions for telemetry; keep it apart from "Telemetry state" of a contact

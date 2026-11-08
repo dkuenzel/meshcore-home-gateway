@@ -55,7 +55,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=92c24776a5bea81beb07c7ddc589bd57201c39b06389f5d6d63c2284521bd98c)
+declare -A L10N_SHA256=([de]=ac1ecfae46104b15022c1937809d92a8cc9d126cde657753ea9e316e4638bc68)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done

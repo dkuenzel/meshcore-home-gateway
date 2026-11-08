@@ -155,7 +155,7 @@ msgstr "Passwort des MQTT-Benutzers '{user}' (leer: das installierte behalten)"
 #. security text (docs/translations.md): asks for the broker's password.
 #, python-brace-format
 msgid "Password of MQTT user '{user}' (empty: none)"
-msgstr "Passwort des MQTT-Benutzers '{user}' (leer: keins)"
+msgstr "Passwort des MQTT-Benutzers '{user}' (leer: kein Passwort)"
 
 #, python-brace-format
 msgid "Proxmox VE {version} is too old: 8 with current updates, or 9, is needed"
@@ -238,7 +238,7 @@ msgstr "Das Funkgerät wird über TCP ({address}) ohne Authentifizierung erreich
 
 #. security text (docs/translations.md): translate all of it, add nothing.
 msgid "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again."
-msgstr "Die TCP-Schnittstelle des Funkgeräts hat keine Authentifizierung: Wer sie erreicht, kann das Funkgerät steuern und seinen privaten Schlüssel lesen, der jede Direktnachricht des Funkgeräts entschlüsselt, auch frühere, die über Funk mitgeschnitten wurden. Nutze sie nur in einem Netzwerk, das nur das Gateway erreicht, nie im WLAN des Haushalts. TCP trotzdem verwenden (tcp_unauthenticated = true)? Nein: Funkgerät erneut wählen."
+msgstr "Die TCP-Schnittstelle des Funkgeräts hat keine Authentifizierung: Wer sie erreicht, kann das Funkgerät steuern und seinen privaten Schlüssel lesen, der jede Direktnachricht des Funkgeräts entschlüsselt, auch frühere, die über Funk mitgeschnitten wurden. Nutze sie nur in einem Netzwerk, zu dem nur das Gateway Zugang hat, nie im WLAN des Haushalts. TCP trotzdem verwenden (tcp_unauthenticated = true)? Nein: Funkgerät erneut wählen."
 
 msgid ""
 "The radio's firmware is not tested: the service only reports what differs\n"
