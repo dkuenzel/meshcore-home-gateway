@@ -1,0 +1,635 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: meshcore-home-gateway\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#, python-brace-format
+msgid "'{tool}' not found: this must run on a Proxmox VE host"
+msgstr "'{tool}' nicht gefunden: Das muss auf einem Proxmox-VE-Host laufen"
+
+msgid "--answers needs a file"
+msgstr "--answers braucht eine Datei"
+
+#, python-brace-format
+msgid "--reconfigure cannot apply the answer {key} (see docs/deployment.md)"
+msgstr "--reconfigure kann die Antwort {key} nicht anwenden (siehe docs/deployment.md)"
+
+msgid "--reconfigure needs a container ID"
+msgstr "--reconfigure braucht eine Container-ID"
+
+msgid "--ref needs a branch, tag or commit, e.g. main"
+msgstr "--ref braucht einen Branch, ein Tag oder einen Commit, z. B. main"
+
+msgid "--release and --ref exclude each other"
+msgstr "--release und --ref schließen sich gegenseitig aus"
+
+msgid "--release needs a version, e.g. 0.1.0"
+msgstr "--release braucht eine Version, z. B. 0.1.0"
+
+msgid "--update needs a container ID"
+msgstr "--update braucht eine Container-ID"
+
+msgid "Announce the radio to Home Assistant (MQTT discovery)?"
+msgstr "Das Funkgerät bei Home Assistant anmelden (MQTT-Erkennung)?"
+
+msgid "At its next connect the service sets the radio:"
+msgstr "Beim nächsten Verbinden setzt der Dienst am Funkgerät:"
+
+msgid "Base topic"
+msgstr "Basis-Topic"
+
+msgid "Channels to send to"
+msgstr "Kanäle, an die gesendet wird"
+
+msgid "Command words, comma-separated (e.g. status,arm,disarm)"
+msgstr "Befehlswörter, durch Kommas getrennt (z. B. status,arm,disarm)"
+
+msgid "Contacts allowed to send commands (direct messages only)"
+msgstr "Kontakte, die Befehle senden dürfen (nur Direktnachrichten)"
+
+msgid "Contacts to send to"
+msgstr "Kontakte, an die gesendet wird"
+
+msgid "Container ID"
+msgstr "Container-ID"
+
+msgid "Container host name"
+msgstr "Hostname des Containers"
+
+#. security text (docs/translations.md): the values start in one column; {tls} is
+#. true or false.
+#, python-brace-format
+msgid ""
+"Create container {id} ({hostname}) now?\n"
+"\n"
+"Disk:     {storage}, {disk} GB\n"
+"Memory:   {memory} MB\n"
+"Network:  {network}\n"
+"Radio:    {radio}\n"
+"Broker:   {host}:{port}, TLS {tls}\n"
+"Login:    {login}\n"
+"\n"
+"Afterwards the channels and contacts are read from the radio."
+msgstr ""
+"Container {id} ({hostname}) jetzt erstellen?\n"
+"\n"
+"Datenträger:      {storage}, {disk} GB\n"
+"Arbeitsspeicher:  {memory} MB\n"
+"Netzwerk:         {network}\n"
+"Funkgerät:        {radio}\n"
+"Broker:           {host}:{port}, TLS {tls}\n"
+"Anmeldung:        {login}\n"
+"\n"
+"Danach werden die Kanäle und Kontakte vom Funkgerät gelesen."
+
+msgid "Device name in Home Assistant"
+msgstr "Gerätename in Home Assistant"
+
+msgid "Disk size in GB"
+msgstr "Größe des Datenträgers in GB"
+
+#. {message} is one of the errors, translated too.
+#, python-brace-format
+msgid "Error: {message}"
+msgstr "Fehler: {message}"
+
+#, python-brace-format
+msgid "ID {id} is already used by a container or virtual machine"
+msgstr "ID {id} wird schon von einem Container oder einer virtuellen Maschine verwendet"
+
+msgid "IPv4 address with prefix (e.g. 192.0.2.20/24), or dhcp"
+msgstr "IPv4-Adresse mit Präfix (z. B. 192.0.2.20/24) oder dhcp"
+
+msgid "IPv4 gateway"
+msgstr "IPv4-Gateway"
+
+msgid "Language of the names in Home Assistant"
+msgstr "Sprache der Namen in Home Assistant"
+
+msgid "MQTT broker port"
+msgstr "Port des MQTT-Brokers"
+
+msgid "MQTT broker: host name or IP address (no mqtt://)"
+msgstr "MQTT-Broker: Hostname oder IP-Adresse (ohne mqtt://)"
+
+#, python-brace-format
+msgid "MQTT user name as set up on the broker (it was '{was}'); empty: none"
+msgstr "MQTT-Benutzername, wie auf dem Broker eingerichtet (bisher '{was}'); leer: keiner"
+
+msgid "MQTT user name as set up on the broker, e.g. meshcore-home-gateway (empty: none)"
+msgstr "MQTT-Benutzername, wie auf dem Broker eingerichtet, z. B. meshcore-home-gateway (leer: keiner)"
+
+msgid "MQTT user name as set up on the broker; empty: none"
+msgstr "MQTT-Benutzername, wie auf dem Broker eingerichtet; leer: keiner"
+
+msgid "Memory in MB"
+msgstr "Arbeitsspeicher in MB"
+
+msgid "Name of the radio in the mesh (1-31 bytes; empty: keep the radio's)"
+msgstr "Name des Funkgeräts im Mesh (1-31 Bytes; leer: den des Funkgeräts behalten)"
+
+msgid "Network bridge"
+msgstr "Netzwerk-Bridge"
+
+#. security text (docs/translations.md): translate all of it, add nothing.
+msgid "No user name: unless the broker refuses clients without one, anyone who reaches it can read the messages and the positions and send commands to the gateway. Continue without a user name?"
+msgstr "Kein Benutzername: Sofern der Broker Clients ohne Benutzernamen nicht abweist, können alle, die ihn erreichen, die Nachrichten und die Positionen lesen und dem Gateway Befehle senden. Ohne Benutzernamen fortfahren?"
+
+msgid "Node id (in topics and entity IDs)"
+msgstr "Knoten-ID (in Topics und Entitäts-IDs)"
+
+#. security text (docs/translations.md): asks for the broker's password.
+#, python-brace-format
+msgid "Password of MQTT user '{user}' (empty: keep the current one)"
+msgstr "Passwort des MQTT-Benutzers '{user}' (leer: das aktuelle behalten)"
+
+#. security text (docs/translations.md): asks for the broker's password.
+#, python-brace-format
+msgid "Password of MQTT user '{user}' (empty: keep the installed one)"
+msgstr "Passwort des MQTT-Benutzers '{user}' (leer: das installierte behalten)"
+
+#. security text (docs/translations.md): asks for the broker's password.
+#, python-brace-format
+msgid "Password of MQTT user '{user}' (empty: none)"
+msgstr "Passwort des MQTT-Benutzers '{user}' (leer: keins)"
+
+#, python-brace-format
+msgid "Proxmox VE {version} is too old: 8 with current updates, or 9, is needed"
+msgstr "Proxmox VE {version} ist zu alt: Nötig ist 8 mit aktuellen Updates oder 9"
+
+msgid "Radio TCP port"
+msgstr "TCP-Port des Funkgeräts"
+
+msgid "Radio address (host name or IP address)"
+msgstr "Adresse des Funkgeräts (Hostname oder IP-Adresse)"
+
+msgid "Radio connection"
+msgstr "Verbindung zum Funkgerät"
+
+msgid "Send ASCII only (for handhelds without Unicode fonts)?"
+msgstr "Nur ASCII senden (für Handgeräte ohne Unicode-Schriften)?"
+
+msgid "Setup"
+msgstr "Einrichtung"
+
+msgid "Storage for templates"
+msgstr "Speicher für Vorlagen"
+
+msgid "Storage for the container disk"
+msgstr "Speicher für den Datenträger des Containers"
+
+#. security text (docs/translations.md).
+msgid "TLS, no user name"
+msgstr "TLS, kein Benutzername"
+
+#. security text (docs/translations.md).
+#, python-brace-format
+msgid "TLS, user '{user}'"
+msgstr "TLS, Benutzer '{user}'"
+
+#. security text (docs/translations.md): translate all of it, add nothing.
+#. {what} is "no user name" or "no TLS".
+#, python-brace-format
+msgid "The broker connection has {what}: any client that reaches the broker could publish command events as if an allowed contact had sent them. Accept it (insecure = true)? No: no commands."
+msgstr "Die Verbindung zum Broker hat {what}: Jeder Client, der den Broker erreicht, könnte Befehlsereignisse veröffentlichen, als hätte ein erlaubter Kontakt sie gesendet. Akzeptieren (insecure = true)? Nein: keine Befehle."
+
+#. {reason} is the program's message, in this language too.
+#, python-brace-format
+msgid ""
+"The broker login failed:\n"
+"\n"
+"{reason}\n"
+"\n"
+"Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)"
+msgstr ""
+"Die Anmeldung am Broker ist fehlgeschlagen:\n"
+"\n"
+"{reason}\n"
+"\n"
+"Die Broker-Einstellungen erneut eingeben? (Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen später.)"
+
+#. {reason} is the program's message, in this language too.
+#, python-brace-format
+msgid ""
+"The broker settings were not accepted:\n"
+"\n"
+"{reason}"
+msgstr ""
+"Die Broker-Einstellungen wurden nicht akzeptiert:\n"
+"\n"
+"{reason}"
+
+#, python-brace-format
+msgid ""
+"The container starts only while the radio is plugged in.\n"
+"After re-plugging the radio: {command}"
+msgstr ""
+"Der Container startet nur, solange das Funkgerät eingesteckt ist.\n"
+"Nach erneutem Einstecken des Funkgeräts: {command}"
+
+#. security text (docs/translations.md): translate all of it, add nothing.
+#, python-brace-format
+msgid "The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key."
+msgstr "Das Funkgerät wird über TCP ({address}) ohne Authentifizierung erreicht: Wer es erreicht, kann es steuern und seinen privaten Schlüssel lesen."
+
+#. security text (docs/translations.md): translate all of it, add nothing.
+msgid "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again."
+msgstr "Die TCP-Schnittstelle des Funkgeräts hat keine Authentifizierung: Wer sie erreicht, kann das Funkgerät steuern und seinen privaten Schlüssel lesen, der jede Direktnachricht des Funkgeräts entschlüsselt, auch frühere, die über Funk mitgeschnitten wurden. Nutze sie nur in einem Netzwerk, das nur das Gateway erreicht, nie im WLAN des Haushalts. TCP trotzdem verwenden (tcp_unauthenticated = true)? Nein: Funkgerät erneut wählen."
+
+msgid ""
+"The radio's firmware is not tested: the service only reports what differs\n"
+"(radio.profile.manage = always sets it anyway):"
+msgstr ""
+"Die Firmware des Funkgeräts ist nicht getestet: Der Dienst meldet nur, was abweicht\n"
+"(radio.profile.manage = always setzt es trotzdem):"
+
+msgid "The service leaves alone:"
+msgstr "Der Dienst lässt unverändert:"
+
+#. security text (docs/translations.md): translate all of it, add nothing.
+msgid "Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear."
+msgstr "TLS für die Verbindung zum Broker verwenden? Ohne TLS gehen das Passwort, die Nachrichten, die Positionen und die Befehle unverschlüsselt durch das Netzwerk."
+
+msgid "With radio.profile.manage = observe the service only reports what differs:"
+msgstr "Mit radio.profile.manage = observe meldet der Dienst nur, was abweicht:"
+
+msgid "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container"
+msgstr "ein Funkgerät über TCP braucht radio.tcp_unauthenticated = true; für USB installiere einen neuen Container"
+
+msgid "all settings: container, network, topics, Home Assistant"
+msgstr "alle Einstellungen: Container, Netzwerk, Topics, Home Assistant"
+
+#, python-brace-format
+msgid "answers file line {line}: expected key=value"
+msgstr "Antwortdatei, Zeile {line}: key=value erwartet"
+
+#, python-brace-format
+msgid "answers file line {line}: not valid UTF-8 (save the file as UTF-8)"
+msgstr "Antwortdatei, Zeile {line}: kein gültiges UTF-8 (speichere die Datei als UTF-8)"
+
+msgid "answers file: targets.channels: expected channel indices, comma-separated"
+msgstr "Antwortdatei: targets.channels: Kanalnummern erwartet, durch Kommas getrennt"
+
+#, python-brace-format
+msgid "answers file: targets.channels: no channel {channel} (0-255)"
+msgstr "Antwortdatei: targets.channels: kein Kanal {channel} (0-255)"
+
+msgid "answers file: targets.contacts: expected public keys (64 hex digits), comma-separated"
+msgstr "Antwortdatei: targets.contacts: öffentliche Schlüssel erwartet (64 Hex-Ziffern), durch Kommas getrennt"
+
+#, python-brace-format
+msgid "answers file: unknown answer {key}"
+msgstr "Antwortdatei: unbekannte Antwort {key}"
+
+msgid "cancelled"
+msgstr "abgebrochen"
+
+#, python-brace-format
+msgid "cannot download release {version} into container {ctid} (see above)"
+msgstr "Release {version} lässt sich nicht in Container {ctid} herunterladen (siehe oben)"
+
+#, python-brace-format
+msgid "cannot download the source of {ref} into container {ctid} (see above)"
+msgstr "der Quelltext von {ref} lässt sich nicht in Container {ctid} herunterladen (siehe oben)"
+
+msgid "cannot get the next free container ID (pvesh)"
+msgstr "die nächste freie Container-ID lässt sich nicht ermitteln (pvesh)"
+
+#, python-brace-format
+msgid "cannot list the storages ({command})"
+msgstr "die Speicher lassen sich nicht auflisten ({command})"
+
+#, python-brace-format
+msgid "cannot read answers file {file}"
+msgstr "die Antwortdatei {file} ist nicht lesbar"
+
+msgid "cannot read the Proxmox VE version"
+msgstr "die Version von Proxmox VE ist nicht lesbar"
+
+#, python-brace-format
+msgid "cannot read the configuration in container {ctid}"
+msgstr "die Konfiguration in Container {ctid} ist nicht lesbar"
+
+msgid "cannot read the radio (is it connected and not used by another program?)"
+msgstr "das Funkgerät ist nicht lesbar (ist es verbunden und nicht von einem anderen Programm belegt?)"
+
+msgid "cannot read the radio's contacts"
+msgstr "die Kontakte des Funkgeräts sind nicht lesbar"
+
+msgid "cannot read the radio's settings"
+msgstr "die Einstellungen des Funkgeräts sind nicht lesbar"
+
+msgid "cannot read the radio's settings (is it connected and not used by another program?)"
+msgstr "die Einstellungen des Funkgeräts sind nicht lesbar (ist es verbunden und nicht von einem anderen Programm belegt?)"
+
+#, python-brace-format
+msgid "cannot read the version of meshcore-home-gateway in container {ctid}"
+msgstr "die Version von meshcore-home-gateway in Container {ctid} ist nicht lesbar"
+
+#, python-brace-format
+msgid "cannot read the version of the checkout {path}"
+msgstr "die Version des Checkouts {path} ist nicht lesbar"
+
+#, python-brace-format
+msgid "command failed at line {line}"
+msgstr "Befehl in Zeile {line} fehlgeschlagen"
+
+#. {contact} is the start of a contact's key and its name.
+#, python-brace-format
+msgid "contact {contact}: added as a favourite"
+msgstr "Kontakt {contact}: als Favorit hinzugefügt"
+
+#, python-brace-format
+msgid "contact {contact}: made a favourite"
+msgstr "Kontakt {contact}: zum Favoriten gemacht"
+
+#, python-brace-format
+msgid "contact {contact}: no favourite"
+msgstr "Kontakt {contact}: kein Favorit"
+
+#, python-brace-format
+msgid "contact {contact}: not on the radio"
+msgstr "Kontakt {contact}: nicht auf dem Funkgerät"
+
+msgid "container ID must be a number of at least 100"
+msgstr "die Container-ID muss eine Zahl ab 100 sein"
+
+#, python-brace-format
+msgid "container {ctid} did not start (see above)"
+msgstr "Container {ctid} ist nicht gestartet (siehe oben)"
+
+#, python-brace-format
+msgid "container {ctid} has no dialout group"
+msgstr "Container {ctid} hat keine Gruppe dialout"
+
+#, python-brace-format
+msgid "container {ctid} has no meshcore-home-gateway installation ({path} is missing)"
+msgstr "Container {ctid} hat keine Installation von meshcore-home-gateway ({path} fehlt)"
+
+#, python-brace-format
+msgid "container {ctid} has no network (DNS lookup of {host} failed)"
+msgstr "Container {ctid} hat kein Netzwerk (DNS-Abfrage von {host} fehlgeschlagen)"
+
+#, python-brace-format
+msgid "container {ctid} has no radio configured"
+msgstr "in Container {ctid} ist kein Funkgerät konfiguriert"
+
+#, python-brace-format
+msgid "container {ctid} is not running"
+msgstr "Container {ctid} läuft nicht"
+
+#, python-brace-format
+msgid "copying meshcore-home-gateway into container {ctid} failed (see above)"
+msgstr "Kopieren von meshcore-home-gateway in Container {ctid} fehlgeschlagen (siehe oben)"
+
+#, python-brace-format
+msgid "could not download {template} to {storage}"
+msgstr "{template} ließ sich nicht nach {storage} herunterladen"
+
+#, python-brace-format
+msgid "creating container {ctid} failed (see above)"
+msgstr "Erstellen von Container {ctid} fehlgeschlagen (siehe oben)"
+
+msgid "creating the service user failed"
+msgstr "Anlegen des Dienstbenutzers fehlgeschlagen"
+
+msgid "disk size and memory must be whole numbers"
+msgstr "Datenträgergröße und Arbeitsspeicher müssen ganze Zahlen sein"
+
+#, python-brace-format
+msgid "installing packages in container {ctid} failed (see above)"
+msgstr "Installieren der Pakete in Container {ctid} fehlgeschlagen (siehe oben)"
+
+msgid "invalid settings (see above)"
+msgstr "ungültige Einstellungen (siehe oben)"
+
+#, python-brace-format
+msgid "invalid settings: {reason}"
+msgstr "ungültige Einstellungen: {reason}"
+
+#, python-brace-format
+msgid "limiting the journal in container {ctid} failed (see above)"
+msgstr "Begrenzen des Journals in Container {ctid} fehlgeschlagen (siehe oben)"
+
+msgid "login accepted"
+msgstr "Anmeldung akzeptiert"
+
+msgid "login failed (see above), the service keeps trying"
+msgstr "Anmeldung fehlgeschlagen (siehe oben), der Dienst versucht es weiter"
+
+msgid "login not checked"
+msgstr "Anmeldung nicht geprüft"
+
+#, python-brace-format
+msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)"
+msgstr "meshcore-home-gateway aus {ref} wurde nicht in Container {ctid} installiert (siehe oben)"
+
+#. the values start in one column; they are commands to copy, but {login} and
+#. {posture} (how the broker connection is secured) and {selftest} (the result of the
+#. gateway's own check after the start).
+#, python-brace-format
+msgid ""
+"meshcore-home-gateway {version} runs in container {ctid}.\n"
+"\n"
+"Broker:       {login} ({posture})\n"
+"Self-test:    {selftest}\n"
+"Logs:         {logs}\n"
+"Check:        {check}\n"
+"Reconfigure:  {reconfigure}\n"
+"Update:       {update}"
+msgstr ""
+"meshcore-home-gateway {version} läuft in Container {ctid}.\n"
+"\n"
+"Broker:          {login} ({posture})\n"
+"Selbsttest:      {selftest}\n"
+"Protokoll:       {logs}\n"
+"Prüfen:          {check}\n"
+"Neu einrichten:  {reconfigure}\n"
+"Aktualisieren:   {update}"
+
+#, python-brace-format
+msgid "meshcore-home-gateway {version} was not installed in container {ctid} (see above)"
+msgstr "meshcore-home-gateway {version} wurde nicht in Container {ctid} installiert (siehe oben)"
+
+#. security text (docs/translations.md).
+msgid "no TLS"
+msgstr "kein TLS"
+
+#. security text (docs/translations.md).
+msgid "no TLS, no user name"
+msgstr "kein TLS, kein Benutzername"
+
+#. security text (docs/translations.md).
+#, python-brace-format
+msgid "no TLS, user '{user}'"
+msgstr "kein TLS, Benutzer '{user}'"
+
+msgid "no active storage for container disks"
+msgstr "kein aktiver Speicher für Container-Datenträger"
+
+msgid "no active storage for templates"
+msgstr "kein aktiver Speicher für Vorlagen"
+
+msgid "no answer for radio.choice: name the radio's device path, or tcp"
+msgstr "keine Antwort für radio.choice: Gib den Gerätepfad des Funkgeräts an oder tcp"
+
+#, python-brace-format
+msgid "no answer for {key} ({text})"
+msgstr "keine Antwort für {key} ({text})"
+
+#. security text (docs/translations.md).
+msgid "no user name"
+msgstr "keinen Benutzernamen"
+
+#. security text (docs/translations.md).
+msgid "none (no user name)"
+msgstr "keine (kein Benutzername)"
+
+#, python-brace-format
+msgid "not checked (version {version} cannot; check after --update)"
+msgstr "nicht geprüft (Version {version} kann das nicht; nach --update prüfen)"
+
+msgid "not run (the broker login failed)"
+msgstr "nicht ausgeführt (die Anmeldung am Broker ist fehlgeschlagen)"
+
+#, python-brace-format
+msgid "not run (version {version} has no doctor command)"
+msgstr "nicht ausgeführt (Version {version} hat keinen Befehl doctor)"
+
+msgid "package pve-container not found"
+msgstr "Paket pve-container nicht gefunden"
+
+msgid "passed"
+msgstr "bestanden"
+
+#, python-brace-format
+msgid "passing {device} to container {ctid} failed (see above)"
+msgstr "Durchreichen von {device} an Container {ctid} fehlgeschlagen (siehe oben)"
+
+#, python-brace-format
+msgid "problems found (see above): {command}"
+msgstr "Probleme gefunden (siehe oben): {command}"
+
+#, python-brace-format
+msgid "pve-container {version} cannot create Debian 13 containers; update the host first ({command})"
+msgstr "pve-container {version} kann keine Debian-13-Container erstellen; aktualisiere zuerst den Host ({command})"
+
+msgid "pveam offers no Debian 13 template (check the host's internet access)"
+msgstr "pveam bietet keine Vorlage für Debian 13 an (prüfe den Internetzugang des Hosts)"
+
+#. security text (docs/translations.md): translate all of it, add nothing.
+msgid "radio with WiFi firmware (TCP, no authentication)"
+msgstr "Funkgerät mit WLAN-Firmware (TCP, keine Authentifizierung)"
+
+#, python-brace-format
+msgid "radio.profile.name: 1 to 31 bytes, got '{name}'"
+msgstr "radio.profile.name: 1 bis 31 Bytes, erhalten: '{name}'"
+
+msgid "recommended: asks only for the radio, the broker and the targets"
+msgstr "empfohlen: fragt nur nach Funkgerät, Broker und Zielen"
+
+msgid "run as root on the Proxmox host"
+msgstr "als root auf dem Proxmox-Host ausführen"
+
+#, python-brace-format
+msgid "serial device {device} not found"
+msgstr "serielles Gerät {device} nicht gefunden"
+
+#, python-brace-format
+msgid "the broker settings were not accepted: {reason}"
+msgstr "die Broker-Einstellungen wurden nicht akzeptiert: {reason}"
+
+msgid "the configuration was not accepted (see above)"
+msgstr "die Konfiguration wurde nicht akzeptiert (siehe oben)"
+
+#, python-brace-format
+msgid "the dialogs need the terminal as input: run {command} instead of piping into bash, or use --answers FILE"
+msgstr "die Dialoge brauchen das Terminal als Eingabe: Führe {command} aus, statt das Skript per Pipe an bash zu geben, oder verwende --answers FILE"
+
+#, python-brace-format
+msgid "the installer of a newer release ({releases}) with -- --update {ctid}"
+msgstr "der Installer eines neueren Release ({releases}) mit -- --update {ctid}"
+
+#, python-brace-format
+msgid "the service did not restart; see: {command}"
+msgstr "der Dienst ist nicht neu gestartet; siehe: {command}"
+
+#, python-brace-format
+msgid "the service did not start; see: {command}"
+msgstr "der Dienst ist nicht gestartet; siehe: {command}"
+
+#, python-brace-format
+msgid "unknown dialog kind {kind}"
+msgstr "unbekannte Dialogart {kind}"
+
+#, python-brace-format
+msgid "unknown option {option} (see --help)"
+msgstr "unbekannte Option {option} (siehe --help)"
+
+#. security text (docs/translations.md).
+#, python-brace-format
+msgid "user '{user}' with a password"
+msgstr "Benutzer '{user}' mit Passwort"
+
+#. security text (docs/translations.md).
+#, python-brace-format
+msgid "user '{user}' without a password"
+msgstr "Benutzer '{user}' ohne Passwort"
+
+#, python-brace-format
+msgid "whiptail not found: install it ({command}) or use --answers FILE"
+msgstr "whiptail nicht gefunden: Installiere es ({command}) oder verwende --answers FILE"
+
+#, python-brace-format
+msgid "{bridge}, {ip}, gateway {gateway}"
+msgstr "{bridge}, {ip}, Gateway {gateway}"
+
+#, python-brace-format
+msgid "{device} is already passed through to another container (ID {ctids}). A radio takes one client at a time: whichever opens it second cannot use it. Choose another radio, or take it out of that container first."
+msgstr "{device} ist schon an einen anderen Container durchgereicht (ID {ctids}). Ein Funkgerät bedient immer nur einen Client: Wer es als Zweites öffnet, kann es nicht nutzen. Wähle ein anderes Funkgerät oder nimm es zuerst aus diesem Container heraus."
+
+#, python-brace-format
+msgid "{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time"
+msgstr "{device} ist schon an einen anderen Container durchgereicht (ID {ctids}): Ein Funkgerät bedient immer nur einen Client"
+
+#. a setting of the radio and its value, as the radio names them.
+#, python-brace-format
+msgid "{setting}: {live} (changed on the radio; kept)"
+msgstr "{setting}: {live} (am Funkgerät geändert; beibehalten)"
+
+#, python-brace-format
+msgid "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)"
+msgstr "{setting}: {live}, nicht {wanted} (nicht in die Firmware des Funkgeräts kompiliert)"
+
+#. a setting of the radio, its value and the one the service had set.
+#, python-brace-format
+msgid "{setting}: {live}, not {wanted} (did not take effect; no longer set)"
+msgstr "{setting}: {live}, nicht {wanted} (nicht wirksam geworden; wird nicht mehr gesetzt)"
+
+#, python-brace-format
+msgid "{setting}: {live}, not {wanted} (the firmware does not support it)"
+msgstr "{setting}: {live}, nicht {wanted} (die Firmware unterstützt es nicht)"
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Cancel"
+msgstr "Abbrechen"
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "No"
+msgstr "Nein"
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Ok"
+msgstr "OK"
+
+#. a button of every dialog; at most 12 characters.
+msgctxt "button"
+msgid "Yes"
+msgstr "Ja"

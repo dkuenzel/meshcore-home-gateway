@@ -1028,6 +1028,7 @@
   "homeassistant.language": {
    "answer": "str",
    "choices": [
+    "de",
     "en"
    ],
    "default": "en",

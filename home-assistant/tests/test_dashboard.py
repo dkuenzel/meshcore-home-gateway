@@ -7,9 +7,9 @@ dashboard from that file; Home Assistant loads it as a YAML-mode dashboard, and 
 is rendered with Home Assistant's own template engine as the frontend asks for it (strict, with
 the variables `config` and `user`). The tests check that it loads, names only entities that exist
 and only cards the pinned frontend has, shows each situation, keeps every name and text from the
-mesh inert, follows the contacts, and that the guide's script sends; in English and in the
-pseudo-language `xx` (test_languages.py), whose marks hold ": ", so a text written as a YAML value
-without quotes would not load.
+mesh inert, follows the contacts, and that the guide's script sends; in every language the
+gateway ships and in the pseudo-language `xx` (test_languages.py), whose marks hold ": ", so a
+text written as a YAML value without quotes would not load.
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ TEXTS = BREAKS + ATTACKS
 KEYS = [f"{0x30 + i:02x}" * 32 for i in range(len(NAMES))]
 BOB, ZED = "d5" * 32, "e7" * 32
 HOME = Position(52.37, 9.73)
-LANGUAGES = ["en", "xx"]
+LANGUAGES = [*i18n.LANGUAGES, "xx"]  # every language the gateway ships, and the pseudo-language
 XX = "‹{language}: {text}›"  # ": " in every text: unquoted as a YAML value, a mapping
 URL = "mesh-radio1"
 # the types of the frontend Home Assistant 2026.10.0 pins (20260930.2): cards in
@@ -941,7 +941,7 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(  # noqa: P
         FACTS: "the radio's name",
         "macro entry(e)": "sender, Latest messages",
     }
-    everyone = card(cards(loaded, "overview"), "Why someone is missing")
+    everyone = card(cards(loaded, "overview"), "macro place(v)")  # Where everyone is
     alices = card(cards(loaded, "alice"), "macro row(e)")
     every: dict[str, str] = {}
     corpus = [*zip(KEYS, NAMES, TEXTS, strict=True)]

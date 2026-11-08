@@ -116,6 +116,11 @@ format, the command line and Home Assistant discovery are public interfaces
 - The update guide says how to roll back from 2.1 to 2.0: clear the retained `pending`, `config`
   and drafts, which 2.0 neither publishes nor clears, and make the dashboard again with 2.0
   ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+- German, the first language besides English: the command line under a German locale (such as
+  `LANG=de_DE.UTF-8`), the installer's dialogs from its language menu, and with
+  `[homeassistant] language = "de"` the names in Home Assistant and the dashboard
+  ([translations.md](docs/translations.md),
+  [configuration.md](docs/configuration.md#homeassistant)).
 
 ### Changed
 

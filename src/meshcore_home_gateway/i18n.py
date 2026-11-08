@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # en is the source; every other language has complete catalogs (tests/test_translations.py)
-LANGUAGES: Final[Mapping[str, str]] = MappingProxyType({"en": "English"})
+LANGUAGES: Final[Mapping[str, str]] = MappingProxyType({"en": "English", "de": "Deutsch"})
 HOME_ASSISTANT: Final = "home assistant"  # msgctxt of every name sent to Home Assistant
 DASHBOARD: Final = "dashboard"  # msgctxt reserved for the dashboards (ADR 0021)
 CATALOGS: Traversable = resources.files(__package__ or __name__) / "locale"

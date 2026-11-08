@@ -52,6 +52,7 @@ WRITTEN = {  # what the steps add or change, and nothing else
     "src/meshcore_home_gateway/i18n.py",
     "deploy/proxmox/meshcore-home-gateway-lxc.sh",
     "tests/public_interface.json",
+    "docs/configuration.md",
 }
 
 
@@ -160,6 +161,12 @@ def test_a_language_needs_its_catalogs_its_line_and_what_the_tools_write(tmp_pat
     assert text.count('{"en": "English"') == 1
     text = text.replace('{"en": "English"', f'{{"en": "English", "{LANGUAGE}": "{NAME}"', 1)
     languages.write_text(text, encoding="utf-8")
+    reference = copy / "docs" / "configuration.md"  # step 7: a choice of language
+    text = reference.read_text(encoding="utf-8")
+    head, row, rest = text.partition("(`meshcore-home-gateway dashboard`): ")
+    choices, more, tail = rest.partition(" ([more")
+    codes = [*re.findall(r"`[a-z]{2}`", choices), f"`{LANGUAGE}`"]
+    reference.write_text(head + row + ", ".join(codes[:-1]) + f" or {codes[-1]}" + more + tail)
 
     make_interface = (["-m", "tests.public_interface", "--write"], ["tools/asyncapi.py", "--write"])
     for step in (["tools/i18n.py", "update"], *make_interface):
