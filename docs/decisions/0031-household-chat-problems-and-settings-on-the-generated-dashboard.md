@@ -77,8 +77,9 @@ without an administrator's script or helper, and without sending a half-written 
 * **Draft requests are Home Assistant's controls**, under `homeassistant/` like `show_hidden` and
   `add_node`, not requests of every front end. Their outcome: a stored text ends in no event, its
   outcome is the draft published back; a press ends in a `delivery` event, `rejected` with
-  `empty` for a blank draft too, except a repeat within 2 s after a queued press of the same chat,
-  whose outcome is that send's events; a retained request is a left-over and is ignored. The draft
+  `empty` for a blank draft too, except a blank press within 2 s after a queued press of the same
+  chat (a double tap's second), whose outcome is that send's events; a retained request is a
+  left-over and is ignored. The draft
   is a document for Home Assistant only, built in `drafts.py`, not in `views`, as both say
   ([mqtt-api.md](../mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)).
 * **Three tabs with their titles alone**: *Overview*, *Chats* and *Contacts*, each without an icon,

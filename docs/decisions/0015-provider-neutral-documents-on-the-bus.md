@@ -155,5 +155,6 @@ providers pure.
 * Amended on 2026-11-07 with [ADR 0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md): the drafts of Home Assistant's chats are
   Home Assistant's controls under `homeassistant/`, as `show_hidden` is, and their draft is a
   document for Home Assistant only: a stored text ends in no event, its outcome is the draft
-  published back; a press ends in a `delivery` event, except a repeat within 2 s after a queued
-  press of the same chat, whose outcome is that send's events; a retained request is ignored.
+  published back; a press ends in a `delivery` event, except a blank press within 2 s after a
+  queued press of the same chat (a double tap's second), whose outcome is that send's events; a
+  retained request is ignored.
