@@ -8,6 +8,33 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-09
+
+The household's chat, its problems and its settings on the generated dashboard, and German. It
+ships the program of 2.1.0rc1, which CI, the Home Assistant contract tests on 2026.10.2 and
+2026.11.0 and the browser check of the dashboard on both checked. As the maintainer decided, it
+did not wait for their use of the candidate.
+
+`meshcore-home-gateway dashboard` writes the dashboard again for the household, with three tabs,
+*Overview*, *Chats* and *Contacts*: a page for each chat that reads like a messenger, with its own
+field and *Send*; a first line that says whether everything is fine, with a card for each problem
+that says what to do; each person's switch to ask for position and battery and a *Remove* that
+asks first; *Settings* read only, and *Help*. For this the gateway announces new entities in Home
+Assistant. German comes with this release: the command line, the installer, the names in Home
+Assistant and the dashboard. The release also carries the fixes of the review of 2.0.0.
+
+For the administrator: make the dashboard again after the update. It needs Home Assistant
+2026.10 or later; the gateway and its entities keep 2026.8. With a broker ACL, Home Assistant's
+user needs `topic write <base_topic>/<node_id>/homeassistant/draft/+/+/request`, or *Send* does
+nothing ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)). The guide's recorder block now
+keeps the texts sent and the commands out too: copy it again
+([home-assistant.md](docs/home-assistant.md#privacy)). Before a roll back to 2.0, read the update
+guide: 2.0 neither publishes nor clears the retained topics that 2.1 added
+([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+
+Known limits of the dashboard are #141, #142 and #143. The section of 2.1.0rc1 in
+[CHANGELOG.md](CHANGELOG.md) lists every change since 2.0.0.
+
 ## [2.1.0rc1] - 2026-11-08
 
 The release candidate of 2.1.0: the household's chat, its problems and its settings on the
