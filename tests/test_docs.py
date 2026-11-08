@@ -107,6 +107,36 @@ def test_attestation_checks_name_the_release_workflow_and_the_tag() -> None:
         assert "--source-ref" in command, command
 
 
+DECISIONS = ROOT / "docs" / "decisions"
+INDEX_ROW = re.compile(r"^\| \[(\d{4})\]\(([^)]+)\) \| ([^|]+?) \| ([^|]+?) \|$", re.MULTILINE)
+
+
+def test_the_index_of_the_decisions_lists_every_record_and_who_amends_it() -> None:
+    """Each record has a row in docs/decisions/README.md with its number, its file and the title
+    of its heading, and a status that says `amended by` a record only where the amended record
+    links to that later one: ADR 0031 amends 0015 and 0021, and each of them ends in a line that
+    links to it."""
+    records = {path.name: path for path in DECISIONS.glob("[0-9]*.md")}
+    rows = INDEX_ROW.findall((DECISIONS / "README.md").read_text(encoding="utf-8"))
+    assert sorted(name for _, name, _, _ in rows) == sorted(records)
+    by_number = {number: name for number, name, _, _ in rows}
+    for number, name, title, status in rows:
+        text = records[name].read_text(encoding="utf-8")
+        assert name.startswith(f"{number}-"), name
+        heading = re.search(r"^# (.+)$", text, re.MULTILINE)
+        assert heading is not None, name
+        assert heading[1] == title, name
+        for amended in re.findall(r"amended by (\d{4}(?:(?:, | and )\d{4})*)", status):
+            for later in re.findall(r"\d{4}", amended):
+                assert f"]({by_number[later]})" in text, (name, later)
+    for name in (
+        "0015-provider-neutral-documents-on-the-bus.md",
+        "0021-generated-dashboards-for-desktop-and-mobile.md",
+    ):
+        (status,) = [s for _, n, _, s in rows if n == name]
+        assert "amended by 0031" in status, name
+
+
 def _load_index_tool() -> ModuleType:
     path = ROOT / "tools" / "platform_notes_index.py"
     spec = importlib.util.spec_from_file_location("platform_notes_index", path)
@@ -250,6 +280,55 @@ def test_the_readme_says_which_messages_are_published() -> None:
     assert f"{int(RECEIVED_PER_CHANNEL_BURST)} per channel" in receive
 
 
+def test_the_roll_back_to_2_0_clears_every_retained_topic_that_2_1_added() -> None:
+    """2.0 neither publishes nor clears the retained topics 2.1 added: `pending`, `config` and the
+    drafts. The note on the roll back in deployment.md clears each the way the changelog since
+    2.0.0 does, the topics the gateway's retained guard keeps now less those it kept in 2.0."""
+    from meshcore_home_gateway.mqtt.retained import RetainedTopics
+    from meshcore_home_gateway.mqtt.topics import Topics
+    from tests.test_retained import Bus
+
+    topics, bus = Topics("meshcore", "radio1"), Bus()
+    guard = RetainedTopics(topics, bus.publish, bus.call_later, lambda: bus.now, drafts=True)
+    kept_by_2_0 = {  # RetainedTopics in v2.0.0's mqtt/retained.py
+        topics.availability,
+        topics.state,
+        topics.stats,
+        topics.contacts,
+        topics.nodes,
+        topics.history,
+        topics.settings,
+        topics.contact("+"),
+    }
+    added = set(guard.filters) - kept_by_2_0
+    assert added == {topics.pending, topics.config, topics.draft_subscription}
+    deployment = _words((ROOT / "docs" / "deployment.md").read_text(encoding="utf-8"))
+    note = deployment.partition("* **Roll back to 2.0**")[2].partition(" * **")[0]
+    # the entries since 2.0.0: under Unreleased until the release, then under 2.1.0
+    since = _words((ROOT / "CHANGELOG.md").read_text(encoding="utf-8").partition("\n## [2.0.0]")[0])
+    for topic in sorted(added - {topics.draft_subscription}):
+        command = f"mosquitto_pub -r -n -t {topic}"
+        assert command in note, topic
+        assert command in since, topic
+    drafts = topics.draft_subscription.removesuffix("+/+")
+    assert f"mosquitto_sub -t '{drafts}#' --retained-only --remove-retained" in note
+    assert f"mosquitto_pub -r -n -t {drafts}" in since
+    assert "meshcore-home-gateway dashboard" in note
+
+
+def test_the_guide_quotes_the_home_assistant_the_dashboard_needs() -> None:
+    """`meshcore-home-gateway dashboard` ends with the Home Assistant release the dashboard needs,
+    newer than the gateway's own floor; the guide's Requirements and its paragraph on making the
+    dashboard name the same release, and the line as the command prints it."""
+    from meshcore_home_gateway.dashboard import HOME_ASSISTANT
+
+    guide = _words((ROOT / "docs" / "home-assistant.md").read_text(encoding="utf-8"))
+    requirements = guide.partition("## Requirements")[2].partition("## ")[0]
+    assert f"needs Home Assistant {HOME_ASSISTANT} or newer" in requirements
+    make = guide.partition("**Make it**")[2].partition("**Add it**")[0]
+    assert f'"This dashboard needs Home Assistant {HOME_ASSISTANT} or later."' in make
+
+
 def test_the_update_note_says_whom_telemetry_asks() -> None:
     """#106: the note on 2.0.0's privacy defaults said that telemetry asks only the companions
     the household includes; `ask = "household"` also asks the contact targets and the command
@@ -306,28 +385,32 @@ def test_the_release_check_r1_expects_what_the_installer_prints() -> None:
     assert "Self-test:    {selftest}" in installer
 
 
+# a placeholder of the dashboard's template, a JSON list's with its brackets and quotes
+PLACEHOLDER = r'\[?"?@\w+@"?\]?'
+
+
 def test_the_design_names_every_placeholder_of_the_dashboard_template() -> None:
     """#106: the design's bullet on the template named neither `@contact@`, `["@controls@"]`
-    nor the second conditional, which `dashboard.py` fills in and keeps. Since 2.1 the lists of
-    chats, switches and remove buttons repeat lines (`# @each`), and `["@controls@"]` is gone:
-    the bullet names what `dashboard.py` fills in now, and nothing it no longer does."""
+    nor the second conditional, which `dashboard.py` filled in and kept. Since 2.1 the lists of
+    chats, switches and remove buttons repeat lines (`# @each`), `["@controls@"]` is gone, and
+    so is `@contact@`, which no card of 2.1 uses: the cards find the contacts by their devices.
+    The bullet names what `dashboard.py` fills in now, and nothing it no longer does."""
     from meshcore_home_gateway.dashboard import LISTS
 
     module = (ROOT / "src" / "meshcore_home_gateway" / "dashboard.py").read_text(encoding="utf-8")
     described = module.partition('"""')[2].partition('"""')[0]
-    placeholders = set(re.findall(r'\[?"?@\w+@"?\]?', described))
+    placeholders = set(re.findall(PLACEHOLDER, described))
     flags = set(re.findall(r"# @if (\w+)", described))
     design = _words((ROOT / "docs" / "design-home-assistant.md").read_text(encoding="utf-8"))
     bullet = design.partition("* **The template** is")[2].partition(" * **")[0]
-    assert {"@contact@", '["@chats@"]', '["@models@"]'} <= placeholders
-    for placeholder in placeholders:
-        assert f"`{placeholder}`" in bullet, placeholder
+    assert {'["@chats@"]', '["@models@"]'} <= placeholders
+    assert set(re.findall(rf"`({PLACEHOLDER})`", bullet)) == placeholders
     for flag in flags | {"trackers"}:
         assert f"`# @if {flag}`" in bullet, flag
     assert "`# @each <list>`" in bullet
     for name in LISTS:
         assert f"`{name}`" in bullet, name
-    for gone in ('["@controls@"]', "# @if controls"):
+    for gone in ('["@controls@"]', "# @if controls", "@contact@"):
         assert gone not in described
         assert gone not in bullet, gone
 

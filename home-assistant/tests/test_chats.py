@@ -1,5 +1,5 @@
 """The generated dashboard's chats against the real Home Assistant: a chat's page (its head, its
-thread, why writing is not possible, its About and its footer's refused line), All chats and Latest
+thread, the refused line under it, why writing is not possible, and its About), All chats and Latest
 messages on Chats, and Latest chats on Overview (docs/home-assistant.md, Dashboard).
 
 The household and the helpers are those of test_dashboard.py. The cards read the gateway's message
@@ -59,6 +59,7 @@ from test_dashboard import (
     household,
     made,
     page,
+    refused_line,
     render,
     shows_nothing,
     topics_of,
@@ -364,7 +365,7 @@ async def test_the_delivery_code_is_cut_only_where_and_while_the_gateway_adds_on
         assert texts(render(hass, everything))[-1] == own, nonce
         for found in (latest, chats):
             assert f"On its way: {own}</small>" in render(hass, found), nonce
-    refused = page(loaded, "alice")["footer"]["card"]["cards"][0]
+    refused = refused_line(loaded, "alice")
     event = DeliveryEvent("r1", "operator", DeliveryState.DUPLICATE, text=own)
     await fire(hass, topics_of(config).delivery, delivery_payload(event))
     assert f"<br>{own}</ha-alert>" in render(hass, refused)
@@ -432,7 +433,7 @@ async def test_a_channel_page_holds_every_alias_on_its_channel(
         ],
     )
     assert texts(render(hass, alerts)) == ["Came in", "Via alerts", "Via family"]
-    refused = page(loaded, "family")["footer"]["card"]["cards"][0]
+    refused = refused_line(loaded, "family")
     topics = topics_of(config)
     for alias in ("family", "alerts"):
         event = DeliveryEvent(f"r{alias}", alias, DeliveryState.REJECTED, reason="too_long")
@@ -441,7 +442,7 @@ async def test_a_channel_page_holds_every_alias_on_its_channel(
     assert problems(caplog) == []
 
 
-# --- the footer's refused line -------------------------------------------------------------------
+# --- the refused line under the thread ------------------------------------------------------------
 
 
 async def test_the_refused_line_says_why_a_send_of_this_chat_was_refused(
@@ -452,15 +453,18 @@ async def test_the_refused_line_says_why_a_send_of_this_chat_was_refused(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """§3.4, D-20: in the footer above the field, a refusal of this chat's Send in words: too
-    long, the same text again, no text at all (HC 1); not another chat's refusal, not one
-    followed by a message of this chat, and nothing at all otherwise."""
+    """§3.4: under the thread, not in the footer (H-27), a refusal of this chat's Send in words,
+    which a household user sees: too long, the same text again, no text at all (HC 1); not
+    another chat's refusal, not one followed by a message of this chat, and nothing at all
+    otherwise."""
     config = make_config()
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
+    viewer = await household_viewer(hass, hass_ws_client)
     alice = page(loaded, "alice")
-    refused = alice["footer"]["card"]["cards"][0]
+    refused = refused_line(loaded, "alice")
     topics = topics_of(config)
     shows_nothing(hass, refused)
+    assert not await viewer.shown(alice, refused)
 
     async def refusal(target: str, state: DeliveryState, **more: Any) -> str:
         event = DeliveryEvent(f"r{time.time()}", target, state, **more)
@@ -471,6 +475,7 @@ async def test_the_refused_line_says_why_a_send_of_this_chat_was_refused(
     assert line == (
         '<div><ha-alert alert-type="warning"><b>Not sent: text too long.</b></ha-alert></div>'
     )
+    assert await viewer.shown(alice, refused), viewer.errors
     line = await refusal("operator", DeliveryState.DUPLICATE, text="Back <b>soon</b>")
     assert line == (
         '<div><ha-alert alert-type="warning"><b>Not sent again: the same text went to this chat '
@@ -483,6 +488,7 @@ async def test_the_refused_line_says_why_a_send_of_this_chat_was_refused(
     await refusal(ALICE, DeliveryState.REJECTED, reason="too_long")
     documented(hass, PENDING, [on_its_way(-5, "Shorter", **to_alice(target=None))])
     shows_nothing(hass, refused)  # a message of this chat after it: the line is done
+    assert not await viewer.shown(alice, refused)
     assert problems(caplog) == []
 
 
@@ -757,7 +763,7 @@ async def test_a_chat_listens_to_its_documents_and_the_minute_only(
         # the radio for the time of each message
         (thread(loaded, "alice"), {HISTORY, PENDING, radio, CONFIGURATION}),
         (card(loaded, "macro entry(e)"), {HISTORY, PENDING, radio, CONFIGURATION}),
-        (page(loaded, "alice")["footer"]["card"]["cards"][0], {HISTORY, PENDING, delivery}),
+        (refused_line(loaded, "alice"), {HISTORY, PENDING, delivery}),
     ):
         info = Template(found["content"], hass).async_render_to_info(
             {"config": found, "user": "Bob"}, strict=True

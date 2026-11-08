@@ -7,9 +7,9 @@ dashboard from that file; Home Assistant loads it as a YAML-mode dashboard, and 
 is rendered with Home Assistant's own template engine as the frontend asks for it (strict, with
 the variables `config` and `user`). The tests check that it loads, names only entities that exist
 and only cards the pinned frontend has, shows each situation, keeps every name and text from the
-mesh inert, follows the contacts, and that the guide's script sends; in English and in the
-pseudo-language `xx` (test_languages.py), whose marks hold ": ", so a text written as a YAML value
-without quotes would not load.
+mesh inert, follows the contacts, and that the guide's script sends; in every language the
+gateway ships and in the pseudo-language `xx` (test_languages.py), whose marks hold ": ", so a
+text written as a YAML value without quotes would not load.
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ TEXTS = BREAKS + ATTACKS
 KEYS = [f"{0x30 + i:02x}" * 32 for i in range(len(NAMES))]
 BOB, ZED = "d5" * 32, "e7" * 32
 HOME = Position(52.37, 9.73)
-LANGUAGES = ["en", "xx"]
+LANGUAGES = [*i18n.LANGUAGES, "xx"]  # every language the gateway ships, and the pseudo-language
 XX = "‹{language}: {text}›"  # ": " in every text: unquoted as a YAML value, a mapping
 URL = "mesh-radio1"
 # the types of the frontend Home Assistant 2026.10.0 pins (20260930.2): cards in
@@ -421,6 +421,23 @@ def cards(loaded: dict[str, Any], needle: str) -> list[dict[str, Any]]:
     tops += view.get("cards", [])
     tops += [view[part]["card"] for part in ("header", "footer") if "card" in view.get(part, {})]
     return list(walk(tops))
+
+
+def refused_line(loaded: dict[str, Any], needle: str) -> dict[str, Any]:
+    """The refused line of the chat page that `needle` names (page(); §3.4): the card right under
+    its thread, not in its footer, which holds the field and the Send tile only. The frontend caps
+    the footer at a quarter of the screen, and a refused line on top of the field pushed the Send
+    tile below a phone's screen (H-27, docs/platform-notes.md)."""
+    view = page(loaded, needle)
+    listed = [each for section in view.get("sections", []) for each in section.get("cards", [])]
+    threads = [n for n, each in enumerate(listed) if "macro row(e)" in each.get("content", "")]
+    assert len(threads) == 1, needle
+    assert threads[0] + 1 < len(listed), f"{needle}: nothing under the thread"
+    line = listed[threads[0] + 1]
+    assert f"{{%- set e = 'event.{PREFIX}_delivery' -%}}" in line.get("content", ""), needle
+    in_footer = [each["type"] for each in view["footer"]["card"]["cards"]]
+    assert in_footer == ["entities", "tile"], f"{needle}: the footer holds {in_footer}"
+    return line
 
 
 def render(hass: HomeAssistant, found: dict[str, Any]) -> str:
@@ -940,13 +957,13 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(  # noqa: P
         FACTS: "the radio's name",
         "macro entry(e)": "sender, Latest messages",
     }
-    everyone = card(cards(loaded, "overview"), "Why someone is missing")
+    everyone = card(cards(loaded, "overview"), "macro place(v)")  # Where everyone is
     alices = card(cards(loaded, "alice"), "macro row(e)")
     every: dict[str, str] = {}
     corpus = [*zip(KEYS, NAMES, TEXTS, strict=True)]
     corpus += [(f"{0x60 + i:02x}" * 32, x, x) for i, x in enumerate(INVISIBLE)]
     without_mt = {i for i, c in enumerate(markdown(loaded)) if "macro mt(x)" not in c["content"]}
-    refused = page(loaded, "alice")["footer"]["card"]["cards"][0]
+    refused = refused_line(loaded, "alice")
     for i, (key, name, text) in enumerate(corpus):
         history, pending = entries(i, name, text)
         hass.states.async_set(HISTORY, history["messages"][0]["at"], history)
@@ -1209,7 +1226,8 @@ async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
 ) -> None:
     """For a household user: the footer of a target's chat, of Alice's (whose field is the target
     operator's, a field of the gateway) and of Bob's (his own device's field) hides while its
-    entities are missing and shows once they exist, each on the device the guard pins."""
+    entities are missing and shows once they exist, each on the device the guard pins. It holds
+    the field and the Send tile only: the refused line is under the thread (H-27)."""
     config = make_config()
     broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
     contacts_of(config, tmp_path, broker).update(mesh)
@@ -1217,6 +1235,9 @@ async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
     viewer = await household_viewer(hass, hass_ws_client)
     footers = {v["path"]: (v, v["footer"]["card"]) for v in loaded["views"] if "footer" in v}
     assert set(footers) == {"chat-alerts", "chat-my-target", "contact-alice", "contact-bob"}
+    for path, (_, footer) in footers.items():
+        assert [each["type"] for each in footer["cards"]] == ["entities", "tile"], path
+        assert refused_line(loaded, path)["type"] == "markdown"
     await gateway(hass, config, drafts=False)
     await deliver(hass, config, broker, mesh, drafts=False)
     assert not [path for path, footer in footers.items() if await viewer.shown(*footer)]
@@ -1351,7 +1372,7 @@ async def test_the_guides_script_is_a_form_that_sends_for_a_household_user(
 # --- machine values as texts --------------------------------------------------------------------
 
 # each step of a delivery as a chat shows it: in the thread (the history's final states, the pending
-# messages' steps) or in the footer's refused line
+# messages' steps) or in the refused line under it
 STEPS = {
     "queued": "… waiting to send",
     "sent": "… sent, waiting for confirmation (try 1 of 3)",
@@ -1394,11 +1415,7 @@ async def test_steps_states_and_contact_events_show_as_texts(  # noqa: PLR0915 -
     topics = await gateway(hass, config)
     await deliver(hass, config, broker, mesh)
     event, table = card(loaded, EVENT), card(loaded, TABLE)
-    alice = page(loaded, "alice")
-    thread, line = (
-        card(cards(loaded, "alice"), "macro row(e)"),
-        alice["footer"]["card"]["cards"][0],
-    )
+    thread, line = card(cards(loaded, "alice"), "macro row(e)"), refused_line(loaded, "alice")
 
     assert "<div>No contact event yet.</div>" in render(hass, event)
     await fire(

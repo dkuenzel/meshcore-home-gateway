@@ -81,8 +81,8 @@ Options follow a `--`, for example `bash -c "$(wget -qO- URL)" -- --answers FILE
 them. If the command does nothing at all, the address could not be downloaded (`bash -c` gets an
 empty script): `wget -O- URL` shows why.
 
-Once the gateway offers a language besides English (2.0.0 offers English only), the first
-dialog chooses the installer's language, preselected from your session (`LANGUAGE`, `LC_ALL`,
+The installer speaks English and German (since 2.1.0; 2.0.0 offered English only): the first
+dialog chooses its language, preselected from your session (`LANGUAGE`, `LC_ALL`,
 `LC_MESSAGES`, `LANG`). The script reads that language's pack from where the script comes from
 (its release, the checkout next to it, else `main`) into memory, stores nothing, and uses it only
 when its SHA-256 is the one the script carries (the release attests the script); else the dialogs
@@ -389,6 +389,24 @@ pct stop 105 && pct destroy 105
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
+* **Roll back to 2.0** from 2.1 leaves three kinds of retained topics on the broker that 2.0
+  neither publishes nor clears: `pending`, `config` and the drafts of Home Assistant's chats,
+  `homeassistant/draft/<kind>/<chat>`, which the stop of 2.1 empties but leaves retained. Once 2.0
+  runs (2.1 would publish them again), clear them with an empty retained message on each, as the
+  changelog of 2.1 gives them; for node `radio1`, with the broker's address and a user that may
+  write them (`-h`, `-u`, `-P`):
+
+  ```sh
+  mosquitto_pub -r -n -t meshcore/radio1/pending
+  mosquitto_pub -r -n -t meshcore/radio1/config
+  mosquitto_sub -t 'meshcore/radio1/homeassistant/draft/#' --retained-only --remove-retained -W 2
+  ```
+
+  Then make the dashboard again with 2.0's `meshcore-home-gateway dashboard` and paste it
+  ([home-assistant.md](home-assistant.md#dashboard)): the dashboard of 2.1 names entities that
+  2.0 does not announce, and its version card asks to update the gateway. An entity of 2.1 that
+  Home Assistant keeps afterwards can be deleted under *Settings → Entities*. The history
+  database keeps working; 2.0 leaves the columns 2.1 added empty.
 * **Roll back to 1.x** from 2.0 or later keeps the state directory, which 1.x reads in its own
   way (#95). 1.x knows no inclusions (`[telemetry] ask` is 2.0's): it asks every companion that
   is not excluded, other people's too. And the first exclusion made under 1.x writes
@@ -669,6 +687,8 @@ updates wait for.
 | *Telemetry status* `paused`, reason `first_start` | Telemetry runs for the first time on this state directory: it asks nobody for an hour after the radio connects. Exclude the companions that are not the household's meanwhile |
 | *Gateway degraded* on, or `degraded` in `systemctl status` | Its attributes (the `health` section of `state`, [mqtt-api.md](mqtt-api.md#state-state)) name the part: `history` `broken` (the journal says why; it is off until the next start: check the disk, `history.sqlite3`), `state_file` `unwritable` (a full or read-only disk: `df -h /var/lib/meshcore-home-gateway`), `exclusions` (as `exclusions_unreadable` above, or `unsaved`: the disk again), `errors_1h` above 0 (a bug: the journal has its traceback, `journalctl -u meshcore-home-gateway -p err`; please report it), `loop_lag_max_s` from 1 s (the host gives the container no CPU or its disk is slow: a backup, swapping; give it more CPU or move the backup), `disk_free_mb` below 100 (free space). It clears an hour after the last error or stall |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |
+| The dashboard has no chat page for a target or a contact | It was made before the target was added, before the contact got a device that takes texts, or before the service wrote its state with that contact: make it again ([home-assistant.md](home-assistant.md#dashboard)). Besides the contact targets, at most 30 contacts get a page; `meshcore-home-gateway dashboard` says on standard error how many contacts have none and which pages it skipped because a name does not fit a page's address, and *Chats* lists the contacts without a page |
+| A chat's message field is empty after a restart | The gateway keeps the drafts in memory only: a stop or restart of the gateway empties every field, as does a draft left unchanged for 15 minutes. Nothing was sent; the thread shows what was. After a restart of the broker or of Home Assistant, the field shows the draft the gateway kept, not what was typed meanwhile ([Writing and sending](home-assistant.md#writing-and-sending)) |
 | Home Assistant's controls to add and remove contacts unavailable after a firmware update of the radio; log: `radio: firmware … is not tested with this version of the gateway` | The gateway writes nothing to firmware it is not tested with ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)): the radio profile is only observed and add and remove requests are refused. The *Contacts* sensor's attribute `manage_reason` says `untested_firmware`, and so does `meshcore-home-gateway contacts list`. Update the gateway once a version tested with that firmware is out ([testing.md](testing.md#testing-another-firmware-release) says how soon the project aims to test one), or set `manage = "always"` in `[radio.profile]` to write to it anyway, at your own risk |
 | Installer: `… is already passed through to another container (ID …)` | Another container of the host has the same radio: take it out there (`pct set <ID> --delete dev0`, or remove its `lxc.mount.entry`), or choose another radio |
 | `systemctl status` shows `activating (auto-restart)`, with longer pauses each time | A crash loop: the service fails at every start, and systemd waits longer each time, up to 5 minutes. `journalctl -u meshcore-home-gateway -p err` shows why; after the fix, `systemctl restart meshcore-home-gateway` starts it at once |

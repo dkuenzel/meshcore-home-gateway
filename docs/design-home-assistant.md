@@ -128,12 +128,16 @@ sequenceDiagram
     Note over G: the user deleted the device: the contact stays hidden<br/>until it leaves the table or is shown again
 ```
 
-## 6.13 Dashboard (MVP)
+## 6.13 Dashboard
 
 `meshcore-home-gateway dashboard` writes one Home Assistant dashboard for the gateway it runs
-beside ([home-assistant.md](home-assistant.md#dashboard)). This is the first part of
-[ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md), which stays the
-target: no new entity, topic or setting, only the entities and the cards Home Assistant has.
+beside ([home-assistant.md](home-assistant.md#dashboard)), as
+[ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md) decided, with only the
+cards Home Assistant has. 2.0's dashboard, the first part, used only the entities the gateway had
+anyway; since 2.1 the gateway announces entities for it, the message history, the messages on
+their way, a draft and its *Send* for each chat and the configuration
+([§6.7](#67-home-assistant)), and the dashboard needs Home Assistant 2026.10 or later
+([ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md)). No setting was added for it.
 
 * **Views:** 2.0 had four tabs, *Overview*, *Messages*, *Contacts* and *Map*. Since 2.1 there
   are three tabs: *Overview* (a status line in a colour that names the first problem, a card for
@@ -150,7 +154,11 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   in a tile, with a hint while the script was missing. Since 2.1 each chat page ends in the
   gateway's draft of that chat, the text entity *Write to …*, and its button *Send*: the gateway
   keeps the draft until it is sent ([home-assistant.md](home-assistant.md#dashboard)). The
-  script stays for automations.
+  script stays for automations. The field and *Send* are the view's footer, which stays at the
+  bottom of the screen; why the gateway refused a *Send* stands under the thread, not in the
+  footer: the frontend caps the footer at a quarter of the screen, and the refused line on top
+  of the field pushed *Send* below a phone's screen
+  ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 * **What changes while the dashboard stays** comes from Markdown templates over the device
   registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
   the heard nodes, the last contact event. What a card needs as fixed IDs is written when the
@@ -161,11 +169,12 @@ target: no new entity, topic or setting, only the entities and the cards Home As
   contact with a device. A hint names a tracker of this gateway whose contact's key no listed
   tracker has.
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
-  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@contact@` (how the contacts'
-  entity IDs begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers),
-  `@guide@` (the address of the guide of this version), `["@trackers@"]` (the map's trackers),
-  `["@chats@"]` (the chat pages, JSON objects that Jinja reads) and `["@models@"]` (each model
-  of a contact's device with its node type). Since 2.1, comment lines repeat lines for each item
+  filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
+  `@major@` and `@minor@` (its first two numbers), `@guide@` (the address of the guide of this
+  version), `["@trackers@"]` (the map's trackers), `["@chats@"]` (the chat pages, JSON objects
+  that Jinja reads) and `["@models@"]` (each model of a contact's device with its node type).
+  2.0 also filled in how the contacts' entity IDs begin; the cards of 2.1 find the contacts by
+  their devices, and the lists' items carry the IDs. Since 2.1, comment lines repeat lines for each item
   of a list, `# @each <list>` … `# @end`, for `chats`, `switches` (the contacts' switches
   *Telemetry*) and `removes` (their buttons *Remove from radio*), with the item's fields as
   `@<list>.<field>@`, each value checked against its pattern first; and keep lines,
@@ -191,7 +200,7 @@ target: no new entity, topic or setting, only the entities and the cards Home As
 * **Interface:** the command is the only growth (`cli > commands > dashboard`); the dashboard's
   content is not an interface, the entity IDs it names are.
 
-Where the MVP departs from ADR 0021:
+Where the dashboard departs from ADR 0021:
 
 1. The template lives in the package, not in `home-assistant/dashboard/`: a file outside it
    reaches neither the zipapp nor the wheel.

@@ -5,13 +5,13 @@ Text in, text out: no YAML parser at run time (ADR 0005).
 
 The template is YAML as it stands, every branch of its conditionals included:
 
-* `@gw@` (the gateway's part of its entity IDs), `@contact@` (how its contacts' entity IDs
-  begin), `@node@`, `@version@`, `@major@` and `@minor@` (its first two numbers), `@guide@`
-  (the address of the guide, docs/home-assistant.md, of this version),
-  `["@trackers@"]` (the map's trackers, a JSON list), `["@chats@"]` (the chat pages, a list
-  of JSON objects, which Jinja reads) and `["@models@"]` (each model of a contact's device as
-  the gateway names it in this language, with its node type: pairs for Jinja's dict()) are
-  filled in.
+* `@gw@` (the gateway's part of its entity IDs), `@node@`, `@version@`, `@major@` and `@minor@`
+  (its first two numbers), `@guide@` (the address of the guide, docs/home-assistant.md, of this
+  version), `["@trackers@"]` (the map's trackers, a JSON list), `["@chats@"]` (the chat pages,
+  a list of JSON objects, which Jinja reads) and `["@models@"]` (each model of a contact's
+  device as the gateway names it in this language, with its node type: pairs for Jinja's
+  dict()) are filled in. No placeholder gives the contacts' entity IDs: the cards find the
+  contacts by their devices, and the lists' items carry their IDs.
 * `# @each <list>` … `# @end` repeats its lines for each item of `chats`, `switches` or
   `removes`, with `@<list>.<field>@` the item's field; no @each inside another. Each item value
   matches its pattern (FIELDS) before it goes in: none is text from the mesh.
@@ -410,16 +410,15 @@ def render(
     version: str,
     trackers: Sequence[str],
     text: Callable[[str, Mapping[str, str]], str],
-    contact_prefix: str = "mesh",
     chats: Sequence[Item] = (),
     switches: Sequence[Item] = (),
     removes: Sequence[Item] = (),
     models: Sequence[tuple[str, str]] = (),
 ) -> str:
     """The template filled in; `text(msgid, values)` gives a text in the dashboard's language,
-    filled with the values; `contact_prefix` begins the contacts' entity IDs; `chats`,
-    `switches`, `removes`: the items of the lists, each checked against its pattern; `models`:
-    the models of the contacts' devices with their types (models())."""
+    filled with the values; `chats`, `switches`, `removes`: the items of the lists, each checked
+    against its pattern; `models`: the models of the contacts' devices with their types
+    (models())."""
     lists = {"chats": list(chats), "switches": list(switches), "removes": list(removes)}
     for name, items in lists.items():
         for each in items:
@@ -445,7 +444,6 @@ def render(
             .replace("@version@", version)
             .replace("@major@", str(int(numbers.group(1))))
             .replace("@minor@", str(int(numbers.group(2))))
-            .replace("@contact@", contact_prefix)
             .replace("@guide@", DOCUMENTATION_URL.replace("/blob/main/", f"/blob/v{version}/"))
         )
         # before any text goes in: no translation can trip it
@@ -559,7 +557,6 @@ def build(config: Config, state_dir: Path) -> Built:
         version=__version__,
         trackers=listed,
         text=text,
-        contact_prefix=prefix,
         chats=[chat.item() for chat in pages.pages],
         switches=switches(records, prefix),
         removes=removes(records, prefix),

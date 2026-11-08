@@ -54,6 +54,16 @@ def test_packs_follow_their_catalogs() -> None:
     assert tool.stale_packs(PROJECT) == []
 
 
+def test_the_reference_offers_each_language_as_a_choice() -> None:
+    """Adding a language, step 7: `[homeassistant] language` in docs/configuration.md lists the
+    languages of i18n.LANGUAGES as its choices, and no other."""
+    reference = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+    (row,) = [line for line in reference.splitlines() if line.startswith("| `language` |")]
+    choices = row.partition("(`meshcore-home-gateway dashboard`): ")[2].partition(" ([more")[0]
+    assert re.fullmatch(r"`[a-z]{2}`(?:, `[a-z]{2}`)*(?: or `[a-z]{2}`)?", choices), choices
+    assert sorted(re.findall(r"`([a-z]{2})`", choices)) == sorted(tool.i18n.LANGUAGES)
+
+
 def test_the_installer_pins_its_packs() -> None:
     """The installer offers the languages of i18n.LANGUAGES and checks each pack it loads against
     the digest that `make translations` wrote into it."""

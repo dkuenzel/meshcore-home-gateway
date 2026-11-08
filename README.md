@@ -60,10 +60,10 @@ flowchart LR
   ([`contrib/mqtt2prometheus`](contrib/mqtt2prometheus/README.md)); the MQTT API as an AsyncAPI
   document generated from the code and attached to each release
   ([`docs/mqtt-api.asyncapi.yaml`](docs/mqtt-api.asyncapi.yaml)).
-- **Translatable:** the command line, the installer, the names in Home Assistant and the
-  dashboard come from gettext catalogs; English for now, more languages by contribution
-  ([`docs/translations.md`](docs/translations.md)). Machine output never changes with the
-  language.
+- **In English and German:** the command line, the installer, the names in Home Assistant and
+  the dashboard, since 2.1.0, from gettext catalogs; more languages by contribution
+  ([`docs/translations.md`](docs/translations.md)). The guides stay English, and machine output
+  never changes with the language.
 - **Small supply chain:** Python standard library plus `paho-mqtt` from the Linux distribution; no
   other runtime dependency.
 - **One-step installation on Proxmox VE** in an unprivileged container, configured through dialogs
@@ -73,7 +73,7 @@ flowchart LR
 
 ## Status
 
-Version 2.0. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and Home
+Version 2.1. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and Home
 Assistant 2026.10 (2026.8 or newer is required); tested on hardware with a LilyGo T-Echo Lite on
 companion firmware 1.18.0 over USB, in a Proxmox container. Its four public interfaces follow
 Semantic Versioning: the MQTT API, the configuration format, the command line and Home Assistant

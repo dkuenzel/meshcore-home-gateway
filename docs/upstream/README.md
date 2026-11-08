@@ -2,7 +2,7 @@
 
 Drafts for MeshCore's maintainers, from the security and architecture review of 2026-11 and from
 running the gateway. None has been sent: the maintainer of this project sends each, by the
-channel it names, once he agrees with it. Each draft says what it relies on at the firmware the
+channel it names, once they agree with it. Each draft says what it relies on at the firmware the
 gateway is tested with (`companion-v1.18.0`, `tests/firmware/sources.toml`); check that again
 before sending.
 

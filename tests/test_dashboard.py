@@ -217,6 +217,7 @@ def test_no_translation_makes_a_marker_or_a_placeholder() -> None:
         'title: _("Mesh"\n',
         'content: |-\n  _("open\n',
         "title: @gx@\n",
+        "title: @contact@\n",  # 2.1's template names no contact's entity ID by its prefix
     ],
 )
 def test_a_left_over_marker_or_placeholder_is_refused(template: str) -> None:
@@ -524,23 +525,17 @@ def test_latest_messages_keep_the_threads_rules_as_the_same_text() -> None:
     assert len(set(dropped)) == 1
 
 
-def test_the_contacts_cards_find_the_contacts_by_their_device_not_a_prefix() -> None:
+def test_the_contacts_cards_find_the_contacts_by_their_device_not_a_prefix(
+    tmp_path: Path,
+) -> None:
     """HA-06, D-31: the contacts table, the sensors and the lists of Contacts find this gateway's
     contacts by their devices below its own, never by an entity-ID prefix, so a prefix set later
-    keeps them: the dashboard is the same whatever `[homeassistant] contact_entity_prefix`."""
+    keeps them: the dashboard is the same whatever `[homeassistant] contact_entity_prefix`, and
+    the template has no placeholder for it."""
     template = (Path(dashboard.__file__).parent / dashboard.TEMPLATE).read_text(encoding="utf-8")
-
-    def made(prefix: str) -> str:
-        return dashboard.render(
-            template,
-            node_id="radio1",
-            version="1.0",
-            trackers=[],
-            text=lambda m, v: m,
-            contact_prefix=prefix,
-        )
-
-    assert made("mesh_2") == made("mesh")
+    other = config(more='[homeassistant]\ncontact_entity_prefix = "mesh_2"\n')
+    assert other.homeassistant.contact_entity_prefix == "mesh_2"
+    assert dashboard.dashboard(other, tmp_path) == dashboard.dashboard(config(), tmp_path)
     assert "@contact@" not in template
     contacts = rules.load(rules.rendered(shipped()))["views"][2]
     table = next(t for t in rules.texts(contacts) if "<th>Asking</th>" in t)
@@ -706,7 +701,6 @@ _INTEGER = re.compile(
 _YAML_11 = re.compile(r"(?i)y|n|yes|no|on|off|\d+(?:\.\d+)+\w*")
 _PLACEHOLDERS = {
     "@gw@",
-    "@contact@",
     "@node@",
     "@version@",
     "@major@",
@@ -1819,6 +1813,11 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
 MT = "{%- macro mt(x) -%}{{ m(x) }}{%- endmacro -%}"
 GUIDE_LINK = rules.GUIDE_URL.replace("{version}", "@version@")
 HELPED = '<details><summary>_("Help")</summary>_("Help")</details>'
+# a chat page's field, the footer's first card, and a Markdown card put in front of it
+FIELD = (
+    '          - type: entities\n            entities:\n              - entity: "@chats.write@"\n'
+)
+IN_FOOTER = "          - type: markdown\n            content: x\n"
 BROKEN = [
     # rule 2: a mapping over a closed list
     (
@@ -1896,7 +1895,7 @@ BROKEN = [
         [
             "          - type: entities",
             "            entities:",
-            "              - button.@contact@_carol_remove",
+            "              - button.mesh_carol_remove",
         ],
         "rule 5: button.mesh_carol_remove",
     ),
@@ -2009,7 +2008,8 @@ BROKEN = [
     # rule 17: a guide section named, Home Assistant's menus in a household line
     (card('<div>_("See A second gateway in the guide.")</div>'), "rule 17: 'See A second gateway"),
     (card('<div>_("Open Settings › Devices & services.")</div>'), "rule 17: 'Open Settings"),
-    # rule 18: the footer's tile first
+    # rule 18: the refused line shows while empty, is not under the thread, or is in the
+    # footer again, where it pushed the Send tile below a phone's screen (H-27)
     (
         [
             "@@",
@@ -2020,6 +2020,14 @@ BROKEN = [
             "          - type: markdown\n            text_only: true\n",
         ],
         "rule 18: chat-family: the refused line shows",
+    ),
+    (
+        ["@@", "{%- set e = 'event.@gw@_delivery' -%}", "{%- set e = 'event.@gw@_message' -%}"],
+        "rule 18: chat-family: the refused line is not under the thread",
+    ),
+    (
+        ["@@", f"        cards:\n{FIELD}", f"        cards:\n{IN_FOOTER}{FIELD}"],
+        "rule 18: chat-family: the footer is vertical-stack of ['markdown', 'entities', 'tile']",
     ),
     # rule 19: m() strips the joiner U+200D
     (
@@ -2115,6 +2123,16 @@ def test_the_tab_titles_fit_a_phone_in_every_shipped_language() -> None:
     for language in i18n.LANGUAGES:
         assert rules.tab_letters(shipped(), i18n.translator(language)) <= rules.TAB_LETTERS
     assert rules.tab_letters(shipped(), i18n.ENGLISH) == 21
+
+
+def test_the_name_beside_send_fits_a_phone_in_every_shipped_language() -> None:
+    """The tile beside a chat's Send button names the key and the button (rules.KEY_NAME); at
+    360 px it has room for the English name, 17 letters. A shipped catalog's name has no more:
+    German's "Eingabe, dann Senden" was cut in the browser check."""
+    for language in i18n.LANGUAGES:
+        name = rules.said(i18n.translator(language), rules.KEY_NAME)
+        assert len(name) <= rules.SEND_NAME_LETTERS, (language, name)
+    assert len(rules.said(i18n.ENGLISH, rules.KEY_NAME)) == rules.SEND_NAME_LETTERS
 
 
 @pytest.mark.real_catalogs
@@ -2230,6 +2248,37 @@ def test_a_quoted_label_is_quoted_in_every_catalog() -> None:
     assert rules.quote_findings(named, {}, [i18n.ENGLISH]) == [
         "rule 16: 'Tap \"Help\" first' quotes 'Help', not in QUOTES"
     ]
+
+
+@pytest.mark.real_catalogs
+def test_a_quoted_label_may_change_the_case_of_its_first_letter() -> None:
+    """Rule 16: a language's grammar may write a label's first letter in the other case, as a
+    German heading ends in its button's verb: "Kontakt entfernen" says "Entfernen". Another word,
+    or another letter in the other case, is another word."""
+    template = (
+        "views:\n"
+        '  - title: _("Contacts")\n'
+        '    action_name: _("Remove")\n'
+        "    content: |-\n"
+        '      <div>_("Remove a contact")</div>\n'
+    )
+    quotes = {"Remove a contact": ("Remove",)}
+
+    def german(heading: str) -> i18n.Translator:
+        return compiled(
+            "de",
+            [
+                Entry("Remove", ("Entfernen",), i18n.DASHBOARD),
+                Entry("Remove a contact", (heading,), i18n.DASHBOARD),
+            ],
+        )
+
+    assert rules.quote_findings(template, quotes, [german("Kontakt entfernen")]) == []
+    assert rules.quote_findings(template, quotes, [german("Entfernen eines Kontakts")]) == []
+    for other in ("Kontakt löschen", "Kontakt eNtfernen"):
+        assert rules.quote_findings(template, quotes, [german(other)]) == [
+            f"rule 16: de: {other!r} does not say 'Entfernen'"
+        ]
 
 
 @pytest.mark.real_catalogs

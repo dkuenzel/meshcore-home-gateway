@@ -158,8 +158,8 @@ lines of its own, which `dashboard.py` reads:
   lines of the content, such as the keys of the contacts a list holds.
 * `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
-* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@contact@` and `@guide@` (the guide of
-  this version, for a link to one of its sections) are filled in;
+* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@` and `@guide@` (the guide of this
+  version, for a link to one of its sections) are filled in;
   `["@trackers@"]` and `["@chats@"]` become JSON lists, `["@models@"]` the pairs of each model of
   a contact's device, as the gateway names it in the dashboard's language, and its node type. A chat page in `["@chats@"]` says with
   `write` only whether it has a field: the entity IDs of its field and its *Send* button stand
@@ -206,7 +206,8 @@ its rule; the shipped template breaks none of them.
    card that loops over `["@chats@"]` with `for x in`.
 7. No marker inside an HTML attribute.
 8. Every card but a heading has a `<details>` last; a tile, entities, map or history-graph card
-   may have it in a `text_only` card that follows it; every page ends with such a card; what a mapping macro says is explained there or on *Help*
+   may have it in a `text_only` card that follows it, and a chat's refused line has the help of
+   the thread above it (rule 18); every page ends with such a card; what a mapping macro says is explained there or on *Help*
    (but the names of the months); *Help* names every page and every control.
 9. The status line and the problem cards list the same problems in the same order: the branches
    of the status line's `problem()`, and the problem a card names on its first line,
@@ -226,13 +227,16 @@ its rule; the shipped template breaks none of them.
     not (D-63: *Send*, *Contacts*, *Gateway*, *Settings*, *Ask for position and battery*, the
     controls and headings of *Contacts*), is listed in `QUOTES` with the labels it names, or in
     `PLAIN` where the words mean no label; and every language says each label as it translates
-    it. A text that asks for the keyboard's key says
+    it, its first letter in either case as the language's grammar wants (a German heading ends
+    in its button's verb). A text that asks for the keyboard's key says
     the key before ↵ in a word of the name beside *Send*.
 17. No text names a section of the guide; it links to its anchor instead. Only a line that
     starts with "For your administrator:" names Home Assistant's menus.
-18. A chat page's footer is a `vertical-stack` of the refused line (a Markdown card that hides
-    while empty, rule 21), one text row whose three actions are `none`, and a tile with a
-    `button` feature.
+18. A chat page's footer is a `vertical-stack` of one text row whose three actions are `none`
+    and a tile with a `button` feature. The refused line (a Markdown card that hides while empty,
+    rule 21) is the card right under the thread, whose help it shares (rule 8): the frontend caps
+    the footer at a quarter of the screen, and on top of the field the line pushed *Send* below
+    a phone's screen ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 19. `m()` removes the C0 and C1 controls but tab, LF and CR, and the invisible characters the
     gateway drops before it reads a contact link; never U+200C and U+200D.
 20. No page has a `back_path`: the back arrow goes back to the page it came from.
@@ -411,7 +415,9 @@ and the dashboard's template.
 - The CI job *release plan* (`make release-plan`) compares the snapshot with the one of the last
   release on every pull request and push, and its log shows the result. A finding that removes or
   narrows needs a `**Breaking:**` entry (or a `### Removed` section) since that release, which
-  makes the next release a major one. A finding that adds or changes needs an entry since then
+  makes the next release a major one. `### Removed` is for a public interface only: removing
+  what is none (the generated dashboard, its template, a log text) is a `### Changed` entry. A
+  finding that adds or changes needs an entry since then
   that makes the next release at least a minor one (`### Added` or `### Changed`): neither
   growth nor a change ships in a patch. A release must contain the snapshot, so the releases
   after it are compared with it. Only these findings need a changelog entry: removing what no
@@ -480,22 +486,26 @@ it passes. `releases/latest` and the installer's default never pick a pre-releas
 ([ADR 0022](decisions/0022-releases-tagged-by-ci-on-main.md)):
 
 1. For a release (not a pre-release): the release check with the release candidate. CI passed on
-   it; the maintainer updates his installation with the candidate's installer, its self-test
-   passes, and he uses Home Assistant as every day (checks R1–R5 of
+   it; the maintainer updates their installation with the candidate's installer, its self-test
+   passes, and they use Home Assistant as every day (checks R1–R5 of
    [testing.md](testing.md#release-check)); the pull request of the release names the Home
    Assistant version. The release ships the program of that candidate: only `__version__`
    may differ in `src/`, `deploy/`, `pyproject.toml` and `tools/build_pyz.py`. So before the
-   candidate, a change raises `RELEASED_AFTER` in `src/meshcore_home_gateway/radio/session.py` to
-   the date of the last release: the gateway takes a host clock before it, or more than ten years
-   after it, as wrong and does not write it to the radio (design §6.1). One left behind only
-   weakens that check; one in the future would refuse every host clock, which a test catches.
+   candidate, and at the latest with the first version written after a release, a pre-release
+   too (a test checks it), a change raises `RELEASED_AFTER` in
+   `src/meshcore_home_gateway/radio/session.py` to the date of the last release: the gateway
+   takes a host clock before it, or more than ten years after it, as wrong and does not write it
+   to the radio (design §6.1). One left behind only weakens that check; one in the future would
+   refuse every host clock, which a test catches.
 2. The pull request that finishes the increment sets `__version__` in
    `src/meshcore_home_gateway/__init__.py`, runs `make interface` (the AsyncAPI document names the
    version), adds its row to the table of Home Assistant releases tested with
    ([home-assistant.md](home-assistant.md#requirements)) and moves the *Unreleased* entries of
    `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD` (a pre-release's section says that it had no
-   release check). The version must be the next one, which `make release-plan` and the CI job
-   *release plan* check: the kind of change comes from the changelog entries since the last
+   release check). The date is the day the tag is due: the day of the merge for a pre-release,
+   the day after it for a release (step 3); once the day of the merge is known, the section is
+   dated again if it moved. The version must be the next one, which `make release-plan` and the
+   CI job *release plan* check: the kind of change comes from the changelog entries since the last
    release (an entry that starts with `**Breaking:**` or a `### Removed` section: major; Added,
    Changed or Deprecated: minor; Fixed or Security only: patch), the stage from the version
    written; pre-releases count up from 1. Only Keep a Changelog's six headings are allowed. The

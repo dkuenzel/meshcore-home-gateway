@@ -225,9 +225,12 @@ Then, for each Home Assistant version to check (before a release, each series th
 7. Stop the runner with Ctrl-C. For the pages that show messages on their way, start it again with
    `--stuck` and a new work folder.
 
-`--language` sets the gateway's `homeassistant.language`: the names of its entities, and the texts
-of a dashboard made from its configuration. The language in the user's profile sets the rest of
-Home Assistant's page.
+`--language` of `tools/emulated_radio.py run` sets the gateway's `homeassistant.language`: the
+names of its entities, and the texts of a dashboard made from its configuration. The language in
+the user's profile sets the rest of Home Assistant's page. Before a release, take the screenshots
+in each language the dashboard ships, on each version: for German, steps 3 to 7 again with
+`--language de`, a new work folder and the dashboard made again, and German in the user's
+profile.
 
 ## Tests against the real firmware
 
@@ -368,10 +371,11 @@ check, not part of `make check`. It caught three bugs the stub could not show: d
 captured output, names starting with `-` taken for options, and non-ASCII characters dropped in a
 locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
 
-While the installer offers English only, it shows no language menu; once it offers another
-language, the menu comes first and the script needs a key for it. Whether whiptail draws a
-no-break space (U+00A0, U+202F) is not checked yet: until it is, the catalog checks refuse one in
-the command line's texts, which the installer's boxes show too.
+The installer offers English and German, so its language menu comes first: the script takes
+the menu's default there, German under the script's `LANG=de_DE.UTF-8`, and types the same
+keys into the German dialogs. Whether whiptail draws a no-break space (U+00A0, U+202F) is not
+checked yet: until it is, the catalog checks refuse one in the command line's texts, which the
+installer's boxes show too.
 
 ## Release check
 
@@ -389,8 +393,8 @@ A release is checked in three places, none of them a procedure by hand
    health and the container ([deployment.md](deployment.md#install)). The final message says
    `Self-test: passed`, or shows the problems; the report stands above it, with the warnings a
    passed self-test has. Nothing is undone.
-3. **The maintainer's use of the release candidate**: he updates his installation with the
-   candidate's installer and uses Home Assistant as every day.
+3. **The maintainer's use of the release candidate**: they update their installation with
+   the candidate's installer and use Home Assistant as every day.
 
    | # | Check | Expected |
    | --- | --- | --- |
@@ -400,7 +404,8 @@ A release is checked in three places, none of them a procedure by hand
    | R4 | A companion's switch *Telemetry* | it switches; battery and position follow within the companion's interval |
    | R5 | The map | the household's companions with a position |
 
-   The features he uses besides are checked by using them, and what he finds goes into issues.
+   The features they use besides are checked by using them, and what they find goes into
+   issues.
    The pull request of the release names the Home Assistant version in the table of
    [home-assistant.md](home-assistant.md#requirements).
 

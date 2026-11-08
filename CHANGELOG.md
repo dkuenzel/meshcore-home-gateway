@@ -8,6 +8,44 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.1.0rc1] - 2026-11-08
+
+The release candidate of 2.1.0: the household's chat, its problems and its settings on the
+generated dashboard, and German. 2.1.0 ships this program.
+
+`meshcore-home-gateway dashboard` writes the dashboard again for the household, with three tabs,
+*Overview*, *Chats* and *Contacts*, and the pages *Map*, *Gateway*, *Settings* and *Help*. Each
+chat has a page that reads like a messenger, with a field to write and a *Send* button.
+*Overview* says in its first line whether everything is fine and names the first problem, with a
+card for each problem that says what to do. *Contacts* has each person's switch to ask for
+position and battery and a *Remove* that asks first, and *Settings* shows what the administrator
+set, read only. For this the gateway announces new entities in Home Assistant: *Message
+history*, *Messages on their way*, *Configuration*, and a draft with its *Send* button for each
+chat. German comes with this release: the command line, the installer, the names in Home
+Assistant and the dashboard. The release also carries the fixes of the review of 2.0.0, among
+them a limit of wrong codes per command sender (#79), the delivery code of `confirm_nonce` kept
+off the broker until the delivery ended (#87) and the requests a stop used to lose (#92).
+
+For the administrator: make the dashboard again after the update. It needs Home Assistant
+2026.10 or later; the gateway and its entities keep 2026.8. With a broker ACL, Home Assistant's
+user needs `topic write <base_topic>/<node_id>/homeassistant/draft/+/+/request`, or *Send* does
+nothing ([mqtt-api.md](docs/mqtt-api.md#securing-the-broker)). The guide's recorder block now
+keeps the texts sent and the commands out too: copy it again
+([home-assistant.md](docs/home-assistant.md#privacy)). Before a roll back to 2.0, read the update
+guide: 2.0 neither publishes nor clears the retained `pending`, `config` and drafts that 2.1
+added, and the guide gives the commands that clear them
+([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+
+Known limits of the dashboard: a command the gateway refused leaves *Latest of each kind* with
+the next message received (#141); the delivery code of `confirm_nonce` is cut by the setting of
+now, not by that of the message's time (#142); and on a desktop screen with a long thread, the
+line that says why a *Send* was refused can stand behind the field until the page is scrolled
+(#143).
+
+CI, the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the browser check of the
+dashboard on both checked it. As the maintainer decided, 2.1.0 does not wait for their use of
+this candidate: their use follows the release, and what it finds ships as 2.1.1.
+
 ### Added
 
 - The attribute `manage_reason` of *Contacts* in Home Assistant, which the guide and the
@@ -77,8 +115,8 @@ format, the command line and Home Assistant discovery are public interfaces
   yellow with the reason in words, one on its way in italics, the newest open and the older ones
   folded, the delivery code of `confirm_nonce` hidden while the gateway adds one (in the history
   only, #87). At its top it says how to write (type,
-  Return, then *Send*), above its field why a *Send* was refused, also when the field held no
-  text; under the thread, why writing is not possible when it is not (the field or its *Send*
+  Return, then *Send*); under the thread, why a *Send* was refused, also when the field held no
+  text, why writing is not possible when it is not (the field or its *Send*
   button disabled, unavailable or under another ID, for the administrator), and about the person
   or the chat: where the person is, the battery, asking for position and battery with how the
   device answers, the text the gateway adds before and after each message. A person removed from
@@ -113,6 +151,14 @@ format, the command line and Home Assistant discovery are public interfaces
   read as never reported. *Help* names every page, button and switch, and says what the
   dashboard cannot do, the kinds of messages and what each word of the cards means
   ([home-assistant.md](docs/home-assistant.md#dashboard)).
+- The update guide says how to roll back from 2.1 to 2.0: clear the retained `pending`, `config`
+  and drafts, which 2.0 neither publishes nor clears, and make the dashboard again with 2.0
+  ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+- German, the first language besides English: the command line under a German locale (such as
+  `LANG=de_DE.UTF-8`), the installer's dialogs from its language menu, and with
+  `[homeassistant] language = "de"` the names in Home Assistant and the dashboard
+  ([translations.md](docs/translations.md),
+  [configuration.md](docs/configuration.md#homeassistant)).
 
 ### Changed
 
@@ -162,15 +208,12 @@ format, the command line and Home Assistant discovery are public interfaces
   not "5 min ago". The field to add a contact is *Add by key or contact link*; the line below it
   says to tap Return. *Gateway* has no tile of the airtime left: its *Health* row shows it with
   the budget. Make the dashboard again to get these.
-
-### Removed
-
-- The dashboard's tile *Write a message* and its hint to add the script *Mesh message*, which
-  Home Assistant 2026.10 and later never showed (#110): each chat page has its own field. The
-  guide keeps the script for automations.
+- The dashboard has no tile *Write a message* and no hint to add the script *Mesh message* any
+  more, which Home Assistant 2026.10 and later never showed (#110): each chat page has its own
+  field. The guide keeps the script for automations.
 - The dashboard's card *Telemetry and removal*, a fixed list of the contacts' switches and
-  remove buttons, which pressed a button without asking first; each contact's switch and
-  *Remove* now stand in *Ask for position and battery* and *Add or remove*.
+  remove buttons, which pressed a button without asking first, is gone; each contact's switch
+  and *Remove* now stand in *Ask for position and battery* and *Add or remove*.
 
 ### Fixed
 
@@ -182,6 +225,12 @@ format, the command line and Home Assistant discovery are public interfaces
   document could be up to 43 bytes larger (#111).
 - The guide said *Queue* counts the messages waiting for the radio. It counts those waiting behind
   the one being sent, so a single message that waits reads 0 (#112).
+- The guide's recorder block, meant to keep message texts out of Home Assistant's database, left
+  in the texts sent and the commands' arguments: it now also excludes *Delivery* and *Command*.
+  It is written as patterns only, which fit any node ID, a second gateway and the IDs Home
+  Assistant numbers with `_2`, and the guide says what each line keeps out and what to write for
+  a `contact_entity_prefix` of your own ([home-assistant.md](docs/home-assistant.md#privacy))
+  (#116).
 - A send request or the answer to a command that came while a stop handled the last received
   messages was published `queued` and then lost: the stop had kept the queue already. The stop
   now keeps the queue as its last step, with these requests and those still waiting to be taken.
@@ -260,11 +309,11 @@ format, the command line and Home Assistant discovery are public interfaces
   tcp_unauthenticated`) or commands over a broker without credentials or TLS (`[mqtt] insecure`)
   need cannot come from `--reconfigure`, which asks with the installed version. The guide shows
   the line to add by hand right before `--update`, and the troubleshooting table has a row for
-  `mqtt.insecure` ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+  `mqtt.insecure` ([deployment.md](docs/deployment.md#update-reconfigure-remove)) (#78).
 - The development guide: a release that is due is stopped by disabling the workflow *Release
   due*, not by a revert of its version, which the release plan refuses; a run of `release.yml`
   that failed before it published is re-run on the same tag
-  ([development.md](docs/development.md#release)).
+  ([development.md](docs/development.md#release)) (#85).
 - With `set_clock`, the radio is no longer restarted for a clock 1 minute to 1 hour ahead when
   no contact changed for longer than `set_clock_max_days`, or the host's clock is before the
   release: the restart starts the clock at the newest contact time, and the next connect then

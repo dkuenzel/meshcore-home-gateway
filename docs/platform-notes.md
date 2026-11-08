@@ -179,6 +179,8 @@ One line per fact, by section.
 * The device classes and units of the reading sensors are accepted: voltage V, current A, power W, temperature °C, humidity %, atmospheric pressure hPa, distance m, frequency Hz.
 * A discovery update that keeps an entity's `state_topic`, QoS and encoding keeps its subscription, so the broker does not send the retained message again: the entity keeps its state, read with the old template, until the next message on the topic.
 * Home Assistant's MQTT integration speaks MQTT 3.1, 3.1.1 and 5, and connects with 5 unless its broker options say otherwise.
+* paho keeps a QoS 1 publish made while it is disconnected and sends it after the reconnect, while Home Assistant raises on the publish's result: the user sees an error for a message that still goes out later. A QoS 0 publish is not kept.
+* A broker passes the messages of one client on to a subscriber in the order it received them only for the same topic and QoS; messages on two topics may arrive in another order.
 
 **[Home Assistant dashboards](#home-assistant-dashboards)**
 
@@ -188,12 +190,20 @@ One line per fact, by section.
 * A device tracker is `force_update`: every write is a new state, so a write after an MQTT reconnect or a restart adds a second point on one spot. A card open while its entity is kept out of the recorder still draws the points that come while it stays open, and a `person` keeps its own copy of the position.
 * A map card's `conditions` filter only the markers: with `show_all`, every entity with a location draws its trail, a phone's and a person's too, also when its marker is filtered out. `show_all` takes the entities that have a location when the card gets its configuration; one without a location then (an `unavailable` tracker) gets neither marker nor trail until the page loads again.
 * A Markdown card's `entity_id` option does nothing: Home Assistant renders the template again when what it read changes, and a template that calls `now()` also each minute.
-* A card's visibility condition `state` reads a missing entity, and a missing attribute, as `unknown`, and compares the values as they are: an unquoted `on` in YAML is the boolean true, which matches no state.
+* Since Home Assistant 2026.10 the frontend decides only some visibility conditions itself and sends the others to core: a `state` or `state_not` condition on an entity that does not exist then hides the card, and a template condition is evaluated again every second.
 * A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and its more-info dialog shows a form for its `fields`.
 * A script's `data` written as a mapping of templates reads each value as Python would: `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text without the spaces around it, and refuses `None`. One template for the whole mapping, `data: "{{ {'message': message} }}"`, keeps the text as it was.
 * Every user can open any entity from the entity search (`e`) and use its controls: a button's dialog has *Press*, a switch's dialog its toggle; only the device and command searches, and the *Settings* panel with the device pages, are for administrators.
 * A card that hides itself leaves the page for good: a Markdown card with `show_empty: false` whose template renders nothing is taken out by its wrapper, which ends its template, so it does not show again until the page is loaded again. A card hidden by its visibility conditions comes back once they hold.
 * The card in a view's footer is at most a quarter of the screen high (`25dvh`); what is taller runs past the bottom of the screen, where nothing scrolls it into view.
+* Core strips what a template renders, so a Markdown card whose content renders only spaces or line breaks counts as empty; markup without text, an HTML entity such as `&nbsp;` and a zero-width character do not.
+* `has_value()` is false for an entity whose state is `unknown`: a timestamp sensor without a value, a button never pressed and a notify entity never used.
+* An entities card's text row sends its value with `text.set_value` at every `change` of its field, which comes with Return and also when the field is left: a tap elsewhere, Tab, the page's back arrow, the browser's back; then it takes the focus from the field.
+* The special `type: button` row of an entities card cancels the end of a touch, so a field that has the focus keeps it and stores nothing; the tile's button feature and a button entity's row take a plain click, before which the field loses the focus and stores its text.
+* A GitHub alert (`> [!NOTE]`) in a Markdown card keeps only the child nodes that have text, so a line break inside it is dropped.
+* The Markdown card's sanitiser escapes `<wbr>`, which js-xss's default allow list lacks; the soft hyphen (U+00AD) and the zero-width space (U+200B) pass as text.
+* A view without `icon` shows its title alone in the tab bar; one with `icon` shows the icon alone, the title only as its tooltip, unless `show_icon_and_title: true`; a subview gets no tab.
+* A section of a sections view hides while all its cards are hidden; since frontend `20261028.4` (Home Assistant 2026.11) while all its cards, badges and sections are.
 
 **[openHAB Homie binding](#openhab-homie-binding)**
 
@@ -1400,7 +1410,13 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   is cleared (`Announcer.device_message()`); an empty contact document it did not send within
   `ECHO_S` of a removal of its own is a deletion by the user
   ([home-assistant.md, Contacts](home-assistant.md#contacts)). *Check:* put
-  `"enabled_by_default": False` back into `placeholder()` and run `make ha-test`.
+  `"enabled_by_default": False` back into `placeholder()` and run `make ha-test`. Since 2026.11.0
+  Home Assistant clears a device's discovery topic once for each entity it removes with the
+  device, and no longer when a single component goes while the device stays; an empty document
+  then removes the device's disabled components too. *Verified:* 2026.11.0,
+  `components/mqtt/entity.py` lines 816-875 (`async_remove_entity_discovery_payload`) and
+  `components/mqtt/discovery.py` lines 290-326; the contract tests count the clears per version
+  (`CLEARS_PER_ENTITY`, #115), and the gateway takes the copies as one deletion.
 * **Deleting a device in Home Assistant publishes one empty retained message, QoS 0, on its
   discovery topic; a re-announced device gets its old device ID, name, area and entity settings
   back, except entity IDs the user renamed, which return to `default_entity_id`.** A live
@@ -1484,7 +1500,11 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   `pytest-homeassistant-custom-component` pins one Home Assistant release.** Hence the separate
   environment and CI job ([testing.md](testing.md#home-assistant-contract-tests));
   `Requires-Python: >=3.14.2` in the installed package's metadata, and the metadata of 0.13.371
-  requires `homeassistant==2026.10.0`.
+  requires `homeassistant==2026.10.0`. Since 2026.11 Home Assistant publishes its own test plugin,
+  `pytest-homeassistant` (2026.11.0 for Home Assistant 2026.11.0), which keeps the test
+  configuration in the test folder; the suite takes the plugin's helpers from
+  `home-assistant/tests/ha_plugin.py`, which imports them from whichever plugin is installed
+  ([testing.md](testing.md#home-assistant-contract-tests)).
 * **Home Assistant installs missing integration requirements from PyPI at runtime, with
   `uv pip install`.** One of the reasons for a standalone bridge
   ([ADR 0002](decisions/0002-standalone-bridge-instead-of-home-assistant-integration.md));
@@ -1627,6 +1647,24 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   gateway keeps 3.1.1 as its default for the brokers that do not
   ([configuration.md](configuration.md#mqtt)). *Check:* `src 2026.10.0
   components/mqtt/const.py | grep -n DEFAULT_PROTOCOL`.
+* **paho keeps a QoS 1 publish made while it is disconnected and sends it after the reconnect,
+  while Home Assistant raises on the publish's result: the user sees an error for a message that
+  still goes out later. A QoS 0 publish is not kept.** *Verified:* paho-mqtt 2.1.0, which Home
+  Assistant 2026.10.2 and 2026.11.0 install, `paho/mqtt/client.py` lines 1772-1777 (QoS 0: sent or
+  dropped) and 1796-1811 (QoS 1: kept as `mqtt_ms_publish` when there is no connection); Home
+  Assistant `components/mqtt/client.py` lines 1490-1497 at 2026.10.2 and 1492-1499 at 2026.11.0.
+  *Here:* the drafts' text entities and *Send* buttons publish at QoS 0, so a *Send* pressed while
+  Home Assistant's link to the broker is down fails and is never sent later;
+  `test_a_press_while_home_assistant_is_disconnected_is_not_sent_later`. *Check:* `make ha-test`.
+* **A broker passes the messages of one client on to a subscriber in the order it received them
+  only for the same topic and QoS; messages on two topics may arrive in another order.**
+  *Verified:* MQTT 3.1.1 and 5.0, section 4.6 *Message ordering* (each topic an ordered topic by
+  default, the order kept for the same topic and QoS). *Here:* a draft's text and its *Send* go
+  to one request topic at one QoS, so a press never overtakes the text stored just before it
+  ([mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)); when
+  a message ends, `history` goes out before `pending`, and the cards skip an entry on its way that
+  the history holds, so a swap of the two loses the message for one render and never shows it
+  twice. *Check:* `make ha-test`.
 
 ## Home Assistant dashboards
 
@@ -1722,16 +1760,26 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   table calls `now()` once, so a new contact shows within a minute also when no row has a time,
   and reads its contacts from the registry, which sets up no listener; `test_dashboard.py` checks
   `has_time` and that no card listens to a whole domain. *Check:* `make ha-test`.
-* **A card's visibility condition `state` reads a missing entity, and a missing attribute, as
-  `unknown`, and compares the values as they are: an unquoted `on` in YAML is the boolean true,
-  which matches no state.** *Verified:* read only, frontend `20260930.2`,
-  `src/panels/lovelace/common/validate-condition.ts` lines 161-207; Home Assistant 2026.10.0 loads
-  a YAML-mode dashboard with PyYAML, which reads YAML 1.1, where `on` is a boolean. *Here:* the
-  dashboard's hint for the script shows while `script.mesh_message` is missing
-  (`state_not: ["on", "off"]`), the version card hides while the gateway is unavailable (its
-  attributes go then), and every `on`, `off` and version is quoted;
-  `test_cards_show_only_while_their_state_says_so` evaluates the conditions as that code does.
-  *Check:* `sed -n 161,207p src/panels/lovelace/common/validate-condition.ts` at `20260930.2`.
+* **Since Home Assistant 2026.10 the frontend decides only some visibility conditions itself and
+  sends the others to core: a `state` or `state_not` condition on an entity that does not exist
+  then hides the card, and a template condition is evaluated again every second.** The browser
+  keeps `screen`, `user`, `view_columns`, `location` and `time`, and a `state` or `numeric_state`
+  with an `attribute` or with an entity ID among its values; every other condition goes to core's
+  websocket command `subscribe_condition`, which any user may call, and an error from core, such
+  as an unknown entity, hides the card, also under a `not`. Until core's first answer the
+  frontend decides what it can by itself, and a card that only core can decide starts hidden. An
+  unquoted `on` in YAML is the boolean true, which matches no state. *Verified:* frontends `20260930.4` (Home Assistant 2026.10.2) and `20261028.4`
+  (2026.11.0), `src/common/condition/translate.ts` lines 21-28 and 52-95 and
+  `src/common/controllers/condition-evaluator-controller.ts` lines 238-274 and 286-314,
+  `src/mixins/conditional-listener-mixin.ts` lines 119-142 at `20260930.4`; core
+  `components/websocket_api/commands.py` lines 1185-1192 at 2026.10.2 and 1292-1299 at 2026.11.0
+  (the interval of one second while the condition `needs_polling`, which a template condition
+  does, `helpers/condition.py` lines 410-416 at 2026.10.2); 2.0's hint for the missing script,
+  a `state_not` card, never showed (#110). *Here:* no card uses `condition: state` or
+  `state_not` on an entity that may be missing ([development.md](development.md#translations),
+  rule 4); the conditions are templates, and every `on`, `off` and version is quoted.
+  `home-assistant/tests/visibility.py` decides each card as these sources do. *Check:*
+  `make ha-test`.
 * **A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and
   its more-info dialog shows a form for its `fields`.** *Verified:* read only, frontend
   `20260930.2`, `src/panels/config/script/ha-script-editor.ts` lines 714-722 and 959-980,
@@ -1772,8 +1820,9 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   hold. *Verified:* frontends `20260930.4` (Home Assistant 2026.10.2) and `20261028.4` (2026.11.0),
   `hui-card`'s `_updateVisibility` and `_setElementVisibility` in the bundle; in Chromium against
   both versions with a real gateway (the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)):
-  a refused line under a chat's field appeared only after a reload, a problem card on an open
-  *Overview* likewise, and both appeared at once with a condition of their content instead.
+  a chat's refused line, then above its field, appeared only after a reload, a problem card on
+  an open *Overview* likewise, and both appeared at once with a condition of their content
+  instead.
   *Here:* the generator turns every `show_empty: false` of the template into a visibility
   condition of the card's own content ([development.md](development.md#translations),
   rule 21). *Check:* `grep -o '_setElementVisibility(t){[^}]*}' hass_frontend/frontend_latest/*.js`
@@ -1781,11 +1830,91 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
 * **The card in a view's footer is at most a quarter of the screen high (`25dvh`); what is taller
   runs past the bottom of the screen, where nothing scrolls it into view.** *Verified:* frontends
   `20260930.4` and `20261028.4`, `src/panels/lovelace/views/hui-view-footer.ts`, `.card {
-  max-height: 25vh; max-height: 25dvh }`; in Chromium at 360x800, a chat page's footer of 162 px
-  with a refused line of three lines above it ran 47 px past the screen's bottom, half of the
-  *Send* tile. *Here:* an open problem of the chat pages' footer (the refused line takes room the
-  footer does not have on a small phone). *Check:* `grep -n max-height
+  max-height: 25vh; max-height: 25dvh }`; in Chromium against Home Assistant 2026.10.2 and
+  2026.11.0 (the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)), a chat
+  page's footer held the field and the *Send* tile (162 px) and, while a *Send* was refused, the
+  line that says why on top of them (61 to 77 px): that line pushed the *Send* tile 15 px below
+  the screen at 360x800 and 4 px at 390x844. *Here:* since 2.1.0 the refused line stands under
+  the thread, and the footer holds only the field and the tile
+  ([development.md](development.md#translations), rule 18). On a phone the line then stands
+  above the footer (at 360x800 with a full thread it ends 8 px above it), but the footer still
+  covers the bottom of the page until it is scrolled: at 1280x800 with a full thread, the line
+  stood at 589 to 638 px and the footer's top at 606 px, so 32 of its 49 px were behind the
+  field on first paint, on both versions, and 10 px in a later run with another full thread.
+  *Check:* `grep -n max-height
   src/panels/lovelace/views/hui-view-footer.ts` in the frontend's source.
+* **Core strips what a template renders, so a Markdown card whose content renders only spaces or
+  line breaks counts as empty; markup without text, an HTML entity such as `&nbsp;` and a
+  zero-width character do not.** *Verified:* Home Assistant 2026.10.2 and 2026.11.0,
+  `helpers/template/__init__.py` line 474 at 2026.10.2 and 493 at 2026.11.0
+  (`render_result.strip()`); a probe through the websocket on both: a line break and
+  `{{ ' ' }}` rendered `''`, `<div></div>`, `&nbsp;` and `{{ '\u200b' }}` stayed. *Here:* a card
+  that hides while it is empty prints nothing in its empty branch, not an empty element; the
+  contract tests compare its output with `''`. *Check:* `make ha-test`.
+* **`has_value()` is false for an entity whose state is `unknown`: a timestamp sensor without a
+  value, a button never pressed and a notify entity never used.** It is true only for an entity
+  that exists with a state other than `unknown` and `unavailable`; a button's state is the time of
+  its last press, a notify entity's the time of its last message, `unknown` before. *Verified:*
+  Home Assistant 2026.10.2 and 2026.11.0, `helpers/template/extensions/state.py` lines 346-351 at
+  2026.10.2 and 352-357 at 2026.11.0, `components/button/__init__.py` lines 104-106 and
+  `components/notify/__init__.py` lines 115-117 at 2026.10.2; a probe: *Message history* with an
+  empty history read `unknown`, its attributes readable, and `has_value` false; in Chromium a
+  guard with `has_value` hid every *Remove* row. *Here:* a guard tests that the entity exists and
+  is not `unavailable`, never `has_value` ([development.md](development.md#translations),
+  rule 3), and an empty history is told by its `total`. *Check:* `make check` and `make ha-test`.
+* **An entities card's text row sends its value with `text.set_value` at every `change` of its
+  field, which comes with Return and also when the field is left: a tap elsewhere, Tab, the
+  page's back arrow, the browser's back; then it takes the focus from the field.** It sends
+  nothing for the words `unknown` and `unavailable` and puts the state back; its `maxlength` is
+  the entity's `max`, which the browser counts in UTF-16 units; its placeholder is Home
+  Assistant's own "(empty value)", in the user's language, which no card option changes.
+  *Verified:* frontends `20260930.4` and `20261028.4`,
+  `src/panels/lovelace/entity-rows/hui-text-entity-row.ts` lines 61, 65-66, 78-80 and 87; in
+  Chromium against Home Assistant 2026.10.2, desktop and an emulated phone: a half-typed text was
+  sent by a tap on the page, by the back arrow and by the browser's back. *Here:* the field of a
+  chat stores a draft, which only *Send* sends
+  ([ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md));
+  `max` counts bytes, and the help says that a text with accents or emoji can fit the field and
+  still be too long. *Check:* the dashboard's [browser check](testing.md#the-dashboard-in-a-browser).
+* **The special `type: button` row of an entities card cancels the end of a touch, so a field that
+  has the focus keeps it and stores nothing; the tile's button feature and a button entity's row
+  take a plain click, before which the field loses the focus and stores its text.** *Verified:*
+  frontends `20260930.4` and `20261028.4`,
+  `src/panels/lovelace/common/directives/action-handler-directive.ts` lines 250-252
+  (`preventDefault` on a cancelable end; `special-rows/hui-button-row.ts` line 81 uses it),
+  `card-features/hui-button-card-feature.ts` line 137 and `entity-rows/hui-button-entity-row.ts`
+  line 50 (`@click`); in Chromium, desktop and an emulated phone, the field's text was stored 1 to
+  4 ms before the press. *Here:* *Send* is the tile's button feature, and the dashboard still
+  says "Return, then Send", since a phone's own tap was not measured. *Check:* the browser check.
+* **A GitHub alert (`> [!NOTE]`) in a Markdown card keeps only the child nodes that have text, so
+  a line break inside it is dropped.** *Verified:* `src/components/ha-markdown-element.ts` line
+  172 at `20260930.4` and 186 at `20261028.4` (the `filter` on `childNode.textContent`). *Here:*
+  the dashboard's colours come from `<ha-alert>` elements, never from an alert in Markdown
+  ([development.md](development.md#translations), rule 11). *Check:* `make check`.
+* **The Markdown card's sanitiser escapes `<wbr>`, which js-xss's default allow list lacks; the
+  soft hyphen (U+00AD) and the zero-width space (U+200B) pass as text.** The frontend adds to
+  that list only `table` with `role`, `input`, `ha-icon`, `ha-svg-icon`, `ha-alert` and
+  `ha-qr-code`. *Verified:* `src/resources/markdown-worker.ts` lines 19-36 in `20260930.4` and
+  `20261028.4`, with xss 1.0.15 (`lib/default.js`, `getDefaultWhiteList`); a replica of the
+  pipeline with the frontends' library versions escaped `<wbr>` on both. *Here:* `mt()` breaks a
+  long word in a message with a zero-width space after every 20 characters, not with `<wbr>`.
+  *Check:* `grep -c wbr node_modules/xss/lib/default.js` prints 0.
+* **A view without `icon` shows its title alone in the tab bar; one with `icon` shows the icon
+  alone, the title only as its tooltip, unless `show_icon_and_title: true`; a subview gets no
+  tab.** At a phone's width the bar is the screen less 104 px, and a tab takes its title and
+  32 px, its icon and title and 64 px, or 56 px with the icon alone. *Verified:* frontends
+  `20260930.4` and `20261028.4`, `src/panels/lovelace/hui-root.ts` lines 470-475 and 475-483;
+  measured in Chromium against Home Assistant 2026.10.2 and 2026.11.0: the bar is 256, 286, 308 and
+  326 px wide at 360, 390, 412 and 430 px; five titled tabs needed 391 px, five icons 280 px, and
+  three titled tabs fit at 360 px in English and German with 7.5 to 10 px to spare. *Here:* three
+  tabs without an icon ([development.md](development.md#translations), rule 12), and at most 22
+  letters for their three titles ([translations.md](translations.md#rules-for-every-text)).
+  *Check:* the browser check.
+* **A section of a sections view hides while all its cards are hidden; since frontend
+  `20261028.4` (Home Assistant 2026.11) while all its cards, badges and sections are.**
+  *Verified:* `src/panels/lovelace/sections/hui-section.ts` lines 292-296 at `20260930.4` and
+  379-384 at `20261028.4`. *Here:* a list whose rows all hide shows no empty frame, and
+  `Viewer.shown` in the contract tests walks the same rule. *Check:* `make ha-test`.
 
 ## openHAB Homie binding
 

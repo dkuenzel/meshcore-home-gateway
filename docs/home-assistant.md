@@ -39,6 +39,7 @@ pins, the release check against a real installation ([testing.md](testing.md#rel
 
 | Gateway | Contract tests | Release check |
 | --- | --- | --- |
+| 2.1.0rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check on 2026.10.2 and 2026.11.0; the maintainer's use follows 2.1.0, as they decided |
 | 2.0.0, the program of 2.0.0rc3 | 2026.10.2 | 2026.11.0 |
 | 2.0.0rc2 | 2026.10.2 | not finished: the clock correction followed in 2.0.0rc3 |
 | 2.0.0rc1 | 2026.10.2 | stopped: the installer's self-test showed an empty report |
@@ -69,7 +70,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_pending_messages` | count | *Messages on their way*: the messages the gateway accepted and has not delivered or given up yet, the one being sent included; the `pending` document as attributes `messages` (oldest first, with `step` `queued` or `sent` and their keys as in [mqtt-api.md](mqtt-api.md#messages-on-their-way-pending)), `total` and `truncated`. A message `queued` for more than a minute waits for the radio or for airtime. It stays available while the gateway is offline |
 | `sensor.meshcore_home_gateway_radio1_configuration` | timestamp, diagnostic | *Configuration*: when the gateway started; the settings in effect as attributes (`targets` with each one's `room`, `messages`, `contacts`, `telemetry`, `homeassistant`, `radio`, `airtime`, `history`, `commands`), as in [mqtt-api.md](mqtt-api.md#configuration-config): never a host, password, key or command word. Read only: Home Assistant cannot change them |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
-| `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_` |
+| `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_`, so two aliases that differ only there get the same IDs, the later ones ending in `_2` (the gateway warns, [configuration.md](configuration.md#targetsalias)) |
 | `text.meshcore_home_gateway_radio1_write_<alias>` | text, one per target not in `hidden_targets` | *Write to …*: the draft of a message to that target, which the gateway keeps until it is sent ([below](#writing-and-sending)); `max` is the room of a text to the target in bytes |
 | `button.meshcore_home_gateway_radio1_write_<alias>_send` | button, one per target not in `hidden_targets` | *Send what is written to …*: sends that draft |
 | `sensor.meshcore_home_gateway_radio1_rx_rssi`, `..._rx_snr` | signal strength, diagnostic | last received packet (only with `diagnostics.publish_rx_log`; disabled until enabled in Home Assistant) |
@@ -107,7 +108,7 @@ restart of either side.
 
 ### Language of the names
 
-The names the gateway sends follow `homeassistant.language`
+The names the gateway sends follow `homeassistant.language`, English or German
 ([configuration.md](configuration.md#homeassistant)): the entity names, the models of the
 contacts' devices (*Companion*, *Repeater*, *Room server*, *Sensor*), the reading types
 (*Temperature 2*) and the default device name `MeshCore radio`. This guide gives them in English.
@@ -221,6 +222,11 @@ refused as `empty`.
   still be too long for the radio; `[messages] truncate` then cuts it or refuses it.
 * A *Send* pressed while Home Assistant has no connection to the broker fails with an error and
   is not sent later.
+* Wait until the field is empty before you write the next message: a text typed in the moment
+  after *Send* can be cut when the gateway empties the field, and the rest goes out with the next
+  *Send*.
+* A text that is only the word `unknown` or `unavailable` cannot be stored: Home Assistant's
+  field refuses it.
 
 Writing grants nothing new: every user can send with the notify entities already, and
 `homeassistant.controls = false` changes neither. The topics, the request forms and the rules are
@@ -255,7 +261,8 @@ after a pick, so the same choice can be made again.
 
 **Add by key or link.** Paste a public key (64 hex digits) or a contact link
 (`meshcore://contact/add?…`, the text of a MeshCore QR code, for example read with the phone's
-camera) into *Add contact (key or link)*. Home Assistant refuses other text before it sends it.
+camera) into *Add contact (key or link)* and press Return (↵), as on the dashboard; leaving the
+field sends it too. Home Assistant refuses other text before it sends it.
 A link's name and type are claims until the node's first advert replaces them; a key without a
 name gets its first 12 digits. Contact cards (`meshcore://` and the hex of an advert) are not
 taken: the field ends at 255 characters, and a card cut there would still be read, with a cut
@@ -717,10 +724,12 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   was sent: after a change, the messages sent before it, also one kept on its way across the
   restart that changed it, show the other way until they leave the history. While the gateway
   is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
-  The thread's help links to *Help*, which explains each reason. Under the thread, why writing is
-  not possible when it is not, and *About*: where the person is, the battery, asking for
-  position and battery with how the device answers, or the chat's text before and after
-  messages. The page ends in the field
+  The thread's help links to *Help*, which explains each reason. Under the thread, why the
+  gateway refused a message to the chat, why writing is not possible when it is not, and
+  *About*: where the person is, the battery, asking for position and battery with how the
+  device answers, or the chat's text before and after messages. On a desktop screen with a long
+  thread, the line that says why a message was refused can stand behind the field until the page
+  is scrolled; on a phone it stands above it. The page ends in the field
   to write in and its *Send* button (writing, below). A person whose device is gone, removed from
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.
@@ -789,7 +798,8 @@ pct exec <id> -- /usr/local/bin/meshcore-home-gateway dashboard > mesh.yaml
 ```
 
 It says on standard error how many contacts the map lists, such as "The map lists 1 contact with
-a position."
+a position.", how many chat pages it has and how many contacts have none, and last "This dashboard
+needs Home Assistant 2026.10 or later."
 
 **Add it** in one of two ways:
 
@@ -811,17 +821,21 @@ lovelace:
 ```
 
 The dashboard's path (`mesh-radio1`) needs a hyphen. Home Assistant reads a replaced file at the
-next page load.
+next page load. The dashboard's links are relative, so they stay inside it under any path; opened
+from an address typed or bookmarked with a `/` at the end, such as `/mesh-radio1/overview/`, a
+tap on a link does nothing.
 
 **Writing.** A chat's page ends in a field *Write to …* and a tile *Return, then Send*: type,
 tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at the gateway; only
 *Send* sends it, once. The field is shared by everyone in the home who uses Home Assistant, and
-a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why above the
-field, also when the field held no text. The field and the button are entities of a gateway of
+a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why under the
+thread, also when the field held no text. The field and the button are entities of a gateway of
 version 2.1; with an earlier gateway, the page says so instead. A channel that only automations
-write to (`homeassistant.hidden_targets`) has no field. While the field or the button is disabled
-or unavailable in Home Assistant, or has another entity ID than the page expects, the page says
-which for the administrator.
+write to (`homeassistant.hidden_targets`) has no field, nor have two targets whose aliases differ
+only in `-` and `_`, whose fields Home Assistant cannot tell apart: their pages say so for the
+administrator ([configuration.md](configuration.md#targetsalias)). While the field or the button
+is disabled or unavailable in Home Assistant, or has another entity ID than the page expects, the
+page says which for the administrator.
 
 **The script for automations.** The dashboard does not use the script *Mesh message*; it stays
 for automations and the developer tools, as a form that sends to a target or a contact. Add it
@@ -863,9 +877,10 @@ stays a text: written as `message: "{{ message }}"`, Home Assistant would read `
 `None`.
 
 **Make it again** after an update of the gateway to another major or minor version (*Overview*
-then shows a card with both versions), after a target was added or a contact got a device that
-takes texts (each needs its chat page; *All chats* names the contacts without one), when the map's
-hint names a contact (one that got a position after the dashboard was made), and after the radio
+then shows a card with both versions) and after a roll back to one, with that version's command
+([deployment.md](deployment.md#update-reconfigure-remove)), after a target was added or a contact
+got a device that takes texts (each needs its chat page; *All chats* names the contacts without
+one), when the map's hint names a contact (one that got a position after the dashboard was made), and after the radio
 got a contact that should have its switch and button there. The
 contacts table, the sensors, the result of the last request, the nodes heard, *Gateway* and
 *Settings* follow by themselves.
@@ -1226,6 +1241,12 @@ switch telemetry for a companion. Dashboards per user hide cards, not the entiti
   channel: they send with `mqtt.publish` to `send/<alias>`
   ([configuration.md](configuration.md#homeassistant)).
 * The notify entities of the contacts send as the household's radio, for every user.
+* The dashboard grants nothing new: its fields and *Send* buttons send to the targets and
+  contacts that every user can send to already, and *Settings* only shows the configuration,
+  which the administrator changes in the file. Everyone shares a chat's draft: what one user
+  leaves in a field, another user's *Send* sends, until it is emptied after 15 minutes
+  ([Writing and sending](#writing-and-sending)). *Configuration* shows every user the settings,
+  the hidden targets' names and prefixes included.
 * Home Assistant's permission policies can restrict a group of users to reading entities, or to
   some of them; its interface does not offer them (developer documentation,
   [Permissions](https://contributors.home-assistant.io/core/internals/permissions/)).
@@ -1266,26 +1287,40 @@ long, is in [privacy.md](privacy.md).
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in
-`.storage/core.restore_state` (restored after a restart). *Message history* holds the latest
-messages in and out as attributes, so the recorder stores them again with every message, and
-*Messages on their way* the texts being sent with each of their steps. Every draft a user stores
-or the gateway empties is a state of its text entity. *Configuration* shows every user the
-settings, the names, prefixes and suffixes of the hidden targets included; the recorder stores it
-at each start and radio connect. To keep them out of the history, exclude
-these entities from the recorder, those of the contacts and the drafts with patterns:
+`.storage/core.restore_state` (restored after a restart): *Message* and each contact's *Message*
+hold the messages received, *Delivery* every step of a message sent, with its text, and
+*Command* a command's word and arguments. *Message history* holds the latest messages in and out
+as attributes, so the recorder stores them again with every message, and *Messages on their way*
+the texts being sent with each of their steps. Every draft a user stores or the gateway empties
+is a state of its text entity, *Write to …* or a contact's *Write*. To keep the texts out of the
+history, exclude these entities from the recorder by patterns, which take every target's and
+every contact's entities:
 
 ```yaml
 recorder:
   exclude:
-    entities:
-      - event.meshcore_home_gateway_radio1_message
-      - sensor.meshcore_home_gateway_radio1_message_history
-      - sensor.meshcore_home_gateway_radio1_pending_messages
     entity_globs:
-      - event.mesh_*_message*
+      - event.meshcore_home_gateway_*_message*
+      - event.meshcore_home_gateway_*_delivery*
+      - event.meshcore_home_gateway_*_command*
+      - sensor.meshcore_home_gateway_*_message_history*
+      - sensor.meshcore_home_gateway_*_pending_messages*
       - text.meshcore_home_gateway_*_write_*
+      - event.mesh_*_message*
       - text.mesh_*_write*
 ```
+
+The first three lines keep out the messages received, the messages sent and the commands'
+arguments; the next two the history and the messages on their way; the sixth the drafts of the
+targets; the last two each contact's messages and draft. The `*` after `meshcore_home_gateway_`
+stands for any `node_id`, so the block serves a second gateway too, and the `*` at the end also
+takes the IDs Home Assistant numbers with `_2`. If you set `[homeassistant] contact_entity_prefix`,
+write your prefix instead of `mesh` in the last two lines; a prefix that begins with `mesh_`,
+such as a second gateway's `mesh_2`, is taken already, any other needs its own two lines. The
+*Send* buttons hold no text and stay recorded. *Configuration* holds no message; it shows every
+user the settings, the names, prefixes and suffixes of the hidden targets included, and the
+recorder stores it at each start and radio connect: add
+`sensor.meshcore_home_gateway_*_configuration` to keep it out too.
 
 The contacts' trackers store their positions in the history too, which a map card with
 `hours_to_show` draws as their traces ([Traces on the map](#traces-on-the-map)): a companion that
@@ -1309,9 +1344,10 @@ recorder:
       - event.meshcore_home_gateway_*_telemetry
 ```
 
-The `*` at the end also takes the IDs Home Assistant numbers with `_2`. Excluding
-`device_tracker.mesh_*` keeps the positions out of the database, while a map card open at that
-moment still draws the points that come while it stays open. *Position in adverts* and the
+The `*` at the end also takes the IDs Home Assistant numbers with `_2`; with a
+`contact_entity_prefix` of your own, change `mesh` as above. Excluding `device_tracker.mesh_*`
+keeps the positions out of the database, while a map card open at that moment still draws the
+points that come while it stays open. *Position in adverts* and the
 *Contact* event record when a companion's adverts started or stopped carrying its position, never
 where: no pattern is needed for them. An excluded sensor keeps no statistics. A contact whose name
 gives such a part of an entity ID, such as *Team ch2* (`_ch` and a digit) or *Old battery*, loses

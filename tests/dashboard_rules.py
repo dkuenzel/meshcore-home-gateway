@@ -32,12 +32,18 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / "docs" / "home-assistant.md"
 # the guide of a release: the guide the gateway's device page links to, at the release's tag
 GUIDE_URL = DOCUMENTATION_URL.replace("/blob/main/", "/blob/v{version}/")
-VERSION = "2.1.0"
+VERSION = "2.1.0rc1"
 NODE = "radio1"
 GW = "meshcore_home_gateway_radio1"
+# rule 18: a chat page's thread, and its refused line, which alone reads the delivery event
+THREAD = "macro row(e)"
+REFUSED = f"'event.{GW}_delivery'"
 ALICE, BOB = "a1" * 32, "b2" * 32
 TABS = ("overview", "messages", "contacts")
 TAB_LETTERS = 22  # the three titles together, or the tab bar scrolls at 360 px
+# the name of the tile beside a chat's Send button: 122 px at 360 px, which 17 letters of
+# "Return, then Send" fill to 111 px; a longer name is cut (docs/testing.md, the browser check)
+SEND_NAME_LETTERS = 17
 # rule 2: the mapping macros, each over a closed list; the gateway's list where one exists
 MAPPINGS = (
     "said",
@@ -843,10 +849,14 @@ def rule_8(template: str, source: Any, loaded: Any, household: Household) -> lis
         listed = [
             card for section in view.get("sections") or [] for card in section.get("cards") or []
         ]
-        for card, after in zip(listed, [*listed[1:], None], strict=True):
+        for card, before, after in zip(
+            listed, [None, *listed[:-1]], [*listed[1:], None], strict=True
+        ):
             # a Markdown card holds its own help; the card after a tile, entities, map or
-            # history-graph card may hold its help (design D-10)
+            # history-graph card may hold its help (design D-10); the refused line, a line of
+            # the thread (D-17) until H-27, has the help of the thread above it (rule 18)
             borrowed = card.get("type") != "markdown" and after is not None and _about(after)
+            borrowed |= is_refused_line(card) and before is not None and is_thread(before)
             if card.get("type") == "heading" or _helped(card) or borrowed:
                 continue
             found.append(f"rule 8: {view['path']}: a {card.get('type')} card without help")
@@ -1110,9 +1120,17 @@ def quote_findings(
             text = said(translator, help_)
             for label in listed:
                 named = said(translator, label)
-                if named not in text:
+                if not says(text, named):
                     found.append(f"rule 16: {translator.language}: {text!r} does not say {named!r}")
     return found
+
+
+def says(text: str, label: str) -> bool:
+    """Rule 16: whether `text` says `label`, its first letter in either case, as a language's
+    grammar may want: a German heading ends in its button's verb, "Kontakt entfernen" for
+    "Entfernen"."""
+    rest = label[1:]
+    return any(first + rest in text for first in {label[:1], label[:1].lower(), label[:1].upper()})
 
 
 def _menus(text: str) -> str:
@@ -1141,7 +1159,10 @@ def rule_17(template: str, source: Any, loaded: Any, household: Household) -> li
 
 
 def rule_18(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
-    """The footer: the refused line, the draft's row, the Send tile, in this order."""
+    """A chat page's footer: the draft's row and the Send tile, in this order. The refused line
+    is the card under the thread, not in the footer: the frontend caps the footer at a quarter of
+    the screen, and a refused line on top of the field pushed the Send tile below a phone's
+    screen (H-27, docs/platform-notes.md)."""
     found = []
     for view in loaded["views"]:
         if "footer" not in view:
@@ -1149,23 +1170,41 @@ def rule_18(template: str, source: Any, loaded: Any, household: Household) -> li
         stack = (view["footer"] or {}).get("card") or {}
         parts = stack.get("cards") or []
         kinds = [part.get("type") for part in parts]
-        if stack.get("type") != "vertical-stack" or kinds != ["markdown", "entities", "tile"]:
+        if stack.get("type") != "vertical-stack" or kinds != ["entities", "tile"]:
             found.append(f"rule 18: {view['path']}: the footer is {stack.get('type')} of {kinds}")
-            continue
-        refused, field, tile = parts
-        rows = field.get("entities") or []
-        actions = ("tap_action", "hold_action", "double_tap_action")
-        if not shown_by_content(refused):
+        else:
+            field, tile = parts
+            rows = field.get("entities") or []
+            actions = ("tap_action", "hold_action", "double_tap_action")
+            if (
+                len(rows) != 1
+                or not str(rows[0].get("entity")).startswith("text.")
+                or any((rows[0].get(a) or {}).get("action") != "none" for a in actions)
+            ):
+                found.append(f"rule 18: {view['path']}: the field is not one quiet text row")
+            features = tile.get("features") or []
+            if {"type": "button"} not in [{"type": f.get("type")} for f in features]:
+                found.append(f"rule 18: {view['path']}: the tile has no button")
+        listed = [
+            card for section in view.get("sections") or [] for card in section.get("cards") or []
+        ]
+        threads = [n for n, card in enumerate(listed) if is_thread(card)]
+        under = listed[threads[0] + 1] if len(threads) == 1 and threads[0] + 1 < len(listed) else {}
+        if not is_refused_line(under):
+            found.append(f"rule 18: {view['path']}: the refused line is not under the thread")
+        elif not shown_by_content(under):
             found.append(f"rule 18: {view['path']}: the refused line shows when empty")
-        if (
-            len(rows) != 1
-            or not str(rows[0].get("entity")).startswith("text.")
-            or any((rows[0].get(a) or {}).get("action") != "none" for a in actions)
-        ):
-            found.append(f"rule 18: {view['path']}: the field is not one quiet text row")
-        if {"type": "button"} not in [{"type": f.get("type")} for f in tile.get("features") or []]:
-            found.append(f"rule 18: {view['path']}: the tile has no button")
     return found
+
+
+def is_thread(card: Mapping[str, Any]) -> bool:
+    """A chat page's thread: the Markdown card of its rows."""
+    return card.get("type") == "markdown" and THREAD in str(card.get("content"))
+
+
+def is_refused_line(card: Mapping[str, Any]) -> bool:
+    """A chat page's refused line: the one Markdown card that reads the delivery event (§3.4)."""
+    return card.get("type") == "markdown" and REFUSED in str(card.get("content"))
 
 
 def rule_19(template: str, source: Any, loaded: Any, household: Household) -> list[str]:

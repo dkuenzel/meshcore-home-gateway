@@ -709,8 +709,9 @@ Home Assistant takes it under the old, larger `max`, and could not take a longer
 new one.
 
 The drafts are Home Assistant's controls, as `homeassistant/show_hidden` is, not documents of
-every front end ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): a stored
-text ends in no event, its outcome is the draft published back.
+every front end ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md),
+[ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md)): a
+stored text ends in no event, its outcome is the draft published back.
 
 ## Contact and node events: `contact`, `node`
 
