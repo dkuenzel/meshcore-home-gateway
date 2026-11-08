@@ -136,9 +136,9 @@ without an administrator's script or helper, and without sending a half-written 
   each contact's controls exist only for what the dashboard was made with: it is made again after
   a target or a contact was added.
 * Bad, because on a desktop screen with a long thread the refused line can stand behind the footer
-  until the page is scrolled: at 1280x800 with a full thread, 32 of its 49 px were behind the
-  field ([platform-notes.md](../platform-notes.md#home-assistant-dashboards)). On a phone it stands
-  above the footer.
+  until the page is scrolled: at 1280x800 with a full thread, up to 32 of its 49 px were behind
+  the field ([platform-notes.md](../platform-notes.md#home-assistant-dashboards)). On a phone it
+  stands above the footer.
 
 ### Trust boundaries
 
