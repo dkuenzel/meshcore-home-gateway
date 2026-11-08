@@ -8,9 +8,10 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
-## [2.1.0] - 2026-11-09
+## [2.1.0rc1] - 2026-11-08
 
-The household's chat, its problems and its settings on the generated dashboard, and German.
+The release candidate of 2.1.0: the household's chat, its problems and its settings on the
+generated dashboard, and German. 2.1.0 ships this program.
 
 `meshcore-home-gateway dashboard` writes the dashboard again for the household, with three tabs,
 *Overview*, *Chats* and *Contacts*, and the pages *Map*, *Gateway*, *Settings* and *Help*. Each
@@ -38,11 +39,12 @@ added, and the guide gives the commands that clear them
 Known limits of the dashboard: a command the gateway refused leaves *Latest of each kind* with
 the next message received (#141); the delivery code of `confirm_nonce` is cut by the setting of
 now, not by that of the message's time (#142); and on a desktop screen with a long thread, the
-line that says why a *Send* was refused can stand behind the field until the page is scrolled.
+line that says why a *Send* was refused can stand behind the field until the page is scrolled
+(#143).
 
-2.1.0 had no release candidate, as the maintainer decided: CI, the Home Assistant contract tests
-on 2026.10.2 and 2026.11.0 and the browser check of the dashboard on both checked it. The
-maintainer's use follows the release; what it finds ships as 2.1.1.
+CI, the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the browser check of the
+dashboard on both checked it. As the maintainer decided, 2.1.0 does not wait for their use of
+this candidate: their use follows the release, and what it finds ships as 2.1.1.
 
 ### Added
 
