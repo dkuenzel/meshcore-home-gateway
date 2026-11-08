@@ -82,6 +82,11 @@ say all of it and nothing more. A new text that names such things (TLS, a passwo
 authentication) needs the note, or a place in the test's list of texts that are none
 (`tests/test_translations.py`).
 
+German is the project's own language: the project started in it, writes its catalogs and its
+maintainer reads them, so a German text needs no second speaker (the maintainer's decision for
+2.1.0). A new or changed German security text is still translated back by machine and compared
+with the English before it is merged. Every other language is reviewed as above.
+
 ## Home Assistant names
 
 `msgctxt "home assistant"`: entity names, the models of the contacts' devices, the reading types
