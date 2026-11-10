@@ -268,8 +268,10 @@ before 1.1.0a4 never.
 `make lock` re-resolves the lock files in `requirements/` from their `.in` files with hashes and
 takes the newest release of every tool that is at least `COOLDOWN_DAYS` (14) old: `dev.txt` (the
 development tools), `release.txt` (the build tools alone, for the release build) and `audit.txt`
-(pip-audit). The cutoff is a date, the start of the day `COOLDOWN_DAYS` back, so a release from
-that day waits a day longer. The files are resolved for Linux alone
+(pip-audit). The cutoff is the moment `COOLDOWN_DAYS` days before the run, given to uv as a
+time: uv reads a bare date as the end of that day, so a release uploaded late on that day was
+taken at 13 days old ([platform-notes.md](platform-notes.md#python)). `COOLDOWN_DAYS=0` takes
+every release up to the run. The files are resolved for Linux alone
 ([ADR 0005](decisions/0005-runtime-dependencies-from-the-distribution.md)) and from inside their
 directory: the form Dependabot writes, so that its pull requests change versions and hashes only
 and need no `make lock` (SUP-004). `make lock UPGRADE=` writes them again with the versions they

@@ -17,6 +17,7 @@ import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -25,6 +26,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 MAKE = shutil.which("make") or "/usr/bin/make"
+BASH = shutil.which("bash") or "/bin/bash"
 GIT = shutil.which("git") or "/usr/bin/git"
 # Set by a make that runs these tests (`make test`); they would leak its options into ours.
 MAKE_ENVIRONMENT = {"MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKELEVEL", "MAKEOVERRIDES"}
@@ -358,6 +360,29 @@ def test_the_release_is_built_where_no_test_or_lint_tool_runs() -> None:
 
 # the locks of the Home Assistant series: requirements.txt, and one per HA_SERIES once it exists
 HOME_ASSISTANT_LOCKS = sorted(ROOT.glob("home-assistant/requirements*.txt"))
+
+# the cooldown's cutoff as the lock recipes pass it to uv: a time, COOLDOWN_DAYS (14) days back
+COOLDOWN_CUTOFF = "$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+
+
+@pytest.mark.parametrize("target", ["lock", "ha-lock", "ha-lock HA_SERIES=2026.11"])
+def test_the_lock_cutoff_is_a_time_a_full_cooldown_back(target: str) -> None:
+    """uv reads a bare date given to --exclude-newer as the end of that day: a release uploaded
+    late on the cutoff day passed at 13 days old (platform-notes.md#python). The recipes give
+    the time instead, COOLDOWN_DAYS before the run, and COOLDOWN_DAYS=0 takes everything."""
+    for days, expected in (("14", 14), ("0", 0)):
+        run = make("--dry-run", *target.split(), f"COOLDOWN_DAYS={days}")
+        assert run.returncode == 0, run.stderr
+        given = re.findall(r'--exclude-newer "\$\(([^)]*)\)"', run.stdout)
+        assert given, run.stdout
+        for command in given:
+            cutoff = subprocess.run(  # noqa: S603 - the recipe's own date command
+                [BASH, "-c", command], capture_output=True, text=True, check=True
+            ).stdout.strip()
+            assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", cutoff), cutoff
+            moment = datetime.strptime(cutoff, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+            back = datetime.now(UTC) - timedelta(days=expected) - moment
+            assert timedelta(0) <= back < timedelta(minutes=1), (cutoff, back)
 
 
 @pytest.mark.parametrize(
@@ -743,7 +768,7 @@ def test_each_home_assistant_series_has_its_own_lock_and_environment(tmp_path: P
     assert series.returncode == 0, series.stderr
     assert "uv pip compile requirements-2026.11.in " in series.stdout
     assert "--output-file requirements-2026.11.txt" in series.stdout
-    assert "--exclude-newer \"$(date -u -d '14 days ago' +%Y-%m-%d)\"" in series.stdout
+    assert f'--exclude-newer "{COOLDOWN_CUTOFF}"' in series.stdout
     assert (ROOT / "home-assistant" / "requirements-2026.11.in").is_file()
     for name, lock, venv in (
         ("", "requirements.txt", ".venv-homeassistant"),

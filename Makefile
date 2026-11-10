@@ -62,7 +62,7 @@ lock: ## Re-resolve the lock files in requirements/: the newest releases older t
 	cd requirements && for name in dev release audit; do \
 	  uv pip compile "$$name.in" --python-version 3.11 --python-platform linux --no-strip-extras \
 	    --generate-hashes $(UPGRADE) \
-	    --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
+	    --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%dT%H:%M:%SZ)" \
 	    --output-file "$$name.txt"; \
 	done
 
@@ -71,7 +71,7 @@ lock: ## Re-resolve the lock files in requirements/: the newest releases older t
 ha-lock: ## Re-resolve home-assistant/requirements.txt (or HA_SERIES's), only releases older than COOLDOWN_DAYS
 	cd home-assistant && uv pip compile $(HA_LOCK).in --python-version 3.14.2 \
 	  --python-platform linux --no-strip-extras --generate-hashes --overrides overrides.txt \
-	  --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%d)" \
+	  --exclude-newer "$$(date -u -d '$(COOLDOWN_DAYS) days ago' +%Y-%m-%dT%H:%M:%SZ)" \
 	  --output-file $(HA_LOCK).txt
 
 # Known vulnerabilities, from the Python Packaging Advisory Database (CI runs it; SUP-005). One in
