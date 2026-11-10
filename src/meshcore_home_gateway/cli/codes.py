@@ -1,7 +1,8 @@
 """`commands enrol KEY`: a new code secret for a command sender (IMP-002). It goes into the file
 `[commands] codes_file` names, which the service reads at its start; the sender adds it to an
 authenticator app from the otpauth:// line this prints (a QR code tool shows it as one) and ends
-each command with the app's 6-digit code (docs/configuration.md, `[commands]`)."""
+each command with the app's 6-digit code (docs/configuration.md, `[commands]`). `commands revoke
+KEY` removes the secret of a key that is no sender any more (#80)."""
 
 from __future__ import annotations
 
@@ -73,6 +74,75 @@ def _enrol(args: argparse.Namespace) -> int:
     )
     print(PREFIX + done, file=sys.stderr)
     return EX_OK
+
+
+def _revoke(args: argparse.Namespace) -> int:
+    config = parse_config(read_text(args.config))
+    try:
+        key = normalise_key(args.key)
+    except TextError as exc:
+        print(PREFIX + tr_text(exc.text), file=sys.stderr)
+        return EX_USAGE
+    if config.commands.codes_file is None:
+        print(PREFIX + tr("[commands] codes_file is not set: no secret to revoke"), file=sys.stderr)
+        return EX_FAILURE
+    if key in config.commands.senders:
+        # Translators: security text (docs/translations.md): a sender without its secret would
+        # command without a code; command is the command line that gives it a new secret
+        still = tr(
+            "{key} is in [commands] senders: without its secret it would command without a code. "
+            "Remove it from the senders first, or give it a new secret: {command}",
+            key=key,
+            command=f"meshcore-home-gateway commands enrol {key}",
+        )
+        print(PREFIX + still, file=sys.stderr)
+        return EX_FAILURE
+    path = Path(config.commands.codes_file)
+    try:
+        entries = _entries(path)
+        if key in entries:
+            _write(path, {k: v for k, v in entries.items() if k != key}, args.config)
+    except _RefusedError as exc:
+        print(PREFIX + str(exc), file=sys.stderr)
+        return EX_FAILURE
+    if key not in entries:
+        print(
+            PREFIX + tr("{key} has no code secret in {path}", key=key, path=path), file=sys.stderr
+        )
+        return EX_FAILURE
+    # Translators: the service reads the codes file only when it starts; while it ignores a
+    # secret, it refuses the commands of senders without one (#80)
+    done = tr(
+        "the code secret of {key} is removed from {path}. The service reads the file at its "
+        "start: restart it to apply this (systemctl restart meshcore-home-gateway).",
+        key=key,
+        path=path,
+    )
+    print(PREFIX + done, file=sys.stderr)
+    for sender in _uncoded_after_revoke(config.commands.senders, entries, key):
+        # Translators: security text (docs/translations.md): sender is a full public key;
+        # command is the command line that gives it a code secret
+        uncoded = tr(
+            "after the restart, {sender} commands without a code: it has no code secret, and "
+            "no secret is ignored any more; '{command}' gives it one",
+            sender=sender,
+            command=f"meshcore-home-gateway commands enrol {sender}",
+        )
+        print(PREFIX + tr("warning: {detail}", detail=uncoded), file=sys.stderr)
+    return EX_OK
+
+
+def _uncoded_after_revoke(
+    senders: frozenset[str], entries: dict[str, str], revoked: str
+) -> list[str]:
+    """The senders that command without a code once the service reads the file without the
+    secret of `revoked`: while a secret is ignored they are refused (code_missing), so they
+    lose that only with the last ignored one (#80). A key corrected by hand and not enrolled
+    is one of them."""
+    left = {key for key in entries if key != revoked}
+    if any(key not in senders for key in left):
+        return []
+    return sorted(sender for sender in senders if sender not in left)
 
 
 def otpauth_uri(secret: str, node_id: str, key: str) -> str:

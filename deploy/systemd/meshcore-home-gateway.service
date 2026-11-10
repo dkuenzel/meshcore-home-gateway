@@ -3,8 +3,10 @@
 # Install to /etc/systemd/system/; see docs/deployment.md.
 [Unit]
 Description=meshcore-home-gateway MeshCore to MQTT bridge
-# time-sync.target: after the first synchronisation of the clock, where a service provides it
-# (systemd-timesyncd, chrony): the radio's clock is set from it and cannot be set back
+# time-sync.target: the radio's clock is set from the host's and cannot be set back. The target
+# waits for a synchronised clock only where a service like systemd-time-wait-sync or chrony-wait
+# is enabled, which neither is by default (systemd-time-wait-sync skips containers): the
+# gateway's bounds of a plausible host clock are the guard (docs/design.md, section 6.1)
 After=network-online.target time-sync.target
 Wants=network-online.target
 # Never given up: a crash loop restarts with a growing delay (below) instead of ending in the

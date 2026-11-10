@@ -142,7 +142,11 @@ def test_the_zipapp_reads_the_dashboards_template_from_inside(tmp_path: Path) ->
     )
     assert shown.stdout.startswith("# meshcore-home-gateway dashboard for node radio1, ")
     assert shown.stdout.endswith("\n# from the archive\n")
-    assert shown.stderr == "The map lists 0 contacts with a position.\n"
+    assert shown.stderr == (
+        "The map lists 0 contacts with a position.\n"
+        "Chat pages: 0 for channels, 0 for people.\n"
+        "This dashboard needs Home Assistant 2026.10 or later.\n"
+    )
 
 
 BUILD_WHEEL = "import sys, flit_core.buildapi as b; print(b.build_wheel(sys.argv[1]))"

@@ -22,6 +22,7 @@ from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
+from meshcore_home_gateway.mqtt.homie import HomieDevice
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.ports import ContactRequest, RadioEvent, SendRequest, Transport
@@ -212,6 +213,7 @@ async def running(
     devices: bool = False,
     profile: RadioProfile | None = None,
     telemetry_lanes: LaneFactory | None = None,
+    homie: HomieDevice | None = None,
 ) -> AsyncIterator[tuple[Bridge, FakeBus, list[str]]]:
     bus = bus or FakeBus()
     stop, notes = asyncio.Event(), []
@@ -242,6 +244,7 @@ async def running(
         manage_components=AnnouncedComponents(store, "manage_contacts"),
         telemetry_records=TelemetryRecords(store),
         telemetry_lanes=telemetry_lanes,
+        homie=homie,
     )
     task = asyncio.create_task(bridge.run(stop))
     try:

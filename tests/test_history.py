@@ -64,6 +64,22 @@ def test_messages_survive_a_restart_newest_first(tmp_path: Path) -> None:
     assert again._db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
+def test_the_newest_messages_shown_are_read_past_the_others_page_by_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#103: the observer asks for the newest messages of the channels it publishes, which may
+    lie behind any number of rows of other channels."""
+    monkeypatch.setattr(history_module, "READ_PAGE", 2)
+    history = opened(tmp_path / "history.sqlite3")
+    for n in range(7):
+        history.add_message(HistoryEntry(T + n, "in", "channel", f"{n}", channel_index=n % 3))
+    texts = [m.text for m in history.recent_messages(2, lambda m: m.channel_index == 0)]
+    assert texts == ["6", "3"]
+    texts = [m.text for m in history.recent_messages(5, lambda m: m.channel_index == 0)]
+    assert texts == ["6", "3", "0"]  # to the end of the table
+    assert [m.text for m in history.recent_messages(3)] == ["6", "5", "4"]
+
+
 def test_the_keys_of_2_1_survive_a_restart(tmp_path: Path) -> None:
     """The target, the delivery id, the acceptance time (unix seconds, as `at`), whether the
     acknowledgement was suspect, and why a message failed (design §6.6)."""

@@ -315,6 +315,137 @@ def test_a_release_is_due_a_day_after_its_version_commit(
     assert plan.due(1800000000 + day) == ("v1.0.0", release, False, 0)
     repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", release)
     assert plan.due(1800000000 + day) == ("v1.0.0", release, True, 0)
+    assert plan.main(["due"]) == 0  # release-due.yml starts a release only once CI passed on it
+    assert "\nexists=true\nfinal=true\n" in capsys.readouterr().out
+
+
+def test_release_yml_admits_a_pre_release_on_main_at_once(repo: Repo) -> None:
+    """#84: release.yml admits a pre-release, a release candidate too, on a commit of main that
+    carries its version, at once; whether CI passed on it is not asked (SECURITY.md)."""
+    repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
+    head = repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    repo.tag("v1.0.0rc1")
+    repo.git("commit", "-q", "--allow-empty", "-m", "main moves on")
+    assert plan.admit("v1.0.0rc1", 0, "main") == (head, False)
+
+
+def test_release_yml_refuses_a_tag_that_is_not_on_main(repo: Repo) -> None:
+    """A tag pushed by hand on a branch's commit: no pull request, no CI on main, no day."""
+    repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
+    repo.git("checkout", "-q", "-b", "elsewhere")
+    head = repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    repo.tag("v1.0.0rc1", annotated=False)
+    refusal = f"v1.0.0rc1 tags {head}, not a commit of main"
+    with pytest.raises(plan.PlanError, match=re.escape(refusal)):
+        plan.admit("v1.0.0rc1", 0, "main")
+
+
+def test_release_yml_refuses_a_release_before_its_day(repo: Repo) -> None:
+    """SUP-001 for every tag, not only those release-due.yml makes: a release waits a day after
+    the commit that wrote its version, and is tagged on that commit."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    changelog = "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST
+    release = repo.commit("1.0.0", changelog)
+    repo.tag("v1.0.0")
+    day = plan.COOLDOWN_S
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0 is due in 60 s")):
+        plan.admit("v1.0.0", 1800000000 + day - 60, "main")
+    assert plan.admit("v1.0.0", 1800000000 + day, "main") == (release, True)
+    later = repo.commit("1.0.0", changelog, program="print('later')\n")
+    repo.git("tag", "-f", "-a", "v1.0.0", "-m", "v1.0.0", later)
+    with pytest.raises(plan.PlanError, match=re.escape(f"already tags {later}, not {release}")):
+        plan.admit("v1.0.0", 1800000000 + day, "main")
+
+
+def test_release_yml_says_when_a_release_tagged_too_early_is_due(repo: Repo) -> None:
+    """#84 review: a release tag pushed by hand within the day is refused, and release-due.yml
+    starts the release on that tag once it is due; the refusal says when."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"  # 2027-01-15 08:00 UTC
+    repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    repo.tag("v1.0.0")
+    refusal = "v1.0.0 is due in 79200 s, at 2027-01-16 08:00 UTC, when release-due.yml starts it"
+    with pytest.raises(plan.PlanError, match=re.escape(refusal)):
+        plan.admit("v1.0.0", 1800000000 + 2 * 3600, "main")
+
+
+def test_release_yml_refuses_a_release_whose_version_main_took_back(repo: Repo) -> None:
+    """#84 review: admit looked for the version commit from the tag's commit, release-due.yml
+    from main's head. A version commit that a later commit of main took back was admitted on a
+    tag pushed by hand after its day, though release-due.yml would never tag it. Both now ask
+    the same function on main."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    stopped = repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    repo.env["GIT_COMMITTER_DATE"] = "@1800003600 +0000"
+    repo.git("revert", "--no-edit", stopped)
+    day = 1800000000 + plan.COOLDOWN_S
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0rc1 already tags")):
+        plan.due(day)  # release-due.yml tags nothing
+    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", stopped)
+    repo.git("checkout", "-q", "v1.0.0")  # as release.yml checks out the tag: HEAD is not main
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0: release-due.yml would tag none")):
+        plan.admit("v1.0.0", day, "main")
+
+
+def test_release_yml_takes_main_from_the_remote_not_from_a_tag_of_its_name(repo: Repo) -> None:
+    """#84 review: admit named main `origin/main`, and git takes a tag of that name before the
+    remote branch (gitrevisions(7): refs/tags/ comes before refs/remotes/). A tag `origin/main`
+    pushed with a release tag on a version commit that main took back made admit publish it.
+    admit names main by its full ref."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    stopped = repo.commit("1.0.0", "## [Unreleased]\n\n" + section("1.0.0", "Tested.") + FIRST)
+    repo.env["GIT_COMMITTER_DATE"] = "@1800003600 +0000"
+    repo.git("revert", "--no-edit", stopped)
+    repo.git("update-ref", "refs/remotes/origin/main", "HEAD")  # as release.yml's checkout has it
+    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", stopped)
+    repo.git("tag", "origin/main", stopped)  # pushed by hand with the release tag
+    repo.git("checkout", "-q", "v1.0.0")
+    day = 1800000000 + plan.COOLDOWN_S
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0: release-due.yml would tag none")):
+        plan.admit("v1.0.0", day)
+
+
+def test_release_yml_refuses_a_release_that_is_not_mains_version(repo: Repo) -> None:
+    """A release tag on a version commit that main has moved on from (a re-run of all jobs of its
+    run, once the next version was tagged): release-due.yml tags only main's version."""
+    released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = "@1800000000 +0000"
+    changelog = section("1.0.0", "Tested.") + FIRST
+    release = repo.commit("1.0.0", "## [Unreleased]\n\n" + changelog)
+    repo.tag("v1.0.0")
+    day = 1800000000 + plan.COOLDOWN_S
+    assert plan.admit("v1.0.0", day, "main") == (release, True)
+    following = repo.commit("1.0.1rc1", section("1.0.1rc1", "Later.", kind="Fixed") + changelog)
+    repo.tag("v1.0.1rc1")
+    refusal = f"v1.0.0 tags {release}; main's version is v1.0.1rc1, of {following}"
+    with pytest.raises(plan.PlanError, match=re.escape(refusal)):
+        plan.admit("v1.0.0", day, "main")
+
+
+def test_release_yml_refuses_a_tag_of_another_version(repo: Repo) -> None:
+    repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
+    repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    repo.tag("v1.0.0rc2")
+    with pytest.raises(plan.PlanError, match=re.escape("v1.0.0rc2 tags a commit of 1.0.0rc1")):
+        plan.admit("v1.0.0rc2", 0, "main")
+    with pytest.raises(plan.PlanError, match="is not one of"):
+        plan.admit("vnext", 0, "main")
+
+
+def test_release_yml_admits_on_the_command_line(
+    repo: Repo, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo.commit("0.1.0.dev0", "## [Unreleased]\n\n")
+    head = repo.commit("1.0.0rc1", "## [Unreleased]\n\n" + FIRST)
+    repo.tag("v1.0.0rc1")
+    assert plan.main(["admit", "v1.0.0rc1", "--main", "main"]) == 0
+    assert capsys.readouterr().out == f"sha={head}\nfinal=false\n"
+    assert plan.main(["admit", "v1.0.0rc1", "--main", "nowhere"]) == 1
+    assert "release_plan: " in capsys.readouterr().err
+    assert plan.main(["admit", "v1.0.0rc1"]) == 1  # origin/main: no remote here
 
 
 def test_main_refuses_a_version_tagged_elsewhere(repo: Repo) -> None:
@@ -345,7 +476,7 @@ def test_the_command_line(repo: Repo, capsys: pytest.CaptureFixture[str]) -> Non
     assert capsys.readouterr().out == "tag=v1.0.0rc1\nexists=false\nfinal=false\nwaits=false\n"
     assert plan.main(["due"]) == 0
     assert capsys.readouterr().out == (
-        f"tag=v1.0.0rc1\nsha={head}\nexists=false\ndue=true\nleft=0\n"
+        f"tag=v1.0.0rc1\nsha={head}\nexists=false\nfinal=false\ndue=true\nleft=0\n"
     )
     assert plan.main(["check"]) == 0
     assert capsys.readouterr().out == (
@@ -723,38 +854,44 @@ def test_a_shallow_clone_is_told_to_fetch_the_history(tmp_path: Path) -> None:
     assert _checked(shallow, origin.env).stdout.endswith(f"{COMPATIBLE}\n")
 
 
-UNTAGGED = (  # the release in the changelog has no tag here
-    "CHANGELOG.md has 1.0.0, but there is no tag v1.0.0 here: if 1.0.0 was merged just now, CI on"
-    " main tags it once its jobs pass (a re-run of failed jobs tags it), then run again; otherwise"
-    " fetch the tags of the main repository"
+WRITTEN = "@1800000000 +0000"  # the commit time of the version commit of 1.0.0
+UNTAGGED = (  # the release in the changelog has no tag here (#107)
+    "CHANGELOG.md has 1.0.0, but there is no tag v1.0.0 here: if 1.0.0 was merged lately,"
+    " release-due.yml tags it a day after its version commit, from 2027-01-16 08:00 UTC on, once"
+    " CI on main passed on it; run again then. Otherwise fetch the tags of the main repository"
 )
 
 
 def test_a_clone_without_the_tag_of_the_last_release_is_told_to_fetch_it(repo: Repo) -> None:
     """A fork synced with the main repository has its commits but not its tags: compared with
     an older release, or with none, a removal would pass."""
+    repo.env["GIT_COMMITTER_DATE"] = WRITTEN
     base = after_1_0_0(repo)
     repo.git("tag", "-d", "v1.0.0")
     repo.commit("1.0.0", unreleased("Fixed", "x."), interface=snapshot(NEW))
     with pytest.raises(plan.PlanError, match=re.escape(UNTAGGED)):
         plan.check(base)
     fix = "## [Unreleased]\n\n" + section("1.0.1rc1", "x.", kind="Fixed") + OUT
+    repo.env["GIT_COMMITTER_DATE"] = "@1800007200 +0000"  # the day counts from 1.0.0's commit
     repo.commit("1.0.1rc1", fix, interface=snapshot(OLD))
     with pytest.raises(plan.PlanError, match=re.escape(UNTAGGED)):
         plan.check(base)
 
 
 def test_a_release_merged_but_not_tagged_yet_is_waited_for(repo: Repo) -> None:
-    """CI on main tags 1.0.0 once every job of its merge passed: a pull request on top of that
-    main, or a further push to it, runs in between and is told to run again then."""
+    """release-due.yml tags 1.0.0 a day after its version commit, once CI on main passed on it
+    (CI on main tags only pre-releases): a pull request on top of that main, or a further push
+    to it, runs in between and is told when to run again (#107)."""
     released(repo, ("1.0.0rc1", FIRST))
+    repo.env["GIT_COMMITTER_DATE"] = WRITTEN
     merged = repo.commit("1.0.0", "## [Unreleased]\n\n" + OUT)  # main, not tagged yet
+    repo.env["GIT_COMMITTER_DATE"] = "@1800003600 +0000"
     repo.git("checkout", "-q", "-b", "fix")
     repo.commit("1.0.0", unreleased("Fixed", "A fix."))
     with pytest.raises(plan.PlanError) as refused:
         plan.check(merged)
     assert str(refused.value) == UNTAGGED
-    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", merged)  # CI on main tagged it
+    repo.git("tag", "-a", "v1.0.0", "-m", "v1.0.0", merged)  # release-due.yml tagged it
     assert plan.check(merged) == f"no release: __version__ stays 1.0.0\n{COMPATIBLE}"
 
 

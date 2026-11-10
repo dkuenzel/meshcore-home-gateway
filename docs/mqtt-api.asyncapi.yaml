@@ -3,14 +3,14 @@
   "id": "urn:meshcore-home-gateway:mqtt-api",
   "info": {
     "title": "meshcore-home-gateway MQTT API",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "The topics the gateway publishes and reads, generated from its interface snapshot by tools/asyncapi.py. docs/mqtt-api.md is normative: it gives what each key means and its type. Every value may be null. `x-values` lists the values the gateway uses at this release, in a key or in the items of a list; within a major version keys and values are only added: ignore a key you do not know, and treat a value you do not know as other.",
     "license": {
       "name": "MIT",
       "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/main/LICENSE"
     },
     "externalDocs": {
-      "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/v2.0.0/docs/mqtt-api.md"
+      "url": "https://github.com/dkuenzel/meshcore-home-gateway/blob/v2.1.0/docs/mqtt-api.md"
     }
   },
   "servers": {
@@ -899,6 +899,153 @@
         }
       }
     },
+    "homie_gateway_name": {
+      "address": "homie/{homie_device}/gateway/$name",
+      "messages": {
+        "homie_gateway_name": {
+          "name": "homie_gateway_name",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_gateway_properties": {
+      "address": "homie/{homie_device}/gateway/$properties",
+      "messages": {
+        "homie_gateway_properties": {
+          "name": "homie_gateway_properties",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_gateway_radio": {
+      "address": "homie/{homie_device}/gateway/radio",
+      "messages": {
+        "homie_gateway_radio": {
+          "name": "homie_gateway_radio",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_gateway_radio_datatype": {
+      "address": "homie/{homie_device}/gateway/radio/$datatype",
+      "messages": {
+        "homie_gateway_radio_datatype": {
+          "name": "homie_gateway_radio_datatype",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_gateway_radio_format": {
+      "address": "homie/{homie_device}/gateway/radio/$format",
+      "messages": {
+        "homie_gateway_radio_format": {
+          "name": "homie_gateway_radio_format",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_gateway_radio_name": {
+      "address": "homie/{homie_device}/gateway/radio/$name",
+      "messages": {
+        "homie_gateway_radio_name": {
+          "name": "homie_gateway_radio_name",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
+    "homie_gateway_type": {
+      "address": "homie/{homie_device}/gateway/$type",
+      "messages": {
+        "homie_gateway_type": {
+          "name": "homie_gateway_type",
+          "contentType": "text/plain",
+          "summary": "text",
+          "payload": {
+            "type": "string"
+          }
+        }
+      },
+      "parameters": {
+        "homie_device": {
+          "description": "the gateway's Homie device, `meshcore-<node_id>` with `_` as `-`",
+          "examples": [
+            "meshcore-radio1"
+          ]
+        }
+      }
+    },
     "homie_homie": {
       "address": "homie/{homie_device}/$homie",
       "messages": {
@@ -1518,7 +1665,7 @@
         "homie_nodes": {
           "name": "homie_nodes",
           "contentType": "text/plain",
-          "summary": "text; an empty retained message: none, an unknown value, or a node that is gone",
+          "summary": "text",
           "payload": {
             "type": "string"
           }
@@ -1725,6 +1872,7 @@
                     "x-values": [
                       "broker_unavailable",
                       "code_invalid",
+                      "code_locked",
                       "code_missing",
                       "code_reused",
                       "from_the_future",
@@ -2921,6 +3069,132 @@
       "messages": [
         {
           "$ref": "#/channels/homie_extensions/messages/homie_extensions"
+        }
+      ]
+    },
+    "send_homie_gateway_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_gateway_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_gateway_name/messages/homie_gateway_name"
+        }
+      ]
+    },
+    "send_homie_gateway_properties": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_gateway_properties"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_gateway_properties/messages/homie_gateway_properties"
+        }
+      ]
+    },
+    "send_homie_gateway_radio": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_gateway_radio"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_gateway_radio/messages/homie_gateway_radio"
+        }
+      ]
+    },
+    "send_homie_gateway_radio_datatype": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_gateway_radio_datatype"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_gateway_radio_datatype/messages/homie_gateway_radio_datatype"
+        }
+      ]
+    },
+    "send_homie_gateway_radio_format": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_gateway_radio_format"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_gateway_radio_format/messages/homie_gateway_radio_format"
+        }
+      ]
+    },
+    "send_homie_gateway_radio_name": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_gateway_radio_name"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_gateway_radio_name/messages/homie_gateway_radio_name"
+        }
+      ]
+    },
+    "send_homie_gateway_type": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/homie_gateway_type"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/homie_gateway_type/messages/homie_gateway_type"
         }
       ]
     },

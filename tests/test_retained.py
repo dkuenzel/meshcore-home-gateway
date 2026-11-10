@@ -244,6 +244,53 @@ def test_a_connect_forgets_what_was_in_flight_and_what_waited() -> None:
     assert bus.published == [(CONTACT, b"own")]
 
 
+def test_what_paho_sends_again_after_a_reconnect_is_the_gateways_own(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#101: paho sends a QoS 1 message again after a reconnect when the broker had not
+    acknowledged it, such as the state written as the broker stopped. Its copy is the gateway's,
+    not another client's write; the connect's own payload follows it, so nothing is restored."""
+    retained, bus = make()
+    retained.sent(TOPICS.state, b'{"radio": "disconnected"}', published=True)  # broker stopping
+    retained.connected()  # the broker is back
+    retained.sent(TOPICS.state, b'{"radio": "connected"}', published=True)  # the connect's
+    retained.received(TOPICS.state, b'{"radio": "disconnected"}', retained=False)  # paho's
+    retained.received(TOPICS.state, b'{"radio": "connected"}', retained=False)
+    assert bus.published == []
+    assert caplog.text == ""
+
+
+def test_a_payload_sent_again_after_the_current_one_is_followed_by_it(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """paho may send the old payload after the connect's: the broker would keep the old one, so
+    the current one goes out again, without a warning. Each copy is taken as paho's once."""
+    retained, bus = make()
+    retained.sent(TOPICS.state, b"old", published=True)
+    retained.connected()
+    retained.sent(TOPICS.state, b"current", published=True)
+    retained.received(TOPICS.state, b"current", retained=False)
+    retained.received(TOPICS.state, b"old", retained=False)
+    assert bus.published == [(TOPICS.state, b"current")]
+    assert caplog.text == ""
+    retained.received(TOPICS.state, b"current", retained=False)  # the restore comes back
+    retained.received(TOPICS.state, b"old", retained=False)  # paho's was taken: a forgery now
+    assert f"another client wrote {TOPICS.state}; restoring" in caplog.text
+
+
+def test_what_was_in_flight_stays_the_gateways_over_two_reconnects() -> None:
+    """The broker may go away again before paho's second try is acknowledged."""
+    retained, bus = make()
+    retained.sent(CONTACT, b"old", published=True)
+    retained.connected()
+    retained.sent(CONTACT, b"newer", published=True)
+    retained.connected()
+    retained.sent(CONTACT, b"current", published=True)
+    for payload in (b"old", b"newer", b"current"):
+        retained.received(CONTACT, payload, retained=False)
+    assert bus.published == []
+
+
 def test_nothing_is_restored_after_the_close() -> None:
     retained, bus = make()
     retained.sent(CONTACT, b"own", published=True)

@@ -92,3 +92,7 @@ list, and the generator substitutes the node ID.
 * Platform facts (Markdown pipeline, sanitiser, card options): [platform-notes.md](../platform-notes.md),
   "Home Assistant dashboards".
 * Revisit when Home Assistant offers translatable dashboards or dashboard variables.
+* Amended on 2026-11-07 with [ADR 0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md): since 2.1 the gateway announces entities
+  for the dashboard (the message history, the messages on their way, a draft and its *Send* for
+  each chat, the configuration), the dashboard has three tabs and pages without a tab, and it
+  needs Home Assistant 2026.10 or later while the gateway keeps 2026.8.

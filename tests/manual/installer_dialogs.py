@@ -30,9 +30,11 @@ from tests import test_installer as stubs  # noqa: E402
 
 PASSWORD = "pw-sêcret§"  # whiptail drops non-ASCII characters in a locale it cannot set
 KEYS = [  # one entry per dialog, in the order of the default setup
+    b"\r",  # language: the caller's, German under the LANG of drive()
     b"\r",  # setup: default
     b"\r",  # radio: first device
     b"broker.example.org\r",  # broker address
+    b"\r",  # TLS: no, the default
     b"bridge\r",  # user: the field starts empty
     PASSWORD.encode() + b"\r",  # password
     b"\r",  # create the container: yes

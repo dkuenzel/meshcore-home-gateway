@@ -53,7 +53,19 @@ def _check_config(args: argparse.Namespace) -> int:
     if error is not None:
         # Translators: why the broker did not take the login, then who logged in
         print(PREFIX + tr("{detail} ({login})", detail=error, login=login), file=sys.stderr)
-        if connection.refusal is not None:
+        from meshcore_home_gateway.mqtt.client import UNSUPPORTED_PROTOCOL_VERSION  # noqa: PLC0415
+
+        if connection.refusal_value == UNSUPPORTED_PROTOCOL_VERSION:
+            # whatever the login: a broker of MQTT 3.1.1 only, asked with MQTT 5
+            # Translators: "protocol" and "[mqtt]" are the setting and its section, not translated
+            hint = tr(
+                "the broker does not speak MQTT {protocol}; set protocol in [mqtt] to the version "
+                "it speaks ({guide})",
+                protocol=mqtt.protocol,
+                guide="docs/deployment.md, troubleshooting",
+            )
+            print(PREFIX + hint, file=sys.stderr)
+        elif connection.refusal is not None:
             hint = tr(
                 "brokers such as Mosquitto refuse a wrong password, an unknown user and missing "
                 "credentials alike; a standalone Mosquitto knows a user added with "

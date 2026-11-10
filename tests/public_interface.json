@@ -171,6 +171,25 @@
      }
     }
    },
+   "commands revoke": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     }
+    },
+    "positionals": {
+     "1": {
+      "name": "key",
+      "required": true,
+      "takes_value": true
+     }
+    }
+   },
    "config": {
     "options": {},
     "positionals": {
@@ -1009,6 +1028,7 @@
   "homeassistant.language": {
    "answer": "str",
    "choices": [
+    "de",
     "en"
    ],
    "default": "en",
@@ -2555,7 +2575,6 @@
     "retained": true
    },
    "homie/<homie_device>/$nodes": {
-    "cleared": true,
     "payload": "text",
     "qos": 1,
     "retained": true
@@ -2692,6 +2711,41 @@
    },
    "homie/<homie_device>/<key>/telemetry-state/$name": {
     "cleared": true,
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/$name": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/$properties": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/$type": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio/$datatype": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio/$format": {
+    "payload": "text",
+    "qos": 1,
+    "retained": true
+   },
+   "homie/<homie_device>/gateway/radio/$name": {
     "payload": "text",
     "qos": 1,
     "retained": true
@@ -2832,6 +2886,7 @@
    "received:command.reason": [
     "broker_unavailable",
     "code_invalid",
+    "code_locked",
     "code_missing",
     "code_reused",
     "from_the_future",

@@ -81,8 +81,8 @@ Options follow a `--`, for example `bash -c "$(wget -qO- URL)" -- --answers FILE
 them. If the command does nothing at all, the address could not be downloaded (`bash -c` gets an
 empty script): `wget -O- URL` shows why.
 
-Once the gateway offers a language besides English (2.0.0 offers English only), the first
-dialog chooses the installer's language, preselected from your session (`LANGUAGE`, `LC_ALL`,
+The installer speaks English and German (since 2.1.0; 2.0.0 offered English only): the first
+dialog chooses its language, preselected from your session (`LANGUAGE`, `LC_ALL`,
 `LC_MESSAGES`, `LANG`). The script reads that language's pack from where the script comes from
 (its release, the checkout next to it, else `main`) into memory, stores nothing, and uses it only
 when its SHA-256 is the one the script carries (the release attests the script); else the dialogs
@@ -129,9 +129,10 @@ broker settings again (without dialogs it warns and goes on: the service keeps t
 service runs, the script has the gateway check itself (`meshcore-home-gateway doctor`: the
 configuration, the broker, the radio as the gateway reports it, the container) and repeats the
 check for about a minute while the radio connects. The final message shows the result of the
-login, the self-test's `passed` (or the problems it found, with the report above it) and how to
-read the logs. If a step fails or the script is
-interrupted after the container was created, the error message says how to remove it.
+login, the self-test's `passed` (or the problems it found) and how to read the logs; the
+self-test's report stands above it, also when it passed, with the warnings it passed with, such
+as a code secret the gateway ignores. If a step fails or the script is interrupted after the
+container was created, the error message says how to remove it.
 
 The dialogs run in the `C.UTF-8` locale: in a locale the host lacks (for example one passed on by
 ssh), whiptail would drop every non-ASCII character typed, passwords included.
@@ -332,9 +333,15 @@ pct stop 105 && pct destroy 105
 
 * **The privacy defaults after an update to 2.0.0:** only the messages of the channels that are a
   target are published, of other people's radios only their keys and types, and telemetry asks
-  only the companions the household includes. Switch *Telemetry* on for each of the household's
+  only the companions the household includes, and the contact targets and command senders, at
+  once. Switch *Telemetry* on for each of the household's
   companions (or `meshcore-home-gateway contacts telemetry KEY on`); the changelog's
-  **Breaking:** entries name the settings that keep the old behaviour.
+  **Breaking:** entries name the settings that keep the old behaviour. The messages that 1.x
+  received on other channels stay in the history database (and in `history export` and `backup`)
+  until they are `messages_days` old, 30 days by default; since 2.1 the `history` document and
+  Home Assistant's *Message history* leave them out. To be rid of them at once, stop the service
+  and delete `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files:
+  the gateway starts a new history, without the rest of the old one.
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with
   `[telemetry] ask = "all"`: telemetry is on from 1.1.0a2 on, and the first time it runs on the
   state directory it asks nobody for an hour
@@ -362,7 +369,11 @@ pct stop 105 && pct destroy 105
   with the version installed in the container (one from before the check skips it). Selected targets keep their
   aliases, all of them when several aliases name the same channel or contact. Targets and command
   senders that the radio does not offer (a contact that is not a chat contact, a channel slot
-  without a name) are kept as well, and the log names them. The service is stopped while the script
+  without a name) are kept as well, and the log names them. Unticking a sender with a code secret
+  leaves the secret in the codes file, where the gateway ignores it: until
+  `meshcore-home-gateway commands revoke <key>` in the container and a restart, the commands of
+  the senders without a secret are refused as `code_missing`, and the self-test's report names
+  them ([configuration.md](configuration.md#commands)). The service is stopped while the script
   reads the radio and started again afterwards, also when a step fails or the script is interrupted
   (Ctrl-C, a closed SSH session). Meanwhile the radio keeps up to 16 received messages for the
   gateway; more are lost, so do not leave the dialogs open for long on a busy mesh. The container and the radio connection stay as installed:
@@ -378,6 +389,43 @@ pct stop 105 && pct destroy 105
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
+* **Roll back to 2.0** from 2.1 leaves three kinds of retained topics on the broker that 2.0
+  neither publishes nor clears: `pending`, `config` and the drafts of Home Assistant's chats,
+  `homeassistant/draft/<kind>/<chat>`, which the stop of 2.1 empties but leaves retained. Once 2.0
+  runs (2.1 would publish them again), clear them with an empty retained message on each, as the
+  changelog of 2.1 gives them; for node `radio1`, with the broker's address and a user that may
+  write them (`-h`, `-u`, `-P`):
+
+  ```sh
+  mosquitto_pub -r -n -t meshcore/radio1/pending
+  mosquitto_pub -r -n -t meshcore/radio1/config
+  mosquitto_sub -t 'meshcore/radio1/homeassistant/draft/#' --retained-only --remove-retained -W 2
+  ```
+
+  Then make the dashboard again with 2.0's `meshcore-home-gateway dashboard` and paste it
+  ([home-assistant.md](home-assistant.md#dashboard)): the dashboard of 2.1 names entities that
+  2.0 does not announce, and its version card asks to update the gateway. An entity of 2.1 that
+  Home Assistant keeps afterwards can be deleted under *Settings → Entities*. The history
+  database keeps working; 2.0 leaves the columns 2.1 added empty.
+* **Roll back to 1.x** from 2.0 or later keeps the state directory, which 1.x reads in its own
+  way (#95). 1.x knows no inclusions (`[telemetry] ask` is 2.0's): it asks every companion that
+  is not excluded, other people's too. And the first exclusion made under 1.x writes
+  `telemetry-excluded.json` without the household's inclusions, so that 2.0, back again, asks
+  none of the household's companions (*Telemetry* off on each). Before the roll back, keep a
+  copy of the file and switch telemetry off for 1.x (`enabled = false` in `[telemetry]`, removed
+  again after the return; 1.0.0 refuses the table, and has no telemetry):
+
+  ```sh
+  pct exec 105 -- cp -p /var/lib/meshcore-home-gateway/telemetry-excluded.json /root/
+  ```
+
+  Back on 2.0 or later, with the service stopped, put the copy back (`cp -p
+  /root/telemetry-excluded.json /var/lib/meshcore-home-gateway/`) if 1.x changed the file; an
+  exclusion made under 1.x is gone then, and a companion the household did not include is not
+  asked anyway.
+  Messages that the stop kept for the next start (`outbox` in `state.json`, with their texts)
+  stay there while 1.x runs, which ignores them; the next start of 2.0 or later ends those whose
+  `queue_ttl_s` has passed, `expired` or `failed`, as their final delivery event.
 
 ## 3 Other Linux systems
 
@@ -419,6 +467,19 @@ install -D -m 0640 -g meshcore-home-gateway deploy/config.example.toml \
 install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
 editor /etc/meshcore-home-gateway/config.toml && meshcore-home-gateway check-config
 systemctl daemon-reload && systemctl enable --now meshcore-home-gateway
+```
+
+To update, check the configuration with the new version first, then switch to it and install
+the unit of its tag too. The unit changes with releases: since 2.0 it gives a stop 90 s
+(`TimeoutStopSec`), which the gateway needs to wait for the acknowledgement of a message in
+flight; the unit of 1.x gives 20 s.
+
+```sh
+install -m 0755 meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/
+python3 -I /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-X.Y.Z.pyz check-config
+ln -sfn meshcore-home-gateway-X.Y.Z.pyz /usr/local/lib/meshcore-home-gateway/current.pyz
+install -m 0644 deploy/systemd/meshcore-home-gateway.service /etc/systemd/system/
+systemctl daemon-reload && systemctl restart meshcore-home-gateway
 ```
 
 The command line's texts follow `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`
@@ -467,9 +528,10 @@ updates wait for.
   (the kernel is the host's). A running service keeps the Python and paho-mqtt it started with:
   restart it after an update of them (`grep -E 'python3|paho'
   /var/log/unattended-upgrades/unattended-upgrades.log`). `systemctl list-timers
-  apt-daily-upgrade.timer` shows the next run, and `apt-config dump
-  APT::Periodic::Unattended-Upgrade` must say `"1"` (the package switches itself on when it is
-  installed without dialogs). An installation from before this version gets the package with its
+  apt-daily-upgrade.timer` shows the next run, and `apt-config dump APT::Periodic` must show
+  `APT::Periodic::Update-Package-Lists` and `APT::Periodic::Unattended-Upgrade` with `"1"` (the
+  package switches itself on when it is installed without dialogs); `doctor` warns when either
+  is `"0"` or missing. An installation from before this version gets the package with its
   next `--update`.
 * **Disk:** the container has 2 GB. The installer limits the journal to 100 MB
   (`/etc/systemd/journald.conf.d/meshcore-home-gateway.conf`; Debian's default is a tenth of the
@@ -491,10 +553,30 @@ updates wait for.
   without the broker password, and the archive without the command senders' code secrets, unless
   `--with-secrets` (which also takes the file `password_file` names and the one `codes_file`
   names, as `password` and `command-codes`); without it, set the password again after a restore
-  and enrol the senders anew. To restore: stop
-  the service, unpack the archive, copy `config.toml` to `/etc/meshcore-home-gateway/` and the
-  files under `state/` to `/var/lib/meshcore-home-gateway/` (owned by `meshcore-home-gateway`),
-  put the secrets back where `MANIFEST.json` says they came from, then start it. By hand: back up
+  and enrol the senders anew. To restore, in the container as root: stop the service, unpack
+  the archive into a private directory, and put each file back with its owner, group and mode.
+  The archive holds every file as `root` with mode 0600; a file copied so cannot be read by the
+  service, which then stops with a configuration error. The configuration and the secrets are
+  `root:meshcore-home-gateway` 0640, so that the service's group reads them, and the state is the
+  service's own. The secrets go where `MANIFEST.json` says they came from (`password_file`,
+  `codes_file`), here the usual paths; leave out the line of a file the archive does not hold
+  (`files` in `MANIFEST.json`). The history uses SQLite's write-ahead log: a stop that was cut
+  short (the stop timeout, the watchdog, a crash) leaves `history.sqlite3-wal` and
+  `history.sqlite3-shm` beside it. Remove both before the restore, or SQLite applies the old log
+  to the restored history at the next start, and the history is the old one:
+
+  ```sh
+  systemctl stop meshcore-home-gateway
+  rm -f /var/lib/meshcore-home-gateway/history.sqlite3-wal /var/lib/meshcore-home-gateway/history.sqlite3-shm
+  mkdir -m 0700 /root/restore && tar -xzf FILE -C /root/restore && cd /root/restore
+  install -m 0640 -o root -g meshcore-home-gateway config.toml /etc/meshcore-home-gateway/config.toml
+  install -m 0640 -o root -g meshcore-home-gateway password /etc/meshcore-home-gateway/mqtt-password
+  install -m 0640 -o root -g meshcore-home-gateway command-codes /etc/meshcore-home-gateway/command-codes
+  install -m 0600 -o meshcore-home-gateway -g meshcore-home-gateway state/* /var/lib/meshcore-home-gateway/
+  systemctl start meshcore-home-gateway
+  ```
+
+  By hand: back up
   `/etc/meshcore-home-gateway/` (`config.toml`, and `mqtt-password` where the installer wrote it,
   and the file `codes_file` names) and the three files of
   `/var/lib/meshcore-home-gateway/`. Stop the service for the copy (`systemctl stop
@@ -506,14 +588,18 @@ updates wait for.
   the household's companions and message texts, and the history also other people's names, keys
   and channel texts
   ([what the gateway keeps](privacy.md)). Restore the three state files together and with the
-  service stopped: the service holds `state.json` in memory and writes it whole while it runs,
+  service stopped, and remove the old history's `-wal` and `-shm` first, as above; a Proxmox
+  backup brings back the whole container, the log with its history. The service holds
+  `state.json` in memory and writes it whole while it runs,
   over a copy restored meanwhile; an older `state.json` beside
   a newer `telemetry-excluded.json` brings back documents of companions excluded since, and an
   older `telemetry-excluded.json` asks companions excluded since.
   * `state.json` holds the newest accepted command time per sender (without it a restored system
     accepts older recorded commands again until a sender sends a new one, within `max_age_s`),
     and for a sender with a code secret the time step of its last accepted code (without it, a
-    code seen in the last 90 seconds would serve once more);
+    code seen in the last 90 seconds would serve once more) and the times of its wrong codes
+    within the last hour (`command_code_failures`; without them a restored system gives a
+    guesser up to 5 new guesses);
     the Home Assistant components last announced; the contacts whose documents are published;
     the last document of each companion whose answers are current, with its position and
     readings, so that they still expire after a restart without the radio (kept in its latest
@@ -522,8 +608,8 @@ updates wait for.
     profile's memory; the telemetry schedule: per companion when it is next due, its unanswered
     requests, when it last answered, was asked and flooded, how long its answers count and when
     one last carried a position, and whether it was last moving, no positions; and what is left
-    of the first-start hour; the airtime budget's level; and at a stop, the messages still
-    queued, until the next start takes them.
+    of the first-start hour; the airtime budget's level; and from the start of a stop, the
+    messages on their way, the one in flight included, until the next start takes them.
   * `telemetry-excluded.json` holds the companions the household excluded from telemetry, and
     with `[telemetry] ask = "household"` those it included: without it a restored system asks the
     excluded ones again, or no longer the included ones. An exclusions file that cannot be parsed
@@ -540,16 +626,21 @@ updates wait for.
   `[Service]` and `LoadCredential=mqtt-password:/etc/meshcore-home-gateway/mqtt-password`, then
   `chmod 0600` the file. The service reads systemd's copy of a credential named like the file,
   the command line (as root) the file itself. `--reconfigure` writes the file with mode 0640
-  again; set 0600 after it.
+  again; set 0600 after it. The file `codes_file` names works the same way
+  (`LoadCredential=command-codes:/etc/meshcore-home-gateway/command-codes`); `commands enrol`
+  keeps its mode. The installer sets up neither credential.
 * **Times:** the gateway's documents and events give times in UTC; the journal shows the
   container's local time, which the installer takes from the host (`--timezone host`).
 * **Retained documents** stay on the broker after the gateway is removed, and its devices in Home
   Assistant. `meshcore-home-gateway retire --yes`, with the service stopped and Home Assistant
   running, removes the devices (each bound first, so that Home Assistant also drops what earlier
-  versions announced), clears every retained document under the gateway's topics and leaves its
-  availability `offline`; without `--yes` it counts what it would do. By hand: for example,
-  `mosquitto_sub -t 'meshcore/radio1/#' --retained-only --remove-retained -W 2` (Mosquitto
-  2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
+  versions announced), clears every retained document under the gateway's topics and every
+  retained message of its Homie device, also with `[homie]` off now while the broker still lets
+  the gateway's user read and write `homie/meshcore-<node_id>/#`, and leaves its availability
+  `offline`. Then it looks again: a retained message left is an error. Without `--yes` it counts
+  what it would do. By hand: for example,
+  `mosquitto_sub -t 'meshcore/radio1/#' -t 'homie/meshcore-radio1/#' --retained-only
+  --remove-retained -W 2` (Mosquitto 2.0), or one by one with `mosquitto_pub -r -n -t <topic>`.
 * **Logs contain no message texts** at the default level; set `log_level = "debug"` temporarily to
   see them.
 * **Metrics for Prometheus** come from an exporter beside the gateway, which has no listener of
@@ -573,25 +664,31 @@ updates wait for.
 | Commands rejected with `too_old` / `from_the_future` | The sender's clock or the gateway host's clock is wrong: the check compares the time the sender's device stamped on the message (the phone app sets a companion's clock) with the host's clock; the clock of the gateway's own radio does not enter it. Set the wrong clock right, or set `max_age_s = 0` |
 | Log: `radio clock left ... behind the host's` | The host's time was not written to the radio: it is before this release, more than ten years after it, or more than `set_clock_max_days` (30) ahead of the radio's clock. A time written cannot be taken back without a restart of the radio, so check the host's clock first (`timedatectl`; in a container the Proxmox host's, `chronyc tracking` there). If it is right (the radio lay unused for a long time), raise `set_clock_max_days` or set it to 0 for one start |
 | Log: `radio clock is ... ahead of the host's: restarting the radio to set it back` | Expected once: the firmware sets its clock back only at a start, to its newest contact time. The gateway connects again a few seconds later and moves the clock forward (`radio clock moved forward`). Over USB the radio is gone for a moment and comes back under the same device |
-| Log: `radio clock is ... ahead of the host's and not set back (...)`, or *Radio clock offset* far above 0 | The reason in brackets: `more than an hour` (a wrong time was written to the radio earlier, or the host's clock went back; nodes and repeaters would ignore the radio as long after a restart: let real time catch up), `a restart starts it at its newest contact time` (a contact changed just now: checked again every minute), `once no message is being delivered, at most once a day` (it waits), `without contacts` or `set_clock = false`. The radio keeps working: its adverts and its contacts' last-modified times carry the later time, the gateway's messages the host's. Fix the host's time first; the service starts after `time-sync.target` where a service provides it |
+| Log: `radio clock is ... ahead of the host's and not set back (...)`, or *Radio clock offset* far above 0 | The reason in brackets: `more than an hour` (a wrong time was written to the radio earlier, or the host's clock went back; nodes and repeaters would ignore the radio as long after a restart: let real time catch up), `a restart starts it at its newest contact time` (a contact changed just now: checked again every minute), `a restart would leave it at its newest contact time, ..., and the next connect would not move it forward` (no contact changed for longer than `set_clock_max_days`, or the host's clock is wrong: a restart would leave the radio that far behind; a contact's advert makes the restart possible, and if the host's clock is right, `set_clock_max_days` raised for one start does too), `once no message is being delivered, at most once a day` (it waits), `without contacts` or `set_clock = false`. The radio keeps working: its adverts and its contacts' last-modified times carry the later time, the gateway's messages the host's. Fix the host's time first. At boot the service waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled, outside a container; in a container the clock is the Proxmox host's |
 | Commands rejected with `replay` although they are new | The sender's clock went backwards (reset, battery change): its timestamps are older than its last accepted command. Set the clock right; or, with the service stopped, remove the sender's key from `command_timestamps` in `/var/lib/meshcore-home-gateway/state.json` |
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
+| Commands rejected with `code_locked` | The sender sent 5 wrong codes within the last hour (`code_missing`, `code_invalid`, with the exceptions in [mqtt-api.md](mqtt-api.md#commands-command)); the log says `sent 5 wrong command codes`. Someone may be guessing its codes: if that is likely, remove the sender ([configuration.md](configuration.md#commands)). Otherwise check its secret and the phone's clock, then wait until the first of them is an hour old, or stop the service, remove the sender's key from `command_code_failures` in `/var/lib/meshcore-home-gateway/state.json` and start it again |
+| Commands rejected with `code_missing` from a sender without a code secret | The codes file holds the secret of a key that is not in `[commands] senders` (the start's log, `check-config` and `doctor` name it): while it is there, senders without a secret cannot command. Give the sender a secret with `meshcore-home-gateway commands enrol <key>`, which a key corrected by hand needs; or remove the ignored secret with `meshcore-home-gateway commands revoke <key>`, after which every sender without a secret commands without a code (`revoke` names them). Then restart the service ([configuration.md](configuration.md#commands)) |
 | Commands rejected with `sender_unverified` | The gateway fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
 | `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto` (and add further users without `-c`, which replaces the file). `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on takes a Home Assistant user by its login name, not the display name (the Supervisor log names the user it refused: `Unauthorized login for '…'`), or a `logins` entry (read when the add-on starts); it remembers a refused login for about 5 minutes, so restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1-` and a random part), not the user |
+| `MQTT: connection refused: Unsupported protocol version: the broker does not speak MQTT 5` | `[mqtt] protocol = "5"` and a broker that speaks MQTT 3.1.1 only. Set `protocol = "3.1.1"` (the default) or remove the line, or update the broker; the login has nothing to do with it. `meshcore-home-gateway check-config --broker` names the setting too ([configuration.md](configuration.md#mqtt)) |
 | `MQTT: cannot reach …` | No broker answered at that name or address and port: check `mqtt.host` (a host name or IP address, no `mqtt://`) and `mqtt.port`, the network and the firewall |
 | `MQTT: … closed the connection without answering` | Something answered but closed the connection before accepting it: TLS expected (port 8883 with `tls = false`), or the broker refuses a feature such as retained messages |
-| `MQTT: another client wrote …; restoring the gateway's payload` | Another client wrote one of the gateway's retained topics, and the gateway wrote its own again ([mqtt-api.md](mqtt-api.md#securing-the-broker)). A second gateway with the same `node_id` and `base_topic` (an old container, a test install), a tool that cleared retained messages, or a client whose ACL lets it write below the gateway's topics: only the gateway's user may |
+| `MQTT: another client wrote …; restoring the gateway's payload` | Another client wrote one of the gateway's retained topics, and the gateway wrote its own again ([mqtt-api.md](mqtt-api.md#securing-the-broker)). A second gateway with the same `node_id` and `base_topic` (an old container, a test install), a tool that cleared retained messages, or a client whose ACL lets it write below the gateway's topics: only the gateway's user may. Once for `availability` as the broker stops is harmless: the broker sends the gateway its own last will ([platform-notes.md](platform-notes.md#mosquitto)) |
 | `MQTT: the broker refused the subscription to …` | The broker's ACL does not let the gateway's user read these topics: requests there do not arrive, and what other clients write on its documents stays. Give the gateway's user `readwrite` below its topics ([mqtt-api.md](mqtt-api.md#securing-the-broker)) |
 | ``MQTT: the gateway's `online` on … did not come back within 10 s`` | The same with Mosquitto's `acl_file`, which grants every subscription and leaves out what the user may not read: give the gateway's user `readwrite` below its topics, not only `write` |
 | `radio.tcp_unauthenticated: the radio's TCP interface has no authentication` | A radio over TCP needs `tcp_unauthenticated = true` in `[radio]` since 2.0: read what the interface exposes ([configuration.md](configuration.md#radio)), then add the setting, or connect the radio over USB. After an update from 1.x, add it by hand ([Update](#update-reconfigure-remove)) |
 | `mqtt.insecure: commands are configured and the broker connection has no credentials` (or `no TLS`) | Since 2.0, commands (`[commands] senders`) need a broker connection with a user name, and TLS to a broker beyond the gateway's host: any client that reaches the broker could publish command events. Add credentials and TLS, or read [Securing the broker](mqtt-api.md#securing-the-broker) and set `insecure = true` in `[mqtt]`. After an update from 1.x, add it by hand ([Update](#update-reconfigure-remove)) |
 | `radio: the radio closed the TCP connection and kept running` | Another client connected to the radio's TCP port, and the gateway took the link back (`radio_link_contested` in `state`, *Radio link taken over* in Home Assistant, for an hour). If it was you (the phone app over WiFi, `meshcore-cli`), stop the gateway first next time, or use USB. If not, treat the radio's private key as read: put the radio in a network of its own, give it a new key (a factory reset formats its storage, and at the next start it makes a new key, without its contacts, channels and settings), re-add the gateway on every companion, and set the radio up again. Nothing protects the direct messages recorded before (no forward secrecy) |
+| `radio: the radio closed the TCP connection, then restarted` | The same as the line above, and the radio restarted before the gateway took the link back. A restart does not close the link: another client did, and any client can restart the radio, also to hide that it read the key (`radio_link_contested` is on for an hour). If you restarted it yourself after connecting another client, nothing more is wrong; if not, do what the line above says |
 | Commands rejected with `broker_unavailable` | The gateway could not reach the broker when the command arrived; check the broker connection (`availability`, the log), then send the command again |
 | Commands rejected with `state_unwritable` | `/var/lib/meshcore-home-gateway/state.json` cannot be written (disk full, permissions); fix it, then send the command again |
 | *Telemetry status* `paused`, reason `exclusions_unreadable` | `/var/lib/meshcore-home-gateway/telemetry-excluded.json` cannot be parsed (the log names it): fix it or delete it, then restart the service; without the file every companion not excluded again is asked |
 | *Telemetry status* `paused`, reason `first_start` | Telemetry runs for the first time on this state directory: it asks nobody for an hour after the radio connects. Exclude the companions that are not the household's meanwhile |
 | *Gateway degraded* on, or `degraded` in `systemctl status` | Its attributes (the `health` section of `state`, [mqtt-api.md](mqtt-api.md#state-state)) name the part: `history` `broken` (the journal says why; it is off until the next start: check the disk, `history.sqlite3`), `state_file` `unwritable` (a full or read-only disk: `df -h /var/lib/meshcore-home-gateway`), `exclusions` (as `exclusions_unreadable` above, or `unsaved`: the disk again), `errors_1h` above 0 (a bug: the journal has its traceback, `journalctl -u meshcore-home-gateway -p err`; please report it), `loop_lag_max_s` from 1 s (the host gives the container no CPU or its disk is slow: a backup, swapping; give it more CPU or move the backup), `disk_free_mb` below 100 (free space). It clears an hour after the last error or stall |
 | Blank container console; units fail with `243/CREDENTIALS` or `226/NAMESPACE` | Container without nesting: `pct set <id> --features nesting=1` and restart it |
+| The dashboard has no chat page for a target or a contact | It was made before the target was added, before the contact got a device that takes texts, or before the service wrote its state with that contact: make it again ([home-assistant.md](home-assistant.md#dashboard)). Besides the contact targets, at most 30 contacts get a page; `meshcore-home-gateway dashboard` says on standard error how many contacts have none and which pages it skipped because a name does not fit a page's address, and *Chats* lists the contacts without a page |
+| A chat's message field is empty after a restart | The gateway keeps the drafts in memory only: a stop or restart of the gateway empties every field, as does a draft left unchanged for 15 minutes. Nothing was sent; the thread shows what was. After a restart of the broker or of Home Assistant, the field shows the draft the gateway kept, not what was typed meanwhile ([Writing and sending](home-assistant.md#writing-and-sending)) |
 | Home Assistant's controls to add and remove contacts unavailable after a firmware update of the radio; log: `radio: firmware … is not tested with this version of the gateway` | The gateway writes nothing to firmware it is not tested with ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)): the radio profile is only observed and add and remove requests are refused. The *Contacts* sensor's attribute `manage_reason` says `untested_firmware`, and so does `meshcore-home-gateway contacts list`. Update the gateway once a version tested with that firmware is out ([testing.md](testing.md#testing-another-firmware-release) says how soon the project aims to test one), or set `manage = "always"` in `[radio.profile]` to write to it anyway, at your own risk |
 | Installer: `… is already passed through to another container (ID …)` | Another container of the host has the same radio: take it out there (`pct set <ID> --delete dev0`, or remove its `lxc.mount.entry`), or choose another radio |
 | `systemctl status` shows `activating (auto-restart)`, with longer pauses each time | A crash loop: the service fails at every start, and systemd waits longer each time, up to 5 minutes. `journalctl -u meshcore-home-gateway -p err` shows why; after the fix, `systemctl restart meshcore-home-gateway` starts it at once |

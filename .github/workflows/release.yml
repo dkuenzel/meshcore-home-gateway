@@ -5,7 +5,11 @@
 # the tag (a tag its token creates starts no workflow); a tag pushed by hand starts it too. A run
 # on a branch is a dry run: it checks, builds and rebuilds, and keeps the files as a workflow
 # artifact, without attestation or release.
-# The jobs (SUP-002): check runs everything CI checks, with the development tools; build makes the
+# The jobs: admit, on a tag, refuses a commit off main, a release that release-due.yml would not
+# tag (not main's version commit, before its day, without CI passed on main, or while the workflow
+# is disabled), and admits a pre-release on any commit of main that carries its version (#84). It
+# lives in the tagged tree, so a commit off main can drop it (SECURITY.md). Then (SUP-002):
+# check runs everything CI checks, with the development tools; build makes the
 # release files in an environment of the build tools alone (requirements/release.txt), so that no
 # test or lint tool runs where they are made; rebuild makes them again on another runner image
 # (arm64) and compares them byte for byte; publish, on a tag and after all three, attests and
@@ -26,8 +30,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  admit:
+    name: a tag that CI would make
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # whether CI passed on a release, and release-due.yml is enabled
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # main, the version commit and the tags
+      - id: plan
+        name: On main, and a release on its version commit a day later
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python3 -I tools/release_plan.py admit "$TAG" >>"$GITHUB_OUTPUT"
+      - name: CI passed on the commit of a release
+        if: steps.plan.outputs.final == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          passed=$(gh run list --workflow ci.yml --commit "$SHA" --event push --status success \
+            --json databaseId --jq length)
+          if [[ $passed == 0 ]]; then
+            echo "::error::CI has not passed on $SHA on main"
+            exit 1
+          fi
+      - name: No release while release-due.yml is disabled
+        if: steps.plan.outputs.final == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          state=$(gh api "repos/$GH_REPO/actions/workflows/release-due.yml" --jq .state)
+          if [[ $state != active ]]; then
+            echo "::error::release-due.yml is $state: disabling it stops a release, also one tagged by hand"
+            exit 1
+          fi
+
   check:
     name: check
+    needs: admit
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -44,6 +95,7 @@ jobs:
 
   build:
     name: build
+    needs: admit
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -91,7 +143,7 @@ jobs:
   publish:
     name: attest and publish
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [check, build, rebuild]
+    needs: [admit, check, build, rebuild]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
